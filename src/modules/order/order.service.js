@@ -100,6 +100,7 @@ const createOrder = async (userId, shopId, orderData) => {
             customer_id: orderData.customer_id,
             order_number: orderNumber,
             channel: orderData.channel || 'manual',
+            order_status: 'draft', // Start as draft
             payment_status: orderData.payment_status || 'pending',
             fulfillment_status: orderData.fulfillment_status || 'unfulfilled',
             subtotal: subtotal,
@@ -278,12 +279,63 @@ const deleteOrder = async (orderId, userId, shopId) => {
 
     await order.destroy();
     return { message: 'Order deleted successfully' };
-}
+};
+
+/**
+ * Confirm a draft order (draft -> confirmed)
+ */
+const confirmOrder = async (orderId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    if (order.order_status !== 'draft') {
+        throw new AppError(`Cannot confirm order with status: ${order.order_status}`, 400);
+    }
+
+    // Update status to confirmed
+    await order.update({ order_status: 'confirmed' });
+
+    return await getOrderById(order.id, userId, shopId);
+};
+
+/**
+ * Finalize a confirmed order (confirmed -> finalized)
+ * This would be called after payment is processed
+ */
+const finalizeOrder = async (orderId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    if (order.order_status !== 'confirmed') {
+        throw new AppError(`Cannot finalize order with status: ${order.order_status}`, 400);
+    }
+
+    // Update status to finalized
+    await order.update({ order_status: 'finalized' });
+
+    return await getOrderById(order.id, userId, shopId);
+};
 
 module.exports = {
     createOrder,
     updateOrder,
     getOrderById,
     listOrders,
-    deleteOrder
+    deleteOrder,
+    confirmOrder,
+    finalizeOrder
 };

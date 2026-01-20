@@ -167,10 +167,83 @@ const deleteOrder = async (req, res, next) => {
     }
 };
 
+/**
+ * Create a draft order
+ */
+const createDraftOrder = async (req, res, next) => {
+    // Same as createOrder for now, since createOrder creates drafts
+    return createOrder(req, res, next);
+};
+
+/**
+ * Confirm a draft order
+ */
+const confirmOrder = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { orderId } = req.body;
+        const order = await orderService.confirmOrder(
+            orderId,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Order confirmed successfully',
+            data: order
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get single order by ID (RESTful)
+ */
+const getOrderById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { id } = req.params;
+        const order = await orderService.getOrderById(
+            id,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            data: order
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * List orders (RESTful)
+ */
+const getOrders = async (req, res, next) => {
+    // Same as listOrders
+    return listOrders(req, res, next);
+};
+
 module.exports = {
     createOrder,
     updateOrder,
     getOrder,
     listOrders,
-    deleteOrder
+    deleteOrder,
+    createDraftOrder,
+    confirmOrder,
+    getOrderById,
+    getOrders
 };

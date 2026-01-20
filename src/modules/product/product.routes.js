@@ -6,7 +6,10 @@ const {
     updateProductValidator,
     deleteProductValidator,
     getProductValidator,
-    listProductsValidator
+    listProductsValidator,
+    getProductByIdValidator,
+    updateProductByIdValidator,
+    deleteProductByIdValidator
 } = require('./product.validator');
 
 const router = express.Router();
@@ -28,5 +31,12 @@ router.post('/update', updateProductValidator, productController.updateProduct);
 
 // POST /product/delete - Delete product
 router.post('/delete', deleteProductValidator, productController.deleteProduct);
+
+// RESTful routes (new)
+router.get('/', listProductsValidator, productController.getProducts);
+router.get('/:id', getProductByIdValidator, productController.getProductById);
+router.post('/', createProductValidator, productController.createProductRest);
+router.patch('/:id', updateProductByIdValidator, productController.updateProductById);
+router.delete('/:id', deleteProductByIdValidator, productController.deleteProductById);
 
 module.exports = router;

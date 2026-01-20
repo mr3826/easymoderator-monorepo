@@ -18,8 +18,8 @@ router.use(authenticate);
 // GET /shop/list - Get all shops for user
 router.get('/list', shopController.getUserShops);
 
-// GET /shop/get - Get user's shops from token
-router.get('/get', shopController.getShop);
+// GET /shop/me - Get current shop context (RESTful alias for /shop/get)
+router.get('/me', shopController.getShop);
 
 // POST /shop/create - Create new shop
 router.post('/create', shopCreateValidator, shopController.createShop);

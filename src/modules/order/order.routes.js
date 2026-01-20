@@ -1,4 +1,5 @@
 const express = require('express');
+const { body } = require('express-validator');
 const orderController = require('./order.controller');
 const { authenticate } = require('src/middleware/auth.middleware');
 const {
@@ -27,5 +28,11 @@ router.post('/update', updateOrderValidator, orderController.updateOrder);
 
 // POST /order/delete - Delete order
 router.post('/delete', orderIdValidator, orderController.deleteOrder);
+
+// New RESTful routes
+router.post('/draft', createOrderValidator, orderController.createDraftOrder);
+router.post('/confirm', [body('orderId').isUUID().withMessage('Order ID must be a valid UUID')], orderController.confirmOrder);
+router.get('/', listOrdersValidator, orderController.getOrders);
+router.get('/:id', orderIdValidator, orderController.getOrderById);
 
 module.exports = router;
