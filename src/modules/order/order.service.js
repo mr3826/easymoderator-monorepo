@@ -98,6 +98,7 @@ const createOrder = async (userId, shopId, orderData) => {
         const order = await Order.create({
             shop_id: shopId,
             customer_id: orderData.customer_id,
+            customer_name: orderData.customer_name,
             order_number: orderNumber,
             channel: orderData.channel || 'manual',
             order_status: 'draft', // Start as draft
@@ -155,7 +156,7 @@ const updateOrder = async (orderId, userId, shopId, updateData) => {
     }
 
     // Allow updating statuses and note
-    const allowedUpdates = ['payment_status', 'fulfillment_status', 'note'];
+    const allowedUpdates = ['order_status', 'payment_status', 'fulfillment_status', 'note'];
     const updates = {};
 
     Object.keys(updateData).forEach(key => {

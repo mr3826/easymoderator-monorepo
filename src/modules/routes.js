@@ -6,7 +6,12 @@ const productRoutes = require('src/modules/product/product.routes');
 const customerRoutes = require('src/modules/customer/customer.routes');
 const orderRoutes = require('src/modules/order/order.routes');
 const paymentRoutes = require('src/modules/payment/payment.routes');
+const channelRoutes = require('src/modules/channel/channel.routes');
+const dashboardRoutes = require('src/modules/dashboard/dashboard.routes');
+const conversationRoutes = require('src/modules/conversation/conversation.routes');
 const ragRoutes = require('src/modules/rag/rag.routes');
+const auditRoutes = require('src/modules/audit/audit.routes');
+const metaRoutes = require('src/modules/integration/meta.routes');
 
 const router = express.Router();
 
@@ -18,6 +23,11 @@ router.use('/product', productRoutes);
 router.use('/customer', customerRoutes);
 router.use('/order', orderRoutes);
 router.use('/payment', paymentRoutes);
+router.use('/channel', channelRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/conversation', conversationRoutes);
 router.use('/rag', ragRoutes);
+router.use('/audit', auditRoutes);
+router.use('/integrations/meta', metaRoutes);
 
 module.exports = router;

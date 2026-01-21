@@ -14,8 +14,12 @@ const globalErrorHandler = (err, req, res, next) => {
     err.status = err.status || 'error';
 
     res.status(err.statusCode).json({
-        status: err.status,
-        message: err.message
+        success: false,
+        data: null,
+        error: {
+            code: err.statusCode.toString(),
+            message: err.message
+        }
     });
 };
 

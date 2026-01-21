@@ -1,20 +1,233 @@
 const customerService = require('./customer.service');
-const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
+const auditService = require('../audit/audit.service');
+const { storeIdempotencyResult } = require('../audit/idempotency.middleware');
+const { auditLogMiddleware, setAuditValues } = require('../audit/audit.middleware');
 
 /**
- * Create a new customer
+ * RESTful: Get customers with pagination and filters
+ */
+const getCustomers = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const filters = req.query; // Already validated
+        const customers = await customerService.listCustomers(
+            req.user.userId,
+            shopId,
+            filters
+        );
+
+        res.status(200).json({
+            success: true,
+            data: customers
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Get customer by ID
+ */
+const getCustomerById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const customer = await customerService.getCustomerById(
+            id,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            data: customer
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Create customer
+ */
+const createCustomerRest = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const customer = await customerService.createCustomer(
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        // Audit log the creation
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'CREATE',
+            resourceType: 'CUSTOMER',
+            resourceId: customer.id,
+            newValues: req.body,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
+
+        res.status(201).json({
+            success: true,
+            data: customer
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Update customer by ID
+ */
+const updateCustomerById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+
+        // Get current customer for audit logging
+        const currentCustomer = await customerService.getCustomerById(id, req.user.userId, shopId);
+
+        const customer = await customerService.updateCustomer(
+            id,
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        // Audit log the update
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'UPDATE',
+            resourceType: 'CUSTOMER',
+            resourceId: id,
+            oldValues: currentCustomer,
+            newValues: req.body,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
+
+        res.status(200).json({
+            success: true,
+            data: customer
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Delete customer by ID
+ */
+const deleteCustomerById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+
+        // Get current customer for audit logging
+        const currentCustomer = await customerService.getCustomerById(id, req.user.userId, shopId);
+
+        const result = await customerService.deleteCustomer(
+            id,
+            req.user.userId,
+            shopId
+        );
+
+        // Audit log the deletion
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'DELETE',
+            resourceType: 'CUSTOMER',
+            resourceId: id,
+            oldValues: currentCustomer,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Legacy: Create a new customer (backward compatibility)
  */
 const createCustomer = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const customer = await customerService.createCustomer(
@@ -25,7 +238,6 @@ const createCustomer = async (req, res, next) => {
 
         res.status(201).json({
             success: true,
-            message: 'Customer created successfully',
             data: customer
         });
     } catch (error) {
@@ -34,18 +246,19 @@ const createCustomer = async (req, res, next) => {
 };
 
 /**
- * Update a customer
+ * Legacy: Update a customer (backward compatibility)
  */
 const updateCustomer = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { customerId, ...updateData } = req.body;
@@ -58,7 +271,6 @@ const updateCustomer = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Customer updated successfully',
             data: customer
         });
     } catch (error) {
@@ -67,18 +279,19 @@ const updateCustomer = async (req, res, next) => {
 };
 
 /**
- * Get a single customer
+ * Legacy: Get a single customer (backward compatibility)
  */
 const getCustomer = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { customerId } = req.query;
@@ -98,18 +311,19 @@ const getCustomer = async (req, res, next) => {
 };
 
 /**
- * List all customers for the shop with filters
+ * Legacy: List all customers for the shop with filters (backward compatibility)
  */
 const listCustomers = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         // Extract filters from query parameters
@@ -138,6 +352,13 @@ const listCustomers = async (req, res, next) => {
 };
 
 module.exports = {
+    // RESTful methods
+    getCustomers,
+    getCustomerById,
+    createCustomerRest,
+    updateCustomerById,
+    deleteCustomerById,
+    // Legacy methods for backward compatibility
     createCustomer,
     updateCustomer,
     getCustomer,

@@ -18,12 +18,16 @@ const Order = sequelize.define('Order', {
     },
     customer_id: {
         type: DataTypes.UUID,
-        allowNull: false,
+        allowNull: true,
         references: {
             model: 'customers',
             key: 'id'
         },
-        onDelete: 'RESTRICT'
+        onDelete: 'SET NULL'
+    },
+    customer_name: {
+        type: DataTypes.STRING,
+        allowNull: true
     },
     order_number: {
         type: DataTypes.STRING,
@@ -35,7 +39,7 @@ const Order = sequelize.define('Order', {
         defaultValue: 'manual'
     },
     order_status: {
-        type: DataTypes.ENUM('draft', 'confirmed', 'finalized', 'cancelled'),
+        type: DataTypes.ENUM('draft', 'confirmed', 'processing', 'completed', 'cancelled'),
         defaultValue: 'draft'
     },
     payment_status: {

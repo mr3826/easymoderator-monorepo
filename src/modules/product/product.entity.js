@@ -68,7 +68,7 @@ const Product = sequelize.define('Product', {
         allowNull: true
     },
     images: {
-        type: DataTypes.ARRAY(DataTypes.STRING),
+        type: DataTypes.JSON,
         defaultValue: []
     },
     weight: {
@@ -88,7 +88,7 @@ const Product = sequelize.define('Product', {
         defaultValue: false
     },
     tags: {
-        type: DataTypes.ARRAY(DataTypes.STRING),
+        type: DataTypes.JSON,
         defaultValue: []
     }
 }, {

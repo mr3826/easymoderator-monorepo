@@ -56,7 +56,6 @@ const createShop = async (req, res, next) => {
 
         res.status(201).json({
             success: true,
-            message: 'Shop created successfully',
             data: shop
         });
     } catch (error) {
@@ -79,7 +78,6 @@ const updateShop = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Shop updated successfully',
             data: shop
         });
     } catch (error) {
@@ -124,7 +122,6 @@ const addUserToShop = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'User added to shop successfully',
             data: userShop
         });
     } catch (error) {
@@ -169,7 +166,6 @@ const updateUserRole = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'User role updated successfully',
             data: userShop
         });
     } catch (error) {
@@ -193,7 +189,6 @@ const switchShop = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Switched to shop successfully',
             data: result
         });
     } catch (error) {

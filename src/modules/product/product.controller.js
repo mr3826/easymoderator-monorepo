@@ -1,31 +1,54 @@
 const productService = require('./product.service');
-const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
 
 /**
- * Create a new product
+ * RESTful: Get products with pagination and filters
  */
-const createProduct = async (req, res, next) => {
+const getProducts = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
-        const product = await productService.createProduct(
-            req.user.userId,
-            shopId,
-            req.body
-        );
+        const options = req.query; // Already validated
+        const result = await productService.getProducts(shopId, options);
 
-        res.status(201).json({
+        res.status(200).json({
             success: true,
-            message: 'Product created successfully',
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Get product by ID
+ */
+const getProductById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const product = await productService.getProductById(id, shopId);
+
+        res.status(200).json({
+            success: true,
             data: product
         });
     } catch (error) {
@@ -34,18 +57,146 @@ const createProduct = async (req, res, next) => {
 };
 
 /**
- * Update a product
+ * RESTful: Create product
+ */
+const createProductRest = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const product = await productService.createProduct(
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        res.status(201).json({
+            success: true,
+            data: product
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Update product by ID
+ */
+const updateProductById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const product = await productService.updateProduct(
+            id,
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        res.status(200).json({
+            success: true,
+            data: product
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Delete a product by ID
+ */
+const deleteProductById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const result = await productService.deleteProduct(
+            id,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Legacy: Create a new product (for backward compatibility)
+ */
+const createProduct = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const product = await productService.createProduct(
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        res.status(201).json({
+            success: true,
+            data: product
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Legacy: Update a product (for backward compatibility)
  */
 const updateProduct = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { productId, ...updateData } = req.body;
@@ -58,7 +209,6 @@ const updateProduct = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Product updated successfully',
             data: product
         });
     } catch (error) {
@@ -67,18 +217,19 @@ const updateProduct = async (req, res, next) => {
 };
 
 /**
- * Delete a product
+ * Legacy: Delete a product (for backward compatibility)
  */
 const deleteProduct = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { productId } = req.body;
@@ -98,24 +249,24 @@ const deleteProduct = async (req, res, next) => {
 };
 
 /**
- * Get a single product
+ * Legacy: Get a single product (for backward compatibility)
  */
 const getProduct = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { productId } = req.query;
         const product = await productService.getProductById(
             productId,
-            req.user.userId,
             shopId
         );
 
@@ -129,123 +280,27 @@ const getProduct = async (req, res, next) => {
 };
 
 /**
- * List all products for the shop with filters
+ * Legacy: List products (for backward compatibility)
  */
 const listProducts = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
-        // Extract filters from query parameters
-        const filters = {
-            search: req.query.search,
-            category_id: req.query.category_id,
-            status: req.query.status,
-            min_price: req.query.min_price ? parseFloat(req.query.min_price) : undefined,
-            max_price: req.query.max_price ? parseFloat(req.query.max_price) : undefined
-        };
-
-        const products = await productService.listProducts(
-            req.user.userId,
-            shopId,
-            filters
-        );
+        const options = req.query;
+        const result = await productService.getProducts(shopId, options);
 
         res.status(200).json({
             success: true,
-            data: products
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * RESTful: Get a single product by ID
- */
-const getProductById = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
-        }
-
-        const { id } = req.params;
-        const product = await productService.getProductById(
-            id,
-            req.user.userId,
-            shopId
-        );
-
-        res.status(200).json({
-            success: true,
-            data: product
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * RESTful: Update a product by ID
- */
-const updateProductById = async (req, res, next) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
-        const { shopId } = req.user;
-        if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
-        }
-
-        const { id } = req.params;
-        const product = await productService.updateProduct(
-            id,
-            req.user.userId,
-            shopId,
-            req.body
-        );
-
-        res.status(200).json({
-            success: true,
-            message: 'Product updated successfully',
-            data: product
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * RESTful: Delete a product by ID
- */
-const deleteProductById = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
-        }
-
-        const { id } = req.params;
-        const result = await productService.deleteProduct(
-            id,
-            req.user.userId,
-            shopId
-        );
-
-        res.status(200).json({
-            success: true,
-            ...result
+            data: result
         });
     } catch (error) {
         next(error);
@@ -253,15 +308,16 @@ const deleteProductById = async (req, res, next) => {
 };
 
 module.exports = {
+    // RESTful methods
+    getProducts,
+    getProductById,
+    createProductRest,
+    updateProductById,
+    deleteProductById,
+    // Legacy methods (for backward compatibility)
     createProduct,
     updateProduct,
     deleteProduct,
     getProduct,
-    listProducts,
-    // RESTful methods
-    getProducts: listProducts,
-    getProductById,
-    createProductRest: createProduct,
-    updateProductById,
-    deleteProductById
+    listProducts
 };

@@ -1,128 +1,207 @@
-const { body, query } = require('express-validator');
+const Joi = require('joi');
 
 /**
- * Validator for creating a customer
+ * Joi schemas for customer validation
  */
-const createCustomerValidator = [
-    body('name')
-        .trim()
-        .notEmpty()
-        .withMessage('Customer name is required')
-        .isLength({ max: 255 })
-        .withMessage('Customer name must not exceed 255 characters'),
+class CustomerValidator {
+    static createCustomer = Joi.object({
+        name: Joi.string()
+            .trim()
+            .required()
+            .max(255)
+            .messages({
+                'string.empty': 'Customer name is required',
+                'string.max': 'Customer name must not exceed 255 characters',
+                'any.required': 'Customer name is required'
+            }),
 
-    body('email')
-        .optional()
-        .trim()
-        .isEmail()
-        .withMessage('Email must be a valid email address')
-        .isLength({ max: 255 })
-        .withMessage('Email must not exceed 255 characters'),
+        email: Joi.string()
+            .trim()
+            .email()
+            .max(255)
+            .optional()
+            .messages({
+                'string.email': 'Email must be a valid email address',
+                'string.max': 'Email must not exceed 255 characters'
+            }),
 
-    body('number')
-        .trim()
-        .notEmpty()
-        .withMessage('Phone number is required')
-        .isLength({ max: 50 })
-        .withMessage('Phone number must not exceed 50 characters'),
+        number: Joi.string()
+            .trim()
+            .required()
+            .max(50)
+            .messages({
+                'string.empty': 'Phone number is required',
+                'string.max': 'Phone number must not exceed 50 characters',
+                'any.required': 'Phone number is required'
+            }),
 
-    body('channel')
-        .trim()
-        .notEmpty()
-        .withMessage('Channel is required')
-        .isIn(['facebook', 'whatsapp', 'telegram', 'webchat', 'manual'])
-        .withMessage('Channel must be one of: facebook, whatsapp, telegram, webchat, manual')
-];
+        channel: Joi.string()
+            .trim()
+            .required()
+            .valid('facebook', 'whatsapp', 'telegram', 'webchat', 'manual')
+            .messages({
+                'string.empty': 'Channel is required',
+                'any.only': 'Channel must be one of: facebook, whatsapp, telegram, webchat, manual',
+                'any.required': 'Channel is required'
+            })
+    });
 
-/**
- * Validator for updating a customer
- */
-const updateCustomerValidator = [
-    body('customerId')
-        .trim()
-        .notEmpty()
-        .withMessage('Customer ID is required')
-        .isUUID()
-        .withMessage('Customer ID must be a valid UUID'),
+    static updateCustomer = Joi.object({
+        customerId: Joi.string()
+            .trim()
+            .required()
+            .uuid()
+            .messages({
+                'string.empty': 'Customer ID is required',
+                'string.uuid': 'Customer ID must be a valid UUID',
+                'any.required': 'Customer ID is required'
+            }),
 
-    body('name')
-        .optional()
-        .trim()
-        .notEmpty()
-        .withMessage('Customer name cannot be empty')
-        .isLength({ max: 255 })
-        .withMessage('Customer name must not exceed 255 characters'),
+        name: Joi.string()
+            .trim()
+            .optional()
+            .max(255)
+            .messages({
+                'string.empty': 'Customer name cannot be empty',
+                'string.max': 'Customer name must not exceed 255 characters'
+            }),
 
-    body('email')
-        .optional()
-        .trim()
-        .isEmail()
-        .withMessage('Email must be a valid email address')
-        .isLength({ max: 255 })
-        .withMessage('Email must not exceed 255 characters'),
+        email: Joi.string()
+            .trim()
+            .email()
+            .max(255)
+            .optional()
+            .messages({
+                'string.email': 'Email must be a valid email address',
+                'string.max': 'Email must not exceed 255 characters'
+            }),
 
-    body('number')
-        .optional()
-        .trim()
-        .notEmpty()
-        .withMessage('Phone number cannot be empty')
-        .isLength({ max: 50 })
-        .withMessage('Phone number must not exceed 50 characters'),
+        number: Joi.string()
+            .trim()
+            .optional()
+            .max(50)
+            .messages({
+                'string.empty': 'Phone number cannot be empty',
+                'string.max': 'Phone number must not exceed 50 characters'
+            }),
 
-    body('channel')
-        .optional()
-        .trim()
-        .isIn(['facebook', 'whatsapp', 'telegram', 'webchat', 'manual'])
-        .withMessage('Channel must be one of: facebook, whatsapp, telegram, webchat, manual')
-];
+        channel: Joi.string()
+            .trim()
+            .valid('facebook', 'whatsapp', 'telegram', 'webchat', 'manual')
+            .optional()
+            .messages({
+                'any.only': 'Channel must be one of: facebook, whatsapp, telegram, webchat, manual'
+            })
+    });
 
-/**
- * Validator for getting a single customer
- */
-const getCustomerValidator = [
-    query('customerId')
-        .trim()
-        .notEmpty()
-        .withMessage('Customer ID is required')
-        .isUUID()
-        .withMessage('Customer ID must be a valid UUID')
-];
+    static getCustomer = Joi.object({
+        customerId: Joi.string()
+            .trim()
+            .required()
+            .uuid()
+            .messages({
+                'string.empty': 'Customer ID is required',
+                'string.uuid': 'Customer ID must be a valid UUID',
+                'any.required': 'Customer ID is required'
+            })
+    });
 
-/**
- * Validator for listing customers with filters
- */
-const listCustomersValidator = [
-    query('search')
-        .optional()
-        .trim(),
+    static listCustomers = Joi.object({
+        search: Joi.string()
+            .trim()
+            .optional(),
 
-    query('email')
-        .optional()
-        .trim(),
+        email: Joi.string()
+            .trim()
+            .optional(),
 
-    query('number')
-        .optional()
-        .trim(),
+        number: Joi.string()
+            .trim()
+            .optional(),
 
-    query('channel')
-        .optional()
-        .isIn(['facebook', 'whatsapp', 'telegram', 'webchat', 'manual'])
-        .withMessage('Channel must be one of: facebook, whatsapp, telegram, webchat, manual'),
+        channel: Joi.string()
+            .valid('facebook', 'whatsapp', 'telegram', 'webchat', 'manual')
+            .optional()
+            .messages({
+                'any.only': 'Channel must be one of: facebook, whatsapp, telegram, webchat, manual'
+            }),
 
-    query('start_date')
-        .optional()
-        .isISO8601()
-        .withMessage('Start date must be a valid ISO 8601 date'),
+        start_date: Joi.date()
+            .iso()
+            .optional()
+            .messages({
+                'date.format': 'Start date must be a valid ISO 8601 date'
+            }),
 
-    query('end_date')
-        .optional()
-        .isISO8601()
-        .withMessage('End date must be a valid ISO 8601 date')
-];
+        end_date: Joi.date()
+            .iso()
+            .optional()
+            .messages({
+                'date.format': 'End date must be a valid ISO 8601 date'
+            })
+    });
 
-module.exports = {
-    createCustomerValidator,
-    updateCustomerValidator,
-    getCustomerValidator,
-    listCustomersValidator
-};
+    static getCustomerById = Joi.object({
+        id: Joi.string()
+            .trim()
+            .required()
+            .uuid()
+            .messages({
+                'string.empty': 'Customer ID is required',
+                'string.uuid': 'Customer ID must be a valid UUID',
+                'any.required': 'Customer ID is required'
+            })
+    });
+
+    static updateCustomerById = Joi.object({
+        name: Joi.string()
+            .trim()
+            .optional()
+            .max(255)
+            .messages({
+                'string.empty': 'Customer name cannot be empty',
+                'string.max': 'Customer name must not exceed 255 characters'
+            }),
+
+        email: Joi.string()
+            .trim()
+            .email()
+            .max(255)
+            .optional()
+            .messages({
+                'string.email': 'Email must be a valid email address',
+                'string.max': 'Email must not exceed 255 characters'
+            }),
+
+        number: Joi.string()
+            .trim()
+            .optional()
+            .max(50)
+            .messages({
+                'string.empty': 'Phone number cannot be empty',
+                'string.max': 'Phone number must not exceed 50 characters'
+            }),
+
+        channel: Joi.string()
+            .trim()
+            .valid('facebook', 'whatsapp', 'telegram', 'webchat', 'manual')
+            .optional()
+            .messages({
+                'any.only': 'Channel must be one of: facebook, whatsapp, telegram, webchat, manual'
+            })
+    });
+
+    static deleteCustomerById = Joi.object({
+        id: Joi.string()
+            .trim()
+            .required()
+            .uuid()
+            .messages({
+                'string.empty': 'Customer ID is required',
+                'string.uuid': 'Customer ID must be a valid UUID',
+                'any.required': 'Customer ID is required'
+            })
+    });
+}
+
+module.exports = CustomerValidator;

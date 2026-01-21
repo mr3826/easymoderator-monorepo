@@ -26,7 +26,6 @@ const confirmCodPayment = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'COD payment confirmed successfully',
             data: order
         });
     } catch (error) {

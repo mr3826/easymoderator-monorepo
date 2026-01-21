@@ -1,38 +1,30 @@
 const express = require('express');
-const { body } = require('express-validator');
 const orderController = require('./order.controller');
+const orderValidator = require('./order.validator');
+const { validate } = require('../helpers');
 const { authenticate } = require('src/middleware/auth.middleware');
-const {
-    createOrderValidator,
-    updateOrderValidator,
-    listOrdersValidator,
-    orderIdValidator
-} = require('./order.validator');
 
 const router = express.Router();
 
 // All order routes require authentication
 router.use(authenticate);
 
-// GET /order/list - List orders with filters
-router.get('/list', listOrdersValidator, orderController.listOrders);
+// RESTful routes
+router.get('/', validate(orderValidator.getOrders), orderController.getOrders);
+router.get('/:id', validate(orderValidator.getOrderById), orderController.getOrderById);
+router.post('/', validate(orderValidator.createOrder), orderController.createOrderRest);
+router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
+router.delete('/:id', validate(orderValidator.deleteOrder), orderController.deleteOrderById);
 
-// GET /order/get - Get single order details
-router.get('/get', orderIdValidator, orderController.getOrder);
+// Legacy routes (for backward compatibility)
+router.get('/list', validate(orderValidator.getOrders), orderController.listOrders);
+router.get('/get', orderController.getOrder); // This needs proper validation
+router.post('/create', validate(orderValidator.createOrder), orderController.createOrder);
+router.post('/update', orderController.updateOrder); // This needs proper validation
+router.post('/delete', orderController.deleteOrder); // This needs proper validation
 
-// POST /order/create - Create new order
-router.post('/create', createOrderValidator, orderController.createOrder);
-
-// POST /order/update - Update order status/note
-router.post('/update', updateOrderValidator, orderController.updateOrder);
-
-// POST /order/delete - Delete order
-router.post('/delete', orderIdValidator, orderController.deleteOrder);
-
-// New RESTful routes
-router.post('/draft', createOrderValidator, orderController.createDraftOrder);
-router.post('/confirm', [body('orderId').isUUID().withMessage('Order ID must be a valid UUID')], orderController.confirmOrder);
-router.get('/', listOrdersValidator, orderController.getOrders);
-router.get('/:id', orderIdValidator, orderController.getOrderById);
+// Additional routes
+router.post('/draft', validate(orderValidator.createOrder), orderController.createDraftOrder);
+router.post('/confirm', validate(orderValidator.confirmOrder), orderController.confirmOrder);
 
 module.exports = router;

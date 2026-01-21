@@ -1,28 +1,45 @@
 const express = require('express');
 const customerController = require('./customer.controller');
+const customerValidator = require('./customer.validator');
+const { validate } = require('../helpers');
 const { authenticate } = require('src/middleware/auth.middleware');
-const {
-    createCustomerValidator,
-    updateCustomerValidator,
-    getCustomerValidator,
-    listCustomersValidator
-} = require('./customer.validator');
+const { idempotencyMiddleware, storeIdempotencyResult } = require('../audit/idempotency.middleware');
+const { auditLogMiddleware } = require('../audit/audit.middleware');
 
 const router = express.Router();
 
 // All customer routes require authentication
 router.use(authenticate);
 
-// GET /customer/list - Get all customers for shop with filters
-router.get('/list', listCustomersValidator, customerController.listCustomers);
+// RESTful routes
+router.get('/', validate(customerValidator.listCustomers), customerController.getCustomers);
+router.get('/:id', validate(customerValidator.getCustomerById), customerController.getCustomerById);
+router.post('/',
+    idempotencyMiddleware,
+    validate(customerValidator.createCustomer),
+    customerController.createCustomerRest,
+    storeIdempotencyResult(201),
+    auditLogMiddleware('CREATE', 'CUSTOMER')
+);
+router.patch('/:id',
+    idempotencyMiddleware,
+    validate(customerValidator.updateCustomerById),
+    customerController.updateCustomerById,
+    storeIdempotencyResult(200),
+    auditLogMiddleware('UPDATE', 'CUSTOMER')
+);
+router.delete('/:id',
+    idempotencyMiddleware,
+    validate(customerValidator.deleteCustomerById),
+    customerController.deleteCustomerById,
+    storeIdempotencyResult(200),
+    auditLogMiddleware('DELETE', 'CUSTOMER')
+);
 
-// GET /customer/get - Get single customer
-router.get('/get', getCustomerValidator, customerController.getCustomer);
-
-// POST /customer/create - Create new customer
-router.post('/create', createCustomerValidator, customerController.createCustomer);
-
-// POST /customer/update - Update customer
-router.post('/update', updateCustomerValidator, customerController.updateCustomer);
+// Legacy routes for backward compatibility
+router.get('/list', validate(customerValidator.listCustomers), customerController.listCustomers);
+router.get('/get', validate(customerValidator.getCustomer), customerController.getCustomer);
+router.post('/create', validate(customerValidator.createCustomer), customerController.createCustomer);
+router.post('/update', validate(customerValidator.updateCustomer), customerController.updateCustomer);
 
 module.exports = router;

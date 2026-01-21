@@ -6,6 +6,11 @@ const Product = require('src/modules/product/product.entity');
 const Customer = require('src/modules/customer/customer.entity');
 const Order = require('src/modules/order/order.entity');
 const OrderItem = require('src/modules/order/order-item.entity');
+const Channel = require('src/modules/channel/channel.entity');
+const { Conversation, Message } = require('src/modules/conversation/conversation.entity');
+const AuditLog = require('src/modules/audit/audit-log.entity');
+const IdempotencyKey = require('src/modules/audit/idempotency-key.entity');
+const MetaIntegration = require('src/modules/integration/meta-integration.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -86,6 +91,18 @@ Customer.belongsTo(Shop, {
     as: 'shop'
 });
 
+// Define Shop-Channel relationship
+Shop.hasMany(Channel, {
+    foreignKey: 'shop_id',
+    as: 'channels',
+    onDelete: 'CASCADE'
+});
+
+Channel.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop'
+});
+
 // Define Shop-Order relationship
 Shop.hasMany(Order, {
     foreignKey: 'shop_id',
@@ -149,6 +166,50 @@ OrderItem.belongsTo(Product, {
     as: 'product'
 });
 
+// Define Shop-Conversation relationship
+Shop.hasMany(Conversation, {
+    foreignKey: 'shop_id',
+    as: 'conversations',
+    onDelete: 'CASCADE'
+});
+
+Conversation.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop'
+});
+
+// Define Customer-Conversation relationship
+Customer.hasMany(Conversation, {
+    foreignKey: 'customer_id',
+    as: 'conversations',
+    onDelete: 'SET NULL'
+});
+
+Conversation.belongsTo(Customer, {
+    foreignKey: 'customer_id',
+    as: 'customer'
+});
+
+// Define Conversation-Message relationship
+Conversation.hasMany(Message, {
+    foreignKey: 'conversation_id',
+    as: 'messages',
+    onDelete: 'CASCADE'
+});
+
+Message.belongsTo(Conversation, {
+    foreignKey: 'conversation_id',
+    as: 'conversation'
+});
+
+// Define audit log relationships
+AuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+AuditLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+
+// Define idempotency key relationships
+IdempotencyKey.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+IdempotencyKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+
 // Export entities
 module.exports = {
     User,
@@ -158,5 +219,10 @@ module.exports = {
     Product,
     Customer,
     Order,
-    OrderItem
+    OrderItem,
+    Channel,
+    Conversation,
+    Message,
+    AuditLog,
+    IdempotencyKey
 };

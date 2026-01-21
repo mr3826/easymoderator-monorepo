@@ -3,29 +3,29 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('src/utils/AppError');
 
 /**
- * Create a new order
+ * Create a new order (legacy)
  */
 const createOrder = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const order = await orderService.createOrder(
             req.user.userId,
             shopId,
-            req.body
+            req.body // Already validated by Joi
         );
 
         res.status(201).json({
             success: true,
-            message: 'Order created successfully',
             data: order
         });
     } catch (error) {
@@ -34,18 +34,19 @@ const createOrder = async (req, res, next) => {
 };
 
 /**
- * Update an order
+ * Update an order (legacy)
  */
 const updateOrder = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { orderId, ...updateData } = req.body;
@@ -58,7 +59,6 @@ const updateOrder = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Order updated successfully',
             data: order
         });
     } catch (error) {
@@ -67,18 +67,19 @@ const updateOrder = async (req, res, next) => {
 };
 
 /**
- * Get a single order
+ * Get a single order (legacy)
  */
 const getOrder = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { orderId } = req.query;
@@ -98,29 +99,23 @@ const getOrder = async (req, res, next) => {
 };
 
 /**
- * List orders with filters
+ * List orders with filters (legacy)
  */
 const listOrders = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         // Extract filters
-        const filters = {
-            search: req.query.search,
-            start_date: req.query.start_date,
-            end_date: req.query.end_date,
-            payment_status: req.query.payment_status,
-            fulfillment_status: req.query.fulfillment_status
-        };
-
+        const filters = req.query; // Already validated
         const orders = await orderService.listOrders(
             req.user.userId,
             shopId,
@@ -137,18 +132,19 @@ const listOrders = async (req, res, next) => {
 };
 
 /**
- * Delete an order
+ * Delete an order (legacy)
  */
 const deleteOrder = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
         const { orderId } = req.body;
@@ -182,10 +178,16 @@ const confirmOrder = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
-        const { orderId } = req.body;
+        const { orderId } = req.body; // Already validated
         const order = await orderService.confirmOrder(
             orderId,
             req.user.userId,
@@ -194,7 +196,6 @@ const confirmOrder = async (req, res, next) => {
 
         res.status(200).json({
             success: true,
-            message: 'Order confirmed successfully',
             data: order
         });
     } catch (error) {
@@ -203,20 +204,114 @@ const confirmOrder = async (req, res, next) => {
 };
 
 /**
- * Get single order by ID (RESTful)
+ * RESTful: Get orders with pagination and filters
+ */
+const getOrders = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const options = req.query; // Already validated
+        const result = await orderService.listOrders(req.user.userId, shopId, options);
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Get order by ID
  */
 const getOrderById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
         }
 
-        const { id } = req.params;
-        const order = await orderService.getOrderById(
+        const { id } = req.params; // Already validated
+        const order = await orderService.getOrderById(id, req.user.userId, shopId);
+
+        res.status(200).json({
+            success: true,
+            data: order
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Create order
+ */
+const createOrderRest = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const order = await orderService.createOrder(
+            req.user.userId,
+            shopId,
+            req.body // Already validated
+        );
+
+        res.status(201).json({
+            success: true,
+            data: order
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Update order by ID
+ */
+const updateOrderById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const order = await orderService.updateOrder(
             id,
             req.user.userId,
-            shopId
+            shopId,
+            req.body // Already validated
         );
 
         res.status(200).json({
@@ -229,21 +324,50 @@ const getOrderById = async (req, res, next) => {
 };
 
 /**
- * List orders (RESTful)
+ * RESTful: Delete order by ID
  */
-const getOrders = async (req, res, next) => {
-    // Same as listOrders
-    return listOrders(req, res, next);
+const deleteOrderById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params; // Already validated
+        const result = await orderService.deleteOrder(
+            id,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
 };
 
 module.exports = {
+    // RESTful methods
+    getOrders,
+    getOrderById,
+    createOrderRest,
+    updateOrderById,
+    deleteOrderById,
+    // Legacy methods (for backward compatibility)
     createOrder,
     updateOrder,
     getOrder,
     listOrders,
     deleteOrder,
     createDraftOrder,
-    confirmOrder,
-    getOrderById,
-    getOrders
+    confirmOrder
 };

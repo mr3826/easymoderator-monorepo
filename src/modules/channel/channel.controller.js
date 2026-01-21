@@ -1,7 +1,12 @@
+const channelService = require('./channel.service');
+const auditService = require('../audit/audit.service');
+const { storeIdempotencyResult } = require('../audit/idempotency.middleware');
+const { auditLogMiddleware, setAuditValues } = require('../audit/audit.middleware');
+
 /**
- * RESTful: Get categories with pagination and filters
+ * RESTful: Get channels with pagination and filters
  */
-const getCategories = async (req, res, next) => {
+const getChannels = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -15,7 +20,7 @@ const getCategories = async (req, res, next) => {
         }
 
         const options = req.query; // Already validated
-        const result = await categoryService.listCategories(req.user.userId, shopId, options.search);
+        const result = await channelService.getChannels(req.user.userId, shopId);
 
         res.status(200).json({
             success: true,
@@ -27,9 +32,9 @@ const getCategories = async (req, res, next) => {
 };
 
 /**
- * RESTful: Get category by ID
+ * RESTful: Get channel by ID
  */
-const getCategoryById = async (req, res, next) => {
+const getChannelById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -43,11 +48,11 @@ const getCategoryById = async (req, res, next) => {
         }
 
         const { id } = req.params; // Already validated
-        const category = await categoryService.getCategoryById(id, req.user.userId, shopId);
+        const channel = await channelService.getChannelById(id, req.user.userId, shopId);
 
         res.status(200).json({
             success: true,
-            data: category
+            data: channel
         });
     } catch (error) {
         next(error);
@@ -55,9 +60,9 @@ const getCategoryById = async (req, res, next) => {
 };
 
 /**
- * RESTful: Create category
+ * RESTful: Create channel
  */
-const createCategoryRest = async (req, res, next) => {
+const createChannelRest = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -70,15 +75,29 @@ const createCategoryRest = async (req, res, next) => {
             });
         }
 
-        const category = await categoryService.createCategory(
+        const channel = await channelService.createChannel(
             req.user.userId,
             shopId,
             req.body // Already validated
         );
 
+        // Audit log the creation
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'CREATE',
+            resourceType: 'CHANNEL',
+            resourceId: channel.id,
+            newValues: req.body,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
+
         res.status(201).json({
             success: true,
-            data: category
+            data: channel
         });
     } catch (error) {
         next(error);
@@ -86,9 +105,9 @@ const createCategoryRest = async (req, res, next) => {
 };
 
 /**
- * RESTful: Update category by ID
+ * RESTful: Update channel by ID
  */
-const updateCategoryById = async (req, res, next) => {
+const updateChannelById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -102,16 +121,35 @@ const updateCategoryById = async (req, res, next) => {
         }
 
         const { id } = req.params; // Already validated
-        const category = await categoryService.updateCategory(
+
+        // Get current channel for audit logging
+        const currentChannel = await channelService.getChannelById(id, req.user.userId, shopId);
+
+        const channel = await channelService.updateChannel(
             id,
             req.user.userId,
             shopId,
             req.body // Already validated
         );
 
+        // Audit log the update
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'UPDATE',
+            resourceType: 'CHANNEL',
+            resourceId: id,
+            oldValues: currentChannel,
+            newValues: req.body,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
+
         res.status(200).json({
             success: true,
-            data: category
+            data: channel
         });
     } catch (error) {
         next(error);
@@ -119,9 +157,9 @@ const updateCategoryById = async (req, res, next) => {
 };
 
 /**
- * RESTful: Delete category by ID
+ * RESTful: Delete channel by ID
  */
-const deleteCategoryById = async (req, res, next) => {
+const deleteChannelById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -135,11 +173,29 @@ const deleteCategoryById = async (req, res, next) => {
         }
 
         const { id } = req.params; // Already validated
-        const result = await categoryService.deleteCategory(
+
+        // Get current channel for audit logging
+        const currentChannel = await channelService.getChannelById(id, req.user.userId, shopId);
+
+        const result = await channelService.deleteChannel(
             id,
             req.user.userId,
             shopId
         );
+
+        // Audit log the deletion
+        await auditService.logOperation({
+            userId: req.user.userId,
+            shopId,
+            action: 'DELETE',
+            resourceType: 'CHANNEL',
+            resourceId: id,
+            oldValues: currentChannel,
+            metadata: { endpoint: req.originalUrl },
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            idempotencyKey: req.idempotencyKey
+        });
 
         res.status(200).json({
             success: true,
@@ -151,9 +207,9 @@ const deleteCategoryById = async (req, res, next) => {
 };
 
 /**
- * Create a new category (legacy)
+ * Legacy: Get all channels for the shop (backward compatibility)
  */
-const createCategory = async (req, res, next) => {
+const getChannelsLegacy = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -166,48 +222,11 @@ const createCategory = async (req, res, next) => {
             });
         }
 
-        const category = await categoryService.createCategory(
-            req.user.userId,
-            shopId,
-            req.body // Already validated by Joi
-        );
-
-        res.status(201).json({
-            success: true,
-            data: category
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Update a category (legacy)
- */
-const updateCategory = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
-        }
-
-        const { categoryId, ...updateData } = req.body;
-        const category = await categoryService.updateCategory(
-            categoryId,
-            req.user.userId,
-            shopId,
-            updateData
-        );
+        const channels = await channelService.getChannels(req.user.userId, shopId);
 
         res.status(200).json({
             success: true,
-            data: category
+            data: channels
         });
     } catch (error) {
         next(error);
@@ -215,9 +234,9 @@ const updateCategory = async (req, res, next) => {
 };
 
 /**
- * Delete a category (legacy)
+ * Legacy: Create a new channel (backward compatibility)
  */
-const deleteCategory = async (req, res, next) => {
+const createChannel = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
@@ -230,82 +249,67 @@ const deleteCategory = async (req, res, next) => {
             });
         }
 
-        const { categoryId } = req.body;
-        const result = await categoryService.deleteCategory(
-            categoryId,
-            req.user.userId,
-            shopId
-        );
+        const channel = await channelService.createChannel(req.user.userId, shopId, req.body);
+
+        res.status(201).json({
+            success: true,
+            data: channel
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Legacy: Update a channel (backward compatibility)
+ */
+const updateChannel = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params;
+        const channel = await channelService.updateChannel(id, req.user.userId, shopId, req.body);
+
+        res.status(200).json({
+            success: true,
+            data: channel
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Legacy: Delete a channel (backward compatibility)
+ */
+const deleteChannel = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params;
+        const result = await channelService.deleteChannel(id, req.user.userId, shopId);
 
         res.status(200).json({
             success: true,
             ...result
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Get a single category (legacy)
- */
-const getCategory = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
-        }
-
-        const { categoryId } = req.query;
-        const category = await categoryService.getCategoryById(
-            categoryId,
-            req.user.userId,
-            shopId
-        );
-
-        res.status(200).json({
-            success: true,
-            data: category
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * List all categories for the shop (legacy)
- */
-const listCategories = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
-        }
-
-        // Get search query from request
-        const { search } = req.query;
-
-        const categories = await categoryService.listCategories(
-            req.user.userId,
-            shopId,
-            search
-        );
-
-        res.status(200).json({
-            success: true,
-            data: categories
         });
     } catch (error) {
         next(error);
@@ -314,15 +318,14 @@ const listCategories = async (req, res, next) => {
 
 module.exports = {
     // RESTful methods
-    getCategories,
-    getCategoryById,
-    createCategoryRest,
-    updateCategoryById,
-    deleteCategoryById,
-    // Legacy methods (for backward compatibility)
-    createCategory,
-    updateCategory,
-    deleteCategory,
-    getCategory,
-    listCategories
+    getChannels,
+    getChannelById,
+    createChannelRest,
+    updateChannelById,
+    deleteChannelById,
+    // Legacy methods for backward compatibility
+    getChannelsLegacy,
+    createChannel,
+    updateChannel,
+    deleteChannel
 };

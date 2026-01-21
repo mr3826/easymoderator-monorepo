@@ -1,153 +1,94 @@
-const { body, query } = require('express-validator');
+const Joi = require('joi');
 
-/**
- * Validator for creating a category
- */
-const createCategoryValidator = [
-    body('name')
-        .trim()
-        .notEmpty()
-        .withMessage('Category name is required')
-        .isLength({ max: 255 })
-        .withMessage('Category name must not exceed 255 characters'),
+class CategoryValidator {
+    createCategory = {
+        body: Joi.object({
+            name: Joi.string().trim().required().max(255).messages({
+                'string.empty': 'Category name is required',
+                'string.max': 'Category name must not exceed 255 characters',
+                'any.required': 'Category name is required'
+            }),
+            description: Joi.string().trim().optional(),
+            cover_image: Joi.string().trim().optional(),
+            image: Joi.string().trim().optional(),
+            subcategories: Joi.array().items(Joi.object({
+                name: Joi.string().trim().required().max(255).messages({
+                    'string.empty': 'Subcategory name is required',
+                    'string.max': 'Subcategory name must not exceed 255 characters',
+                    'any.required': 'Subcategory name is required'
+                }),
+                description: Joi.string().trim().optional(),
+                cover_image: Joi.string().trim().optional(),
+                image: Joi.string().trim().optional()
+            })).optional().messages({
+                'array.base': 'Subcategories must be an array'
+            })
+        })
+    };
 
-    body('description')
-        .optional()
-        .trim(),
+    updateCategory = {
+        params: Joi.object({
+            id: Joi.string().uuid().required().messages({
+                'string.uuid': 'Category ID must be a valid UUID',
+                'any.required': 'Category ID is required'
+            })
+        }),
+        body: Joi.object({
+            name: Joi.string().trim().optional().max(255).messages({
+                'string.max': 'Category name must not exceed 255 characters'
+            }),
+            description: Joi.string().trim().optional(),
+            cover_image: Joi.string().trim().optional(),
+            image: Joi.string().trim().optional(),
+            is_active: Joi.boolean().optional().messages({
+                'boolean.base': 'is_active must be a boolean'
+            }),
+            subcategories: Joi.array().items(Joi.object({
+                id: Joi.string().uuid().optional().messages({
+                    'string.uuid': 'Subcategory ID must be a valid UUID'
+                }),
+                name: Joi.string().trim().required().max(255).messages({
+                    'string.empty': 'Subcategory name is required',
+                    'string.max': 'Subcategory name must not exceed 255 characters',
+                    'any.required': 'Subcategory name is required'
+                }),
+                description: Joi.string().trim().optional(),
+                cover_image: Joi.string().trim().optional(),
+                image: Joi.string().trim().optional(),
+                is_active: Joi.boolean().optional().messages({
+                    'boolean.base': 'Subcategory is_active must be a boolean'
+                })
+            })).optional().messages({
+                'array.base': 'Subcategories must be an array'
+            })
+        })
+    };
 
-    body('cover_image')
-        .optional()
-        .trim(),
+    getCategories = {
+        query: Joi.object({
+            search: Joi.string().trim().optional(),
+            page: Joi.number().integer().min(1).default(1),
+            limit: Joi.number().integer().min(1).max(100).default(20)
+        })
+    };
 
-    body('image')
-        .optional()
-        .trim(),
+    getCategoryById = {
+        params: Joi.object({
+            id: Joi.string().uuid().required().messages({
+                'string.uuid': 'Category ID must be a valid UUID',
+                'any.required': 'Category ID is required'
+            })
+        })
+    };
 
-    body('subcategories')
-        .optional()
-        .isArray()
-        .withMessage('Subcategories must be an array'),
+    deleteCategory = {
+        params: Joi.object({
+            id: Joi.string().uuid().required().messages({
+                'string.uuid': 'Category ID must be a valid UUID',
+                'any.required': 'Category ID is required'
+            })
+        })
+    };
+}
 
-    body('subcategories.*.name')
-        .if(body('subcategories').exists())
-        .trim()
-        .notEmpty()
-        .withMessage('Subcategory name is required')
-        .isLength({ max: 255 })
-        .withMessage('Subcategory name must not exceed 255 characters'),
-
-    body('subcategories.*.description')
-        .optional()
-        .trim(),
-
-    body('subcategories.*.cover_image')
-        .optional()
-        .trim(),
-
-    body('subcategories.*.image')
-        .optional()
-        .trim()
-];
-
-/**
- * Validator for updating a category
- */
-const updateCategoryValidator = [
-    body('categoryId')
-        .trim()
-        .notEmpty()
-        .withMessage('Category ID is required')
-        .isUUID()
-        .withMessage('Category ID must be a valid UUID'),
-
-    body('name')
-        .optional()
-        .trim()
-        .notEmpty()
-        .withMessage('Category name cannot be empty')
-        .isLength({ max: 255 })
-        .withMessage('Category name must not exceed 255 characters'),
-
-    body('description')
-        .optional()
-        .trim(),
-
-    body('cover_image')
-        .optional()
-        .trim(),
-
-    body('image')
-        .optional()
-        .trim(),
-
-    body('is_active')
-        .optional()
-        .isBoolean()
-        .withMessage('is_active must be a boolean'),
-
-    body('subcategories')
-        .optional()
-        .isArray()
-        .withMessage('Subcategories must be an array'),
-
-    body('subcategories.*.id')
-        .optional()
-        .isUUID()
-        .withMessage('Subcategory ID must be a valid UUID'),
-
-    body('subcategories.*.name')
-        .if(body('subcategories').exists())
-        .trim()
-        .notEmpty()
-        .withMessage('Subcategory name is required')
-        .isLength({ max: 255 })
-        .withMessage('Subcategory name must not exceed 255 characters'),
-
-    body('subcategories.*.description')
-        .optional()
-        .trim(),
-
-    body('subcategories.*.cover_image')
-        .optional()
-        .trim(),
-
-    body('subcategories.*.image')
-        .optional()
-        .trim(),
-
-    body('subcategories.*.is_active')
-        .optional()
-        .isBoolean()
-        .withMessage('Subcategory is_active must be a boolean')
-];
-
-/**
- * Validator for deleting a category
- */
-const deleteCategoryValidator = [
-    body('categoryId')
-        .trim()
-        .notEmpty()
-        .withMessage('Category ID is required')
-        .isUUID()
-        .withMessage('Category ID must be a valid UUID')
-];
-
-/**
- * Validator for getting a single category
- */
-const getCategoryValidator = [
-    query('categoryId')
-        .trim()
-        .notEmpty()
-        .withMessage('Category ID is required')
-        .isUUID()
-        .withMessage('Category ID must be a valid UUID')
-];
-
-module.exports = {
-    createCategoryValidator,
-    updateCategoryValidator,
-    deleteCategoryValidator,
-    getCategoryValidator
-};
+module.exports = new CategoryValidator();
