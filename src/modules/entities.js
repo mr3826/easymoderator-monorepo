@@ -11,6 +11,7 @@ const { Conversation, Message } = require('src/modules/conversation/conversation
 const AuditLog = require('src/modules/audit/audit-log.entity');
 const IdempotencyKey = require('src/modules/audit/idempotency-key.entity');
 const MetaIntegration = require('src/modules/integration/meta-integration.entity');
+const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -210,6 +211,10 @@ AuditLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 IdempotencyKey.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 IdempotencyKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 
+// Define delivery integration relationships
+DeliveryIntegration.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(DeliveryIntegration, { foreignKey: 'shop_id', as: 'delivery_integrations' });
+
 // Export entities
 module.exports = {
     User,
@@ -224,5 +229,7 @@ module.exports = {
     Conversation,
     Message,
     AuditLog,
-    IdempotencyKey
+    IdempotencyKey,
+    MetaIntegration,
+    DeliveryIntegration
 };

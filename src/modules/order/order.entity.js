@@ -28,6 +28,14 @@ const Order = sequelize.define('Order', {
     customer_name: {
         type: DataTypes.STRING,
         allowNull: true
+        },
+        customer_phone: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        delivery_address: {
+            type: DataTypes.TEXT,
+            allowNull: true
     },
     order_number: {
         type: DataTypes.STRING,
@@ -72,6 +80,31 @@ const Order = sequelize.define('Order', {
     },
     note: {
         type: DataTypes.TEXT,
+        allowNull: true
+    },
+    // Delivery tracking fields
+    delivery_provider: {
+        type: DataTypes.ENUM('pathao', 'steadfast'),
+        allowNull: true
+    },
+    delivery_consignment_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    delivery_tracking_code: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    delivery_status: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    delivery_dispatched_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    delivery_delivered_at: {
+        type: DataTypes.DATE,
         allowNull: true
     },
     created_at: {

@@ -12,6 +12,7 @@ const conversationRoutes = require('src/modules/conversation/conversation.routes
 const ragRoutes = require('src/modules/rag/rag.routes');
 const auditRoutes = require('src/modules/audit/audit.routes');
 const metaRoutes = require('src/modules/integration/meta.routes');
+const deliveryRoutes = require('src/modules/delivery/delivery.routes');
 
 const router = express.Router();
 
@@ -29,5 +30,6 @@ router.use('/conversation', conversationRoutes);
 router.use('/rag', ragRoutes);
 router.use('/audit', auditRoutes);
 router.use('/integrations/meta', metaRoutes);
+router.use('/shop/delivery', deliveryRoutes);
 
 module.exports = router;

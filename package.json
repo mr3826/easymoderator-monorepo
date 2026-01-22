@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "nodemon server.js",
-    "db:sync": "node src/utils/database/sync.js"
+    "db:sync": "node src/utils/database/sync.js",
+    "seed:admin": "node src/scripts/seed-admin.js"
   },
   "keywords": [],
   "author": "",

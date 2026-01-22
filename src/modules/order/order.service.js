@@ -2,6 +2,7 @@ const { Order, OrderItem, Product, Customer, UserShop } = require('src/modules/e
 const { AppError } = require('src/utils/AppError');
 const { sequelize } = require('src/utils/database/database-setup');
 const { Op } = require('sequelize');
+const deliveryService = require('src/modules/delivery/delivery.service');
 
 /**
  * Verify user has access to shop
@@ -302,6 +303,46 @@ const confirmOrder = async (orderId, userId, shopId) => {
 
     // Update status to confirmed
     await order.update({ order_status: 'confirmed' });
+
+    // Attempt to dispatch delivery order if active provider exists
+    try {
+        const activeProvider = await deliveryService.getActiveProvider(shopId);
+        
+        if (activeProvider && order.total > 0) {
+            // Build delivery order payload from order data
+            const deliveryPayload = {
+                order_number: order.order_number,
+                customer_name: order.customer_name || 'Customer',
+                customer_phone: order.customer_phone || '',
+                delivery_address: order.delivery_address || '',
+                total: parseFloat(order.total),
+                note: order.note || '',
+                item_quantity: 1, // Can be calculated from order items if needed
+                item_weight: 0.5, // Default weight, should be configurable
+                item_description: `Order ${order.order_number}`,
+                delivery_type: 48 // Default to normal delivery
+            };
+
+            const deliveryResult = await deliveryService.createDeliveryOrder(
+                shopId,
+                deliveryPayload
+            );
+
+            // Update order with delivery tracking info
+            await order.update({
+                delivery_provider: deliveryResult.provider,
+                delivery_consignment_id: deliveryResult.consignment_id,
+                delivery_tracking_code: deliveryResult.tracking_code,
+                delivery_status: deliveryResult.status,
+                delivery_dispatched_at: new Date(),
+                fulfillment_status: 'fulfilled'
+            });
+        }
+    } catch (deliveryError) {
+        // Log error but don't fail order confirmation
+        console.error('Delivery dispatch failed:', deliveryError.message);
+        // Order is still confirmed, just without delivery tracking
+    }
 
     return await getOrderById(order.id, userId, shopId);
 };
