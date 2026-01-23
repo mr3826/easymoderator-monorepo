@@ -13,6 +13,7 @@ const ragRoutes = require('src/modules/rag/rag.routes');
 const auditRoutes = require('src/modules/audit/audit.routes');
 const metaRoutes = require('src/modules/integration/meta.routes');
 const deliveryRoutes = require('src/modules/delivery/delivery.routes');
+const subscriptionRoutes = require('src/modules/subscription/subscription.routes');
 
 const router = express.Router();
 
@@ -31,5 +32,6 @@ router.use('/rag', ragRoutes);
 router.use('/audit', auditRoutes);
 router.use('/integrations/meta', metaRoutes);
 router.use('/shop/delivery', deliveryRoutes);
+router.use('/subscription', subscriptionRoutes);
 
 module.exports = router;

@@ -1,6 +1,8 @@
-const { Order } = require('src/modules/entities');
+const { Order, PaymentConfig } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
 const { UserShop } = require('src/modules/entities');
+const axios = require('axios');
+const crypto = require('crypto');
 
 /**
  * Verify user has access to shop
@@ -51,5 +53,363 @@ const confirmCodPayment = async (orderId, userId, shopId) => {
 };
 
 module.exports = {
-    confirmCodPayment
+    confirmCodPayment,
+    getPaymentConfigs,
+    savePaymentConfig,
+    initiateAamarPayPayment,
+    initiateSSLCommerzPayment,
+    verifyAamarPayCallback,
+    verifySSLCommerzCallback
 };
+
+/**
+ * Get all payment configurations for a shop
+ */
+async function getPaymentConfigs(shopId, userId) {
+    await verifyShopAccess(userId, shopId);
+
+    const configs = await PaymentConfig.findAll({
+        where: { shop_id: shopId }
+    });
+
+    // Mask sensitive data before returning
+    return configs.map(config => ({
+        id: config.id,
+        gateway: config.gateway,
+        is_enabled: config.is_enabled,
+        config: config.config,
+        // Never return actual credentials, only indicate if they're set
+        has_credentials: config.credentials != null && Object.keys(config.credentials).length > 0,
+        created_at: config.created_at,
+        updated_at: config.updated_at
+    }));
+}
+
+/**
+ * Save or update payment configuration
+ */
+async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials, config) {
+    await verifyShopAccess(userId, shopId);
+
+    // Validate gateway
+    const validGateways = ['cod', 'aamarpay', 'sslcommerz', 'self-mfs'];
+    if (!validGateways.includes(gateway)) {
+        throw new AppError('Invalid payment gateway', 400);
+    }
+
+    // Validate credentials based on gateway
+    if (isEnabled && credentials) {
+        if (gateway === 'aamarpay') {
+            if (!credentials.store_id || !credentials.secret_key) {
+                throw new AppError('AamarPay requires store_id and secret_key', 400);
+            }
+        } else if (gateway === 'sslcommerz') {
+            if (!credentials.store_id || !credentials.store_password) {
+                throw new AppError('SSLCommerz requires store_id and store_password', 400);
+            }
+        }
+    }
+
+    // Find existing config or create new one
+    let paymentConfig = await PaymentConfig.findOne({
+        where: { shop_id: shopId, gateway }
+    });
+
+    if (paymentConfig) {
+        // Update existing
+        paymentConfig.is_enabled = isEnabled;
+        if (credentials) {
+            paymentConfig.credentials = credentials;
+        }
+        if (config) {
+            paymentConfig.config = config;
+        }
+        await paymentConfig.save();
+    } else {
+        // Create new
+        paymentConfig = await PaymentConfig.create({
+            shop_id: shopId,
+            gateway,
+            is_enabled: isEnabled,
+            credentials,
+            config: config || {}
+        });
+    }
+
+    // Return masked data
+    return {
+        id: paymentConfig.id,
+        gateway: paymentConfig.gateway,
+        is_enabled: paymentConfig.is_enabled,
+        config: paymentConfig.config,
+        has_credentials: paymentConfig.credentials != null && Object.keys(paymentConfig.credentials).length > 0,
+        created_at: paymentConfig.created_at,
+        updated_at: paymentConfig.updated_at
+    };
+}
+
+/**
+ * Initiate AamarPay payment
+ */
+async function initiateAamarPayPayment(orderId, shopId, userId) {
+    await verifyShopAccess(userId, shopId);
+
+    // Get order
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    if (order.payment_status !== 'pending') {
+        throw new AppError('Payment already processed or cancelled', 400);
+    }
+
+    // Get AamarPay configuration
+    const config = await PaymentConfig.findOne({
+        where: { shop_id: shopId, gateway: 'aamarpay', is_enabled: true }
+    });
+
+    if (!config || !config.credentials) {
+        throw new AppError('AamarPay is not configured for this shop', 400);
+    }
+
+    const { store_id, secret_key } = config.credentials;
+    const baseUrl = process.env.AAMARPAY_SANDBOX === 'true' 
+        ? 'https://sandbox.aamarpay.com'
+        : 'https://secure.aamarpay.com';
+
+    // Prepare payment data
+    const paymentData = {
+        store_id,
+        signature_key: secret_key,
+        tran_id: `${order.order_number}-${Date.now()}`,
+        success_url: `${process.env.BASE_URL}/api/payment/aamarpay/success`,
+        fail_url: `${process.env.BASE_URL}/api/payment/aamarpay/fail`,
+        cancel_url: `${process.env.BASE_URL}/api/payment/aamarpay/cancel`,
+        amount: parseFloat(order.total),
+        currency: 'BDT',
+        desc: `Payment for Order #${order.order_number}`,
+        cus_name: order.customer_name || 'Customer',
+        cus_email: 'customer@example.com',
+        cus_add1: order.delivery_address || 'N/A',
+        cus_phone: order.customer_phone || '01700000000',
+        type: 'json'
+    };
+
+    try {
+        const response = await axios.post(`${baseUrl}/api/v1/initiate-payment`, paymentData, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.data && response.data.payment_url) {
+            // Update order with transaction ID
+            await order.update({
+                payment_status: 'processing'
+            });
+
+            return {
+                success: true,
+                payment_url: response.data.payment_url,
+                transaction_id: paymentData.tran_id
+            };
+        }
+
+        throw new AppError('Failed to initiate AamarPay payment', 500);
+    } catch (error) {
+        console.error('AamarPay initiation error:', error.response?.data || error.message);
+        throw new AppError('Failed to initiate payment with AamarPay', 500);
+    }
+}
+
+/**
+ * Initiate SSLCommerz payment
+ */
+async function initiateSSLCommerzPayment(orderId, shopId, userId) {
+    await verifyShopAccess(userId, shopId);
+
+    // Get order
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    if (order.payment_status !== 'pending') {
+        throw new AppError('Payment already processed or cancelled', 400);
+    }
+
+    // Get SSLCommerz configuration
+    const config = await PaymentConfig.findOne({
+        where: { shop_id: shopId, gateway: 'sslcommerz', is_enabled: true }
+    });
+
+    if (!config || !config.credentials) {
+        throw new AppError('SSLCommerz is not configured for this shop', 400);
+    }
+
+    const { store_id, store_password } = config.credentials;
+    const environment = config.config?.environment || 'sandbox';
+    const baseUrl = environment === 'sandbox'
+        ? 'https://sandbox.sslcommerz.com'
+        : 'https://securepay.sslcommerz.com';
+
+    // Prepare payment data
+    const paymentData = {
+        store_id,
+        store_passwd: store_password,
+        total_amount: parseFloat(order.total),
+        currency: 'BDT',
+        tran_id: `${order.order_number}-${Date.now()}`,
+        success_url: `${process.env.BASE_URL}/api/payment/sslcommerz/success`,
+        fail_url: `${process.env.BASE_URL}/api/payment/sslcommerz/fail`,
+        cancel_url: `${process.env.BASE_URL}/api/payment/sslcommerz/cancel`,
+        ipn_url: `${process.env.BASE_URL}/api/payment/sslcommerz/ipn`,
+        product_name: `Order #${order.order_number}`,
+        product_category: 'General',
+        product_profile: 'general',
+        cus_name: order.customer_name || 'Customer',
+        cus_email: 'customer@example.com',
+        cus_add1: order.delivery_address || 'N/A',
+        cus_phone: order.customer_phone || '01700000000',
+        cus_city: 'Dhaka',
+        cus_country: 'Bangladesh',
+        shipping_method: 'NO',
+        num_of_item: 1,
+        product_amount: parseFloat(order.total),
+        vat: 0,
+        discount_amount: 0,
+        convenience_fee: 0
+    };
+
+    try {
+        const response = await axios.post(`${baseUrl}/gwprocess/v4/api.php`, 
+            new URLSearchParams(paymentData).toString(),
+            {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            }
+        );
+
+        if (response.data && response.data.status === 'SUCCESS' && response.data.GatewayPageURL) {
+            // Update order with transaction ID
+            await order.update({
+                payment_status: 'processing'
+            });
+
+            return {
+                success: true,
+                payment_url: response.data.GatewayPageURL,
+                transaction_id: paymentData.tran_id
+            };
+        }
+
+        throw new AppError(response.data?.failedreason || 'Failed to initiate SSLCommerz payment', 500);
+    } catch (error) {
+        console.error('SSLCommerz initiation error:', error.response?.data || error.message);
+        throw new AppError('Failed to initiate payment with SSLCommerz', 500);
+    }
+}
+
+/**
+ * Verify AamarPay payment callback
+ */
+async function verifyAamarPayCallback(callbackData) {
+    const { mer_txnid, pay_status, status_code } = callbackData;
+    
+    if (!mer_txnid) {
+        throw new AppError('Invalid callback data', 400);
+    }
+
+    // Extract order number from transaction ID
+    const orderNumber = mer_txnid.split('-')[0];
+    
+    // Find order
+    const order = await Order.findOne({
+        where: { order_number: orderNumber }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    // Verify payment status
+    if (pay_status === 'Successful' && status_code === '2') {
+        await order.update({
+            payment_status: 'paid'
+        });
+        return { success: true, order };
+    } else {
+        await order.update({
+            payment_status: 'failed'
+        });
+        return { success: false, order };
+    }
+}
+
+/**
+ * Verify SSLCommerz payment callback
+ */
+async function verifySSLCommerzCallback(callbackData, shopId) {
+    const { tran_id, val_id, status } = callbackData;
+    
+    if (!tran_id) {
+        throw new AppError('Invalid callback data', 400);
+    }
+
+    // Extract order number from transaction ID
+    const orderNumber = tran_id.split('-')[0];
+    
+    // Find order
+    const order = await Order.findOne({
+        where: { order_number: orderNumber, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    // Get SSLCommerz configuration for validation
+    const config = await PaymentConfig.findOne({
+        where: { shop_id: order.shop_id, gateway: 'sslcommerz', is_enabled: true }
+    });
+
+    if (!config || !config.credentials) {
+        throw new AppError('SSLCommerz configuration not found', 400);
+    }
+
+    const { store_id, store_password } = config.credentials;
+    const environment = config.config?.environment || 'sandbox';
+    const baseUrl = environment === 'sandbox'
+        ? 'https://sandbox.sslcommerz.com'
+        : 'https://securepay.sslcommerz.com';
+
+    // Validate transaction with SSLCommerz
+    try {
+        if (status === 'VALID' || status === 'VALIDATED') {
+            const validationUrl = `${baseUrl}/validator/api/validationserverAPI.php?val_id=${val_id}&store_id=${store_id}&store_passwd=${store_password}&format=json`;
+            const validation = await axios.get(validationUrl);
+
+            if (validation.data && validation.data.status === 'VALID') {
+                await order.update({
+                    payment_status: 'paid'
+                });
+                return { success: true, order };
+            }
+        }
+
+        await order.update({
+            payment_status: 'failed'
+        });
+        return { success: false, order };
+    } catch (error) {
+        console.error('SSLCommerz validation error:', error.message);
+        await order.update({
+            payment_status: 'failed'
+        });
+        return { success: false, order };
+    }
+}

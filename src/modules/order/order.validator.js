@@ -110,6 +110,45 @@ class OrderValidator {
             })
         })
     };
+
+    // Legacy route validators (for backward compatibility)
+    // POST /order/update - expects order_id in body or query
+    legacyUpdate = {
+        body: Joi.object({
+            order_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional(),
+            order_status: Joi.string().valid('draft', 'confirmed', 'processing', 'completed', 'cancelled').optional(),
+            payment_status: Joi.string().valid('pending', 'paid', 'unpaid', 'refunded', 'partially_paid').optional(),
+            fulfillment_status: Joi.string().valid('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled').optional(),
+            note: Joi.string().trim().optional()
+        }).min(1).messages({
+            'object.min': 'At least one field to update is required'
+        }),
+        query: Joi.object({
+            order_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
+
+    // POST /order/delete - expects order_id in body or query
+    legacyDelete = {
+        body: Joi.object({
+            order_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        }),
+        query: Joi.object({
+            order_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
+
+    // GET /order/get - expects id in query
+    legacyGet = {
+        query: Joi.object({
+            order_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
 }
 
 module.exports = new OrderValidator();

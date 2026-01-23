@@ -18,9 +18,9 @@ router.delete('/:id', validate(productValidator.deleteProduct), productControlle
 
 // Legacy routes (for backward compatibility)
 router.get('/list', validate(productValidator.getProducts), productController.listProducts);
-router.get('/get', productController.getProduct); // This needs proper validation
+router.get('/get', validate(productValidator.legacyGet), productController.getProduct);
 router.post('/create', validate(productValidator.createProduct), productController.createProduct);
-router.post('/update', productController.updateProduct); // This needs proper validation
-router.post('/delete', productController.deleteProduct); // This needs proper validation
+router.post('/update', validate(productValidator.legacyUpdate), productController.updateProduct);
+router.post('/delete', validate(productValidator.legacyDelete), productController.deleteProduct);
 
 module.exports = router;

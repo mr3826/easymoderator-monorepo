@@ -18,10 +18,10 @@ router.delete('/:id', validate(orderValidator.deleteOrder), orderController.dele
 
 // Legacy routes (for backward compatibility)
 router.get('/list', validate(orderValidator.getOrders), orderController.listOrders);
-router.get('/get', orderController.getOrder); // This needs proper validation
+router.get('/get', validate(orderValidator.legacyGet), orderController.getOrder);
 router.post('/create', validate(orderValidator.createOrder), orderController.createOrder);
-router.post('/update', orderController.updateOrder); // This needs proper validation
-router.post('/delete', orderController.deleteOrder); // This needs proper validation
+router.post('/update', validate(orderValidator.legacyUpdate), orderController.updateOrder);
+router.post('/delete', validate(orderValidator.legacyDelete), orderController.deleteOrder);
 
 // Additional routes
 router.post('/draft', validate(orderValidator.createOrder), orderController.createDraftOrder);

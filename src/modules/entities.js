@@ -12,6 +12,10 @@ const AuditLog = require('src/modules/audit/audit-log.entity');
 const IdempotencyKey = require('src/modules/audit/idempotency-key.entity');
 const MetaIntegration = require('src/modules/integration/meta-integration.entity');
 const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
+const PaymentConfig = require('src/modules/payment/payment-config.entity');
+const Subscription = require('src/modules/subscription/subscription.entity');
+const Invoice = require('src/modules/subscription/invoice.entity');
+const UsageEvent = require('src/modules/subscription/usage-event.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -215,6 +219,24 @@ IdempotencyKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 DeliveryIntegration.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(DeliveryIntegration, { foreignKey: 'shop_id', as: 'delivery_integrations' });
 
+// Define payment config relationships
+PaymentConfig.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(PaymentConfig, { foreignKey: 'shop_id', as: 'payment_configs' });
+
+// Define subscription relationships
+Subscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasOne(Subscription, { foreignKey: 'shop_id', as: 'subscription' });
+
+// Define invoice relationships
+Invoice.belongsTo(Subscription, { foreignKey: 'subscription_id', as: 'subscription' });
+Invoice.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Subscription.hasMany(Invoice, { foreignKey: 'subscription_id', as: 'invoices' });
+Shop.hasMany(Invoice, { foreignKey: 'shop_id', as: 'invoices' });
+
+// Define usage event relationships
+UsageEvent.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(UsageEvent, { foreignKey: 'shop_id', as: 'usage_events' });
+
 // Export entities
 module.exports = {
     User,
@@ -231,5 +253,9 @@ module.exports = {
     AuditLog,
     IdempotencyKey,
     MetaIntegration,
-    DeliveryIntegration
+    DeliveryIntegration,
+    PaymentConfig,
+    Subscription,
+    Invoice,
+    UsageEvent
 };

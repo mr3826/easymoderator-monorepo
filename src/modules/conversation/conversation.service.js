@@ -1,5 +1,8 @@
 const { Conversation, Message, Shop, Customer } = require('../entities');
 const { Op } = require('sequelize');
+const subscriptionService = require('../subscription/subscription.service');
+const { createLogger } = require('../../utils/structured-logger');
+const { AppError } = require('../../utils/AppError');
 
 class ConversationService {
     async getConversations(shopId, options = {}) {
@@ -110,17 +113,64 @@ class ConversationService {
         }
     }
 
-    async createConversation(shopId, conversationData) {
+    async createConversation(shopId, conversationData, requestId = null) {
+        const logger = createLogger(requestId, shopId);
+        const { sequelize } = require('../../utils/database/database-setup');
+        const transaction = await sequelize.transaction();
+        
         try {
+            // Create conversation within transaction
             const conversation = await Conversation.create({
                 ...conversationData,
                 shop_id: shopId,
                 status: conversationData.status || 'active'
-            });
+            }, { transaction });
+
+            // Commit transaction - NOW conversation is persisted
+            await transaction.commit();
+
+            // ATOMIC: Track usage ONLY after successful DB commit
+            // Uses transaction-safe idempotent tracking with request_id
+            // Usage increments ONLY on successful database persistence
+            try {
+                const usageResult = await subscriptionService.trackUsage(
+                    shopId,
+                    'conversations',
+                    1,
+                    requestId, // Request-scoped idempotency key - prevents double counting
+                    {
+                        resourceId: conversation.id,
+                        channel: conversation.channel,
+                        customerId: conversation.customer_id
+                    }
+                );
+                
+                logger.logUsage('conversation_created', shopId, null, {
+                    conversationId: conversation.id,
+                    channel: conversation.channel,
+                    transactionId: usageResult.transactionId,
+                    isRetry: usageResult.isRetry
+                });
+            } catch (usageError) {
+                // CRITICAL errors: usage_limit_exceeded, validation errors
+                if (usageError.code === 'USAGE_LIMIT_EXCEEDED') {
+                    logger.error('Usage limit exceeded on conversation', usageError, { severity: 'critical' });
+                    throw usageError;
+                }
+                
+                // Non-critical errors: transient tracking issues don't fail conversation
+                logger.error('Failed to track conversation usage', usageError, {
+                    conversationId: conversation.id,
+                    severity: 'warning'
+                });
+            }
 
             return conversation;
         } catch (error) {
-            throw new Error(`Failed to create conversation: ${error.message}`);
+            await transaction.rollback();
+            if (error instanceof AppError) throw error;
+            logger.error('Failed to create conversation', error);
+            throw new AppError(`Failed to create conversation: ${error.message}`, 500);
         }
     }
 

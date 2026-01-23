@@ -2,6 +2,8 @@ const { Product, Category, Shop, UserShop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
+const subscriptionService = require('../subscription/subscription.service');
+const { createLogger } = require('../../utils/structured-logger');
 
 /**
  * Verify user has access to shop
@@ -24,8 +26,11 @@ const verifyShopAccess = async (userId, shopId) => {
 
 /**
  * Create a new product
+ * CRITICAL: Tracks usage for billing on successful creation
  */
-const createProduct = async (userId, shopId, productData) => {
+const createProduct = async (userId, shopId, productData, requestId = null) => {
+    const logger = createLogger(requestId, shopId, userId);
+
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
@@ -43,14 +48,61 @@ const createProduct = async (userId, shopId, productData) => {
         }
     }
 
-    // Create product
-    const product = await Product.create({
-        shop_id: shopId,
-        ...productData
-    });
+    const transaction = await sequelize.transaction();
+    
+    try {
+        // Create product within transaction
+        const product = await Product.create({
+            shop_id: shopId,
+            ...productData
+        }, { transaction });
 
-    // Fetch product with category
-    return await getProductById(product.id, userId, shopId);
+        // Commit transaction - NOW product is persisted
+        await transaction.commit();
+
+        // ATOMIC: Track usage ONLY after successful DB commit
+        // Uses transaction-safe idempotent tracking with request_id
+        // Usage increments ONLY on successful database persistence
+        try {
+            const usageResult = await subscriptionService.trackUsage(
+                shopId,
+                'products',
+                1,
+                requestId, // Request-scoped idempotency key - prevents double counting
+                {
+                    resourceId: product.id,
+                    productName: product.name,
+                    sku: product.sku
+                }
+            );
+            
+            logger.logUsage('product_created', shopId, userId, {
+                productId: product.id,
+                productName: product.name,
+                sku: product.sku,
+                transactionId: usageResult.transactionId,
+                isRetry: usageResult.isRetry
+            });
+        } catch (usageError) {
+            // CRITICAL errors: usage_limit_exceeded, validation errors
+            if (usageError.code === 'USAGE_LIMIT_EXCEEDED') {
+                logger.error('Usage limit exceeded on product', usageError, { severity: 'critical' });
+                throw usageError;
+            }
+            
+            // Non-critical errors: transient tracking issues don't fail product
+            logger.error('Failed to track product usage', usageError, {
+                productId: product.id,
+                severity: 'warning'
+            });
+        }
+
+        // Fetch product with category
+        return await getProductById(product.id, userId, shopId);
+    } catch (error) {
+        await transaction.rollback();
+        throw error;
+    }
 };
 
 /**

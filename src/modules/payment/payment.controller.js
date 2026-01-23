@@ -34,5 +34,183 @@ const confirmCodPayment = async (req, res, next) => {
 };
 
 module.exports = {
-    confirmCodPayment
+    confirmCodPayment,
+    getPaymentConfigs,
+    savePaymentConfig,
+    initiatePayment,
+    handleAamarPaySuccess,
+    handleAamarPayFail,
+    handleSSLCommerzSuccess,
+    handleSSLCommerzFail,
+    handleSSLCommerzIPN
 };
+
+/**
+ * Get payment configurations
+ */
+async function getPaymentConfigs(req, res, next) {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const configs = await paymentService.getPaymentConfigs(shopId, req.user.userId);
+
+        res.status(200).json({
+            success: true,
+            data: configs
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Save payment configuration
+ */
+async function savePaymentConfig(req, res, next) {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { gateway, is_enabled, credentials, config } = req.body;
+
+        const savedConfig = await paymentService.savePaymentConfig(
+            shopId,
+            req.user.userId,
+            gateway,
+            is_enabled,
+            credentials,
+            config
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Payment configuration saved successfully',
+            data: savedConfig
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Initiate payment
+ */
+async function initiatePayment(req, res, next) {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { orderId, gateway } = req.body;
+
+        let result;
+        if (gateway === 'aamarpay') {
+            result = await paymentService.initiateAamarPayPayment(orderId, shopId, req.user.userId);
+        } else if (gateway === 'sslcommerz') {
+            result = await paymentService.initiateSSLCommerzPayment(orderId, shopId, req.user.userId);
+        } else {
+            throw new AppError('Invalid payment gateway', 400);
+        }
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Handle AamarPay success callback
+ */
+async function handleAamarPaySuccess(req, res, next) {
+    try {
+        const result = await paymentService.verifyAamarPayCallback(req.body);
+
+        if (result.success) {
+            res.redirect(`${process.env.FRONTEND_URL}/orders?payment=success&order=${result.order.order_number}`);
+        } else {
+            res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
+        }
+    } catch (error) {
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);
+    }
+}
+
+/**
+ * Handle AamarPay fail callback
+ */
+async function handleAamarPayFail(req, res, next) {
+    try {
+        const result = await paymentService.verifyAamarPayCallback(req.body);
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
+    } catch (error) {
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);
+    }
+}
+
+/**
+ * Handle SSLCommerz success callback
+ */
+async function handleSSLCommerzSuccess(req, res, next) {
+    try {
+        // Extract shopId from tran_id or session (you may need to adjust based on your setup)
+        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+
+        if (result.success) {
+            res.redirect(`${process.env.FRONTEND_URL}/orders?payment=success&order=${result.order.order_number}`);
+        } else {
+            res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
+        }
+    } catch (error) {
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);
+    }
+}
+
+/**
+ * Handle SSLCommerz fail callback
+ */
+async function handleSSLCommerzFail(req, res, next) {
+    try {
+        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
+    } catch (error) {
+        res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);
+    }
+}
+
+/**
+ * Handle SSLCommerz IPN (Instant Payment Notification)
+ */
+async function handleSSLCommerzIPN(req, res, next) {
+    try {
+        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        
+        res.status(200).json({
+            success: result.success,
+            message: result.success ? 'Payment verified' : 'Payment failed'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+}

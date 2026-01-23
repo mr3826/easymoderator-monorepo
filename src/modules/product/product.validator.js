@@ -139,6 +139,46 @@ class ProductValidator {
             })
         })
     };
+
+    // Legacy route validators (for backward compatibility)
+    // POST /product/update - expects product_id in body or query
+    legacyUpdate = {
+        body: Joi.object({
+            product_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional(),
+            name: Joi.string().trim().optional().max(255),
+            description: Joi.string().trim().optional(),
+            price: Joi.number().positive().optional(),
+            quantity: Joi.number().integer().min(0).optional(),
+            is_active: Joi.boolean().optional()
+        }).min(1).messages({
+            'object.min': 'At least one field to update is required'
+        }),
+        query: Joi.object({
+            product_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
+
+    // POST /product/delete - expects product_id in body or query
+    legacyDelete = {
+        body: Joi.object({
+            product_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        }),
+        query: Joi.object({
+            product_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
+
+    // GET /product/get - expects id in query
+    legacyGet = {
+        query: Joi.object({
+            product_id: Joi.string().uuid().optional(),
+            id: Joi.string().uuid().optional()
+        })
+    };
 }
 
 module.exports = new ProductValidator();

@@ -3,6 +3,8 @@ const { AppError } = require('src/utils/AppError');
 const { sequelize } = require('src/utils/database/database-setup');
 const { Op } = require('sequelize');
 const deliveryService = require('src/modules/delivery/delivery.service');
+const subscriptionService = require('src/modules/subscription/subscription.service');
+const { createLogger } = require('src/utils/structured-logger');
 
 /**
  * Verify user has access to shop
@@ -46,8 +48,11 @@ const generateOrderNumber = async (shopId) => {
 
 /**
  * Create a new order
+ * CRITICAL: Tracks usage for billing on successful creation
  */
-const createOrder = async (userId, shopId, orderData) => {
+const createOrder = async (userId, shopId, orderData, requestId = null) => {
+    const logger = createLogger(requestId, shopId, userId);
+    
     await verifyShopAccess(userId, shopId);
 
     const transaction = await sequelize.transaction();
@@ -82,7 +87,6 @@ const createOrder = async (userId, shopId, orderData) => {
                 quantity: item.quantity,
                 price: unitPrice,
                 total: itemTotal,
-                // for updating stock later if needed
                 productInstance: product
             });
         }
@@ -102,7 +106,7 @@ const createOrder = async (userId, shopId, orderData) => {
             customer_name: orderData.customer_name,
             order_number: orderNumber,
             channel: orderData.channel || 'manual',
-            order_status: 'draft', // Start as draft
+            order_status: 'draft',
             payment_status: orderData.payment_status || 'pending',
             fulfillment_status: orderData.fulfillment_status || 'unfulfilled',
             subtotal: subtotal,
@@ -133,6 +137,46 @@ const createOrder = async (userId, shopId, orderData) => {
         }
 
         await transaction.commit();
+        // Order now persisted in database
+
+        // ATOMIC: Track usage ONLY after successful DB commit
+        // Uses transaction-safe idempotent tracking with request_id
+        // Usage increments ONLY on successful database persistence
+        try {
+            const usageResult = await subscriptionService.trackUsage(
+                shopId,
+                'orders',
+                1,
+                requestId, // Request-scoped idempotency key - prevents double counting
+                {
+                    resourceId: order.id,
+                    orderNumber: order.order_number,
+                    total: total,
+                    itemCount: validItems.length
+                }
+            );
+            
+            logger.logUsage('order_created', shopId, userId, {
+                orderId: order.id,
+                orderNumber: order.order_number,
+                total: total,
+                itemCount: validItems.length,
+                transactionId: usageResult.transactionId,
+                isRetry: usageResult.isRetry
+            });
+        } catch (usageError) {
+            // CRITICAL errors: usage_limit_exceeded, validation errors
+            if (usageError.code === 'USAGE_LIMIT_EXCEEDED') {
+                logger.error('Usage limit exceeded on order', usageError, { severity: 'critical' });
+                throw usageError;
+            }
+            
+            // Non-critical errors: transient tracking issues don't fail order
+            logger.error('Failed to track order usage', usageError, {
+                orderId: order.id,
+                severity: 'warning'
+            });
+        }
 
         return await getOrderById(order.id, userId, shopId);
 
