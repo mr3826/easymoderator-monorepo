@@ -29,7 +29,7 @@ aws rds create-db-instance \
 
 **Connection String:**
 ```
-postgresql://postgres:password@commerce-ai-db.xxxxxx.us-east-1.rds.amazonaws.com:5432/commerce_ai
+postgresql://postgres:oN3sKXcA9vFZrQ2mE1Y4D7P8HkWT6M@commerce-ai-db.cvyq4i0wgvgl.ap-south-1.rds.amazonaws.com:5432/commerce_ai
 ```
 
 ---
@@ -51,7 +51,7 @@ aws elasticache create-cache-cluster \
 
 **Connection String:**
 ```
-redis://commerce-ai-redis.xxxxxx.cache.amazonaws.com:6379
+redis://commerce-ai-redis.np2zon.0001.aps1.cache.amazonaws.com:6379
 ```
 
 ---
@@ -66,7 +66,7 @@ redis://commerce-ai-redis.xxxxxx.cache.amazonaws.com:6379
 
 **Connect to EC2:**
 ```bash
-ssh -i your-key.pem ubuntu@your-ec2-ip
+ssh -i your-key.pem ubuntu@65.1.84.60
 ```
 
 **Run Setup Script:**
@@ -99,11 +99,14 @@ Update with your AWS resources:
 ```env
 PORT=3000
 NODE_ENV=production
-DATABASE_URL=postgresql://postgres:password@your-rds.amazonaws.com:5432/commerce_ai
-REDIS_URL=redis://your-elasticache.amazonaws.com:6379
-JWT_ACCESS_SECRET=<generated-secret>
-JWT_REFRESH_SECRET=<generated-secret>
-SESSION_SECRET=<generated-secret>
+DATABASE_URL=postgresql://postgres:oN3sKXcA9vFZrQ2mE1Y4D7P8HkWT6M@commerce-ai-db.cvyq4i0wgvgl.ap-south-1.rds.amazonaws.com:5432/commerce_ai
+REDIS_URL=redis://commerce-ai-redis.np2zon.0001.aps1.cache.amazonaws.com:6379
+JWT_ACCESS_SECRET=216f6d943d8e87c10f3c3314f34d273ba1cd380e881ce028bb3f19dd58a1b744
+JWT_REFRESH_SECRET=113da3ba14d9a5b000a40c5adb445a9d1c45c05b566c94dac2a8e6f1752284a0
+SESSION_SECRET=a215be064624a8a02fb40048561ac279a4c679110c2380c4f75e8919ac7d349a
+CORS_ORIGINS=https://your-amplify-app.amplifyapp.com
+META_APP_ID=dummy-meta-app-id
+META_APP_SECRET=dummy-meta-app-secret
 ```
 
 **3. Install Dependencies:**
@@ -143,7 +146,7 @@ sudo systemctl start commerce-ai
 
 ```bash
 # Set environment variables
-export EC2_HOST=your-ec2-ip
+export EC2_HOST=65.1.84.60
 export EC2_USER=ubuntu
 export EC2_KEY=~/.ssh/your-key.pem
 
