@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { sequelize } = require('../utils/database/database-setup');
+const { getRedisClient } = require('../utils/redis-client');
 
 /**
  * Liveness probe - Is the service responding?
@@ -29,10 +30,17 @@ router.get('/ready', async (req, res) => {
         // Check database connection
         await sequelize.authenticate();
 
+        // Check Redis connection
+        const redis = getRedisClient();
+        if (redis) {
+            await redis.ping();
+        }
+
         res.status(200).json({
             status: 'ready',
             timestamp: new Date().toISOString(),
             database: 'connected',
+            redis: redis ? 'connected' : 'not_configured',
             version: process.env.APP_VERSION || '1.0.0'
         });
     } catch (error) {
@@ -40,6 +48,7 @@ router.get('/ready', async (req, res) => {
             status: 'not_ready',
             timestamp: new Date().toISOString(),
             database: 'disconnected',
+            redis: 'disconnected',
             error: error.message
         });
     }
@@ -64,6 +73,19 @@ router.get('/health', async (req, res) => {
     } catch (error) {
         checks.database = 'disconnected';
         checks.database_error = error.message;
+    }
+
+    try {
+        const redis = getRedisClient();
+        if (redis) {
+            await redis.ping();
+            checks.redis = 'connected';
+        } else {
+            checks.redis = 'not_configured';
+        }
+    } catch (error) {
+        checks.redis = 'disconnected';
+        checks.redis_error = error.message;
     }
 
     const hasErrors = Object.values(checks).some(v => v === 'disconnected' || v === 'down');
