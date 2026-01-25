@@ -18,7 +18,7 @@ const startServer = async () => {
         // Sync models (disable in production or use migrations)
         // await sequelize.sync(); 
 
-        app.listen(config.port, () => {
+        app.listen(config.port, '0.0.0.0', () => {
             console.log(`Server running on port ${config.port}`);
         });
     } catch (error) {
