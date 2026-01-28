@@ -11,7 +11,7 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
     type: DataTypes.UUID,
     allowNull: false,
     references: {
-      model: 'Shops',
+      model: 'shops',
       key: 'id'
     }
   },

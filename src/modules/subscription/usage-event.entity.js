@@ -31,8 +31,7 @@ const UsageEvent = sequelize.define('UsageEvent', {
     },
     resource_type: {
         type: DataTypes.ENUM('conversations', 'orders', 'products'),
-        allowNull: false,
-        comment: 'Type of resource being tracked'
+        allowNull: false
     },
     request_id: {
         type: DataTypes.UUID,
@@ -54,8 +53,7 @@ const UsageEvent = sequelize.define('UsageEvent', {
     status: {
         type: DataTypes.ENUM('pending', 'committed', 'rolled_back'),
         allowNull: false,
-        defaultValue: 'pending',
-        comment: 'Transaction status: pending→committed on success, rolled_back on error'
+        defaultValue: 'pending'
     },
     // Metadata for audit trail
     resource_id: {

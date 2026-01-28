@@ -62,6 +62,10 @@ const Conversation = sequelize.define('Conversation', {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW
     },
+}, {
+    tableName: 'conversations',
+    underscored: true,
+    timestamps: true
 });
 
 const Message = sequelize.define('Message', {
@@ -104,6 +108,11 @@ const Message = sequelize.define('Message', {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW
     },
+}, {
+    tableName: 'messages',
+    underscored: true,
+    timestamps: true,
+    updatedAt: false
 });
 
 module.exports = {
