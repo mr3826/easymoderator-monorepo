@@ -64,6 +64,11 @@ app.get('/', (req, res) => {
     res.send('welcome to commerce-ai server');
 });
 
+// This tells AWS: "Yes, I am alive and working!"
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Health check endpoints (no auth required, must be before other routes)
 app.use('/health', healthRoutes);
 
