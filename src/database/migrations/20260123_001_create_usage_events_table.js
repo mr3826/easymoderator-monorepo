@@ -24,13 +24,15 @@ module.exports = {
         id TEXT PRIMARY KEY,
         shop_id TEXT NOT NULL,
         resource_type TEXT NOT NULL,
-        amount INTEGER NOT NULL DEFAULT 1,
         request_id TEXT NOT NULL,
+        delta INTEGER NOT NULL DEFAULT 1,
+        transaction_id TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
-        metadata TEXT DEFAULT '{}',
+        resource_id TEXT,
+        resource_metadata TEXT,
         error_message TEXT,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        committed_at DATETIME,
         FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE ON UPDATE CASCADE
       )
     `);
@@ -59,15 +61,23 @@ module.exports = {
       ON usage_events(resource_type)
     `);
     
+    // Create index for transaction_id
+    await sequelize.query(`
+      CREATE INDEX IF NOT EXISTS idx_usage_events_transaction_id 
+      ON usage_events(transaction_id)
+    `);
+    
     console.log('  ✓ Created usage_events table');
     console.log('  ✓ Created idempotency index (shop_id, resource_type, request_id)');
     console.log('  ✓ Created usage query index (shop_id, status)');
     console.log('  ✓ Created audit query index (created_at)');
     console.log('  ✓ Created resource type index (resource_type)');
+    console.log('  ✓ Created transaction_id index');
   },
   
   down: async (sequelize) => {
     // Drop indexes first
+    await sequelize.query(`DROP INDEX IF EXISTS idx_usage_events_transaction_id`);
     await sequelize.query(`DROP INDEX IF EXISTS idx_usage_events_resource_type`);
     await sequelize.query(`DROP INDEX IF EXISTS idx_usage_events_created_at`);
     await sequelize.query(`DROP INDEX IF EXISTS idx_usage_events_shop_status`);
