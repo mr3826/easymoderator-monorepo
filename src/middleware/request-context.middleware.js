@@ -16,7 +16,7 @@ const requestContextMiddleware = (req, res, next) => {
     const requestId = req.headers['x-request-id'] || uuidv4();
     
     // Extract user context from JWT payload (set by auth middleware)
-    const userId = req.user?.id || null;
+    const userId = req.user?.userId || null;
     const shopId = req.user?.shopId || req.headers['x-shop-id'] || null;
     
     // Attach logger to request

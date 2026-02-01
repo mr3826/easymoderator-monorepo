@@ -16,7 +16,9 @@ const startServer = async () => {
         console.log('Database connection established successfully.');
 
         // Sync models (disable in production or use migrations)
-        // await sequelize.sync(); 
+        if (config.env === 'development') {
+            await sequelize.sync({ force: false });
+        } 
 
         app.listen(config.port, '0.0.0.0', () => {
             console.log(`Server running on port ${config.port}`);

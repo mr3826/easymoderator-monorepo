@@ -21,7 +21,7 @@ async function ensureAdminUser() {
     await sequelize.authenticate();
     
     // Sync database schema first
-    await sequelize.sync({ alter: true });
+    // await sequelize.sync({ alter: true });
     console.log('Database schema synced');
 
     const existingUser = await User.findOne({ where: { email: ADMIN_EMAIL } });

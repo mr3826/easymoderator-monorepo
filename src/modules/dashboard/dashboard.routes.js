@@ -11,9 +11,10 @@ router.use(authenticate);
 
 // RESTful routes
 router.get('/', validate(dashboardValidator.getDashboardMetrics), dashboardController.getDashboardMetricsRest);
-router.get('/:id', validate(dashboardValidator.getDashboardMetricsById), dashboardController.getDashboardMetricsById);
 
 // Legacy routes for backward compatibility
 router.get('/metrics', validate(dashboardValidator.getDashboardMetrics), dashboardController.getDashboardMetrics);
+
+router.get('/:id', validate(dashboardValidator.getDashboardMetricsById), dashboardController.getDashboardMetricsById);
 
 module.exports = router;

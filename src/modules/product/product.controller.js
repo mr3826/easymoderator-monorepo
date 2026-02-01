@@ -5,7 +5,7 @@ const productService = require('./product.service');
  */
 const getProducts = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -17,7 +17,7 @@ const getProducts = async (req, res, next) => {
         }
 
         const options = req.query; // Already validated
-        const result = await productService.getProducts(shopId, options);
+        const result = await productService.listProducts(userId, shopId, options);
 
         res.status(200).json({
             success: true,
@@ -284,7 +284,7 @@ const getProduct = async (req, res, next) => {
  */
 const listProducts = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -296,7 +296,7 @@ const listProducts = async (req, res, next) => {
         }
 
         const options = req.query;
-        const result = await productService.getProducts(shopId, options);
+        const result = await productService.listProducts(userId, shopId, options);
 
         res.status(200).json({
             success: true,
