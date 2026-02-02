@@ -90,6 +90,22 @@ const Product = sequelize.define('Product', {
     tags: {
         type: DataTypes.JSON,
         defaultValue: []
+    },
+    allow_discounts: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    charge_tax: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    send_low_stock_alert: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    variants: {
+        type: DataTypes.JSON,
+        defaultValue: []
     }
 }, {
     tableName: 'products',

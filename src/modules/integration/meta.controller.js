@@ -5,7 +5,7 @@ const auditService = require('src/modules/audit/audit.service');
 class MetaController {
   /**
    * Start OAuth flow
-   * GET /integrations/meta/connect?platform=messenger|instagram|whatsapp
+    * GET /integrations/meta/connect?platform=facebook|instagram|whatsapp
    */
   async connect(req, res, next) {
     try {
@@ -13,7 +13,7 @@ class MetaController {
       const shopId = req.shop.id;
 
       // Validate platform
-      if (!['messenger', 'instagram', 'whatsapp'].includes(platform)) {
+      if (!['facebook', 'instagram', 'whatsapp'].includes(platform)) {
         throw new AppError('Invalid platform specified', 400);
       }
 
@@ -67,7 +67,7 @@ class MetaController {
       let assetType = '';
 
       switch (platform) {
-        case 'messenger':
+        case 'facebook':
           availableAssets = assets.pages;
           assetType = 'page';
           break;
@@ -149,7 +149,7 @@ class MetaController {
       const shopId = req.shop.id;
       const userId = req.user.id;
 
-      if (!['messenger', 'instagram', 'whatsapp'].includes(platform)) {
+      if (!['facebook', 'instagram', 'whatsapp'].includes(platform)) {
         throw new AppError('Invalid platform specified', 400);
       }
 
@@ -164,6 +164,56 @@ class MetaController {
       res.json({
         success: true,
         data: { message: 'Integration disconnected successfully' }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Manual connect (UI-provided credentials)
+   * POST /integrations/meta/manual-connect
+   */
+  async manualConnect(req, res, next) {
+    try {
+      const { platform, asset_id, display_name, access_token } = req.body;
+      const shopId = req.shop.id;
+
+      if (!['facebook', 'instagram', 'whatsapp'].includes(platform)) {
+        throw new AppError('Invalid platform specified', 400);
+      }
+
+      if (!access_token || !asset_id) {
+        throw new AppError('access_token and asset_id are required', 400);
+      }
+
+      // Subscribe to webhooks using provided token
+      await metaService.subscribeToWebhooks(access_token, asset_id, platform);
+
+      // Create integration
+      const integration = await metaService.createIntegration(
+        shopId,
+        platform,
+        asset_id,
+        display_name || `Meta ${platform} Account`,
+        access_token
+      );
+
+      // Log audit event
+      await auditService.logOperation(req.user?.id || 'system', shopId, 'META_MANUAL_CONNECT', 'meta_integration', null, {
+        platform,
+        meta_asset_id: asset_id,
+        display_name: integration.display_name,
+        action: 'manual_connect'
+      });
+
+      res.json({
+        success: true,
+        data: {
+          platform,
+          display_name: integration.display_name,
+          connected_at: integration.connected_at
+        }
       });
     } catch (error) {
       next(error);

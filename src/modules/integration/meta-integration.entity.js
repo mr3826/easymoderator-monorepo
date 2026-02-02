@@ -16,7 +16,7 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
     }
   },
   platform: {
-    type: DataTypes.ENUM('messenger', 'instagram', 'whatsapp'),
+    type: DataTypes.ENUM('facebook', 'instagram', 'whatsapp'),
     allowNull: false,
   },
   meta_asset_id: {

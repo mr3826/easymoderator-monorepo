@@ -32,7 +32,7 @@ const Customer = sequelize.define('Customer', {
         allowNull: false
     },
     channel: {
-        type: DataTypes.ENUM('facebook', 'whatsapp', 'telegram', 'webchat', 'manual'),
+        type: DataTypes.ENUM('facebook', 'whatsapp', 'instagram', 'telegram', 'webchat', 'manual'),
         allowNull: false
     }
 }, {

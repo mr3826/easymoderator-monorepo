@@ -30,7 +30,7 @@ const Conversation = sequelize.define('Conversation', {
         allowNull: true
     },
     channel: {
-        type: DataTypes.ENUM('whatsapp', 'facebook', 'telegram', 'webchat'),
+        type: DataTypes.ENUM('facebook', 'whatsapp', 'instagram', 'telegram', 'webchat', 'manual'),
         allowNull: false
     },
     external_id: {

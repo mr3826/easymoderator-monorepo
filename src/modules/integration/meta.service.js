@@ -15,7 +15,7 @@ const META_CONFIG = {
 
 // Platform mappings
 const PLATFORM_MAPPINGS = {
-  messenger: {
+  facebook: {
     scopes: ['pages_show_list', 'pages_messaging', 'pages_read_engagement'],
     assetType: 'page'
   },
@@ -192,7 +192,7 @@ class MetaService {
   async subscribeToWebhooks(accessToken, assetId, platform) {
     try {
       const subscriptionData = {
-        object: platform === 'messenger' ? 'page' : platform,
+        object: platform === 'facebook' ? 'page' : platform,
         callback_url: `${process.env.BASE_URL || 'http://localhost:3000'}/webhooks/meta`,
         verify_token: process.env.META_WEBHOOK_VERIFY_TOKEN,
         fields: this.getWebhookFields(platform)
@@ -220,7 +220,7 @@ class MetaService {
    */
   getWebhookFields(platform) {
     switch (platform) {
-      case 'messenger':
+      case 'facebook':
         return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads';
       case 'instagram':
         return 'messages,message_echoes';
@@ -332,7 +332,7 @@ class MetaService {
     });
 
     // Return status for all platforms
-    const platforms = ['messenger', 'instagram', 'whatsapp'];
+    const platforms = ['facebook', 'instagram', 'whatsapp'];
     return platforms.map(platform => {
       const integration = integrations.find(i => i.platform === platform);
       return {

@@ -46,13 +46,21 @@ class ProductValidator {
                 name: Joi.string().required(),
                 options: Joi.array().items(Joi.string()).required(),
                 price_adjustment: Joi.number().optional(),
-                sku: Joi.string().optional()
+                priceAdjustment: Joi.number().optional(),
+                sku: Joi.string().allow('').optional()
             })).optional(),
             seo_title: Joi.string().trim().optional().max(60),
             seo_description: Joi.string().trim().optional().max(160),
             ai_generated: Joi.boolean().optional(),
-            confidence: Joi.number().min(0).max(1).optional()
-        })
+            confidence: Joi.number().min(0).max(1).optional(),
+            brand: Joi.string().trim().optional().max(100).messages({
+                'string.max': 'Brand must not exceed 100 characters'
+            }),
+            allow_discounts: Joi.boolean().optional(),
+            charge_tax: Joi.boolean().optional(),
+            send_low_stock_alert: Joi.boolean().optional(),
+            track_quantity: Joi.boolean().optional()
+        }).unknown(true)
     };
 
     updateProduct = {
@@ -103,13 +111,21 @@ class ProductValidator {
                 name: Joi.string().required(),
                 options: Joi.array().items(Joi.string()).required(),
                 price_adjustment: Joi.number().optional(),
-                sku: Joi.string().optional()
+                priceAdjustment: Joi.number().optional(),
+                sku: Joi.string().allow('').optional()
             })).optional(),
             seo_title: Joi.string().trim().optional().max(60),
             seo_description: Joi.string().trim().optional().max(160),
             ai_generated: Joi.boolean().optional(),
-            confidence: Joi.number().min(0).max(1).optional()
-        })
+            confidence: Joi.number().min(0).max(1).optional(),
+            brand: Joi.string().trim().optional().max(100).messages({
+                'string.max': 'Brand must not exceed 100 characters'
+            }),
+            allow_discounts: Joi.boolean().optional(),
+            charge_tax: Joi.boolean().optional(),
+            send_low_stock_alert: Joi.boolean().optional(),
+            track_quantity: Joi.boolean().optional()
+        }).unknown(true)
     };
 
     getProducts = {
@@ -119,6 +135,12 @@ class ProductValidator {
             category_id: Joi.string().uuid().optional(),
             is_active: Joi.boolean().optional(),
             search: Joi.string().trim().optional(),
+            min_price: Joi.number().min(0).optional().messages({
+                'number.min': 'Minimum price must be non-negative'
+            }),
+            max_price: Joi.number().min(0).optional().messages({
+                'number.min': 'Maximum price must be non-negative'
+            }),
             sort_by: Joi.string().valid('name', 'price', 'created_at', 'updated_at').default('created_at'),
             sort_order: Joi.string().valid('asc', 'desc').default('desc')
         })

@@ -85,6 +85,31 @@ const getCustomerById = async (customerId, userId, shopId) => {
 };
 
 /**
+ * Delete a customer
+ */
+const deleteCustomer = async (customerId, userId, shopId) => {
+    // Verify shop access
+    await verifyShopAccess(userId, shopId);
+
+    // Find customer
+    const customer = await Customer.findOne({
+        where: {
+            id: customerId,
+            shop_id: shopId
+        }
+    });
+
+    if (!customer) {
+        throw new AppError('Customer not found', 404);
+    }
+
+    // Delete customer
+    await customer.destroy();
+
+    return { message: 'Customer deleted successfully' };
+};
+
+/**
  * List all customers for a shop with filters
  */
 const listCustomers = async (userId, shopId, filters = {}) => {
@@ -145,6 +170,7 @@ const listCustomers = async (userId, shopId, filters = {}) => {
 module.exports = {
     createCustomer,
     updateCustomer,
+    deleteCustomer,
     getCustomerById,
     listCustomers,
     verifyShopAccess

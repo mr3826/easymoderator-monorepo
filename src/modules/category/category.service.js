@@ -195,8 +195,10 @@ const listCategories = async (userId, shopId, searchQuery = null) => {
 
     // Add search filter if provided
     if (searchQuery) {
+        const { Op } = require('sequelize');
+        const dialect = sequelize.getDialect();
         whereClause.name = {
-            [require('sequelize').Op.iLike]: `%${searchQuery}%`
+            [dialect === 'sqlite' ? Op.like : Op.iLike]: `%${searchQuery}%`
         };
     }
 

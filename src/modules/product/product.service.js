@@ -34,6 +34,11 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
+    // Handle track_quantity: if not tracking, clear quantity
+    if (productData.track_quantity === false) {
+        productData.quantity = 0;
+    }
+
     // Verify category exists if provided
     if (productData.category_id) {
         const category = await Category.findOne({
@@ -124,6 +129,11 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
         throw new AppError('Product not found', 404);
     }
 
+    // Handle track_quantity: if not tracking, clear quantity
+    if (updateData.track_quantity === false) {
+        updateData.quantity = 0;
+    }
+
     // Verify category exists if being updated
     if (updateData.category_id) {
         const category = await Category.findOne({
@@ -181,19 +191,17 @@ const getProductById = async (productId, userId, shopId) => {
         where: {
             id: productId,
             shop_id: shopId
-        },
-        include: [{
-            model: Category,
-            as: 'category',
-            attributes: ['id', 'name', 'description']
-        }]
+        }
     });
 
     if (!product) {
         throw new AppError('Product not found', 404);
     }
 
-    return product;
+    // Transform to match API response format - category should be just the ID (string)
+    const productData = product.toJSON ? product.toJSON() : product;
+    
+    return productData;
 };
 
 /**
@@ -208,11 +216,12 @@ const listProducts = async (userId, shopId, filters = {}) => {
         shop_id: shopId
     };
 
-    // Add search filter (search in name and description)
+    // Add search filter (search in name, description, and SKU)
     if (filters.search) {
         whereClause[Op.or] = [
-            { name: { [Op.iLike]: `%${filters.search}%` } },
-            { description: { [Op.iLike]: `%${filters.search}%` } }
+            { name: { [Op.like]: `%${filters.search}%` } },
+            { description: { [Op.like]: `%${filters.search}%` } },
+            { sku: { [Op.like]: `%${filters.search}%` } }
         ];
     }
 
@@ -222,8 +231,8 @@ const listProducts = async (userId, shopId, filters = {}) => {
     }
 
     // Add status filter
-    if (filters.status) {
-        whereClause.is_active = filters.status === 'active';
+    if (filters.is_active !== undefined) {
+        whereClause.is_active = filters.is_active;
     }
 
     // Add price range filter
@@ -242,17 +251,29 @@ const listProducts = async (userId, shopId, filters = {}) => {
     // Get all products with filters
     const products = await Product.findAll({
         where: whereClause,
-        include: [{
-            model: Category,
-            as: 'category',
-            attributes: ['id', 'name', 'description']
-        }],
+        include: [
+            {
+                model: Category,
+                as: 'category',
+                attributes: ['id', 'name']
+            }
+        ],
         order: [
             ['created_at', 'DESC']
         ]
     });
 
-    return products;
+    // Map products to include category name and status string
+    const mappedProducts = products.map(product => {
+        const productData = product.toJSON();
+        return {
+            ...productData,
+            category: productData.category?.name || null,
+            status: productData.is_active ? 'active' : 'inactive'
+        };
+    });
+
+    return mappedProducts;
 };
 
 module.exports = {

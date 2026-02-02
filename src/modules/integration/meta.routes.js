@@ -2,6 +2,8 @@ const express = require('express');
 const metaController = require('./meta.controller');
 const { authenticate } = require('src/middleware/auth.middleware');
 const { verifyShopAccess } = require('src/middleware/shop-access.middleware');
+const { validateRequest } = require('src/middleware/validate-request.middleware');
+const { manualConnectSchema } = require('./meta.validator');
 
 const router = express.Router();
 
@@ -12,6 +14,9 @@ router.use(verifyShopAccess);
 // OAuth flow routes
 router.get('/connect', metaController.connect);
 router.get('/callback', metaController.callback);
+
+// Manual connect route (UI-provided credentials)
+router.post('/manual-connect', validateRequest(manualConnectSchema), metaController.manualConnect);
 
 // Management routes
 router.get('/status', metaController.getStatus);

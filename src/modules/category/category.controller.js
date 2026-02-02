@@ -1,3 +1,5 @@
+const categoryService = require('./category.service');
+
 /**
  * RESTful: Get categories with pagination and filters
  */
@@ -100,6 +102,8 @@ const updateCategoryById = async (req, res, next) => {
                 }
             });
         }
+
+        console.log('Update category payload:', JSON.stringify(req.body, null, 2));
 
         const { id } = req.params; // Already validated
         const category = await categoryService.updateCategory(

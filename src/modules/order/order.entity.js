@@ -42,7 +42,7 @@ const Order = sequelize.define('Order', {
         allowNull: false
     },
     channel: {
-        type: DataTypes.STRING,
+        type: DataTypes.ENUM('facebook', 'whatsapp', 'instagram', 'telegram', 'webchat', 'manual'),
         allowNull: false,
         defaultValue: 'manual'
     },

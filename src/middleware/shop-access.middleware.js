@@ -8,7 +8,8 @@ const { UserShop } = require('src/modules/entities');
  */
 const verifyShopAccess = async (req, res, next) => {
     try {
-        const { shopId } = req.body;
+        // Get shopId from body or header
+        const shopId = req.body?.shopId || req.headers['x-shop-id'];
 
         if (!shopId) {
             throw new AppError('Shop ID is required', 400);

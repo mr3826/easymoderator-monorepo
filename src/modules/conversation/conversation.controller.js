@@ -3,7 +3,19 @@ const conversationService = require('./conversation.service');
 class ConversationController {
     async getConversations(req, res) {
         try {
-            const shopId = req.shop.id;
+            // Get shopId from header or body
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
+
             const options = req.query; // Already validated by Joi
 
             const result = await conversationService.getConversations(shopId, options);
@@ -26,7 +38,18 @@ class ConversationController {
     async getConversationById(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.shop.id;
+            // Get shopId from header or body
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
 
             const conversation = await conversationService.getConversationById(conversationId, shopId);
 
@@ -51,7 +74,17 @@ class ConversationController {
     async getMessages(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.shop.id;
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
             const options = req.query; // Already validated
 
             const result = await conversationService.getMessages(conversationId, shopId, options);
@@ -76,7 +109,17 @@ class ConversationController {
 
     async createConversation(req, res) {
         try {
-            const shopId = req.shop.id;
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
             const conversationData = req.body; // Already validated
 
             const conversation = await conversationService.createConversation(shopId, conversationData);
@@ -99,7 +142,17 @@ class ConversationController {
     async createMessage(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.shop.id;
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
             const messageData = req.body; // Already validated
 
             const message = await conversationService.createMessage(conversationId, shopId, messageData);
@@ -125,7 +178,17 @@ class ConversationController {
     async updateConversationStatus(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.shop.id;
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Shop ID is required'
+                    }
+                });
+            }
             const { status } = req.body; // Already validated
 
             const conversation = await conversationService.updateConversationStatus(conversationId, shopId, status);

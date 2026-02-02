@@ -60,14 +60,14 @@ async function handlePageWebhook(payload) {
 
     // Find the integration for this page
     const integration = await MetaIntegration.findOne({
-      where: { meta_asset_id: pageId, platform: 'messenger', status: 'CONNECTED' }
+      where: { meta_asset_id: pageId, platform: 'facebook', status: 'CONNECTED' }
     });
 
     if (!integration) continue;
 
     for (const messaging of entry.messaging) {
       const normalizedEvent = {
-        platform: 'messenger',
+        platform: 'facebook',
         shop_id: integration.shop_id,
         sender: messaging.sender.id,
         message: messaging.message?.text || null,

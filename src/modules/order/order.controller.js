@@ -49,9 +49,9 @@ const updateOrder = async (req, res, next) => {
             });
         }
 
-        const { orderId, ...updateData } = req.body;
+        const { order_id, ...updateData } = req.body;
         const order = await orderService.updateOrder(
-            orderId,
+            order_id,
             req.user.userId,
             shopId,
             updateData

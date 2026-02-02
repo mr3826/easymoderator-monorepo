@@ -33,7 +33,7 @@ const getProducts = async (req, res, next) => {
  */
 const getProductById = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -45,7 +45,7 @@ const getProductById = async (req, res, next) => {
         }
 
         const { id } = req.params; // Already validated
-        const product = await productService.getProductById(id, shopId);
+        const product = await productService.getProductById(id, userId, shopId);
 
         res.status(200).json({
             success: true,
@@ -253,7 +253,7 @@ const deleteProduct = async (req, res, next) => {
  */
 const getProduct = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -267,6 +267,7 @@ const getProduct = async (req, res, next) => {
         const { productId } = req.query;
         const product = await productService.getProductById(
             productId,
+            userId,
             shopId
         );
 

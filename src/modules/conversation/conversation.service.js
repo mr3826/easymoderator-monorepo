@@ -20,7 +20,7 @@ class ConversationService {
                     {
                         model: Customer,
                         as: 'customer',
-                        attributes: ['id', 'name', 'email', 'phone']
+                        attributes: ['id', 'name', 'email', 'number']
                     },
                     {
                         model: Message,
@@ -60,7 +60,7 @@ class ConversationService {
                     {
                         model: Customer,
                         as: 'customer',
-                        attributes: ['id', 'name', 'email', 'phone']
+                        attributes: ['id', 'name', 'email', 'number']
                     }
                 ]
             });
