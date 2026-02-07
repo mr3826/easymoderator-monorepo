@@ -48,6 +48,26 @@ const Shop = sequelize.define('Shop', {
         type: DataTypes.JSON,
         allowNull: true,
         defaultValue: []
+    },
+    branding_rules: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: {}
+    },
+    knowledge_faqs: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
+    },
+    knowledge_gaps: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
+    },
+    knowledge_documents: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
     }
 }, {
     tableName: 'shops',

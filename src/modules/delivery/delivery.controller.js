@@ -206,20 +206,6 @@ class DeliveryController {
                 throw new AppError('Provider must be connected before activation', 400);
             }
 
-            // If activating this provider, optionally deactivate others
-            // (based on business rule - one active provider at a time)
-            if (is_active) {
-                await DeliveryIntegration.update(
-                    { is_active: false },
-                    {
-                        where: {
-                            shop_id: shopId,
-                            provider: { [require('sequelize').Op.ne]: provider }
-                        }
-                    }
-                );
-            }
-
             integration.is_active = is_active;
             await integration.save();
 

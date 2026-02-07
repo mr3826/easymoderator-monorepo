@@ -8,8 +8,8 @@ class ChannelValidator {
                 'string.max': 'Channel name must not exceed 255 characters',
                 'any.required': 'Channel name is required'
             }),
-            type: Joi.string().valid('facebook', 'whatsapp', 'telegram', 'webchat').required().messages({
-                'any.only': 'Channel type must be one of: facebook, whatsapp, telegram, webchat',
+            type: Joi.string().valid('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram').required().messages({
+                'any.only': 'Channel type must be one of: facebook, whatsapp, telegram, webchat, instagram',
                 'any.required': 'Channel type is required'
             }),
             config: Joi.object().optional()
@@ -50,6 +50,32 @@ class ChannelValidator {
     };
 
     deleteChannel = {
+        params: Joi.object({
+            id: Joi.string().uuid().required().messages({
+                'string.uuid': 'Channel ID must be a valid UUID',
+                'any.required': 'Channel ID is required'
+            })
+        })
+    };
+
+    connectChannel = {
+        body: Joi.object({
+            type: Joi.string().valid('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram').required(),
+            name: Joi.string().trim().optional().max(255),
+            appId: Joi.string().trim().required().messages({
+                'any.required': 'App ID is required'
+            }),
+            appSecret: Joi.string().trim().required().messages({
+                'any.required': 'App Secret is required'
+            }),
+            assetId: Joi.string().trim().required().messages({
+                'any.required': 'Asset/Page ID is required'
+            }),
+            config: Joi.object().optional()
+        })
+    };
+
+    disconnectChannel = {
         params: Joi.object({
             id: Joi.string().uuid().required().messages({
                 'string.uuid': 'Channel ID must be a valid UUID',

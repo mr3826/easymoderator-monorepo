@@ -23,6 +23,7 @@ const savePaymentConfigValidator = [
         .isIn(['cod', 'aamarpay', 'sslcommerz', 'self-mfs'])
         .withMessage('Invalid payment gateway'),
     body('is_enabled')
+        .optional()
         .isBoolean()
         .withMessage('is_enabled must be a boolean'),
     body('credentials')

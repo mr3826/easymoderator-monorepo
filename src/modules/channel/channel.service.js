@@ -20,6 +20,17 @@ const verifyShopAccess = async (userId, shopId) => {
     return userShop;
 };
 
+const mapChannel = (channel) => ({
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    status: channel.status,
+    connected: channel.connected,
+    lastSync: channel.last_sync?.toISOString(),
+    messageCount: channel.message_count,
+    config: channel.config || null
+});
+
 /**
  * Get all channels for a shop
  */
@@ -31,15 +42,24 @@ const getChannels = async (userId, shopId) => {
         order: [['created_at', 'ASC']]
     });
 
-    return channels.map(channel => ({
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-        status: channel.status,
-        connected: channel.connected,
-        lastSync: channel.last_sync?.toISOString(),
-        messageCount: channel.message_count
-    }));
+    return channels.map(mapChannel);
+};
+
+/**
+ * Get channel by ID
+ */
+const getChannelById = async (channelId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const channel = await Channel.findOne({
+        where: { id: channelId, shop_id: shopId }
+    });
+
+    if (!channel) {
+        throw new AppError('Channel not found', 404);
+    }
+
+    return mapChannel(channel);
 };
 
 /**
@@ -68,15 +88,7 @@ const createChannel = async (userId, shopId, channelData) => {
         message_count: 0
     });
 
-    return {
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-        status: channel.status,
-        connected: channel.connected,
-        lastSync: null,
-        messageCount: channel.message_count
-    };
+    return mapChannel(channel);
 };
 
 /**
@@ -100,15 +112,70 @@ const updateChannel = async (channelId, userId, shopId, updateData) => {
 
     await channel.save();
 
-    return {
-        id: channel.id,
-        name: channel.name,
-        type: channel.type,
-        status: channel.status,
-        connected: channel.connected,
-        lastSync: channel.last_sync?.toISOString(),
-        messageCount: channel.message_count
+    return mapChannel(channel);
+};
+
+/**
+ * Connect or create a channel with credentials
+ */
+const connectChannel = async (userId, shopId, payload) => {
+    await verifyShopAccess(userId, shopId);
+
+    const { type, name, config, appId, appSecret, assetId } = payload;
+
+    const computedConfig = config || {
+        appId,
+        appSecret,
+        assetId
     };
+
+    let channel = await Channel.findOne({
+        where: { shop_id: shopId, type }
+    });
+
+    if (!channel) {
+        channel = await Channel.create({
+            shop_id: shopId,
+            name: name || type,
+            type,
+            status: 'active',
+            connected: true,
+            config: computedConfig,
+            last_sync: new Date(),
+            message_count: 0
+        });
+    } else {
+        channel.name = name || channel.name;
+        channel.status = 'active';
+        channel.connected = true;
+        channel.config = computedConfig;
+        channel.last_sync = new Date();
+        await channel.save();
+    }
+
+    return mapChannel(channel);
+};
+
+/**
+ * Disconnect a channel
+ */
+const disconnectChannel = async (channelId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const channel = await Channel.findOne({
+        where: { id: channelId, shop_id: shopId }
+    });
+
+    if (!channel) {
+        throw new AppError('Channel not found', 404);
+    }
+
+    channel.status = 'inactive';
+    channel.connected = false;
+    channel.last_sync = null;
+    await channel.save();
+
+    return mapChannel(channel);
 };
 
 /**
@@ -131,7 +198,10 @@ const deleteChannel = async (channelId, userId, shopId) => {
 
 module.exports = {
     getChannels,
+    getChannelById,
     createChannel,
     updateChannel,
-    deleteChannel
+    deleteChannel,
+    connectChannel,
+    disconnectChannel
 };

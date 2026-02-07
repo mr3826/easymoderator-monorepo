@@ -84,6 +84,19 @@ class CategoryValidator {
         })
     };
 
+    getSubcategoryById = {
+        params: Joi.object({
+            categoryId: Joi.string().uuid().required().messages({
+                'string.uuid': 'Category ID must be a valid UUID',
+                'any.required': 'Category ID is required'
+            }),
+            subcategoryId: Joi.string().uuid().required().messages({
+                'string.uuid': 'Subcategory ID must be a valid UUID',
+                'any.required': 'Subcategory ID is required'
+            })
+        })
+    };
+
     deleteCategory = {
         params: Joi.object({
             id: Joi.string().uuid().required().messages({

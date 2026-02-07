@@ -180,6 +180,34 @@ const getCategoryById = async (categoryId, userId, shopId) => {
 };
 
 /**
+ * Get a subcategory by ID scoped to a parent category
+ */
+const getSubcategoryById = async (categoryId, subcategoryId, userId, shopId) => {
+    // Verify shop access
+    await verifyShopAccess(userId, shopId);
+
+    const subcategory = await Category.findOne({
+        where: {
+            id: subcategoryId,
+            parent_category_id: categoryId,
+            shop_id: shopId
+        },
+        include: [{
+            model: Category,
+            as: 'subcategories',
+            where: { is_active: true },
+            required: false
+        }]
+    });
+
+    if (!subcategory) {
+        throw new AppError('Subcategory not found', 404);
+    }
+
+    return subcategory;
+};
+
+/**
  * List all categories for a shop with hierarchical structure
  */
 const listCategories = async (userId, shopId, searchQuery = null) => {
@@ -225,6 +253,7 @@ module.exports = {
     updateCategory,
     deleteCategory,
     getCategoryById,
+    getSubcategoryById,
     listCategories,
     verifyShopAccess
 };

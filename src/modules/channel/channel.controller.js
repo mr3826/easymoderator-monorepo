@@ -207,6 +207,68 @@ const deleteChannelById = async (req, res, next) => {
 };
 
 /**
+ * RESTful: Connect channel by type
+ */
+const connectChannelByType = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const channel = await channelService.connectChannel(
+            req.user.userId,
+            shopId,
+            req.body
+        );
+
+        res.status(200).json({
+            success: true,
+            data: channel
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * RESTful: Disconnect channel by ID
+ */
+const disconnectChannelById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const channel = await channelService.disconnectChannel(
+            req.params.id,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            data: channel
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Legacy: Get all channels for the shop (backward compatibility)
  */
 const getChannelsLegacy = async (req, res, next) => {
@@ -323,6 +385,8 @@ module.exports = {
     createChannelRest,
     updateChannelById,
     deleteChannelById,
+    connectChannelByType,
+    disconnectChannelById,
     // Legacy methods for backward compatibility
     getChannelsLegacy,
     createChannel,

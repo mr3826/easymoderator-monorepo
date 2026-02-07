@@ -235,8 +235,8 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         const newUsage = subscription[field] + amount;
         const limit = subscription[limitField];
 
-        if (newUsage > limit) {
-            // Hard error if limit exceeded - must be thrown before transaction commit
+        if (usageType !== 'conversations' && newUsage > limit) {
+            // Hard error if limit exceeded for non-conversation usage
             const error = new AppError(
                 `Usage limit exceeded for ${usageType}: ${newUsage} > ${limit}`,
                 402

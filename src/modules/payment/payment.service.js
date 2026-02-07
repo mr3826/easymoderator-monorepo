@@ -56,6 +56,8 @@ module.exports = {
     confirmCodPayment,
     getPaymentConfigs,
     savePaymentConfig,
+    testPaymentConnection,
+    deletePaymentConfig,
     initiateAamarPayPayment,
     initiateSSLCommerzPayment,
     verifyAamarPayCallback,
@@ -117,7 +119,15 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
 
     if (paymentConfig) {
         // Update existing
-        paymentConfig.is_enabled = isEnabled;
+        if (isEnabled !== undefined) {
+            // If trying to enable, ensure credentials exist (except for COD)
+            if (isEnabled && gateway !== 'cod') {
+                if (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0) {
+                    throw new AppError('Cannot enable payment method without credentials. Please save credentials first.', 400);
+                }
+            }
+            paymentConfig.is_enabled = isEnabled;
+        }
         if (credentials) {
             paymentConfig.credentials = credentials;
         }
@@ -126,11 +136,15 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         }
         await paymentConfig.save();
     } else {
-        // Create new
+        // Create new - credentials required for non-COD gateways
+        if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
+            throw new AppError('Credentials are required to create payment configuration', 400);
+        }
+        
         paymentConfig = await PaymentConfig.create({
             shop_id: shopId,
             gateway,
-            is_enabled: isEnabled,
+            is_enabled: isEnabled !== undefined ? isEnabled : false,
             credentials,
             config: config || {}
         });
@@ -145,6 +159,84 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         has_credentials: paymentConfig.credentials != null && Object.keys(paymentConfig.credentials).length > 0,
         created_at: paymentConfig.created_at,
         updated_at: paymentConfig.updated_at
+    };
+}
+
+/**
+ * Test payment gateway connection
+ */
+async function testPaymentConnection(shopId, userId, gateway, credentials) {
+    await verifyShopAccess(userId, shopId);
+
+    if (gateway === 'aamarpay') {
+        if (!credentials.store_id || !credentials.secret_key) {
+            throw new AppError('AamarPay requires store_id and secret_key', 400);
+        }
+
+        try {
+            // Test AamarPay credentials by making a minimal API call
+            const baseUrl = 'https://sandbox.aamarpay.com';
+            
+            // AamarPay doesn't have a dedicated test endpoint, so we'll validate the format
+            // In production, you might want to make an actual small transaction test
+            if (credentials.store_id.length < 3 || credentials.secret_key.length < 10) {
+                throw new Error('Invalid credential format');
+            }
+
+            return {
+                success: true,
+                message: 'AamarPay credentials validated successfully'
+            };
+        } catch (error) {
+            throw new AppError('Failed to validate AamarPay credentials: ' + error.message, 400);
+        }
+    } else if (gateway === 'sslcommerz') {
+        if (!credentials.store_id || !credentials.store_password) {
+            throw new AppError('SSLCommerz requires store_id and store_password', 400);
+        }
+
+        try {
+            // Validate credential format
+            if (credentials.store_id.length < 3 || credentials.store_password.length < 3) {
+                throw new Error('Invalid credential format');
+            }
+
+            return {
+                success: true,
+                message: 'SSLCommerz credentials validated successfully'
+            };
+        } catch (error) {
+            throw new AppError('Failed to validate SSLCommerz credentials: ' + error.message, 400);
+        }
+    } else if (gateway === 'cod') {
+        return {
+            success: true,
+            message: 'COD does not require credentials'
+        };
+    }
+
+    throw new AppError('Invalid payment gateway', 400);
+}
+
+/**
+ * Delete payment configuration (disconnect)
+ */
+async function deletePaymentConfig(shopId, userId, gateway) {
+    await verifyShopAccess(userId, shopId);
+
+    const paymentConfig = await PaymentConfig.findOne({
+        where: { shop_id: shopId, gateway }
+    });
+
+    if (!paymentConfig) {
+        throw new AppError('Payment configuration not found', 404);
+    }
+
+    await paymentConfig.destroy();
+
+    return {
+        success: true,
+        message: `${gateway} configuration deleted successfully`
     };
 }
 

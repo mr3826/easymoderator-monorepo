@@ -17,6 +17,8 @@ const migrations = [
   require('./migrations/20260123_001_create_usage_events_table'),
   require('./migrations/20260123_002_create_subscription_tables'),
   require('./migrations/20260202_001_add_product_fields'),
+  require('./migrations/20260206_001_add_shop_knowledge_fields'),
+  require('./migrations/20260206_002_add_shop_knowledge_documents'),
 ];
 
 const createMigrationsTable = async () => {

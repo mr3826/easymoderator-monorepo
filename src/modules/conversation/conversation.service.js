@@ -1,4 +1,5 @@
 const { Conversation, Message, Shop, Customer } = require('../entities');
+const ragService = require('../rag/rag.service');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -195,6 +196,43 @@ class ConversationService {
 
             // Update conversation's updated_at timestamp
             await conversation.update({ updated_at: new Date() });
+
+            if (messageData.sender === 'customer') {
+                try {
+                    const ragResult = await ragService.queryData({
+                        query: messageData.content,
+                        limit: 3,
+                        shopId,
+                        filters: {
+                            must: [
+                                {
+                                    key: 'type',
+                                    match: { value: 'faq' }
+                                }
+                            ]
+                        }
+                    });
+
+                    const topResult = ragResult?.results?.[0];
+                    const confidence = topResult?.score || 0;
+                    const answer = topResult?.metadata?.answer || topResult?.content;
+
+                    if (answer && confidence >= 0.4) {
+                        await Message.create({
+                            conversation_id: conversationId,
+                            sender: 'ai',
+                            content: answer,
+                            ai_confidence: confidence,
+                            ai_suggestion: topResult?.content || null
+                        });
+
+                        await conversation.update({ updated_at: new Date() });
+                    }
+                } catch (error) {
+                    // Do not block message creation if AI fails
+                    console.error('Failed to generate AI answer:', error.message || error);
+                }
+            }
 
             return message;
         } catch (error) {

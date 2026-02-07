@@ -14,6 +14,7 @@ const auditRoutes = require('src/modules/audit/audit.routes');
 const metaRoutes = require('src/modules/integration/meta.routes');
 const deliveryRoutes = require('src/modules/delivery/delivery.routes');
 const subscriptionRoutes = require('src/modules/subscription/subscription.routes');
+const knowledgeRoutes = require('src/modules/knowledge/knowledge.routes');
 
 const router = express.Router();
 
@@ -33,5 +34,6 @@ router.use('/audit', auditRoutes);
 router.use('/integrations/meta', metaRoutes);
 router.use('/shop/delivery', deliveryRoutes);
 router.use('/subscription', subscriptionRoutes);
+router.use('/knowledge', knowledgeRoutes);
 
 module.exports = router;

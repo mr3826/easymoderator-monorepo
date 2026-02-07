@@ -57,6 +57,39 @@ const getCategoryById = async (req, res, next) => {
 };
 
 /**
+ * RESTful: Get subcategory by ID scoped to a parent category
+ */
+const getSubcategoryById = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { categoryId, subcategoryId } = req.params;
+        const subcategory = await categoryService.getSubcategoryById(
+            categoryId,
+            subcategoryId,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            success: true,
+            data: subcategory
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * RESTful: Create category
  */
 const createCategoryRest = async (req, res, next) => {
@@ -320,6 +353,7 @@ module.exports = {
     // RESTful methods
     getCategories,
     getCategoryById,
+    getSubcategoryById,
     createCategoryRest,
     updateCategoryById,
     deleteCategoryById,

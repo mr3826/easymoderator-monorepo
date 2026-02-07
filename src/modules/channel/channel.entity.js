@@ -21,7 +21,7 @@ const Channel = sequelize.define('Channel', {
         allowNull: false
     },
     type: {
-        type: DataTypes.ENUM('facebook', 'whatsapp', 'telegram', 'webchat'),
+        type: DataTypes.ENUM('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram'),
         allowNull: false
     },
     status: {
