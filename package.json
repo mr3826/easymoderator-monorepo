@@ -4,13 +4,14 @@
   "description": "Commerce AI Server",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
+    "dev": "nodemon server.js",
     "db:sync": "node src/utils/database/sync.js",
-      "seed:admin": "node src/scripts/seed-admin.js",
-      "migrate": "node src/database/migrate.js up",
-      "migrate:down": "node src/database/migrate.js down",
-      "migrate:down:all": "node src/database/migrate.js down:all",
-      "migrate:status": "node src/database/migrate.js status"
+    "seed:admin": "node src/scripts/seed-admin.js",
+    "migrate": "node src/database/migrate.js up",
+    "migrate:down": "node src/database/migrate.js down",
+    "migrate:down:all": "node src/database/migrate.js down:all",
+    "migrate:status": "node src/database/migrate.js status"
   },
   "keywords": [],
   "author": "",
