@@ -12,6 +12,11 @@ router.use(authenticate);
 // RESTful routes
 router.get('/', validate(dashboardValidator.getDashboardMetrics), dashboardController.getDashboardMetricsRest);
 
+// Analytics endpoints
+router.post('/analytics/events', dashboardController.logAnalyticsEvent);
+router.post('/analytics/metrics', dashboardController.logAnalyticsMetric);
+router.get('/analytics/dashboard', dashboardController.getAnalyticsDashboard);
+
 // Legacy routes for backward compatibility
 router.get('/metrics', validate(dashboardValidator.getDashboardMetrics), dashboardController.getDashboardMetrics);
 

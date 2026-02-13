@@ -11,6 +11,7 @@ router.use(authenticate);
 
 // RESTful routes
 router.get('/', validate(categoryValidator.getCategories), categoryController.getCategories);
+router.get('/:categoryId/subcategory/:subcategoryId', validate(categoryValidator.getSubcategoryById), categoryController.getSubcategoryById);
 router.get('/:id', validate(categoryValidator.getCategoryById), categoryController.getCategoryById);
 router.post('/', validate(categoryValidator.createCategory), categoryController.createCategoryRest);
 router.patch('/:id', validate(categoryValidator.updateCategory), categoryController.updateCategoryById);

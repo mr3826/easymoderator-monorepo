@@ -11,9 +11,12 @@ router.use(authenticate);
 
 // RESTful routes
 router.get('/', validate(orderValidator.getOrders), orderController.getOrders);
+router.get('/by-customer/:customerId', orderController.getOrdersByCustomer);
 router.get('/:id', validate(orderValidator.getOrderById), orderController.getOrderById);
 router.post('/', validate(orderValidator.createOrder), orderController.createOrderRest);
 router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
+router.patch('/:orderId/cancel', orderController.cancelOrder);
+router.post('/:orderId/return-request', orderController.createReturnRequest);
 router.delete('/:id', validate(orderValidator.deleteOrder), orderController.deleteOrderById);
 
 // Legacy routes (for backward compatibility)

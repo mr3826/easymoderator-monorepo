@@ -33,7 +33,11 @@ const queryData = async (req, res, next) => {
             throw new AppError(errors.array()[0].msg, 400);
         }
 
-        const result = await ragService.queryData(req.body);
+        const shopId = req.user?.shopId;
+        const result = await ragService.queryData({
+            ...req.body,
+            shopId
+        });
 
         res.status(200).json({
             success: true,

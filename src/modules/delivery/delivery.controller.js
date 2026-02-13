@@ -3,6 +3,83 @@ const PathaoProvider = require('./providers/pathao.provider');
 const SteadfastProvider = require('./providers/steadfast.provider');
 const deliveryService = require('./delivery.service');
 const AppError = require('src/utils/AppError');
+const { Shop } = require('src/modules/entities');
+
+const DELIVERY_ZONES = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
+
+const DEFAULT_DELIVERY_SETTINGS = {
+    default_delivery_charge: 60,
+    cod_enabled: false,
+    cod_charge: 0,
+    non_refundable: false,
+    area_pricing: [
+        { zone: 'inside_dhaka', charge: 60, cod_enabled: false },
+        { zone: 'sub_dhaka', charge: 80, cod_enabled: false },
+        { zone: 'outside_dhaka', charge: 120, cod_enabled: false }
+    ],
+    weight_tiers: []
+};
+
+const toNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeAreaPricing = (areas) => {
+    if (!Array.isArray(areas)) return [];
+
+    return areas
+        .map((entry) => ({
+            zone: entry?.zone,
+            charge: toNumber(entry?.charge, 0),
+            cod_enabled: Boolean(entry?.cod_enabled)
+        }))
+        .filter((entry) => DELIVERY_ZONES.includes(entry.zone));
+};
+
+const normalizeWeightTiers = (tiers) => {
+    if (!Array.isArray(tiers)) return [];
+
+    return tiers
+        .map((entry) => ({
+            from_kg: toNumber(entry?.from_kg, 0),
+            to_kg: toNumber(entry?.to_kg, 0),
+            extra_charge: toNumber(entry?.extra_charge, 0)
+        }))
+        .filter((entry) => Number.isFinite(entry.from_kg) && Number.isFinite(entry.to_kg));
+};
+
+const applyDeliveryDefaults = (settings = {}) => {
+    const normalizedAreas = normalizeAreaPricing(settings.area_pricing);
+    const normalizedTiers = normalizeWeightTiers(settings.weight_tiers);
+
+    return {
+        default_delivery_charge: toNumber(settings.default_delivery_charge, DEFAULT_DELIVERY_SETTINGS.default_delivery_charge),
+        cod_enabled: settings.cod_enabled ?? DEFAULT_DELIVERY_SETTINGS.cod_enabled,
+        cod_charge: toNumber(settings.cod_charge, DEFAULT_DELIVERY_SETTINGS.cod_charge),
+        non_refundable: settings.non_refundable ?? DEFAULT_DELIVERY_SETTINGS.non_refundable,
+        area_pricing: normalizedAreas.length > 0 ? normalizedAreas : DEFAULT_DELIVERY_SETTINGS.area_pricing,
+        weight_tiers: normalizedTiers.length > 0 ? normalizedTiers : DEFAULT_DELIVERY_SETTINGS.weight_tiers
+    };
+};
+
+const pickDeliverySettings = (payload = {}) => {
+    const allowed = [
+        'default_delivery_charge',
+        'cod_enabled',
+        'cod_charge',
+        'non_refundable',
+        'area_pricing',
+        'weight_tiers'
+    ];
+
+    return allowed.reduce((acc, key) => {
+        if (payload[key] !== undefined) {
+            acc[key] = payload[key];
+        }
+        return acc;
+    }, {});
+};
 
 /**
  * Delivery Settings Controller
@@ -19,6 +96,9 @@ class DeliveryController {
                 where: { shop_id: shopId },
                 attributes: ['id', 'provider', 'is_active', 'is_connected', 'metadata', 'last_validated_at', 'created_at']
             });
+
+            const shop = await Shop.findByPk(shopId, { attributes: ['id', 'settings'] });
+            const deliverySettings = applyDeliveryDefaults(shop?.settings?.delivery || {});
 
             // Build provider list
             const providers = ['pathao', 'steadfast'].map(providerName => {
@@ -38,8 +118,45 @@ class DeliveryController {
             res.json({
                 success: true,
                 data: {
-                    providers
+                    providers,
+                    settings: deliverySettings
                 }
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Update delivery settings for the shop
+     */
+    async updateSettings(req, res, next) {
+        try {
+            const shopId = req.user.shopId;
+            const shop = await Shop.findByPk(shopId);
+
+            if (!shop) {
+                throw new AppError('Shop not found', 404);
+            }
+
+            const existingSettings = shop.settings || {};
+            const existingDelivery = existingSettings.delivery || {};
+            const incoming = pickDeliverySettings(req.body || {});
+            const merged = applyDeliveryDefaults({
+                ...existingDelivery,
+                ...incoming
+            });
+
+            await shop.update({
+                settings: {
+                    ...existingSettings,
+                    delivery: merged
+                }
+            });
+
+            res.json({
+                success: true,
+                data: merged
             });
         } catch (error) {
             next(error);
@@ -204,20 +321,6 @@ class DeliveryController {
 
             if (!integration.is_connected) {
                 throw new AppError('Provider must be connected before activation', 400);
-            }
-
-            // If activating this provider, optionally deactivate others
-            // (based on business rule - one active provider at a time)
-            if (is_active) {
-                await DeliveryIntegration.update(
-                    { is_active: false },
-                    {
-                        where: {
-                            shop_id: shopId,
-                            provider: { [require('sequelize').Op.ne]: provider }
-                        }
-                    }
-                );
             }
 
             integration.is_active = is_active;

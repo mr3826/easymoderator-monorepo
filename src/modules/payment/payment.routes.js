@@ -12,6 +12,8 @@ const router = express.Router();
 // Payment configuration routes (require authentication)
 router.get('/config', authenticate, paymentController.getPaymentConfigs);
 router.post('/config', authenticate, savePaymentConfigValidator, paymentController.savePaymentConfig);
+router.post('/config/test', authenticate, savePaymentConfigValidator, paymentController.testPaymentConnection);
+router.delete('/config/:gateway', authenticate, paymentController.deletePaymentConfig);
 
 // Payment initiation (requires authentication)
 router.post('/initiate', authenticate, initiatePaymentValidator, paymentController.initiatePayment);

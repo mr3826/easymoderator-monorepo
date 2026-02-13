@@ -1,42 +1,51 @@
-const { Conversation, Message, Shop, Customer } = require('../entities');
+const { Conversation, Message, Customer } = require('../entities');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
 
 class ConversationService {
+    mapConversation(conversation) {
+        const meta = conversation.metadata || {};
+        const channel = conversation.channel === 'messenger'
+            ? 'facebook'
+            : conversation.channel === 'web'
+                ? 'webchat'
+                : conversation.channel;
+
+        return {
+            id: conversation.id,
+            customer_id: conversation.customer_id,
+            customer: conversation.customer || null,
+            channel,
+            title: conversation.title || meta.title || conversation.intent || null,
+            status: conversation.status || meta.status || 'active',
+            lastMessage: conversation.message,
+            unreadCount: meta.unreadCount || 0,
+            created_at: conversation.created_at,
+            updated_at: conversation.updated_at
+        };
+    }
+
     async getConversations(shopId, options = {}) {
         try {
-            const { page = 1, limit = 20, status, channel } = options;
+            const { page = 1, limit = 20, channel, customer_id } = options;
             const offset = (page - 1) * limit;
 
             const whereClause = { shop_id: shopId };
-            if (status) whereClause.status = status;
             if (channel) whereClause.channel = channel;
+            if (customer_id) whereClause.customer_id = customer_id;
 
             const conversations = await Conversation.findAndCountAll({
                 where: whereClause,
-                include: [
-                    {
-                        model: Customer,
-                        as: 'customer',
-                        attributes: ['id', 'name', 'email', 'phone']
-                    },
-                    {
-                        model: Message,
-                        as: 'messages',
-                        limit: 1,
-                        order: [['created_at', 'DESC']],
-                        attributes: ['id', 'content', 'sender', 'created_at']
-                    }
-                ],
-                order: [['updated_at', 'DESC']],
+                order: [['created_at', 'DESC']],
                 limit,
-                offset
+                offset,
+                include: [{ model: Customer, as: 'customer' }]
             });
 
             return {
-                conversations: conversations.rows,
+                conversations: conversations.rows.map((row) => this.mapConversation(row)),
                 pagination: {
                     total: conversations.count,
                     page,
@@ -56,20 +65,14 @@ class ConversationService {
                     id: conversationId,
                     shop_id: shopId
                 },
-                include: [
-                    {
-                        model: Customer,
-                        as: 'customer',
-                        attributes: ['id', 'name', 'email', 'phone']
-                    }
-                ]
+                include: [{ model: Customer, as: 'customer' }]
             });
 
             if (!conversation) {
                 throw new Error('Conversation not found');
             }
 
-            return conversation;
+            return this.mapConversation(conversation);
         } catch (error) {
             throw new Error(`Failed to fetch conversation: ${error.message}`);
         }
@@ -80,7 +83,6 @@ class ConversationService {
             const { page = 1, limit = 50 } = options;
             const offset = (page - 1) * limit;
 
-            // First verify the conversation belongs to the shop
             const conversation = await Conversation.findOne({
                 where: {
                     id: conversationId,
@@ -92,20 +94,34 @@ class ConversationService {
                 throw new Error('Conversation not found');
             }
 
-            const messages = await Message.findAndCountAll({
-                where: { conversation_id: conversationId },
+            const results = await Message.findAndCountAll({
+                where: {
+                    conversation_id: conversationId
+                },
                 order: [['created_at', 'ASC']],
                 limit,
                 offset
             });
 
+            const messages = results.rows.map((message) => ({
+                id: message.id,
+                conversation_id: message.conversation_id,
+                content: message.content,
+                sender: message.sender === 'business' ? 'agent' : message.sender,
+                message_type: 'text',
+                ai_suggestion: message.ai_suggestion || null,
+                ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                created_at: message.created_at,
+                updated_at: message.updated_at || message.created_at
+            }));
+
             return {
-                messages: messages.rows,
+                messages,
                 pagination: {
-                    total: messages.count,
+                    total: results.count,
                     page,
                     limit,
-                    totalPages: Math.ceil(messages.count / limit)
+                    totalPages: Math.ceil(results.count / limit)
                 }
             };
         } catch (error) {
@@ -119,11 +135,27 @@ class ConversationService {
         const transaction = await sequelize.transaction();
         
         try {
+            const resolvedTitle = conversationData.title
+                || conversationData.intent
+                || conversationData.metadata?.title
+                || null;
+            const resolvedStatus = conversationData.status
+                || conversationData.metadata?.status
+                || 'active';
+
+            const metadata = {
+                ...(conversationData.metadata || {}),
+                title: resolvedTitle || conversationData.metadata?.title || null,
+                status: resolvedStatus || conversationData.metadata?.status || 'active'
+            };
+
             // Create conversation within transaction
             const conversation = await Conversation.create({
                 ...conversationData,
                 shop_id: shopId,
-                status: conversationData.status || 'active'
+                title: resolvedTitle,
+                status: resolvedStatus,
+                metadata
             }, { transaction });
 
             // Commit transaction - NOW conversation is persisted
@@ -176,7 +208,6 @@ class ConversationService {
 
     async createMessage(conversationId, shopId, messageData) {
         try {
-            // Verify conversation belongs to shop
             const conversation = await Conversation.findOne({
                 where: {
                     id: conversationId,
@@ -188,15 +219,30 @@ class ConversationService {
                 throw new Error('Conversation not found');
             }
 
+            const sender = messageData.sender === 'agent'
+                ? 'business'
+                : messageData.sender || 'customer';
+
             const message = await Message.create({
-                ...messageData,
-                conversation_id: conversationId
+                conversation_id: conversationId,
+                content: messageData.content || messageData.message || '',
+                sender,
+                ai_suggestion: messageData.ai_suggestion || null,
+                ai_confidence: messageData.ai_confidence || null,
+                external_id: messageData.metadata?.external_id || null
             });
 
-            // Update conversation's updated_at timestamp
-            await conversation.update({ updated_at: new Date() });
-
-            return message;
+            return {
+                id: message.id,
+                conversation_id: message.conversation_id,
+                content: message.content,
+                sender: sender === 'business' ? 'agent' : sender,
+                message_type: 'text',
+                ai_suggestion: message.ai_suggestion || null,
+                ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                created_at: message.created_at,
+                updated_at: message.updated_at || message.created_at
+            };
         } catch (error) {
             throw new Error(`Failed to create message: ${error.message}`);
         }
@@ -215,11 +261,41 @@ class ConversationService {
                 throw new Error('Conversation not found');
             }
 
-            await conversation.update({ status });
-            return conversation;
+            const resolvedStatus = status || 'active';
+            const metadata = {
+                ...(conversation.metadata || {}),
+                status: resolvedStatus
+            };
+
+            await conversation.update({ status: resolvedStatus, metadata });
+
+            return this.mapConversation(conversation);
         } catch (error) {
             throw new Error(`Failed to update conversation status: ${error.message}`);
         }
+    }
+
+    async getHistoryByCustomer(shopId, customerId, options = {}) {
+        const { limit = 10, within_hours } = options;
+        const whereClause = {
+            shop_id: shopId,
+            customer_id: customerId
+        };
+
+        if (within_hours) {
+            const since = new Date(Date.now() - Number(within_hours) * 60 * 60 * 1000);
+            whereClause.created_at = {
+                [Op.gte]: since
+            };
+        }
+
+        const entries = await Conversation.findAll({
+            where: whereClause,
+            order: [['created_at', 'DESC']],
+            limit: Number(limit)
+        });
+
+        return entries;
     }
 }
 

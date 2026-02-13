@@ -100,6 +100,7 @@ class QueueManager {
         await this.queues.dailyOverage.add(
             { dryRun: false, runDate: new Date() },
             {
+                jobId: 'daily-overage-calculator',
                 repeat: { cron: '0 0 * * *', tz: 'UTC' },
                 removeOnComplete: 100,
                 removeOnFail: 50
@@ -110,6 +111,7 @@ class QueueManager {
         await this.queues.monthlyReset.add(
             { dryRun: false, runDate: new Date() },
             {
+                jobId: 'monthly-usage-reset',
                 repeat: { cron: '0 0 1 * *', tz: 'UTC' },
                 removeOnComplete: 100,
                 removeOnFail: 50
@@ -120,6 +122,7 @@ class QueueManager {
         await this.queues.invoiceGenerator.add(
             { dryRun: false, runDate: new Date() },
             {
+                jobId: 'invoice-generator',
                 repeat: { cron: '0 1 1 * *', tz: 'UTC' },
                 removeOnComplete: 100,
                 removeOnFail: 50
@@ -130,6 +133,7 @@ class QueueManager {
         await this.queues.paymentReconciler.add(
             { dryRun: false, runDate: new Date() },
             {
+                jobId: 'failed-payment-reconciler',
                 repeat: { cron: '0 2 * * *', tz: 'UTC' },
                 removeOnComplete: 100,
                 removeOnFail: 50

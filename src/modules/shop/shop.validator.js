@@ -1,4 +1,4 @@
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 
 const shopCreateValidator = [
     body('shop_name')
@@ -96,11 +96,66 @@ const updateRoleValidator = [
         .withMessage('Role must be either admin or staff')
 ];
 
+const tenantValidateValidator = [
+    param('tenantId')
+        .notEmpty()
+        .withMessage('Tenant ID is required')
+        .isUUID()
+        .withMessage('Invalid tenant ID')
+];
+
+const tenantShopValidateValidator = [
+    param('tenantId')
+        .notEmpty()
+        .withMessage('Tenant ID is required')
+        .isUUID()
+        .withMessage('Invalid tenant ID'),
+    param('shopId')
+        .notEmpty()
+        .withMessage('Shop ID is required')
+        .isUUID()
+        .withMessage('Invalid shop ID')
+];
+
+const shopBusinessInfoValidator = [
+    body('shopName')
+        .optional()
+        .trim(),
+    body('address')
+        .optional()
+        .trim(),
+    body('phone')
+        .optional()
+        .trim(),
+    body('openingHours')
+        .optional()
+        .trim(),
+    body('deliveryAreas')
+        .optional()
+        .isArray()
+        .withMessage('Delivery areas must be an array'),
+    body('deliveryAreas.*')
+        .optional()
+        .isString()
+        .trim(),
+    body('paymentMethods')
+        .optional()
+        .isArray()
+        .withMessage('Payment methods must be an array'),
+    body('paymentMethods.*')
+        .optional()
+        .isString()
+        .trim()
+];
+
 module.exports = {
     shopCreateValidator,
     shopUpdateValidator,
     shopGetValidator,
     addUserValidator,
     removeUserValidator,
-    updateRoleValidator
+    updateRoleValidator,
+    tenantValidateValidator,
+    tenantShopValidateValidator,
+    shopBusinessInfoValidator
 };

@@ -33,7 +33,7 @@ const getProducts = async (req, res, next) => {
  */
 const getProductById = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -45,7 +45,7 @@ const getProductById = async (req, res, next) => {
         }
 
         const { id } = req.params; // Already validated
-        const product = await productService.getProductById(id, shopId);
+        const product = await productService.getProductById(id, userId, shopId);
 
         res.status(200).json({
             success: true,
@@ -153,6 +153,37 @@ const deleteProductById = async (req, res, next) => {
 };
 
 /**
+ * AI: Extract products from uploaded content
+ */
+const extractProducts = async (req, res, next) => {
+    try {
+        const { userId, shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const result = await productService.extractProductsFromContent(
+            userId,
+            shopId,
+            req.body
+        );
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Legacy: Create a new product (for backward compatibility)
  */
 const createProduct = async (req, res, next) => {
@@ -249,11 +280,43 @@ const deleteProduct = async (req, res, next) => {
 };
 
 /**
+ * V2: Product search
+ */
+const searchProducts = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const result = await productService.searchProducts(
+            req.user.userId,
+            shopId,
+            req.body
+        );
+
+        res.status(200).json({
+            products: result,
+            total: result.length,
+            page: 1
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Legacy: Get a single product (for backward compatibility)
  */
 const getProduct = async (req, res, next) => {
     try {
-        const { shopId } = req.user;
+        const { userId, shopId } = req.user;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -267,6 +330,7 @@ const getProduct = async (req, res, next) => {
         const { productId } = req.query;
         const product = await productService.getProductById(
             productId,
+            userId,
             shopId
         );
 
@@ -314,10 +378,12 @@ module.exports = {
     createProductRest,
     updateProductById,
     deleteProductById,
+    extractProducts,
     // Legacy methods (for backward compatibility)
     createProduct,
     updateProduct,
     deleteProduct,
     getProduct,
-    listProducts
+    listProducts,
+    searchProducts
 };

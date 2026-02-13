@@ -18,73 +18,72 @@ const Order = sequelize.define('Order', {
     },
     customer_id: {
         type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'customers',
-            key: 'id'
-        },
-        onDelete: 'SET NULL'
+        allowNull: true
     },
     customer_name: {
         type: DataTypes.STRING,
         allowNull: true
-        },
-        customer_phone: {
-            type: DataTypes.STRING,
-            allowNull: true
-        },
-        delivery_address: {
-            type: DataTypes.TEXT,
-            allowNull: true
+    },
+    customer_phone: {
+        type: DataTypes.STRING,
+        allowNull: true
     },
     order_number: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: true
     },
     channel: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 'manual'
     },
+    items: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        defaultValue: []
+    },
     order_status: {
-        type: DataTypes.ENUM('draft', 'confirmed', 'processing', 'completed', 'cancelled'),
+        type: DataTypes.STRING,
         defaultValue: 'draft'
     },
     payment_status: {
-        type: DataTypes.ENUM('pending', 'paid', 'unpaid', 'refunded', 'partially_paid'),
+        type: DataTypes.STRING,
         defaultValue: 'pending'
     },
     fulfillment_status: {
-        type: DataTypes.ENUM('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled'),
+        type: DataTypes.STRING,
         defaultValue: 'unfulfilled'
     },
     subtotal: {
         type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00
+        defaultValue: 0
     },
     discount: {
         type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00
+        defaultValue: 0
     },
     tax: {
         type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00
+        defaultValue: 0
     },
     delivery_fee: {
         type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00
+        defaultValue: 0
     },
-    total: {
-        type: DataTypes.DECIMAL(10, 2),
-        defaultValue: 0.00
-    },
-    note: {
+    delivery_location: {
         type: DataTypes.TEXT,
         allowNull: true
     },
-    // Delivery tracking fields
+    delivery_address: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    delivery_zone: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
     delivery_provider: {
-        type: DataTypes.ENUM('pathao', 'steadfast'),
+        type: DataTypes.STRING,
         allowNull: true
     },
     delivery_consignment_id: {
@@ -103,28 +102,23 @@ const Order = sequelize.define('Order', {
         type: DataTypes.DATE,
         allowNull: true
     },
-    delivery_delivered_at: {
-        type: DataTypes.DATE,
+    total: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0
+    },
+    payment_method: {
+        type: DataTypes.STRING(30),
         allowNull: true
     },
-    created_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW
-    },
-    updated_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW
+    note: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'orders',
     underscored: true,
     timestamps: true,
-    indexes: [
-        {
-            unique: true,
-            fields: ['shop_id', 'order_number']
-        }
-    ]
+    indexes: []
 });
 
 module.exports = Order;

@@ -1539,24 +1539,6 @@ paths:
       responses:
         '200': { description: Cleanup started }
 
-  /integrations/meta/connect:
-    parameters:
-      - $ref: '#/components/parameters/XShopId'
-      - $ref: '#/components/parameters/RateLimitInfo'
-    get:
-      tags: [Integration:Meta]
-      summary: Start Meta OAuth connect
-      responses:
-        '200': { description: Redirect URL }
-  /integrations/meta/callback:
-    parameters:
-      - $ref: '#/components/parameters/XShopId'
-      - $ref: '#/components/parameters/RateLimitInfo'
-    get:
-      tags: [Integration:Meta]
-      summary: Meta OAuth callback
-      responses:
-        '200': { description: Connected }
   /integrations/meta/status:
     parameters:
       - $ref: '#/components/parameters/XShopId'

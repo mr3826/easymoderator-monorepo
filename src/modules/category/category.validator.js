@@ -11,6 +11,9 @@ class CategoryValidator {
             description: Joi.string().trim().optional(),
             cover_image: Joi.string().trim().optional(),
             image: Joi.string().trim().optional(),
+            is_active: Joi.boolean().optional().messages({
+                'boolean.base': 'is_active must be a boolean'
+            }),
             subcategories: Joi.array().items(Joi.object({
                 name: Joi.string().trim().required().max(255).messages({
                     'string.empty': 'Subcategory name is required',
@@ -77,6 +80,19 @@ class CategoryValidator {
             id: Joi.string().uuid().required().messages({
                 'string.uuid': 'Category ID must be a valid UUID',
                 'any.required': 'Category ID is required'
+            })
+        })
+    };
+
+    getSubcategoryById = {
+        params: Joi.object({
+            categoryId: Joi.string().uuid().required().messages({
+                'string.uuid': 'Category ID must be a valid UUID',
+                'any.required': 'Category ID is required'
+            }),
+            subcategoryId: Joi.string().uuid().required().messages({
+                'string.uuid': 'Subcategory ID must be a valid UUID',
+                'any.required': 'Subcategory ID is required'
             })
         })
     };

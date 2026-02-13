@@ -6,9 +6,17 @@ class OrderValidator {
             customer_id: Joi.string().uuid().optional().messages({
                 'string.uuid': 'Customer ID must be a valid UUID'
             }),
-            customer_name: Joi.string().trim().min(1).max(100).optional().messages({
+            customer_name: Joi.string().trim().min(1).max(100).required().messages({
                 'string.min': 'Customer name must be at least 1 character',
-                'string.max': 'Customer name must not exceed 100 characters'
+                'string.max': 'Customer name must not exceed 100 characters',
+                'any.required': 'Customer name is required'
+            }),
+            customer_phone: Joi.string().trim().min(1).required().messages({
+                'string.min': 'Phone number is required',
+                'any.required': 'Phone/Mobile number is required'
+            }),
+            delivery_address: Joi.string().trim().min(5).optional().allow('').messages({
+                'string.min': 'Delivery address must be at least 5 characters'
             }),
             channel: Joi.string().trim().optional(),
             items: Joi.array().min(1).items(Joi.object({
@@ -39,14 +47,14 @@ class OrderValidator {
             tax: Joi.number().min(0).optional().messages({
                 'number.min': 'Tax must be a non-negative number'
             }),
-            payment_status: Joi.string().valid('pending', 'paid', 'unpaid', 'refunded', 'partially_paid').optional().messages({
+            payment_status: Joi.string().valid('pending', 'paid', 'unpaid', 'refunded', 'partially_paid').default('unpaid').messages({
                 'any.only': 'Invalid payment status'
             }),
             fulfillment_status: Joi.string().valid('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled').optional().messages({
                 'any.only': 'Invalid fulfillment status'
             }),
-            note: Joi.string().trim().optional()
-        })
+            note: Joi.string().trim().allow('').optional()
+        }).unknown()
     };
 
     updateOrder = {
@@ -64,7 +72,7 @@ class OrderValidator {
             fulfillment_status: Joi.string().valid('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled').optional().messages({
                 'any.only': 'Invalid fulfillment status'
             }),
-            note: Joi.string().trim().optional()
+            note: Joi.string().trim().allow('').optional()
         })
     };
 
@@ -123,7 +131,7 @@ class OrderValidator {
             note: Joi.string().trim().optional()
         }).min(1).messages({
             'object.min': 'At least one field to update is required'
-        }),
+        }).unknown(),
         query: Joi.object({
             order_id: Joi.string().uuid().optional(),
             id: Joi.string().uuid().optional()
