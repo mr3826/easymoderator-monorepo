@@ -378,6 +378,35 @@ const deleteChannel = async (req, res, next) => {
     }
 };
 
+/**
+ * V2: Get channel config by shop and type
+ */
+const getChannelConfig = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { channelType } = req.params;
+        const channel = await channelService.getChannelByType(
+            req.user.userId,
+            shopId,
+            channelType
+        );
+
+        res.status(200).json(channel);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getChannels,
@@ -391,5 +420,6 @@ module.exports = {
     getChannelsLegacy,
     createChannel,
     updateChannel,
-    deleteChannel
+    deleteChannel,
+    getChannelConfig
 };

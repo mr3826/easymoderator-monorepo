@@ -17,6 +17,17 @@ router.get(
 );
 
 /**
+ * PUT /shop/delivery/settings
+ * Update delivery settings for the shop
+ */
+router.put(
+    '/settings',
+    deliveryValidators.updateSettings,
+    checkValidation,
+    deliveryController.updateSettings
+);
+
+/**
  * POST /shop/delivery/connect
  * Connect a delivery provider
  */

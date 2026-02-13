@@ -16,32 +16,85 @@ const Product = sequelize.define('Product', {
         },
         onDelete: 'CASCADE'
     },
-    category_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'categories',
-            key: 'id'
-        },
-        onDelete: 'SET NULL'
-    },
     name: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(500),
+        allowNull: false
+    },
+    name_bn: {
+        type: DataTypes.STRING(500),
+        allowNull: true
+    },
+    category: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    price: {
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: false
     },
     description: {
         type: DataTypes.TEXT,
         allowNull: true
     },
-    sku: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        unique: true
+    description_bn: {
+        type: DataTypes.TEXT,
+        allowNull: true
     },
-    price: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: false,
-        defaultValue: 0.00
+    image_url: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    in_stock: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    is_active: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    sku: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    quantity: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    track_quantity: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    low_stock_threshold: {
+        type: DataTypes.INTEGER,
+        defaultValue: 5
+    },
+    send_low_stock_alert: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    allow_discounts: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    charge_tax: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    variants: {
+        type: DataTypes.JSONB,
+        defaultValue: []
+    },
+    brand: {
+        type: DataTypes.STRING(200),
+        allowNull: true
+    },
+    weight: {
+        type: DataTypes.DECIMAL(10, 3),
+        allowNull: true
+    },
+    weight_unit: {
+        type: DataTypes.STRING(10),
+        allowNull: true
     },
     compare_at_price: {
         type: DataTypes.DECIMAL(10, 2),
@@ -51,60 +104,21 @@ const Product = sequelize.define('Product', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true
     },
-    track_quantity: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
+    category_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'categories',
+            key: 'id'
+        },
+        onDelete: 'SET NULL'
     },
-    quantity: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
-    },
-    allow_backorder: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false
-    },
-    low_stock_threshold: {
-        type: DataTypes.INTEGER,
+    embedding: {
+        type: DataTypes.ARRAY(DataTypes.FLOAT),
         allowNull: true
-    },
-    images: {
-        type: DataTypes.JSON,
-        defaultValue: []
-    },
-    weight: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true
-    },
-    weight_unit: {
-        type: DataTypes.ENUM('kg', 'g', 'lb', 'oz'),
-        defaultValue: 'kg'
-    },
-    is_active: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    is_featured: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false
     },
     tags: {
-        type: DataTypes.JSON,
-        defaultValue: []
-    },
-    allow_discounts: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    charge_tax: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    send_low_stock_alert: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false
-    },
-    variants: {
-        type: DataTypes.JSON,
+        type: DataTypes.JSONB,
         defaultValue: []
     }
 }, {

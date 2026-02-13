@@ -260,6 +260,116 @@ const getOrderById = async (req, res, next) => {
 };
 
 /**
+ * V2: Get orders by customer
+ */
+const getOrdersByCustomer = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { customerId } = req.params;
+        const orders = await orderService.getOrdersByCustomer(
+            req.user.userId,
+            shopId,
+            customerId,
+            req.query
+        );
+
+        res.status(200).json({
+            orders: orders.map(order => ({
+                order_id: order.id,
+                status: order.order_status,
+                total: order.total,
+                created_at: order.created_at
+            })),
+            total: orders.length
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * V2: Cancel order
+ */
+const cancelOrder = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { orderId } = req.params;
+        const { reason, customer_id } = req.body;
+
+        const order = await orderService.cancelOrder(
+            req.user.userId,
+            shopId,
+            orderId,
+            reason,
+            customer_id
+        );
+
+        res.status(200).json({
+            order_id: order.id,
+            status: order.order_status,
+            refund_status: 'pending',
+            updated_at: order.updated_at
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * V2: Create return request
+ */
+const createReturnRequest = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { orderId } = req.params;
+        const request = await orderService.createReturnRequest(
+            req.user.userId,
+            shopId,
+            orderId,
+            req.body
+        );
+
+        res.status(201).json({
+            return_request_id: request.id,
+            status: request.status,
+            created_at: request.created_at
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * RESTful: Create order
  */
 const createOrderRest = async (req, res, next) => {
@@ -359,6 +469,9 @@ module.exports = {
     // RESTful methods
     getOrders,
     getOrderById,
+    getOrdersByCustomer,
+    cancelOrder,
+    createReturnRequest,
     createOrderRest,
     updateOrderById,
     deleteOrderById,

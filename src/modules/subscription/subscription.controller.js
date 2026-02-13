@@ -136,10 +136,58 @@ const getInvoiceById = async (req, res, next) => {
     }
 };
 
+/**
+ * V2: Check rate limit
+ */
+const checkRateLimit = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { customer_id } = req.body;
+        if (!customer_id) {
+            throw new AppError('customer_id is required', 400);
+        }
+
+        const result = await subscriptionService.checkRateLimit(shopId, req.user.userId, customer_id);
+
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * V2: Increment rate limit counter
+ */
+const incrementRateLimit = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { customer_id } = req.body;
+        if (!customer_id) {
+            throw new AppError('customer_id is required', 400);
+        }
+
+        const result = await subscriptionService.incrementRateLimit(shopId, req.user.userId, customer_id);
+
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getSubscription,
     updatePlan,
     requestConversationPack,
     getInvoices,
-    getInvoiceById
+    getInvoiceById,
+    checkRateLimit,
+    incrementRateLimit
 };

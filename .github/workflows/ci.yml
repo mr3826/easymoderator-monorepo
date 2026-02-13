@@ -47,6 +47,15 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/commerce_ai_test
         run: npm run migrate
 
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/commerce_ai_test
+          JWT_ACCESS_SECRET: test-access-secret
+          JWT_REFRESH_SECRET: test-refresh-secret
+          SESSION_SECRET: test-session-secret
+        run: npm test
+
   frontend:
     runs-on: ubuntu-latest
     steps:

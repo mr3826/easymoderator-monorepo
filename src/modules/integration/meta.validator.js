@@ -10,16 +10,6 @@ const disconnectSchema = Joi.object({
     })
 });
 
-const connectQuerySchema = Joi.object({
-  platform: Joi.string()
-    .valid('facebook', 'instagram', 'whatsapp')
-    .required()
-    .messages({
-      'any.only': 'Platform must be one of: facebook, instagram, whatsapp',
-      'any.required': 'Platform query parameter is required'
-    })
-});
-
 const manualConnectSchema = Joi.object({
   platform: Joi.string()
     .valid('facebook', 'instagram', 'whatsapp')
@@ -33,6 +23,5 @@ const manualConnectSchema = Joi.object({
 
 module.exports = {
   disconnectSchema,
-  connectQuerySchema,
   manualConnectSchema
 };

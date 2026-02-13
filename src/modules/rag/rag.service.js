@@ -129,25 +129,30 @@ const ingestData = async ({ text, metadata = {} }) => {
         throw new Error('No text provided for ingestion');
     }
 
-    await ensureCollection();
+    try {
+        await ensureCollection();
 
-    const pointId = metadata.documentId || crypto.randomUUID();
-    const vector = await getEmbedding(content);
+        const pointId = metadata.documentId || crypto.randomUUID();
+        const vector = await getEmbedding(content);
 
-    await upsertPoint({
-        id: pointId,
-        vector,
-        payload: {
-            text: content,
-            ...metadata
-        }
-    });
+        await upsertPoint({
+            id: pointId,
+            vector,
+            payload: {
+                text: content,
+                ...metadata
+            }
+        });
 
-    return {
-        success: true,
-        message: 'Data ingested successfully',
-        ingestionId: pointId
-    };
+        return {
+            success: true,
+            message: 'Data ingested successfully',
+            ingestionId: pointId
+        };
+    } catch (error) {
+        console.warn('RAG ingestion skipped (service unavailable):', error.message);
+        return { success: false, message: 'RAG service unavailable', ingestionId: null };
+    }
 };
 
 const queryData = async ({ query, limit = 5, filters, shopId }) => {

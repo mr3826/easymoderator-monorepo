@@ -34,8 +34,26 @@ const refreshTokenValidator = [
         .withMessage('Refresh token is required')
 ];
 
+const forgotPasswordValidator = [
+    body('email')
+        .isEmail()
+        .withMessage('Please provide a valid email address')
+        .normalizeEmail()
+];
+
+const resetPasswordValidator = [
+    body('token')
+        .notEmpty()
+        .withMessage('Reset token is required'),
+    body('password')
+        .isLength({ min: 6 })
+        .withMessage('Password must be at least 6 characters long')
+];
+
 module.exports = {
     signupValidator,
     signinValidator,
-    refreshTokenValidator
+    refreshTokenValidator,
+    forgotPasswordValidator,
+    resetPasswordValidator
 };

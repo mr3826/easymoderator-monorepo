@@ -4,6 +4,7 @@ const { UserShop } = require('src/modules/entities');
 const { Op } = require('sequelize');
 const { sequelize } = require('src/utils/database/database-setup');
 const { createLogger } = require('src/utils/structured-logger');
+const cacheService = require('src/utils/cache.service');
 
 /**
  * Verify user has access to shop
@@ -104,7 +105,8 @@ const createDefaultSubscription = async (shopId) => {
             image_understanding: false,
             advanced_ai: false,
             priority_support: false,
-            custom_branding: false
+            custom_branding: false,
+            rate_limit_per_minute: 10
         }
     });
 };
@@ -518,6 +520,52 @@ const verifyNoDoubleCount = async (shopId, resourceType, requestId) => {
     return events.length === 1 && events[0].status === 'committed';
 };
 
+const getRateLimitKey = (shopId, customerId) => {
+    const bucket = Math.floor(Date.now() / 60000);
+    return `rate:${shopId}:${customerId}:${bucket}`;
+};
+
+const getRateLimitReset = () => {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    now.setMinutes(now.getMinutes() + 1);
+    return now.toISOString();
+};
+
+const checkRateLimit = async (shopId, userId, customerId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    const limit = subscription?.features?.rate_limit_per_minute || 10;
+
+    const key = getRateLimitKey(shopId, customerId);
+    const current = (await cacheService.get(key)) || 0;
+
+    return {
+        allowed: current < limit,
+        limit,
+        current,
+        window: 'per_minute',
+        reset_at: getRateLimitReset()
+    };
+};
+
+const incrementRateLimit = async (shopId, userId, customerId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    const limit = subscription?.features?.rate_limit_per_minute || 10;
+
+    const key = getRateLimitKey(shopId, customerId);
+    const currentCount = await cacheService.increment(key, 1);
+    await cacheService.expire(key, 120);
+
+    return {
+        current_count: currentCount,
+        limit
+    };
+};
+
 module.exports = {
     getSubscription,
     updatePlan,
@@ -528,5 +576,7 @@ module.exports = {
     resetUsageCounters,
     createDefaultSubscription,
     getUsageEvents,
-    verifyNoDoubleCount
+    verifyNoDoubleCount,
+    checkRateLimit,
+    incrementRateLimit
 };

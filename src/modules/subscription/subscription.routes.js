@@ -14,6 +14,10 @@ router.use(authenticate);
 // GET /subscription - Get subscription details
 router.get('/', subscriptionController.getSubscription);
 
+// Rate limit endpoints
+router.post('/rate-limit/check', subscriptionController.checkRateLimit);
+router.post('/rate-limit/increment', subscriptionController.incrementRateLimit);
+
 // PUT /subscription/plan - Update subscription plan
 router.put('/plan', updatePlanValidator, subscriptionController.updatePlan);
 

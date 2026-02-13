@@ -162,6 +162,17 @@ class ProductValidator {
         })
     };
 
+    aiExtract = {
+        body: Joi.object({
+            filename: Joi.string().trim().optional(),
+            content_type: Joi.string().trim().optional(),
+            content: Joi.string().trim().required().max(2000000).messages({
+                'string.empty': 'Uploaded content is required',
+                'string.max': 'Uploaded content exceeds the maximum size'
+            })
+        })
+    };
+
     // Legacy route validators (for backward compatibility)
     // POST /product/update - expects product_id in body or query
     legacyUpdate = {

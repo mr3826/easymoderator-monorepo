@@ -1,10 +1,12 @@
 const User = require('src/modules/user/user.entity');
+const Tenant = require('src/modules/tenant/tenant.entity');
 const Shop = require('src/modules/shop/shop.entity');
 const UserShop = require('src/modules/user-shop/user-shop.entity');
 const Category = require('src/modules/category/category.entity');
 const Product = require('src/modules/product/product.entity');
 const Customer = require('src/modules/customer/customer.entity');
 const Order = require('src/modules/order/order.entity');
+const OrderReturn = require('src/modules/order/order-return.entity');
 const OrderItem = require('src/modules/order/order-item.entity');
 const Channel = require('src/modules/channel/channel.entity');
 const { Conversation, Message } = require('src/modules/conversation/conversation.entity');
@@ -12,10 +14,17 @@ const AuditLog = require('src/modules/audit/audit-log.entity');
 const IdempotencyKey = require('src/modules/audit/idempotency-key.entity');
 const MetaIntegration = require('src/modules/integration/meta-integration.entity');
 const DeliveryIntegration = require('src/modules/delivery/delivery-integration.entity');
+const DeliveryCost = require('src/modules/delivery/delivery-cost.entity');
+const KnownArea = require('src/modules/delivery/known-area.entity');
 const PaymentConfig = require('src/modules/payment/payment-config.entity');
 const Subscription = require('src/modules/subscription/subscription.entity');
 const Invoice = require('src/modules/subscription/invoice.entity');
 const UsageEvent = require('src/modules/subscription/usage-event.entity');
+const Keyword = require('src/modules/keyword/keyword.entity');
+const FaqResponse = require('src/modules/knowledge/faq-response.entity');
+const BanglishDictionary = require('src/modules/language/banglish-dictionary.entity');
+const Analytics = require('src/modules/analytics/analytics.entity');
+const SupportTicket = require('src/modules/support/support-ticket.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -35,6 +44,18 @@ Shop.belongsToMany(User, {
 // Define belongsTo relationships for UserShop
 UserShop.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 UserShop.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+
+// Define Tenant-Shop relationship
+Tenant.hasMany(Shop, {
+    foreignKey: 'tenant_id',
+    as: 'shops',
+    onDelete: 'CASCADE'
+});
+
+Shop.belongsTo(Tenant, {
+    foreignKey: 'tenant_id',
+    as: 'tenant'
+});
 
 // Define Shop-Category relationship
 Shop.hasMany(Category, {
@@ -81,7 +102,7 @@ Category.hasMany(Product, {
 
 Product.belongsTo(Category, {
     foreignKey: 'category_id',
-    as: 'category'
+    as: 'category_ref'
 });
 
 // Define Shop-Customer relationship
@@ -150,7 +171,7 @@ Product.belongsToMany(Order, {
 // Define Order-OrderItem (One-to-Many)
 Order.hasMany(OrderItem, {
     foreignKey: 'order_id',
-    as: 'items',
+    as: 'order_items',
     onDelete: 'CASCADE'
 });
 
@@ -219,6 +240,12 @@ IdempotencyKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 DeliveryIntegration.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(DeliveryIntegration, { foreignKey: 'shop_id', as: 'delivery_integrations' });
 
+// Define delivery cost and areas
+DeliveryCost.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(DeliveryCost, { foreignKey: 'shop_id', as: 'delivery_costs' });
+KnownArea.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(KnownArea, { foreignKey: 'shop_id', as: 'known_areas' });
+
 // Define payment config relationships
 PaymentConfig.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PaymentConfig, { foreignKey: 'shop_id', as: 'payment_configs' });
@@ -237,15 +264,31 @@ Shop.hasMany(Invoice, { foreignKey: 'shop_id', as: 'invoices' });
 UsageEvent.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(UsageEvent, { foreignKey: 'shop_id', as: 'usage_events' });
 
+// Define keyword and faq relationships
+Keyword.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(Keyword, { foreignKey: 'shop_id', as: 'keywords' });
+FaqResponse.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(FaqResponse, { foreignKey: 'shop_id', as: 'faq_responses' });
+
+// Define analytics relationships
+Analytics.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(Analytics, { foreignKey: 'shop_id', as: 'analytics' });
+
+// Define support ticket relationships
+SupportTicket.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(SupportTicket, { foreignKey: 'shop_id', as: 'support_tickets' });
+
 // Export entities
 module.exports = {
     User,
+    Tenant,
     Shop,
     UserShop,
     Category,
     Product,
     Customer,
     Order,
+    OrderReturn,
     OrderItem,
     Channel,
     Conversation,
@@ -254,8 +297,15 @@ module.exports = {
     IdempotencyKey,
     MetaIntegration,
     DeliveryIntegration,
+    DeliveryCost,
+    KnownArea,
     PaymentConfig,
     Subscription,
     Invoice,
-    UsageEvent
+    UsageEvent,
+    Keyword,
+    FaqResponse,
+    BanglishDictionary,
+    Analytics,
+    SupportTicket
 };

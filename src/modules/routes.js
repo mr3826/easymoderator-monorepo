@@ -15,6 +15,9 @@ const metaRoutes = require('src/modules/integration/meta.routes');
 const deliveryRoutes = require('src/modules/delivery/delivery.routes');
 const subscriptionRoutes = require('src/modules/subscription/subscription.routes');
 const knowledgeRoutes = require('src/modules/knowledge/knowledge.routes');
+const supportRoutes = require('src/modules/support/support.routes');
+const webhookRoutes = require('src/modules/webhook/webhook.routes');
+const tenantRoutes = require('src/modules/tenant/tenant.routes');
 
 const router = express.Router();
 
@@ -35,5 +38,8 @@ router.use('/integrations/meta', metaRoutes);
 router.use('/shop/delivery', deliveryRoutes);
 router.use('/subscription', subscriptionRoutes);
 router.use('/knowledge', knowledgeRoutes);
+router.use('/support', supportRoutes);
+router.use('/webhook', webhookRoutes);
+router.use('/tenant', tenantRoutes);
 
 module.exports = router;

@@ -240,6 +240,77 @@ const deleteDocument = async (req, res, next) => {
     }
 };
 
+const searchFaq = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const answers = await knowledgeService.searchFaq(userId, shopId, req.body);
+        res.status(200).json({
+            answers,
+            total: answers.length
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPolicies = async (req, res, next) => {
+    try {
+        const { shopId: tokenShopId, userId } = req.user;
+        const shopId = req.params.shopId || tokenShopId;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const policies = await knowledgeService.getShopPolicies(userId, shopId);
+        res.status(200).json(policies);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const normalizeLanguage = async (req, res, next) => {
+    try {
+        const result = await knowledgeService.normalizeLanguage(req.body);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const cacheLanguageLearning = async (req, res, next) => {
+    try {
+        const result = await knowledgeService.cacheLanguageLearning(req.body);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const queryKnowledge = async (req, res, next) => {
+    try {
+        const result = await knowledgeService.queryKnowledge(req.body);
+        res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getKnowledge,
     updateBusinessInfo,
@@ -252,5 +323,10 @@ module.exports = {
     updateGaps,
     listDocuments,
     createDocument,
-    deleteDocument
+    deleteDocument,
+    searchFaq,
+    getPolicies,
+    normalizeLanguage,
+    cacheLanguageLearning,
+    queryKnowledge
 };

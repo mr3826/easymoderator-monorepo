@@ -1,4 +1,4 @@
-const { Order, OrderItem, Product, Customer, UserShop } = require('src/modules/entities');
+const { Order, OrderItem, Product, Customer, UserShop, OrderReturn } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
 const { sequelize } = require('src/utils/database/database-setup');
 const { Op } = require('sequelize');
@@ -181,7 +181,7 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
         return await getOrderById(order.id, userId, shopId);
 
     } catch (error) {
-        await transaction.rollback();
+        try { await transaction.rollback(); } catch (_) { /* already committed */ }
         throw error;
     }
 };
@@ -227,15 +227,15 @@ const getOrderById = async (orderId, userId, shopId) => {
             {
                 model: Customer,
                 as: 'customer',
-                attributes: ['id', 'name', 'number', 'email']
+                attributes: ['id', 'name', 'phone']
             },
             {
                 model: OrderItem,
-                as: 'items',
+                as: 'order_items',
                 include: [{
                     model: Product,
                     as: 'product',
-                    attributes: ['id', 'name', 'sku', 'images']
+                    attributes: ['id', 'name', 'image_url', 'price']
                 }]
             }
         ]
@@ -282,11 +282,11 @@ const listOrders = async (userId, shopId, filters = {}) => {
         {
             model: Customer,
             as: 'customer',
-            attributes: ['id', 'name', 'number', 'email']
+            attributes: ['id', 'name', 'phone']
         },
         {
             model: OrderItem,
-            as: 'items',
+            as: 'order_items',
             attributes: ['id', 'quantity', 'total'] // Light include for list
         }
     ];
@@ -296,7 +296,7 @@ const listOrders = async (userId, shopId, filters = {}) => {
         whereClause[Op.or] = [
             { order_number: { [Op.iLike]: `%${search}%` } },
             { '$customer.name$': { [Op.iLike]: `%${search}%` } },
-            { '$customer.number$': { [Op.iLike]: `%${search}%` } }
+            { '$customer.phone$': { [Op.iLike]: `%${search}%` } }
         ];
     }
 
@@ -416,6 +416,84 @@ const finalizeOrder = async (orderId, userId, shopId) => {
     return await getOrderById(order.id, userId, shopId);
 };
 
+/**
+ * V2: Get orders by customer
+ */
+const getOrdersByCustomer = async (userId, shopId, customerId, options = {}) => {
+    await verifyShopAccess(userId, shopId);
+
+    const whereClause = {
+        shop_id: shopId,
+        customer_id: customerId
+    };
+
+    if (options.status && options.status !== 'all') {
+        whereClause.order_status = options.status;
+    }
+
+    const limit = Number(options.limit || 5);
+
+    const orders = await Order.findAll({
+        where: whereClause,
+        order: [['created_at', 'DESC']],
+        limit
+    });
+
+    return orders;
+};
+
+/**
+ * V2: Cancel order
+ */
+const cancelOrder = async (userId, shopId, orderId, reason, customerId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    if (customerId && String(order.customer_id) !== String(customerId)) {
+        throw new AppError('Customer verification failed', 403);
+    }
+
+    await order.update({
+        order_status: 'cancelled',
+        note: reason ? `Cancelled: ${reason}` : order.note
+    });
+
+    return order;
+};
+
+/**
+ * V2: Create return request
+ */
+const createReturnRequest = async (userId, shopId, orderId, payload) => {
+    await verifyShopAccess(userId, shopId);
+
+    const order = await Order.findOne({
+        where: { id: orderId, shop_id: shopId }
+    });
+
+    if (!order) {
+        throw new AppError('Order not found', 404);
+    }
+
+    const request = await OrderReturn.create({
+        order_id: orderId,
+        customer_id: payload.customer_id,
+        reason: payload.reason || null,
+        items: payload.items || [],
+        description: payload.description || null,
+        status: 'pending_approval'
+    });
+
+    return request;
+};
+
 module.exports = {
     createOrder,
     updateOrder,
@@ -423,5 +501,8 @@ module.exports = {
     listOrders,
     deleteOrder,
     confirmOrder,
-    finalizeOrder
+    finalizeOrder,
+    getOrdersByCustomer,
+    cancelOrder,
+    createReturnRequest
 };

@@ -2,7 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const csrf = require('csurf');
 const config = require('src/config/config');
 const routes = require('src/modules/routes');
 const healthRoutes = require('src/routes/health.routes');
@@ -23,6 +25,10 @@ app.use(helmet());
 
 // CORS with allowlist
 const allowedOrigins = config.corsOrigins || [];
+if (config.env === 'production' && allowedOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS must be set in production');
+}
+
 const corsOptions = allowedOrigins.length > 0
     ? {
         origin(origin, callback) {
@@ -36,18 +42,38 @@ const corsOptions = allowedOrigins.length > 0
     : { origin: true, credentials: true };
 app.use(cors(corsOptions));
 
-// Rate limiting
-const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 500,
-    standardHeaders: true,
-    legacyHeaders: false
-});
-app.use(apiLimiter);
+// Rate limiting (skip in test environment to avoid interference with test suites)
+if (config.env !== 'test') {
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: 500,
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+    app.use(apiLimiter);
+
+    // Stricter rate limiting for auth endpoints (per IP)
+    if (config.env !== 'development') {
+        const authLimiter = rateLimit({
+            windowMs: 60 * 1000, // 1 minute
+            max: 10, // 10 requests per minute per IP
+            standardHeaders: true,
+            legacyHeaders: false,
+            message: { success: false, error: { code: '429', message: 'Too many authentication attempts. Please try again later.' } }
+        });
+        app.use('/auth', authLimiter);
+    }
+}
+
+// Webhook routes (must be before JSON parsing middleware)
+app.use('/webhooks/meta', metaWebhookRoutes);
 
 // Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: config.bodySizeLimit }));
+app.use(express.urlencoded({ extended: true, limit: config.bodySizeLimit }));
+
+// Cookie parser (for httpOnly token cookies)
+app.use(cookieParser());
 
 app.use((req, res, next) => {
     console.log(`[REQ] ${req.method} ${req.url}`);
@@ -59,6 +85,25 @@ app.use(requestContextMiddleware);
 
 // Session middleware (Redis-backed in production)
 app.use(createSessionMiddleware());
+
+// CSRF protection (session-based)
+const csrfProtection = csrf();
+
+app.get('/csrf', csrfProtection, (req, res) => {
+    res.status(200).json({ csrfToken: req.csrfToken() });
+});
+
+app.use((req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return next();
+    }
+
+    if (req.path.startsWith('/webhooks') || req.path.startsWith('/auth') || req.path.startsWith('/health')) {
+        return next();
+    }
+
+    return csrfProtection(req, res, next);
+});
 
 // Dev logging
 if (config.env === 'development') {
@@ -76,9 +121,6 @@ app.get('/health', (req, res) => {
 
 // Health check endpoints (no auth required, must be before other routes)
 app.use('/health', healthRoutes);
-
-// Webhook routes (must be before JSON parsing middleware)
-app.use('/webhooks/meta', metaWebhookRoutes);
 
 // API routes
 app.use('/', routes);

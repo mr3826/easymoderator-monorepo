@@ -15,9 +15,8 @@ class OrderValidator {
                 'string.min': 'Phone number is required',
                 'any.required': 'Phone/Mobile number is required'
             }),
-            delivery_address: Joi.string().trim().min(5).required().messages({
-                'string.min': 'Delivery address must be at least 5 characters',
-                'any.required': 'Delivery address is required'
+            delivery_address: Joi.string().trim().min(5).optional().allow('').messages({
+                'string.min': 'Delivery address must be at least 5 characters'
             }),
             channel: Joi.string().trim().optional(),
             items: Joi.array().min(1).items(Joi.object({

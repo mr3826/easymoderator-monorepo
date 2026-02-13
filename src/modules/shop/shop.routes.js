@@ -7,7 +7,10 @@ const {
     shopGetValidator,
     addUserValidator,
     removeUserValidator,
-    updateRoleValidator
+    updateRoleValidator,
+    tenantValidateValidator,
+    tenantShopValidateValidator,
+    shopBusinessInfoValidator
 } = require('./shop.validator');
 
 const router = express.Router();
@@ -41,5 +44,15 @@ router.post('/update-role', updateRoleValidator, shopController.updateUserRole);
 
 // POST /shop/switch - Switch to a different shop
 router.post('/switch', shopGetValidator, shopController.switchShop);
+
+// GET /shop/business-info - Get business info for current shop
+router.get('/business-info', shopController.getBusinessInfo);
+
+// PUT /shop/business-info - Update business info for current shop
+router.put('/business-info', shopBusinessInfoValidator, shopController.updateBusinessInfo);
+
+// Tenant validation routes
+router.get('/tenant/:tenantId/validate', tenantValidateValidator, shopController.validateTenant);
+router.get('/tenant/:tenantId/shop/:shopId/validate', tenantShopValidateValidator, shopController.validateTenantShop);
 
 module.exports = router;

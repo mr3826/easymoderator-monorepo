@@ -29,10 +29,15 @@ const createCustomer = async (userId, shopId, customerData) => {
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
-    // Create customer
+    // Map frontend field names to model field names
     const customer = await Customer.create({
         shop_id: shopId,
-        ...customerData
+        name: customerData.name,
+        phone: customerData.number || customerData.phone,
+        channel_type: customerData.channel || customerData.channel_type || 'manual',
+        channel_user_id: customerData.channel_user_id || customerData.number || customerData.phone || 'manual',
+        language_preference: customerData.language_preference || null,
+        metadata: customerData.metadata || {}
     });
 
     return customer;
@@ -57,8 +62,11 @@ const updateCustomer = async (customerId, userId, shopId, updateData) => {
         throw new AppError('Customer not found', 404);
     }
 
-    // Update customer
-    await customer.update(updateData);
+    // Map frontend field names to model field names
+    const mappedData = { ...updateData };
+    if (mappedData.number !== undefined) { mappedData.phone = mappedData.number; delete mappedData.number; }
+    if (mappedData.channel !== undefined) { mappedData.channel_type = mappedData.channel; delete mappedData.channel; }
+    await customer.update(mappedData);
 
     return customer;
 };
@@ -126,19 +134,14 @@ const listCustomers = async (userId, shopId, filters = {}) => {
         whereClause.name = { [Op.iLike]: `%${filters.search}%` };
     }
 
-    // Add email filter
-    if (filters.email) {
-        whereClause.email = { [Op.iLike]: `%${filters.email}%` };
-    }
-
-    // Add number filter
-    if (filters.number) {
-        whereClause.number = { [Op.iLike]: `%${filters.number}%` };
+    // Add phone filter
+    if (filters.phone) {
+        whereClause.phone = { [Op.iLike]: `%${filters.phone}%` };
     }
 
     // Add channel filter
-    if (filters.channel) {
-        whereClause.channel = filters.channel;
+    if (filters.channel_type) {
+        whereClause.channel_type = filters.channel_type;
     }
 
     // Add date range filter
@@ -167,11 +170,65 @@ const listCustomers = async (userId, shopId, filters = {}) => {
     return customers;
 };
 
+/**
+ * Find or create a customer by channel identifiers
+ */
+const findOrCreateCustomerByChannel = async (userId, shopId, data) => {
+    await verifyShopAccess(userId, shopId);
+
+    const existing = await Customer.findOne({
+        where: {
+            shop_id: shopId,
+            channel_type: data.channel_type,
+            channel_user_id: data.channel_user_id
+        }
+    });
+
+    if (existing) {
+        return { customer: existing, isNew: false };
+    }
+
+    const customer = await Customer.create({
+        shop_id: shopId,
+        phone: data.phone,
+        name: data.name || null,
+        channel_type: data.channel_type,
+        channel_user_id: data.channel_user_id,
+        language_preference: data.language_preference || null,
+        last_active: data.last_active || null,
+        metadata: data.metadata || {}
+    });
+
+    return { customer, isNew: true };
+};
+
+/**
+ * Get customer by external ID and shop
+ */
+const getCustomerByExternalId = async (customerId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const customer = await Customer.findOne({
+        where: {
+            id: customerId,
+            shop_id: shopId
+        }
+    });
+
+    if (!customer) {
+        throw new AppError('Customer not found', 404);
+    }
+
+    return customer;
+};
+
 module.exports = {
     createCustomer,
     updateCustomer,
     deleteCustomer,
     getCustomerById,
     listCustomers,
-    verifyShopAccess
+    verifyShopAccess,
+    findOrCreateCustomerByChannel,
+    getCustomerByExternalId
 };

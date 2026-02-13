@@ -11,10 +11,6 @@ const router = express.Router();
 router.use(authenticate);
 router.use(verifyShopAccess);
 
-// OAuth flow routes
-router.get('/connect', metaController.connect);
-router.get('/callback', metaController.callback);
-
 // Manual connect route (UI-provided credentials)
 router.post('/manual-connect', validateRequest(manualConnectSchema), metaController.manualConnect);
 

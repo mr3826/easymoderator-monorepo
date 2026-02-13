@@ -28,17 +28,20 @@ const normalizedDatabaseUrl = normalizeSqliteUrl(databaseUrl);
 // Decide dialect
 const isSqlite = normalizedDatabaseUrl.startsWith('sqlite');
 
+if (config.env === 'production' && isSqlite) {
+    throw new Error('SQLite is not allowed in production. Set DATABASE_URL to a Postgres connection string.');
+}
+
+const sslOptions = config.env === 'production'
+    ? { require: true, rejectUnauthorized: true }
+    : (config.allowSelfSignedTls ? { require: true, rejectUnauthorized: false } : undefined);
+
 const sequelize = new Sequelize(normalizedDatabaseUrl, {
     dialect: isSqlite ? 'sqlite' : 'postgres',
     logging: config.env === 'development' ? console.log : false,
     dialectOptions: isSqlite
         ? {}
-        : {
-            ssl: {
-                require: true,
-                rejectUnauthorized: false
-            }
-        }
+        : (sslOptions ? { ssl: sslOptions } : {})
 });
 
 module.exports = { sequelize };

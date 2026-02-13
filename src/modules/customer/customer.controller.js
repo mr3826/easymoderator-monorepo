@@ -311,6 +311,108 @@ const getCustomer = async (req, res, next) => {
 };
 
 /**
+ * V2: Get customer by external ID
+ */
+const getCustomerExternal = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { customerId } = req.params;
+        const customer = await customerService.getCustomerByExternalId(
+            customerId,
+            req.user.userId,
+            shopId
+        );
+
+        res.status(200).json({
+            customer_id: customer.id,
+            phone: customer.phone,
+            name: customer.name,
+            language_preference: customer.language_preference,
+            created_at: customer.created_at,
+            last_active: customer.last_active,
+            metadata: customer.metadata || {}
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * V2: Create or find customer by channel identifiers
+ */
+const createCustomerExternal = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { customer, isNew } = await customerService.findOrCreateCustomerByChannel(
+            req.user.userId,
+            shopId,
+            req.body
+        );
+
+        res.status(201).json({
+            customer_id: customer.id,
+            is_new: isNew
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * V2: Update customer by external ID
+ */
+const updateCustomerExternal = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { customerId } = req.params;
+
+        await customerService.updateCustomer(
+            customerId,
+            req.user.userId,
+            shopId,
+            req.body
+        );
+
+        res.status(200).json({
+            customer_id: customerId,
+            updated: true
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
  * Legacy: List all customers for the shop with filters (backward compatibility)
  */
 const listCustomers = async (req, res, next) => {
@@ -326,12 +428,10 @@ const listCustomers = async (req, res, next) => {
             });
         }
 
-        // Extract filters from query parameters
         const filters = {
             search: req.query.search,
-            email: req.query.email,
-            number: req.query.number,
-            channel: req.query.channel,
+            phone: req.query.phone,
+            channel_type: req.query.channel_type,
             start_date: req.query.start_date,
             end_date: req.query.end_date
         };
@@ -362,5 +462,9 @@ module.exports = {
     createCustomer,
     updateCustomer,
     getCustomer,
-    listCustomers
+    listCustomers,
+    // V2 methods
+    getCustomerExternal,
+    createCustomerExternal,
+    updateCustomerExternal
 };

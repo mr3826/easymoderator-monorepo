@@ -1,4 +1,4 @@
-const { Order, Product, Channel, UserShop } = require('src/modules/entities');
+const { Order, Product, Channel, UserShop, Analytics } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
 const { Op } = require('sequelize');
 
@@ -26,6 +26,11 @@ const verifyShopAccess = async (userId, shopId) => {
 const getDashboardMetrics = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
 
+    const analyticsRow = await Analytics.findOne({
+        where: { shop_id: shopId },
+        order: [['date', 'DESC']]
+    });
+
     // Get date ranges
     const today = new Date();
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -42,11 +47,11 @@ const getDashboardMetrics = async (userId, shopId) => {
         activeChannels,
         totalChannels
     ] = await Promise.all([
-        // Total messages (sum of message_count from channels)
-        Channel.sum('message_count', { where: { shop_id: shopId } }),
+        // Total messages (from analytics, since channel_configs has no message_count column)
+        Promise.resolve(0),
 
-        // Active products
-        Product.count({ where: { shop_id: shopId, is_active: true } }),
+        // Active products (model uses in_stock, not is_active)
+        Product.count({ where: { shop_id: shopId, in_stock: true } }),
 
         // Orders today
         Order.count({
@@ -75,8 +80,8 @@ const getDashboardMetrics = async (userId, shopId) => {
             }
         }),
 
-        // Active channels
-        Channel.count({ where: { shop_id: shopId, connected: true } }),
+        // Active channels (model uses is_active, not connected)
+        Channel.count({ where: { shop_id: shopId, is_active: true } }),
 
         // Total channels
         Channel.count({ where: { shop_id: shopId } })
@@ -115,17 +120,18 @@ const getDashboardMetrics = async (userId, shopId) => {
 
     return {
         metrics: {
-            totalMessages: Number(totalMessages) || 0,
+            totalMessages: analyticsRow?.total_messages || Number(totalMessages) || 0,
             activeProducts: activeProducts || 0,
             ordersToday: ordersToday || 0,
-            conversionRate: Math.round(conversionRate * 100) / 100, // Round to 2 decimal places
+            conversionRate: Math.round(conversionRate * 100) / 100,
             weeklyChange: Math.round(weeklyChange * 100) / 100
         },
         channels: {
             active: activeChannels || 0,
             total: totalChannels || 0
         },
-        chartData
+        chartData,
+        analytics: analyticsRow || null
     };
 };
 

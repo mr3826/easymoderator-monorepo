@@ -11,6 +11,11 @@ router.use(authenticate);
 router.get('/', validate(knowledgeValidator.getKnowledge), knowledgeController.getKnowledge);
 router.put('/business-info', validate(knowledgeValidator.updateBusinessInfo), knowledgeController.updateBusinessInfo);
 router.put('/branding', validate(knowledgeValidator.updateBrandingRules), knowledgeController.updateBrandingRules);
+router.post('/faq/search', knowledgeController.searchFaq);
+router.get('/shop-settings/:shopId/policies', knowledgeController.getPolicies);
+router.post('/language/normalize', knowledgeController.normalizeLanguage);
+router.post('/language/cache-learning', knowledgeController.cacheLanguageLearning);
+router.post('/query', knowledgeController.queryKnowledge);
 
 router.get('/faqs', knowledgeController.listFaqs);
 router.post('/faqs', validate(knowledgeValidator.createFaq), knowledgeController.createFaq);

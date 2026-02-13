@@ -5,6 +5,7 @@ const crypto = require('crypto');
 // Generate or use encryption key (must be exactly 32 bytes for AES-256)
 const getEncryptionKey = () => {
     const keyEnv = process.env.PAYMENT_ENCRYPTION_KEY;
+    const env = process.env.NODE_ENV || 'development';
     if (keyEnv) {
         // If it's hex, convert from hex; otherwise treat as string and hash
         if (/^[a-f0-9]{64}$/i.test(keyEnv)) {
@@ -15,7 +16,10 @@ const getEncryptionKey = () => {
             return crypto.createHash('sha256').update(keyEnv).digest();
         }
     }
-    // Default key (change in production!)
+    if (env === 'production' || env === 'staging') {
+        throw new Error('PAYMENT_ENCRYPTION_KEY must be set in production/staging');
+    }
+
     return crypto.createHash('sha256').update('default-payment-encryption-key-change-me').digest();
 };
 

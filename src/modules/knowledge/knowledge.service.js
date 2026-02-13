@@ -1,7 +1,8 @@
-const { Shop, UserShop } = require('src/modules/entities');
+const { Shop, UserShop, FaqResponse, BanglishDictionary } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
 const ragService = require('src/modules/rag/rag.service');
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 
 const verifyShopAccess = async (userId, shopId) => {
     const userShop = await UserShop.findOne({
@@ -59,19 +60,19 @@ const getKnowledge = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
+    const settings = normalizeObject(shop.settings);
+
+    const faqs = await FaqResponse.findAll({
+        where: { shop_id: shopId },
+        order: [['priority', 'DESC']]
+    });
+
     return {
-        businessInfo: {
-            shopName: shop.shop_name || '',
-            address: shop.address || '',
-            phone: shop.phone || '',
-            openingHours: shop.opening_hours || '',
-            deliveryAreas: normalizeArray(shop.delivery_areas),
-            paymentMethods: normalizeArray(shop.payment_methods),
-        },
-        brandingRules: normalizeObject(shop.branding_rules),
-        faqs: normalizeArray(shop.knowledge_faqs),
-        gaps: normalizeArray(shop.knowledge_gaps),
-        documents: normalizeArray(shop.knowledge_documents)
+        businessInfo: normalizeObject(settings.businessInfo),
+        brandingRules: normalizeObject(settings.brandingRules),
+        faqs,
+        gaps: normalizeArray(settings.gaps),
+        documents: normalizeArray(settings.documents)
     };
 };
 
@@ -79,24 +80,37 @@ const updateBusinessInfo = async (userId, shopId, data) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
-    const payload = {
-        shop_name: data.shopName,
-        address: data.address,
-        phone: data.phone,
-        opening_hours: data.openingHours,
-        delivery_areas: normalizeArray(data.deliveryAreas),
-        payment_methods: normalizeArray(data.paymentMethods)
+    const settings = normalizeObject(shop.settings);
+    const businessInfo = {
+        shopName: data.shopName || '',
+        address: data.address || '',
+        phone: data.phone || '',
+        openingHours: data.openingHours || '',
+        deliveryAreas: normalizeArray(data.deliveryAreas),
+        paymentMethods: normalizeArray(data.paymentMethods)
     };
 
-    await shop.update(payload);
+    const shopUpdates = {
+        settings: {
+            ...settings,
+            businessInfo
+        }
+    };
+
+    if (data.shopName && String(data.shopName).trim()) {
+        shopUpdates.shop_name = data.shopName.trim();
+        shopUpdates.name = data.shopName.trim();
+    }
+
+    await shop.update(shopUpdates);
 
     const businessText = [
-        `Shop Name: ${payload.shop_name || ''}`,
-        `Address: ${payload.address || ''}`,
-        `Phone: ${payload.phone || ''}`,
-        `Opening Hours: ${payload.opening_hours || ''}`,
-        `Delivery Areas: ${(payload.delivery_areas || []).join(', ')}`,
-        `Payment Methods: ${(payload.payment_methods || []).join(', ')}`
+        `Shop Name: ${businessInfo.shopName || ''}`,
+        `Address: ${businessInfo.address || ''}`,
+        `Phone: ${businessInfo.phone || ''}`,
+        `Opening Hours: ${businessInfo.openingHours || ''}`,
+        `Delivery Areas: ${(businessInfo.deliveryAreas || []).join(', ')}`,
+        `Payment Methods: ${(businessInfo.paymentMethods || []).join(', ')}`
     ].join('\n');
 
     await ragService.ingestData({
@@ -115,8 +129,12 @@ const updateBrandingRules = async (userId, shopId, brandingRules) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
+    const settings = normalizeObject(shop.settings);
     await shop.update({
-        branding_rules: brandingRules || {}
+        settings: {
+            ...settings,
+            brandingRules: brandingRules || {}
+        }
     });
 
     const brandingText = Object.entries(brandingRules || {})
@@ -137,37 +155,34 @@ const updateBrandingRules = async (userId, shopId, brandingRules) => {
 
 const listFaqs = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
-    const shop = await getShop(shopId);
-    return normalizeArray(shop.knowledge_faqs);
+    return await FaqResponse.findAll({
+        where: {
+            shop_id: shopId
+        },
+        order: [['priority', 'DESC']]
+    });
 };
 
 const createFaq = async (userId, shopId, faq) => {
     await verifyShopAccess(userId, shopId);
-    const shop = await getShop(shopId);
+    const newFaq = await FaqResponse.create({
+        shop_id: shopId,
+        category: faq.category || faq.question || 'General',
+        template_bn: faq.template_bn || null,
+        template_en: faq.template_en || faq.answer || null,
+        variables: faq.variables || [],
+        priority: faq.priority || 0,
+        is_active: faq.is_active !== undefined ? faq.is_active : (faq.active !== undefined ? faq.active : true)
+    });
 
-    const faqs = normalizeArray(shop.knowledge_faqs);
-    const newFaq = {
-        id: crypto.randomUUID(),
-        active: false,
-        usageCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...faq
-    };
-
-    faqs.push(newFaq);
-
-    await shop.update({ knowledge_faqs: faqs });
-
-    if (newFaq.active) {
+    if (newFaq.is_active) {
+        const text = `Category: ${newFaq.category}\nBN: ${newFaq.template_bn || ''}\nEN: ${newFaq.template_en || ''}`;
         await ragService.ingestData({
-            text: `Q: ${newFaq.question}\nA: ${newFaq.answer}`,
+            text,
             metadata: {
                 documentId: `faq-${newFaq.id}`,
                 shopId,
                 type: 'faq',
-                question: newFaq.question,
-                answer: newFaq.answer,
                 category: newFaq.category
             }
         });
@@ -178,47 +193,59 @@ const createFaq = async (userId, shopId, faq) => {
 
 const updateFaq = async (userId, shopId, faqId, updates) => {
     await verifyShopAccess(userId, shopId);
-    const shop = await getShop(shopId);
-
-    const faqs = normalizeArray(shop.knowledge_faqs).map((faq) => {
-        if (faq.id !== faqId) return faq;
-        return {
-            ...faq,
-            ...updates,
-            updatedAt: new Date().toISOString()
-        };
+    const faq = await FaqResponse.findOne({
+        where: {
+            id: faqId,
+            shop_id: shopId
+        }
     });
 
-    await shop.update({ knowledge_faqs: faqs });
-
-    const updatedFaq = faqs.find(faq => faq.id === faqId) || null;
-    if (updatedFaq) {
-        if (updatedFaq.active) {
-            await ragService.ingestData({
-                text: `Q: ${updatedFaq.question}\nA: ${updatedFaq.answer}`,
-                metadata: {
-                    documentId: `faq-${updatedFaq.id}`,
-                    shopId,
-                    type: 'faq',
-                    question: updatedFaq.question,
-                    answer: updatedFaq.answer,
-                    category: updatedFaq.category
-                }
-            });
-        } else {
-            await ragService.deletePoint(`faq-${updatedFaq.id}`);
-        }
+    if (!faq) {
+        throw new AppError('FAQ not found', 404);
     }
 
-    return updatedFaq;
+    const resolvedCategory = updates.category || updates.question || faq.category;
+    const resolvedTemplateEn = updates.template_en !== undefined
+        ? updates.template_en
+        : (updates.answer !== undefined ? updates.answer : faq.template_en);
+
+    await faq.update({
+        category: resolvedCategory,
+        template_bn: updates.template_bn !== undefined ? updates.template_bn : faq.template_bn,
+        template_en: resolvedTemplateEn,
+        variables: updates.variables || faq.variables,
+        priority: updates.priority !== undefined ? updates.priority : faq.priority,
+        is_active: updates.is_active !== undefined
+            ? updates.is_active
+            : (updates.active !== undefined ? updates.active : faq.is_active)
+    });
+
+    if (faq.is_active) {
+        const text = `Category: ${faq.category}\nBN: ${faq.template_bn || ''}\nEN: ${faq.template_en || ''}`;
+        await ragService.ingestData({
+            text,
+            metadata: {
+                documentId: `faq-${faq.id}`,
+                shopId,
+                type: 'faq',
+                category: faq.category
+            }
+        });
+    } else {
+        await ragService.deletePoint(`faq-${faq.id}`).catch(() => {});
+    }
+
+    return faq;
 };
 
 const deleteFaq = async (userId, shopId, faqId) => {
     await verifyShopAccess(userId, shopId);
-    const shop = await getShop(shopId);
-
-    const faqs = normalizeArray(shop.knowledge_faqs).filter(faq => faq.id !== faqId);
-    await shop.update({ knowledge_faqs: faqs });
+    await FaqResponse.destroy({
+        where: {
+            id: faqId,
+            shop_id: shopId
+        }
+    });
 
     await ragService.deletePoint(`faq-${faqId}`).catch(() => {});
 
@@ -228,29 +255,40 @@ const deleteFaq = async (userId, shopId, faqId) => {
 const listGaps = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
-    return normalizeArray(shop.knowledge_gaps);
+    const settings = normalizeObject(shop.settings);
+    return normalizeArray(settings.gaps);
 };
 
 const updateGaps = async (userId, shopId, gaps) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
-    await shop.update({ knowledge_gaps: normalizeArray(gaps) });
+    const settings = normalizeObject(shop.settings);
+    const normalizedGaps = normalizeArray(gaps);
 
-    return normalizeArray(gaps);
+    await shop.update({
+        settings: {
+            ...settings,
+            gaps: normalizedGaps
+        }
+    });
+
+    return normalizedGaps;
 };
 
 const listDocuments = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
-    return normalizeArray(shop.knowledge_documents);
+    const settings = normalizeObject(shop.settings);
+    return normalizeArray(settings.documents);
 };
 
 const createDocument = async (userId, shopId, document) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
-    const documents = normalizeArray(shop.knowledge_documents);
+    const settings = normalizeObject(shop.settings);
+    const documents = normalizeArray(settings.documents);
     const newDocument = {
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
@@ -261,7 +299,12 @@ const createDocument = async (userId, shopId, document) => {
 
     documents.push(newDocument);
 
-    await shop.update({ knowledge_documents: documents });
+    await shop.update({
+        settings: {
+            ...settings,
+            documents
+        }
+    });
 
     if (document?.text) {
         try {
@@ -284,10 +327,15 @@ const createDocument = async (userId, shopId, document) => {
             newDocument.error = error.message || 'Failed to index document';
         }
 
-        const updatedDocuments = normalizeArray(shop.knowledge_documents).map((doc) =>
+        const updatedDocuments = normalizeArray(documents).map((doc) =>
             doc.id === newDocument.id ? newDocument : doc
         );
-        await shop.update({ knowledge_documents: updatedDocuments });
+        await shop.update({
+            settings: {
+                ...settings,
+                documents: updatedDocuments
+            }
+        });
     }
 
     return newDocument;
@@ -297,12 +345,136 @@ const deleteDocument = async (userId, shopId, documentId) => {
     await verifyShopAccess(userId, shopId);
     const shop = await getShop(shopId);
 
-    const documents = normalizeArray(shop.knowledge_documents).filter(doc => doc.id !== documentId);
-    await shop.update({ knowledge_documents: documents });
+    const settings = normalizeObject(shop.settings);
+    const documents = normalizeArray(settings.documents).filter(doc => doc.id !== documentId);
+    await shop.update({
+        settings: {
+            ...settings,
+            documents
+        }
+    });
 
     await ragService.deletePoint(documentId).catch(() => {});
 
     return { message: 'Document deleted successfully' };
+};
+
+const searchFaq = async (userId, shopId, payload) => {
+    await verifyShopAccess(userId, shopId);
+
+    const whereClause = {
+        shop_id: shopId,
+        is_active: true
+    };
+
+    if (payload.category) {
+        whereClause.category = payload.category;
+    }
+
+    if (payload.query) {
+        whereClause[Op.or] = [
+            { template_en: { [Op.iLike]: `%${payload.query}%` } },
+            { template_bn: { [Op.iLike]: `%${payload.query}%` } }
+        ];
+    }
+
+    const faqs = await FaqResponse.findAll({
+        where: whereClause,
+        order: [['priority', 'DESC']]
+    });
+
+    const answers = faqs.map(faq => ({
+        faq_id: String(faq.id),
+        question: faq.category,
+        answer: payload.language === 'bangla' ? faq.template_bn : faq.template_en,
+        category: faq.category,
+        language: payload.language || 'english',
+        relevance_score: 0.8
+    }));
+
+    return answers;
+};
+
+const getShopPolicies = async (userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+    const shop = await getShop(shopId);
+    const settings = normalizeObject(shop.settings);
+
+    return normalizeObject(settings.policies);
+};
+
+const normalizeLanguage = async (payload) => {
+    if (!payload || !payload.text) {
+        throw new AppError('Text is required', 400);
+    }
+
+    const text = payload.text;
+    if (payload.detected_language !== 'banglish' || payload.target_language !== 'bangla') {
+        return {
+            original: text,
+            normalized: text,
+            language: payload.detected_language || 'unknown',
+            confidence: 0.5,
+            method_used: 'dictionary'
+        };
+    }
+
+    const tokens = text.split(/\s+/);
+    const dictionaryRows = await BanglishDictionary.findAll({
+        where: {
+            banglish: {
+                [Op.in]: tokens.map(token => token.toLowerCase())
+            }
+        }
+    });
+
+    const dictionary = new Map(dictionaryRows.map(row => [row.banglish, row.bangla]));
+    const normalized = tokens.map(token => dictionary.get(token.toLowerCase()) || token).join(' ');
+
+    return {
+        original: text,
+        normalized,
+        language: 'bangla',
+        confidence: 0.85,
+        method_used: 'dictionary'
+    };
+};
+
+const cacheLanguageLearning = async (payload) => {
+    if (!payload || !payload.banglish_input || !payload.normalized_output) {
+        throw new AppError('banglish_input and normalized_output are required', 400);
+    }
+
+    const existing = await BanglishDictionary.findOne({
+        where: { banglish: payload.banglish_input.toLowerCase() }
+    });
+
+    if (existing) {
+        await existing.update({
+            bangla: payload.normalized_output,
+            confidence: payload.confidence || existing.confidence
+        });
+
+        return { cached: true, id: existing.id };
+    }
+
+    const entry = await BanglishDictionary.create({
+        banglish: payload.banglish_input.toLowerCase(),
+        bangla: payload.normalized_output,
+        confidence: payload.confidence || 95
+    });
+
+    return { cached: true, id: entry.id };
+};
+
+const queryKnowledge = async (payload) => {
+    const result = await ragService.queryData({
+        query: payload.query,
+        limit: payload.limit || 5,
+        shopId: payload.shop_id
+    });
+
+    return result;
 };
 
 module.exports = {
@@ -317,5 +489,10 @@ module.exports = {
     updateGaps,
     listDocuments,
     createDocument,
-    deleteDocument
+    deleteDocument,
+    searchFaq,
+    getShopPolicies,
+    normalizeLanguage,
+    cacheLanguageLearning,
+    queryKnowledge
 };

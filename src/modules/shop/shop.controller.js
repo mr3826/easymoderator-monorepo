@@ -1,6 +1,9 @@
 const shopService = require('./shop.service');
+const tenantService = require('../tenant/tenant.service');
+const knowledgeService = require('src/modules/knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('src/utils/AppError');
+const { setAuthCookies } = require('src/utils/auth-cookies');
 
 /**
  * Get all shops for user
@@ -36,6 +39,55 @@ const getShop = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: shop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get business info for current shop
+ */
+const getBusinessInfo = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const data = await knowledgeService.getKnowledge(userId, shopId);
+
+        res.status(200).json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update business info for current shop
+ */
+const updateBusinessInfo = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId, userId } = req.user;
+
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const data = await knowledgeService.updateBusinessInfo(userId, shopId, req.body);
+
+        res.status(200).json({
+            success: true,
+            data
         });
     } catch (error) {
         next(error);
@@ -187,9 +239,47 @@ const switchShop = async (req, res, next) => {
         const switchService = require('./shop-switch.service');
         const result = await switchService.switchShop(req.user.userId, shopId);
 
+        setAuthCookies(res, result.accessToken, null);
+
         res.status(200).json({
             success: true,
-            data: result
+            data: {
+                currentShop: result.currentShop
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const validateTenant = async (req, res, next) => {
+    try {
+        const { tenantId } = req.params;
+        const tenant = await tenantService.getTenantById(tenantId);
+
+        res.status(200).json({
+            tenant_id: tenant.id,
+            is_active: tenant.is_active,
+            name: tenant.name,
+            settings: tenant.settings || {}
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const validateTenantShop = async (req, res, next) => {
+    try {
+        const { tenantId, shopId } = req.params;
+        const result = await tenantService.getTenantShop(tenantId, shopId);
+
+        res.status(200).json({
+            shop_id: result.shop.id,
+            tenant_id: result.tenant.id,
+            is_active: result.shop.is_active,
+            name: result.shop.name,
+            business_hours: result.shop.business_hours || {},
+            settings: result.shop.settings || {}
         });
     } catch (error) {
         next(error);
@@ -205,5 +295,9 @@ module.exports = {
     addUserToShop,
     removeUserFromShop,
     updateUserRole,
-    switchShop
+    switchShop,
+    getBusinessInfo,
+    updateBusinessInfo,
+    validateTenant,
+    validateTenantShop
 };

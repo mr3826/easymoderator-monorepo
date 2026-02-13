@@ -1,3 +1,17 @@
 node_modules
 
 .env
+.env.*
+!.env.example
+
+logs/
+coverage/
+dist/
+build/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store
+database.sqlite
+*.sqlite

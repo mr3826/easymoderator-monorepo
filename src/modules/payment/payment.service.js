@@ -3,6 +3,7 @@ const { AppError } = require('src/utils/AppError');
 const { UserShop } = require('src/modules/entities');
 const axios = require('axios');
 const crypto = require('crypto');
+const config = require('src/config/config');
 
 /**
  * Verify user has access to shop
@@ -410,7 +411,7 @@ async function initiateSSLCommerzPayment(orderId, shopId, userId) {
  * Verify AamarPay payment callback
  */
 async function verifyAamarPayCallback(callbackData) {
-    const { mer_txnid, pay_status, status_code } = callbackData;
+    const { mer_txnid, pay_status, status_code, verify_sign, verify_key, amount, store_id } = callbackData;
     
     if (!mer_txnid) {
         throw new AppError('Invalid callback data', 400);
@@ -426,6 +427,54 @@ async function verifyAamarPayCallback(callbackData) {
 
     if (!order) {
         throw new AppError('Order not found', 404);
+    }
+
+    const paymentConfig = await PaymentConfig.findOne({
+        where: { shop_id: order.shop_id, gateway: 'aamarpay' }
+    });
+
+    const requireSignature = config.env === 'production' || config.env === 'staging';
+    if (requireSignature && (!paymentConfig || !paymentConfig.credentials)) {
+        throw new AppError('AamarPay configuration not found', 400);
+    }
+
+    const { store_id: configStoreId, secret_key } = paymentConfig?.credentials || {};
+
+    if (store_id && configStoreId && store_id !== configStoreId) {
+        throw new AppError('Invalid AamarPay store ID', 403);
+    }
+
+    const requireSignature = config.env === 'production' || config.env === 'staging';
+    if (requireSignature) {
+        if (!verify_sign || !verify_key) {
+            throw new AppError('Missing AamarPay signature', 403);
+        }
+
+        const keys = String(verify_key)
+            .split(',')
+            .map((key) => key.trim())
+            .filter(Boolean);
+
+        const signaturePayload = keys
+            .map((key) => `${key}=${callbackData[key] ?? ''}`)
+            .join('&');
+
+        const expected = crypto
+            .createHash('md5')
+            .update(`${signaturePayload}&signature_key=${secret_key}`)
+            .digest('hex');
+
+        if (expected !== verify_sign) {
+            throw new AppError('Invalid AamarPay signature', 403);
+        }
+    }
+
+    if (amount !== undefined && Number.isFinite(parseFloat(amount))) {
+        const orderTotal = parseFloat(order.total);
+        const paidAmount = parseFloat(amount);
+        if (Math.abs(orderTotal - paidAmount) > 0.01) {
+            throw new AppError('AamarPay amount mismatch', 400);
+        }
     }
 
     // Verify payment status

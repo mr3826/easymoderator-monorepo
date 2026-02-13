@@ -5,12 +5,15 @@
   "main": "server.js",
   "scripts": {
     "start": "nodemon server.js",
+    "start:worker": "node src/jobs/worker.js",
+    "test": "jest --coverage --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch",
     "db:sync": "node src/utils/database/sync.js",
-      "seed:admin": "node src/scripts/seed-admin.js",
-      "migrate": "node src/database/migrate.js up",
-      "migrate:down": "node src/database/migrate.js down",
-      "migrate:down:all": "node src/database/migrate.js down:all",
-      "migrate:status": "node src/database/migrate.js status"
+    "seed:admin": "node src/scripts/seed-admin.js",
+    "migrate": "node src/database/migrate.js up",
+    "migrate:down": "node src/database/migrate.js down",
+    "migrate:down:all": "node src/database/migrate.js down:all",
+    "migrate:status": "node src/database/migrate.js status"
   },
   "keywords": [],
   "author": "",
@@ -20,7 +23,9 @@
     "bcryptjs": "^3.0.3",
     "bull": "^4.12.0",
     "connect-redis": "^7.1.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "csurf": "^1.11.0",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "express-rate-limit": "^7.5.0",
@@ -32,6 +37,7 @@
     "jsonwebtoken": "^9.0.3",
     "module-alias": "^2.2.3",
     "morgan": "^1.10.1",
+    "nodemailer": "^6.10.1",
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "pm2": "^5.3.0",
@@ -39,7 +45,9 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.11",
+    "supertest": "^7.2.2"
   },
   "_moduleAliases": {
     "src": "./src"

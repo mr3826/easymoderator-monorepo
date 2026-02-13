@@ -3,16 +3,26 @@ const Joi = require('joi');
 class ChannelValidator {
     createChannel = {
         body: Joi.object({
-            name: Joi.string().trim().required().max(255).messages({
-                'string.empty': 'Channel name is required',
-                'string.max': 'Channel name must not exceed 255 characters',
-                'any.required': 'Channel name is required'
-            }),
-            type: Joi.string().valid('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram').required().messages({
-                'any.only': 'Channel type must be one of: facebook, whatsapp, telegram, webchat, instagram',
-                'any.required': 'Channel type is required'
-            }),
-            config: Joi.object().optional()
+            channel_type: Joi.string().valid('messenger', 'whatsapp', 'instagram').optional(),
+            type: Joi.string().valid('facebook', 'whatsapp', 'instagram').optional(),
+            name: Joi.string().trim().optional(),
+            page_id: Joi.string().trim().optional().max(100),
+            access_token: Joi.string().trim().optional(),
+            systemUserToken: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().optional(),
+            verify_token: Joi.string().trim().optional(),
+            webhook_secret: Joi.string().trim().optional(),
+            config: Joi.object().optional(),
+            settings: Joi.object().optional()
+        }).custom((value, helpers) => {
+            const hasLegacy = Boolean(value.channel_type && value.page_id && value.access_token);
+            const hasFrontend = Boolean(value.type && value.systemUserToken);
+
+            if (!hasLegacy && !hasFrontend) {
+                return helpers.message('channel_type/page_id/access_token or type/systemUserToken is required');
+            }
+
+            return value;
         })
     };
 
@@ -24,12 +34,17 @@ class ChannelValidator {
             })
         }),
         body: Joi.object({
-            name: Joi.string().trim().optional().max(255).messages({
-                'string.max': 'Channel name must not exceed 255 characters'
+            page_id: Joi.string().trim().optional().max(100),
+            access_token: Joi.string().trim().optional(),
+            systemUserToken: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().optional(),
+            verify_token: Joi.string().trim().optional(),
+            webhook_secret: Joi.string().trim().optional(),
+            settings: Joi.object().optional().messages({
+                'object.base': 'Settings must be an object'
             }),
-            config: Joi.object().optional().messages({
-                'object.base': 'Config must be an object'
-            })
+            config: Joi.object().optional(),
+            is_active: Joi.boolean().optional()
         })
     };
 
@@ -60,18 +75,26 @@ class ChannelValidator {
 
     connectChannel = {
         body: Joi.object({
-            type: Joi.string().valid('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram').required(),
-            name: Joi.string().trim().optional().max(255),
-            appId: Joi.string().trim().required().messages({
-                'any.required': 'App ID is required'
-            }),
-            appSecret: Joi.string().trim().required().messages({
-                'any.required': 'App Secret is required'
-            }),
-            assetId: Joi.string().trim().required().messages({
-                'any.required': 'Asset/Page ID is required'
-            }),
-            config: Joi.object().optional()
+            channel_type: Joi.string().valid('messenger', 'whatsapp', 'instagram').optional(),
+            type: Joi.string().valid('facebook', 'whatsapp', 'instagram').optional(),
+            name: Joi.string().trim().optional(),
+            page_id: Joi.string().trim().optional().max(100),
+            access_token: Joi.string().trim().optional(),
+            systemUserToken: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().optional(),
+            verify_token: Joi.string().trim().optional(),
+            webhook_secret: Joi.string().trim().optional(),
+            config: Joi.object().optional(),
+            settings: Joi.object().optional()
+        }).custom((value, helpers) => {
+            const hasLegacy = Boolean(value.channel_type && value.page_id && value.access_token);
+            const hasFrontend = Boolean(value.type && value.systemUserToken);
+
+            if (!hasLegacy && !hasFrontend) {
+                return helpers.message('channel_type/page_id/access_token or type/systemUserToken is required');
+            }
+
+            return value;
         })
     };
 

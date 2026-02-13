@@ -16,33 +16,34 @@ const Channel = sequelize.define('Channel', {
         },
         onDelete: 'CASCADE'
     },
-    name: {
-        type: DataTypes.STRING,
+    channel_type: {
+        type: DataTypes.ENUM('messenger', 'whatsapp', 'instagram', 'webchat', 'telegram'),
         allowNull: false
     },
-    type: {
-        type: DataTypes.ENUM('facebook', 'whatsapp', 'telegram', 'webchat', 'instagram'),
+    page_id: {
+        type: DataTypes.STRING(100),
         allowNull: false
     },
-    status: {
-        type: DataTypes.ENUM('active', 'inactive', 'error'),
-        defaultValue: 'inactive'
+    access_token: {
+        type: DataTypes.TEXT,
+        allowNull: false
     },
-    connected: {
+    verify_token: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    webhook_secret: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
+    is_active: {
         type: DataTypes.BOOLEAN,
-        defaultValue: false
+        defaultValue: true
     },
-    config: {
+    settings: {
         type: DataTypes.JSONB,
-        allowNull: true
-    },
-    last_sync: {
-        type: DataTypes.DATE,
-        allowNull: true
-    },
-    message_count: {
-        type: DataTypes.INTEGER,
-        defaultValue: 0
+        allowNull: true,
+        defaultValue: {}
     },
     created_at: {
         type: DataTypes.DATE,
@@ -53,13 +54,13 @@ const Channel = sequelize.define('Channel', {
         defaultValue: DataTypes.NOW
     }
 }, {
-    tableName: 'channels',
+    tableName: 'channel_configs',
     underscored: true,
     timestamps: true,
     indexes: [
         {
             unique: true,
-            fields: ['shop_id', 'type']
+            fields: ['shop_id', 'channel_type']
         }
     ]
 });

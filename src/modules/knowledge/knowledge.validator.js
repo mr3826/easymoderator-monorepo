@@ -22,7 +22,7 @@ class KnowledgeValidator {
         body: Joi.object({
             question: Joi.string().trim().required(),
             answer: Joi.string().trim().required(),
-            category: Joi.string().trim().required(),
+            category: Joi.string().trim().optional(),
             confidence: Joi.number().min(0).max(1).optional(),
             source: Joi.string().trim().optional(),
             active: Joi.boolean().optional(),
