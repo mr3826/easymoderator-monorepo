@@ -4,7 +4,8 @@
   "description": "Commerce AI Server",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
+    "dev": "nodemon server.js",
     "start:worker": "node src/jobs/worker.js",
     "test": "jest --coverage --forceExit --detectOpenHandles",
     "test:watch": "jest --watch",
