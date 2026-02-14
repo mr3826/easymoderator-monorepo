@@ -141,7 +141,7 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
             throw new AppError('Credentials are required to create payment configuration', 400);
         }
-        
+
         paymentConfig = await PaymentConfig.create({
             shop_id: shopId,
             gateway,
@@ -177,7 +177,7 @@ async function testPaymentConnection(shopId, userId, gateway, credentials) {
         try {
             // Test AamarPay credentials by making a minimal API call
             const baseUrl = 'https://sandbox.aamarpay.com';
-            
+
             // AamarPay doesn't have a dedicated test endpoint, so we'll validate the format
             // In production, you might want to make an actual small transaction test
             if (credentials.store_id.length < 3 || credentials.secret_key.length < 10) {
@@ -270,7 +270,7 @@ async function initiateAamarPayPayment(orderId, shopId, userId) {
     }
 
     const { store_id, secret_key } = config.credentials;
-    const baseUrl = process.env.AAMARPAY_SANDBOX === 'true' 
+    const baseUrl = process.env.AAMARPAY_SANDBOX === 'true'
         ? 'https://sandbox.aamarpay.com'
         : 'https://secure.aamarpay.com';
 
@@ -380,7 +380,7 @@ async function initiateSSLCommerzPayment(orderId, shopId, userId) {
     };
 
     try {
-        const response = await axios.post(`${baseUrl}/gwprocess/v4/api.php`, 
+        const response = await axios.post(`${baseUrl}/gwprocess/v4/api.php`,
             new URLSearchParams(paymentData).toString(),
             {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -412,14 +412,14 @@ async function initiateSSLCommerzPayment(orderId, shopId, userId) {
  */
 async function verifyAamarPayCallback(callbackData) {
     const { mer_txnid, pay_status, status_code, verify_sign, verify_key, amount, store_id } = callbackData;
-    
+
     if (!mer_txnid) {
         throw new AppError('Invalid callback data', 400);
     }
 
     // Extract order number from transaction ID
     const orderNumber = mer_txnid.split('-')[0];
-    
+
     // Find order
     const order = await Order.findOne({
         where: { order_number: orderNumber }
@@ -444,7 +444,6 @@ async function verifyAamarPayCallback(callbackData) {
         throw new AppError('Invalid AamarPay store ID', 403);
     }
 
-    const requireSignature = config.env === 'production' || config.env === 'staging';
     if (requireSignature) {
         if (!verify_sign || !verify_key) {
             throw new AppError('Missing AamarPay signature', 403);
@@ -496,14 +495,14 @@ async function verifyAamarPayCallback(callbackData) {
  */
 async function verifySSLCommerzCallback(callbackData, shopId) {
     const { tran_id, val_id, status } = callbackData;
-    
+
     if (!tran_id) {
         throw new AppError('Invalid callback data', 400);
     }
 
     // Extract order number from transaction ID
     const orderNumber = tran_id.split('-')[0];
-    
+
     // Find order
     const order = await Order.findOne({
         where: { order_number: orderNumber, shop_id: shopId }
