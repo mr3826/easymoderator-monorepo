@@ -1,5 +1,6 @@
 require('module-alias/register');
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const config = require('src/config/config');
+
 const { sequelize } = require('src/utils/database/database-setup');
 const entities = require('src/modules/entities');
 

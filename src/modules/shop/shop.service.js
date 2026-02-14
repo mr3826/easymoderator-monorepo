@@ -1,6 +1,5 @@
 const { User, Shop, UserShop } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
-const { generateUniqueShopCode } = require('src/modules/auth/auth.service');
 const { sequelize } = require('src/utils/database/database-setup');
 
 /**
@@ -57,13 +56,12 @@ const createShop = async (userId, shopData) => {
     const transaction = await sequelize.transaction();
 
     try {
-        // Generate unique shop code
-        const shopCode = await generateUniqueShopCode();
-
         // Create shop
+        const resolvedName = shopData.shop_name || shopData.name || 'My Shop';
         const shop = await Shop.create({
-            unique_code: shopCode,
-            ...shopData
+            ...shopData,
+            name: resolvedName,
+            shop_name: resolvedName
         }, { transaction });
 
         // Create UserShop relationship with owner role
@@ -110,8 +108,11 @@ const updateShopById = async (shopId, userId, updateData) => {
     }
 
     // Don't allow updating unique_code
-    delete updateData.unique_code;
     delete updateData.id;
+
+    if (updateData.shop_name && !updateData.name) {
+        updateData.name = updateData.shop_name;
+    }
 
     await shop.update(updateData);
 

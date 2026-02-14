@@ -1,8 +1,123 @@
-const { User, Shop, UserShop } = require('src/modules/entities');
+const { User, Shop, UserShop, Tenant } = require('src/modules/entities');
 const { hashPassword, comparePassword } = require('src/utils/password.util');
 const { generateAccessToken, generateRefreshToken } = require('src/utils/jwt.util');
 const { sequelize } = require('src/utils/database/database-setup');
 const { AppError } = require('src/utils/AppError');
+const { getRedisClient } = require('src/utils/redis-client');
+const config = require('src/config/config');
+const jwt = require('jsonwebtoken');
+const emailService = require('src/utils/email.service');
+
+const RESET_TOKEN_TTL = '1h';
+
+const buildResetSecret = (user) => `${config.jwtAccessSecret}${user.password}`;
+
+const generateResetToken = (user) => {
+    return jwt.sign({ userId: user.id, email: user.email }, buildResetSecret(user), {
+        expiresIn: RESET_TOKEN_TTL
+    });
+};
+
+const verifyResetToken = (token, user) => {
+    try {
+        return jwt.verify(token, buildResetSecret(user));
+    } catch (error) {
+        throw new AppError('Invalid or expired reset token', 400);
+    }
+};
+
+// ── Token blacklist (Redis) ────────────────────────────────────────────
+
+const TOKEN_BLACKLIST_PREFIX = 'token_blacklist:';
+
+/**
+ * Blacklist a JWT so it can no longer be used.
+ * TTL is set to the token's remaining lifetime.
+ */
+const blacklistToken = async (token, decoded) => {
+    const redis = getRedisClient();
+    if (!redis) return; // graceful no-op if Redis unavailable in dev
+
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = decoded.exp ? decoded.exp - now : 86400; // fallback 1 day
+    if (ttl > 0) {
+        await redis.set(`${TOKEN_BLACKLIST_PREFIX}${token}`, '1', 'EX', ttl);
+    }
+};
+
+/**
+ * Check whether a token has been blacklisted.
+ */
+const isTokenBlacklisted = async (token) => {
+    const redis = getRedisClient();
+    if (!redis) return false;
+
+    const result = await redis.get(`${TOKEN_BLACKLIST_PREFIX}${token}`);
+    return result === '1';
+};
+
+// ── Account lockout (Redis) ────────────────────────────────────────────
+
+const LOGIN_ATTEMPTS_PREFIX = 'login_attempts:';
+const LOGIN_LOCKOUT_PREFIX = 'login_lockout:';
+
+/**
+ * Check if an account is currently locked out.
+ */
+const checkAccountLockout = async (email) => {
+    const redis = getRedisClient();
+    if (!redis) return; // no lockout enforcement without Redis
+
+    const locked = await redis.get(`${LOGIN_LOCKOUT_PREFIX}${email}`);
+    if (locked) {
+        const ttl = await redis.ttl(`${LOGIN_LOCKOUT_PREFIX}${email}`);
+        throw new AppError(
+            `Account temporarily locked due to too many failed login attempts. Try again in ${Math.ceil(ttl / 60)} minute(s).`,
+            429
+        );
+    }
+};
+
+/**
+ * Record a failed login attempt. Locks the account after maxLoginAttempts.
+ */
+const recordFailedLogin = async (email) => {
+    const redis = getRedisClient();
+    if (!redis) return;
+
+    const key = `${LOGIN_ATTEMPTS_PREFIX}${email}`;
+    const attempts = await redis.incr(key);
+
+    // Set expiry on first attempt
+    if (attempts === 1) {
+        await redis.expire(key, config.loginLockoutMinutes * 60);
+    }
+
+    if (attempts >= config.maxLoginAttempts) {
+        // Lock the account
+        await redis.set(
+            `${LOGIN_LOCKOUT_PREFIX}${email}`,
+            '1',
+            'EX',
+            config.loginLockoutMinutes * 60
+        );
+        // Clear the attempt counter
+        await redis.del(key);
+    }
+};
+
+/**
+ * Clear failed login attempts on successful login.
+ */
+const clearFailedLogins = async (email) => {
+    const redis = getRedisClient();
+    if (!redis) return;
+
+    await redis.del(`${LOGIN_ATTEMPTS_PREFIX}${email}`);
+    await redis.del(`${LOGIN_LOCKOUT_PREFIX}${email}`);
+};
+
+// ── Existing auth logic ────────────────────────────────────────────────
 
 /**
  * Generate unique 5-6 character shop code
@@ -37,7 +152,7 @@ const createUserWithShop = async (userData) => {
     const transaction = await sequelize.transaction();
 
     try {
-        const { email, password, full_name, phone } = userData;
+        const { email, password, full_name, phone, shop_name } = userData;
 
         // Check if user already exists
         const existingUser = await User.findOne({ where: { email } });
@@ -56,12 +171,24 @@ const createUserWithShop = async (userData) => {
             phone
         }, { transaction });
 
+        const tenantName = shop_name || full_name || email.split('@')[0] || 'Default Tenant';
+
+        // Create tenant
+        const tenant = await Tenant.create({
+            name: tenantName
+        }, { transaction });
+
         // Generate unique shop code
         const shopCode = await generateUniqueShopCode();
 
+        const resolvedShopName = shop_name || full_name || 'My Shop';
+
         // Create shop
         const shop = await Shop.create({
-            unique_code: shopCode
+            unique_code: shopCode,
+            tenant_id: tenant.id,
+            name: resolvedShopName,
+            shop_name: resolvedShopName
         }, { transaction });
 
         // Create UserShop relationship with owner role
@@ -115,9 +242,12 @@ const createUserWithShop = async (userData) => {
 };
 
 /**
- * Authenticate user
+ * Authenticate user (with lockout check)
  */
 const authenticateUser = async (email, password) => {
+    // Check if account is locked
+    await checkAccountLockout(email);
+
     // Find user
     const user = await User.findOne({
         where: { email },
@@ -132,14 +262,19 @@ const authenticateUser = async (email, password) => {
     });
 
     if (!user) {
+        await recordFailedLogin(email);
         throw new AppError('Invalid email or password', 401);
     }
 
     // Compare password
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
+        await recordFailedLogin(email);
         throw new AppError('Invalid email or password', 401);
     }
+
+    // Successful login — clear any failed attempt counters
+    await clearFailedLogins(email);
 
     // Check if user has any shops
     if (!user.shops || user.shops.length === 0) {
@@ -210,6 +345,54 @@ const authenticateUser = async (email, password) => {
 };
 
 /**
+ * Request a password reset email
+ */
+const requestPasswordReset = async (email) => {
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+        return { sent: false };
+    }
+
+    const token = generateResetToken(user);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+    const subject = 'Reset your EasyMod password';
+    const text = `You requested a password reset. Use the link below to set a new password:\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`;
+    const html = `
+        <p>You requested a password reset.</p>
+        <p><a href="${resetUrl}">Reset your password</a></p>
+        <p>If you did not request this, you can ignore this email.</p>
+    `;
+
+    await emailService.sendEmail({ to: user.email, subject, text, html });
+
+    return { sent: true };
+};
+
+/**
+ * Reset password using a token
+ */
+const resetPassword = async (token, newPassword) => {
+    const decoded = jwt.decode(token);
+    if (!decoded || !decoded.userId) {
+        throw new AppError('Invalid or expired reset token', 400);
+    }
+
+    const user = await User.findOne({ where: { id: decoded.userId } });
+    if (!user) {
+        throw new AppError('Invalid or expired reset token', 400);
+    }
+
+    verifyResetToken(token, user);
+
+    const hashedPassword = await hashPassword(newPassword);
+    await user.update({ password: hashedPassword, refresh_token: null });
+
+    return { success: true };
+};
+
+/**
  * Validate refresh token and generate new access token
  */
 const validateRefreshToken = async (refreshToken) => {
@@ -231,8 +414,9 @@ const validateRefreshToken = async (refreshToken) => {
             throw new AppError('Invalid refresh token', 401);
         }
 
-        // Generate new access token
-        const accessToken = generateAccessToken({ userId: user.id, email: user.email });
+        const shopId = user.last_logged_shop_id || null;
+        // Generate new access token (include shopId when available)
+        const accessToken = generateAccessToken({ userId: user.id, email: user.email, shopId });
 
         return { accessToken };
     } catch (error) {
@@ -240,9 +424,85 @@ const validateRefreshToken = async (refreshToken) => {
     }
 };
 
+/**
+ * Get auth context for current user
+ */
+const getAuthContext = async (userId, shopIdFromToken) => {
+    const user = await User.findOne({
+        where: { id: userId },
+        include: [{
+            model: Shop,
+            as: 'shops',
+            through: {
+                attributes: ['role', 'is_active'],
+                where: { is_active: true }
+            }
+        }]
+    });
+
+    if (!user || !user.shops || user.shops.length === 0) {
+        throw new AppError('User has no associated shops', 403);
+    }
+
+    let resolvedShopId = shopIdFromToken || user.last_logged_shop_id;
+    if (resolvedShopId && !user.shops.some(shop => shop.id === resolvedShopId)) {
+        resolvedShopId = null;
+    }
+
+    if (!resolvedShopId) {
+        const ownerShop = user.shops.find(shop => shop.UserShop.role === 'owner');
+        resolvedShopId = ownerShop ? ownerShop.id : user.shops[0].id;
+    }
+
+    const currentShop = user.shops.find(shop => shop.id === resolvedShopId) || user.shops[0];
+
+    const userResponse = {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        phone: user.phone,
+        profile_picture: user.profile_picture
+    };
+
+    return {
+        user: userResponse,
+        currentShop: {
+            id: currentShop.id,
+            unique_code: currentShop.unique_code,
+            shop_name: currentShop.shop_name,
+            role: currentShop.UserShop.role
+        },
+        allShops: user.shops.map(shop => ({
+            id: shop.id,
+            unique_code: shop.unique_code,
+            shop_name: shop.shop_name,
+            role: shop.UserShop.role
+        }))
+    };
+};
+
+/**
+ * Logout — blacklist the access token and clear the stored refresh token
+ */
+const logoutUser = async (accessToken, decoded) => {
+    // Blacklist the access token so it cannot be reused
+    await blacklistToken(accessToken, decoded);
+
+    // Clear the stored refresh token for this user
+    const user = await User.findByPk(decoded.userId);
+    if (user) {
+        await user.update({ refresh_token: null });
+    }
+};
+
 module.exports = {
     createUserWithShop,
     authenticateUser,
+    requestPasswordReset,
+    resetPassword,
     validateRefreshToken,
+    getAuthContext,
+    logoutUser,
+    isTokenBlacklisted,
     generateUniqueShopCode
 };

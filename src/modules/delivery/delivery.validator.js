@@ -79,6 +79,71 @@ const deliveryValidators = {
         body('is_active')
             .isBoolean()
             .withMessage('is_active must be a boolean')
+    ],
+
+    /**
+     * Validate update delivery settings request
+     */
+    updateSettings: [
+        body('default_delivery_charge')
+            .optional()
+            .isNumeric()
+            .withMessage('default_delivery_charge must be a number'),
+
+        body('cod_enabled')
+            .optional()
+            .isBoolean()
+            .withMessage('cod_enabled must be a boolean'),
+
+        body('cod_charge')
+            .optional()
+            .isNumeric()
+            .withMessage('cod_charge must be a number'),
+
+        body('non_refundable')
+            .optional()
+            .isBoolean()
+            .withMessage('non_refundable must be a boolean'),
+
+        body('area_pricing')
+            .optional()
+            .isArray()
+            .withMessage('area_pricing must be an array'),
+
+        body('area_pricing.*.zone')
+            .optional()
+            .isIn(['inside_dhaka', 'sub_dhaka', 'outside_dhaka'])
+            .withMessage('area_pricing.zone must be inside_dhaka, sub_dhaka, or outside_dhaka'),
+
+        body('area_pricing.*.charge')
+            .optional()
+            .isNumeric()
+            .withMessage('area_pricing.charge must be a number'),
+
+        body('area_pricing.*.cod_enabled')
+            .optional()
+            .isBoolean()
+            .withMessage('area_pricing.cod_enabled must be a boolean'),
+
+        body('weight_tiers')
+            .optional()
+            .isArray()
+            .withMessage('weight_tiers must be an array'),
+
+        body('weight_tiers.*.from_kg')
+            .optional()
+            .isNumeric()
+            .withMessage('weight_tiers.from_kg must be a number'),
+
+        body('weight_tiers.*.to_kg')
+            .optional()
+            .isNumeric()
+            .withMessage('weight_tiers.to_kg must be a number'),
+
+        body('weight_tiers.*.extra_charge')
+            .optional()
+            .isNumeric()
+            .withMessage('weight_tiers.extra_charge must be a number')
     ]
 };
 

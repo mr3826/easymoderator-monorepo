@@ -11,6 +11,8 @@ router.use(authenticate);
 
 // RESTful routes
 router.get('/', validate(productValidator.getProducts), productController.getProducts);
+router.post('/ai-extract', validate(productValidator.aiExtract), productController.extractProducts);
+router.post('/search', productController.searchProducts);
 router.get('/:id', validate(productValidator.getProductById), productController.getProductById);
 router.post('/', validate(productValidator.createProduct), productController.createProductRest);
 router.patch('/:id', validate(productValidator.updateProduct), productController.updateProductById);

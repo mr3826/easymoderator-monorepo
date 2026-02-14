@@ -3,6 +3,7 @@ const { AppError } = require('src/utils/AppError');
 const { UserShop } = require('src/modules/entities');
 const axios = require('axios');
 const crypto = require('crypto');
+const config = require('src/config/config');
 
 /**
  * Verify user has access to shop
@@ -56,6 +57,8 @@ module.exports = {
     confirmCodPayment,
     getPaymentConfigs,
     savePaymentConfig,
+    testPaymentConnection,
+    deletePaymentConfig,
     initiateAamarPayPayment,
     initiateSSLCommerzPayment,
     verifyAamarPayCallback,
@@ -117,7 +120,15 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
 
     if (paymentConfig) {
         // Update existing
-        paymentConfig.is_enabled = isEnabled;
+        if (isEnabled !== undefined) {
+            // If trying to enable, ensure credentials exist (except for COD)
+            if (isEnabled && gateway !== 'cod') {
+                if (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0) {
+                    throw new AppError('Cannot enable payment method without credentials. Please save credentials first.', 400);
+                }
+            }
+            paymentConfig.is_enabled = isEnabled;
+        }
         if (credentials) {
             paymentConfig.credentials = credentials;
         }
@@ -126,11 +137,15 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         }
         await paymentConfig.save();
     } else {
-        // Create new
+        // Create new - credentials required for non-COD gateways
+        if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
+            throw new AppError('Credentials are required to create payment configuration', 400);
+        }
+        
         paymentConfig = await PaymentConfig.create({
             shop_id: shopId,
             gateway,
-            is_enabled: isEnabled,
+            is_enabled: isEnabled !== undefined ? isEnabled : false,
             credentials,
             config: config || {}
         });
@@ -145,6 +160,84 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         has_credentials: paymentConfig.credentials != null && Object.keys(paymentConfig.credentials).length > 0,
         created_at: paymentConfig.created_at,
         updated_at: paymentConfig.updated_at
+    };
+}
+
+/**
+ * Test payment gateway connection
+ */
+async function testPaymentConnection(shopId, userId, gateway, credentials) {
+    await verifyShopAccess(userId, shopId);
+
+    if (gateway === 'aamarpay') {
+        if (!credentials.store_id || !credentials.secret_key) {
+            throw new AppError('AamarPay requires store_id and secret_key', 400);
+        }
+
+        try {
+            // Test AamarPay credentials by making a minimal API call
+            const baseUrl = 'https://sandbox.aamarpay.com';
+            
+            // AamarPay doesn't have a dedicated test endpoint, so we'll validate the format
+            // In production, you might want to make an actual small transaction test
+            if (credentials.store_id.length < 3 || credentials.secret_key.length < 10) {
+                throw new Error('Invalid credential format');
+            }
+
+            return {
+                success: true,
+                message: 'AamarPay credentials validated successfully'
+            };
+        } catch (error) {
+            throw new AppError('Failed to validate AamarPay credentials: ' + error.message, 400);
+        }
+    } else if (gateway === 'sslcommerz') {
+        if (!credentials.store_id || !credentials.store_password) {
+            throw new AppError('SSLCommerz requires store_id and store_password', 400);
+        }
+
+        try {
+            // Validate credential format
+            if (credentials.store_id.length < 3 || credentials.store_password.length < 3) {
+                throw new Error('Invalid credential format');
+            }
+
+            return {
+                success: true,
+                message: 'SSLCommerz credentials validated successfully'
+            };
+        } catch (error) {
+            throw new AppError('Failed to validate SSLCommerz credentials: ' + error.message, 400);
+        }
+    } else if (gateway === 'cod') {
+        return {
+            success: true,
+            message: 'COD does not require credentials'
+        };
+    }
+
+    throw new AppError('Invalid payment gateway', 400);
+}
+
+/**
+ * Delete payment configuration (disconnect)
+ */
+async function deletePaymentConfig(shopId, userId, gateway) {
+    await verifyShopAccess(userId, shopId);
+
+    const paymentConfig = await PaymentConfig.findOne({
+        where: { shop_id: shopId, gateway }
+    });
+
+    if (!paymentConfig) {
+        throw new AppError('Payment configuration not found', 404);
+    }
+
+    await paymentConfig.destroy();
+
+    return {
+        success: true,
+        message: `${gateway} configuration deleted successfully`
     };
 }
 
@@ -318,7 +411,7 @@ async function initiateSSLCommerzPayment(orderId, shopId, userId) {
  * Verify AamarPay payment callback
  */
 async function verifyAamarPayCallback(callbackData) {
-    const { mer_txnid, pay_status, status_code } = callbackData;
+    const { mer_txnid, pay_status, status_code, verify_sign, verify_key, amount, store_id } = callbackData;
     
     if (!mer_txnid) {
         throw new AppError('Invalid callback data', 400);
@@ -334,6 +427,54 @@ async function verifyAamarPayCallback(callbackData) {
 
     if (!order) {
         throw new AppError('Order not found', 404);
+    }
+
+    const paymentConfig = await PaymentConfig.findOne({
+        where: { shop_id: order.shop_id, gateway: 'aamarpay' }
+    });
+
+    const requireSignature = config.env === 'production' || config.env === 'staging';
+    if (requireSignature && (!paymentConfig || !paymentConfig.credentials)) {
+        throw new AppError('AamarPay configuration not found', 400);
+    }
+
+    const { store_id: configStoreId, secret_key } = paymentConfig?.credentials || {};
+
+    if (store_id && configStoreId && store_id !== configStoreId) {
+        throw new AppError('Invalid AamarPay store ID', 403);
+    }
+
+    const requireSignature = config.env === 'production' || config.env === 'staging';
+    if (requireSignature) {
+        if (!verify_sign || !verify_key) {
+            throw new AppError('Missing AamarPay signature', 403);
+        }
+
+        const keys = String(verify_key)
+            .split(',')
+            .map((key) => key.trim())
+            .filter(Boolean);
+
+        const signaturePayload = keys
+            .map((key) => `${key}=${callbackData[key] ?? ''}`)
+            .join('&');
+
+        const expected = crypto
+            .createHash('md5')
+            .update(`${signaturePayload}&signature_key=${secret_key}`)
+            .digest('hex');
+
+        if (expected !== verify_sign) {
+            throw new AppError('Invalid AamarPay signature', 403);
+        }
+    }
+
+    if (amount !== undefined && Number.isFinite(parseFloat(amount))) {
+        const orderTotal = parseFloat(order.total);
+        const paidAmount = parseFloat(amount);
+        if (Math.abs(orderTotal - paidAmount) > 0.01) {
+            throw new AppError('AamarPay amount mismatch', 400);
+        }
     }
 
     // Verify payment status

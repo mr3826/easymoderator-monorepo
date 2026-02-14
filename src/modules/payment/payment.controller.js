@@ -37,6 +37,8 @@ module.exports = {
     confirmCodPayment,
     getPaymentConfigs,
     savePaymentConfig,
+    testPaymentConnection,
+    deletePaymentConfig,
     initiatePayment,
     handleAamarPaySuccess,
     handleAamarPayFail,
@@ -96,6 +98,67 @@ async function savePaymentConfig(req, res, next) {
             success: true,
             message: 'Payment configuration saved successfully',
             data: savedConfig
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Test payment gateway connection
+ */
+async function testPaymentConnection(req, res, next) {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { gateway, credentials } = req.body;
+
+        const result = await paymentService.testPaymentConnection(
+            shopId,
+            req.user.userId,
+            gateway,
+            credentials
+        );
+
+        res.status(200).json({
+            success: true,
+            message: result.message,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
+/**
+ * Delete payment configuration
+ */
+async function deletePaymentConfig(req, res, next) {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const { gateway } = req.params;
+
+        const result = await paymentService.deletePaymentConfig(
+            shopId,
+            req.user.userId,
+            gateway
+        );
+
+        res.status(200).json({
+            success: true,
+            message: result.message
         });
     } catch (error) {
         next(error);

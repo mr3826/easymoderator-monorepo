@@ -17,51 +17,54 @@ const Conversation = sequelize.define('Conversation', {
         onDelete: 'CASCADE'
     },
     customer_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'customers',
-            key: 'id'
-        },
-        onDelete: 'SET NULL'
-    },
-    customer_name: {
-        type: DataTypes.STRING,
-        allowNull: true
-    },
-    channel: {
-        type: DataTypes.ENUM('whatsapp', 'facebook', 'telegram', 'webchat'),
+        type: DataTypes.STRING(100),
         allowNull: false
     },
-    external_id: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        comment: 'External platform conversation ID'
+    channel: {
+        type: DataTypes.STRING(20),
+        allowNull: false
+    },
+    title: {
+        type: DataTypes.STRING(255),
+        allowNull: true
     },
     status: {
-        type: DataTypes.ENUM('new', 'replied', 'closed'),
-        defaultValue: 'new'
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'active'
     },
-    last_message: {
+    role: {
+        type: DataTypes.ENUM('user', 'assistant', 'system'),
+        allowNull: false
+    },
+    message: {
         type: DataTypes.TEXT,
+        allowNull: false
+    },
+    intent: {
+        type: DataTypes.STRING(50),
         allowNull: true
     },
-    last_message_at: {
-        type: DataTypes.DATE,
-        allowNull: true
-    },
-    unread_count: {
+    confidence: {
         type: DataTypes.INTEGER,
-        defaultValue: 0
+        allowNull: true
     },
-    created_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW
+    llm_used: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     },
-    updated_at: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW
+    cache_hit: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     },
+    keyword_match: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    metadata: {
+        type: DataTypes.JSONB,
+        defaultValue: {}
+    }
 }, {
     tableName: 'conversations',
     underscored: true,

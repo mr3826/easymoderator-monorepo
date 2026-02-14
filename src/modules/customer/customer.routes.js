@@ -13,6 +13,9 @@ router.use(authenticate);
 
 // RESTful routes
 router.get('/', validate(customerValidator.listCustomers), customerController.getCustomers);
+router.get('/external/:customerId', customerController.getCustomerExternal);
+router.post('/external', customerController.createCustomerExternal);
+router.patch('/external/:customerId', customerController.updateCustomerExternal);
 router.get('/:id', validate(customerValidator.getCustomerById), customerController.getCustomerById);
 router.post('/',
     idempotencyMiddleware,

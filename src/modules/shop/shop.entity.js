@@ -8,46 +8,48 @@ const Shop = sequelize.define('Shop', {
         primaryKey: true
     },
     unique_code: {
-        type: DataTypes.STRING(6),
+        type: DataTypes.STRING(20),
         allowNull: false,
         unique: true
     },
+    tenant_id: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'tenants',
+            key: 'id'
+        },
+        onDelete: 'CASCADE'
+    },
     shop_name: {
-        type: DataTypes.STRING,
-        allowNull: true
+        type: DataTypes.STRING(255),
+        allowNull: false
     },
-    address: {
-        type: DataTypes.STRING,
-        allowNull: true
+    name: {
+        type: DataTypes.STRING(255),
+        allowNull: false
     },
-    phone: {
-        type: DataTypes.STRING,
-        allowNull: true
+    is_active: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
     },
-    opening_hours: {
-        type: DataTypes.STRING,
-        allowNull: true
+    timezone: {
+        type: DataTypes.STRING(50),
+        defaultValue: 'Asia/Dhaka'
     },
-    delivery_areas: {
-        type: DataTypes.TEXT,
-        allowNull: true
-    },
-    payment_methods: {
-        type: DataTypes.TEXT,
-        allowNull: true
-    },
-    logo: {
-        type: DataTypes.STRING,
-        allowNull: true
-    },
-    banner_image: {
-        type: DataTypes.STRING,
-        allowNull: true
-    },
-    shop_images: {
-        type: DataTypes.JSON,
+    business_hours: {
+        type: DataTypes.JSONB,
         allowNull: true,
-        defaultValue: []
+        defaultValue: {
+            start: '09:00',
+            end: '22:00',
+            days: [0, 1, 2, 3, 4, 5, 6]
+        }
+    },
+    settings: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        defaultValue: {}
     }
 }, {
     tableName: 'shops',

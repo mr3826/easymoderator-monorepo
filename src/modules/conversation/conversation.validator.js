@@ -6,7 +6,7 @@ class ConversationValidator {
             page: Joi.number().integer().min(1).default(1),
             limit: Joi.number().integer().min(1).max(100).default(20),
             status: Joi.string().valid('active', 'closed', 'archived'),
-            channel: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web')
+            channel: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web', 'webchat')
         })
     };
 
@@ -23,11 +23,12 @@ class ConversationValidator {
     createConversation = {
         body: Joi.object({
             customer_id: Joi.string().uuid().required(),
-            channel: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web').required(),
+            channel: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web', 'webchat').optional(),
+            channel_type: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web', 'webchat').optional(),
             title: Joi.string().max(255),
             status: Joi.string().valid('active', 'closed', 'archived').default('active'),
             metadata: Joi.object()
-        })
+        }).or('channel', 'channel_type')
     };
 
     createMessage = {

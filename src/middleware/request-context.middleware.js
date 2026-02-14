@@ -21,6 +21,7 @@ const requestContextMiddleware = (req, res, next) => {
     
     // Attach logger to request
     req.logger = createLogger(requestId, shopId, userId);
+    req.requestId = requestId;
     
     // Attach context to response for tracing
     res.set('X-Request-ID', requestId);
