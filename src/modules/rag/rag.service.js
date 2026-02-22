@@ -1,10 +1,16 @@
 const crypto = require('crypto');
 const { getEmbedding } = require('./embedding.service');
 
+const config = require('src/config/config');
 const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
 const qdrantCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
 const vectorSize = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const qdrantApiKey = process.env.QDRANT_API_KEY;
+
+// P1-5: Require API key when Qdrant is used in production (VPC-only; rotate leaked keys)
+if ((config.env === 'production' || config.env === 'staging') && qdrantUrl && qdrantUrl.includes('6333') && !qdrantApiKey) {
+    console.warn('⚠️  QDRANT_API_KEY should be set when using Qdrant in production. Run Qdrant on VPC-internal IP only.');
+}
 
 const normalizeText = (text) => (text || '').toString().trim();
 

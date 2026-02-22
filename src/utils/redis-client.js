@@ -2,17 +2,52 @@ const Redis = require('ioredis');
 const config = require('src/config/config');
 
 let redisClient = null;
+let redisDeadInDev = false;
+
+/**
+ * Validate Redis URL uses VPC-internal IP in production.
+ * Block public IPs for security.
+ */
+function validateRedisUrl(url) {
+    if (!url || config.env !== 'production') return;
+    try {
+        const u = new URL(url);
+        const host = u.hostname.toLowerCase();
+        // Allow localhost for local dev; block public IPs in prod
+        if (host === 'localhost' || host === '127.0.0.1') return;
+        // Private/VPC ranges: 10.x, 172.16-31.x, 192.168.x
+        const parts = host.split('.');
+        if (parts.length === 4) {
+            const first = parseInt(parts[0], 10);
+            const second = parseInt(parts[1], 10);
+            if (first === 10) return; // 10.0.0.0/8
+            if (first === 172 && second >= 16 && second <= 31) return; // 172.16.0.0/12
+            if (first === 192 && second === 168) return; // 192.168.0.0/16
+        }
+        console.warn('⚠️  REDIS_URL should use VPC-internal IP in production. Block public access at AWS security group.');
+    } catch (_) { /* ignore parse errors */ }
+}
 
 /**
  * Initialize Redis client with connection handling
  * @returns {Redis} Redis client instance
  */
 function getRedisClient() {
+    // If we've already determined Redis is dead in dev, don't even try
+    if (redisDeadInDev && config.env === 'development') {
+        return null;
+    }
+
+    // If client exists but is in a terminal state, clear it
+    if (redisClient && (['end', 'closing'].includes(redisClient.status))) {
+        redisClient = null;
+    }
+
     if (redisClient) {
         return redisClient;
     }
 
-    // Skip Redis in development if not configured
+    // Bypass Redis in development if not configured or connection fails
     if (!config.redisUrl && config.env === 'development') {
         console.warn('⚠️  Redis not configured - using in-memory fallback for development');
         return null;
@@ -22,23 +57,39 @@ function getRedisClient() {
         throw new Error('REDIS_URL is required in production');
     }
 
-    try {
-        redisClient = new Redis(config.redisUrl, {
-            maxRetriesPerRequest: 3,
-            enableReadyCheck: true,
-            retryStrategy(times) {
-                const delay = Math.min(times * 50, 2000);
-                return delay;
-            },
-            reconnectOnError(err) {
-                const targetError = 'READONLY';
-                if (err.message.includes(targetError)) {
-                    // Reconnect when Redis is in READONLY mode
-                    return true;
-                }
-                return false;
+    validateRedisUrl(config.redisUrl);
+
+    const redisOptions = {
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        retryStrategy(times) {
+            // In development, stop retrying after 3 attempts to avoid log spam
+            if (config.env === 'development' && times > 3) {
+                console.warn('⚠️  Redis not available — using in-memory fallback for development. Start Redis or set REDIS_URL=false to suppress this.');
+                redisDeadInDev = true;
+                redisClient = null;
+                return null; // stop retrying
             }
-        });
+            const delay = Math.min(times * 50, 2000);
+            return delay;
+        },
+        reconnectOnError(err) {
+            const targetError = 'READONLY';
+            if (err.message.includes(targetError)) {
+                return true;
+            }
+            return false;
+        }
+    };
+
+    if (config.redisPassword) {
+        redisOptions.password = config.redisPassword;
+    } else if (config.env === 'production' || config.env === 'staging') {
+        console.warn('⚠️  REDIS_PASSWORD recommended for production. Block public access at AWS security group.');
+    }
+
+    try {
+        redisClient = new Redis(config.redisUrl, redisOptions);
 
         redisClient.on('connect', () => {
             console.log('✅ Redis connected successfully');
@@ -46,6 +97,10 @@ function getRedisClient() {
 
         redisClient.on('error', (err) => {
             console.error('❌ Redis connection error:', err.message);
+            if (config.env === 'development') {
+                console.warn('⚠️  Redis connection failed - using in-memory fallback for development');
+                redisClient = null;
+            }
         });
 
         redisClient.on('ready', () => {
@@ -59,6 +114,10 @@ function getRedisClient() {
         return redisClient;
     } catch (error) {
         console.error('Failed to initialize Redis client:', error);
+        if (config.env === 'development') {
+            console.warn('⚠️  Redis initialization failed - using in-memory fallback for development');
+            return null;
+        }
         throw error;
     }
 }

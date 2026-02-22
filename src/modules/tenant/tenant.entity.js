@@ -16,7 +16,7 @@ const Tenant = sequelize.define('Tenant', {
         defaultValue: true
     },
     settings: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true,
         defaultValue: {}
     }

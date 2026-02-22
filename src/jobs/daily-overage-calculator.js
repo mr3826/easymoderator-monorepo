@@ -41,46 +41,50 @@ class DailyOverageCalculator extends BaseJob {
             overageDetails: []
         };
 
-        // Get all active subscriptions
-        const subscriptions = await Subscription.findAll({
-            where: {
-                status: 'active'
-            },
-            include: [{
-                model: Shop,
-                as: 'shop',
-                required: true
-            }]
-        });
+        // Process in batches of 100 — prevents OOM at 10k+ tenants
+        const BATCH_SIZE = 100;
+        let offset = 0;
+        let hasMore = true;
 
-        this.metrics.recordsProcessed = subscriptions.length;
+        while (hasMore) {
+            const subscriptions = await Subscription.findAll({
+                where: { status: 'active' },
+                limit: BATCH_SIZE,
+                offset,
+                order: [['id', 'ASC']], // stable ordering required for cursor pagination
+                include: [{ model: Shop, as: 'shop', required: true }]
+            });
 
-        for (const subscription of subscriptions) {
-            try {
-                const overage = await this.calculateOverage(subscription, runDate);
+            if (subscriptions.length < BATCH_SIZE) hasMore = false;
+            offset += subscriptions.length;
+            this.metrics.recordsProcessed += subscriptions.length;
 
-                if (overage.totalAmount > 0) {
-                    results.shopsWithOverage++;
-                    results.totalOverageAmount += overage.totalAmount;
-                    results.overageDetails.push({
-                        shopId: subscription.shop_id,
-                        shopName: subscription.shop?.name || 'Unknown',
-                        ...overage
-                    });
+            for (const subscription of subscriptions) {
+                try {
+                    const overage = await this.calculateOverage(subscription, runDate);
 
-                    // Update subscription overage fields (if not dry-run)
-                    if (!dryRun) {
-                        await this.recordOverage(subscription, overage);
+                    if (overage.totalAmount > 0) {
+                        results.shopsWithOverage++;
+                        results.totalOverageAmount += overage.totalAmount;
+                        results.overageDetails.push({
+                            shopId: subscription.shop_id,
+                            shopName: subscription.shop?.name || 'Unknown',
+                            ...overage
+                        });
+
+                        if (!dryRun) {
+                            await this.recordOverage(subscription, overage);
+                        }
                     }
+
+                    results.shopsProcessed++;
+                    this.metrics.recordsSucceeded++;
+
+                } catch (error) {
+                    this.logger.error(`Failed to calculate overage for shop ${subscription.shop_id}`, error);
+                    this.metrics.recordsFailed++;
+                    this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
                 }
-
-                results.shopsProcessed++;
-                this.metrics.recordsSucceeded++;
-
-            } catch (error) {
-                this.logger.error(`Failed to calculate overage for shop ${subscription.shop_id}`, error);
-                this.metrics.recordsFailed++;
-                this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
             }
         }
 

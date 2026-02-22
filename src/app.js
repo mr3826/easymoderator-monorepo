@@ -4,7 +4,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const csrf = require('csurf');
+const timeout = require('express-timeout-handler');
+const { doubleCsrf } = require('csrf-csrf');
 const config = require('src/config/config');
 const routes = require('src/modules/routes');
 const healthRoutes = require('src/routes/health.routes');
@@ -14,6 +15,14 @@ const { requestContextMiddleware } = require('src/middleware/request-context.mid
 const createSessionMiddleware = require('src/middleware/session.middleware');
 
 const app = express();
+
+// P2-2: Request timeouts — global 30s; use timeout.set(5000) for read routes, timeout.set(10000) for write routes
+const timeoutHandler = timeout.handler({
+    timeout: 30000,
+    onTimeout(req, res) {
+        res.status(503).json({ success: false, error: { code: 'TIMEOUT', message: 'Request timeout' } });
+    }
+});
 
 // Trust proxy so secure cookies work behind load balancers
 if (config.env === 'production') {
@@ -75,35 +84,56 @@ app.use(express.urlencoded({ extended: true, limit: config.bodySizeLimit }));
 // Cookie parser (for httpOnly token cookies)
 app.use(cookieParser());
 
-app.use((req, res, next) => {
-    console.log(`[REQ] ${req.method} ${req.url}`);
-    next();
-});
-
-// Request context middleware (must be early for all requests)
+// Request context middleware (must be early — provides req.logger for P2-5)
 app.use(requestContextMiddleware);
 
 // Session middleware (Redis-backed in production)
 app.use(createSessionMiddleware());
 
-// CSRF protection (session-based)
-const csrfProtection = csrf();
+// P2-3: CSRF — csrf-csrf (Double Submit Cookie); cookie-parser must be before this
+const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
+    getSecret: () => config.sessionSecret,
+    getSessionIdentifier: (req) => req.session?.id || req.ip || 'anonymous',
+    cookieOptions: {
+        httpOnly: false, // Must be accessible by client-side JS if not using double submit cookie pattern, 
+        // but csrf-csrf uses double submit cookie pattern where the token is in a header AND a cookie.
+        // The cookie itself should be httpOnly: true for security usually, but csrf-csrf has its own logic.
+        sameSite: 'lax',
+        path: '/',
+        secure: config.env === 'production'
+    }
+});
 
-app.get('/csrf', csrfProtection, (req, res) => {
-    res.status(200).json({ csrfToken: req.csrfToken() });
+app.get('/csrf', (req, res) => {
+    const csrfToken = generateCsrfToken(req, res);
+    res.status(200).json({ csrfToken });
 });
 
 app.use((req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
         return next();
     }
-
-    if (req.path.startsWith('/webhooks') || req.path.startsWith('/auth') || req.path.startsWith('/health')) {
+    const path = req.path;
+    if (
+        path.startsWith('/webhooks') ||
+        path.startsWith('/auth') ||
+        path.startsWith('/health') ||
+        path === '/csrf' ||
+        path.startsWith('/payment/aamarpay') ||
+        path.startsWith('/payment/sslcommerz')
+    ) {
         return next();
     }
-
-    return csrfProtection(req, res, next);
+    return doubleCsrfProtection(req, res, (err) => {
+        if (err && config.env === 'development') {
+            console.warn(`❌ CSRF Error [${req.method} ${req.path}]:`, err.message);
+        }
+        next(err);
+    });
 });
+
+// P2-2: Apply global timeout after CSRF so protected routes are covered
+app.use(timeoutHandler);
 
 // Dev logging
 if (config.env === 'development') {

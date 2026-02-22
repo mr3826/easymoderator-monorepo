@@ -2,8 +2,23 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('src/utils/database/database-setup');
 const crypto = require('crypto');
 
-// Encryption key should be in environment variables
-const ENCRYPTION_KEY = process.env.DELIVERY_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// Same AES-256-CBC key derivation as payment-config.entity.js (P1-9)
+const getDeliveryEncryptionKey = () => {
+    const keyEnv = process.env.DELIVERY_ENCRYPTION_KEY;
+    const env = process.env.NODE_ENV || 'development';
+    if (keyEnv) {
+        if (/^[a-f0-9]{64}$/i.test(keyEnv)) {
+            return Buffer.from(keyEnv, 'hex');
+        }
+        return crypto.createHash('sha256').update(keyEnv).digest();
+    }
+    if (env === 'production' || env === 'staging') {
+        throw new Error('DELIVERY_ENCRYPTION_KEY must be set in production/staging');
+    }
+    return crypto.createHash('sha256').update('default-delivery-encryption-key-change-me').digest();
+};
+
+const DELIVERY_ENCRYPTION_KEY = getDeliveryEncryptionKey();
 
 const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
     id: {
@@ -28,23 +43,16 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
         type: DataTypes.TEXT,
         allowNull: false,
         get() {
-            const encrypted = this.getDataValue('credentials');
-            if (!encrypted) return null;
-            
+            const value = this.getDataValue('credentials');
+            if (!value) return null;
             try {
-                // Decrypt credentials
-                const parts = encrypted.split(':');
+                const algorithm = 'aes-256-cbc';
+                const parts = value.split(':');
                 const iv = Buffer.from(parts[0], 'hex');
-                const encryptedText = Buffer.from(parts[1], 'hex');
-                const key = Buffer.from(ENCRYPTION_KEY.substring(0, 64), 'hex');
-                
-                const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-                const authTag = Buffer.from(parts[2], 'hex');
-                decipher.setAuthTag(authTag);
-                
-                let decrypted = decipher.update(encryptedText, undefined, 'utf8');
+                const encrypted = parts[1];
+                const decipher = crypto.createDecipheriv(algorithm, DELIVERY_ENCRYPTION_KEY, iv);
+                let decrypted = decipher.update(encrypted, 'hex', 'utf8');
                 decrypted += decipher.final('utf8');
-                
                 return JSON.parse(decrypted);
             } catch (error) {
                 console.error('Failed to decrypt credentials:', error.message);
@@ -56,23 +64,13 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
                 this.setDataValue('credentials', null);
                 return;
             }
-            
             try {
-                // Encrypt credentials
-                const text = JSON.stringify(value);
-                const key = Buffer.from(ENCRYPTION_KEY.substring(0, 64), 'hex');
+                const algorithm = 'aes-256-cbc';
                 const iv = crypto.randomBytes(16);
-                
-                const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-                
-                let encrypted = cipher.update(text, 'utf8', 'hex');
+                const cipher = crypto.createCipheriv(algorithm, DELIVERY_ENCRYPTION_KEY, iv);
+                let encrypted = cipher.update(JSON.stringify(value), 'utf8', 'hex');
                 encrypted += cipher.final('hex');
-                
-                const authTag = cipher.getAuthTag();
-                
-                // Store as iv:encrypted:authTag
-                const encryptedValue = iv.toString('hex') + ':' + encrypted + ':' + authTag.toString('hex');
-                this.setDataValue('credentials', encryptedValue);
+                this.setDataValue('credentials', iv.toString('hex') + ':' + encrypted);
             } catch (error) {
                 console.error('Failed to encrypt credentials:', error.message);
                 throw new Error('Credential encryption failed');

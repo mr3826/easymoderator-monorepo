@@ -170,6 +170,10 @@ class DeliveryController {
         try {
             const shopId = req.user.shopId;
             const { provider, credentials, is_sandbox = false, metadata = {} } = req.body;
+                // Tenant-safe lookup enforcement
+                const getDeliverySettings = async (shopId, tenantId) => {
+                    return DeliverySettings.findOne({ where: { shop_id: shopId, tenant_id: tenantId } });
+                };
 
             // Check if provider already exists
             let integration = await DeliveryIntegration.findOne({

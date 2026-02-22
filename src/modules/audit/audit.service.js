@@ -43,78 +43,111 @@ class AuditService {
     }
 
     /**
-     * Check if an idempotency key exists and return cached response
+     * Atomically claim an idempotency key and return its current state.
+     *
+     * Two-phase flow to eliminate the TOCTOU race:
+     *   Phase 1 (here): findOrCreate a placeholder record (response_data = null).
+     *                   The DB composite unique constraint on (idempotency_key, shop_id)
+     *                   guarantees only one caller "wins" even under concurrency.
+     *   Phase 2 (storeIdempotencyResult): update the placeholder with actual response.
+     *
+     * Returns:
+     *   null                   → key is newly claimed, proceed with the operation
+     *   { inFlight: true }     → another request with this key is currently executing
+     *   { statusCode, data }   → operation already completed, return cached response
+     *
+     * @throws {Error} if key is reused with different request body
      */
     static async checkIdempotency(idempotencyKey, userId, shopId, endpoint, method, requestData) {
         if (!idempotencyKey) return null;
 
-        try {
-            // Create request hash for comparison
-            const requestHash = this.createRequestHash(requestData);
+        const requestHash = this.createRequestHash(requestData);
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-            const existingKey = await IdempotencyKey.findOne({
-                where: {
-                    idempotency_key: idempotencyKey,
+        let record, created;
+        try {
+            [record, created] = await IdempotencyKey.findOrCreate({
+                where: { idempotency_key: idempotencyKey, shop_id: shopId },
+                defaults: {
                     user_id: userId,
-                    shop_id: shopId,
                     endpoint,
-                    method
+                    method,
+                    request_hash: requestHash,
+                    response_data: null,
+                    status_code: null,
+                    expires_at: expiresAt
                 }
             });
-
-            if (existingKey) {
-                // Check if request hash matches (for safety)
-                if (existingKey.request_hash === requestHash) {
-                    return {
-                        statusCode: existingKey.status_code,
-                        data: existingKey.response_data
-                    };
-                } else {
-                    // Hash mismatch - this is a different request with same key
-                    throw new Error('Idempotency key used with different request data');
-                }
-            }
-
-            return null; // Key doesn't exist, proceed with operation
         } catch (error) {
-            console.error('Idempotency check failed:', error);
-            throw error;
+            if (error.name === 'SequelizeUniqueConstraintError') {
+                // Concurrent request won the race — retry findOne to read the winner's record
+                record = await IdempotencyKey.findOne({
+                    where: { idempotency_key: idempotencyKey, shop_id: shopId }
+                });
+                created = false;
+            } else {
+                throw error;
+            }
         }
+
+        if (created) {
+            // We claimed this key slot — proceed with the operation
+            return null;
+        }
+
+        // Key already exists — validate the request body matches
+        if (record.request_hash !== requestHash) {
+            throw new Error('Idempotency key used with different request data');
+        }
+
+        // No response yet — another in-flight request holds this key
+        if (record.response_data === null && record.status_code === null) {
+            return { inFlight: true };
+        }
+
+        // Completed request — return cached response
+        return { statusCode: record.status_code, data: record.response_data };
     }
 
     /**
-     * Store idempotency key result
+     * Persist the response for a previously claimed idempotency key.
+     * Updates the placeholder record created by checkIdempotency().
      */
-    static async storeIdempotencyResult(idempotencyKey, userId, shopId, endpoint, method, requestData, statusCode, responseData) {
+    static async storeIdempotencyResult(idempotencyKey, shopId, statusCode, responseData) {
         if (!idempotencyKey) return;
 
         try {
-            const requestHash = this.createRequestHash(requestData);
-
-            await IdempotencyKey.create({
-                idempotency_key: idempotencyKey,
-                user_id: userId,
-                shop_id: shopId,
-                endpoint,
-                method,
-                request_hash: requestHash,
-                response_data: responseData,
-                status_code: statusCode
-            });
+            await IdempotencyKey.update(
+                { response_data: responseData, status_code: statusCode },
+                { where: { idempotency_key: idempotencyKey, shop_id: shopId } }
+            );
         } catch (error) {
-            // If it's a unique constraint error, the key was already stored
-            if (error.name !== 'SequelizeUniqueConstraintError') {
-                console.error('Failed to store idempotency key:', error);
-            }
+            console.error('Failed to store idempotency result:', error);
         }
     }
 
     /**
-     * Create a hash of request data for idempotency checking
+     * Create a deterministic hash of request data.
+     * Deep-sorts all object keys so {b:1, a:2} and {a:2, b:1} produce the same hash.
      */
     static createRequestHash(data) {
-        const sortedData = JSON.stringify(data, Object.keys(data).sort());
-        return crypto.createHash('sha256').update(sortedData).digest('hex');
+        if (data === null || data === undefined) {
+            return crypto.createHash('sha256').update('').digest('hex');
+        }
+        if (typeof data !== 'object') {
+            return crypto.createHash('sha256').update(String(data)).digest('hex');
+        }
+        const deepSort = (val) => {
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                return Object.fromEntries(
+                    Object.entries(val)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([k, v]) => [k, deepSort(v)])
+                );
+            }
+            return val;
+        };
+        return crypto.createHash('sha256').update(JSON.stringify(deepSort(data))).digest('hex');
     }
 
     /**

@@ -44,14 +44,74 @@ router.get('/ready', async (req, res) => {
             version: process.env.APP_VERSION || '1.0.0'
         });
     } catch (error) {
+        // Do NOT include error.message — this endpoint is unauthenticated and
+        // error messages can expose connection strings, DB hostnames, or credentials.
         res.status(503).json({
             status: 'not_ready',
             timestamp: new Date().toISOString(),
             database: 'disconnected',
-            redis: 'disconnected',
-            error: error.message
+            redis: 'disconnected'
         });
     }
+});
+
+/**
+ * P2-6: Detailed health — DB, Redis, queue depths, Qdrant
+ */
+router.get('/detailed', async (req, res) => {
+    const checks = {
+        service: 'up',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        database: 'unknown',
+        redis: 'unknown',
+        qdrant: 'unknown',
+        queues: null
+    };
+
+    try {
+        await sequelize.authenticate();
+        checks.database = 'connected';
+    } catch (_) {
+        checks.database = 'disconnected';
+    }
+
+    try {
+        const redis = getRedisClient();
+        if (redis) {
+            await redis.ping();
+            checks.redis = 'connected';
+        } else {
+            checks.redis = 'not_configured';
+        }
+    } catch (_) {
+        checks.redis = 'disconnected';
+    }
+
+    try {
+        const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
+        const qdrantRes = await fetch(`${qdrantUrl}/collections`, {
+            headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {}
+        });
+        checks.qdrant = qdrantRes.ok ? 'available' : 'unavailable';
+    } catch (_) {
+        checks.qdrant = 'unavailable';
+    }
+
+    try {
+        const queueManager = require('../jobs/queue-manager');
+        const queueNames = ['dailyOverage', 'monthlyReset', 'invoiceGenerator', 'paymentReconciler'];
+        checks.queues = {};
+        for (const name of queueNames) {
+            const stats = await queueManager.getQueueStats(name);
+            checks.queues[name] = stats || { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
+        }
+    } catch (_) {
+        checks.queues = { error: 'queue_manager_unavailable' };
+    }
+
+    const unhealthy = checks.database === 'disconnected' || checks.redis === 'disconnected';
+    res.status(unhealthy ? 503 : 200).json(checks);
 });
 
 /**
@@ -70,9 +130,10 @@ router.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate();
         checks.database = 'connected';
-    } catch (error) {
+    } catch (_error) {
+        // Do NOT expose error.message — this endpoint is unauthenticated.
+        // Log internally; return only a generic status code to callers.
         checks.database = 'disconnected';
-        checks.database_error = error.message;
     }
 
     try {
@@ -83,9 +144,8 @@ router.get('/health', async (req, res) => {
         } else {
             checks.redis = 'not_configured';
         }
-    } catch (error) {
+    } catch (_error) {
         checks.redis = 'disconnected';
-        checks.redis_error = error.message;
     }
 
     const hasErrors = Object.values(checks).some(v => v === 'disconnected' || v === 'down');

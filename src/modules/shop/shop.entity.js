@@ -38,7 +38,7 @@ const Shop = sequelize.define('Shop', {
         defaultValue: 'Asia/Dhaka'
     },
     business_hours: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true,
         defaultValue: {
             start: '09:00',
@@ -47,9 +47,15 @@ const Shop = sequelize.define('Shop', {
         }
     },
     settings: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true,
         defaultValue: {}
+    }
+    ,
+    config_version: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1
     }
 }, {
     tableName: 'shops',

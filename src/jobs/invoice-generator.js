@@ -2,6 +2,7 @@ const BaseJob = require('./base-job');
 const { Subscription, Invoice, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
+const crypto = require('crypto');
 
 /**
  * Invoice Generator Job
@@ -46,58 +47,59 @@ class InvoiceGenerator extends BaseJob {
             invoiceDetails: []
         };
 
-        // Get all active subscriptions
-        const subscriptions = await Subscription.findAll({
-            where: {
-                status: 'active'
-            },
-            include: [{
-                model: Shop,
-                as: 'shop',
-                required: true
-            }]
-        });
+        // Process in batches of 100 — prevents OOM at 10k+ tenants
+        const BATCH_SIZE = 100;
+        let offset = 0;
+        let hasMore = true;
 
-        this.metrics.recordsProcessed = subscriptions.length;
+        while (hasMore) {
+            const subscriptions = await Subscription.findAll({
+                where: { status: 'active' },
+                limit: BATCH_SIZE,
+                offset,
+                order: [['id', 'ASC']], // stable ordering required for cursor pagination
+                include: [{ model: Shop, as: 'shop', required: true }]
+            });
 
-        for (const subscription of subscriptions) {
-            try {
-                // Check if invoice already exists for this period (idempotency)
-                const existingInvoice = await this.checkExistingInvoice(subscription, runDate);
-                if (existingInvoice && !dryRun) {
-                    this.logger.info(`Invoice already exists for this period`, {
-                        shopId: subscription.shop_id,
-                        invoiceId: existingInvoice.id,
-                        invoiceNumber: existingInvoice.invoice_number
-                    });
-                    results.invoicesSkipped++;
-                    continue;
+            if (subscriptions.length < BATCH_SIZE) hasMore = false;
+            offset += subscriptions.length;
+            this.metrics.recordsProcessed += subscriptions.length;
+
+            for (const subscription of subscriptions) {
+                try {
+                    const existingInvoice = await this.checkExistingInvoice(subscription, runDate);
+                    if (existingInvoice && !dryRun) {
+                        this.logger.info(`Invoice already exists for this period`, {
+                            shopId: subscription.shop_id,
+                            invoiceId: existingInvoice.id,
+                            invoiceNumber: existingInvoice.invoice_number
+                        });
+                        results.invoicesSkipped++;
+                        continue;
+                    }
+
+                    const invoiceData = await this.calculateInvoice(subscription, runDate);
+
+                    if (!dryRun) {
+                        const invoice = await this.createInvoice(subscription, invoiceData, runDate);
+                        invoiceData.invoiceId = invoice.id;
+                        invoiceData.invoiceNumber = invoice.invoice_number;
+                    }
+
+                    results.invoicesGenerated++;
+                    results.totalInvoiceAmount += invoiceData.totalAmount;
+                    results.invoiceDetails.push(invoiceData);
+                    this.metrics.recordsSucceeded++;
+
+                } catch (error) {
+                    this.logger.error(`Failed to generate invoice for shop ${subscription.shop_id}`, error);
+                    this.metrics.recordsFailed++;
+                    this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
                 }
-
-                // Calculate invoice amounts
-                const invoiceData = await this.calculateInvoice(subscription, runDate);
-
-                // Generate invoice (if not dry-run)
-                if (!dryRun) {
-                    const invoice = await this.createInvoice(subscription, invoiceData, runDate);
-                    invoiceData.invoiceId = invoice.id;
-                    invoiceData.invoiceNumber = invoice.invoice_number;
-                }
-
-                results.invoicesGenerated++;
-                results.totalInvoiceAmount += invoiceData.totalAmount;
-                results.invoiceDetails.push(invoiceData);
-                this.metrics.recordsSucceeded++;
-
-            } catch (error) {
-                this.logger.error(`Failed to generate invoice for shop ${subscription.shop_id}`, error);
-                this.metrics.recordsFailed++;
-                this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
             }
         }
 
-        results.subscriptionsProcessed = subscriptions.length;
-
+        results.subscriptionsProcessed = offset;
         return results;
     }
 
@@ -214,29 +216,18 @@ class InvoiceGenerator extends BaseJob {
     }
 
     /**
-     * Generate invoice number (e.g., INV-2026-02-001)
-     * @param {Object} subscription 
-     * @param {Date} runDate 
+     * Generate a collision-resistant invoice number.
+     *
+     * Format: INV-YYYYMM-XXXXXX (6 random hex chars = 1-in-16M collision chance per month)
+     * The invoice_number column has a UNIQUE constraint as the final safety net.
+     *
+     * Previous implementation used COUNT(*)+1 which is a non-atomic read-modify-write
+     * and produces duplicate numbers under concurrent execution.
      */
     async generateInvoiceNumber(subscription, runDate) {
         const yearMonth = runDate.toISOString().substring(0, 7).replace('-', ''); // 202602
-        
-        // Get count of invoices this month
-        const startOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 1);
-        const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth() + 1, 0);
-        
-        const invoiceCount = await Invoice.count({
-            where: {
-                created_at: {
-                    [Op.gte]: startOfMonth,
-                    [Op.lte]: endOfMonth
-                }
-            }
-        });
-
-        const sequenceNumber = (invoiceCount + 1).toString().padStart(3, '0');
-        
-        return `INV-${yearMonth}-${sequenceNumber}`;
+        const uniqueSuffix = crypto.randomBytes(3).toString('hex').toUpperCase(); // e.g. A3F9C2
+        return `INV-${yearMonth}-${uniqueSuffix}`;
     }
 }
 

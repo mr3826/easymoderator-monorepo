@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const env = process.env.NODE_ENV || 'development';
 
@@ -67,6 +67,7 @@ module.exports = {
     env,
     databaseUrl: process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
+    redisPassword: process.env.REDIS_PASSWORD || '',
     bodySizeLimit: process.env.BODY_SIZE_LIMIT || '1mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
     corsOrigins: process.env.CORS_ORIGINS
@@ -84,5 +85,10 @@ module.exports = {
     cookieDomain: process.env.COOKIE_DOMAIN || undefined,
     // Account lockout
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS, 10) || 5,
-    loginLockoutMinutes: parseInt(process.env.LOGIN_LOCKOUT_MINUTES, 10) || 15
+    loginLockoutMinutes: parseInt(process.env.LOGIN_LOCKOUT_MINUTES, 10) || 15,
+    // Payment callback security (P0-4)
+    paymentGatewayIpAllowlist: process.env.PAYMENT_GATEWAY_IP_ALLOWLIST
+        ? process.env.PAYMENT_GATEWAY_IP_ALLOWLIST.split(',').map(ip => ip.trim()).filter(Boolean)
+        : [],
+    paymentCallbackHmacSecret: process.env.PAYMENT_CALLBACK_HMAC_SECRET || ''
 };

@@ -36,6 +36,16 @@ const Invoice = sequelize.define('Invoice', {
         type: DataTypes.STRING,
         allowNull: false
     },
+    // Explicit date range used by checkExistingInvoice() to prevent duplicate generation.
+    // billing_period (STRING) is kept for display; these columns drive dedup logic.
+    billing_period_start: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    billing_period_end: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     invoice_type: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -110,6 +120,11 @@ const Invoice = sequelize.define('Invoice', {
         },
         {
             fields: ['invoice_number']
+        },
+        // Composite index for checkExistingInvoice() duplicate detection query
+        {
+            fields: ['subscription_id', 'billing_period_start'],
+            name: 'idx_invoices_subscription_period'
         }
     ]
 });

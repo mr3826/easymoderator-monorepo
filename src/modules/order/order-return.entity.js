@@ -20,7 +20,7 @@ const OrderReturn = sequelize.define('OrderReturn', {
         allowNull: true
     },
     items: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         defaultValue: []
     },
     description: {

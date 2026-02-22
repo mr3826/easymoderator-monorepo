@@ -5,6 +5,39 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
+// Atomic stock update utility
+const updateProductStock = async (tenantId, sku, delta, transaction = null) => {
+    // Find product by tenant and SKU
+    const product = await Product.findOne({
+        where: { tenant_id: tenantId, sku },
+        transaction
+    });
+    if (!product) throw new AppError('Product not found', 404);
+    // Use atomic increment/decrement
+    await product.increment('quantity', { by: delta, transaction });
+    return product.reload({ transaction });
+};
+// Cursor pagination for products
+const getProductsCursor = async (tenantId, cursor = null, limit = 10, filters = {}) => {
+    const whereClause = { tenant_id: tenantId };
+    // Apply filters (name, category, etc.)
+    if (filters.search) {
+        whereClause[Op.or] = [
+            { name: { [Op.like]: `%${filters.search}%` } },
+            { description: { [Op.like]: `%${filters.search}%` } },
+            { sku: { [Op.like]: `%${filters.search}%` } }
+        ];
+    }
+    if (filters.category_id) whereClause.category_id = filters.category_id;
+    if (filters.is_active !== undefined) whereClause.is_active = filters.is_active;
+    if (cursor) whereClause.id = { [Op.lt]: cursor };
+    const products = await Product.findAll({
+        where: whereClause,
+        order: [['id', 'DESC']],
+        limit
+    });
+    return products;
+};
 
 const MAX_EXTRACT_ROWS = 200;
 const HEADER_ALIASES = {

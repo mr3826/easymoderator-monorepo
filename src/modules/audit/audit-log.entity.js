@@ -7,55 +7,55 @@ const AuditLog = sequelize.define('AuditLog', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
+    // Nullable: system jobs (cron, queue workers) have no user context
     user_id: {
         type: DataTypes.UUID,
-        allowNull: false,
+        allowNull: true,
         references: {
             model: 'users',
             key: 'id'
         }
     },
+    // Nullable: system-wide jobs are not scoped to a single shop
     shop_id: {
         type: DataTypes.UUID,
-        allowNull: false,
+        allowNull: true,
         references: {
             model: 'shops',
             key: 'id'
         }
     },
+    // Free-form string: covers both HTTP actions ('CREATE', 'UPDATE') and
+    // job actions ('job:daily_overage_calculator', 'job:invoice_generator:error')
     action: {
-        type: DataTypes.ENUM(
-            'CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT',
-            'CHANNEL_CONNECT', 'CHANNEL_DISCONNECT', 'ORDER_CONFIRM',
-            'ORDER_CANCEL', 'PAYMENT_PROCESS', 'EXPORT_DATA', 'DASHBOARD_ACCESS'
-        ),
+        type: DataTypes.STRING(128),
         allowNull: false
     },
+    // Free-form string: covers entity types ('USER', 'SHOP') and 'job'
     resource_type: {
-        type: DataTypes.ENUM(
-            'USER', 'SHOP', 'CHANNEL', 'CUSTOMER', 'PRODUCT',
-            'ORDER', 'CATEGORY', 'CONVERSATION', 'MESSAGE', 'PAYMENT', 'DASHBOARD'
-        ),
+        type: DataTypes.STRING(64),
         allowNull: false
     },
+    // String (not UUID): job execution IDs are date-based strings, not UUIDs
     resource_id: {
-        type: DataTypes.UUID,
+        type: DataTypes.STRING,
         allowNull: false
     },
     old_values: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true
     },
     new_values: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true
     },
     metadata: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true
     },
+    // STRING instead of INET: INET is PostgreSQL-specific; SQLite uses TEXT
     ip_address: {
-        type: DataTypes.INET,
+        type: DataTypes.STRING(45),
         allowNull: true
     },
     user_agent: {
@@ -85,14 +85,12 @@ const AuditLog = sequelize.define('AuditLog', {
         {
             fields: ['resource_type', 'resource_id']
         },
+        // Composite index for the most common audit query: shop + type + time window
         {
-            fields: ['idempotency_key'],
-            unique: true,
-            where: {
-                idempotency_key: {
-                    [require('sequelize').Op.ne]: null
-                }
-            }
+            fields: ['shop_id', 'resource_type', 'created_at']
+        },
+        {
+            fields: ['idempotency_key']
         }
     ]
 });

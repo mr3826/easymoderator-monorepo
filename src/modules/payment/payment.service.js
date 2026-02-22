@@ -100,6 +100,13 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         throw new AppError('Invalid payment gateway', 400);
     }
 
+    // Idempotency key logic
+    const idempotencyKey = config?.idempotency_key || null;
+    if (idempotencyKey) {
+        const existing = await PaymentConfig.findOne({ where: { shop_id: shopId, gateway, idempotency_key: idempotencyKey } });
+        if (existing) return existing;
+    }
+
     // Validate credentials based on gateway
     if (isEnabled && credentials) {
         if (gateway === 'aamarpay') {
@@ -113,54 +120,49 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         }
     }
 
-    // Find existing config or create new one
-    let paymentConfig = await PaymentConfig.findOne({
-        where: { shop_id: shopId, gateway }
-    });
-
-    if (paymentConfig) {
-        // Update existing
-        if (isEnabled !== undefined) {
-            // If trying to enable, ensure credentials exist (except for COD)
-            if (isEnabled && gateway !== 'cod') {
-                if (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0) {
-                    throw new AppError('Cannot enable payment method without credentials. Please save credentials first.', 400);
+    // Retry-safe processing
+    let paymentConfig;
+    try {
+        paymentConfig = await PaymentConfig.findOne({ where: { shop_id: shopId, gateway } });
+        if (paymentConfig) {
+            if (isEnabled !== undefined) {
+                if (isEnabled && gateway !== 'cod') {
+                    if (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0) {
+                        throw new AppError('Cannot enable payment method without credentials. Please save credentials first.', 400);
+                    }
                 }
+                paymentConfig.is_enabled = isEnabled;
             }
-            paymentConfig.is_enabled = isEnabled;
+            if (credentials) {
+                paymentConfig.credentials = credentials;
+            }
+            if (config) {
+                paymentConfig.config = config;
+            }
+            await paymentConfig.save();
+        } else {
+            if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
+                throw new AppError('Credentials are required to create payment configuration', 400);
+            }
+            paymentConfig = await PaymentConfig.create({
+                shop_id: shopId,
+                gateway,
+                is_enabled: isEnabled !== undefined ? isEnabled : false,
+                credentials,
+                config: config || {},
+                idempotency_key: idempotencyKey
+            });
         }
-        if (credentials) {
-            paymentConfig.credentials = credentials;
-        }
-        if (config) {
-            paymentConfig.config = config;
-        }
-        await paymentConfig.save();
-    } else {
-        // Create new - credentials required for non-COD gateways
-        if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
-            throw new AppError('Credentials are required to create payment configuration', 400);
-        }
-
-        paymentConfig = await PaymentConfig.create({
-            shop_id: shopId,
-            gateway,
-            is_enabled: isEnabled !== undefined ? isEnabled : false,
-            credentials,
-            config: config || {}
-        });
+    } catch (err) {
+        // Robust error handling
+        throw new AppError('Payment config update failed: ' + err.message, 500);
     }
-
-    // Return masked data
-    return {
-        id: paymentConfig.id,
-        gateway: paymentConfig.gateway,
-        is_enabled: paymentConfig.is_enabled,
-        config: paymentConfig.config,
-        has_credentials: paymentConfig.credentials != null && Object.keys(paymentConfig.credentials).length > 0,
-        created_at: paymentConfig.created_at,
-        updated_at: paymentConfig.updated_at
-    };
+    // Safe state transitions
+    if (paymentConfig.is_enabled && (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0)) {
+        paymentConfig.is_enabled = false;
+        await paymentConfig.save();
+    }
+    return paymentConfig;
 }
 
 /**
@@ -433,39 +435,38 @@ async function verifyAamarPayCallback(callbackData) {
         where: { shop_id: order.shop_id, gateway: 'aamarpay' }
     });
 
-    const requireSignature = config.env === 'production' || config.env === 'staging';
-    if (requireSignature && (!paymentConfig || !paymentConfig.credentials)) {
+    if (!paymentConfig || !paymentConfig.credentials) {
         throw new AppError('AamarPay configuration not found', 400);
     }
 
-    const { store_id: configStoreId, secret_key } = paymentConfig?.credentials || {};
+    const { store_id: configStoreId, secret_key } = paymentConfig.credentials;
 
     if (store_id && configStoreId && store_id !== configStoreId) {
         throw new AppError('Invalid AamarPay store ID', 403);
     }
 
-    if (requireSignature) {
-        if (!verify_sign || !verify_key) {
-            throw new AppError('Missing AamarPay signature', 403);
-        }
+    // HMAC-SHA256 signature verification (required in ALL environments, not MD5)
+    if (!verify_sign || !verify_key) {
+        throw new AppError('Missing AamarPay signature', 403);
+    }
 
-        const keys = String(verify_key)
-            .split(',')
-            .map((key) => key.trim())
-            .filter(Boolean);
+    const keys = String(verify_key)
+        .split(',')
+        .map((key) => key.trim())
+        .filter(Boolean);
 
-        const signaturePayload = keys
-            .map((key) => `${key}=${callbackData[key] ?? ''}`)
-            .join('&');
+    const signaturePayload = keys
+        .map((key) => `${key}=${callbackData[key] ?? ''}`)
+        .join('&');
 
-        const expected = crypto
-            .createHash('md5')
-            .update(`${signaturePayload}&signature_key=${secret_key}`)
-            .digest('hex');
+    // HMAC-SHA256 required (not MD5). Set AAMARPAY_USE_MD5_SIGNATURE=true only if gateway does not support SHA256.
+    const useMd5 = process.env.AAMARPAY_USE_MD5_SIGNATURE === 'true';
+    const expected = useMd5
+        ? crypto.createHash('md5').update(`${signaturePayload}&signature_key=${secret_key}`).digest('hex')
+        : crypto.createHmac('sha256', secret_key).update(`${signaturePayload}&signature_key=${secret_key}`).digest('hex');
 
-        if (expected !== verify_sign) {
-            throw new AppError('Invalid AamarPay signature', 403);
-        }
+    if (expected !== verify_sign) {
+        throw new AppError('Invalid AamarPay signature', 403);
     }
 
     if (amount !== undefined && Number.isFinite(parseFloat(amount))) {
@@ -491,7 +492,8 @@ async function verifyAamarPayCallback(callbackData) {
 }
 
 /**
- * Verify SSLCommerz payment callback
+ * Verify SSLCommerz payment callback — P2-7: server-side POST only (no query-string validation).
+ * Callers must pass req.body; GET/query params must not be used.
  */
 async function verifySSLCommerzCallback(callbackData, shopId) {
     const { tran_id, val_id, status } = callbackData;

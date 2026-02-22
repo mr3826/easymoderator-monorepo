@@ -25,25 +25,51 @@ const verifyShopAccess = async (userId, shopId) => {
 };
 
 /**
- * Generate next order number (ORD-001, ORD-002...)
+ * Generate next order number (ORD-001, ORD-002...) — P2-4: race-free via sequence table
+ * Uses order_sequences table with atomic UPDATE/INSERT + RETURNING (Postgres) or transaction (SQLite).
  */
-const generateOrderNumber = async (shopId) => {
-    const lastOrder = await Order.findOne({
-        where: { shop_id: shopId },
-        order: [['created_at', 'DESC']],
-        attributes: ['order_number']
-    });
+const generateOrderNumber = async (shopId, transaction = null) => {
+    const dialect = sequelize.getDialect();
+    const q = transaction ? (sql, opts) => sequelize.query(sql, { ...opts, transaction }) : (sql, opts) => sequelize.query(sql, opts);
 
-    let nextNumber = 1;
-    if (lastOrder && lastOrder.order_number) {
-        // Extract number from ORD-XXX
-        const parts = lastOrder.order_number.split('-');
-        if (parts.length === 2 && !isNaN(parts[1])) {
-            nextNumber = parseInt(parts[1]) + 1;
-        }
+    if (dialect === 'postgres') {
+        const [rows] = await q(
+            `INSERT INTO order_sequences (shop_id, next_number)
+             VALUES (:shopId, 1)
+             ON CONFLICT (shop_id) DO UPDATE SET next_number = order_sequences.next_number + 1
+             RETURNING next_number`,
+            { replacements: { shopId } }
+        );
+        const nextNumber = rows && rows[0] ? rows[0].next_number : 1;
+        return `ORD-${nextNumber.toString().padStart(3, '0')}`;
     }
 
-    return `ORD-${nextNumber.toString().padStart(3, '0')}`;
+    // SQLite: transaction + SELECT then UPDATE
+    const t = transaction || await sequelize.transaction();
+    try {
+        const [existing] = await sequelize.query(
+            'SELECT next_number FROM order_sequences WHERE shop_id = ?',
+            { replacements: [shopId], transaction: t }
+        );
+        let nextNumber = 1;
+        if (existing && existing.length > 0) {
+            nextNumber = existing[0].next_number + 1;
+            await sequelize.query(
+                'UPDATE order_sequences SET next_number = ? WHERE shop_id = ?',
+                { replacements: [nextNumber, shopId], transaction: t }
+            );
+        } else {
+            await sequelize.query(
+                'INSERT INTO order_sequences (shop_id, next_number) VALUES (?, 1)',
+                { replacements: [shopId], transaction: t }
+            );
+        }
+        if (!transaction) await t.commit();
+        return `ORD-${nextNumber.toString().padStart(3, '0')}`;
+    } catch (err) {
+        if (!transaction) await t.rollback();
+        throw err;
+    }
 };
 
 /**
@@ -52,36 +78,44 @@ const generateOrderNumber = async (shopId) => {
  */
 const createOrder = async (userId, shopId, orderData, requestId = null) => {
     const logger = createLogger(requestId, shopId, userId);
-    
     await verifyShopAccess(userId, shopId);
 
-    const transaction = await sequelize.transaction();
+    // USAGE_LIMIT_EXCEEDED check BEFORE creating the DB transaction
+    await subscriptionService.checkOrderLimit(shopId);
 
+    // Strict state machine definition
+    const ORDER_STATES = ['draft', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
+    const PAYMENT_STATES = ['pending', 'paid', 'unpaid', 'refunded', 'partially_paid'];
+
+    // Idempotency key check
+    if (requestId) {
+        const existingOrder = await Order.findOne({ where: { shop_id: shopId, idempotency_key: requestId } });
+        if (existingOrder) return existingOrder;
+    }
+
+    const transaction = await sequelize.transaction();
     try {
-        // 1. Calculate totals and verify products
+        // 1. Fetch all products in one query (N+1 fix)
+        const itemIds = orderData.items.map((item) => item.product_id);
+        const products = await Product.findAll({
+            where: { id: { [Op.in]: itemIds }, shop_id: shopId },
+            transaction
+        });
+        const productMap = new Map(products.map((p) => [p.id, p]));
+
         let subtotal = 0;
         const validItems = [];
-
         for (const item of orderData.items) {
-            const product = await Product.findOne({
-                where: { id: item.product_id, shop_id: shopId }
-            });
-
-            if (!product) {
-                throw new AppError(`Product not found: ${item.product_id}`, 404);
-            }
-
+            const product = productMap.get(item.product_id);
+            if (!product) throw new AppError(`Product not found: ${item.product_id}`, 404);
             // Verify stock if tracking enabled
             if (product.track_quantity && !product.allow_backorder && product.quantity < item.quantity) {
                 throw new AppError(`Insufficient stock for product: ${product.name}`, 400);
             }
-
             // Use provided price (manual override) or product price
             const unitPrice = item.price !== undefined ? parseFloat(item.price) : parseFloat(product.price);
             const itemTotal = unitPrice * item.quantity;
-
             subtotal += itemTotal;
-
             validItems.push({
                 product_id: product.id,
                 quantity: item.quantity,
@@ -90,15 +124,12 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
                 productInstance: product
             });
         }
-
         const discount = parseFloat(orderData.discount || 0);
         const tax = parseFloat(orderData.tax || 0);
         const deliveryFee = parseFloat(orderData.delivery_fee || 0);
         const total = subtotal - discount + tax + deliveryFee;
-
         // 2. Generate Order Number
-        const orderNumber = await generateOrderNumber(shopId);
-
+        const orderNumber = await generateOrderNumber(shopId, transaction);
         // 3. Create Order
         const order = await Order.create({
             shop_id: shopId,
@@ -114,10 +145,10 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
             tax: tax,
             delivery_fee: deliveryFee,
             total: total,
-            note: orderData.note
+            note: orderData.note,
+            idempotency_key: requestId || null
         }, { transaction });
-
-        // 4. Create Order Items and update stock
+        // 4. Create Order Items and update stock atomically
         for (const validItem of validItems) {
             await OrderItem.create({
                 order_id: order.id,
@@ -126,8 +157,7 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
                 price: validItem.price,
                 total: validItem.total
             }, { transaction });
-
-            // Update product stock if tracked
+            // Atomic stock deduction
             if (validItem.productInstance.track_quantity) {
                 await validItem.productInstance.decrement('quantity', {
                     by: validItem.quantity,
@@ -135,54 +165,39 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
                 });
             }
         }
-
+        // Final usage limit check before commit (defense in depth)
+        await subscriptionService.checkOrderLimit(shopId);
         await transaction.commit();
-        // Order now persisted in database
-
         // ATOMIC: Track usage ONLY after successful DB commit
-        // Uses transaction-safe idempotent tracking with request_id
-        // Usage increments ONLY on successful database persistence
         try {
             const usageResult = await subscriptionService.trackUsage(
                 shopId,
                 'orders',
                 1,
-                requestId, // Request-scoped idempotency key - prevents double counting
-                {
-                    resourceId: order.id,
-                    orderNumber: order.order_number,
-                    total: total,
-                    itemCount: validItems.length
-                }
+                requestId
             );
-            
-            logger.logUsage('order_created', shopId, userId, {
-                orderId: order.id,
-                orderNumber: order.order_number,
-                total: total,
-                itemCount: validItems.length,
-                transactionId: usageResult.transactionId,
-                isRetry: usageResult.isRetry
-            });
-        } catch (usageError) {
-            // CRITICAL errors: usage_limit_exceeded, validation errors
-            if (usageError.code === 'USAGE_LIMIT_EXCEEDED') {
-                logger.error('Usage limit exceeded on order', usageError, { severity: 'critical' });
-                throw usageError;
+            order.usage_transaction_id = usageResult.transactionId;
+            await order.save();
+        } catch (usageErr) {
+            if (usageErr.code === 'USAGE_LIMIT_EXCEEDED') {
+                throw usageErr;
             }
-            
-            // Non-critical errors: transient tracking issues don't fail order
-            logger.error('Failed to track order usage', usageError, {
-                orderId: order.id,
-                severity: 'warning'
-            });
+            logger.error('Failed to track usage', usageErr);
         }
-
-        return await getOrderById(order.id, userId, shopId);
-
-    } catch (error) {
+        // Enforce payment state consistency
+        if (!PAYMENT_STATES.includes(order.payment_status)) {
+            order.payment_status = 'pending';
+            await order.save();
+        }
+        // Enforce strict order state machine
+        if (!ORDER_STATES.includes(order.order_status)) {
+            order.order_status = 'draft';
+            await order.save();
+        }
+        return order;
+    } catch (err) {
         try { await transaction.rollback(); } catch (_) { /* already committed */ }
-        throw error;
+        throw err;
     }
 };
 
@@ -345,8 +360,67 @@ const confirmOrder = async (orderId, userId, shopId) => {
         throw new AppError(`Cannot confirm order with status: ${order.order_status}`, 400);
     }
 
+
     // Update status to confirmed
     await order.update({ order_status: 'confirmed' });
+
+    // --- INVOICE CREATION LOGIC ---
+    // Create invoice for this order (simple, not subscription-based)
+    const { Invoice } = require('src/modules/entities');
+    const { sendEmail } = require('src/utils/email.service');
+    let invoice = null;
+    try {
+        // Generate invoice number: INV-YYYYMM-ORDERID
+        const now = new Date();
+        const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
+        const invoiceNumber = `INV-${yearMonth}-${order.order_number}`;
+        invoice = await Invoice.create({
+            shop_id: shopId,
+            invoice_number: invoiceNumber,
+            amount: order.total,
+            status: 'pending',
+            billing_period: yearMonth,
+            invoice_type: 'Order',
+            due_date: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+            notes: `Order invoice for ${order.customer_name || 'Customer'}`,
+            metadata: {
+                orderId: order.id,
+                orderNumber: order.order_number,
+                customerName: order.customer_name,
+                customerPhone: order.customer_phone,
+                items: order.items,
+                subtotal: order.subtotal,
+                tax: order.tax,
+                delivery_fee: order.delivery_fee,
+                total: order.total
+            }
+        });
+    } catch (err) {
+        console.error('Invoice creation failed:', err.message);
+    }
+
+    // --- EMAIL LOGIC ---
+    try {
+        // Try to get customer email
+        let customerEmail = null;
+        if (order.customer_id) {
+            // Enforce tenant scoping
+            const customer = await Customer.findOne({ where: { id: order.customer_id, shop_id: order.shop_id } });
+            if (customer && customer.email) customerEmail = customer.email;
+        }
+        // Fallback: check order.customer_email if present
+        if (!customerEmail && order.customer_email) customerEmail = order.customer_email;
+
+        if (customerEmail && invoice) {
+            const subject = `Invoice for your order ${order.order_number}`;
+            const text = `Dear ${order.customer_name || 'Customer'},\n\nThank you for your order.\n\nInvoice Number: ${invoice.invoice_number}\nOrder Number: ${order.order_number}\nTotal: ${order.total}\n\nPlease pay by: ${invoice.due_date.toDateString()}\n\nThank you.`;
+            const html = `<p>Dear ${order.customer_name || 'Customer'},</p><p>Thank you for your order.</p><ul><li><b>Invoice Number:</b> ${invoice.invoice_number}</li><li><b>Order Number:</b> ${order.order_number}</li><li><b>Total:</b> ${order.total}</li></ul><p>Please pay by: <b>${invoice.due_date.toDateString()}</b></p><p>Thank you.</p>`;
+            await sendEmail({ to: customerEmail, subject, text, html });
+        }
+    } catch (err) {
+        console.error('Invoice email send failed:', err.message);
+    }
+    // Return order (with invoice info if needed)
 
     // Attempt to dispatch delivery order if active provider exists
     try {

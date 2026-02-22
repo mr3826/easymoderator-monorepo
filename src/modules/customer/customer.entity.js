@@ -16,14 +16,6 @@ const Customer = sequelize.define('Customer', {
         },
         onDelete: 'CASCADE'
     },
-    phone: {
-        type: DataTypes.STRING,
-        allowNull: false
-    },
-    email: {
-        type: DataTypes.STRING,
-        allowNull: true
-    },
     name: {
         type: DataTypes.STRING,
         allowNull: true
@@ -40,22 +32,49 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.ENUM('bangla', 'english', 'banglish'),
         allowNull: true
     },
+    phone: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    email: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     last_active: {
         type: DataTypes.DATE,
         allowNull: true
     },
     metadata: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         defaultValue: {}
     }
 }, {
     tableName: 'customers',
     underscored: true,
     timestamps: true,
-    getterMethods: {
-        number() { return this.getDataValue('phone'); },
-        channel() { return this.getDataValue('channel_type'); }
+    scopes: {
+        shopScoped(shopId) {
+            return { where: { shop_id: shopId } };
+        }
+    },
+    indexes: [
+        {
+            unique: true,
+            fields: ['shop_id', 'phone']
+        },
+        {
+            unique: true,
+            fields: ['shop_id', 'email']
+        }
+    ],
+    hooks: {
+        beforeDestroy: (customer, options) => {
+            customer.phone = null;
+            customer.email = null;
+            customer.name = null;
+        }
     }
 });
+// ...existing code...
 
 module.exports = Customer;

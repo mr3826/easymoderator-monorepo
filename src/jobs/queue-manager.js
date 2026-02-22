@@ -29,62 +29,102 @@ class QueueManager {
     }
 
     /**
-     * Initialize Bull queues for each job type
+     * Initialize Bull queues for each job type.
+     *
+     * Fixes applied:
+     *   1. Processors now call job.execute() (not .run()) so BaseJob's idempotency
+     *      guard and audit logging are honoured on every queue execution.
+     *   2. Exponential backoff retry (3 attempts, 5s / 25s / 125s delays).
+     *   3. Failed jobs are retained (removeOnFail: 200) for post-mortem inspection —
+     *      this is the DLQ. Failed jobs in Redis are inspectable via Bull Board or CLI.
+     *   4. runDate is serialized to ISO string in the queue payload and deserialized
+     *      back to Date on the worker side.
      */
     initializeQueues() {
-        const redisConfig = {
+        const baseQueueConfig = {
             redis: config.redisUrl,
             settings: {
-                lockDuration: 300000, // 5 minutes
+                lockDuration: 300000, // 5 minutes — billing jobs can be slow at scale
                 maxStalledCount: 2,
                 stalledInterval: 30000
+            },
+            // Default job options: retry with exponential backoff, keep failures for DLQ
+            defaultJobOptions: {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 5000 }, // 5s → 25s → 125s
+                removeOnComplete: 100,
+                removeOnFail: 200 // DLQ: keep last 200 failed jobs for inspection
             }
         };
 
         // Daily Overage Calculator Queue
-        this.queues.dailyOverage = new Queue('daily-overage-calculator', redisConfig);
+        this.queues.dailyOverage = new Queue('daily-overage-calculator', baseQueueConfig);
         this.queues.dailyOverage.process(async (job) => {
             const calculator = new DailyOverageCalculator();
-            return await calculator.run(job.data.dryRun, job.data.runDate);
+            return await calculator.execute({
+                dryRun: job.data.dryRun,
+                runDate: job.data.runDate ? new Date(job.data.runDate) : new Date()
+            });
         });
 
         // Monthly Usage Reset Queue
-        this.queues.monthlyReset = new Queue('monthly-usage-reset', redisConfig);
+        this.queues.monthlyReset = new Queue('monthly-usage-reset', baseQueueConfig);
         this.queues.monthlyReset.process(async (job) => {
             const reset = new MonthlyUsageReset();
-            return await reset.run(job.data.dryRun, job.data.runDate);
+            return await reset.execute({
+                dryRun: job.data.dryRun,
+                runDate: job.data.runDate ? new Date(job.data.runDate) : new Date()
+            });
         });
 
         // Invoice Generator Queue
-        this.queues.invoiceGenerator = new Queue('invoice-generator', redisConfig);
+        this.queues.invoiceGenerator = new Queue('invoice-generator', baseQueueConfig);
         this.queues.invoiceGenerator.process(async (job) => {
             const generator = new InvoiceGenerator();
-            return await generator.run(job.data.dryRun, job.data.runDate);
+            return await generator.execute({
+                dryRun: job.data.dryRun,
+                runDate: job.data.runDate ? new Date(job.data.runDate) : new Date()
+            });
         });
 
         // Failed Payment Reconciler Queue
-        this.queues.paymentReconciler = new Queue('failed-payment-reconciler', redisConfig);
+        this.queues.paymentReconciler = new Queue('failed-payment-reconciler', baseQueueConfig);
         this.queues.paymentReconciler.process(async (job) => {
             const reconciler = new FailedPaymentReconciler();
-            return await reconciler.run(job.data.dryRun, job.data.runDate);
+            return await reconciler.execute({
+                dryRun: job.data.dryRun,
+                runDate: job.data.runDate ? new Date(job.data.runDate) : new Date()
+            });
         });
 
-        // Setup event listeners for all queues
+        // Unified event listeners: log completions, surface DLQ-bound failures
         Object.entries(this.queues).forEach(([name, queue]) => {
             queue.on('completed', (job, result) => {
-                console.log(`✅ Job ${name} #${job.id} completed:`, result);
+                console.log(`✅ Job ${name} #${job.id} completed`);
             });
 
             queue.on('failed', (job, err) => {
-                console.error(`❌ Job ${name} #${job.id} failed:`, err.message);
+                const isTerminal = job.attemptsMade >= (job.opts.attempts || 1);
+                if (isTerminal) {
+                    // Final failure — job is now in the DLQ (failed set in Redis)
+                    console.error(
+                        `[DLQ] Job ${name} #${job.id} exhausted all retries after ` +
+                        `${job.attemptsMade} attempts. Error: ${err.message}`
+                    );
+                    // TODO: emit to alerting channel (PagerDuty, Slack, etc.)
+                } else {
+                    console.warn(
+                        `⚠️  Job ${name} #${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`
+                    );
+                }
             });
 
             queue.on('stalled', (job) => {
-                console.warn(`⚠️  Job ${name} #${job.id} stalled`);
+                console.warn(`⚠️  Job ${name} #${job.id} stalled — will be retried`);
             });
         });
 
-        console.log('✅ Job queues initialized');
+        console.log('✅ Job queues initialized with retry/backoff and DLQ');
     }
 
     /**
@@ -96,48 +136,32 @@ class QueueManager {
             return;
         }
 
-        // Daily Overage Calculator - Every day at 00:00 UTC
+        // Note: runDate is intentionally omitted from repeatable job payloads.
+        // The processor uses new Date(job.data.runDate || Date.now()) so each
+        // scheduled execution captures the actual wall-clock time of that run.
+
+        // Daily Overage Calculator — every day at 00:00 UTC
         await this.queues.dailyOverage.add(
-            { dryRun: false, runDate: new Date() },
-            {
-                jobId: 'daily-overage-calculator',
-                repeat: { cron: '0 0 * * *', tz: 'UTC' },
-                removeOnComplete: 100,
-                removeOnFail: 50
-            }
+            { dryRun: false },
+            { jobId: 'daily-overage-calculator', repeat: { cron: '0 0 * * *', tz: 'UTC' } }
         );
 
-        // Monthly Usage Reset - 1st of month at 00:00 UTC
+        // Monthly Usage Reset — 1st of each month at 00:00 UTC
         await this.queues.monthlyReset.add(
-            { dryRun: false, runDate: new Date() },
-            {
-                jobId: 'monthly-usage-reset',
-                repeat: { cron: '0 0 1 * *', tz: 'UTC' },
-                removeOnComplete: 100,
-                removeOnFail: 50
-            }
+            { dryRun: false },
+            { jobId: 'monthly-usage-reset', repeat: { cron: '0 0 1 * *', tz: 'UTC' } }
         );
 
-        // Invoice Generator - 1st of month at 01:00 UTC
+        // Invoice Generator — 1st of each month at 01:00 UTC (after usage reset)
         await this.queues.invoiceGenerator.add(
-            { dryRun: false, runDate: new Date() },
-            {
-                jobId: 'invoice-generator',
-                repeat: { cron: '0 1 1 * *', tz: 'UTC' },
-                removeOnComplete: 100,
-                removeOnFail: 50
-            }
+            { dryRun: false },
+            { jobId: 'invoice-generator', repeat: { cron: '0 1 1 * *', tz: 'UTC' } }
         );
 
-        // Failed Payment Reconciler - Every day at 02:00 UTC
+        // Failed Payment Reconciler — every day at 02:00 UTC
         await this.queues.paymentReconciler.add(
-            { dryRun: false, runDate: new Date() },
-            {
-                jobId: 'failed-payment-reconciler',
-                repeat: { cron: '0 2 * * *', tz: 'UTC' },
-                removeOnComplete: 100,
-                removeOnFail: 50
-            }
+            { dryRun: false },
+            { jobId: 'failed-payment-reconciler', repeat: { cron: '0 2 * * *', tz: 'UTC' } }
         );
 
         console.log('✅ Scheduled jobs configured');

@@ -48,7 +48,7 @@ const SupportTicket = sequelize.define('SupportTicket', {
         allowNull: true
     },
     metadata: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         defaultValue: {}
     }
 }, {

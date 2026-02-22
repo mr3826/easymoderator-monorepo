@@ -1,4 +1,4 @@
-const { Shop, UserShop, FaqResponse, BanglishDictionary } = require('src/modules/entities');
+const { Shop, UserShop, FaqResponse, BanglishDictionary, MetaIntegration } = require('src/modules/entities');
 const { AppError } = require('src/utils/AppError');
 const ragService = require('src/modules/rag/rag.service');
 const crypto = require('crypto');
@@ -67,8 +67,26 @@ const getKnowledge = async (userId, shopId) => {
         order: [['priority', 'DESC']]
     });
 
+    // Fetch facebook page access token if available
+    let facebookPageToken = null;
+    try {
+        const fbIntegration = await MetaIntegration.findOne({
+            where: { shop_id: shopId, platform: 'facebook', status: 'CONNECTED' }
+        });
+        if (fbIntegration && fbIntegration.access_token) {
+            facebookPageToken = fbIntegration.access_token;
+        }
+    } catch (e) {
+        // ignore errors, just don't return the token
+    }
+
+    const businessInfo = {
+        ...normalizeObject(settings.businessInfo),
+        facebookPageToken
+    };
+
     return {
-        businessInfo: normalizeObject(settings.businessInfo),
+        businessInfo,
         brandingRules: normalizeObject(settings.brandingRules),
         faqs,
         gaps: normalizeArray(settings.gaps),

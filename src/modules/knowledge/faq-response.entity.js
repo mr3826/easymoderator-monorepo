@@ -29,7 +29,7 @@ const FaqResponse = sequelize.define('FaqResponse', {
         allowNull: true
     },
     variables: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         defaultValue: []
     },
     priority: {

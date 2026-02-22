@@ -29,6 +29,18 @@ const createCustomer = async (userId, shopId, customerData) => {
     // Verify shop access
     await verifyShopAccess(userId, shopId);
 
+    // Duplicate detection logic
+    const existing = await Customer.findOne({
+        where: {
+            shop_id: shopId,
+            [Op.or]: [
+                { phone: customerData.number || customerData.phone },
+                { email: customerData.email }
+            ]
+        }
+    });
+    if (existing) throw new AppError('Duplicate customer detected', 409);
+
     // Map frontend field names to model field names
     const customer = await Customer.create({
         shop_id: shopId,

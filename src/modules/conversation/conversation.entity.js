@@ -62,7 +62,7 @@ const Conversation = sequelize.define('Conversation', {
         defaultValue: false
     },
     metadata: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         defaultValue: {}
     }
 }, {

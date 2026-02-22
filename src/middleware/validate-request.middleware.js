@@ -15,7 +15,6 @@ const validateRequest = (schema) => {
         if (error) {
             const messages = error.details.map(detail => detail.message).join(', ');
             console.error('Validation error:', messages);
-            console.error('Request body:', req.body);
             return next(new AppError(messages, 400));
         }
 

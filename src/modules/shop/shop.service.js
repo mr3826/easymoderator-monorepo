@@ -195,6 +195,9 @@ const addUserToShop = async (shopId, requestingUserId, email, role) => {
         is_active: true
     });
 
+        // Multi-owner safety validation
+        const owners = await UserShop.count({ where: { shop_id: shop.id, role: 'owner', is_active: true }, transaction });
+        if (owners > 1) throw new AppError('Shop cannot have multiple owners', 400);
     return userShop;
 };
 

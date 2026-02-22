@@ -35,8 +35,9 @@ const idempotencyMiddleware = async (req, res, next) => {
             });
         }
 
-        // Check if this operation was already performed
-        const cachedResult = await AuditService.checkIdempotency(
+        // Atomically claim the key (or retrieve the existing state).
+        // Uses findOrCreate + DB unique constraint to eliminate TOCTOU race.
+        const state = await AuditService.checkIdempotency(
             idempotencyKey,
             userId,
             shopId,
@@ -45,23 +46,46 @@ const idempotencyMiddleware = async (req, res, next) => {
             req.body
         );
 
-        if (cachedResult) {
-            // Return cached response
-            return res.status(cachedResult.statusCode).json(cachedResult.data);
+        if (state !== null) {
+            if (state.inFlight) {
+                // Another request with this key is currently executing
+                return res.status(409).json({
+                    success: false,
+                    error: {
+                        code: 'CONFLICT',
+                        message: 'A request with this idempotency key is already in progress. Retry after it completes.'
+                    }
+                });
+            }
+            // Completed request — replay cached response
+            return res.status(state.statusCode).json(state.data);
         }
 
-        // Store idempotency info for later use in response
-        req.idempotencyKey = idempotencyKey;
-        req.idempotencyData = {
-            userId,
-            shopId,
-            endpoint: req.originalUrl,
-            method: req.method,
-            requestData: req.body
+        // Key was just claimed by us — intercept res.json to store response BEFORE
+        // flushing to client, eliminating the race window between "response sent" and
+        // "idempotency record updated".
+        const originalJson = res.json.bind(res);
+        res.json = async function(body) {
+            await AuditService.storeIdempotencyResult(
+                idempotencyKey,
+                shopId,
+                this.statusCode,
+                body
+            ).catch(err => console.error('Failed to store idempotency result:', err));
+            return originalJson(body);
         };
 
         next();
     } catch (error) {
+        if (error.message === 'Idempotency key used with different request data') {
+            return res.status(422).json({
+                success: false,
+                error: {
+                    code: 'IDEMPOTENCY_CONFLICT',
+                    message: 'This idempotency key was previously used with different request data.'
+                }
+            });
+        }
         console.error('Idempotency middleware error:', error);
         return res.status(500).json({
             success: false,
@@ -83,28 +107,12 @@ function isValidIdempotencyKey(key) {
 }
 
 /**
- * Middleware to store successful idempotency results
- * Should be used after successful operations
+ * @deprecated Storage is now handled inline inside idempotencyMiddleware via res.json
+ * interception. This export is kept for backward compatibility but is a no-op.
+ * Remove from route definitions in a future cleanup pass.
  */
-const storeIdempotencyResult = (statusCode = 200) => {
-    return (req, res, next) => {
-        if (req.idempotencyKey && req.idempotencyData) {
-            // Store the result asynchronously (don't wait for it)
-            AuditService.storeIdempotencyResult(
-                req.idempotencyKey,
-                req.idempotencyData.userId,
-                req.idempotencyData.shopId,
-                req.idempotencyData.endpoint,
-                req.idempotencyData.method,
-                req.idempotencyData.requestData,
-                statusCode,
-                res.locals.responseData || null
-            ).catch(error => {
-                console.error('Failed to store idempotency result:', error);
-            });
-        }
-        next();
-    };
+const storeIdempotencyResult = (_statusCode = 200) => {
+    return (_req, _res, next) => next();
 };
 
 module.exports = {

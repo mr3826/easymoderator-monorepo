@@ -4,7 +4,7 @@ const config = require('src/config/config');
 
 // Use SQLite only if DATABASE_URL is not set
 const projectRoot = path.resolve(__dirname, '../../..');
-const databaseUrl = config.databaseUrl || 'sqlite::memory:';
+const databaseUrl = config.databaseUrl || 'sqlite:./database.sqlite';
 
 const normalizeSqliteUrl = (url) => {
     if (!url.startsWith('sqlite:') || url === 'sqlite::memory:') {
@@ -25,8 +25,8 @@ const normalizeSqliteUrl = (url) => {
 
 const normalizedDatabaseUrl = normalizeSqliteUrl(databaseUrl);
 
-// Decide dialect
 const isSqlite = normalizedDatabaseUrl.startsWith('sqlite');
+const sqlitePath = isSqlite ? normalizedDatabaseUrl.replace('sqlite:', '') : null;
 
 if (config.env === 'production' && isSqlite) {
     throw new Error('SQLite is not allowed in production. Set DATABASE_URL to a Postgres connection string.');
@@ -36,12 +36,23 @@ const sslOptions = config.allowSelfSignedTls
     ? { require: true, rejectUnauthorized: false }
     : (config.env === 'production' ? { require: true, rejectUnauthorized: true } : undefined);
 
-const sequelize = new Sequelize(normalizedDatabaseUrl, {
-    dialect: isSqlite ? 'sqlite' : 'postgres',
-    logging: config.env === 'development' ? console.log : false,
-    dialectOptions: isSqlite
-        ? {}
-        : (sslOptions ? { ssl: sslOptions } : {})
-});
+let sequelize;
+if (isSqlite) {
+    sequelize = new Sequelize({
+        dialect: 'sqlite',
+        storage: sqlitePath,
+        logging: config.env === 'development' ? console.log : false
+    });
+} else {
+    sequelize = new Sequelize(normalizedDatabaseUrl, {
+        dialect: 'postgres',
+        logging: false,
+        dialectOptions: sslOptions ? { ssl: sslOptions } : {}
+    });
+}
+
+if (isSqlite && config.env === 'development') {
+    console.log(`📡 Database: SQLite (${sqlitePath})`);
+}
 
 module.exports = { sequelize };

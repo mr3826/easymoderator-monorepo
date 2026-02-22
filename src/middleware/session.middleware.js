@@ -11,13 +11,13 @@ function createSessionMiddleware() {
     const sessionConfig = {
         secret: config.sessionSecret,
         resave: false,
-        saveUninitialized: false,
+        saveUninitialized: config.env === 'development', // Ensure session ID is created immediately for CSRF stability in dev
         name: 'commerce_ai.sid',
         cookie: {
             secure: config.env === 'production', // HTTPS only in production
             httpOnly: true,
             maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-            sameSite: 'lax'
+            sameSite: config.env === 'development' ? 'lax' : 'strict' // P2-9: use lax in dev for cross-port support, strict in prod
         }
     };
 

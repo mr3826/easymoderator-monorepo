@@ -1,28 +1,50 @@
 const { getRedisClient } = require('./redis-client');
 
+// In-memory fallback: evict oldest entries when this limit is reached
+const MAX_MEMORY_ENTRIES = 10000;
+
 /**
- * Cache Service - Abstraction over Redis for caching
- * Falls back to in-memory cache if Redis unavailable
+ * Cache Service — Redis-backed with in-memory fallback.
+ *
+ * TENANT ISOLATION
+ * ─────────────────
+ * All callers SHOULD use the tenant-scoped API:
+ *   cache.getForShop(shopId, key)
+ *   cache.setForShop(shopId, key, value, ttl)
+ *   cache.deleteForShop(shopId, key)
+ *   cache.deletePatternForShop(shopId, pattern)
+ *   cache.clearForShop(shopId)
+ *
+ * The legacy un-scoped methods (get/set/delete/deletePattern/clear) are kept for
+ * backward compatibility but are NOT tenant-isolated. Migrate callers to the
+ * scoped API when touching those code paths.
  */
 class CacheService {
     constructor() {
         this.memoryCache = new Map();
-        this.redis = getRedisClient();
+    }
+
+    // ─── Internal helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Build a tenant-namespaced Redis key.
+     * Format: t:{shopId}:{key}
+     */
+    _tenantKey(shopId, key) {
+        return `t:${shopId}:${key}`;
     }
 
     /**
-     * Get value from cache
-     * @param {string} key 
-     * @returns {Promise<any|null>}
+     * Core get — works on any raw Redis key.
      */
-    async get(key) {
+    async _get(rawKey) {
         try {
-            if (this.redis) {
-                const value = await this.redis.get(key);
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
+                const value = await redis.get(rawKey);
                 return value ? JSON.parse(value) : null;
             }
-            // Fallback to memory cache
-            return this.memoryCache.get(key) || null;
+            return this.memoryCache.get(rawKey) ?? null;
         } catch (error) {
             console.error('Cache get error:', error);
             return null;
@@ -30,29 +52,28 @@ class CacheService {
     }
 
     /**
-     * Set value in cache with optional TTL
-     * @param {string} key 
-     * @param {any} value 
-     * @param {number} ttl - Time to live in seconds (optional)
-     * @returns {Promise<boolean>}
+     * Core set — works on any raw Redis key.
      */
-    async set(key, value, ttl = null) {
+    async _set(rawKey, value, ttl = null) {
         try {
             const serialized = JSON.stringify(value);
-            
-            if (this.redis) {
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
                 if (ttl) {
-                    await this.redis.setex(key, ttl, serialized);
+                    await redis.setex(rawKey, ttl, serialized);
                 } else {
-                    await this.redis.set(key, serialized);
+                    await redis.set(rawKey, serialized);
                 }
                 return true;
             }
-            
-            // Fallback to memory cache
-            this.memoryCache.set(key, value);
+            // In-memory fallback: evict LRU entry when at capacity
+            if (this.memoryCache.size >= MAX_MEMORY_ENTRIES) {
+                const firstKey = this.memoryCache.keys().next().value;
+                this.memoryCache.delete(firstKey);
+            }
+            this.memoryCache.set(rawKey, value);
             if (ttl) {
-                setTimeout(() => this.memoryCache.delete(key), ttl * 1000);
+                setTimeout(() => this.memoryCache.delete(rawKey), ttl * 1000);
             }
             return true;
         } catch (error) {
@@ -62,17 +83,16 @@ class CacheService {
     }
 
     /**
-     * Delete value from cache
-     * @param {string} key 
-     * @returns {Promise<boolean>}
+     * Core delete — works on any raw Redis key.
      */
-    async delete(key) {
+    async _delete(rawKey) {
         try {
-            if (this.redis) {
-                await this.redis.del(key);
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
+                await redis.del(rawKey);
                 return true;
             }
-            return this.memoryCache.delete(key);
+            return this.memoryCache.delete(rawKey);
         } catch (error) {
             console.error('Cache delete error:', error);
             return false;
@@ -80,38 +100,146 @@ class CacheService {
     }
 
     /**
-     * Delete multiple keys matching pattern
-     * @param {string} pattern - Redis pattern (e.g., 'user:*')
-     * @returns {Promise<number>} Number of keys deleted
+     * Core pattern delete using SCAN (non-blocking, safe at scale).
+     * NEVER uses KEYS * which blocks the Redis event loop.
      */
-    async deletePattern(pattern) {
+    async _deletePattern(rawPattern) {
         try {
-            if (this.redis) {
-                const keys = await this.redis.keys(pattern);
-                if (keys.length > 0) {
-                    await this.redis.del(...keys);
-                }
-                return keys.length;
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
+                let cursor = '0';
+                let deleted = 0;
+                do {
+                    const [nextCursor, keys] = await redis.scan(
+                        cursor, 'MATCH', rawPattern, 'COUNT', 100
+                    );
+                    cursor = nextCursor;
+                    if (keys.length > 0) {
+                        await redis.del(...keys);
+                        deleted += keys.length;
+                    }
+                } while (cursor !== '0');
+                return deleted;
             }
-            // Memory cache doesn't support patterns efficiently
-            return 0;
+            // Memory cache: iterate and delete matching keys
+            let deleted = 0;
+            const patternRegex = new RegExp(
+                '^' + rawPattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
+            );
+            for (const k of this.memoryCache.keys()) {
+                if (patternRegex.test(k)) {
+                    this.memoryCache.delete(k);
+                    deleted++;
+                }
+            }
+            return deleted;
         } catch (error) {
-            console.error('Cache delete pattern error:', error);
+            console.error('Cache deletePattern error:', error);
             return 0;
         }
     }
 
+    // ─── Tenant-scoped API (preferred) ──────────────────────────────────────────
+
     /**
-     * Check if key exists
-     * @param {string} key 
-     * @returns {Promise<boolean>}
+     * Get a tenant-scoped cache value.
+     * @param {string} shopId - Tenant identifier
+     * @param {string} key
      */
+    async getForShop(shopId, key) {
+        return this._get(this._tenantKey(shopId, key));
+    }
+
+    /**
+     * Set a tenant-scoped cache value.
+     * @param {string} shopId - Tenant identifier
+     * @param {string} key
+     * @param {any} value
+     * @param {number} [ttl] - Seconds
+     */
+    async setForShop(shopId, key, value, ttl = null) {
+        return this._set(this._tenantKey(shopId, key), value, ttl);
+    }
+
+    /**
+     * Delete a tenant-scoped cache entry.
+     */
+    async deleteForShop(shopId, key) {
+        return this._delete(this._tenantKey(shopId, key));
+    }
+
+    /**
+     * Delete tenant-scoped entries matching a pattern (SCAN-based, non-blocking).
+     * @param {string} shopId - Tenant identifier
+     * @param {string} pattern - Glob pattern relative to tenant namespace (e.g. 'product:*')
+     */
+    async deletePatternForShop(shopId, pattern) {
+        return this._deletePattern(this._tenantKey(shopId, pattern));
+    }
+
+    /**
+     * Clear ALL cache entries for a single tenant.
+     * Safe: only removes keys prefixed with t:{shopId}: — no cross-tenant impact.
+     */
+    async clearForShop(shopId) {
+        return this._deletePattern(`t:${shopId}:*`);
+    }
+
+    /**
+     * Check if a tenant-scoped key exists.
+     */
+    async existsForShop(shopId, key) {
+        try {
+            const rawKey = this._tenantKey(shopId, key);
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
+                return (await redis.exists(rawKey)) === 1;
+            }
+            return this.memoryCache.has(rawKey);
+        } catch (error) {
+            console.error('Cache existsForShop error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Increment a tenant-scoped numeric counter.
+     */
+    async incrementForShop(shopId, key, amount = 1) {
+        try {
+            const rawKey = this._tenantKey(shopId, key);
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') {
+                return await redis.incrby(rawKey, amount);
+            }
+            const current = this.memoryCache.get(rawKey) || 0;
+            const newValue = current + amount;
+            this.memoryCache.set(rawKey, newValue);
+            return newValue;
+        } catch (error) {
+            console.error('Cache incrementForShop error:', error);
+            return 0;
+        }
+    }
+
+    // ─── Legacy un-scoped API (backward compatible, not tenant-isolated) ─────────
+
+    async get(key) { return this._get(key); }
+
+    async set(key, value, ttl = null) { return this._set(key, value, ttl); }
+
+    async delete(key) { return this._delete(key); }
+
+    /**
+     * Delete keys matching a pattern.
+     * Fixed: uses SCAN cursor instead of blocking KEYS *.
+     */
+    async deletePattern(pattern) { return this._deletePattern(pattern); }
+
     async exists(key) {
         try {
-            if (this.redis) {
-                const result = await this.redis.exists(key);
-                return result === 1;
-            }
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') return (await redis.exists(key)) === 1;
             return this.memoryCache.has(key);
         } catch (error) {
             console.error('Cache exists error:', error);
@@ -119,21 +247,12 @@ class CacheService {
         }
     }
 
-    /**
-     * Set expiration on existing key
-     * @param {string} key 
-     * @param {number} ttl - Seconds
-     * @returns {Promise<boolean>}
-     */
     async expire(key, ttl) {
         try {
-            if (this.redis) {
-                await this.redis.expire(key, ttl);
-                return true;
-            }
-            // Memory cache TTL requires re-setting
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') { await redis.expire(key, ttl); return true; }
             const value = this.memoryCache.get(key);
-            if (value) {
+            if (value !== undefined) {
                 setTimeout(() => this.memoryCache.delete(key), ttl * 1000);
                 return true;
             }
@@ -145,34 +264,23 @@ class CacheService {
     }
 
     /**
-     * Clear all cache (use with caution)
-     * @returns {Promise<boolean>}
+     * @deprecated NEVER calls redis.flushdb() — that would wipe ALL tenants' data.
+     * Use clearForShop(shopId) to clear a specific tenant's cache instead.
      */
     async clear() {
-        try {
-            if (this.redis) {
-                await this.redis.flushdb();
-                return true;
-            }
-            this.memoryCache.clear();
-            return true;
-        } catch (error) {
-            console.error('Cache clear error:', error);
-            return false;
-        }
+        console.error(
+            '[CacheService] cache.clear() is disabled — it would wipe all tenants. ' +
+            'Use cache.clearForShop(shopId) to clear a single tenant.'
+        );
+        // Only clear the in-memory fallback; never touch Redis here
+        this.memoryCache.clear();
+        return false;
     }
 
-    /**
-     * Increment numeric value
-     * @param {string} key 
-     * @param {number} amount 
-     * @returns {Promise<number>} New value
-     */
     async increment(key, amount = 1) {
         try {
-            if (this.redis) {
-                return await this.redis.incrby(key, amount);
-            }
+            const redis = getRedisClient();
+            if (redis && redis.status === 'ready') return await redis.incrby(key, amount);
             const current = this.memoryCache.get(key) || 0;
             const newValue = current + amount;
             this.memoryCache.set(key, newValue);

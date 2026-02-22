@@ -26,7 +26,51 @@ const Channel = sequelize.define('Channel', {
     },
     access_token: {
         type: DataTypes.TEXT,
-        allowNull: false
+        allowNull: false,
+        get() {
+            const value = this.getDataValue('access_token');
+            if (!value) return null;
+            try {
+                const algorithm = 'aes-256-cbc';
+                const keyEnv = process.env.CHANNEL_ENCRYPTION_KEY;
+                if (!keyEnv) throw new Error('CHANNEL_ENCRYPTION_KEY not set');
+                const ENCRYPTION_KEY = /^[a-f0-9]{64}$/i.test(keyEnv)
+                    ? Buffer.from(keyEnv, 'hex')
+                    : require('crypto').createHash('sha256').update(keyEnv).digest();
+                const parts = value.split(':');
+                const iv = Buffer.from(parts[0], 'hex');
+                const encrypted = parts[1];
+                const decipher = require('crypto').createDecipheriv(algorithm, ENCRYPTION_KEY, iv);
+                let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+                decrypted += decipher.final('utf8');
+                return decrypted;
+            } catch (error) {
+                console.error('Failed to decrypt access_token:', error.message);
+                return null;
+            }
+        },
+        set(value) {
+            if (!value) {
+                this.setDataValue('access_token', null);
+                return;
+            }
+            try {
+                const algorithm = 'aes-256-cbc';
+                const keyEnv = process.env.CHANNEL_ENCRYPTION_KEY;
+                if (!keyEnv) throw new Error('CHANNEL_ENCRYPTION_KEY not set');
+                const ENCRYPTION_KEY = /^[a-f0-9]{64}$/i.test(keyEnv)
+                    ? Buffer.from(keyEnv, 'hex')
+                    : require('crypto').createHash('sha256').update(keyEnv).digest();
+                const iv = require('crypto').randomBytes(16);
+                const cipher = require('crypto').createCipheriv(algorithm, ENCRYPTION_KEY, iv);
+                let encrypted = cipher.update(value, 'utf8', 'hex');
+                encrypted += cipher.final('hex');
+                this.setDataValue('access_token', iv.toString('hex') + ':' + encrypted);
+            } catch (error) {
+                console.error('Failed to encrypt access_token:', error.message);
+                throw new Error('Access token encryption failed: ' + error.message);
+            }
+        }
     },
     verify_token: {
         type: DataTypes.STRING(255),
@@ -41,7 +85,7 @@ const Channel = sequelize.define('Channel', {
         defaultValue: true
     },
     settings: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true,
         defaultValue: {}
     },

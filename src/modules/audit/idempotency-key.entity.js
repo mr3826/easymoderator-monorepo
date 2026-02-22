@@ -7,10 +7,11 @@ const IdempotencyKey = sequelize.define('IdempotencyKey', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
+    // No field-level unique: true — uniqueness is enforced by the composite
+    // index (idempotency_key, shop_id) below, which is tenant-scoped.
     idempotency_key: {
         type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
+        allowNull: false
     },
     user_id: {
         type: DataTypes.UUID,
@@ -41,7 +42,7 @@ const IdempotencyKey = sequelize.define('IdempotencyKey', {
         allowNull: false
     },
     response_data: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true
     },
     status_code: {
@@ -62,18 +63,13 @@ const IdempotencyKey = sequelize.define('IdempotencyKey', {
     underscored: true,
     timestamps: false,
     indexes: [
+        // Tenant-scoped unique: Shop A's key "abc" does not collide with Shop B's "abc"
         {
-            fields: ['idempotency_key'],
-            unique: true
+            fields: ['idempotency_key', 'shop_id'],
+            unique: true,
+            name: 'idx_idempotency_shop_key'
         },
-        {
-            fields: ['expires_at'],
-            where: {
-                expires_at: {
-                    [require('sequelize').Op.lt]: new Date()
-                }
-            }
-        }
+        { fields: ['expires_at'] }
     ]
 });
 

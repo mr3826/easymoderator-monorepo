@@ -25,7 +25,12 @@ class StructuredLogger {
             ...meta,
             timestamp: new Date().toISOString()
         };
-        console.log(JSON.stringify(logEntry));
+        const out = JSON.stringify(logEntry);
+        if (process.env.NODE_ENV === 'production') {
+            process.stdout.write(out + '\n');
+        } else {
+            console.log(out);
+        }
         return logEntry;
     }
 
@@ -37,8 +42,10 @@ class StructuredLogger {
         return this.log('ERROR', message, {
             error: {
                 message: error?.message,
-                stack: error?.stack,
-                code: error?.code
+                code: error?.code,
+                // Stack traces expose internal file paths and line numbers.
+                // Only include in non-production environments.
+                ...(process.env.NODE_ENV !== 'production' && { stack: error?.stack })
             },
             ...meta
         });

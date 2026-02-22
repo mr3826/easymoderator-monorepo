@@ -22,16 +22,32 @@ const migrations = [
   require('./migrations/20260209_001_add_customer_email'),
   require('./migrations/20260209_002_add_conversation_fields'),
   require('./migrations/20260209_003_extend_channel_types'),
+  // Infrastructure hardening — 2026-02-18
+  require('./migrations/20260218_001_harden_audit_log'),
+  require('./migrations/20260218_002_fix_idempotency_composite'),
+  require('./migrations/20260218_003_add_invoice_period_dates'),
+  require('./migrations/20260220_001_order_sequences_table'),
 ];
 
 const createMigrationsTable = async () => {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS migrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  const dialect = sequelize.getDialect();
+  if (dialect === 'postgres') {
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  } else {
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        executed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  }
 };
 
 const isMigrationExecuted = async (name) => {
@@ -43,10 +59,18 @@ const isMigrationExecuted = async (name) => {
 };
 
 const recordMigration = async (name) => {
-  await sequelize.query(
-    `INSERT INTO migrations (name, executed_at) VALUES (?, DATETIME('now'))`,
-    { replacements: [name] }
-  );
+  const dialect = sequelize.getDialect();
+  if (dialect === 'postgres') {
+    await sequelize.query(
+      `INSERT INTO migrations (name, executed_at) VALUES (?, NOW())`,
+      { replacements: [name] }
+    );
+  } else {
+    await sequelize.query(
+      `INSERT INTO migrations (name, executed_at) VALUES (?, DATETIME('now'))`,
+      { replacements: [name] }
+    );
+  }
 };
 
 const removeMigrationRecord = async (name) => {

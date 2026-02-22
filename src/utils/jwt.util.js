@@ -30,7 +30,7 @@ const generateRefreshToken = (payload) => {
  */
 const verifyAccessToken = (token) => {
     try {
-        return jwt.verify(token, config.jwtAccessSecret);
+        return jwt.verify(token, config.jwtAccessSecret, { algorithms: ['HS256'] });
     } catch (error) {
         throw new Error('Invalid or expired access token');
     }
@@ -43,7 +43,7 @@ const verifyAccessToken = (token) => {
  */
 const verifyRefreshToken = (token) => {
     try {
-        return jwt.verify(token, config.jwtRefreshSecret);
+        return jwt.verify(token, config.jwtRefreshSecret, { algorithms: ['HS256'] });
     } catch (error) {
         throw new Error('Invalid or expired refresh token');
     }

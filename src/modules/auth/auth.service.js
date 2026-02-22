@@ -6,6 +6,7 @@ const { AppError } = require('src/utils/AppError');
 const { getRedisClient } = require('src/utils/redis-client');
 const config = require('src/config/config');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const emailService = require('src/utils/email.service');
 
 const RESET_TOKEN_TTL = '1h';
@@ -120,22 +121,22 @@ const clearFailedLogins = async (email) => {
 // ── Existing auth logic ────────────────────────────────────────────────
 
 /**
- * Generate unique 5-6 character shop code
+ * Generate unique 5-6 character shop code — P2-10: crypto.randomBytes (not Math.random)
  */
 const generateUniqueShopCode = async () => {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const length = Math.random() > 0.5 ? 5 : 6; // Randomly choose 5 or 6 characters
 
     let code;
     let isUnique = false;
 
     while (!isUnique) {
+        const length = crypto.randomBytes(1)[0] % 2 === 0 ? 5 : 6;
+        const bytes = crypto.randomBytes(length);
         code = '';
         for (let i = 0; i < length; i++) {
-            code += characters.charAt(Math.floor(Math.random() * characters.length));
+            code += characters.charAt(bytes[i] % characters.length);
         }
 
-        // Check if code already exists
         const existingShop = await Shop.findOne({ where: { unique_code: code } });
         if (!existingShop) {
             isUnique = true;
@@ -225,13 +226,17 @@ const createUserWithShop = async (userData) => {
             profile_picture: user.profile_picture
         };
 
+        const currentShop = {
+            id: shop.id,
+            unique_code: shop.unique_code,
+            shop_name: shop.shop_name,
+            role: 'owner'
+        };
+
         return {
             user: userResponse,
-            shop: {
-                id: shop.id,
-                unique_code: shop.unique_code,
-                role: 'owner'
-            },
+            currentShop,
+            allShops: [currentShop],
             accessToken,
             refreshToken
         };
@@ -375,11 +380,12 @@ const requestPasswordReset = async (email) => {
  */
 const resetPassword = async (token, newPassword) => {
     const decoded = jwt.decode(token);
-    if (!decoded || !decoded.userId) {
+    if (!decoded || !decoded.userId || !decoded.shopId) {
         throw new AppError('Invalid or expired reset token', 400);
     }
 
-    const user = await User.findOne({ where: { id: decoded.userId } });
+    // Enforce tenant scoping
+    const user = await User.findOne({ where: { id: decoded.userId, shop_id: decoded.shopId } });
     if (!user) {
         throw new AppError('Invalid or expired reset token', 400);
     }

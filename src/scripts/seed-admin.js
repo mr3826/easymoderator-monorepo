@@ -19,7 +19,7 @@ if (!process.env.DATABASE_URL && env !== 'production') {
 const entities = require('src/modules/entities');
 
 const { sequelize } = require('src/utils/database/database-setup');
-const { User, Shop, UserShop } = entities;
+const { User, Shop, UserShop, Tenant } = entities;
 const { hashPassword } = require('src/utils/password.util');
 const { generateUniqueShopCode } = require('src/modules/auth/auth.service');
 
@@ -30,9 +30,9 @@ const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE || '+8801000000000';
 
 async function ensureAdminUser() {
     await sequelize.authenticate();
-    
+
     // Sync database schema first
-    // await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: true });
     console.log('Database schema synced');
 
     const existingUser = await User.findOne({ where: { email: ADMIN_EMAIL } });
@@ -51,9 +51,15 @@ async function ensureAdminUser() {
         phone: ADMIN_PHONE
     });
 
+    const tenant = await Tenant.create({
+        name: 'Admin Tenant'
+    });
+
     const shopCode = await generateUniqueShopCode();
     const shop = await Shop.create({
         unique_code: shopCode,
+        tenant_id: tenant.id,
+        name: 'Admin Test Shop',
         shop_name: 'Admin Test Shop'
     });
 

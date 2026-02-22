@@ -108,7 +108,21 @@ const deliveryValidators = {
         body('area_pricing')
             .optional()
             .isArray()
-            .withMessage('area_pricing must be an array'),
+            .withMessage('area_pricing must be an array')
+            .custom((areaPricing) => {
+                // Overlapping zone validation
+                const seenZones = new Set();
+                for (const entry of areaPricing) {
+                    if (seenZones.has(entry.zone)) {
+                        throw new Error('Overlapping delivery zones detected');
+                    }
+                    seenZones.add(entry.zone);
+                    if (entry.charge < 0) {
+                        throw new Error('Delivery charge must be non-negative');
+                    }
+                }
+                return true;
+            }),
 
         body('area_pricing.*.zone')
             .optional()

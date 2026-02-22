@@ -44,14 +44,6 @@ const Product = sequelize.define('Product', {
         type: DataTypes.TEXT,
         allowNull: true
     },
-    in_stock: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    is_active: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
     sku: {
         type: DataTypes.STRING(100),
         allowNull: true
@@ -60,41 +52,45 @@ const Product = sequelize.define('Product', {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    track_quantity: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false
-    },
     low_stock_threshold: {
         type: DataTypes.INTEGER,
         defaultValue: 5
     },
-    send_low_stock_alert: {
+    track_quantity: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
-    },
-    allow_discounts: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: true
-    },
-    charge_tax: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false
-    },
-    variants: {
-        type: DataTypes.JSONB,
-        defaultValue: []
-    },
-    brand: {
-        type: DataTypes.STRING(200),
-        allowNull: true
     },
     weight: {
-        type: DataTypes.DECIMAL(10, 3),
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: true
     },
     weight_unit: {
         type: DataTypes.STRING(10),
+        defaultValue: 'kg'
+    },
+    brand: {
+        type: DataTypes.STRING(255),
         allowNull: true
+    },
+    tags: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
+    },
+    images: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
+    },
+    aliases: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
+    },
+    variants: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: []
     },
     compare_at_price: {
         type: DataTypes.DECIMAL(10, 2),
@@ -104,27 +100,33 @@ const Product = sequelize.define('Product', {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true
     },
-    category_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'categories',
-            key: 'id'
-        },
-        onDelete: 'SET NULL'
+    allow_discounts: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
     },
-    embedding: {
-        type: DataTypes.ARRAY(DataTypes.FLOAT),
-        allowNull: true
+    charge_tax: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
     },
-    tags: {
-        type: DataTypes.JSONB,
-        defaultValue: []
+    send_low_stock_alert: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false
+    },
+    in_stock: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
+    },
+    is_active: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true
     }
 }, {
     tableName: 'products',
     underscored: true,
-    timestamps: true
+    timestamps: true,
+    paranoid: true // Enable soft delete
+    // Note: unique index on (shop_id, sku) removed — add back via migration
+    // once sku data is validated and existing rows are updated
 });
 
 module.exports = Product;

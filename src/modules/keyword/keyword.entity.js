@@ -29,7 +29,7 @@ const Keyword = sequelize.define('Keyword', {
         allowNull: false
     },
     response_data: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: false
     },
     language: {

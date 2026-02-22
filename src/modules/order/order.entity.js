@@ -38,7 +38,7 @@ const Order = sequelize.define('Order', {
         defaultValue: 'manual'
     },
     items: {
-        type: DataTypes.JSONB,
+        type: DataTypes.JSON,
         allowNull: true,
         defaultValue: []
     },
@@ -118,7 +118,19 @@ const Order = sequelize.define('Order', {
     tableName: 'orders',
     underscored: true,
     timestamps: true,
-    indexes: []
+    // P2-1: Multi-tenant — enforce shop_id via scope or where in all queries
+    scopes: {
+        shopScoped(shopId) {
+            return { where: { shop_id: shopId } };
+        }
+    },
+    indexes: [
+        { fields: ['shop_id'] },
+        { fields: ['shop_id', 'order_status'] },
+        { fields: ['shop_id', 'created_at'] },
+        { fields: ['order_number'], unique: true },
+        { fields: ['customer_id'] }
+    ]
 });
 
 module.exports = Order;

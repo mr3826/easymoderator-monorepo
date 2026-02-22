@@ -550,6 +550,23 @@ const checkRateLimit = async (shopId, userId, customerId) => {
     };
 };
 
+/**
+ * Check if shop can create one more order (usage limit).
+ * Call BEFORE creating order to avoid creating orders that would exceed limit.
+ * @throws {AppError} USAGE_LIMIT_EXCEEDED if orders_used + 1 > orders_limit
+ */
+const checkOrderLimit = async (shopId) => {
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    if (!subscription) return;
+    const newUsage = (subscription.orders_used || 0) + 1;
+    const limit = subscription.orders_limit;
+    if (newUsage > limit) {
+        const error = new AppError(`Usage limit exceeded for orders: ${newUsage} > ${limit}`, 402);
+        error.code = 'USAGE_LIMIT_EXCEEDED';
+        throw error;
+    }
+};
+
 const incrementRateLimit = async (shopId, userId, customerId) => {
     await verifyShopAccess(userId, shopId);
 
@@ -570,6 +587,7 @@ module.exports = {
     getSubscription,
     updatePlan,
     trackUsage,
+    checkOrderLimit,
     requestConversationPack,
     getInvoices,
     getInvoiceById,

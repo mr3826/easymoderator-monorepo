@@ -45,72 +45,62 @@ class MonthlyUsageReset extends BaseJob {
             resetDetails: []
         };
 
-        // Get all active subscriptions that need reset
-        const subscriptions = await this.getSubscriptionsToReset(runDate);
+        // Process in batches of 100 — prevents OOM at 10k+ tenants
+        const BATCH_SIZE = 100;
+        let offset = 0;
+        let hasMore = true;
 
-        this.metrics.recordsProcessed = subscriptions.length;
+        while (hasMore) {
+            const subscriptions = await Subscription.findAll({
+                where: { status: 'active' },
+                limit: BATCH_SIZE,
+                offset,
+                order: [['id', 'ASC']], // stable ordering required for cursor pagination
+                include: [{ model: Shop, as: 'shop', required: true }]
+            });
 
-        for (const subscription of subscriptions) {
-            try {
-                // Check if already reset this month (idempotency)
-                if (this.isAlreadyReset(subscription, runDate) && !dryRun) {
-                    this.logger.info(`Subscription already reset this month`, {
+            if (subscriptions.length < BATCH_SIZE) hasMore = false;
+            offset += subscriptions.length;
+            this.metrics.recordsProcessed += subscriptions.length;
+
+            for (const subscription of subscriptions) {
+                try {
+                    if (this.isAlreadyReset(subscription, runDate) && !dryRun) {
+                        this.logger.info(`Subscription already reset this month`, {
+                            shopId: subscription.shop_id,
+                            lastReset: subscription.usage_reset_at
+                        });
+                        results.subscriptionsSkipped++;
+                        continue;
+                    }
+
+                    const usageSnapshot = {
                         shopId: subscription.shop_id,
-                        lastReset: subscription.usage_reset_at
-                    });
-                    results.subscriptionsSkipped++;
-                    continue;
+                        shopName: subscription.shop?.name || 'Unknown',
+                        conversationsUsed: subscription.conversations_used,
+                        ordersUsed: subscription.orders_used,
+                        productsUsed: subscription.products_used,
+                        extraCharges: subscription.extra_charges
+                    };
+
+                    if (!dryRun) {
+                        await this.resetSubscription(subscription, runDate);
+                    }
+
+                    results.subscriptionsReset++;
+                    results.resetDetails.push(usageSnapshot);
+                    this.metrics.recordsSucceeded++;
+
+                } catch (error) {
+                    this.logger.error(`Failed to reset subscription for shop ${subscription.shop_id}`, error);
+                    this.metrics.recordsFailed++;
+                    this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
                 }
-
-                // Capture current usage before reset
-                const usageSnapshot = {
-                    shopId: subscription.shop_id,
-                    shopName: subscription.shop?.name || 'Unknown',
-                    conversationsUsed: subscription.conversations_used,
-                    ordersUsed: subscription.orders_used,
-                    productsUsed: subscription.products_used,
-                    extraCharges: subscription.extra_charges
-                };
-
-                // Reset usage counters (if not dry-run)
-                if (!dryRun) {
-                    await this.resetSubscription(subscription, runDate);
-                }
-
-                results.subscriptionsReset++;
-                results.resetDetails.push(usageSnapshot);
-                this.metrics.recordsSucceeded++;
-
-            } catch (error) {
-                this.logger.error(`Failed to reset subscription for shop ${subscription.shop_id}`, error);
-                this.metrics.recordsFailed++;
-                this.metrics.errors.push(`Shop ${subscription.shop_id}: ${error.message}`);
             }
         }
 
-        results.subscriptionsProcessed = subscriptions.length;
-
+        results.subscriptionsProcessed = offset;
         return results;
-    }
-
-    /**
-     * Get subscriptions that need to be reset
-     * @param {Date} runDate 
-     */
-    async getSubscriptionsToReset(runDate) {
-        // Get all active subscriptions
-        const subscriptions = await Subscription.findAll({
-            where: {
-                status: 'active'
-            },
-            include: [{
-                model: Shop,
-                as: 'shop',
-                required: true
-            }]
-        });
-
-        return subscriptions;
     }
 
     /**
