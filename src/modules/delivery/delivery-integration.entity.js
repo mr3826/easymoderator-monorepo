@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../../utils/database/database-setup');
 const crypto = require('crypto');
 
 // Same AES-256-CBC key derivation as payment-config.entity.js (P1-9)

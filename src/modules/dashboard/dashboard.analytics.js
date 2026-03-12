@@ -1,5 +1,5 @@
-const { Analytics, UserShop } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
+const { Analytics, UserShop } = require('../entities');
+const { AppError } = require('../../utils/AppError');
 
 const verifyShopAccess = async (userId, shopId) => {
     const userShop = await UserShop.findOne({

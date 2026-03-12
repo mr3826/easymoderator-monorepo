@@ -1,9 +1,9 @@
-const { Order, PaymentConfig } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { UserShop } = require('src/modules/entities');
+const { Order, PaymentConfig } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { UserShop } = require('../entities');
 const axios = require('axios');
 const crypto = require('crypto');
-const config = require('src/config/config');
+const config = require('../../config/config');
 
 /**
  * Verify user has access to shop

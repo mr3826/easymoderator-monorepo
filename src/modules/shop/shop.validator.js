@@ -2,10 +2,21 @@ const { body, param } = require('express-validator');
 
 const shopCreateValidator = [
     body('shop_name')
+        .trim()
+        .notEmpty().withMessage('Shop name is required')
+        .isLength({ min: 2, max: 100 }).withMessage('Shop name must be 2–100 characters'),
+    body('phone')
         .optional()
         .trim()
-        .isLength({ min: 2 })
-        .withMessage('Shop name must be at least 2 characters long')
+        .matches(/^01[3-9]\d{8}$/).withMessage('Phone must be a valid Bangladeshi mobile number (e.g. 01712345678)'),
+    body('address')
+        .optional()
+        .trim()
+        .isLength({ max: 500 }).withMessage('Address must not exceed 500 characters'),
+    body('shop_type')
+        .optional()
+        .isIn(['retail', 'wholesale', 'f-commerce', 'service', 'other'])
+        .withMessage('shop_type must be one of: retail, wholesale, f-commerce, service, other')
 ];
 
 const shopUpdateValidator = [

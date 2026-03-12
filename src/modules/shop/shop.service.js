@@ -1,6 +1,6 @@
-const { User, Shop, UserShop } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { sequelize } = require('src/utils/database/database-setup');
+const { User, Shop, UserShop, Tenant } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { sequelize } = require('../../utils/database/database-setup');
 
 /**
  * Get all shops for a user
@@ -297,6 +297,44 @@ const getUserRoleInShop = async (shopId, userId) => {
     return userShop ? userShop.role : null;
 };
 
+/**
+ * Get shop AI settings
+ */
+const getShopAiSettings = async (shopId) => {
+    const shop = await Shop.findByPk(shopId);
+    
+    if (!shop) {
+        return null;
+    }
+
+    // Return AI settings from the settings JSON field, with defaults
+    const defaultSettings = {
+        automation_mode: 'DRAFT',
+        confidence_threshold: 60,
+        auto_reply_enabled: true,
+        max_auto_order_value: 5000,
+        ask_email: false,
+        required_fields: {
+            customer_name: true,
+            mobile_number: true,
+            delivery_address: true,
+            payment_method: true,
+            email_address: false,
+            special_instructions: false
+        },
+        handoff_settings: {
+            trigger_keywords: ['complain', 'problem', 'issue'],
+            notification_channel: 'in_app',
+            cooldown_minutes: 30
+        }
+    };
+
+    return {
+        ...defaultSettings,
+        ...(shop.settings?.ai_control || {})
+    };
+};
+
 module.exports = {
     getShopsByUserId,
     getShopById,
@@ -306,5 +344,6 @@ module.exports = {
     addUserToShop,
     removeUserFromShop,
     updateUserRole,
-    getUserRoleInShop
+    getUserRoleInShop,
+    getShopAiSettings
 };

@@ -1,6 +1,6 @@
 const express = require('express');
 const subscriptionController = require('./subscription.controller');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 const { 
     updatePlanValidator, 
     requestConversationPackValidator 

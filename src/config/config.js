@@ -68,6 +68,11 @@ module.exports = {
     databaseUrl: process.env.DATABASE_URL,
     redisUrl: process.env.REDIS_URL,
     redisPassword: process.env.REDIS_PASSWORD || '',
+    redisHost: process.env.REDIS_HOST || 'localhost',
+    redisPort: process.env.REDIS_PORT || 6379,
+    redisSessionDb: process.env.REDIS_SESSION_DB || '0',
+    redisCacheDb: process.env.REDIS_CACHE_DB || '1',
+    redisRateLimitDb: process.env.REDIS_RATELIMIT_DB || '2',
     bodySizeLimit: process.env.BODY_SIZE_LIMIT || '1mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
     corsOrigins: process.env.CORS_ORIGINS
@@ -78,7 +83,8 @@ module.exports = {
     jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1d',
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     sessionSecret: process.env.SESSION_SECRET,
-    workflowUrl: process.env.WF1_WEBHOOK_URL || '',
+    workflowUrl: process.env.MAKE_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL || process.env.WF1_WEBHOOK_URL || '',
+    workflowOutboundSecret: process.env.MAKE_INTERNAL_AUTH || process.env.INTERNAL_WEBHOOK_SECRET || '',
     metaWebhookAppSecret: process.env.META_WEBHOOK_APP_SECRET,
     internalWebhookSecret: process.env.INTERNAL_WEBHOOK_SECRET || '',
     // Cookie config for httpOnly token storage

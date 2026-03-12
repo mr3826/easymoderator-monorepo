@@ -18,9 +18,9 @@ const {
     Shop,
     User,
     UserShop
-} = require('src/modules/entities');
-const subscriptionService = require('src/modules/subscription/subscription.service');
-const { sequelize } = require('src/utils/database/database-setup');
+} = require('../../entities');
+const subscriptionService = require('../subscription.service');
+const { sequelize } = require('../../../utils/database/database-setup');
 
 describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
     let shop, user, subscription, requestId;

@@ -1,6 +1,6 @@
-const { Channel } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { UserShop } = require('src/modules/entities');
+const { Channel } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { UserShop } = require('../entities');
 
 /**
  * Verify user has access to shop

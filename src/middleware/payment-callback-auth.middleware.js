@@ -1,6 +1,6 @@
 const crypto = require('crypto');
-const config = require('src/config/config');
-const { AppError } = require('src/utils/AppError');
+const config = require('../config/config');
+const { AppError } = require('../utils/AppError');
 
 /**
  * IP allowlist middleware for payment gateway callbacks.

@@ -10,6 +10,7 @@ const redisStore = {};
 const mockRedis = {
     get: jest.fn((key) => Promise.resolve(redisStore[key] || null)),
     set: jest.fn((key, val, ...args) => { redisStore[key] = val; return Promise.resolve('OK'); }),
+    setex: jest.fn((key, ttl, val) => { redisStore[key] = val; return Promise.resolve('OK'); }),
     del: jest.fn((key) => { delete redisStore[key]; return Promise.resolve(1); }),
     incr: jest.fn((key) => {
         redisStore[key] = (parseInt(redisStore[key], 10) || 0) + 1;
@@ -156,6 +157,7 @@ describe('Auth API', () => {
         // Reset call counts but keep implementations
         mockRedis.get.mockClear();
         mockRedis.set.mockClear();
+        mockRedis.setex.mockClear();
         mockRedis.del.mockClear();
         mockRedis.incr.mockClear();
         mockRedis.expire.mockClear();
@@ -165,10 +167,10 @@ describe('Auth API', () => {
 
     // ── Signup ──────────────────────────────────────────────────────────
 
-    describe('POST /auth/signup', () => {
+    describe('POST /api/auth/signup', () => {
         it('should return 400 when email is missing', async () => {
             const res = await request(app)
-                .post('/auth/signup')
+                .post('/api/auth/signup')
                 .send({ password: '123456' });
 
             expect(res.status).toBe(400);
@@ -177,7 +179,7 @@ describe('Auth API', () => {
 
         it('should return 400 when password is too short', async () => {
             const res = await request(app)
-                .post('/auth/signup')
+                .post('/api/auth/signup')
                 .send({ email: 'test@example.com', password: '123' });
 
             expect(res.status).toBe(400);
@@ -187,12 +189,12 @@ describe('Auth API', () => {
 
     // ── Signin ──────────────────────────────────────────────────────────
 
-    describe('POST /auth/signin', () => {
+    describe('POST /api/auth/signin', () => {
         it('should return 401 for invalid credentials', async () => {
             User.findOne.mockResolvedValue(null);
 
             const res = await request(app)
-                .post('/auth/signin')
+                .post('/api/auth/signin')
                 .send({ email: 'wrong@example.com', password: 'wrong' });
 
             expect(res.status).toBe(401);
@@ -203,13 +205,13 @@ describe('Auth API', () => {
             User.findOne.mockResolvedValue(mockUser);
 
             const res = await request(app)
-                .post('/auth/signin')
+                .post('/api/auth/signin')
                 .send({ email: 'test@example.com', password: 'correct-password' });
 
             expect(res.status).toBe(200);
             expect(res.body.success).toBe(true);
-            expect(res.body.data.accessToken).toBeDefined();
-            expect(res.body.data.refreshToken).toBeDefined();
+            expect(res.body.data.tokens.access_token).toBeDefined();
+            expect(res.body.data.tokens.refresh_token).toBeDefined();
 
             // Verify httpOnly cookies are set
             const cookies = res.headers['set-cookie'];
@@ -221,7 +223,7 @@ describe('Auth API', () => {
 
         it('should return 400 when email is missing', async () => {
             const res = await request(app)
-                .post('/auth/signin')
+                .post('/api/auth/signin')
                 .send({ password: 'test123' });
 
             expect(res.status).toBe(400);
@@ -237,13 +239,13 @@ describe('Auth API', () => {
             // Make 5 failed attempts
             for (let i = 0; i < 5; i++) {
                 await request(app)
-                    .post('/auth/signin')
+                    .post('/api/auth/signin')
                     .send({ email: 'lockme@example.com', password: 'wrong' });
             }
 
             // 6th attempt should get lockout message
             const res = await request(app)
-                .post('/auth/signin')
+                .post('/api/auth/signin')
                 .send({ email: 'lockme@example.com', password: 'wrong' });
 
             expect(res.status).toBe(429);
@@ -253,20 +255,20 @@ describe('Auth API', () => {
 
     // ── Logout ──────────────────────────────────────────────────────────
 
-    describe('POST /auth/logout', () => {
+    describe('POST /api/auth/logout', () => {
         let validToken;
 
         // Helper: get a valid access token
         const loginAndGetToken = async () => {
             User.findOne.mockResolvedValue(mockUser);
             const loginRes = await request(app)
-                .post('/auth/signin')
+                .post('/api/auth/signin')
                 .send({ email: 'logout-test@example.com', password: 'correct-password' });
-            return loginRes.body.data.accessToken;
+            return loginRes.body.data.tokens.access_token;
         };
 
         it('should return 401 without a token', async () => {
-            const res = await request(app).post('/auth/logout');
+            const res = await request(app).post('/api/auth/logout');
             expect(res.status).toBe(401);
         });
 
@@ -275,18 +277,17 @@ describe('Auth API', () => {
             User.findByPk.mockResolvedValue(mockUser);
 
             const logoutRes = await request(app)
-                .post('/auth/logout')
+                .post('/api/auth/logout')
                 .set('Authorization', `Bearer ${validToken}`);
 
             expect(logoutRes.status).toBe(200);
             expect(logoutRes.body.message).toBe('Logged out successfully');
 
             // Verify the token is blacklisted in our mock Redis
-            expect(mockRedis.set).toHaveBeenCalledWith(
+            expect(mockRedis.setex).toHaveBeenCalledWith(
                 expect.stringContaining('token_blacklist:'),
-                '1',
-                'EX',
-                expect.any(Number)
+                expect.any(Number),
+                '1'
             );
         });
 
@@ -296,12 +297,12 @@ describe('Auth API', () => {
 
             // Logout (blacklists the token)
             await request(app)
-                .post('/auth/logout')
+                .post('/api/auth/logout')
                 .set('Authorization', `Bearer ${validToken}`);
 
             // Try to use the same token — should be rejected
             const res = await request(app)
-                .post('/auth/logout')
+                .post('/api/auth/logout')
                 .set('Authorization', `Bearer ${validToken}`);
 
             expect(res.status).toBe(401);
@@ -310,10 +311,10 @@ describe('Auth API', () => {
 
     // ── Refresh ─────────────────────────────────────────────────────────
 
-    describe('POST /auth/refresh', () => {
+    describe('POST /api/auth/refresh', () => {
         it('should return 400 when refresh_token is missing', async () => {
             const res = await request(app)
-                .post('/auth/refresh')
+                .post('/api/auth/refresh')
                 .send({ refresh_token: '' });
 
             // express-validator will reject empty refresh_token

@@ -1,8 +1,8 @@
 const axios = require('axios');
 const crypto = require('crypto');
 const MetaIntegration = require('./meta-integration.entity');
-const config = require('src/config/config');
-const AppError = require('src/utils/AppError');
+const config = require('../../config/config');
+const AppError = require('../../utils/AppError');
 
 // Meta API configuration
 const META_CONFIG = {

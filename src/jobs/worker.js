@@ -1,7 +1,7 @@
 require('module-alias/register');
 const queueManager = require('./queue-manager');
-const { sequelize } = require('src/utils/database/database-setup');
-const { getRedisClient } = require('src/utils/redis-client');
+const { sequelize } = require('../utils/database/database-setup');
+const { cacheMemory } = require('../config/redis.js');
 
 /**
  * Queue Worker Process
@@ -15,10 +15,10 @@ async function startWorker() {
         await sequelize.authenticate();
         console.log('✅ Database connected');
 
-        // Initialize Redis connection
-        const redis = getRedisClient();
+        // Initialize memory cache
+        const redis = cacheMemory;
         if (!redis) {
-            console.error('❌ Redis required for queue worker');
+            console.warn('⚠️  Memory cache not available');
             process.exit(1);
         }
 

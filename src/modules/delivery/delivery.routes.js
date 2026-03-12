@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const deliveryController = require('./delivery.controller');
-const { deliveryValidators, checkValidation } = require('./delivery.validator');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { deliveryValidators } = require('./delivery.validator');
+const { authenticate } = require('../../middleware/auth.middleware');
+const validate = require('../../middleware/validate.middleware');
 
 // All delivery routes require authentication
 router.use(authenticate);
@@ -22,8 +23,7 @@ router.get(
  */
 router.put(
     '/settings',
-    deliveryValidators.updateSettings,
-    checkValidation,
+    validate(deliveryValidators.updateSettings),
     deliveryController.updateSettings
 );
 
@@ -33,8 +33,7 @@ router.put(
  */
 router.post(
     '/connect',
-    deliveryValidators.connectProvider,
-    checkValidation,
+    validate(deliveryValidators.connectProvider),
     deliveryController.connectProvider
 );
 
@@ -44,8 +43,7 @@ router.post(
  */
 router.post(
     '/disconnect',
-    deliveryValidators.disconnectProvider,
-    checkValidation,
+    validate(deliveryValidators.disconnectProvider),
     deliveryController.disconnectProvider
 );
 
@@ -55,8 +53,7 @@ router.post(
  */
 router.post(
     '/toggle',
-    deliveryValidators.toggleProvider,
-    checkValidation,
+    validate(deliveryValidators.toggleProvider),
     deliveryController.toggleProvider
 );
 
@@ -66,8 +63,7 @@ router.post(
  */
 router.post(
     '/test',
-    deliveryValidators.disconnectProvider, // Reuse same validation (just needs provider)
-    checkValidation,
+    validate(deliveryValidators.disconnectProvider), // Reuse same validation (just needs provider)
     deliveryController.testConnection
 );
 

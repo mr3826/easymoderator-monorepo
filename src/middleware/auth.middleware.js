@@ -1,6 +1,6 @@
-const { AppError } = require('src/utils/AppError');
-const { verifyAccessToken } = require('src/utils/jwt.util');
-const { isTokenBlacklisted } = require('src/modules/auth/auth.service');
+const { AppError } = require('../utils/AppError');
+const { verifyAccessToken } = require('../utils/jwt.util');
+const { isTokenBlacklisted } = require('../modules/auth/auth.service');
 
 /**
  * Authentication middleware

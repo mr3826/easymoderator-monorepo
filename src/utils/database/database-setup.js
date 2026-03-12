@@ -1,6 +1,6 @@
 const { Sequelize } = require('sequelize');
 const path = require('path');
-const config = require('src/config/config');
+const config = require('../../config/config');
 
 // Use SQLite only if DATABASE_URL is not set
 const projectRoot = path.resolve(__dirname, '../../..');

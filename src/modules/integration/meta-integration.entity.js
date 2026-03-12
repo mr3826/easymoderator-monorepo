@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../../utils/database/database-setup');
 
 const MetaIntegration = sequelize.define('MetaIntegration', {
   id: {
@@ -48,7 +48,18 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
     type: DataTypes.STRING,
     allowNull: true,
     comment: 'Meta webhook subscription ID for cleanup'
-  }
+  },
+  app_secret: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Encrypted per-tenant Meta app secret for per-page webhook signature verification'
+  },
+  webhook_verify_token: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+    comment: 'Unique per-tenant verify token used for Meta webhook subscription handshake'
+  },
 }, {
   tableName: 'meta_integrations',
   indexes: [
@@ -69,6 +80,11 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
     {
       fields: ['platform'],
       name: 'idx_platform'
+    },
+    {
+      unique: true,
+      fields: ['webhook_verify_token'],
+      name: 'idx_meta_verify_token'
     }
   ],
   timestamps: true,
@@ -77,7 +93,7 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
 });
 
 // Define relationships
-const Shop = require('src/modules/shop/shop.entity');
+const Shop = require('../shop/shop.entity');
 MetaIntegration.belongsTo(Shop, {
   foreignKey: 'shop_id',
   as: 'shop'

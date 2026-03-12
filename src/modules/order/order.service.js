@@ -1,10 +1,10 @@
-const { Order, OrderItem, Product, Customer, UserShop, OrderReturn } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { sequelize } = require('src/utils/database/database-setup');
+const { Order, OrderItem, Product, Customer, UserShop, OrderReturn } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
-const deliveryService = require('src/modules/delivery/delivery.service');
-const subscriptionService = require('src/modules/subscription/subscription.service');
-const { createLogger } = require('src/utils/structured-logger');
+const deliveryService = require('../delivery/delivery.service');
+const subscriptionService = require('../subscription/subscription.service');
+const { createLogger } = require('../../utils/structured-logger');
 
 /**
  * Verify user has access to shop
@@ -83,6 +83,19 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
     // USAGE_LIMIT_EXCEEDED check BEFORE creating the DB transaction
     await subscriptionService.checkOrderLimit(shopId);
 
+    // RTO Shield: check phone blacklist for COD orders before opening transaction
+    const isCodOrder = !orderData.payment_status || orderData.payment_status === 'unpaid' || orderData.payment_status === 'pending';
+    if (isCodOrder && orderData.customer_phone) {
+        const RtoShieldService = require('../rto-shield/rto-shield.service');
+        const rtoResult = await RtoShieldService.checkPhone(orderData.customer_phone, shopId);
+        if (rtoResult.flagged && rtoResult.risk_score >= 70) {
+            throw new AppError(
+                `Order blocked by RTO Shield: ${rtoResult.reason} (risk score: ${rtoResult.risk_score})`,
+                422
+            );
+        }
+    }
+
     // Strict state machine definition
     const ORDER_STATES = ['draft', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
     const PAYMENT_STATES = ['pending', 'paid', 'unpaid', 'refunded', 'partially_paid'];
@@ -128,6 +141,18 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
         const tax = parseFloat(orderData.tax || 0);
         const deliveryFee = parseFloat(orderData.delivery_fee || 0);
         const total = subtotal - discount + tax + deliveryFee;
+
+        // M8: COD order value cap — configurable via COD_ORDER_MAX_VALUE env (default 50000 BDT)
+        if (isCodOrder) {
+            const COD_MAX = parseInt(process.env.COD_ORDER_MAX_VALUE || '50000', 10);
+            if (total > COD_MAX) {
+                throw new AppError(
+                    `COD orders cannot exceed ৳${COD_MAX.toLocaleString()}. Please use an online payment method for large orders.`,
+                    422
+                );
+            }
+        }
+
         // 2. Generate Order Number
         const orderNumber = await generateOrderNumber(shopId, transaction);
         // 3. Create Order
@@ -366,8 +391,8 @@ const confirmOrder = async (orderId, userId, shopId) => {
 
     // --- INVOICE CREATION LOGIC ---
     // Create invoice for this order (simple, not subscription-based)
-    const { Invoice } = require('src/modules/entities');
-    const { sendEmail } = require('src/utils/email.service');
+    const { Invoice } = require('../entities');
+    const { sendEmail } = require('../../utils/email.service');
     let invoice = null;
     try {
         // Generate invoice number: INV-YYYYMM-ORDERID

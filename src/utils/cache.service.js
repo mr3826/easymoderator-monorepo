@@ -1,4 +1,4 @@
-const { getRedisClient } = require('./redis-client');
+const { cacheRedis } = require('../config/redis.js');
 
 // In-memory fallback: evict oldest entries when this limit is reached
 const MAX_MEMORY_ENTRIES = 10000;
@@ -39,9 +39,8 @@ class CacheService {
      */
     async _get(rawKey) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
-                const value = await redis.get(rawKey);
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                const value = await cacheRedis.get(rawKey);
                 return value ? JSON.parse(value) : null;
             }
             return this.memoryCache.get(rawKey) ?? null;
@@ -57,12 +56,11 @@ class CacheService {
     async _set(rawKey, value, ttl = null) {
         try {
             const serialized = JSON.stringify(value);
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
+            if (cacheRedis && cacheRedis.status === 'ready') {
                 if (ttl) {
-                    await redis.setex(rawKey, ttl, serialized);
+                    await cacheRedis.setex(rawKey, ttl, serialized);
                 } else {
-                    await redis.set(rawKey, serialized);
+                    await cacheRedis.set(rawKey, serialized);
                 }
                 return true;
             }
@@ -87,9 +85,8 @@ class CacheService {
      */
     async _delete(rawKey) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
-                await redis.del(rawKey);
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                await cacheRedis.del(rawKey);
                 return true;
             }
             return this.memoryCache.delete(rawKey);
@@ -105,17 +102,16 @@ class CacheService {
      */
     async _deletePattern(rawPattern) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
+            if (cacheRedis && cacheRedis.status === 'ready') {
                 let cursor = '0';
                 let deleted = 0;
                 do {
-                    const [nextCursor, keys] = await redis.scan(
+                    const [nextCursor, keys] = await cacheRedis.scan(
                         cursor, 'MATCH', rawPattern, 'COUNT', 100
                     );
                     cursor = nextCursor;
                     if (keys.length > 0) {
-                        await redis.del(...keys);
+                        await cacheRedis.del(...keys);
                         deleted += keys.length;
                     }
                 } while (cursor !== '0');
@@ -191,9 +187,8 @@ class CacheService {
     async existsForShop(shopId, key) {
         try {
             const rawKey = this._tenantKey(shopId, key);
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
-                return (await redis.exists(rawKey)) === 1;
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                return (await cacheRedis.exists(rawKey)) === 1;
             }
             return this.memoryCache.has(rawKey);
         } catch (error) {
@@ -208,9 +203,8 @@ class CacheService {
     async incrementForShop(shopId, key, amount = 1) {
         try {
             const rawKey = this._tenantKey(shopId, key);
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') {
-                return await redis.incrby(rawKey, amount);
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                return await cacheRedis.incrby(rawKey, amount);
             }
             const current = this.memoryCache.get(rawKey) || 0;
             const newValue = current + amount;
@@ -238,8 +232,7 @@ class CacheService {
 
     async exists(key) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') return (await redis.exists(key)) === 1;
+            if (cacheRedis && cacheRedis.status === 'ready') return (await cacheRedis.exists(key)) === 1;
             return this.memoryCache.has(key);
         } catch (error) {
             console.error('Cache exists error:', error);
@@ -249,8 +242,7 @@ class CacheService {
 
     async expire(key, ttl) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') { await redis.expire(key, ttl); return true; }
+            if (cacheRedis && cacheRedis.status === 'ready') { await cacheRedis.expire(key, ttl); return true; }
             const value = this.memoryCache.get(key);
             if (value !== undefined) {
                 setTimeout(() => this.memoryCache.delete(key), ttl * 1000);
@@ -279,8 +271,7 @@ class CacheService {
 
     async increment(key, amount = 1) {
         try {
-            const redis = getRedisClient();
-            if (redis && redis.status === 'ready') return await redis.incrby(key, amount);
+            if (cacheRedis && cacheRedis.status === 'ready') return await cacheRedis.incrby(key, amount);
             const current = this.memoryCache.get(key) || 0;
             const newValue = current + amount;
             this.memoryCache.set(key, newValue);

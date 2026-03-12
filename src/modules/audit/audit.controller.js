@@ -1,5 +1,5 @@
 const auditService = require('./audit.service');
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Get audit logs for the shop with filters

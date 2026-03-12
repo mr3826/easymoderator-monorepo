@@ -11,13 +11,17 @@ class OrderValidator {
                 'string.max': 'Customer name must not exceed 100 characters',
                 'any.required': 'Customer name is required'
             }),
-            customer_phone: Joi.string().trim().min(1).required().messages({
-                'string.min': 'Phone number is required',
+            customer_phone: Joi.string().trim().pattern(/^01[3-9]\d{8}$/).required().messages({
+                'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)',
                 'any.required': 'Phone/Mobile number is required'
             }),
-            delivery_address: Joi.string().trim().min(5).optional().allow('').messages({
-                'string.min': 'Delivery address must be at least 5 characters'
+            delivery_address: Joi.string().trim().min(10).max(500).optional().allow('').messages({
+                'string.min': 'Delivery address must be at least 10 characters',
+                'string.max': 'Delivery address must not exceed 500 characters'
             }),
+            delivery_district: Joi.string().trim().max(100).optional(),
+            delivery_thana: Joi.string().trim().max(100).optional(),
+            delivery_area: Joi.string().trim().max(100).optional(),
             channel: Joi.string().trim().optional(),
             items: Joi.array().min(1).items(Joi.object({
                 product_id: Joi.string().uuid().required().messages({
@@ -54,7 +58,7 @@ class OrderValidator {
                 'any.only': 'Invalid fulfillment status'
             }),
             note: Joi.string().trim().allow('').optional()
-        }).unknown()
+        })
     };
 
     updateOrder = {

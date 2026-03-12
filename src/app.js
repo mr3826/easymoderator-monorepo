@@ -4,15 +4,17 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const timeout = require('express-timeout-handler');
 const { doubleCsrf } = require('csrf-csrf');
-const config = require('src/config/config');
-const routes = require('src/modules/routes');
-const healthRoutes = require('src/routes/health.routes');
-const metaWebhookRoutes = require('src/modules/integration/meta-webhook.routes');
-const { AppError, globalErrorHandler } = require('src/utils/AppError');
-const { requestContextMiddleware } = require('src/middleware/request-context.middleware');
-const createSessionMiddleware = require('src/middleware/session.middleware');
+const config = require('./config/config');
+const routes = require('./modules/routes');
+const healthRoutes = require('./routes/health.routes');
+const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
+const { AppError, globalErrorHandler } = require('./utils/AppError');
+const { requestContextMiddleware } = require('./middleware/request-context.middleware');
+const createSessionMiddleware = require('./middleware/session.middleware');
+const xssSanitize = require('./middleware/xss-sanitize.middleware');
 
 const app = express();
 
@@ -52,12 +54,30 @@ const corsOptions = allowedOrigins.length > 0
 app.use(cors(corsOptions));
 
 // Rate limiting (skip in test environment to avoid interference with test suites)
+// H8: Use Redis store so limits are shared across all PM2 workers/processes.
+// Falls back to memory store if Redis is unavailable (development without Redis).
 if (config.env !== 'test') {
+    const { rateLimitRedis } = require('./config/redis');
+    const buildStore = (prefix) => {
+        try {
+            if (rateLimitRedis && typeof rateLimitRedis.call === 'function') {
+                return new RedisStore({
+                    prefix,
+                    sendCommand: (...args) => rateLimitRedis.call(...args)
+                });
+            }
+        } catch (e) {
+            // ioredis mock or unavailable — fall through to memory store
+        }
+        return undefined; // express-rate-limit default: MemoryStore
+    };
+
     const apiLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15 minutes
         max: 500,
         standardHeaders: true,
-        legacyHeaders: false
+        legacyHeaders: false,
+        store: buildStore('rl:api:')
     });
     app.use(apiLimiter);
 
@@ -68,7 +88,8 @@ if (config.env !== 'test') {
             max: 10, // 10 requests per minute per IP
             standardHeaders: true,
             legacyHeaders: false,
-            message: { success: false, error: { code: '429', message: 'Too many authentication attempts. Please try again later.' } }
+            message: { success: false, error: { code: '429', message: 'Too many authentication attempts. Please try again later.' } },
+            store: buildStore('rl:auth:')
         });
         app.use('/auth', authLimiter);
     }
@@ -80,6 +101,9 @@ app.use('/webhooks/meta', metaWebhookRoutes);
 // Body parsing
 app.use(express.json({ limit: config.bodySizeLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.bodySizeLimit }));
+
+// Global XSS sanitization — strips script tags, event handlers, javascript: URIs from req.body
+app.use(xssSanitize);
 
 // Cookie parser (for httpOnly token cookies)
 app.use(cookieParser());
@@ -116,11 +140,18 @@ app.use((req, res, next) => {
     const path = req.path;
     if (
         path.startsWith('/webhooks') ||
+        path.startsWith('/api/webhooks') ||
         path.startsWith('/auth') ||
+        path.startsWith('/api/auth') ||
         path.startsWith('/health') ||
         path === '/csrf' ||
         path.startsWith('/payment/aamarpay') ||
-        path.startsWith('/payment/sslcommerz')
+        path.startsWith('/api/payment/aamarpay') ||
+        path.startsWith('/payment/sslcommerz') ||
+        path.startsWith('/api/payment/sslcommerz') ||
+        // NOTE: /order-session, /ai-chatbot, /notifications, /analytics
+        // are browser-facing state-mutating routes — CSRF protection is enforced on these.
+        // Automation callers (n8n/Make) must obtain a CSRF token via GET /csrf first.
     ) {
         return next();
     }
@@ -153,7 +184,7 @@ app.get('/health', (req, res) => {
 app.use('/health', healthRoutes);
 
 // API routes
-app.use('/', routes);
+app.use('/api', routes);
 
 // 404 Handler
 app.all('*', (req, res, next) => {

@@ -1,4 +1,4 @@
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../utils/AppError');
 
 /**
  * Require owner role

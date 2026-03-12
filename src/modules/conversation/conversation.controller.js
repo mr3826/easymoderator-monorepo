@@ -1,5 +1,5 @@
 const conversationService = require('./conversation.service');
-const cacheService = require('src/utils/cache.service');
+const cacheService = require('../../utils/cache.service');
 
 class ConversationController {
     async getConversations(req, res) {

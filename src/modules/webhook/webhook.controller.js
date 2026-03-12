@@ -1,7 +1,7 @@
 const crypto = require('crypto');
-const config = require('src/config/config');
-const { AppError } = require('src/utils/AppError');
-const { postToWorkflow } = require('src/utils/workflow-client');
+const config = require('../../config/config');
+const { AppError } = require('../../utils/AppError');
+const { postToWorkflow } = require('../../utils/workflow-client');
 
 const validateWebhook = async (req, res, next) => {
     try {

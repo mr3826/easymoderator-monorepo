@@ -1,8 +1,8 @@
 require('module-alias/register');
-const config = require('src/config/config');
+const config = require('../../config/config');
 
-const { sequelize } = require('src/utils/database/database-setup');
-const entities = require('src/modules/entities');
+const { sequelize } = require('./database-setup');
+const entities = require('../../modules/entities');
 
 const syncDatabase = async () => {
     try {

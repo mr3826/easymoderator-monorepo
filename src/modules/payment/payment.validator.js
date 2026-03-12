@@ -1,58 +1,75 @@
-const { body } = require('express-validator');
+const Joi = require('joi');
 
 /**
  * Validator for COD payment confirmation
  */
-const confirmCodPaymentValidator = [
-    body('orderId')
-        .trim()
-        .notEmpty()
-        .withMessage('Order ID is required')
-        .isUUID()
-        .withMessage('Order ID must be a valid UUID')
-];
+const confirmCodPaymentValidator = Joi.object({
+    orderId: Joi.string()
+        .uuid()
+        .required()
+        .messages({
+            'string.guid': 'Order ID must be a valid UUID',
+            'any.required': 'Order ID is required',
+            'string.empty': 'Order ID is required'
+        })
+});
 
 /**
  * Validator for saving payment configuration
  */
-const savePaymentConfigValidator = [
-    body('gateway')
-        .trim()
-        .notEmpty()
-        .withMessage('Gateway is required')
-        .isIn(['cod', 'aamarpay', 'sslcommerz', 'self-mfs'])
-        .withMessage('Invalid payment gateway'),
-    body('is_enabled')
+const savePaymentConfigValidator = Joi.object({
+    gateway: Joi.string()
+        .valid('cod', 'aamarpay', 'sslcommerz', 'self-mfs')
+        .required()
+        .messages({
+            'any.only': 'Invalid payment gateway',
+            'any.required': 'Gateway is required',
+            'string.empty': 'Gateway is required'
+        }),
+    is_enabled: Joi.boolean()
         .optional()
-        .isBoolean()
-        .withMessage('is_enabled must be a boolean'),
-    body('credentials')
+        .messages({
+            'boolean.base': 'is_enabled must be a boolean'
+        }),
+    credentials: Joi.object()
         .optional()
-        .isObject()
-        .withMessage('Credentials must be an object'),
-    body('config')
+        .messages({
+            'object.base': 'Credentials must be an object'
+        }),
+    config: Joi.object()
         .optional()
-        .isObject()
-        .withMessage('Config must be an object')
-];
+        .messages({
+            'object.base': 'Config must be an object'
+        })
+});
 
 /**
  * Validator for initiating payment
  */
-const initiatePaymentValidator = [
-    body('orderId')
-        .trim()
-        .notEmpty()
-        .withMessage('Order ID is required')
-        .isUUID()
-        .withMessage('Order ID must be a valid UUID'),
-    body('gateway')
-        .trim()
-        .notEmpty()
-        .withMessage('Gateway is required')
-        .isIn(['aamarpay', 'sslcommerz'])
-        .withMessage('Invalid payment gateway')
-];
+const initiatePaymentValidator = Joi.object({
+    orderId: Joi.string()
+        .uuid()
+        .required()
+        .messages({
+            'string.guid': 'Order ID must be a valid UUID',
+            'any.required': 'Order ID is required',
+            'string.empty': 'Order ID is required'
+        }),
+    gateway: Joi.string()
+        .valid('aamarpay', 'sslcommerz')
+        .required()
+        .messages({
+            'any.only': 'Invalid payment gateway',
+            'any.required': 'Gateway is required',
+            'string.empty': 'Gateway is required'
+        }),
+    customer_phone: Joi.string()
+        .pattern(/^01[3-9]\d{8}$/)
+        .optional()
+        .messages({
+            'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)'
+        })
+});
 
 module.exports = {
     confirmCodPaymentValidator,

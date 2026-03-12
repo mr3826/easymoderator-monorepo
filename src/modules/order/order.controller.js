@@ -1,6 +1,6 @@
 const orderService = require('./order.service');
 const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Create a new order (legacy)

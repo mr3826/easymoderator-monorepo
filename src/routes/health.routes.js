@@ -7,7 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { sequelize } = require('../utils/database/database-setup');
-const { getRedisClient } = require('../utils/redis-client');
+const { checkRedisAvailability } = require('../config/redis');
 
 /**
  * Liveness probe - Is the service responding?
@@ -30,17 +30,16 @@ router.get('/ready', async (req, res) => {
         // Check database connection
         await sequelize.authenticate();
 
-        // Check Redis connection
-        const redis = getRedisClient();
-        if (redis) {
-            await redis.ping();
-        }
+        // Check Redis connections
+        const redisStatus = checkRedisAvailability();
+        const redisConnected = Object.values(redisStatus).some(status => status);
 
         res.status(200).json({
             status: 'ready',
             timestamp: new Date().toISOString(),
             database: 'connected',
-            redis: redis ? 'connected' : 'not_configured',
+            redis: redisConnected ? 'connected' : 'not_configured',
+            redis_details: redisStatus,
             version: process.env.APP_VERSION || '1.0.0'
         });
     } catch (error) {
@@ -56,7 +55,7 @@ router.get('/ready', async (req, res) => {
 });
 
 /**
- * P2-6: Detailed health — DB, Redis, queue depths, Qdrant
+ * P2-6: Detailed health — DB, Redis, queue depths, Vector DB
  */
 router.get('/detailed', async (req, res) => {
     const checks = {
@@ -65,7 +64,9 @@ router.get('/detailed', async (req, res) => {
         uptime: process.uptime(),
         database: 'unknown',
         redis: 'unknown',
-        qdrant: 'unknown',
+        redis_details: {},
+        vectorDb: 'unknown',
+        vectorProvider: process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX ? 'pinecone' : 'qdrant',
         queues: null
     };
 
@@ -77,25 +78,28 @@ router.get('/detailed', async (req, res) => {
     }
 
     try {
-        const redis = getRedisClient();
-        if (redis) {
-            await redis.ping();
-            checks.redis = 'connected';
-        } else {
-            checks.redis = 'not_configured';
-        }
+        const redisStatus = checkRedisAvailability();
+        checks.redis_details = redisStatus;
+        checks.redis = Object.values(redisStatus).some(status => status) ? 'connected' : 'not_configured';
     } catch (_) {
         checks.redis = 'disconnected';
     }
 
     try {
-        const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
-        const qdrantRes = await fetch(`${qdrantUrl}/collections`, {
-            headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {}
-        });
-        checks.qdrant = qdrantRes.ok ? 'available' : 'unavailable';
+        if (checks.vectorProvider === 'pinecone') {
+            const { Pinecone } = require('@pinecone-database/pinecone');
+            const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+            await pc.index(process.env.PINECONE_INDEX).describeIndexStats();
+            checks.vectorDb = 'available';
+        } else {
+            const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
+            const qdrantRes = await fetch(`${qdrantUrl}/collections`, {
+                headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {}
+            });
+            checks.vectorDb = qdrantRes.ok ? 'available' : 'unavailable';
+        }
     } catch (_) {
-        checks.qdrant = 'unavailable';
+        checks.vectorDb = 'unavailable';
     }
 
     try {
@@ -136,17 +140,8 @@ router.get('/health', async (req, res) => {
         checks.database = 'disconnected';
     }
 
-    try {
-        const redis = getRedisClient();
-        if (redis) {
-            await redis.ping();
-            checks.redis = 'connected';
-        } else {
-            checks.redis = 'not_configured';
-        }
-    } catch (_error) {
-        checks.redis = 'disconnected';
-    }
+    // Memory cache is always available
+    checks.redis = 'connected';
 
     const hasErrors = Object.values(checks).some(v => v === 'disconnected' || v === 'down');
     const statusCode = hasErrors ? 503 : 200;

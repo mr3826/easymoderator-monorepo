@@ -1,6 +1,6 @@
 const tenantService = require('./tenant.service');
 const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Get tenant details

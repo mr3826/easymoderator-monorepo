@@ -1,5 +1,5 @@
 const Redis = require('ioredis');
-const config = require('src/config/config');
+const config = require('../config/config');
 
 let redisClient = null;
 let redisDeadInDev = false;
@@ -24,7 +24,7 @@ function validateRedisUrl(url) {
             if (first === 172 && second >= 16 && second <= 31) return; // 172.16.0.0/12
             if (first === 192 && second === 168) return; // 192.168.0.0/16
         }
-        console.warn('⚠️  REDIS_URL should use VPC-internal IP in production. Block public access at AWS security group.');
+        console.warn('⚠️  REDIS_URL appears public in production. Prefer private networking or managed TLS Redis.');
     } catch (_) { /* ignore parse errors */ }
 }
 
@@ -82,10 +82,15 @@ function getRedisClient() {
         }
     };
 
+    // Upstash and other managed Redis providers commonly use rediss://
+    if (config.redisUrl && config.redisUrl.startsWith('rediss://')) {
+        redisOptions.tls = { rejectUnauthorized: false };
+    }
+
     if (config.redisPassword) {
         redisOptions.password = config.redisPassword;
-    } else if (config.env === 'production' || config.env === 'staging') {
-        console.warn('⚠️  REDIS_PASSWORD recommended for production. Block public access at AWS security group.');
+    } else if ((config.env === 'production' || config.env === 'staging') && !(config.redisUrl || '').startsWith('rediss://')) {
+        console.warn('⚠️  REDIS_PASSWORD recommended for non-TLS production Redis.');
     }
 
     try {
