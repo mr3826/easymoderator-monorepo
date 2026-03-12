@@ -1,7 +1,6 @@
 const authService = require('./auth.service');
-const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
-const { setAuthCookies, clearAuthCookies } = require('src/utils/auth-cookies');
+const { AppError } = require('../../utils/AppError');
+const { setAuthCookies, clearAuthCookies } = require('../../utils/auth-cookies');
 
 // ── Controllers ────────────────────────────────────────────────────────
 
@@ -10,11 +9,6 @@ const { setAuthCookies, clearAuthCookies } = require('src/utils/auth-cookies');
  */
 const signup = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const result = await authService.createUserWithShop(req.body);
 
         // Set httpOnly cookies
@@ -37,11 +31,6 @@ const signup = async (req, res, next) => {
  */
 const signin = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { email, password } = req.body;
         const result = await authService.authenticateUser(email, password);
 
@@ -53,7 +42,13 @@ const signin = async (req, res, next) => {
         res.status(200).json({
             success: true,
             message: 'Login successful',
-            data: safeResult
+            data: {
+                ...safeResult,
+                tokens: {
+                    access_token: accessToken,
+                    refresh_token: refreshToken
+                }
+            }
         });
     } catch (error) {
         next(error);
@@ -65,11 +60,6 @@ const signin = async (req, res, next) => {
  */
 const refresh = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         // Accept refresh token from body OR cookie
         const refreshToken = req.body.refresh_token || req.cookies?.refresh_token;
         if (!refreshToken) {
@@ -134,11 +124,6 @@ const logout = async (req, res, next) => {
  */
 const forgotPassword = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { email } = req.body;
         await authService.requestPasswordReset(email);
 
@@ -156,11 +141,6 @@ const forgotPassword = async (req, res, next) => {
  */
 const resetPassword = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { token, password } = req.body;
         await authService.resetPassword(token, password);
 

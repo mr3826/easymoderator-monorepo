@@ -1,54 +1,93 @@
-const { body } = require('express-validator');
+const Joi = require('joi');
 
-const signupValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email address')
-        .normalizeEmail(),
-    body('password')
-        .isLength({ min: 6 })
-        .withMessage('Password must be at least 6 characters long'),
-    body('full_name')
-        .optional()
+const signupValidator = Joi.object({
+    email: Joi.string()
+        .email({ tlds: { allow: false } })
+        .lowercase()
+        .required()
+        .messages({
+            'string.email': 'Please provide a valid email address',
+            'any.required': 'Email is required'
+        }),
+    password: Joi.string()
+        .min(8)
+        .pattern(/[A-Z]/, 'uppercase')
+        .pattern(/[0-9]/, 'digit')
+        .pattern(/[^A-Za-z0-9]/, 'special')
+        .required()
+        .messages({
+            'string.min': 'Password must be at least 8 characters long',
+            'string.pattern.name': 'Password must contain at least one {{#name}} character',
+            'any.required': 'Password is required'
+        }),
+    full_name: Joi.string()
         .trim()
-        .isLength({ min: 2 })
-        .withMessage('Full name must be at least 2 characters long'),
-    body('phone')
+        .min(2)
         .optional()
+        .messages({
+            'string.min': 'Full name must be at least 2 characters long'
+        }),
+    phone: Joi.string()
         .trim()
-];
+        .optional()
+});
 
-const signinValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email address')
-        .normalizeEmail(),
-    body('password')
-        .notEmpty()
-        .withMessage('Password is required')
-];
+const signinValidator = Joi.object({
+    email: Joi.string()
+        .email({ tlds: { allow: false } })
+        .lowercase()
+        .required()
+        .messages({
+            'string.email': 'Please provide a valid email address',
+            'any.required': 'Email is required'
+        }),
+    password: Joi.string()
+        .required()
+        .messages({
+            'any.required': 'Password is required',
+            'string.empty': 'Password is required'
+        })
+});
 
-const refreshTokenValidator = [
-    body('refresh_token')
-        .notEmpty()
-        .withMessage('Refresh token is required')
-];
+const refreshTokenValidator = Joi.object({
+    refresh_token: Joi.string()
+        .required()
+        .messages({
+            'any.required': 'Refresh token is required',
+            'string.empty': 'Refresh token is required'
+        })
+});
 
-const forgotPasswordValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email address')
-        .normalizeEmail()
-];
+const forgotPasswordValidator = Joi.object({
+    email: Joi.string()
+        .email({ tlds: { allow: false } })
+        .lowercase()
+        .required()
+        .messages({
+            'string.email': 'Please provide a valid email address',
+            'any.required': 'Email is required'
+        })
+});
 
-const resetPasswordValidator = [
-    body('token')
-        .notEmpty()
-        .withMessage('Reset token is required'),
-    body('password')
-        .isLength({ min: 6 })
-        .withMessage('Password must be at least 6 characters long')
-];
+const resetPasswordValidator = Joi.object({
+    token: Joi.string()
+        .required()
+        .messages({
+            'any.required': 'Reset token is required',
+            'string.empty': 'Reset token is required'
+        }),
+    password: Joi.string()
+        .min(8)
+        .pattern(/[A-Z]/, 'uppercase')
+        .pattern(/[0-9]/, 'digit')
+        .pattern(/[^A-Za-z0-9]/, 'special')
+        .required()
+        .messages({
+            'string.min': 'Password must be at least 8 characters long',
+            'string.pattern.name': 'Password must contain at least one {{#name}} character',
+            'any.required': 'Password is required'
+        })
+});
 
 module.exports = {
     signupValidator,

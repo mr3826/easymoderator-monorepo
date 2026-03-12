@@ -1,6 +1,6 @@
 const metaService = require('./meta.service');
-const AppError = require('src/utils/AppError');
-const auditService = require('src/modules/audit/audit.service');
+const AppError = require('../../utils/AppError');
+const auditService = require('../audit/audit.service');
 
 class MetaController {
   /**

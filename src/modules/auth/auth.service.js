@@ -1,13 +1,13 @@
-const { User, Shop, UserShop, Tenant } = require('src/modules/entities');
-const { hashPassword, comparePassword } = require('src/utils/password.util');
-const { generateAccessToken, generateRefreshToken } = require('src/utils/jwt.util');
-const { sequelize } = require('src/utils/database/database-setup');
-const { AppError } = require('src/utils/AppError');
-const { getRedisClient } = require('src/utils/redis-client');
-const config = require('src/config/config');
+const { User, Shop, UserShop, Tenant } = require('../entities');
+const { hashPassword, comparePassword } = require('../../utils/password.util');
+const { generateAccessToken, generateRefreshToken } = require('../../utils/jwt.util');
+const { sequelize } = require('../../utils/database/database-setup');
+const { AppError } = require('../../utils/AppError');
+const { getRedisClient } = require('../../utils/redis-client');
+const config = require('../../config/config');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const emailService = require('src/utils/email.service');
+const emailService = require('../../utils/email.service');
 
 const RESET_TOKEN_TTL = '1h';
 
@@ -42,7 +42,7 @@ const blacklistToken = async (token, decoded) => {
     const now = Math.floor(Date.now() / 1000);
     const ttl = decoded.exp ? decoded.exp - now : 86400; // fallback 1 day
     if (ttl > 0) {
-        await redis.set(`${TOKEN_BLACKLIST_PREFIX}${token}`, '1', 'EX', ttl);
+        await redis.setex(`${TOKEN_BLACKLIST_PREFIX}${token}`, ttl, '1');
     }
 };
 
@@ -96,11 +96,10 @@ const recordFailedLogin = async (email) => {
 
     if (attempts >= config.maxLoginAttempts) {
         // Lock the account
-        await redis.set(
+        await redis.setex(
             `${LOGIN_LOCKOUT_PREFIX}${email}`,
-            '1',
-            'EX',
-            config.loginLockoutMinutes * 60
+            config.loginLockoutMinutes * 60,
+            '1'
         );
         // Clear the attempt counter
         await redis.del(key);
@@ -330,14 +329,16 @@ const authenticateUser = async (email, password) => {
         profile_picture: user.profile_picture
     };
 
+    const currentShop = {
+        id: loggedShop.id,
+        unique_code: loggedShop.unique_code,
+        shop_name: loggedShop.shop_name,
+        role: loggedShop.UserShop.role
+    };
+
     return {
         user: userResponse,
-        currentShop: {
-            id: loggedShop.id,
-            unique_code: loggedShop.unique_code,
-            shop_name: loggedShop.shop_name,
-            role: loggedShop.UserShop.role
-        },
+        currentShop,
         allShops: user.shops.map(shop => ({
             id: shop.id,
             unique_code: shop.unique_code,
@@ -380,12 +381,11 @@ const requestPasswordReset = async (email) => {
  */
 const resetPassword = async (token, newPassword) => {
     const decoded = jwt.decode(token);
-    if (!decoded || !decoded.userId || !decoded.shopId) {
+    if (!decoded || !decoded.userId) {
         throw new AppError('Invalid or expired reset token', 400);
     }
 
-    // Enforce tenant scoping
-    const user = await User.findOne({ where: { id: decoded.userId, shop_id: decoded.shopId } });
+    const user = await User.findOne({ where: { id: decoded.userId } });
     if (!user) {
         throw new AppError('Invalid or expired reset token', 400);
     }
@@ -402,7 +402,7 @@ const resetPassword = async (token, newPassword) => {
  * Validate refresh token and generate new access token
  */
 const validateRefreshToken = async (refreshToken) => {
-    const { verifyRefreshToken } = require('src/utils/jwt.util');
+    const { verifyRefreshToken } = require('../../utils/jwt.util');
 
     try {
         // Verify refresh token

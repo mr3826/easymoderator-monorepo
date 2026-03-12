@@ -1,7 +1,7 @@
 require('module-alias/register');
 require('dotenv').config();
 
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../utils/database/database-setup');
 
 const createPaymentConfigsTable = async () => {
     try {

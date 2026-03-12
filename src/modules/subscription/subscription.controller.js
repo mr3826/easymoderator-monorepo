@@ -1,6 +1,6 @@
 const subscriptionService = require('./subscription.service');
 const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Get subscription details

@@ -1,7 +1,7 @@
 const express = require('express');
 const supportController = require('./support.controller');
-const { authenticate } = require('src/middleware/auth.middleware');
-const { validateRequest } = require('src/middleware/validate-request.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
+const { validateRequest } = require('../../middleware/validate-request.middleware');
 const supportValidator = require('./support.validator');
 
 const router = express.Router();

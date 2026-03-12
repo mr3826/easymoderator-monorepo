@@ -1,5 +1,5 @@
-const { Order, Product, Channel, UserShop, Analytics } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
+const { Order, Product, Channel, UserShop, Analytics } = require('../entities');
+const { AppError } = require('../../utils/AppError');
 const { Op } = require('sequelize');
 
 /**

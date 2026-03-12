@@ -1,4 +1,4 @@
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../utils/AppError');
 
 /**
  * Middleware to validate request body against a Joi schema

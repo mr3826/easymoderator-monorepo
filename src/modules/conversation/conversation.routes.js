@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const conversationController = require('./conversation.controller');
-const supportController = require('src/modules/support/support.controller');
-const webhookController = require('src/modules/webhook/webhook.controller');
+const supportController = require('../support/support.controller');
+const webhookController = require('../webhook/webhook.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 // All conversation routes require authentication
 router.use(authenticate);

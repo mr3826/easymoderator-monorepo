@@ -27,11 +27,11 @@ class CustomerValidator {
 
         number: Joi.string()
             .trim()
+            .pattern(/^01[3-9]\d{8}$/)
             .required()
-            .max(50)
             .messages({
                 'string.empty': 'Phone number is required',
-                'string.max': 'Phone number must not exceed 50 characters',
+                'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)',
                 'any.required': 'Phone number is required'
             }),
 
@@ -78,11 +78,11 @@ class CustomerValidator {
 
         number: Joi.string()
             .trim()
+            .pattern(/^01[3-9]\d{8}$/)
             .optional()
-            .max(50)
             .messages({
                 'string.empty': 'Phone number cannot be empty',
-                'string.max': 'Phone number must not exceed 50 characters'
+                'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)'
             }),
 
         channel: Joi.string()
@@ -175,11 +175,11 @@ class CustomerValidator {
 
         number: Joi.string()
             .trim()
+            .pattern(/^01[3-9]\d{8}$/)
             .optional()
-            .max(50)
             .messages({
                 'string.empty': 'Phone number cannot be empty',
-                'string.max': 'Phone number must not exceed 50 characters'
+                'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)'
             }),
 
         channel: Joi.string()

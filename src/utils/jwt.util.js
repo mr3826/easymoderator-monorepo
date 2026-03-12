@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const config = require('src/config/config');
+const config = require('../config/config');
 
 /**
  * Generate access token (valid for 1 day)

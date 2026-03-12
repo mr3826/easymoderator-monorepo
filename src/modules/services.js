@@ -1,5 +1,5 @@
 // Import your services here
-// Example: const userService = require('src/modules/user/user.service');
+// Example: const userService = require('../modules/user/user.service');
 
 module.exports = {
     // Add your services here

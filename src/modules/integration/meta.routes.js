@@ -1,8 +1,8 @@
 const express = require('express');
 const metaController = require('./meta.controller');
-const { authenticate } = require('src/middleware/auth.middleware');
-const { verifyShopAccess } = require('src/middleware/shop-access.middleware');
-const { validateRequest } = require('src/middleware/validate-request.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { validateRequest } = require('../../middleware/validate-request.middleware');
 const { manualConnectSchema } = require('./meta.validator');
 
 const router = express.Router();

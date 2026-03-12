@@ -1,6 +1,6 @@
-const { Shop, UserShop, FaqResponse, BanglishDictionary, MetaIntegration } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const ragService = require('src/modules/rag/rag.service');
+const { Shop, UserShop, FaqResponse, BanglishDictionary, MetaIntegration } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const ragService = require('../rag/rag.service');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 
@@ -250,7 +250,7 @@ const updateFaq = async (userId, shopId, faqId, updates) => {
             }
         });
     } else {
-        await ragService.deletePoint(`faq-${faq.id}`).catch(() => {});
+        await ragService.deletePoint(`faq-${faq.id}`, shopId).catch(() => {});
     }
 
     return faq;
@@ -265,7 +265,7 @@ const deleteFaq = async (userId, shopId, faqId) => {
         }
     });
 
-    await ragService.deletePoint(`faq-${faqId}`).catch(() => {});
+    await ragService.deletePoint(`faq-${faqId}`, shopId).catch(() => {});
 
     return { message: 'FAQ deleted successfully' };
 };
@@ -372,7 +372,7 @@ const deleteDocument = async (userId, shopId, documentId) => {
         }
     });
 
-    await ragService.deletePoint(documentId).catch(() => {});
+    await ragService.deletePoint(documentId, shopId).catch(() => {});
 
     return { message: 'Document deleted successfully' };
 };

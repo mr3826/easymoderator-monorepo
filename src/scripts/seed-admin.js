@@ -16,12 +16,12 @@ if (!process.env.DATABASE_URL && env !== 'production') {
 }
 
 // Load all models by requiring entities first
-const entities = require('src/modules/entities');
+const entities = require('../modules/entities');
 
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../utils/database/database-setup');
 const { User, Shop, UserShop, Tenant } = entities;
-const { hashPassword } = require('src/utils/password.util');
-const { generateUniqueShopCode } = require('src/modules/auth/auth.service');
+const { hashPassword } = require('../utils/password.util');
+const { generateUniqueShopCode } = require('../modules/auth/auth.service');
 
 const ADMIN_EMAIL = requireInProduction('SEED_ADMIN_EMAIL') || process.env.SEED_ADMIN_EMAIL || 'admin@test.local';
 const ADMIN_PASSWORD = requireInProduction('SEED_ADMIN_PASSWORD') || process.env.SEED_ADMIN_PASSWORD || 'Admin@12345!';

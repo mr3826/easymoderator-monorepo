@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../../utils/database/database-setup');
 
 const Shop = sequelize.define('Shop', {
     id: {
@@ -56,6 +56,16 @@ const Shop = sequelize.define('Shop', {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 1
+    },
+    workflow_webhook_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'Per-tenant Make.com or n8n webhook URL for automation forwarding'
+    },
+    workflow_webhook_secret: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Secret sent as X-Internal-Webhook-Secret header when forwarding to workflow'
     }
 }, {
     tableName: 'shops',

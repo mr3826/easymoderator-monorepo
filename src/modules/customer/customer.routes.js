@@ -2,7 +2,7 @@ const express = require('express');
 const customerController = require('./customer.controller');
 const customerValidator = require('./customer.validator');
 const { validate } = require('../helpers');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 const { idempotencyMiddleware, storeIdempotencyResult } = require('../audit/idempotency.middleware');
 const { auditLogMiddleware } = require('../audit/audit.middleware');
 

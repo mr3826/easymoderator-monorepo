@@ -1,6 +1,6 @@
-const { Category, Shop, UserShop } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { sequelize } = require('src/utils/database/database-setup');
+const { Category, Shop, UserShop } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { sequelize } = require('../../utils/database/database-setup');
 
 /**
  * Verify user has access to shop

@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('src/utils/database/database-setup');
+const { sequelize } = require('../../utils/database/database-setup');
 const crypto = require('crypto');
 
 // Generate or use encryption key (must be exactly 32 bytes for AES-256)

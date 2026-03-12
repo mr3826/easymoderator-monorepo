@@ -18,7 +18,9 @@ const manualConnectSchema = Joi.object({
   display_name: Joi.string().allow('', null),
   access_token: Joi.string().required(),
   app_id: Joi.string().allow('', null),
-  app_secret: Joi.string().allow('', null)
+  app_secret: Joi.string().min(10).allow('', null).messages({
+    'string.min': 'app_secret must be at least 10 characters when provided'
+  })
 });
 
 module.exports = {

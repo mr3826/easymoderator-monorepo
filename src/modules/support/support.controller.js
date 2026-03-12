@@ -1,5 +1,5 @@
-const { SupportTicket } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
+const { SupportTicket } = require('../entities');
+const { AppError } = require('../../utils/AppError');
 
 const createTicket = async (req, res, next) => {
     try {

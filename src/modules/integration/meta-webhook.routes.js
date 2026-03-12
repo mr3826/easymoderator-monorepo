@@ -1,18 +1,31 @@
 const express = require('express');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const config = require('src/config/config');
-const MetaIntegration = require('src/modules/integration/meta-integration.entity');
-const { Customer } = require('src/modules/entities');
-const { Conversation, Message } = require('src/modules/conversation/conversation.entity');
+const { RedisStore } = require('rate-limit-redis');
+const config = require('../../config/config');
+const MetaIntegration = require('./meta-integration.entity');
+const { Customer } = require('../entities');
+const { Conversation, Message } = require('../conversation/conversation.entity');
 
 const router = express.Router();
+
+// H8: Redis-backed rate limiter shared across all workers; falls back to MemoryStore
+const buildWebhookStore = () => {
+  try {
+    const { rateLimitRedis } = require('../../config/redis');
+    if (rateLimitRedis && typeof rateLimitRedis.call === 'function') {
+      return new RedisStore({ prefix: 'rl:webhook:', sendCommand: (...args) => rateLimitRedis.call(...args) });
+    }
+  } catch (_) { /* fall through */ }
+  return undefined;
+};
 
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  store: buildWebhookStore()
 });
 
 router.use(webhookLimiter);
@@ -28,17 +41,30 @@ const isValidSignature = (rawBody, signature, secret) => {
 };
 
 // Webhook verification (GET request from Meta)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': verifyToken } = req.query;
 
-  // Verify the webhook token
-  const expectedToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
-  if (mode === 'subscribe' && verifyToken === expectedToken) {
-    console.log('Meta webhook verified successfully');
-    res.status(200).send(challenge);
-  } else {
-    console.error('Meta webhook verification failed');
-    res.sendStatus(403);
+  if (mode !== 'subscribe' || !verifyToken) {
+    return res.sendStatus(403);
+  }
+
+  try {
+    // Per-tenant: find the integration whose verify token matches
+    const integration = await MetaIntegration.findOne({
+      where: { webhook_verify_token: verifyToken, status: 'CONNECTED' }
+    });
+
+    // Fallback to global env var for backward-compat during migration period
+    const globalToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+    const isValid = integration || (globalToken && verifyToken === globalToken);
+
+    if (isValid) {
+      return res.status(200).send(challenge);
+    }
+    return res.sendStatus(403);
+  } catch (err) {
+    console.error('Webhook verify token lookup error:', err.message);
+    return res.sendStatus(500);
   }
 });
 
@@ -46,22 +72,48 @@ router.get('/', (req, res) => {
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   try {
     const signature = req.headers['x-hub-signature-256'];
-    if (config.env === 'production' && !config.metaWebhookAppSecret) {
-      return res.status(500).send('Missing META_WEBHOOK_APP_SECRET');
+
+    // Safe JSON parse — malformed body must not cause 500 (which triggers Meta retry storm)
+    let payload;
+    try {
+      const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body || '');
+      payload = rawBody ? JSON.parse(rawBody) : {};
+    } catch (parseErr) {
+      console.error('Webhook payload JSON parse error:', parseErr.message);
+      return res.sendStatus(200); // Ack to prevent retry storm
     }
 
-    if (config.metaWebhookAppSecret) {
-      const isValid = isValidSignature(req.body, signature, config.metaWebhookAppSecret);
-      if (!isValid) {
-        console.error('Invalid Meta webhook signature');
-        return res.sendStatus(403);
+    // Determine app_secret: per-tenant first, then global fallback
+    const globalSecret = config.metaWebhookAppSecret;
+    let appSecret = globalSecret;
+
+    if (!appSecret && payload.entry && payload.entry.length > 0) {
+      // Multi-app setup: look up per-tenant secret from the first entry's asset ID
+      try {
+        const firstAssetId = payload.entry[0].id;
+        const integration = await MetaIntegration.findOne({
+          where: { meta_asset_id: firstAssetId, status: 'CONNECTED' }
+        });
+        appSecret = integration?.app_secret || null;
+      } catch (lookupErr) {
+        console.error('Per-tenant secret lookup error:', lookupErr.message);
       }
     }
 
-    const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body || '');
-    const payload = rawBody ? JSON.parse(rawBody) : {};
+    // Verify signature
+    if (appSecret) {
+      const rawBodyBuf = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body || ''));
+      const isValid = isValidSignature(rawBodyBuf, signature, appSecret);
+      if (!isValid) {
+        console.error('Invalid Meta webhook signature for asset:', payload.entry?.[0]?.id);
+        return res.sendStatus(403);
+      }
+    } else if (config.env === 'production') {
+      console.error('No app_secret configured for signature verification in production');
+      return res.status(500).send('Missing app secret configuration');
+    }
 
-    // Handle webhook based on object type
+    // Route by object type
     if (payload.object === 'page') {
       await handlePageWebhook(payload);
     } else if (payload.object === 'instagram') {
@@ -87,11 +139,18 @@ router.post('/reply', express.json(), async (req, res) => {
       }
     }
 
-    const { conversation_id, shop_id, message, platform, recipient_id } = req.body;
+    const { conversation_id, message, platform, recipient_id } = req.body;
 
     if (!conversation_id || !message) {
       return res.status(400).json({ error: 'conversation_id and message are required' });
     }
+
+    // H6: Derive shop_id from conversation — never trust caller-supplied shop_id
+    const conversation = await Conversation.findOne({ where: { id: conversation_id } });
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    const shop_id = conversation.shop_id;
 
     // Store the bot reply as a message record
     const botMessage = await Message.create({
@@ -182,21 +241,23 @@ async function handlePageWebhook(payload) {
 
     for (const messaging of entry.messaging) {
       const messageText = messaging.message?.text || null;
-      if (!messageText) continue; // Skip non-text events (read receipts, deliveries, etc.)
+      const attachments = messaging.message?.attachments || [];
+      // Skip non-message events (read receipts, delivery confirmations, etc.)
+      if (!messageText && attachments.length === 0) continue;
 
       const normalizedEvent = {
         platform: 'facebook',
         shop_id: integration.shop_id,
         sender: messaging.sender.id,
-        message: messageText,
-        attachments: messaging.message?.attachments || [],
+        message: messageText || '',
+        attachments,
         timestamp: new Date(messaging.timestamp),
         raw_event: messaging
       };
 
-      // Store in database then forward to n8n
+      // Store in database then forward to automation workflow (Make/n8n)
       const stored = await storeIncomingMessage(normalizedEvent);
-      await forwardToN8n({ ...normalizedEvent, ...stored });
+      if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
     }
   }
 }
@@ -214,20 +275,21 @@ async function handleInstagramWebhook(payload) {
 
     for (const message of entry.messaging) {
       const messageText = message.message?.text || null;
-      if (!messageText) continue;
+      const attachments = message.message?.attachments || [];
+      if (!messageText && attachments.length === 0) continue;
 
       const normalizedEvent = {
         platform: 'instagram',
         shop_id: integration.shop_id,
         sender: message.sender.id,
-        message: messageText,
-        attachments: message.message?.attachments || [],
+        message: messageText || '',
+        attachments,
         timestamp: new Date(message.timestamp),
         raw_event: message
       };
 
       const stored = await storeIncomingMessage(normalizedEvent);
-      await forwardToN8n({ ...normalizedEvent, ...stored });
+      if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
     }
   }
 }
@@ -247,20 +309,21 @@ async function handleWhatsAppWebhook(payload) {
       if (change.field === 'messages' && change.value.messages) {
         for (const message of change.value.messages) {
           const messageText = message.text?.body || null;
-          if (!messageText) continue;
+          const attachments = message.type !== 'text' ? [message] : [];
+          if (!messageText && attachments.length === 0) continue;
 
           const normalizedEvent = {
             platform: 'whatsapp',
             shop_id: integration.shop_id,
             sender: message.from,
-            message: messageText,
-            attachments: message.type !== 'text' ? [message] : [],
+            message: messageText || '',
+            attachments,
             timestamp: new Date(parseInt(message.timestamp) * 1000),
             raw_event: message
           };
 
           const stored = await storeIncomingMessage(normalizedEvent);
-          await forwardToN8n({ ...normalizedEvent, ...stored });
+          if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
         }
       }
     }
@@ -270,7 +333,7 @@ async function handleWhatsAppWebhook(payload) {
 /**
  * Store incoming customer message in database.
  * Find-or-create customer → find-or-create conversation → create message.
- * Returns { customer_id, conversation_id, message_id } for n8n context.
+ * Returns { customer_id, conversation_id, message_id } for workflow context.
  */
 async function storeIncomingMessage(event) {
   try {
@@ -320,12 +383,25 @@ async function storeIncomingMessage(event) {
       });
     }
 
-    // 3. Store the message
+    // 3. Store the message — idempotency: skip if external_id already recorded
+    const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
+    if (externalId) {
+      const existing = await Message.findOne({ where: { external_id: externalId } });
+      if (existing) {
+        console.log(`Duplicate webhook event skipped (external_id=${externalId})`);
+        return {
+          customer_id: customer.id,
+          customer_name: customer.name,
+          conversation_id: conversation.id,
+          message_id: existing.id
+        };
+      }
+    }
     const msgRecord = await Message.create({
       conversation_id: conversation.id,
       content: message,
       sender: 'customer',
-      external_id: event.raw_event?.message?.mid || event.raw_event?.id || null
+      external_id: externalId
     });
 
     console.log(`Stored ${platform} message: customer=${customer.id}, conv=${conversation.id}, msg=${msgRecord.id}`);
@@ -338,31 +414,81 @@ async function storeIncomingMessage(event) {
     };
   } catch (error) {
     console.error('Failed to store incoming message:', error.message);
-    // Don't block the webhook — still forward to n8n even if storage fails
-    return { customer_id: null, conversation_id: null, message_id: null };
+    // storageFailed sentinel — callers must NOT forward to workflow without a conversation record
+    return { customer_id: null, conversation_id: null, message_id: null, storageFailed: true };
   }
 }
 
-// Forward normalized event to n8n
-async function forwardToN8n(event) {
-  try {
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
-    if (!n8nWebhookUrl) {
-      console.warn('N8N_WEBHOOK_URL not configured, skipping webhook forwarding');
-      return;
-    }
+// Forward normalized event to the shop's automation workflow (Make.com / n8n).
+// Priority: shop.workflow_webhook_url (per-tenant DB) → global env fallback.
+// On failure: writes to failed_workflow_forwards dead-letter table.
+async function forwardToWorkflow(event) {
+  const FailedWorkflowForward = require('./failed-workflow-forward.entity');
+  const { v4: uuidv4 } = require('uuid');
 
-    await fetch(n8nWebhookUrl, {
+  // Resolve per-tenant workflow URL from shop record
+  let workflowWebhookUrl = null;
+  let workflowSecret = null;
+
+  try {
+    const Shop = require('../shop/shop.entity');
+    const shop = await Shop.findOne({ where: { id: event.shop_id } });
+    if (shop && shop.workflow_webhook_url) {
+      workflowWebhookUrl = shop.workflow_webhook_url;
+      workflowSecret = shop.workflow_webhook_secret;
+    }
+  } catch (lookupErr) {
+    console.error(`forwardToWorkflow: shop lookup failed for shop ${event.shop_id}:`, lookupErr.message);
+  }
+
+  // Fallback to global env vars for backward compatibility
+  if (!workflowWebhookUrl) {
+    workflowWebhookUrl = process.env.MAKE_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL || process.env.WF1_WEBHOOK_URL;
+    workflowSecret = workflowSecret || process.env.MAKE_INTERNAL_AUTH || process.env.INTERNAL_WEBHOOK_SECRET;
+  }
+
+  if (!workflowWebhookUrl) {
+    console.warn(`forwardToWorkflow: no workflow URL configured for shop ${event.shop_id}, skipping`);
+    return;
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (workflowSecret) {
+    headers['X-Internal-Webhook-Secret'] = workflowSecret;
+  }
+
+  try {
+    const res = await fetch(workflowWebhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(event)
     });
 
-    console.log(`Forwarded ${event.platform} event to n8n for shop ${event.shop_id}`);
+    if (!res.ok) {
+      throw new Error(`Workflow responded with HTTP ${res.status}`);
+    }
+
+    console.log(`Forwarded ${event.platform} event to workflow for shop ${event.shop_id}`);
   } catch (error) {
-    console.error('Failed to forward event to n8n:', error);
+    console.error(`forwardToWorkflow: delivery failed for shop ${event.shop_id}:`, error.message);
+
+    // Dead-letter: persist failed event for manual replay or retry job
+    try {
+      await FailedWorkflowForward.create({
+        id: uuidv4(),
+        shop_id: event.shop_id,
+        platform: event.platform || 'unknown',
+        event_data: JSON.stringify(event),
+        error: error.message,
+        attempt: 1,
+        resolved: false
+      });
+      console.warn(`forwardToWorkflow: event written to dead-letter queue for shop ${event.shop_id}`);
+    } catch (dlqErr) {
+      // Last-resort: if even DLQ write fails, log everything for manual recovery
+      console.error('forwardToWorkflow: DLQ write also failed:', dlqErr.message);
+      console.error('DEAD_LETTER_FALLBACK', JSON.stringify({ shop_id: event.shop_id, platform: event.platform, error: error.message }));
+    }
   }
 }
 

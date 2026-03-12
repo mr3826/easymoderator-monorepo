@@ -14,12 +14,18 @@
     "migrate": "node src/database/migrate.js up",
     "migrate:down": "node src/database/migrate.js down",
     "migrate:down:all": "node src/database/migrate.js down:all",
-    "migrate:status": "node src/database/migrate.js status"
+    "migrate:status": "node src/database/migrate.js status",
+    "cleanup": "powershell -ExecutionPolicy Bypass -File cleanup.ps1",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@pinecone-database/pinecone": "^4.1.0",
+    "@qdrant/qdrant-js": "^1.17.0",
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "bull": "^4.12.0",
@@ -43,6 +49,7 @@
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "pm2": "^5.3.0",
+    "rate-limit-redis": "^4.3.1",
     "sequelize": "^6.37.7",
     "sqlite3": "^5.1.7"
   },

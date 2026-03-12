@@ -1,7 +1,7 @@
 const express = require('express');
 const tenantController = require('./tenant.controller');
-const { authenticate } = require('src/middleware/auth.middleware');
-const { validateRequest } = require('src/middleware/validate-request.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
+const { validateRequest } = require('../../middleware/validate-request.middleware');
 const tenantValidator = require('./tenant.validator');
 
 const router = express.Router();

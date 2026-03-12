@@ -1,6 +1,5 @@
 const DeliveryIntegration = require('./delivery-integration.entity');
-const PathaoProvider = require('./providers/pathao.provider');
-const SteadfastProvider = require('./providers/steadfast.provider');
+const { COURIER_REGISTRY } = require('./providers/provider.registry');
 const EventEmitter = require('events');
 
 /**
@@ -10,10 +9,7 @@ const EventEmitter = require('events');
 class DeliveryService extends EventEmitter {
     constructor() {
         super();
-        this.providers = {
-            pathao: PathaoProvider,
-            steadfast: SteadfastProvider
-        };
+        this.providers = COURIER_REGISTRY;
     }
 
     /**
@@ -33,13 +29,13 @@ class DeliveryService extends EventEmitter {
             throw new Error(`No active ${provider} integration found for this shop`);
         }
 
-        const ProviderClass = this.providers[provider];
-        if (!ProviderClass) {
+        const entry = this.providers[provider];
+        if (!entry) {
             throw new Error(`Unknown provider: ${provider}`);
         }
 
         const credentials = integration.credentials;
-        return new ProviderClass(credentials);
+        return new entry.Provider(credentials);
     }
 
     /**
@@ -67,104 +63,40 @@ class DeliveryService extends EventEmitter {
     }
 
     /**
-     * Normalize order payload based on provider
+     * Normalize order payload based on provider — delegates to registry
      */
     normalizeOrderPayload(provider, orderData, providerMetadata = {}) {
-        if (provider === 'pathao') {
-            return {
-                store_id: providerMetadata.store_id || orderData.store_id,
-                merchant_order_id: orderData.order_number,
-                recipient_name: orderData.customer_name,
-                recipient_phone: orderData.customer_phone,
-                recipient_address: orderData.delivery_address,
-                delivery_type: orderData.delivery_type || 48, // 48 = Normal, 12 = On Demand
-                item_type: orderData.item_type || 2, // 1 = Document, 2 = Parcel
-                special_instruction: orderData.note || '',
-                item_quantity: orderData.item_quantity || 1,
-                item_weight: orderData.item_weight || 0.5,
-                item_description: orderData.item_description || '',
-                amount_to_collect: orderData.total || 0
-            };
-        }
-
-        if (provider === 'steadfast') {
-            return {
-                invoice: orderData.order_number,
-                recipient_name: orderData.customer_name,
-                recipient_phone: orderData.customer_phone,
-                recipient_address: orderData.delivery_address,
-                cod_amount: orderData.total || 0,
-                note: orderData.note || '',
-                item_description: orderData.item_description || '',
-                total_lot: orderData.item_quantity || 1,
-                delivery_type: orderData.delivery_type || 0 // 0 = Home, 1 = Point Delivery
-            };
-        }
-
-        throw new Error(`Unknown provider: ${provider}`);
+        const entry = this.providers[provider];
+        if (!entry) throw new Error(`Unknown provider: ${provider}`);
+        return entry.normalizePayload(orderData, providerMetadata);
     }
 
     /**
-     * Normalize order response to internal format
+     * Normalize order response to internal format — delegates to registry
      */
     normalizeOrderResponse(provider, response) {
-        const normalized = {
+        const entry = this.providers[provider];
+        if (!entry) throw new Error(`Unknown provider: ${provider}`);
+        const fields = entry.normalizeResponse(response);
+        return {
             provider,
             success: true,
             consignment_id: null,
             tracking_code: null,
             status: null,
             delivery_fee: null,
-            raw_response: response
+            raw_response: response,
+            ...fields
         };
-
-        if (provider === 'pathao') {
-            normalized.consignment_id = response.consignment_id;
-            normalized.tracking_code = response.consignment_id;
-            normalized.status = response.order_status;
-            normalized.delivery_fee = response.delivery_fee;
-        }
-
-        if (provider === 'steadfast') {
-            normalized.consignment_id = response.consignment_id;
-            normalized.tracking_code = response.tracking_code;
-            normalized.status = response.status;
-            normalized.invoice = response.invoice;
-        }
-
-        return normalized;
     }
 
     /**
-     * Normalize delivery status to internal format
+     * Normalize delivery status to internal format — delegates to registry status map
      */
     normalizeDeliveryStatus(provider, status) {
-        // Map provider-specific statuses to internal statuses
-        const statusMap = {
-            pathao: {
-                'Pending': 'pending',
-                'Picked_Up': 'picked_up',
-                'In_Transit': 'in_transit',
-                'Delivered': 'delivered',
-                'Cancelled': 'cancelled',
-                'Returned': 'returned',
-                'Hold': 'hold'
-            },
-            steadfast: {
-                'pending': 'pending',
-                'in_review': 'in_review',
-                'hold': 'hold',
-                'delivered_approval_pending': 'delivered_pending',
-                'delivered': 'delivered',
-                'partial_delivered': 'partial_delivered',
-                'cancelled_approval_pending': 'cancelled_pending',
-                'cancelled': 'cancelled',
-                'unknown': 'unknown'
-            }
-        };
-
-        const providerMap = statusMap[provider] || {};
-        return providerMap[status] || status.toLowerCase();
+        const entry = this.providers[provider];
+        const map = entry ? entry.statusMap : {};
+        return map[status] || status.toLowerCase();
     }
 
     /**

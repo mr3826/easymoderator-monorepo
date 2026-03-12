@@ -1,9 +1,9 @@
 const shopService = require('./shop.service');
 const tenantService = require('../tenant/tenant.service');
-const knowledgeService = require('src/modules/knowledge/knowledge.service');
+const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
-const { setAuthCookies } = require('src/utils/auth-cookies');
+const { AppError } = require('../../utils/AppError');
+const { setAuthCookies } = require('../../utils/auth-cookies');
 
 /**
  * Get all shops for user
@@ -57,6 +57,16 @@ const getBusinessInfo = async (req, res, next) => {
         }
 
         const data = await knowledgeService.getKnowledge(userId, shopId);
+        
+        // Get AI settings for n8n workflow
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        
+        // Add ai_settings to the response
+        if (data && data.data) {
+            data.data.ai_settings = aiSettings;
+        } else if (data) {
+            data.ai_settings = aiSettings;
+        }
 
         res.status(200).json({
             success: true,

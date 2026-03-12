@@ -180,7 +180,7 @@ class AuditService {
             offset,
             include: [
                 {
-                    model: require('src/modules/user/user.entity'),
+                    model: require('../user/user.entity'),
                     as: 'user',
                     attributes: ['id', 'full_name', 'email']
                 }
@@ -212,7 +212,7 @@ class AuditService {
             offset,
             include: [
                 {
-                    model: require('src/modules/user/user.entity'),
+                    model: require('../user/user.entity'),
                     as: 'user',
                     attributes: ['id', 'full_name', 'email']
                 }

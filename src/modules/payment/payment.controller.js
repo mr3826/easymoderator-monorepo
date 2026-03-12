@@ -1,17 +1,11 @@
 const paymentService = require('./payment.service');
-const { validationResult } = require('express-validator');
-const { AppError } = require('src/utils/AppError');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Confirm COD payment
  */
 const confirmCodPayment = async (req, res, next) => {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
             throw new AppError('No shop selected. Please login again.', 400);
@@ -73,11 +67,6 @@ async function getPaymentConfigs(req, res, next) {
  */
 async function savePaymentConfig(req, res, next) {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
             throw new AppError('No shop selected. Please login again.', 400);
@@ -109,11 +98,6 @@ async function savePaymentConfig(req, res, next) {
  */
 async function testPaymentConnection(req, res, next) {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
             throw new AppError('No shop selected. Please login again.', 400);
@@ -170,11 +154,6 @@ async function deletePaymentConfig(req, res, next) {
  */
 async function initiatePayment(req, res, next) {
     try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
         const { shopId } = req.user;
         if (!shopId) {
             throw new AppError('No shop selected. Please login again.', 400);

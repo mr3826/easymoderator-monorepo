@@ -1,6 +1,8 @@
 const { body, validationResult } = require('express-validator');
 const ConversationStateService = require('./conversation-state-standalone.service');
 const OrderSessionService = require('../order/order-session-standalone.service');
+const intentRouter = require('../ai/intent-router.service');
+const knowledgeService = require('../knowledge/knowledge.service');
 
 class AIChatbotController {
     /**
@@ -137,17 +139,49 @@ class AIChatbotController {
     }
 
     /**
-     * Process new intent (when not in active order session).
+     * Process new intent via the hybrid intent router (LLM failover + semantic FAQ caching).
+     * Falls back to keyword matching if all LLM providers are unavailable.
      * Returns { response: string, confidence: number (0.0–1.0) }.
-     * Confidence reflects how certain the keyword matcher is about the intent.
-     * When a real LLM is wired in (TODO-AI1), it will supply its own confidence score.
      */
     static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult) {
         const { shop_id, customer_channel_id, platform } = ingestionResult;
+        const { conversation_id } = ingestionResult;
 
+        // --- Try the AI intent router first ---
+        try {
+            // Load shop knowledge to build the system prompt (cached by Anthropic prompt caching)
+            let shopKnowledge = null;
+            try {
+                // getKnowledge requires userId; use a system-level bypass by querying knowledge directly
+                shopKnowledge = await knowledgeService.queryKnowledge({ query: message, shop_id, limit: 3 });
+            } catch (_) { /* ignore */ }
+
+            const systemPrompt = intentRouter.buildSystemPrompt(
+                shopKnowledge || {},
+                language
+            );
+
+            const routerResult = await intentRouter.route({
+                shopId: shop_id,
+                message,
+                conversationId: conversation_id,
+                history: conversationHistory,
+                language,
+                systemPrompt
+            });
+
+            // Invalidate summary cache so next message gets fresh context
+            await intentRouter.invalidateSummary(conversation_id).catch(() => {});
+
+            return { response: routerResult.response, confidence: routerResult.confidence };
+        } catch (llmError) {
+            // LLM/router unavailable — fall through to keyword matching
+            console.warn('Intent router unavailable, falling back to keyword matching:', llmError.message);
+        }
+
+        // --- Keyword-based fallback (original logic) ---
         const lowerMessage = message.toLowerCase().trim();
 
-        // Order intent detection — medium-high confidence when keywords match
         const orderKeywords = [
             'order', 'buy', 'purchase', 'অর্ডার', 'কিনতে', 'নিবে', 'চাই',
             'দাম', 'price', 'cost', 'কত', 'available'
@@ -167,7 +201,6 @@ class AIChatbotController {
             return { response: sessionResult.prompt, confidence: 0.75 };
         }
 
-        // Greeting detection — high confidence (very distinct signals)
         const greetings = [
             'hello', 'hi', 'hey', 'হ্যালো', 'স্বাগতম', 'আসসালামু আলাইকুম',
             'good morning', 'good evening', 'সুপ্রভাত', 'শুভ সকাল'
@@ -178,7 +211,6 @@ class AIChatbotController {
             return { response: this.generateGreetingResponse(language, aiSettings), confidence: 0.90 };
         }
 
-        // FAQ/Help detection — medium confidence
         const helpKeywords = [
             'help', 'support', 'সাহায্য', 'তথ্য', 'information', 'details',
             'how to', 'কিভাবে', 'where', 'কোথা', 'contact', 'যোগাযোগ'
@@ -189,7 +221,6 @@ class AIChatbotController {
             return { response: this.generateHelpResponse(language, aiSettings), confidence: 0.80 };
         }
 
-        // No intent matched — low confidence; gate will intercept this
         return { response: this.generateDefaultResponse(language, aiSettings), confidence: 0.30 };
     }
 

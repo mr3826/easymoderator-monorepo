@@ -1,6 +1,6 @@
-const { Customer, Shop, UserShop } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { sequelize } = require('src/utils/database/database-setup');
+const { Customer, Shop, UserShop } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
 
 /**

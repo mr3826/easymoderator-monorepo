@@ -2,8 +2,8 @@ const DeliveryIntegration = require('./delivery-integration.entity');
 const PathaoProvider = require('./providers/pathao.provider');
 const SteadfastProvider = require('./providers/steadfast.provider');
 const deliveryService = require('./delivery.service');
-const AppError = require('src/utils/AppError');
-const { Shop } = require('src/modules/entities');
+const AppError = require('../../utils/AppError');
+const { Shop } = require('../entities');
 
 const DELIVERY_ZONES = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
 

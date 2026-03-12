@@ -1,5 +1,5 @@
-const { Tenant, Shop } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
+const { Tenant, Shop } = require('../entities');
+const { AppError } = require('../../utils/AppError');
 
 const getTenantById = async (tenantId) => {
     const tenant = await Tenant.findByPk(tenantId);

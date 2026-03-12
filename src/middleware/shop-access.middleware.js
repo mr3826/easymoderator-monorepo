@@ -1,5 +1,5 @@
-const { AppError } = require('src/utils/AppError');
-const { UserShop } = require('src/modules/entities');
+const { AppError } = require('../utils/AppError');
+const { UserShop } = require('../modules/entities');
 
 /**
  * Shop access middleware

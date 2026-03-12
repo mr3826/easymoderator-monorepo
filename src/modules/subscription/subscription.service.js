@@ -1,10 +1,10 @@
-const { Subscription, Invoice, UsageEvent, AuditLog } = require('src/modules/entities');
-const { AppError } = require('src/utils/AppError');
-const { UserShop } = require('src/modules/entities');
+const { Subscription, Invoice, UsageEvent, AuditLog } = require('../entities');
+const { AppError } = require('../../utils/AppError');
+const { UserShop } = require('../entities');
 const { Op } = require('sequelize');
-const { sequelize } = require('src/utils/database/database-setup');
-const { createLogger } = require('src/utils/structured-logger');
-const cacheService = require('src/utils/cache.service');
+const { sequelize } = require('../../utils/database/database-setup');
+const { createLogger } = require('../../utils/structured-logger');
+const cacheService = require('../../utils/cache.service');
 
 /**
  * Verify user has access to shop

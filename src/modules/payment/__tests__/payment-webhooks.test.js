@@ -1,4 +1,5 @@
 const request = require('supertest');
+const crypto = require('crypto');
 
 // ── Set test env vars before anything loads ────────────────────────────
 process.env.NODE_ENV = 'test';
@@ -39,6 +40,44 @@ const mockPaymentConfig = {
     },
     config: { environment: 'sandbox' }
 };
+
+const mockAamarPayConfig = {
+    id: 'pc-2',
+    shop_id: 'shop-1',
+    gateway: 'aamarpay',
+    is_enabled: true,
+    credentials: {
+        store_id: 'aamar_store',
+        secret_key: 'aamar_secret_key'
+    },
+    config: {}
+};
+
+function buildAamarPaySignedPayload(overrides = {}) {
+    const base = {
+        mer_txnid: 'ORD001-1706000000',
+        pay_status: 'Successful',
+        status_code: '2',
+        amount: '1500.00',
+        store_id: mockAamarPayConfig.credentials.store_id,
+        ...overrides
+    };
+
+    const verifyKeys = ['mer_txnid', 'pay_status', 'status_code', 'amount', 'store_id'];
+    const signaturePayload = verifyKeys
+        .map((key) => `${key}=${base[key] ?? ''}`)
+        .join('&');
+    const verify_sign = crypto
+        .createHmac('sha256', mockAamarPayConfig.credentials.secret_key)
+        .update(`${signaturePayload}&signature_key=${mockAamarPayConfig.credentials.secret_key}`)
+        .digest('hex');
+
+    return {
+        ...base,
+        verify_key: verifyKeys.join(','),
+        verify_sign
+    };
+}
 
 const mockModel = {
     findOne: jest.fn(),
@@ -121,24 +160,23 @@ describe('Payment Webhook Handlers', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        PaymentConfig.findOne.mockImplementation(({ where }) => {
+            if (where?.gateway === 'aamarpay') return Promise.resolve(mockAamarPayConfig);
+            if (where?.gateway === 'sslcommerz') return Promise.resolve(mockPaymentConfig);
+            return Promise.resolve(null);
+        });
     });
 
     // ── AamarPay Webhooks ───────────────────────────────────────────────
 
     describe('AamarPay Callbacks', () => {
-        describe('POST /payment/aamarpay/success', () => {
+        describe('POST /api/payment/aamarpay/success', () => {
             it('should mark order as paid and redirect on successful payment', async () => {
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: jest.fn() });
 
                 const res = await request(app)
-                    .post('/payment/aamarpay/success')
-                    .send({
-                        mer_txnid: 'ORD001-1706000000',
-                        pay_status: 'Successful',
-                        status_code: '2',
-                        amount: '1500.00',
-                        cus_name: 'Test Customer'
-                    });
+                    .post('/api/payment/aamarpay/success')
+                    .send(buildAamarPaySignedPayload({ cus_name: 'Test Customer' }));
 
                 expect(res.status).toBe(302);
                 expect(res.headers.location).toContain('payment=success');
@@ -150,12 +188,8 @@ describe('Payment Webhook Handlers', () => {
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: orderUpdate });
 
                 const res = await request(app)
-                    .post('/payment/aamarpay/success')
-                    .send({
-                        mer_txnid: 'ORD001-1706000000',
-                        pay_status: 'Failed',
-                        status_code: '7'
-                    });
+                    .post('/api/payment/aamarpay/success')
+                    .send(buildAamarPaySignedPayload({ pay_status: 'Failed', status_code: '7' }));
 
                 expect(res.status).toBe(302);
                 expect(res.headers.location).toContain('payment=failed');
@@ -166,7 +200,7 @@ describe('Payment Webhook Handlers', () => {
                 Order.findOne.mockResolvedValue(null);
 
                 const res = await request(app)
-                    .post('/payment/aamarpay/success')
+                    .post('/api/payment/aamarpay/success')
                     .send({
                         mer_txnid: 'NONEXIST-1706000000',
                         pay_status: 'Successful',
@@ -178,35 +212,28 @@ describe('Payment Webhook Handlers', () => {
             });
         });
 
-        describe('POST /payment/aamarpay/fail', () => {
+        describe('POST /api/payment/aamarpay/fail', () => {
             it('should mark order as failed and redirect', async () => {
                 const orderUpdate = jest.fn();
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: orderUpdate });
 
                 const res = await request(app)
-                    .post('/payment/aamarpay/fail')
-                    .send({
-                        mer_txnid: 'ORD001-1706000000',
-                        pay_status: 'Failed',
-                        status_code: '7'
-                    });
+                    .post('/api/payment/aamarpay/fail')
+                    .send(buildAamarPaySignedPayload({ pay_status: 'Failed', status_code: '7' }));
 
                 expect(res.status).toBe(302);
                 expect(res.headers.location).toContain('payment=failed');
             });
         });
 
-        describe('POST /payment/aamarpay/cancel', () => {
+        describe('POST /api/payment/aamarpay/cancel', () => {
             it('should handle cancellation and redirect', async () => {
                 const orderUpdate = jest.fn();
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: orderUpdate });
 
                 const res = await request(app)
-                    .post('/payment/aamarpay/cancel')
-                    .send({
-                        mer_txnid: 'ORD001-1706000000',
-                        pay_status: 'Cancelled'
-                    });
+                    .post('/api/payment/aamarpay/cancel')
+                    .send(buildAamarPaySignedPayload({ pay_status: 'Cancelled', status_code: '7' }));
 
                 expect(res.status).toBe(302);
                 expect(res.headers.location).toContain('payment=failed');
@@ -217,7 +244,7 @@ describe('Payment Webhook Handlers', () => {
     // ── SSLCommerz Webhooks ─────────────────────────────────────────────
 
     describe('SSLCommerz Callbacks', () => {
-        describe('POST /payment/sslcommerz/success', () => {
+        describe('POST /api/payment/sslcommerz/success', () => {
             it('should validate with SSLCommerz API and mark as paid', async () => {
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: jest.fn() });
                 PaymentConfig.findOne.mockResolvedValue(mockPaymentConfig);
@@ -228,7 +255,7 @@ describe('Payment Webhook Handlers', () => {
                 });
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/success')
+                    .post('/api/payment/sslcommerz/success')
                     .send({
                         tran_id: 'ORD001-1706000000',
                         val_id: 'VAL123456',
@@ -251,7 +278,7 @@ describe('Payment Webhook Handlers', () => {
                 });
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/success')
+                    .post('/api/payment/sslcommerz/success')
                     .send({
                         tran_id: 'ORD001-1706000000',
                         val_id: 'VAL_BAD',
@@ -264,14 +291,14 @@ describe('Payment Webhook Handlers', () => {
             });
         });
 
-        describe('POST /payment/sslcommerz/fail', () => {
+        describe('POST /api/payment/sslcommerz/fail', () => {
             it('should handle failure callback', async () => {
                 const orderUpdate = jest.fn();
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: orderUpdate });
                 PaymentConfig.findOne.mockResolvedValue(mockPaymentConfig);
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/fail')
+                    .post('/api/payment/sslcommerz/fail')
                     .send({
                         tran_id: 'ORD001-1706000000',
                         status: 'FAILED',
@@ -283,7 +310,7 @@ describe('Payment Webhook Handlers', () => {
             });
         });
 
-        describe('POST /payment/sslcommerz/ipn', () => {
+        describe('POST /api/payment/sslcommerz/ipn', () => {
             it('should return JSON response for IPN callback', async () => {
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: jest.fn() });
                 PaymentConfig.findOne.mockResolvedValue(mockPaymentConfig);
@@ -293,7 +320,7 @@ describe('Payment Webhook Handlers', () => {
                 });
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/ipn')
+                    .post('/api/payment/sslcommerz/ipn')
                     .send({
                         tran_id: 'ORD001-1706000000',
                         val_id: 'VAL123456',
@@ -310,7 +337,7 @@ describe('Payment Webhook Handlers', () => {
                 Order.findOne.mockResolvedValue(null);
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/ipn')
+                    .post('/api/payment/sslcommerz/ipn')
                     .send({
                         tran_id: 'NONEXIST-1706000000',
                         status: 'VALID',
@@ -322,14 +349,14 @@ describe('Payment Webhook Handlers', () => {
             });
         });
 
-        describe('POST /payment/sslcommerz/cancel', () => {
+        describe('POST /api/payment/sslcommerz/cancel', () => {
             it('should handle SSLCommerz cancellation', async () => {
                 const orderUpdate = jest.fn();
                 Order.findOne.mockResolvedValue({ ...mockOrder, update: orderUpdate });
                 PaymentConfig.findOne.mockResolvedValue(mockPaymentConfig);
 
                 const res = await request(app)
-                    .post('/payment/sslcommerz/cancel')
+                    .post('/api/payment/sslcommerz/cancel')
                     .send({
                         tran_id: 'ORD001-1706000000',
                         status: 'CANCELLED',
@@ -347,7 +374,7 @@ describe('Payment Webhook Handlers', () => {
     describe('Edge Cases', () => {
         it('should handle missing transaction ID in AamarPay callback', async () => {
             const res = await request(app)
-                .post('/payment/aamarpay/success')
+                .post('/api/payment/aamarpay/success')
                 .send({ pay_status: 'Successful' });
 
             expect(res.status).toBe(302);
@@ -356,7 +383,7 @@ describe('Payment Webhook Handlers', () => {
 
         it('should handle missing transaction ID in SSLCommerz IPN', async () => {
             const res = await request(app)
-                .post('/payment/sslcommerz/ipn')
+                .post('/api/payment/sslcommerz/ipn')
                 .send({ status: 'VALID', shop_id: 'shop-1' });
 
             expect(res.status).toBe(400);
@@ -370,7 +397,7 @@ describe('Payment Webhook Handlers', () => {
             axios.get.mockRejectedValue(new Error('Network error'));
 
             const res = await request(app)
-                .post('/payment/sslcommerz/ipn')
+                .post('/api/payment/sslcommerz/ipn')
                 .send({
                     tran_id: 'ORD001-1706000000',
                     val_id: 'VAL123',

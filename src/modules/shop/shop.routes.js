@@ -1,6 +1,6 @@
 const express = require('express');
 const shopController = require('./shop.controller');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 const {
     shopCreateValidator,
     shopUpdateValidator,

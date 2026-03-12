@@ -2,7 +2,7 @@ const express = require('express');
 const dashboardController = require('./dashboard.controller');
 const dashboardValidator = require('./dashboard.validator');
 const { validate } = require('../helpers');
-const { authenticate } = require('src/middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 

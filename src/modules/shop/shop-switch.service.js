@@ -1,6 +1,6 @@
-const { User } = require('src/modules/entities');
-const { generateAccessToken } = require('src/utils/jwt.util');
-const { AppError } = require('src/utils/AppError');
+const { User } = require('../entities');
+const { generateAccessToken } = require('../../utils/jwt.util');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Switch to a different shop
@@ -9,7 +9,7 @@ const switchShop = async (userId, shopId) => {
     // Verify user has access to this shop
     const user = await User.findByPk(userId, {
         include: [{
-            model: require('src/modules/shop/shop.entity'),
+            model: require('../shop/shop.entity'),
             as: 'shops',
             where: { id: shopId },
             through: {

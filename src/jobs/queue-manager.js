@@ -1,6 +1,5 @@
 const Queue = require('bull');
-const { getRedisClient } = require('src/utils/redis-client');
-const config = require('src/config/config');
+const config = require('../config/config');
 
 // Import job classes
 const { 
@@ -17,9 +16,9 @@ const {
 class QueueManager {
     constructor() {
         this.queues = {};
-        this.redisClient = getRedisClient();
+        this.redisUrl = config.redisUrl;
         
-        if (!this.redisClient) {
+        if (!this.redisUrl) {
             console.warn('⚠️  Redis not available - job queues disabled');
             return;
         }
@@ -41,8 +40,10 @@ class QueueManager {
      *      back to Date on the worker side.
      */
     initializeQueues() {
+        const redisConnection = this.buildBullRedisConfig();
+
         const baseQueueConfig = {
-            redis: config.redisUrl,
+            redis: redisConnection,
             settings: {
                 lockDuration: 300000, // 5 minutes — billing jobs can be slow at scale
                 maxStalledCount: 2,
@@ -127,11 +128,39 @@ class QueueManager {
         console.log('✅ Job queues initialized with retry/backoff and DLQ');
     }
 
+    buildBullRedisConfig() {
+        if (!this.redisUrl) return null;
+
+        try {
+            const parsed = new URL(this.redisUrl);
+            const configObj = {
+                host: parsed.hostname,
+                port: parsed.port ? parseInt(parsed.port, 10) : 6379,
+                db: 0,
+                maxRetriesPerRequest: 3,
+                enableReadyCheck: true
+            };
+
+            if (parsed.password) {
+                configObj.password = decodeURIComponent(parsed.password);
+            }
+
+            if (parsed.protocol === 'rediss:') {
+                configObj.tls = { rejectUnauthorized: false };
+            }
+
+            return configObj;
+        } catch (error) {
+            console.warn('⚠️  Invalid REDIS_URL for Bull queue:', error.message);
+            return { host: 'localhost', port: 6379 };
+        }
+    }
+
     /**
      * Schedule recurring jobs with cron expressions
      */
     async scheduleJobs() {
-        if (!this.redisClient) {
+        if (!this.redisUrl) {
             console.warn('⚠️  Cannot schedule jobs - Redis not available');
             return;
         }
