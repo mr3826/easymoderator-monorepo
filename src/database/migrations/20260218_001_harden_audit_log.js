@@ -12,6 +12,9 @@
  * relaxed constraints (nullable user_id/shop_id, free-form TEXT action/resource_type)
  * and copy existing data.
  *
+ * PostgreSQL: sync() already creates the table with the correct schema, so we
+ * just ensure the indexes exist.
+ *
  * Backward Compatibility: YES
  *   - Existing rows are preserved
  *   - Sequelize entity updated in parallel to match
@@ -24,82 +27,88 @@ module.exports = {
   name: '20260218_001_harden_audit_log',
 
   up: async (sequelize) => {
-    // Disable FK constraints during table swap
-    await sequelize.query('PRAGMA foreign_keys = OFF');
+    const dialect = sequelize.getDialect();
 
-    try {
-      // Remove any leftover from a previous failed run
-      await sequelize.query('DROP TABLE IF EXISTS audit_logs_new');
+    if (dialect === 'sqlite') {
+      // Disable FK constraints during table swap
+      await sequelize.query('PRAGMA foreign_keys = OFF');
 
-      // Create replacement table: user_id/shop_id nullable, action/resource_type plain TEXT
-      await sequelize.query(`
-        CREATE TABLE audit_logs_new (
-          id            TEXT     PRIMARY KEY,
-          user_id       TEXT,
-          shop_id       TEXT,
-          action        TEXT     NOT NULL,
-          resource_type TEXT     NOT NULL,
-          resource_id   TEXT     NOT NULL,
-          old_values    TEXT,
-          new_values    TEXT,
-          metadata      TEXT,
-          ip_address    TEXT,
-          user_agent    TEXT,
-          idempotency_key TEXT,
-          created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      try {
+        // Remove any leftover from a previous failed run
+        await sequelize.query('DROP TABLE IF EXISTS audit_logs_new');
 
-      // Check whether the old table exists (may not exist on fresh installs)
-      const [tables] = await sequelize.query(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'`
-      );
-
-      if (tables.length > 0) {
+        // Create replacement table: user_id/shop_id nullable, action/resource_type plain TEXT
         await sequelize.query(`
-          INSERT INTO audit_logs_new
-            (id, user_id, shop_id, action, resource_type, resource_id,
-             old_values, new_values, metadata, ip_address, user_agent,
-             idempotency_key, created_at)
-          SELECT
-            id, user_id, shop_id, action, resource_type, resource_id,
-            old_values, new_values, metadata, ip_address, user_agent,
-            idempotency_key, created_at
-          FROM audit_logs
+          CREATE TABLE audit_logs_new (
+            id            TEXT     PRIMARY KEY,
+            user_id       TEXT,
+            shop_id       TEXT,
+            action        TEXT     NOT NULL,
+            resource_type TEXT     NOT NULL,
+            resource_id   TEXT     NOT NULL,
+            old_values    TEXT,
+            new_values    TEXT,
+            metadata      TEXT,
+            ip_address    TEXT,
+            user_agent    TEXT,
+            idempotency_key TEXT,
+            created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
         `);
-        await sequelize.query('DROP TABLE audit_logs');
-        console.log('  ✓ Migrated existing audit_logs rows');
+
+        // Check whether the old table exists (may not exist on fresh installs)
+        const [tables] = await sequelize.query(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'`
+        );
+
+        if (tables.length > 0) {
+          await sequelize.query(`
+            INSERT INTO audit_logs_new
+              (id, user_id, shop_id, action, resource_type, resource_id,
+               old_values, new_values, metadata, ip_address, user_agent,
+               idempotency_key, created_at)
+            SELECT
+              id, user_id, shop_id, action, resource_type, resource_id,
+              old_values, new_values, metadata, ip_address, user_agent,
+              idempotency_key, created_at
+            FROM audit_logs
+          `);
+          await sequelize.query('DROP TABLE audit_logs');
+          console.log('  ✓ Migrated existing audit_logs rows');
+        }
+
+        await sequelize.query('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+        console.log('  ✓ audit_logs hardened: user_id/shop_id nullable, action/resource_type free-form TEXT');
+      } finally {
+        await sequelize.query('PRAGMA foreign_keys = ON');
       }
-
-      await sequelize.query('ALTER TABLE audit_logs_new RENAME TO audit_logs');
-
-      // Recreate indexes
-      await sequelize.query(
-        `CREATE INDEX IF NOT EXISTS idx_audit_user_created
-         ON audit_logs(user_id, created_at)`
-      );
-      await sequelize.query(
-        `CREATE INDEX IF NOT EXISTS idx_audit_shop_created
-         ON audit_logs(shop_id, created_at)`
-      );
-      await sequelize.query(
-        `CREATE INDEX IF NOT EXISTS idx_audit_resource
-         ON audit_logs(resource_type, resource_id)`
-      );
-      await sequelize.query(
-        `CREATE INDEX IF NOT EXISTS idx_audit_shop_resource_created
-         ON audit_logs(shop_id, resource_type, created_at)`
-      );
-      await sequelize.query(
-        `CREATE INDEX IF NOT EXISTS idx_audit_idempotency
-         ON audit_logs(idempotency_key)`
-      );
-
-      console.log('  ✓ audit_logs hardened: user_id/shop_id nullable, action/resource_type free-form TEXT');
-      console.log('  ✓ Added composite index (shop_id, resource_type, created_at)');
-    } finally {
-      await sequelize.query('PRAGMA foreign_keys = ON');
     }
+    // PostgreSQL: sync() already creates audit_logs with TEXT columns and nullable fields.
+    // Just ensure the indexes exist.
+
+    // Recreate indexes (IF NOT EXISTS is safe on both dialects)
+    await sequelize.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_user_created
+       ON audit_logs(user_id, created_at)`
+    );
+    await sequelize.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_shop_created
+       ON audit_logs(shop_id, created_at)`
+    );
+    await sequelize.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_resource
+       ON audit_logs(resource_type, resource_id)`
+    );
+    await sequelize.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_shop_resource_created
+       ON audit_logs(shop_id, resource_type, created_at)`
+    );
+    await sequelize.query(
+      `CREATE INDEX IF NOT EXISTS idx_audit_idempotency
+       ON audit_logs(idempotency_key)`
+    );
+
+    console.log('  ✓ Added composite index (shop_id, resource_type, created_at)');
   },
 
   down: async (sequelize) => {
