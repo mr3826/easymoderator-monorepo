@@ -189,7 +189,10 @@ jobs:
               sleep 2
             done
 
-            # Run migrations
+            # Sync base schema (creates tables defined in Sequelize models, e.g. shops)
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend node src/utils/database/sync.js
+
+            # Run migrations (depends on base tables existing)
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
 
             # Start/restart backend

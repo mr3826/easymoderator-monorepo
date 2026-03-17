@@ -27,6 +27,10 @@ const migrations = [
   require('./migrations/20260218_002_fix_idempotency_composite'),
   require('./migrations/20260218_003_add_invoice_period_dates'),
   require('./migrations/20260220_001_order_sequences_table'),
+  require('./migrations/20260303_001_create_order_sessions_table'),
+  require('./migrations/20260312_001_add_meta_integration_secrets'),
+  require('./migrations/20260312_002_create_rto_blacklist_table'),
+  require('./migrations/20260312_003_add_workflow_url_and_dlq'),
 ];
 
 const createMigrationsTable = async () => {
