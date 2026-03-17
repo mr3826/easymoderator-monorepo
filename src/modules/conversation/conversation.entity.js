@@ -17,8 +17,8 @@ const Conversation = sequelize.define('Conversation', {
         onDelete: 'CASCADE'
     },
     customer_id: {
-        type: DataTypes.STRING(100),
-        allowNull: false
+        type: DataTypes.UUID,
+        allowNull: true
     },
     channel: {
         type: DataTypes.STRING(20),
