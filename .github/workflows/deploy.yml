@@ -124,7 +124,7 @@ jobs:
 
             # URL-encode the DB password so special chars are safe in the connection URL
             ENCODED_PG_PASS=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${POSTGRES_PASSWORD}")
-            DB_URL_DEFAULT="postgresql://${POSTGRES_USER}:${ENCODED_PG_PASS}@postgres:5432/${POSTGRES_DB}"
+            DB_URL_DEFAULT="postgresql://${POSTGRES_USER}:${ENCODED_PG_PASS}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
             REDIS_URL_DEFAULT="redis://redis:6379"
             DATABASE_URL_FINAL="${DATABASE_URL:-$DB_URL_DEFAULT}"
             REDIS_URL_FINAL="${REDIS_URL:-$REDIS_URL_DEFAULT}"
