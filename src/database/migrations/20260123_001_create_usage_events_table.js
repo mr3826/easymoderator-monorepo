@@ -31,8 +31,8 @@ module.exports = {
         resource_id TEXT,
         resource_metadata TEXT,
         error_message TEXT,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        committed_at DATETIME,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        committed_at TIMESTAMPTZ,
         FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE ON UPDATE CASCADE
       )
     `);

@@ -46,7 +46,7 @@ module.exports = {
           ip_address    TEXT,
           user_agent    TEXT,
           idempotency_key TEXT,
-          created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
 

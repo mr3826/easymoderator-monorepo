@@ -14,8 +14,8 @@ module.exports = {
           shop_id           TEXT,
           added_by          TEXT,
           notes             TEXT,
-          created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `);
       console.log('  ✓ Created rto_blacklist table');

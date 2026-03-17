@@ -38,7 +38,7 @@ module.exports = {
 
     if (!colNames.includes('billing_period_start')) {
       await sequelize.query(
-        `ALTER TABLE invoices ADD COLUMN billing_period_start DATETIME`
+        `ALTER TABLE invoices ADD COLUMN billing_period_start TIMESTAMPTZ`
       );
       console.log('  ✓ Added billing_period_start column to invoices');
     } else {
@@ -47,7 +47,7 @@ module.exports = {
 
     if (!colNames.includes('billing_period_end')) {
       await sequelize.query(
-        `ALTER TABLE invoices ADD COLUMN billing_period_end DATETIME`
+        `ALTER TABLE invoices ADD COLUMN billing_period_end TIMESTAMPTZ`
       );
       console.log('  ✓ Added billing_period_end column to invoices');
     } else {
