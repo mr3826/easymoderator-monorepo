@@ -192,7 +192,9 @@ jobs:
             done
 
             # Sync base schema (creates tables defined in Sequelize models, e.g. shops)
-            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend node src/utils/database/sync.js
+            # Use force:false so Sequelize respects FK ordering when creating fresh tables
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend \
+              node -e "require('module-alias/register');require('src/modules/entities');const{sequelize}=require('src/utils/database/database-setup');sequelize.sync({force:false}).then(()=>{console.log('Sync complete');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
 
             # Run migrations (depends on base tables existing)
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
