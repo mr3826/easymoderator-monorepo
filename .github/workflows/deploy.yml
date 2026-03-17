@@ -113,6 +113,7 @@ jobs:
 
             # Install AWS CLI v2 if not present
             if ! command -v aws &> /dev/null; then
+              sudo apt-get install -y -qq unzip
               curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
               unzip -q /tmp/awscliv2.zip -d /tmp
               sudo /tmp/aws/install
