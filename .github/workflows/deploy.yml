@@ -20,51 +20,58 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Compute image tag
-        id: image
-        run: |
-          ECR_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
-          echo "ecr-image=$ECR_IMAGE" >> "$GITHUB_OUTPUT"
+          aws-region: ap-south-1
 
       - name: Login to Amazon ECR
         run: |
-          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" \
+          aws ecr get-login-password --region ap-south-1 \
             | docker login --username AWS --password-stdin \
-              "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+              441250065813.dkr.ecr.ap-south-1.amazonaws.com
 
-      - name: Build image
+      - name: Build and push image
+        id: image
         run: |
-          docker build -t "${{ steps.image.outputs.ecr-image }}" .
-          docker tag "${{ steps.image.outputs.ecr-image }}" "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest"
-
-      - name: Push image
-        run: |
-          docker push "${{ steps.image.outputs.ecr-image }}"
-          docker push "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest"
+          ECR_IMAGE="441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:${{ github.sha }}"
+          docker build -t "$ECR_IMAGE" .
+          docker tag "$ECR_IMAGE" "441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:latest"
+          docker push "$ECR_IMAGE"
+          docker push "441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:latest"
+          echo "ecr-image=$ECR_IMAGE" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy On EC2
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: 3.111.186.159
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /app/easymod-backend/
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
         env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          ECR_IMAGE: ${{ needs.build-and-push.outputs.ecr-image }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          ECR_IMAGE: ${{ needs.build-and-push.outputs.ecr-image }}
-          PORT: ${{ secrets.PORT }}
-          NODE_ENV: production
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
+          PORT: ${{ secrets.PORT }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          BASE_URL: ${{ secrets.BASE_URL }}
           BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT }}
           ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
           JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
           JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
@@ -80,132 +87,97 @@ jobs:
           GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
           Google_Gemini_Api_KEY: ${{ secrets.Google_Gemini_Api_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          BASE_URL: ${{ secrets.BASE_URL }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
+          PINECONE_NAMESPACE: ${{ secrets.PINECONE_NAMESPACE }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
-          PINECONE_NAMESPACE: ${{ secrets.PINECONE_NAMESPACE }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          host: 3.111.186.159
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: AWS_REGION,AWS_ACCOUNT_ID,ECR_REPOSITORY,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,ECR_IMAGE,PORT,NODE_ENV,DATABASE_URL,REDIS_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,CORS_ORIGINS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,FRONTEND_URL,BASE_URL,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD
+          envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM
           script: |
             set -euo pipefail
-
-            mkdir -p /app/easymod-backend
             cd /app/easymod-backend
 
-            # Keep compose file on server so deploy stays self-contained.
-            cat > docker-compose.prod.yml <<'EOF'
-            version: "3.9"
-
-            services:
-              postgres:
-                image: postgres:15-alpine
-                restart: unless-stopped
-                environment:
-                  POSTGRES_DB: ${POSTGRES_DB}
-                  POSTGRES_USER: ${POSTGRES_USER}
-                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-                volumes:
-                  - postgres_data:/var/lib/postgresql/data
-                networks:
-                  - easymod-network
-
-              redis:
-                image: redis:7-alpine
-                restart: unless-stopped
-                command: ["redis-server", "--appendonly", "yes"]
-                volumes:
-                  - redis_data:/data
-                networks:
-                  - easymod-network
-
-              backend:
-                image: ${ECR_IMAGE}
-                restart: unless-stopped
-                env_file:
-                  - .env.prod
-                ports:
-                  - "3000:3000"
-                depends_on:
-                  - postgres
-                  - redis
-                networks:
-                  - easymod-network
-
-            volumes:
-              postgres_data:
-              redis_data:
-
-            networks:
-              easymod-network:
-                driver: bridge
-            EOF
-
-            # Set default local service URLs if not explicitly provided via secrets.
-            DB_URL_DEFAULT="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+            # URL-encode the DB password so special chars are safe in the connection URL
+            ENCODED_PG_PASS=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${POSTGRES_PASSWORD}")
+            DB_URL_DEFAULT="postgresql://${POSTGRES_USER}:${ENCODED_PG_PASS}@postgres:5432/${POSTGRES_DB}"
             REDIS_URL_DEFAULT="redis://redis:6379"
             DATABASE_URL_FINAL="${DATABASE_URL:-$DB_URL_DEFAULT}"
             REDIS_URL_FINAL="${REDIS_URL:-$REDIS_URL_DEFAULT}"
 
-            cat > .env.prod <<EOF
-            ECR_IMAGE=${ECR_IMAGE}
-            POSTGRES_DB=${POSTGRES_DB}
-            POSTGRES_USER=${POSTGRES_USER}
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            PORT=${PORT}
-            NODE_ENV=${NODE_ENV}
-            DATABASE_URL=${DATABASE_URL_FINAL}
-            REDIS_URL=${REDIS_URL_FINAL}
-            BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT}
-            ALLOW_SELF_SIGNED_TLS=${ALLOW_SELF_SIGNED_TLS}
-            CORS_ORIGINS=${CORS_ORIGINS}
-            JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
-            JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-            JWT_ACCESS_EXPIRES_IN=${JWT_ACCESS_EXPIRES_IN}
-            JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN}
-            SESSION_SECRET=${SESSION_SECRET}
-            PAYMENT_ENCRYPTION_KEY=${PAYMENT_ENCRYPTION_KEY}
-            WF1_WEBHOOK_URL=${WF1_WEBHOOK_URL}
-            INTERNAL_WEBHOOK_SECRET=${INTERNAL_WEBHOOK_SECRET}
-            META_WEBHOOK_APP_SECRET=${META_WEBHOOK_APP_SECRET}
-            META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}
-            EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER}
-            EMBEDDING_MODEL=${EMBEDDING_MODEL}
-            GEMINI_EMBEDDING_MODEL=${GEMINI_EMBEDDING_MODEL}
-            Google_Gemini_Api_KEY=${Google_Gemini_Api_KEY}
-            OPENAI_API_KEY=${OPENAI_API_KEY}
-            FRONTEND_URL=${FRONTEND_URL}
-            BASE_URL=${BASE_URL}
-            SMTP_HOST=${SMTP_HOST}
-            SMTP_PORT=${SMTP_PORT}
-            SMTP_USER=${SMTP_USER}
-            SMTP_PASS=${SMTP_PASS}
-            SMTP_SECURE=${SMTP_SECURE}
-            EMAIL_FROM=${EMAIL_FROM}
-            PINECONE_API_KEY=${PINECONE_API_KEY}
-            PINECONE_INDEX=${PINECONE_INDEX}
-            PINECONE_NAMESPACE=${PINECONE_NAMESPACE}
-            EOF
+            # Write .env.prod using printf to avoid heredoc YAML conflicts
+            {
+              printf 'ECR_IMAGE="%s"\n'               "${ECR_IMAGE}"
+              printf 'POSTGRES_DB="%s"\n'             "${POSTGRES_DB}"
+              printf 'POSTGRES_USER="%s"\n'           "${POSTGRES_USER}"
+              printf 'POSTGRES_PASSWORD="%s"\n'       "${POSTGRES_PASSWORD}"
+              printf 'PORT="%s"\n'                    "${PORT:-3000}"
+              printf 'NODE_ENV=production\n'
+              printf 'DATABASE_URL="%s"\n'            "${DATABASE_URL_FINAL}"
+              printf 'REDIS_URL="%s"\n'               "${REDIS_URL_FINAL}"
+              printf 'BODY_SIZE_LIMIT="%s"\n'         "${BODY_SIZE_LIMIT:-10mb}"
+              printf 'ALLOW_SELF_SIGNED_TLS="%s"\n'   "${ALLOW_SELF_SIGNED_TLS:-false}"
+              printf 'CORS_ORIGINS="%s"\n'            "${CORS_ORIGINS}"
+              printf 'JWT_ACCESS_SECRET="%s"\n'       "${JWT_ACCESS_SECRET}"
+              printf 'JWT_REFRESH_SECRET="%s"\n'      "${JWT_REFRESH_SECRET}"
+              printf 'JWT_ACCESS_EXPIRES_IN="%s"\n'   "${JWT_ACCESS_EXPIRES_IN}"
+              printf 'JWT_REFRESH_EXPIRES_IN="%s"\n'  "${JWT_REFRESH_EXPIRES_IN}"
+              printf 'SESSION_SECRET="%s"\n'          "${SESSION_SECRET}"
+              printf 'PAYMENT_ENCRYPTION_KEY="%s"\n'  "${PAYMENT_ENCRYPTION_KEY}"
+              printf 'WF1_WEBHOOK_URL="%s"\n'         "${WF1_WEBHOOK_URL}"
+              printf 'INTERNAL_WEBHOOK_SECRET="%s"\n' "${INTERNAL_WEBHOOK_SECRET}"
+              printf 'META_WEBHOOK_APP_SECRET="%s"\n' "${META_WEBHOOK_APP_SECRET}"
+              printf 'META_WEBHOOK_VERIFY_TOKEN="%s"\n' "${META_WEBHOOK_VERIFY_TOKEN}"
+              printf 'EMBEDDING_PROVIDER="%s"\n'      "${EMBEDDING_PROVIDER}"
+              printf 'EMBEDDING_MODEL="%s"\n'         "${EMBEDDING_MODEL}"
+              printf 'GEMINI_EMBEDDING_MODEL="%s"\n'  "${GEMINI_EMBEDDING_MODEL}"
+              printf 'Google_Gemini_Api_KEY="%s"\n'   "${Google_Gemini_Api_KEY}"
+              printf 'OPENAI_API_KEY="%s"\n'          "${OPENAI_API_KEY}"
+              printf 'FRONTEND_URL="%s"\n'            "${FRONTEND_URL}"
+              printf 'BASE_URL="%s"\n'                "${BASE_URL}"
+              printf 'SMTP_HOST="%s"\n'               "${SMTP_HOST}"
+              printf 'SMTP_PORT="%s"\n'               "${SMTP_PORT}"
+              printf 'SMTP_USER="%s"\n'               "${SMTP_USER}"
+              printf 'SMTP_PASS="%s"\n'               "${SMTP_PASS}"
+              printf 'SMTP_SECURE="%s"\n'             "${SMTP_SECURE:-false}"
+              printf 'EMAIL_FROM="%s"\n'              "${EMAIL_FROM}"
+              printf 'PINECONE_API_KEY="%s"\n'        "${PINECONE_API_KEY}"
+              printf 'PINECONE_INDEX="%s"\n'          "${PINECONE_INDEX}"
+              printf 'PINECONE_NAMESPACE="%s"\n'      "${PINECONE_NAMESPACE}"
+            } > .env.prod
 
-            aws ecr get-login-password --region "${AWS_REGION}" \
+            # Login to ECR
+            aws ecr get-login-password --region ap-south-1 \
               | docker login --username AWS --password-stdin \
-                "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+                441250065813.dkr.ecr.ap-south-1.amazonaws.com
 
+            # Pull new backend image
             docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend
+
+            # Start / restart postgres and redis
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d postgres redis
-            sleep 8
+
+            # Wait for postgres to be ready (up to 30s)
+            echo "Waiting for postgres..."
+            for i in $(seq 1 15); do
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" && break
+              sleep 2
+            done
+
+            # Run migrations
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
+
+            # Start/restart backend
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend
+
+            # Clean up old images
             docker image prune -af --filter "until=72h"
+            echo "Deployment complete."
