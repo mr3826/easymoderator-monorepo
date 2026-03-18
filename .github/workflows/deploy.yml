@@ -209,8 +209,9 @@ jobs:
             echo "Waiting for backend to be healthy..."
             for i in $(seq 1 20); do
               STATUS=$(docker compose --env-file .env.prod -f docker-compose.prod.yml \
-                exec -T backend curl -sf http://localhost:3000/health/ready \
-                -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+                exec -T backend node -e \
+                "require('http').get('http://localhost:3000/health/ready',(r)=>{process.stdout.write(String(r.statusCode));process.exit(0)}).on('error',()=>{process.stdout.write('000');process.exit(0)})" \
+                2>/dev/null || echo "000")
               if [ "$STATUS" = "200" ]; then
                 echo "Backend is healthy (attempt $i)"
                 break
