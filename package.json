@@ -1,7 +1,7 @@
 {
-  "name": "server-commerce-ai",
+  "name": "easymod-backend",
   "version": "1.0.0",
-  "description": "Commerce AI Server",
+  "description": "EasyMod Backend Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

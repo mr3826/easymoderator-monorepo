@@ -180,7 +180,7 @@ if (config.env === 'development') {
 }
 
 app.get('/', (req, res) => {
-    res.send('welcome to commerce-ai server');
+    res.send('welcome to EasyMod API server');
 });
 
 // This tells AWS: "Yes, I am alive and working!"

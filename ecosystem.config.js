@@ -93,7 +93,7 @@ module.exports = {
       user: 'ubuntu',
       host: process.env.DEPLOY_HOST || '3.108.44.119',
       ref: 'origin/main',
-      repo: 'git@github.com:your-username/easymod-backend.git',
+      repo: 'git@github.com:mr3826/EasyMod-backend.git',
       path: '/home/ubuntu/easymod-backend',
       'post-deploy': 'npm install && pm2 reload ecosystem.config.js --env production',
       'pre-setup': ''
