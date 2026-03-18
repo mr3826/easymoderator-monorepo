@@ -5,6 +5,14 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const { createLogger } = require('../../utils/structured-logger');
 const cacheService = require('../../utils/cache.service');
+const {
+    PlanCode,
+    PRICING_TIERS,
+    isUnlimitedLimit,
+    isLimitExceeded,
+    getTierByCode,
+    getTierByPlanName
+} = require('./subscription.plans');
 
 /**
  * Verify user has access to shop
@@ -44,19 +52,19 @@ const getSubscription = async (shopId, userId) => {
         conversations: {
             used: subscription.conversations_used,
             limit: subscription.conversations_limit,
-            percentage: (subscription.conversations_used / subscription.conversations_limit) * 100,
+            percentage: getUsagePercentage(subscription.conversations_used, subscription.conversations_limit),
             status: getUsageStatus(subscription.conversations_used, subscription.conversations_limit)
         },
         orders: {
             used: subscription.orders_used,
             limit: subscription.orders_limit,
-            percentage: (subscription.orders_used / subscription.orders_limit) * 100,
+            percentage: getUsagePercentage(subscription.orders_used, subscription.orders_limit),
             status: getUsageStatus(subscription.orders_used, subscription.orders_limit)
         },
         products: {
             used: subscription.products_used,
             limit: subscription.products_limit,
-            percentage: (subscription.products_used / subscription.products_limit) * 100,
+            percentage: getUsagePercentage(subscription.products_used, subscription.products_limit),
             status: getUsageStatus(subscription.products_used, subscription.products_limit)
         }
     };
@@ -75,10 +83,16 @@ const getSubscription = async (shopId, userId) => {
  * Get usage status
  */
 const getUsageStatus = (used, limit) => {
+    if (isUnlimitedLimit(limit)) return 'safe';
     const percentage = (used / limit) * 100;
-    if (used > limit) return 'exceeded';
+    if (isLimitExceeded(used, limit)) return 'exceeded';
     if (percentage >= 80) return 'warning';
     return 'safe';
+};
+
+const getUsagePercentage = (used, limit) => {
+    if (isUnlimitedLimit(limit) || limit === 0) return 0;
+    return (used / limit) * 100;
 };
 
 /**
@@ -88,26 +102,21 @@ const createDefaultSubscription = async (shopId) => {
     const now = new Date();
     const nextMonth = new Date(now);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const freeTier = PRICING_TIERS[PlanCode.FREE];
 
     return await Subscription.create({
         shop_id: shopId,
-        plan_name: 'Free',
-        plan_price: 0,
+        plan_name: freeTier.name,
+        plan_price: freeTier.priceBdtMonthly,
         billing_cycle: 'monthly',
         status: 'active',
-        conversations_limit: 100,
-        orders_limit: 50,
-        products_limit: 100,
+        conversations_limit: freeTier.conversationsLimit,
+        orders_limit: freeTier.ordersLimit,
+        products_limit: freeTier.productsLimit,
         current_period_start: now,
         current_period_end: nextMonth,
         next_billing_date: nextMonth,
-        features: {
-            image_understanding: false,
-            advanced_ai: false,
-            priority_support: false,
-            custom_branding: false,
-            rate_limit_per_minute: 10
-        }
+        features: freeTier.features
     });
 };
 
@@ -134,14 +143,22 @@ const updatePlan = async (shopId, userId, planData) => {
         nextPeriod.setMonth(nextPeriod.getMonth() + 1);
     }
 
+    const selectedTier =
+        getTierByCode(planData.plan_code) || getTierByPlanName(planData.plan_name);
+
+    const fallbackMonthlyPrice = parseFloat(planData.plan_price || 0);
+    const tierMonthlyPrice = selectedTier ? selectedTier.priceBdtMonthly : fallbackMonthlyPrice;
+    const calculatedPlanPrice =
+        planData.billing_cycle === 'yearly' ? tierMonthlyPrice * 12 : tierMonthlyPrice;
+
     await subscription.update({
-        plan_name: planData.plan_name,
-        plan_price: planData.plan_price,
+        plan_name: selectedTier ? selectedTier.name : planData.plan_name,
+        plan_price: selectedTier ? calculatedPlanPrice : planData.plan_price,
         billing_cycle: planData.billing_cycle,
-        conversations_limit: planData.conversations_limit,
-        orders_limit: planData.orders_limit,
-        products_limit: planData.products_limit,
-        features: planData.features || subscription.features,
+        conversations_limit: selectedTier ? selectedTier.conversationsLimit : planData.conversations_limit,
+        orders_limit: selectedTier ? selectedTier.ordersLimit : planData.orders_limit,
+        products_limit: selectedTier ? selectedTier.productsLimit : planData.products_limit,
+        features: selectedTier ? selectedTier.features : (planData.features || subscription.features),
         current_period_start: now,
         current_period_end: nextPeriod,
         next_billing_date: nextPeriod
@@ -237,7 +254,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         const newUsage = subscription[field] + amount;
         const limit = subscription[limitField];
 
-        if (usageType !== 'conversations' && newUsage > limit) {
+        if (usageType !== 'conversations' && isLimitExceeded(newUsage, limit)) {
             // Hard error if limit exceeded for non-conversation usage
             const error = new AppError(
                 `Usage limit exceeded for ${usageType}: ${newUsage} > ${limit}`,
@@ -266,7 +283,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         let extraConversations = subscription.extra_conversations || 0;
 
         // Calculate extra usage charge if exceeded limit
-        if (usageType === 'conversations' && newUsage > limit) {
+        if (usageType === 'conversations' && isLimitExceeded(newUsage, limit)) {
             const extraAmount = newUsage - limit;
             const perConversationCharge = 2.5;
             extraCharge = extraAmount * perConversationCharge;
@@ -560,7 +577,7 @@ const checkOrderLimit = async (shopId) => {
     if (!subscription) return;
     const newUsage = (subscription.orders_used || 0) + 1;
     const limit = subscription.orders_limit;
-    if (newUsage > limit) {
+    if (isLimitExceeded(newUsage, limit)) {
         const error = new AppError(`Usage limit exceeded for orders: ${newUsage} > ${limit}`, 402);
         error.code = 'USAGE_LIMIT_EXCEEDED';
         throw error;

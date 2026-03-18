@@ -1,4 +1,4 @@
-const AppError = require('../utils/AppError');
+const { AppError } = require('../utils/AppError');
 
 /**
  * Generic Joi validation middleware factory.

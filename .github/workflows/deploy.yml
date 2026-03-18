@@ -204,4 +204,22 @@ jobs:
 
             # Clean up old images
             docker image prune -af --filter "until=72h"
+
+            # Post-deploy health check (up to 60s)
+            echo "Waiting for backend to be healthy..."
+            for i in $(seq 1 20); do
+              STATUS=$(docker compose --env-file .env.prod -f docker-compose.prod.yml \
+                exec -T backend curl -sf http://localhost:3000/health/ready \
+                -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Backend is healthy (attempt $i)"
+                break
+              fi
+              if [ "$i" = "20" ]; then
+                echo "ERROR: Backend failed health check after 20 attempts"
+                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 backend
+                exit 1
+              fi
+              sleep 3
+            done
             echo "Deployment complete."

@@ -6,10 +6,10 @@ const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 // Atomic stock update utility
-const updateProductStock = async (tenantId, sku, delta, transaction = null) => {
-    // Find product by tenant and SKU
+const updateProductStock = async (shopId, sku, delta, transaction = null) => {
+    // Find product by shop and SKU
     const product = await Product.findOne({
-        where: { tenant_id: tenantId, sku },
+        where: { shop_id: shopId, sku },
         transaction
     });
     if (!product) throw new AppError('Product not found', 404);
@@ -18,8 +18,8 @@ const updateProductStock = async (tenantId, sku, delta, transaction = null) => {
     return product.reload({ transaction });
 };
 // Cursor pagination for products
-const getProductsCursor = async (tenantId, cursor = null, limit = 10, filters = {}) => {
-    const whereClause = { tenant_id: tenantId };
+const getProductsCursor = async (shopId, cursor = null, limit = 10, filters = {}) => {
+    const whereClause = { shop_id: shopId };
     // Apply filters (name, category, etc.)
     if (filters.search) {
         whereClause[Op.or] = [

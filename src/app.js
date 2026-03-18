@@ -119,9 +119,7 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.sessionSecret,
     getSessionIdentifier: (req) => req.session?.id || req.ip || 'anonymous',
     cookieOptions: {
-        httpOnly: false, // Must be accessible by client-side JS if not using double submit cookie pattern, 
-        // but csrf-csrf uses double submit cookie pattern where the token is in a header AND a cookie.
-        // The cookie itself should be httpOnly: true for security usually, but csrf-csrf has its own logic.
+          httpOnly: true, // Secure: CSRF token in httpOnly cookie + X-CSRF-TOKEN header
         sameSite: 'lax',
         path: '/',
         secure: config.env === 'production'
@@ -130,8 +128,8 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
 
 app.get('/csrf', (req, res) => {
     // Force session to be saved so the session ID is stable for CSRF validation.
-    // Without this, saveUninitialized:false means the session is never persisted to Redis,
-    // so successive requests get different session IDs and CSRF HMAC validation fails.
+     // Session is now always saved immediately (saveUninitialized: true), but we explicitly ensure
+     // the session is committed before returning the CSRF token to prevent token invalidation.
     if (!req.session.csrfInit) {
         req.session.csrfInit = true;
     }

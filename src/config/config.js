@@ -80,6 +80,7 @@ module.exports = {
         : [],
     jwtAccessSecret: process.env.JWT_ACCESS_SECRET,
     jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+    jwtResetSecret: process.env.JWT_RESET_SECRET || process.env.JWT_ACCESS_SECRET,
     jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1d',
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     sessionSecret: process.env.SESSION_SECRET,

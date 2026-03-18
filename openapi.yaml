@@ -1,4 +1,32 @@
 openapi: 3.1.0
+info:
+  title: EasyMod API
+  version: 1.0.0
+  description: EasyMod Backend API
+servers:
+  - url: /api
+    description: Production
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Auth
+  - name: Shop
+  - name: Category
+  - name: Product
+  - name: Customer
+  - name: Order
+  - name: Payment
+  - name: Channel
+  - name: Dashboard
+  - name: Conversation
+  - name: RAG
+  - name: Audit
+  - name: Integration:Meta
+  - name: Delivery
+  - name: Subscription
+  - name: Webhooks
+paths:
   /category/:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -28,10 +56,7 @@ openapi: 3.1.0
       responses:
         '201': { description: Created }
         '401': { $ref: '#/components/responses/Unauthorized' }
-  disabledInEnvironments:
-    - production
 
-components:
   /category/{id}:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -76,204 +101,7 @@ components:
       responses:
         '204': { description: Deleted }
         '404': { $ref: '#/components/responses/NotFound' }
-                properties:
-                  code:
-                    type: string
-                    example: VALIDATION_ERROR
-                  message:
-                    type: string
-                    example: Invalid request payload
-    Unauthorized:
-      description: Authentication required or invalid token
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/responses/Error/content/application~1json/schema'
-          examples:
-            unauthorized:
-              value:
-                success: false
-                error:
-                  code: AUTH_ERROR
-                  message: Invalid or missing token
-  schemas:
-    Shop:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        address:
-          type: string
-        phone:
-          type: string
-    Category:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        parent_id:
-          type: string
-        shop_id:
-          type: string
-    Product:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        sku:
-          type: string
-        price:
-          type: number
-        stock:
-          type: integer
-        category_id:
-          type: string
-    Customer:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-    Order:
-      type: object
-      properties:
-        id:
-          type: string
-        status:
-          type: string
-        total:
-          type: number
-        customer_id:
-          type: string
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrderItem'
-    OrderItem:
-      type: object
-      properties:
-        product_id:
-          type: string
-        quantity:
-          type: integer
-        price:
-          type: number
-    PaymentConfig:
-      type: object
-      properties:
-        gateway:
-          type: string
-          enum: [aamarpay, sslcommerz, cod]
-        active:
-          type: boolean
-        credentials:
-          type: object
-    Subscription:
-      type: object
-      properties:
-        id:
-          type: string
-        plan_name:
-          type: string
-        status:
-          type: string
-        conversations_used:
-          type: integer
-        orders_used:
-          type: integer
-        products_used:
-          type: integer
-        next_billing_date:
-          type: string
-          format: date-time
-    Invoice:
-      type: object
-      properties:
-        id:
-          type: string
-        invoice_number:
-          type: string
-        billing_period:
-          type: string
-        amount:
-          type: number
-        status:
-          type: string
-        due_date:
-          type: string
-          format: date-time
-    Channel:
-      type: object
-      properties:
-        id:
-          type: string
-        platform:
-          type: string
-        status:
-          type: string
-        metadata:
-          type: object
-    Conversation:
-      type: object
-      properties:
-        id:
-          type: string
-        subject:
-          type: string
-        status:
-          type: string
-        channel:
-          type: string
-    Message:
-      type: object
-      properties:
-        id:
-          type: string
-        conversation_id:
-          type: string
-        sender:
-          type: string
-        content:
-          type: string
-        sent_at:
-          type: string
-          format: date-time
 
-security:
-  - bearerAuth: []
-
-tags:
-  - name: Health
-  - name: Auth
-  - name: Shop
-  - name: Category
-  - name: Product
-  - name: Customer
-  - name: Order
-  - name: Payment
-  - name: Channel
-  - name: Dashboard
-  - name: Conversation
-  - name: RAG
-  - name: Audit
-  - name: Integration:Meta
-  - name: Delivery
-  - name: Subscription
-  - name: Webhooks
-
-paths:
   /health/live:
     get:
       tags: [Health]
@@ -557,51 +385,6 @@ paths:
               type: object
       responses:
         '201': { description: Created }
-    
-  /category/{id}:
-    parameters:
-      - $ref: '#/components/parameters/XShopId'
-      - $ref: '#/components/parameters/RateLimitInfo'
-    get:
-      tags: [Category]
-      summary: Get category
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        '200': { description: Category }
-        '404': { $ref: '#/components/responses/Error' }
-    patch:
-      tags: [Category]
-      summary: Update category
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        content:
-          application/json:
-            example:
-              name: Boots
-            schema:
-              type: object
-      responses:
-        '200': { description: Updated }
-    delete:
-      tags: [Category]
-      summary: Delete category
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-        - $ref: '#/components/parameters/IdempotencyKey'
-      responses:
-        '200': { description: Deleted }
 
   /category/list:
     parameters:
@@ -706,7 +489,7 @@ paths:
               type: object
       responses:
         '201': { description: Created }
-    
+
   /product/{id}:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -853,7 +636,7 @@ paths:
               type: object
       responses:
         '201': { description: Created }
-    
+
   /customer/{id}:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -985,7 +768,7 @@ paths:
               type: object
       responses:
         '201': { description: Created }
-    
+
   /order/{id}:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -1695,7 +1478,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Subscription'
-    
+
   /subscription/plan:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -1796,3 +1579,261 @@ paths:
         '200': { description: Received }
         '403': { description: Invalid signature }
         '500': { description: Processing error }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    XShopId:
+      name: x-shop-id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Shop identifier for multi-tenant context
+    RateLimitInfo:
+      name: x-rate-limit-info
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Rate limit information header
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Idempotency key for safe retries
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: AUTH_ERROR
+                  message:
+                    type: string
+                    example: Invalid or missing token
+          examples:
+            unauthorized:
+              value:
+                success: false
+                error:
+                  code: AUTH_ERROR
+                  message: Invalid or missing token
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+    Error:
+      description: General error response
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: VALIDATION_ERROR
+                  message:
+                    type: string
+                    example: Invalid request payload
+  schemas:
+    Shop:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parent_id:
+          type: string
+        shop_id:
+          type: string
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: string
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: string
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+        stock:
+          type: integer
+        category_id:
+          type: string
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        total:
+          type: number
+        customer_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+    OrderItem:
+      type: object
+      properties:
+        product_id:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+    PaymentConfig:
+      type: object
+      properties:
+        gateway:
+          type: string
+          enum: [aamarpay, sslcommerz, cod]
+        active:
+          type: boolean
+        credentials:
+          type: object
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        plan_name:
+          type: string
+        status:
+          type: string
+        conversations_used:
+          type: integer
+        orders_used:
+          type: integer
+        products_used:
+          type: integer
+        next_billing_date:
+          type: string
+          format: date-time
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+        invoice_number:
+          type: string
+        billing_period:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+        due_date:
+          type: string
+          format: date-time
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        status:
+          type: string
+        channel:
+          type: string
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender:
+          type: string
+        content:
+          type: string
+        sent_at:
+          type: string
+          format: date-time

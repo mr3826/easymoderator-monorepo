@@ -11,7 +11,7 @@ const emailService = require('../../utils/email.service');
 
 const RESET_TOKEN_TTL = '1h';
 
-const buildResetSecret = (user) => `${config.jwtAccessSecret}${user.password}`;
+const buildResetSecret = (user) => `${config.jwtResetSecret}${user.password}`;
 
 const generateResetToken = (user) => {
     return jwt.sign({ userId: user.id, email: user.email }, buildResetSecret(user), {
