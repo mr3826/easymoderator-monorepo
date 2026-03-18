@@ -127,14 +127,18 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
 });
 
 app.get('/csrf', (req, res) => {
-    // Force session to be saved so the session ID is stable for CSRF validation.
-     // Session is now always saved immediately (saveUninitialized: true), but we explicitly ensure
-     // the session is committed before returning the CSRF token to prevent token invalidation.
     if (!req.session.csrfInit) {
         req.session.csrfInit = true;
     }
-    const csrfToken = generateCsrfToken(req, res);
-    res.status(200).json({ csrfToken });
+    // Explicitly save the session to Redis BEFORE generating the CSRF token.
+    // express-session saves asynchronously after res.end(), so without this the client
+    // can fire the next request before the session is persisted, causing a new session ID
+    // to be assigned and the HMAC validation to fail ("invalid csrf token").
+    req.session.save((err) => {
+        if (err) console.error('Session save error on GET /csrf:', err);
+        const csrfToken = generateCsrfToken(req, res);
+        res.status(200).json({ csrfToken });
+    });
 });
 
 app.use((req, res, next) => {
