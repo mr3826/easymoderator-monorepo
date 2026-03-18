@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'easymod-backend',
-      script: './src/app.js',
+      script: './server.js',
       instances: 'max', // Use all available CPU cores
       exec_mode: 'cluster',
       autorestart: true,
@@ -16,7 +16,7 @@ module.exports = {
         DB_PORT: process.env.DB_PORT || '5432',
         DB_NAME: process.env.DB_NAME || 'easymod_prod',
         DB_USER: process.env.DB_USER || 'easymod_user',
-        DB_PASSWORD: process.env.DB_PASSWORD || 'your_secure_password',
+        DB_PASSWORD: process.env.DB_PASSWORD,
         // Redis configuration
         REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
         // Vector DB configuration (Pinecone primary)
@@ -43,12 +43,12 @@ module.exports = {
         NAGAD_PRIVATE_KEY: process.env.NAGAD_PRIVATE_KEY || '',
         NAGAD_SANDBOX: process.env.NAGAD_SANDBOX || 'false',
         // Security
-        JWT_SECRET: process.env.JWT_SECRET || 'your_jwt_secret_key_here',
-        CSRF_SECRET: process.env.CSRF_SECRET || 'your_csrf_secret_key_here',
+        JWT_SECRET: process.env.JWT_SECRET,
+        CSRF_SECRET: process.env.CSRF_SECRET,
         // App configuration
         APP_ADMIN_EMAIL: process.env.APP_ADMIN_EMAIL || 'admin@easymod.tech',
-        APP_ADMIN_PASSWORD: process.env.APP_ADMIN_PASSWORD || 'your_secure_admin_password',
-        META_WEBHOOK_VERIFY_TOKEN: process.env.META_WEBHOOK_VERIFY_TOKEN || 'your_meta_verify_token'
+        APP_ADMIN_PASSWORD: process.env.APP_ADMIN_PASSWORD,
+        META_WEBHOOK_VERIFY_TOKEN: process.env.META_WEBHOOK_VERIFY_TOKEN
       },
       error_file: './logs/err.log',
       out_file: './logs/out.log',
@@ -77,7 +77,7 @@ module.exports = {
         DB_HOST: process.env.DB_HOST || 'localhost',
         DB_NAME: process.env.DB_NAME || 'easymod_prod',
         DB_USER: process.env.DB_USER || 'easymod_user',
-        DB_PASSWORD: process.env.DB_PASSWORD || 'your_secure_password'
+        DB_PASSWORD: process.env.DB_PASSWORD
       },
       error_file: './logs/worker-err.log',
       out_file: './logs/worker-out.log',

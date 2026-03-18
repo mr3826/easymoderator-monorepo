@@ -1,14 +1,7 @@
 require('module-alias/register');
-const config = require('src/config/config');
 
-// P2-5: In production, disable raw console.log/warn; use structured logger (CloudWatch/Datadog ingest stdout)
-if (config.env === 'production') {
-    console.log = () => {};
-    console.warn = () => {};
-}
-
-// Process crash protection
-process.on('unhandledRejection', (reason, promise) => {
+// Crash protection — register before anything async runs
+process.on('unhandledRejection', (reason) => {
     console.error('Unhandled Rejection:', reason);
     process.exit(1);
 });
@@ -17,13 +10,24 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
 });
 
-const app = require('src/app');
-const { sequelize } = require('src/utils/database/database-setup');
-const { getRedisClient, closeRedis } = require('src/utils/redis-client');
+(async () => {
+    // Must run before config.js is required — populates process.env from AWS Secrets Manager
+    await require('./src/config/secrets-loader')();
 
-let server = null;
+    const config = require('src/config/config');
 
-const startServer = async () => {
+    // P2-5: In production, disable raw console.log/warn; use structured logger (CloudWatch/Datadog ingest stdout)
+    if (config.env === 'production') {
+        console.log = () => {};
+        console.warn = () => {};
+    }
+
+    const app = require('src/app');
+    const { sequelize } = require('src/utils/database/database-setup');
+    const { getRedisClient, closeRedis } = require('src/utils/redis-client');
+
+    let server = null;
+
     try {
         // Database Connection
         await sequelize.authenticate();
@@ -47,20 +51,18 @@ const startServer = async () => {
         console.error('Unable to connect to the database:', error);
         process.exit(1);
     }
-};
 
-// P1-8: Graceful shutdown
-process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully...');
-    try {
-        if (server) await server.close();
-        await sequelize.close();
-        await closeRedis();
-        process.exit(0);
-    } catch (err) {
-        console.error('Error during shutdown:', err);
-        process.exit(1);
-    }
-});
-
-startServer();
+    // P1-8: Graceful shutdown
+    process.on('SIGTERM', async () => {
+        console.log('SIGTERM received, shutting down gracefully...');
+        try {
+            if (server) await server.close();
+            await sequelize.close();
+            await closeRedis();
+            process.exit(0);
+        } catch (err) {
+            console.error('Error during shutdown:', err);
+            process.exit(1);
+        }
+    });
+})();

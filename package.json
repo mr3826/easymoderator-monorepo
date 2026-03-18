@@ -18,12 +18,14 @@
     "cleanup": "powershell -ExecutionPolicy Bypass -File cleanup.ps1",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:logs": "docker-compose logs -f",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1011.0",
     "@pinecone-database/pinecone": "^4.1.0",
     "@qdrant/qdrant-js": "^1.17.0",
     "axios": "^1.13.2",
@@ -54,6 +56,7 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
     "jest": "^30.2.0",
     "nodemon": "^3.1.11",
     "supertest": "^7.2.2"
