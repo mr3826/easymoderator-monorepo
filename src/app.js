@@ -129,6 +129,12 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
 });
 
 app.get('/csrf', (req, res) => {
+    // Force session to be saved so the session ID is stable for CSRF validation.
+    // Without this, saveUninitialized:false means the session is never persisted to Redis,
+    // so successive requests get different session IDs and CSRF HMAC validation fails.
+    if (!req.session.csrfInit) {
+        req.session.csrfInit = true;
+    }
     const csrfToken = generateCsrfToken(req, res);
     res.status(200).json({ csrfToken });
 });
