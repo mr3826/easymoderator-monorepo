@@ -126,7 +126,7 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     }
 });
 
-app.get('/csrf', (req, res) => {
+const csrfHandler = (req, res) => {
     if (!req.session.csrfInit) {
         req.session.csrfInit = true;
     }
@@ -139,7 +139,11 @@ app.get('/csrf', (req, res) => {
         const csrfToken = generateCsrfToken(req, res);
         res.status(200).json({ csrfToken });
     });
-});
+};
+
+// Both paths work: frontend uses /api/csrf via its baseURL, direct callers use /csrf
+app.get('/csrf', csrfHandler);
+app.get('/api/csrf', csrfHandler);
 
 app.use((req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -153,6 +157,7 @@ app.use((req, res, next) => {
         path.startsWith('/api/auth') ||
         path.startsWith('/health') ||
         path === '/csrf' ||
+        path === '/api/csrf' ||
         path.startsWith('/payment/aamarpay') ||
         path.startsWith('/api/payment/aamarpay') ||
         path.startsWith('/payment/sslcommerz') ||
