@@ -63,7 +63,7 @@ class MetaService {
     const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync(config.jwtAccessSecret, 'salt', 32);
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(algorithm, key);
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
     cipher.setAAD(Buffer.from('meta-token'));
 
     let encrypted = cipher.update(token, 'utf8', 'hex');
@@ -85,7 +85,7 @@ class MetaService {
       const iv = Buffer.from(ivHex, 'hex');
       const authTag = Buffer.from(authTagHex, 'hex');
 
-      const decipher = crypto.createDecipher(algorithm, key);
+      const decipher = crypto.createDecipheriv(algorithm, key, iv);
       decipher.setAAD(Buffer.from('meta-token'));
       decipher.setAuthTag(authTag);
 

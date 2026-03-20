@@ -129,6 +129,106 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Meta Data Deletion Callback (required by Meta Platform Terms for Facebook Login apps)
+// Meta sends a signed_request when a user removes the app from Facebook settings.
+// Spec: https://developers.facebook.com/docs/development/create-an-app/app-dashboard/data-deletion-callback
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse and verify Meta's signed_request parameter.
+ * Returns the decoded payload or null if the signature is invalid.
+ */
+function parseSignedRequest(signedRequest, appSecret) {
+  try {
+    const [encodedSig, encodedPayload] = signedRequest.split('.');
+    if (!encodedSig || !encodedPayload) return null;
+
+    const sig = Buffer.from(encodedSig.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    const expectedSig = crypto.createHmac('sha256', appSecret).update(encodedPayload).digest();
+
+    if (!crypto.timingSafeEqual(sig, expectedSig)) return null;
+
+    const payloadJson = Buffer.from(encodedPayload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    return JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * GET /webhooks/meta/data-deletion
+ * Human-readable deletion instructions page (also serves as the Data Deletion Instructions URL
+ * in the Meta app dashboard if you prefer a URL over a callback).
+ */
+router.get('/data-deletion', (req, res) => {
+  res.json({
+    message: 'Easy Moderator Data Deletion Instructions',
+    instructions: [
+      '1. Remove Easy Moderator from your Facebook App Settings (Settings > Apps and Websites).',
+      '2. Meta will automatically send a deletion request to our callback and we will delete your data within 30 days.',
+      '3. Alternatively, email privacy@easymod.tech with subject "Facebook Data Deletion Request" and we will process it manually.',
+      '4. You will receive a confirmation code by email once deletion is complete.'
+    ],
+    contact: 'privacy@easymod.tech'
+  });
+});
+
+/**
+ * POST /webhooks/meta/data-deletion
+ * Meta Data Deletion Request Callback.
+ * Meta sends a signed_request (form-encoded) when a user revokes app permissions.
+ * We must respond within a few seconds with a confirmation_code and status_url.
+ */
+router.post('/data-deletion', express.urlencoded({ extended: false }), async (req, res) => {
+  try {
+    const { signed_request: signedRequest } = req.body;
+    if (!signedRequest) {
+      return res.status(400).json({ error: 'Missing signed_request' });
+    }
+
+    const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
+    if (!appSecret) {
+      console.error('Data deletion callback: META_WEBHOOK_APP_SECRET not configured');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    const payload = parseSignedRequest(signedRequest, appSecret);
+    if (!payload) {
+      return res.status(403).json({ error: 'Invalid signed_request signature' });
+    }
+
+    const facebookUserId = payload.user_id;
+    const confirmationCode = `DEL-${facebookUserId}-${Date.now()}`;
+
+    // Schedule deletion: anonymize/delete all customer records linked to this Facebook user ID
+    setImmediate(async () => {
+      try {
+        // Delete customer records where channel_user_id matches the Facebook user ID
+        // and channel_type is 'messenger' or 'instagram'
+        const deletedCount = await Customer.destroy({
+          where: {
+            channel_user_id: facebookUserId
+          }
+        });
+        console.log(`Data deletion callback: deleted ${deletedCount} customer record(s) for Facebook user ${facebookUserId} (code: ${confirmationCode})`);
+      } catch (deleteErr) {
+        console.error(`Data deletion callback: failed to delete records for Facebook user ${facebookUserId}:`, deleteErr.message);
+      }
+    });
+
+    // Meta requires this exact response shape
+    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://app.easymod.tech';
+    return res.status(200).json({
+      url: `${baseUrl}/privacy-policy`,
+      confirmation_code: confirmationCode
+    });
+  } catch (error) {
+    console.error('Data deletion callback error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // n8n reply callback — stores bot response and sends to customer via Meta
 router.post('/reply', express.json(), async (req, res) => {
   try {
