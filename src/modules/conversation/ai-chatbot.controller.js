@@ -22,10 +22,33 @@ class AIChatbotController {
                 shop_id,
                 customer_channel_id,
                 platform,
-                message,
+                message: rawMessage = '',
                 message_id,
-                sender_info = {}
+                sender_info = {},
+                attachments = []
             } = req.body;
+
+            // Extract image URLs from attachments (Facebook/Instagram format)
+            const imageUrls = attachments
+                .filter(a => a.type === 'image' && (a.payload?.url || a.url))
+                .map(a => a.payload?.url || a.url);
+
+            // WhatsApp sends image as { type: 'image', image: { id, mime_type, sha256 } }
+            // WhatsApp image URLs require Graph API download — not directly accessible.
+            // For now, treat WhatsApp image-only messages as image signals without URL.
+            const hasImageAttachment = imageUrls.length > 0 ||
+                attachments.some(a => a.type === 'image' || a.type === 'sticker');
+
+            // Build effective message — if image-only, create a descriptive placeholder
+            const message = rawMessage.trim() ||
+                (hasImageAttachment ? '[image]' : '');
+
+            if (!message) {
+                return res.status(400).json({
+                    success: false,
+                    errors: [{ msg: 'message or attachments is required' }]
+                });
+            }
 
             // Step 1: Ingest message and get conversation state
             const ingestionResult = await ConversationStateService.ingestMessage({
@@ -88,7 +111,8 @@ class AIChatbotController {
                     entities,
                     detectedLanguage,
                     aiSettings,
-                    ingestionResult
+                    ingestionResult,
+                    imageUrls
                 );
                 response = intentResult.response;
                 confidence = intentResult.confidence;
@@ -143,9 +167,11 @@ class AIChatbotController {
      * Falls back to keyword matching if all LLM providers are unavailable.
      * Returns { response: string, confidence: number (0.0–1.0) }.
      */
-    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult) {
+    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult, imageUrls = []) {
         const { shop_id, customer_channel_id, platform } = ingestionResult;
         const { conversation_id } = ingestionResult;
+
+        const hasImages = imageUrls.length > 0;
 
         // --- Try the AI intent router first ---
         try {
@@ -158,7 +184,8 @@ class AIChatbotController {
 
             const systemPrompt = intentRouter.buildSystemPrompt(
                 shopKnowledge || {},
-                language
+                language,
+                hasImages
             );
 
             const routerResult = await intentRouter.route({
@@ -167,7 +194,8 @@ class AIChatbotController {
                 conversationId: conversation_id,
                 history: conversationHistory,
                 language,
-                systemPrompt
+                systemPrompt,
+                imageUrls
             });
 
             // Invalidate summary cache so next message gets fresh context

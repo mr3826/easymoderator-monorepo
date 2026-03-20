@@ -115,19 +115,22 @@ const route = async ({
     history = [],
     language = 'mixed',
     systemPrompt = '',
-    preferredProvider
+    preferredProvider,
+    imageUrls = []
 }) => {
     if (ROUTER_DISABLED) {
-        return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider });
+        return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls });
     }
 
     // ------------------------------------------------------------------
-    // Stage 1: Exact-match response cache
+    // Stage 1: Exact-match response cache (skip for image messages)
     // ------------------------------------------------------------------
-    const cacheKey = normalisedKey(shopId, message);
-    const cachedResponse = await intentCache.get(cacheKey);
-    if (cachedResponse) {
-        return { response: cachedResponse, confidence: 1.0, source: 'cache' };
+    const cacheKey = imageUrls.length > 0 ? null : normalisedKey(shopId, message);
+    if (cacheKey) {
+        const cachedResponse = await intentCache.get(cacheKey);
+        if (cachedResponse) {
+            return { response: cachedResponse, confidence: 1.0, source: 'cache' };
+        }
     }
 
     // ------------------------------------------------------------------
@@ -166,10 +169,10 @@ const route = async ({
     // ------------------------------------------------------------------
     // Stage 3: Full LLM call with context
     // ------------------------------------------------------------------
-    return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey });
+    return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls });
 };
 
-const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey }) => {
+const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [] }) => {
     // Build active context: rolling summary + recent turns
     const summary = await getOrBuildSummary(conversationId, history);
     const recentTurns = history.length > SUMMARY_THRESHOLD
@@ -193,14 +196,28 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         });
     }
 
-    // Current message
-    llmMessages.push({ role: 'user', content: message });
+    // Current message — build vision content if image URLs are present
+    if (imageUrls.length > 0) {
+        const contentBlocks = imageUrls.map(url => ({ type: 'image_url', url }));
+        if (message && message !== '[image]') {
+            contentBlocks.push({ type: 'text', text: message });
+        } else {
+            contentBlocks.push({ type: 'text', text: 'What product is this? Can you help me?' });
+        }
+        llmMessages.push({ role: 'user', content: contentBlocks });
+    } else {
+        llmMessages.push({ role: 'user', content: message });
+    }
+
+    // For vision requests: prefer OpenAI (gpt-4o-mini) then Gemini, skip Deepseek
+    const effectiveProvider = imageUrls.length > 0 ? (preferredProvider || 'openai') : preferredProvider;
 
     const { text: response, provider } = await llmService.chat({
         systemPrompt,
         messages: llmMessages,
-        preferredProvider,
-        maxTokens: 768
+        preferredProvider: effectiveProvider,
+        maxTokens: 768,
+        skipProviders: imageUrls.length > 0 ? ['deepseek'] : []
     });
 
     if (cacheKey) {
@@ -223,7 +240,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
  * @param {string} language
  * @returns {string}
  */
-const buildSystemPrompt = (shopKnowledge, language = 'mixed') => {
+const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false) => {
     const { businessInfo = {}, brandingRules = {}, faqs = [] } = shopKnowledge || {};
 
     const langInstruction =
@@ -239,9 +256,14 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed') => {
         return `Q: ${q}\nA: ${a}`;
     }).join('\n\n');
 
+    const imageInstruction = hasImages
+        ? 'The customer has sent an image. Look at the image carefully. Identify the product shown, describe it, and help the customer with their query about it (price, availability, ordering, etc.). Respond contextually about the product in the image.'
+        : '';
+
     return [
         `You are a helpful customer service assistant for ${businessInfo.shopName || 'this shop'}.`,
         langInstruction,
+        imageInstruction,
         businessInfo.address ? `Address: ${businessInfo.address}` : '',
         businessInfo.phone ? `Phone: ${businessInfo.phone}` : '',
         businessInfo.openingHours ? `Hours: ${businessInfo.openingHours}` : '',

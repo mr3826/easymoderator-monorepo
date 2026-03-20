@@ -23,6 +23,76 @@ const ANTHROPIC_MODEL = process.env.LLM_DEFAULT_MODEL_ANTHROPIC || 'claude-3-5-h
 const OPENAI_MODEL = process.env.LLM_DEFAULT_MODEL_OPENAI || 'gpt-4o-mini';
 const GEMINI_MODEL = process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-1.5-flash';
 const DEEPSEEK_MODEL = process.env.LLM_DEFAULT_MODEL_DEEPSEEK || 'deepseek-chat';
+
+// ---------------------------------------------------------------------------
+// Vision helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if any message in the array has vision content blocks.
+ */
+const hasVisionContent = (messages) =>
+    messages.some(m => Array.isArray(m.content));
+
+/**
+ * Fetch an image URL and return base64-encoded data + mime type.
+ * Used for providers that don't accept raw HTTP image URLs (e.g. Gemini REST).
+ */
+const fetchImageAsBase64 = async (url) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+    const contentType = res.headers.get('content-type') || 'image/jpeg';
+    const buffer = await res.arrayBuffer();
+    return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType.split(';')[0] };
+};
+
+/**
+ * Normalize a message's content blocks for Anthropic's Messages API format.
+ * Our internal format: [{ type: 'image_url', url }, { type: 'text', text }]
+ * Anthropic format:   [{ type: 'image', source: { type: 'url', url } }, { type: 'text', text }]
+ */
+const toAnthropicContent = (content) => {
+    if (typeof content === 'string') return content;
+    return content.map(block => {
+        if (block.type === 'image_url') {
+            return { type: 'image', source: { type: 'url', url: block.url } };
+        }
+        return { type: 'text', text: block.text || '' };
+    });
+};
+
+/**
+ * Normalize a message's content blocks for OpenAI's chat API format.
+ * OpenAI format: [{ type: 'image_url', image_url: { url } }, { type: 'text', text }]
+ */
+const toOpenAIContent = (content) => {
+    if (typeof content === 'string') return content;
+    return content.map(block => {
+        if (block.type === 'image_url') {
+            return { type: 'image_url', image_url: { url: block.url } };
+        }
+        return { type: 'text', text: block.text || '' };
+    });
+};
+
+/**
+ * Normalize a message's content blocks for Gemini's generateContent format.
+ * Gemini requires base64 inline data for non-GCS URLs — we fetch and encode.
+ * Returns a promise of parts array.
+ */
+const toGeminiParts = async (content) => {
+    if (typeof content === 'string') return [{ text: content }];
+    const parts = [];
+    for (const block of content) {
+        if (block.type === 'image_url') {
+            const { data, mimeType } = await fetchImageAsBase64(block.url);
+            parts.push({ inlineData: { mimeType, data } });
+        } else {
+            parts.push({ text: block.text || '' });
+        }
+    }
+    return parts;
+};
 const MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS || '1024', 10);
 const TEMPERATURE = parseFloat(process.env.LLM_TEMPERATURE || '0.3');
 
@@ -47,11 +117,16 @@ const callAnthropic = async ({ systemPrompt, messages, model, maxTokens }) => {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
 
+    const normalizedMessages = messages.map(m => ({
+        role: m.role,
+        content: toAnthropicContent(m.content)
+    }));
+
     const body = {
         model: model || ANTHROPIC_MODEL,
         max_tokens: maxTokens || MAX_TOKENS,
         temperature: TEMPERATURE,
-        messages
+        messages: normalizedMessages
     };
 
     if (systemPrompt) {
@@ -94,7 +169,7 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
 
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
-    oaiMessages.push(...messages);
+    oaiMessages.push(...messages.map(m => ({ role: m.role, content: toOpenAIContent(m.content) })));
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -127,10 +202,10 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens }) => {
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
     const geminiModel = model || GEMINI_MODEL;
-    const contents = messages.map((m) => ({
+    const contents = await Promise.all(messages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-    }));
+        parts: await toGeminiParts(m.content)
+    })));
 
     const body = {
         contents,
@@ -217,13 +292,13 @@ const PROVIDERS = [
  * @returns {Promise<{ text: string, provider: string }>}
  */
 const chat = async (params) => {
-    const { preferredProvider } = params;
+    const { preferredProvider, skipProviders = [] } = params;
 
-    let providers = PROVIDERS;
+    let providers = PROVIDERS.filter(p => !skipProviders.includes(p.name));
     if (preferredProvider) {
-        const pref = PROVIDERS.find((p) => p.name === preferredProvider);
+        const pref = providers.find((p) => p.name === preferredProvider);
         if (pref) {
-            providers = [pref, ...PROVIDERS.filter((p) => p.name !== preferredProvider)];
+            providers = [pref, ...providers.filter((p) => p.name !== preferredProvider)];
         }
     }
 

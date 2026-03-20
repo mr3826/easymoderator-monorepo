@@ -17,7 +17,8 @@ const validateProcessMessage = [
     .isIn(['facebook', 'instagram', 'whatsapp'])
     .withMessage('platform must be one of: facebook, instagram, whatsapp'),
   body('message')
-    .trim().notEmpty().withMessage('message is required')
+    .optional({ checkFalsy: true })
+    .trim()
     .isLength({ max: 4000 }).withMessage('message must not exceed 4000 characters')
     .customSanitizer(v => typeof v === 'string'
       ? v.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
@@ -28,7 +29,10 @@ const validateProcessMessage = [
     .isLength({ max: 255 }),
   body('sender_info')
     .optional()
-    .isObject().withMessage('sender_info must be an object')
+    .isObject().withMessage('sender_info must be an object'),
+  body('attachments')
+    .optional()
+    .isArray().withMessage('attachments must be an array')
 ];
 
 const validateMarkHandoff = [
