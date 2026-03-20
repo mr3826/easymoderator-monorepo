@@ -31,6 +31,7 @@ const migrations = [
   require('./migrations/20260312_001_add_meta_integration_secrets'),
   require('./migrations/20260312_002_create_rto_blacklist_table'),
   require('./migrations/20260312_003_add_workflow_url_and_dlq'),
+  require('./migrations/20260320_001_add_conversation_chatbot_columns'),
 ];
 
 const createMigrationsTable = async () => {
