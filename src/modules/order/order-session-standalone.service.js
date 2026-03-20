@@ -187,7 +187,10 @@ class OrderSessionService {
      * Handle the current step in the order flow
      */
     static async handleCurrentStep(session, answer, rawMessage) {
-        const { current_step, step_data } = session;
+        const { current_step } = session;
+        // Spread into a new object so Sequelize's dirty-tracking detects the change
+        // (mutating session.step_data in-place is not detected as a change by Sequelize)
+        const step_data = { ...(session.step_data || {}) };
         let nextStep = current_step;
         let prompt = '';
         let completed = false;
