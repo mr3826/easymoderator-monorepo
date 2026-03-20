@@ -33,6 +33,10 @@ const migrations = [
   require('./migrations/20260312_003_add_workflow_url_and_dlq'),
   require('./migrations/20260320_001_add_conversation_chatbot_columns'),
   require('./migrations/20260320_002_fix_order_sessions_json_columns'),
+  require('./migrations/20260320_003_add_product_ai_columns'),
+  require('./migrations/20260320_004_add_hitl_and_message_tag'),
+  require('./migrations/20260320_005_add_faq_use_count'),
+  require('./migrations/20260321_001_channel_configs_hardening'),
 ];
 
 const createMigrationsTable = async () => {

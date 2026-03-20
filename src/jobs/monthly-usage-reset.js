@@ -132,7 +132,10 @@ class MonthlyUsageReset extends BaseJob {
             conversations_used: 0,
             orders_used: 0,
             products_used: 0,
-            extra_charges: 0,
+            // extra_charges and extra_conversations are NOT reset here.
+            // They accumulate until the invoice-generator captures and clears them
+            // (runs at 01:00 UTC, one hour after this job). Resetting here would
+            // cause the invoice generator to always bill ৳0 for overage.
             usage_reset_at: runDate,
             updated_at: new Date()
         });

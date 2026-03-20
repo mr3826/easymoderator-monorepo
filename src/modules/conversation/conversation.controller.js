@@ -1,5 +1,6 @@
 const conversationService = require('./conversation.service');
 const cacheService = require('../../utils/cache.service');
+const sseManager = require('../../utils/sse-manager');
 
 class ConversationController {
     async getConversations(req, res) {
@@ -192,6 +193,9 @@ class ConversationController {
 
             const message = await conversationService.createMessage(conversationId, shopId, messageData);
 
+            // Push real-time update to all open agent tabs for this shop
+            sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message });
+
             res.status(201).json({
                 success: true,
                 data: message
@@ -206,6 +210,44 @@ class ConversationController {
                     code: errorCode,
                     message: error.message
                 }
+            });
+        }
+    }
+
+    async updateConversation(req, res) {
+        try {
+            const { conversationId } = req.params;
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
+                });
+            }
+
+            const { hitl, status } = req.body;
+            const conversation = await conversationService.updateConversation(
+                conversationId,
+                shopId,
+                { hitl, status }
+            );
+
+            // Notify other agent tabs of HITL change
+            if (hitl !== undefined) {
+                sseManager.emit(shopId, 'hitl_changed', {
+                    conversation_id: conversationId,
+                    hitl: conversation.hitl
+                });
+            }
+
+            res.json({ success: true, data: conversation });
+        } catch (error) {
+            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
+            const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_UPDATE_FAILED';
+            res.status(statusCode).json({
+                success: false,
+                error: { code: errorCode, message: error.message }
             });
         }
     }
@@ -298,6 +340,35 @@ class ConversationController {
                 }
             });
         }
+    }
+
+    getEventStream(req, res) {
+        const shopId = req.headers['x-shop-id'] || req.query.shop_id || req.user?.shopId;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
+            });
+        }
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        // Disable nginx/proxy buffering so events arrive immediately
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+
+        sseManager.register(shopId, res);
+
+        // Heartbeat keeps the connection alive through idle proxies (25s < 30s proxy timeout)
+        const heartbeat = setInterval(() => {
+            try { res.write(':heartbeat\n\n'); } catch (_) {}
+        }, 25000);
+
+        req.on('close', () => {
+            clearInterval(heartbeat);
+            sseManager.unregister(shopId, res);
+        });
     }
 
     async checkDuplicate(req, res) {

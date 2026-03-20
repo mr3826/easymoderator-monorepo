@@ -2,6 +2,7 @@ const BaseJob = require('./base-job');
 const { Invoice, Subscription, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
+const emailService = require('../../utils/email.service');
 
 /**
  * Failed Payment Reconciler Job
@@ -187,33 +188,72 @@ class FailedPaymentReconciler extends BaseJob {
     }
 
     /**
-     * Send reminder notification
-     * @param {Object} invoice 
-     * @param {string} action 
+     * Send dunning email to shop owner.
+     * Silently skips if shop has no email or SMTP is not configured.
      */
     async sendReminderNotification(invoice, action) {
-        // TODO: Integrate with email service
-        this.logger.info(`Reminder notification queued`, {
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.invoice_number,
-            shopId: invoice.shop_id,
-            action,
-            // Email details would go here
-            to: invoice.shop?.email || 'shop-owner@example.com',
-            subject: action === 'suspended' 
-                ? 'Subscription Suspended - Payment Required'
-                : 'Payment Reminder - Invoice Overdue',
-            amount: invoice.amount,
-            dueDate: invoice.due_date
+        const shopEmail = invoice.shop?.email;
+        const shopName = invoice.shop?.name || 'Shop';
+        const invoiceNumber = invoice.invoice_number;
+        const amount = parseFloat(invoice.amount).toLocaleString();
+        const dueDate = new Date(invoice.due_date).toLocaleDateString('en-BD', {
+            day: 'numeric', month: 'long', year: 'numeric'
         });
+        const billingUrl = `${process.env.FRONTEND_URL}/app/subscription`;
 
-        // Example integration:
-        // await emailService.send({
-        //     to: invoice.shop.email,
-        //     subject: '...',
-        //     template: action === 'suspended' ? 'subscription-suspended' : 'payment-reminder',
-        //     data: { invoice, shop: invoice.shop }
-        // });
+        if (!shopEmail) {
+            this.logger.warn(`Shop ${invoice.shop_id} has no email — skipping dunning notification`);
+            return;
+        }
+
+        const isSuspended = action === 'suspended';
+
+        const subject = isSuspended
+            ? 'Your Easy Moderator subscription has been suspended'
+            : `Payment Reminder: Invoice ${invoiceNumber} is overdue`;
+
+        const ctaColor = isSuspended ? '#dc2626' : '#2563eb';
+        const ctaLabel = isSuspended ? 'Pay Now to Restore Access' : 'Pay Invoice';
+        const bodyHeading = isSuspended
+            ? 'Your subscription has been <strong>suspended</strong> due to non-payment.'
+            : 'This is a reminder that your invoice is overdue.';
+        const footerNote = isSuspended
+            ? 'If you believe this is an error, please contact support immediately.'
+            : 'Subscriptions unpaid for 30 days will be suspended.';
+
+        const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="font-family:sans-serif;max-width:560px;margin:32px auto;color:#1f2937">
+  <div style="background:#f9fafb;border-radius:8px;padding:32px;border:1px solid #e5e7eb">
+    <h2 style="margin-top:0;color:${ctaColor}">${subject}</h2>
+    <p>Dear <strong>${shopName}</strong>,</p>
+    <p>${bodyHeading}</p>
+    <table style="width:100%;border-collapse:collapse;margin:16px 0">
+      <tr><td style="padding:8px 0;color:#6b7280">Invoice</td><td style="padding:8px 0;font-weight:600">${invoiceNumber}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280">Amount Due</td><td style="padding:8px 0;font-weight:600">৳${amount}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280">Due Date</td><td style="padding:8px 0;font-weight:600">${dueDate}</td></tr>
+    </table>
+    <a href="${billingUrl}" style="display:inline-block;background:${ctaColor};color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:600;margin:8px 0">${ctaLabel}</a>
+    <p style="font-size:13px;color:#6b7280;margin-top:24px">${footerNote}</p>
+  </div>
+</body></html>`;
+
+        try {
+            const result = await emailService.sendEmail({ to: shopEmail, subject, html });
+            this.logger.info(`Dunning email ${result.sent ? 'sent' : 'skipped (SMTP not configured)'}`, {
+                invoiceId: invoice.id,
+                shopId: invoice.shop_id,
+                action,
+                to: shopEmail
+            });
+        } catch (error) {
+            // Email failures must never break the reconciler — log and continue
+            this.logger.warn(`Failed to send dunning email`, {
+                invoiceId: invoice.id,
+                shopId: invoice.shop_id,
+                error: error.message
+            });
+        }
     }
 }
 

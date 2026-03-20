@@ -8,7 +8,11 @@
  * are always fetched fresh from the DB at query time.
  */
 module.exports = {
-    up: async (queryInterface, Sequelize) => {
+    name: '20260320_003_add_product_ai_columns',
+
+    up: async (sequelize) => {
+        const { DataTypes } = require('sequelize');
+        const queryInterface = sequelize.getQueryInterface();
         const tableDesc = await queryInterface.describeTable('products');
 
         const addIfMissing = async (col, def) => {
@@ -18,57 +22,57 @@ module.exports = {
         };
 
         await addIfMissing('ai_description', {
-            type: Sequelize.TEXT,
+            type: DataTypes.TEXT,
             allowNull: true,
             comment: 'LLM-generated product description for search (set once at upload)'
         });
 
         await addIfMissing('ai_tags', {
-            type: Sequelize.JSONB,
+            type: DataTypes.JSONB,
             allowNull: false,
             defaultValue: [],
             comment: 'LLM-generated tags e.g. ["saree","blue","embroidery"]'
         });
 
         await addIfMissing('ai_category', {
-            type: Sequelize.STRING(100),
+            type: DataTypes.STRING(100),
             allowNull: true,
             comment: 'Normalised product category from vision LLM'
         });
 
         await addIfMissing('ai_color_primary', {
-            type: Sequelize.STRING(50),
+            type: DataTypes.STRING(50),
             allowNull: true,
             comment: 'Primary colour detected from product image'
         });
 
         await addIfMissing('ai_material', {
-            type: Sequelize.STRING(100),
+            type: DataTypes.STRING(100),
             allowNull: true,
             comment: 'Material / fabric detected from product image'
         });
 
         await addIfMissing('ai_attributes', {
-            type: Sequelize.JSONB,
+            type: DataTypes.JSONB,
             allowNull: false,
             defaultValue: {},
             comment: 'Flexible key-value attributes e.g. {style:"traditional",pattern:"floral"}'
         });
 
         await addIfMissing('ai_search_text', {
-            type: Sequelize.TEXT,
+            type: DataTypes.TEXT,
             allowNull: true,
             comment: 'Concatenated text used for full-text search indexing'
         });
 
         await addIfMissing('ai_processed_at', {
-            type: Sequelize.DATE,
+            type: DataTypes.DATE,
             allowNull: true,
             comment: 'Timestamp when vision LLM last processed this product'
         });
 
         // Full-text search index on ai_search_text + name
-        await queryInterface.sequelize.query(`
+        await sequelize.query(`
             CREATE INDEX CONCURRENTLY IF NOT EXISTS products_ai_search_idx
             ON products
             USING GIN (
@@ -84,7 +88,7 @@ module.exports = {
             WHERE deleted_at IS NULL;
         `).catch(() => {
             // If CONCURRENTLY fails (inside a transaction), fall back
-            return queryInterface.sequelize.query(`
+            return sequelize.query(`
                 CREATE INDEX IF NOT EXISTS products_ai_search_idx
                 ON products
                 USING GIN (
@@ -93,7 +97,6 @@ module.exports = {
                         coalesce(ai_search_text, '') || ' ' ||
                         coalesce(ai_category, '') || ' ' ||
                         coalesce(ai_color_primary, '') || ' ' ||
-                        coalesce(ai_material, '') || ' ' ||
                         coalesce(category, '')
                     )
                 )
@@ -102,24 +105,26 @@ module.exports = {
         });
 
         // Index on ai_tags for tag-based search
-        await queryInterface.sequelize.query(`
+        await sequelize.query(`
             CREATE INDEX IF NOT EXISTS products_ai_tags_idx
             ON products USING GIN (ai_tags)
             WHERE deleted_at IS NULL;
         `);
 
         // Index for unprocessed products (background job)
-        await queryInterface.sequelize.query(`
+        await sequelize.query(`
             CREATE INDEX IF NOT EXISTS products_ai_pending_idx
             ON products (shop_id, ai_processed_at)
             WHERE deleted_at IS NULL AND ai_processed_at IS NULL;
         `);
     },
 
-    down: async (queryInterface) => {
-        await queryInterface.sequelize.query('DROP INDEX IF EXISTS products_ai_search_idx;');
-        await queryInterface.sequelize.query('DROP INDEX IF EXISTS products_ai_tags_idx;');
-        await queryInterface.sequelize.query('DROP INDEX IF EXISTS products_ai_pending_idx;');
+    down: async (sequelize) => {
+        const queryInterface = sequelize.getQueryInterface();
+
+        await sequelize.query('DROP INDEX IF EXISTS products_ai_search_idx;');
+        await sequelize.query('DROP INDEX IF EXISTS products_ai_tags_idx;');
+        await sequelize.query('DROP INDEX IF EXISTS products_ai_pending_idx;');
 
         for (const col of ['ai_description', 'ai_tags', 'ai_category', 'ai_color_primary',
             'ai_material', 'ai_attributes', 'ai_search_text', 'ai_processed_at']) {

@@ -22,11 +22,14 @@ const llmService = require('./llm.service');
 const ragService = require('../rag/rag.service');
 const { MemoryCache } = require('../../config/memory-cache');
 const productSearch = require('../product/product-search.service');
+const { incrementFaqHit } = require('../knowledge/knowledge.service');
 
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '300', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const SUMMARY_THRESHOLD = parseInt(process.env.SUMMARY_THRESHOLD || '10', 10);
 const ROUTER_DISABLED = process.env.INTENT_ROUTER_DISABLED === 'true';
+// Fix #15: configurable FAQ cap in system prompt (was hard-coded 20)
+const MAX_FAQ_IN_PROMPT = parseInt(process.env.MAX_FAQ_IN_PROMPT || '50', 10);
 
 // Dedicated cache bucket for intent routing
 const intentCache = new MemoryCache();
@@ -160,6 +163,12 @@ const route = async ({
                 maxTokens: 512
             });
 
+            // Fix #16: Track FAQ hit — best-effort, non-blocking
+            const docId = topHit.metadata?.documentId;
+            if (docId && docId.startsWith('faq-')) {
+                incrementFaqHit(parseInt(docId.replace('faq-', ''), 10));
+            }
+
             await intentCache.setex(cacheKey, CACHE_TTL, answer);
             return { response: answer, confidence: topHit.score, source: 'faq', provider };
         }
@@ -242,6 +251,29 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         llmMessages.push({ role: 'user', content: contentBlocks });
     } else {
         llmMessages.push({ role: 'user', content: message });
+
+        // Text-query product search: inject live product data as grounded context.
+        // Runs for every text message; empty results = no injection (non-product queries
+        // like "hello" return no rows so the guard below keeps the prompt clean).
+        if (shopId) {
+            const textProducts = await productSearch.searchByAttributes({
+                shopId,
+                query: message,
+                limit: 5
+            }).catch(() => []);
+
+            // Guard: only inject if we have at least one product with a real name.
+            // Prevents injecting malformed rows from mock/stub returns.
+            const validProducts = textProducts.filter(p => p.name);
+            if (validProducts.length > 0) {
+                const productContext = productSearch.formatProductsForLlm(validProducts);
+                groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
+                    `RELEVANT SHOP PRODUCTS (live data — use ONLY these facts):\n${productContext}\n\n` +
+                    `GROUNDING RULES:\n` +
+                    `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
+                    `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
+            }
+        }
     }
 
     // For vision requests: prefer OpenAI (gpt-4o-mini) then Gemini, skip Deepseek
@@ -327,7 +359,7 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false)
             ? 'Always respond in English.'
             : 'Respond in the same language the customer uses (Bangla, English, or mixed Banglish).';
 
-    const faqSection = faqs.slice(0, 20).map((f) => {
+    const faqSection = faqs.slice(0, MAX_FAQ_IN_PROMPT).map((f) => {
         const q = f.category || f.question || '';
         const a = f.template_en || f.template_bn || f.answer || '';
         return `Q: ${q}\nA: ${a}`;

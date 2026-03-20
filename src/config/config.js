@@ -1,4 +1,7 @@
-require('dotenv').config({ override: true });
+// Do NOT use override:true — if NODE_ENV (or other vars) are already set in the
+// process environment (e.g. by test runners or CI), they should take precedence
+// over the .env file.
+require('dotenv').config();
 
 const env = process.env.NODE_ENV || 'development';
 
@@ -43,7 +46,8 @@ if (env === 'production') {
         'CORS_ORIGINS',
         'FRONTEND_URL',
         'META_WEBHOOK_APP_SECRET',
-        'PAYMENT_ENCRYPTION_KEY'
+        'PAYMENT_ENCRYPTION_KEY',
+        'CHANNEL_ENCRYPTION_KEY'   // required: encrypts Meta System User tokens at rest
     ].forEach(requireEnv);
 }
 

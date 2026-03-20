@@ -1,5 +1,9 @@
 const { AuditLog } = require('../modules/entities');
 const { createLogger } = require('../utils/structured-logger');
+const { cacheRedis } = require('../config/redis.js');
+
+// Redis lock TTL: 2 hours. Covers the longest expected job run with headroom.
+const JOB_LOCK_TTL_SECONDS = 7200;
 
 /**
  * Base Job Class
@@ -30,6 +34,7 @@ class BaseJob {
     async execute(options = {}) {
         const { dryRun = false, runDate = new Date() } = options;
         const executionId = this.generateExecutionId(runDate);
+        const lockKey = `job-lock:${this.jobName}:${executionId}`;
 
         this.logger.info(`[${this.jobName}] Starting execution`, {
             executionId,
@@ -39,8 +44,20 @@ class BaseJob {
 
         this.metrics.startTime = Date.now();
 
+        // Acquire distributed Redis lock — prevents duplicate runs on multi-instance deployments.
+        // Dry-runs skip the lock so they can always be triggered for testing.
+        if (!dryRun) {
+            const locked = await this._acquireJobLock(lockKey);
+            if (!locked) {
+                this.logger.warn(`[${this.jobName}] Another instance holds the lock, skipping`, {
+                    executionId, lockKey
+                });
+                return { status: 'skipped', reason: 'lock_held', executionId };
+            }
+        }
+
         try {
-            // Check if job already executed for this period (idempotency)
+            // Check if job already executed for this period (AuditLog-based idempotency)
             const existingExecution = await this.checkExistingExecution(executionId);
             if (existingExecution && !dryRun) {
                 this.logger.warn(`[${this.jobName}] Already executed`, {
@@ -100,6 +117,42 @@ class BaseJob {
             }
 
             throw error;
+        } finally {
+            // Always release the lock — whether the job succeeded or failed
+            if (!dryRun) {
+                await this._releaseJobLock(lockKey);
+            }
+        }
+    }
+
+    /**
+     * Attempt to acquire a Redis distributed lock using SET NX EX (atomic).
+     * Returns true if the lock was acquired (this instance should proceed).
+     * Returns true if Redis is unavailable — fail open, prefer running over blocking.
+     */
+    async _acquireJobLock(lockKey) {
+        try {
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                const result = await cacheRedis.set(lockKey, '1', 'EX', JOB_LOCK_TTL_SECONDS, 'NX');
+                return result === 'OK'; // null means key already existed
+            }
+            return true; // No Redis: fall through to AuditLog idempotency only
+        } catch (error) {
+            this.logger.warn(`Failed to acquire job lock, proceeding without it`, { lockKey, error: error.message });
+            return true; // fail open
+        }
+    }
+
+    /**
+     * Release the Redis job lock. Best-effort — errors are swallowed.
+     */
+    async _releaseJobLock(lockKey) {
+        try {
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                await cacheRedis.del(lockKey);
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to release job lock`, { lockKey, error: error.message });
         }
     }
 

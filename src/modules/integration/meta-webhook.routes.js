@@ -229,6 +229,62 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Meta Deauthorize Callback (required by Meta Platform Terms)
+// Called when a user removes your app in Facebook Settings > Apps and Websites.
+// Must be registered at: App Dashboard → Settings → Advanced → Deauthorize Callback URL
+// Path to register: <your-domain>/webhooks/meta/deauthorize
+// Spec: https://developers.facebook.com/docs/development/create-an-app/app-dashboard/deauthorize-callback-url
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /webhooks/meta/deauthorize
+ * Meta sends a signed_request (form-encoded) when a user deauthorizes the app.
+ * We mark the customer as deauthorized and revoke their conversation data.
+ */
+router.post('/deauthorize', express.urlencoded({ extended: false }), async (req, res) => {
+  try {
+    const { signed_request: signedRequest } = req.body;
+    if (!signedRequest) {
+      return res.status(400).json({ error: 'Missing signed_request' });
+    }
+
+    const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
+    if (!appSecret) {
+      console.error('Deauthorize callback: META_WEBHOOK_APP_SECRET not configured');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    const payload = parseSignedRequest(signedRequest, appSecret);
+    if (!payload) {
+      return res.status(403).json({ error: 'Invalid signed_request signature' });
+    }
+
+    const facebookUserId = payload.user_id;
+
+    // Best-effort: mark customers with this Facebook user ID as deauthorized.
+    // Full data deletion happens via the /data-deletion callback (user-controlled)
+    // or a scheduled purge after the retention window.
+    setImmediate(async () => {
+      try {
+        await Customer.update(
+          { metadata: require('sequelize').literal(`jsonb_set(COALESCE(metadata, '{}'), '{deauthorized}', 'true')`) },
+          { where: { channel_user_id: facebookUserId } }
+        );
+        console.log(`Deauthorize callback: marked customer ${facebookUserId} as deauthorized`);
+      } catch (err) {
+        console.error(`Deauthorize callback: failed to update customer ${facebookUserId}:`, err.message);
+      }
+    });
+
+    // Meta expects a 200; no specific body format required for deauthorize.
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error('Deauthorize callback error:', error);
+    return res.sendStatus(500);
+  }
+});
+
 // n8n reply callback — stores bot response and sends to customer via Meta
 router.post('/reply', express.json(), async (req, res) => {
   try {

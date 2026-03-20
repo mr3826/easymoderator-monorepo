@@ -20,6 +20,7 @@ class ConversationService {
             channel,
             title: conversation.title || meta.title || conversation.intent || null,
             status: conversation.status || meta.status || 'active',
+            hitl: conversation.hitl ?? false,
             lastMessage: conversation.message,
             unreadCount: meta.unreadCount || 0,
             created_at: conversation.created_at,
@@ -111,6 +112,7 @@ class ConversationService {
                 message_type: 'text',
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                message_tag: message.message_tag || null,
                 created_at: message.created_at,
                 updated_at: message.updated_at || message.created_at
             }));
@@ -229,6 +231,7 @@ class ConversationService {
                 sender,
                 ai_suggestion: messageData.ai_suggestion || null,
                 ai_confidence: messageData.ai_confidence || null,
+                message_tag: messageData.message_tag || null,
                 external_id: messageData.metadata?.external_id || null
             });
 
@@ -240,11 +243,40 @@ class ConversationService {
                 message_type: 'text',
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                message_tag: message.message_tag || null,
                 created_at: message.created_at,
                 updated_at: message.updated_at || message.created_at
             };
         } catch (error) {
             throw new Error(`Failed to create message: ${error.message}`);
+        }
+    }
+
+    async updateConversation(conversationId, shopId, updates) {
+        try {
+            const conversation = await Conversation.findOne({
+                where: { id: conversationId, shop_id: shopId }
+            });
+
+            if (!conversation) {
+                throw new Error('Conversation not found');
+            }
+
+            const fields = {};
+            if (updates.hitl !== undefined) fields.hitl = updates.hitl;
+            if (updates.status !== undefined) {
+                fields.status = updates.status;
+                fields.metadata = { ...(conversation.metadata || {}), status: updates.status };
+            }
+
+            await conversation.update(fields);
+
+            return {
+                ...this.mapConversation(conversation),
+                hitl: conversation.hitl
+            };
+        } catch (error) {
+            throw new Error(`Failed to update conversation: ${error.message}`);
         }
     }
 

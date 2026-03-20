@@ -39,6 +39,10 @@ const FaqResponse = sequelize.define('FaqResponse', {
     is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    use_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
     }
 }, {
     tableName: 'faq_responses',

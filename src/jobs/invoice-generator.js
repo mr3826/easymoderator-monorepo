@@ -67,6 +67,15 @@ class InvoiceGenerator extends BaseJob {
 
             for (const subscription of subscriptions) {
                 try {
+                    // Yearly subscriptions: generate one invoice per year, not every month
+                    if (subscription.billing_cycle === 'yearly') {
+                        const yearlyInvoiceExists = await this.checkExistingYearlyInvoice(subscription, runDate);
+                        if (yearlyInvoiceExists) {
+                            results.invoicesSkipped++;
+                            continue;
+                        }
+                    }
+
                     const existingInvoice = await this.checkExistingInvoice(subscription, runDate);
                     if (existingInvoice && !dryRun) {
                         this.logger.info(`Invoice already exists for this period`, {
@@ -108,6 +117,23 @@ class InvoiceGenerator extends BaseJob {
      * @param {Object} subscription 
      * @param {Date} runDate 
      */
+    /**
+     * Check if a yearly invoice already exists for the current calendar year.
+     * Prevents 12 monthly invoices being generated for yearly subscribers.
+     */
+    async checkExistingYearlyInvoice(subscription, runDate) {
+        const startOfYear = new Date(runDate.getFullYear(), 0, 1);
+        const endOfYear = new Date(runDate.getFullYear(), 11, 31, 23, 59, 59);
+
+        return Invoice.findOne({
+            where: {
+                subscription_id: subscription.id,
+                billing_period_start: { [Op.gte]: startOfYear },
+                billing_period_end: { [Op.lte]: endOfYear }
+            }
+        });
+    }
+
     async checkExistingInvoice(subscription, runDate) {
         const startOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 1);
         const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth() + 1, 0);
@@ -210,6 +236,14 @@ class InvoiceGenerator extends BaseJob {
             invoiceId: invoice.id,
             invoiceNumber: invoice.invoice_number,
             amount: invoice.amount
+        });
+
+        // Reset overage counters — they've been captured in this invoice.
+        // The monthly usage reset does NOT reset these (it only resets *_used counters)
+        // so they accumulate accurately until invoiced, then clear here.
+        await subscription.update({
+            extra_charges: 0,
+            extra_conversations: 0
         });
 
         return invoice;

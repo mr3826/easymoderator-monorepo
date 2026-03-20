@@ -186,6 +186,10 @@ async function handleAamarPaySuccess(req, res, next) {
     try {
         const result = await paymentService.verifyAamarPayCallback(req.body);
 
+        if (result.type === 'invoice') {
+            const status = result.success ? 'success' : 'failed';
+            return res.redirect(`${process.env.FRONTEND_URL}/subscription?payment=${status}`);
+        }
         if (result.success) {
             res.redirect(`${process.env.FRONTEND_URL}/orders?payment=success&order=${result.order.order_number}`);
         } else {
@@ -202,6 +206,9 @@ async function handleAamarPaySuccess(req, res, next) {
 async function handleAamarPayFail(req, res, next) {
     try {
         const result = await paymentService.verifyAamarPayCallback(req.body);
+        if (result.type === 'invoice') {
+            return res.redirect(`${process.env.FRONTEND_URL}/subscription?payment=failed`);
+        }
         res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
     } catch (error) {
         res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);
@@ -213,9 +220,12 @@ async function handleAamarPayFail(req, res, next) {
  */
 async function handleSSLCommerzSuccess(req, res, next) {
     try {
-        // Extract shopId from tran_id or session (you may need to adjust based on your setup)
         const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
 
+        if (result.type === 'invoice') {
+            const status = result.success ? 'success' : 'failed';
+            return res.redirect(`${process.env.FRONTEND_URL}/subscription?payment=${status}`);
+        }
         if (result.success) {
             res.redirect(`${process.env.FRONTEND_URL}/orders?payment=success&order=${result.order.order_number}`);
         } else {
@@ -232,6 +242,9 @@ async function handleSSLCommerzSuccess(req, res, next) {
 async function handleSSLCommerzFail(req, res, next) {
     try {
         const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        if (result.type === 'invoice') {
+            return res.redirect(`${process.env.FRONTEND_URL}/subscription?payment=failed`);
+        }
         res.redirect(`${process.env.FRONTEND_URL}/orders?payment=failed&order=${result.order.order_number}`);
     } catch (error) {
         res.redirect(`${process.env.FRONTEND_URL}/orders?payment=error`);

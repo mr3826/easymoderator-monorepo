@@ -24,6 +24,7 @@ const Keyword = require('./keyword/keyword.entity');
 const FaqResponse = require('./knowledge/faq-response.entity');
 const BanglishDictionary = require('./language/banglish-dictionary.entity');
 const Analytics = require('./analytics/analytics.entity');
+const KnowledgeGap = require('./analytics/knowledge-gap.entity');
 const SupportTicket = require('./support/support-ticket.entity');
 
 // Define many-to-many relationships
@@ -274,6 +275,10 @@ Shop.hasMany(FaqResponse, { foreignKey: 'shop_id', as: 'faq_responses' });
 Analytics.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(Analytics, { foreignKey: 'shop_id', as: 'analytics' });
 
+// Define knowledge gap relationships
+KnowledgeGap.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(KnowledgeGap, { foreignKey: 'shop_id', as: 'knowledge_gaps' });
+
 // Define support ticket relationships
 SupportTicket.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(SupportTicket, { foreignKey: 'shop_id', as: 'support_tickets' });
@@ -307,5 +312,6 @@ module.exports = {
     FaqResponse,
     BanglishDictionary,
     Analytics,
+    KnowledgeGap,
     SupportTicket
 };

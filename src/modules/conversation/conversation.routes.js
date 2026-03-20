@@ -5,10 +5,11 @@ const supportController = require('../support/support.controller');
 const webhookController = require('../webhook/webhook.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, checkSubscriptionStatus } = require('../../middleware/auth.middleware');
 
-// All conversation routes require authentication
+// All conversation routes require authentication + active subscription
 router.use(authenticate);
+router.use(checkSubscriptionStatus);
 
 // Routes for conversations
 router.get(
@@ -20,6 +21,12 @@ router.get(
 router.get(
     '/history',
     conversationController.getHistory
+);
+
+// SSE stream — must be before /:conversationId to avoid param capture
+router.get(
+    '/events',
+    conversationController.getEventStream
 );
 
 router.post(
@@ -40,6 +47,12 @@ router.post(
 router.get(
     '/:conversationId',
     conversationController.getConversationById
+);
+
+router.patch(
+    '/:conversationId',
+    validate(conversationValidator.updateConversation),
+    conversationController.updateConversation
 );
 
 router.put(

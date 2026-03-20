@@ -6,7 +6,6 @@
 class MemoryCache {
     constructor() {
         this.cache = new Map();
-        this.ttls = new Map(); // Time-to-live
     }
 
     /**
@@ -27,43 +26,48 @@ class MemoryCache {
     }
 
     /**
-     * Set value in cache with optional TTL
+     * Set value. Supports Redis-style variadic args: SET key value [NX] [EX seconds]
      */
-    async set(key, value, ttlSeconds = null) {
-        this.cache.set(key, { value });
-        
-        if (ttlSeconds) {
-            this.ttls.set(key, Date.now() + (ttlSeconds * 1000));
+    async set(key, value, ...args) {
+        let nx = false;
+        let ttlSeconds = null;
+
+        for (let i = 0; i < args.length; i++) {
+            const arg = typeof args[i] === 'string' ? args[i].toUpperCase() : args[i];
+            if (arg === 'NX') { nx = true; }
+            else if (arg === 'EX' && args[i + 1] != null) { ttlSeconds = parseInt(args[i + 1]); i++; }
+            else if (arg === 'PX' && args[i + 1] != null) { ttlSeconds = parseInt(args[i + 1]) / 1000; i++; }
+            // Legacy positional: set(key, value, ttlSeconds) where ttlSeconds is a number
+            else if (typeof arg === 'number') { ttlSeconds = arg; }
         }
-        
-        return true;
+
+        if (nx) {
+            const existing = await this.get(key);
+            if (existing !== null) return null; // NX failed — key exists
+        }
+
+        const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : null;
+        this.cache.set(key, { value, expiresAt });
+        return 'OK';
     }
 
     /**
-     * Set value with expiration
+     * Set value with expiration (SETEX compatibility)
      */
     async setex(key, ttlSeconds, value) {
-        return this.set(key, value, ttlSeconds);
+        const expiresAt = Date.now() + ttlSeconds * 1000;
+        this.cache.set(key, { value, expiresAt });
+        return 'OK';
     }
 
     /**
-     * Delete key from cache
-     */
-    async del(key) {
-        this.cache.delete(key);
-        this.ttls.delete(key);
-        return true;
-    }
-
-    /**
-     * Delete multiple keys
+     * Delete one or more keys
      */
     async del(...keys) {
         for (const key of keys) {
             this.cache.delete(key);
-            this.ttls.delete(key);
         }
-        return true;
+        return keys.length;
     }
 
     /**
@@ -111,66 +115,8 @@ class MemoryCache {
      */
     async flushall() {
         this.cache.clear();
-        this.ttls.clear();
-        return true;
+        return 'OK';
     }
 }
 
-// Create singleton instances
-const sessionCache = new MemoryCache();
-const cacheMemory = new MemoryCache();
-const rateLimitCache = new MemoryCache();
-const legacyCache = new MemoryCache();
-
-/**
- * Simulate Redis client status
- */
-const createMockRedisClient = (name, dbName) => {
-    const cache = name === 'Sessions' ? sessionCache :
-                   name === 'Cache' ? cacheMemory :
-                   name === 'RateLimit' ? rateLimitCache :
-                   legacyCache;
-
-    return {
-        status: 'ready',
-        get: (key) => cache.get(key),
-        set: (key, value) => cache.set(key, value),
-        setex: (key, ttl, value) => cache.setex(key, ttl, value),
-        del: (...keys) => cache.del(...keys),
-        exists: (key) => cache.exists(key),
-        scan: (cursor, options) => cache.scan(cursor, options),
-        flushall: () => cache.flushall(),
-        quit: async () => {
-            console.log(`📝 Memory ${name} (DB ${dbName}) connection closed`);
-            return Promise.resolve();
-        },
-        on: (event, callback) => {
-            if (event === 'connect') {
-                setTimeout(() => callback(), 100); // Simulate connection
-            }
-        }
-    };
-};
-
-module.exports = {
-    MemoryCache,
-    sessionRedis: createMockRedisClient('Sessions', 0),
-    cacheRedis: createMockRedisClient('Cache', 1),
-    rateLimitRedis: createMockRedisClient(rateLimitCache, 'RateLimit', 2),
-    legacyRedis: createMockRedisClient('Legacy', 0),
-    closeAllRedis: async () => {
-        await Promise.all([
-            sessionCache.flushall(),
-            cacheMemory.flushall(),
-            rateLimitCache.flushall(),
-            legacyCache.flushall()
-        ]);
-        console.log('📝 All memory cache connections closed');
-    },
-    checkRedisAvailability: () => ({
-        session: true,
-        cache: true,
-        rateLimit: true,
-        legacy: true
-    })
-};
+module.exports = { MemoryCache };

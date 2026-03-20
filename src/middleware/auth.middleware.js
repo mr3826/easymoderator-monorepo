@@ -1,6 +1,7 @@
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
+const cacheService = require('../utils/cache.service');
 
 /**
  * Authentication middleware
@@ -50,4 +51,41 @@ const authenticate = async (req, res, next) => {
     }
 };
 
-module.exports = { authenticate };
+/**
+ * Block API access for suspended shops.
+ * Caches subscription status for 60 seconds to avoid a DB hit on every request.
+ * Fails open (next()) on DB/cache errors — never block users due to infrastructure issues.
+ */
+const checkSubscriptionStatus = async (req, res, next) => {
+    try {
+        const shopId = req.user?.shopId;
+        if (!shopId) return next();
+
+        const cacheKey = 'subscription:status';
+        let status = await cacheService.getForShop(shopId, cacheKey);
+
+        if (status === null) {
+            // Lazy-require to avoid circular dependency at module load time
+            const { Subscription } = require('../modules/entities');
+            const subscription = await Subscription.findOne({
+                where: { shop_id: shopId },
+                attributes: ['status']
+            });
+            status = subscription?.status || 'active';
+            await cacheService.setForShop(shopId, cacheKey, status, 60);
+        }
+
+        if (status === 'suspended') {
+            return next(new AppError(
+                'Your subscription is suspended due to an unpaid invoice. Please visit Billing to resolve.',
+                402
+            ));
+        }
+
+        next();
+    } catch (_) {
+        next(); // fail open — infrastructure errors must not lock out users
+    }
+};
+
+module.exports = { authenticate, checkSubscriptionStatus };

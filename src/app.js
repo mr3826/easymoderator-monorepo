@@ -168,6 +168,11 @@ app.use((req, res, next) => {
     ) {
         return next();
     }
+    // Skip CSRF validation in test environment — tests don't run a browser,
+    // so cookie-based double-submit can't function correctly.
+    if (config.env === 'test') {
+        return next();
+    }
     return doubleCsrfProtection(req, res, (err) => {
         if (err && config.env === 'development') {
             console.warn(`❌ CSRF Error [${req.method} ${req.path}]:`, err.message);

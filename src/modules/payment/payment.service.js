@@ -1,4 +1,4 @@
-const { Order, PaymentConfig } = require('../entities');
+const { Order, PaymentConfig, Invoice, Shop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { UserShop } = require('../entities');
 const axios = require('axios');
@@ -61,6 +61,7 @@ module.exports = {
     deletePaymentConfig,
     initiateAamarPayPayment,
     initiateSSLCommerzPayment,
+    initiateSubscriptionInvoicePayment,
     verifyAamarPayCallback,
     verifySSLCommerzCallback
 };
@@ -410,6 +411,110 @@ async function initiateSSLCommerzPayment(orderId, shopId, userId) {
 }
 
 /**
+ * Initiate payment for a subscription invoice (conversation pack, etc.)
+ * Works with AamarPay and SSLCommerz.
+ * tran_id format: INV-YYYYMM-XXXXXX-<timestamp> so callbacks can identify it.
+ */
+async function initiateSubscriptionInvoicePayment(invoiceId, shopId, userId, gateway) {
+    await verifyShopAccess(userId, shopId);
+
+    const invoice = await Invoice.findOne({ where: { id: invoiceId, shop_id: shopId } });
+    if (!invoice) throw new AppError('Invoice not found', 404);
+    if (invoice.status !== 'pending') throw new AppError('Invoice is not awaiting payment', 400);
+
+    const shop = await Shop.findOne({ where: { id: shopId }, attributes: ['name', 'email'] });
+    const tran_id = `${invoice.invoice_number}-${Date.now()}`;
+    const amount = parseFloat(invoice.amount);
+
+    if (gateway === 'aamarpay') {
+        const payConfig = await PaymentConfig.findOne({
+            where: { shop_id: shopId, gateway: 'aamarpay', is_enabled: true }
+        });
+        if (!payConfig?.credentials) throw new AppError('AamarPay is not configured for this shop', 400);
+
+        const { store_id, secret_key } = payConfig.credentials;
+        const baseUrl = process.env.AAMARPAY_SANDBOX === 'true'
+            ? 'https://sandbox.aamarpay.com'
+            : 'https://secure.aamarpay.com';
+
+        const paymentData = {
+            store_id, signature_key: secret_key, tran_id,
+            success_url: `${process.env.BASE_URL}/api/payment/aamarpay/success`,
+            fail_url: `${process.env.BASE_URL}/api/payment/aamarpay/fail`,
+            cancel_url: `${process.env.BASE_URL}/api/payment/aamarpay/cancel`,
+            amount, currency: 'BDT',
+            desc: invoice.invoice_type || 'Subscription Invoice',
+            cus_name: shop?.name || 'Shop Owner',
+            cus_email: shop?.email || 'owner@example.com',
+            cus_add1: 'Bangladesh', cus_phone: '01700000000',
+            type: 'json'
+        };
+
+        const response = await axios.post(`${baseUrl}/api/v1/initiate-payment`, paymentData, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.data?.payment_url) {
+            await invoice.update({ transaction_id: tran_id });
+            return { success: true, payment_url: response.data.payment_url, transaction_id: tran_id };
+        }
+        throw new AppError('Failed to initiate AamarPay payment for invoice', 500);
+
+    } else if (gateway === 'sslcommerz') {
+        const payConfig = await PaymentConfig.findOne({
+            where: { shop_id: shopId, gateway: 'sslcommerz', is_enabled: true }
+        });
+        if (!payConfig?.credentials) throw new AppError('SSLCommerz is not configured for this shop', 400);
+
+        const { store_id, store_password } = payConfig.credentials;
+        const environment = payConfig.config?.environment || 'sandbox';
+        const baseUrl = environment === 'sandbox'
+            ? 'https://sandbox.sslcommerz.com'
+            : 'https://securepay.sslcommerz.com';
+
+        const paymentData = {
+            store_id, store_passwd: store_password,
+            total_amount: amount, currency: 'BDT', tran_id,
+            success_url: `${process.env.BASE_URL}/api/payment/sslcommerz/success`,
+            fail_url: `${process.env.BASE_URL}/api/payment/sslcommerz/fail`,
+            cancel_url: `${process.env.BASE_URL}/api/payment/sslcommerz/cancel`,
+            ipn_url: `${process.env.BASE_URL}/api/payment/sslcommerz/ipn`,
+            product_name: invoice.invoice_type || 'Subscription Invoice',
+            product_category: 'Subscription', product_profile: 'general',
+            cus_name: shop?.name || 'Shop Owner',
+            cus_email: shop?.email || 'owner@example.com',
+            cus_add1: 'Bangladesh', cus_phone: '01700000000',
+            cus_city: 'Dhaka', cus_country: 'Bangladesh',
+            shipping_method: 'NO', num_of_item: 1,
+            product_amount: amount, vat: 0, discount_amount: 0, convenience_fee: 0
+        };
+
+        const response = await axios.post(
+            `${baseUrl}/gwprocess/v4/api.php`,
+            new URLSearchParams(paymentData).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        if (response.data?.status === 'SUCCESS' && response.data?.GatewayPageURL) {
+            await invoice.update({ transaction_id: tran_id });
+            return { success: true, payment_url: response.data.GatewayPageURL, transaction_id: tran_id };
+        }
+        throw new AppError(response.data?.failedreason || 'Failed to initiate SSLCommerz payment for invoice', 500);
+    }
+
+    throw new AppError('Invalid payment gateway. Use aamarpay or sslcommerz', 400);
+}
+
+/**
+ * Extract invoice_number from an INV- prefixed tran_id.
+ * tran_id format: INV-YYYYMM-XXXXXX-<timestamp>
+ * invoice_number: INV-YYYYMM-XXXXXX (first 3 dash-separated segments)
+ */
+function extractInvoiceNumber(tranId) {
+    return tranId.split('-').slice(0, 3).join('-');
+}
+
+/**
  * Verify AamarPay payment callback
  */
 async function verifyAamarPayCallback(callbackData) {
@@ -417,6 +522,37 @@ async function verifyAamarPayCallback(callbackData) {
 
     if (!mer_txnid) {
         throw new AppError('Invalid callback data', 400);
+    }
+
+    // Subscription invoice payment — tran_id starts with 'INV-'
+    if (mer_txnid.startsWith('INV-')) {
+        const invoiceNumber = extractInvoiceNumber(mer_txnid);
+        const invoice = await Invoice.findOne({ where: { invoice_number: invoiceNumber } });
+        if (!invoice) throw new AppError('Invoice not found', 404);
+
+        const payConfig = await PaymentConfig.findOne({ where: { shop_id: invoice.shop_id, gateway: 'aamarpay' } });
+        if (!payConfig?.credentials) throw new AppError('AamarPay configuration not found', 400);
+
+        const { store_id: configStoreId, secret_key } = payConfig.credentials;
+        if (store_id && configStoreId && store_id !== configStoreId) throw new AppError('Invalid AamarPay store ID', 403);
+
+        if (!verify_sign || !verify_key) throw new AppError('Missing AamarPay signature', 403);
+        const keys = String(verify_key).split(',').map(k => k.trim()).filter(Boolean);
+        const signaturePayload = keys.map(k => `${k}=${callbackData[k] ?? ''}`).join('&');
+        const useMd5 = process.env.AAMARPAY_USE_MD5_SIGNATURE === 'true';
+        const expected = useMd5
+            ? crypto.createHash('md5').update(`${signaturePayload}&signature_key=${secret_key}`).digest('hex')
+            : crypto.createHmac('sha256', secret_key).update(`${signaturePayload}&signature_key=${secret_key}`).digest('hex');
+        if (expected !== verify_sign) throw new AppError('Invalid AamarPay signature', 403);
+
+        if (pay_status === 'Successful' && status_code === '2') {
+            const subscriptionService = require('../subscription/subscription.service');
+            await subscriptionService.deliverConversationPackCredit(invoice);
+            return { success: true, type: 'invoice', invoice };
+        } else {
+            await invoice.update({ status: 'failed' });
+            return { success: false, type: 'invoice', invoice };
+        }
     }
 
     // Extract order number from transaction ID
@@ -500,6 +636,42 @@ async function verifySSLCommerzCallback(callbackData, shopId) {
 
     if (!tran_id) {
         throw new AppError('Invalid callback data', 400);
+    }
+
+    // Subscription invoice payment — tran_id starts with 'INV-'
+    if (tran_id.startsWith('INV-')) {
+        const invoiceNumber = extractInvoiceNumber(tran_id);
+        const invoice = await Invoice.findOne({ where: { invoice_number: invoiceNumber } });
+        if (!invoice) throw new AppError('Invoice not found', 404);
+
+        const payConfig = await PaymentConfig.findOne({
+            where: { shop_id: invoice.shop_id, gateway: 'sslcommerz', is_enabled: true }
+        });
+        if (!payConfig?.credentials) throw new AppError('SSLCommerz configuration not found', 400);
+
+        const { store_id, store_password } = payConfig.credentials;
+        const environment = payConfig.config?.environment || 'sandbox';
+        const baseUrl = environment === 'sandbox'
+            ? 'https://sandbox.sslcommerz.com'
+            : 'https://securepay.sslcommerz.com';
+
+        try {
+            if (status === 'VALID' || status === 'VALIDATED') {
+                const validationUrl = `${baseUrl}/validator/api/validationserverAPI.php?val_id=${val_id}&store_id=${store_id}&store_passwd=${store_password}&format=json`;
+                const validation = await axios.get(validationUrl);
+                if (validation.data?.status === 'VALID') {
+                    const subscriptionService = require('../subscription/subscription.service');
+                    await subscriptionService.deliverConversationPackCredit(invoice);
+                    return { success: true, type: 'invoice', invoice };
+                }
+            }
+            await invoice.update({ status: 'failed' });
+            return { success: false, type: 'invoice', invoice };
+        } catch (error) {
+            console.error('SSLCommerz invoice validation error:', error.message);
+            await invoice.update({ status: 'failed' });
+            return { success: false, type: 'invoice', invoice };
+        }
     }
 
     // Extract order number from transaction ID

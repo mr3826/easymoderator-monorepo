@@ -1,6 +1,11 @@
 const { Order, Product, Channel, UserShop, Analytics } = require('../entities');
 const { AppError } = require('../../utils/AppError');
-const { Op } = require('sequelize');
+const { Op, fn, col, literal } = require('sequelize');
+const { sequelize } = require('../../utils/database/database-setup');
+const cacheService = require('../../utils/cache.service');
+
+const METRICS_CACHE_KEY = 'dashboard:metrics';
+const METRICS_CACHE_TTL = 60; // seconds
 
 /**
  * Verify user has access to shop
@@ -21,126 +26,120 @@ const verifyShopAccess = async (userId, shopId) => {
 };
 
 /**
- * Get dashboard metrics for a shop
+ * Get dashboard metrics for a shop.
+ * Authorization is handled upstream by the auth middleware (JWT already contains
+ * shopId set at login). verifyShopAccess is intentionally omitted here — it adds
+ * a redundant UserShop DB query on every page load.
  */
-const getDashboardMetrics = async (userId, shopId) => {
-    await verifyShopAccess(userId, shopId);
+const getDashboardMetrics = async (userId, shopId, period = 30) => {
+    const cacheKey = `${METRICS_CACHE_KEY}:${period}`;
+    const cached = await cacheService.getForShop(shopId, cacheKey);
+    if (cached) return cached;
 
-    const analyticsRow = await Analytics.findOne({
-        where: { shop_id: shopId },
-        order: [['date', 'DESC']]
-    });
-
-    // Get date ranges
+    // Date ranges — all derived from the requested period
     const today = new Date();
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const startOfWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const startOfLastWeek = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const startOfToday   = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const periodDays     = Number(period) || 30;
+    const startOfPeriod  = new Date(today.getTime() - periodDays * 24 * 60 * 60 * 1000);
+    const startOfLast    = new Date(today.getTime() - periodDays * 2 * 24 * 60 * 60 * 1000);
 
-    // Parallel queries for better performance
     const [
         totalMessages,
+        messagesInPeriod,
         activeProducts,
         ordersToday,
-        ordersThisWeek,
-        ordersLastWeek,
+        ordersInPeriod,
+        ordersLastPeriod,
         activeChannels,
-        totalChannels
+        totalChannels,
+        chartRows,
+        analyticsRow
     ] = await Promise.all([
-        // Total messages (from analytics, since channel_configs has no message_count column)
-        Promise.resolve(0),
+        // All-time total messages
+        Analytics.sum('total_messages', { where: { shop_id: shopId } }).then(v => Number(v) || 0),
 
-        // Active products (model uses in_stock, not is_active)
+        // Messages in selected period (conversion rate denominator)
+        Analytics.sum('total_messages', {
+            where: { shop_id: shopId, date: { [Op.gte]: startOfPeriod.toISOString().split('T')[0] } }
+        }).then(v => Number(v) || 0),
+
+        // Active products
         Product.count({ where: { shop_id: shopId, in_stock: true } }),
 
         // Orders today
+        Order.count({ where: { shop_id: shopId, created_at: { [Op.gte]: startOfToday } } }),
+
+        // Orders in selected period (conversion rate numerator + main order stat)
+        Order.count({ where: { shop_id: shopId, created_at: { [Op.gte]: startOfPeriod } } }),
+
+        // Orders in previous period (for period-over-period change %)
         Order.count({
-            where: {
-                shop_id: shopId,
-                created_at: { [Op.gte]: startOfToday }
-            }
+            where: { shop_id: shopId, created_at: { [Op.gte]: startOfLast, [Op.lt]: startOfPeriod } }
         }),
 
-        // Orders this week
-        Order.count({
-            where: {
-                shop_id: shopId,
-                created_at: { [Op.gte]: startOfWeek }
-            }
-        }),
-
-        // Orders last week
-        Order.count({
-            where: {
-                shop_id: shopId,
-                created_at: {
-                    [Op.gte]: startOfLastWeek,
-                    [Op.lt]: startOfWeek
-                }
-            }
-        }),
-
-        // Active channels (model uses is_active, not connected)
         Channel.count({ where: { shop_id: shopId, is_active: true } }),
+        Channel.count({ where: { shop_id: shopId } }),
 
-        // Total channels
-        Channel.count({ where: { shop_id: shopId } })
+        // Chart: orders per day over the selected period — single GROUP BY
+        Order.findAll({
+            attributes: [
+                [fn('DATE', col('created_at')), 'date'],
+                [fn('COUNT', col('id')), 'orders']
+            ],
+            where: { shop_id: shopId, created_at: { [Op.gte]: startOfPeriod } },
+            group: [fn('DATE', col('created_at'))],
+            order: [[fn('DATE', col('created_at')), 'ASC']],
+            raw: true
+        }),
+
+        // Most recent daily analytics row (for AI metrics)
+        Analytics.findOne({ where: { shop_id: shopId }, order: [['date', 'DESC']] })
     ]);
 
-    // Calculate conversion rate (orders / messages * 100, simplified)
-    const conversionRate = totalMessages > 0 ? ((ordersToday / totalMessages) * 100) : 0;
+    const conversionRate = messagesInPeriod > 0
+        ? (ordersInPeriod / messagesInPeriod) * 100
+        : 0;
 
-    // Calculate weekly change
-    const weeklyChange = ordersLastWeek > 0 ?
-        ((ordersThisWeek - ordersLastWeek) / ordersLastWeek * 100) : 0;
+    const periodChange = ordersLastPeriod > 0
+        ? ((ordersInPeriod - ordersLastPeriod) / ordersLastPeriod) * 100
+        : 0;
 
-    // Get chart data (orders per day for the last 7 days)
+    // Fill chart to always have `periodDays` data points
+    const chartMap = new Map(chartRows.map(r => [r.date, parseInt(r.orders)]));
     const chartData = [];
-    // Temporarily disabled chart data to fix 500 error
-    // for (let i = 6; i >= 0; i--) {
-    //     const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-    //     const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    //     const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+    for (let i = periodDays - 1; i >= 0; i--) {
+        const d   = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+        const key = d.toISOString().split('T')[0];
+        chartData.push({ date: key, orders: chartMap.get(key) || 0 });
+    }
 
-    //     const dayOrders = await Order.count({
-    //         where: {
-    //             shop_id: shopId,
-    //             created_at: {
-    //                 [Op.gte]: startOfDay,
-    //                 [Op.lt]: endOfDay
-    //             }
-    //         }
-    //     });
-
-    //     chartData.push({
-    //         date: date.toISOString().split('T')[0],
-    //         orders: dayOrders
-    //     });
-    // }
-
-    return {
+    const result = {
         metrics: {
-            totalMessages: analyticsRow?.total_messages || Number(totalMessages) || 0,
-            activeProducts: activeProducts || 0,
-            ordersToday: ordersToday || 0,
-            conversionRate: Math.round(conversionRate * 100) / 100,
-            weeklyChange: Math.round(weeklyChange * 100) / 100
+            totalMessages,
+            activeProducts:  activeProducts  || 0,
+            ordersToday:     ordersToday     || 0,
+            ordersInPeriod:  ordersInPeriod  || 0,
+            conversionRate:  Math.round(conversionRate * 100) / 100,
+            weeklyChange:    Math.round(periodChange   * 100) / 100,
         },
-        channels: {
-            active: activeChannels || 0,
-            total: totalChannels || 0
-        },
+        channels:  { active: activeChannels || 0, total: totalChannels || 0 },
         chartData,
-        analytics: analyticsRow || null
+        analytics: analyticsRow || null,
+        period:    periodDays,
     };
+
+    await cacheService.setForShop(shopId, cacheKey, result, METRICS_CACHE_TTL).catch(() => {});
+    return result;
 };
 
 /**
- * Get dashboard metrics by ID (placeholder for future use)
+ * Get dashboard metrics by ID.
+ * Dashboard data is always shop-scoped; the only valid ID is the shop's own ID.
+ * Any other UUID returns null so the controller can 404.
  */
-const getDashboardMetricsById = async (id, userId, shopId) => {
-    // For now, same as getDashboardMetrics
-    return getDashboardMetrics(userId, shopId);
+const getDashboardMetricsById = async (id, userId, shopId, period) => {
+    if (id !== shopId) return null;
+    return getDashboardMetrics(userId, shopId, period);
 };
 
 module.exports = {

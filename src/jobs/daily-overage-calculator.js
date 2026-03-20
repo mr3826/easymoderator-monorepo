@@ -1,6 +1,7 @@
 const BaseJob = require('./base-job');
 const { Subscription, Invoice, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
+const { Op } = require('sequelize');
 
 /**
  * Daily Overage Calculator Job
@@ -48,7 +49,16 @@ class DailyOverageCalculator extends BaseJob {
 
         while (hasMore) {
             const subscriptions = await Subscription.findAll({
-                where: { status: 'active' },
+                where: {
+                    status: 'active',
+                    // Only load shops that are actually over their limit.
+                    // conversations_limit > 0 excludes unlimited plans (stored as -1).
+                    // The DB-level filter avoids a full table scan at 10k+ tenants.
+                    conversations_limit: { [Op.gt]: 0 },
+                    [Op.and]: sequelize.literal(
+                        '"Subscription"."conversations_used" > "Subscription"."conversations_limit"'
+                    )
+                },
                 limit: BATCH_SIZE,
                 offset,
                 order: [['id', 'ASC']], // stable ordering required for cursor pagination

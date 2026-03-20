@@ -1,4 +1,5 @@
 const { Subscription, Invoice, UsageEvent, AuditLog } = require('../entities');
+const crypto = require('crypto');
 const { AppError } = require('../../utils/AppError');
 const { UserShop } = require('../entities');
 const { Op } = require('sequelize');
@@ -151,8 +152,55 @@ const updatePlan = async (shopId, userId, planData) => {
     const calculatedPlanPrice =
         planData.billing_cycle === 'yearly' ? tierMonthlyPrice * 12 : tierMonthlyPrice;
 
+    const oldPrice = parseFloat(subscription.plan_price || 0);
+    const newPrice = selectedTier ? calculatedPlanPrice : parseFloat(planData.plan_price || 0);
+    const newPlanName = selectedTier ? selectedTier.name : planData.plan_name;
+
+    // Proration: on upgrade mid-cycle, charge the difference for remaining days.
+    // Downgrade takes effect at the next billing date — no immediate charge.
+    const isUpgrade = newPrice > oldPrice;
+    const periodStart = subscription.current_period_start
+        ? new Date(subscription.current_period_start)
+        : now;
+    const periodEnd = subscription.current_period_end
+        ? new Date(subscription.current_period_end)
+        : nextPeriod;
+
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysRemaining = Math.max(0, Math.ceil((periodEnd - now) / msPerDay));
+    const totalDays = Math.max(1, Math.ceil((periodEnd - periodStart) / msPerDay));
+
+    if (isUpgrade && daysRemaining > 0 && oldPrice > 0) {
+        const fraction = daysRemaining / totalDays;
+        const proratedCharge = Math.round((newPrice - oldPrice) * fraction * 100) / 100;
+
+        if (proratedCharge >= 1) {
+            const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
+            const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+            const invoiceNumber = `INV-PRO-${yearMonth}-${suffix}`;
+            const dueDate = new Date(now.getTime() + 7 * msPerDay);
+
+            await Invoice.create({
+                subscription_id: subscription.id,
+                shop_id: shopId,
+                invoice_number: invoiceNumber,
+                billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                billing_period_start: now,
+                billing_period_end: periodEnd,
+                invoice_type: `Proration (upgrade to ${newPlanName})`,
+                amount: proratedCharge,
+                base_amount: proratedCharge,
+                extra_usage_amount: 0,
+                addon_amount: 0,
+                status: 'pending',
+                due_date: dueDate,
+                notes: `Prorated charge for ${daysRemaining} remaining days (${Math.round(fraction * 100)}% of billing period)`
+            });
+        }
+    }
+
     await subscription.update({
-        plan_name: selectedTier ? selectedTier.name : planData.plan_name,
+        plan_name: newPlanName,
         plan_price: selectedTier ? calculatedPlanPrice : planData.plan_price,
         billing_cycle: planData.billing_cycle,
         conversations_limit: selectedTier ? selectedTier.conversationsLimit : planData.conversations_limit,
@@ -600,6 +648,33 @@ const incrementRateLimit = async (shopId, userId, customerId) => {
     };
 };
 
+/**
+ * Deliver conversation pack credit after successful payment.
+ * Parses pack size from invoice_type, increments extra_conversations,
+ * and marks the invoice as paid.
+ *
+ * @param {Object} invoice - Invoice Sequelize instance
+ */
+const deliverConversationPackCredit = async (invoice) => {
+    if (!invoice?.invoice_type?.startsWith('Conversation Pack (')) return;
+
+    const match = invoice.invoice_type.match(/Conversation Pack \((\d+) conversations\)/);
+    if (!match) return;
+
+    const packAmount = parseInt(match[1], 10);
+
+    // Atomic increment — safe under concurrent requests
+    await Subscription.increment(
+        { extra_conversations: packAmount },
+        { where: { shop_id: invoice.shop_id } }
+    );
+
+    await Invoice.update(
+        { status: 'paid', paid_at: new Date() },
+        { where: { id: invoice.id } }
+    );
+};
+
 module.exports = {
     getSubscription,
     updatePlan,
@@ -613,5 +688,6 @@ module.exports = {
     getUsageEvents,
     verifyNoDoubleCount,
     checkRateLimit,
-    incrementRateLimit
+    incrementRateLimit,
+    deliverConversationPackCredit
 };

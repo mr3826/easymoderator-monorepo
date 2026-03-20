@@ -14,6 +14,8 @@ const pineconeIndexName = process.env.PINECONE_INDEX;
 const pineconeNamespace = process.env.PINECONE_NAMESPACE || process.env.QDRANT_COLLECTION || 'knowledge_documents';
 const usePinecone = Boolean(Pinecone && pineconeApiKey && pineconeIndexName);
 
+// Qdrant REST API uses paths without a /v1/ prefix (both old and current versions).
+// Always pin QDRANT_URL to the server root, e.g. http://qdrant:6333
 const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
 const qdrantCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
 const vectorSize = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
@@ -36,16 +38,25 @@ const resolveCollectionName = (shopId) => {
     return qdrantCollection;
 };
 
+const pineconeHost = process.env.PINECONE_HOST || null;
+
 const getPineconeNamespace = async (shopId) => {
     if (!usePinecone) {
         throw new Error('Pinecone is not configured');
     }
 
     const ns = perTenantMode && shopId ? shopId : pineconeNamespace;
+    // Only reuse the shared-namespace client for the default namespace
     if (ns === pineconeNamespace && pineconeNamespaceClient) return pineconeNamespaceClient;
 
     const pc = new Pinecone({ apiKey: pineconeApiKey });
-    const client = pc.index(pineconeIndexName).namespace(ns);
+    // If PINECONE_HOST is set, pass it directly — skips the API describe-index lookup
+    // and avoids a round-trip to the Pinecone control plane on every cold start.
+    const index = pineconeHost
+        ? pc.index(pineconeIndexName, pineconeHost)
+        : pc.index(pineconeIndexName);
+
+    const client = index.namespace(ns);
     if (ns === pineconeNamespace) pineconeNamespaceClient = client;
     return client;
 };

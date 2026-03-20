@@ -41,8 +41,24 @@ class ConversationValidator {
             message_type: Joi.string().valid('text', 'image', 'file', 'location').default('text'),
             metadata: Joi.object(),
             ai_suggestion: Joi.string(),
-            ai_confidence: Joi.number().min(0).max(1)
+            ai_confidence: Joi.number().min(0).max(1),
+            message_tag: Joi.string().valid(
+                'CONFIRMED_EVENT_UPDATE',
+                'POST_PURCHASE_UPDATE',
+                'ACCOUNT_UPDATE',
+                'HUMAN_AGENT'
+            ).optional()
         })
+    };
+
+    updateConversation = {
+        params: Joi.object({
+            conversationId: Joi.string().uuid().required()
+        }),
+        body: Joi.object({
+            hitl: Joi.boolean(),
+            status: Joi.string().valid('active', 'closed', 'archived')
+        }).or('hitl', 'status')
     };
 
     updateConversationStatus = {

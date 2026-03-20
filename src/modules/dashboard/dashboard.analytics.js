@@ -1,117 +1,104 @@
-const { Analytics, UserShop } = require('../entities');
-const { AppError } = require('../../utils/AppError');
+const { Analytics } = require('../entities');
+const { fn, col, Op } = require('sequelize');
+const cacheService = require('../../utils/cache.service');
 
-const verifyShopAccess = async (userId, shopId) => {
-    const userShop = await UserShop.findOne({
-        where: {
-            user_id: userId,
-            shop_id: shopId,
-            is_active: true
-        }
-    });
+const METRICS_CACHE_KEY = 'dashboard:metrics';
 
-    if (!userShop) {
-        throw new AppError('You do not have access to this shop', 403);
-    }
-    return userShop;
-};
-
-const logEvent = async (userId, shopId, payload) => {
-    await verifyShopAccess(userId, shopId);
-
+/**
+ * Log an analytics event for a shop day-bucket.
+ *
+ * Uses findOrCreate (INSERT WHERE NOT EXISTS) to safely create the day-row,
+ * then issues atomic SQL-level INCREMENT so concurrent callers never lose counts.
+ * Only events with event_type === 'message' count toward total_messages.
+ */
+const logEvent = async (shopId, payload) => {
     const date = payload.timestamp ? new Date(payload.timestamp) : new Date();
     const dateKey = date.toISOString().split('T')[0];
 
-    let row = await Analytics.findOne({
-        where: {
-            shop_id: shopId,
-            date: dateKey
-        }
-    });
-
-    if (!row) {
-        row = await Analytics.create({
-            shop_id: shopId,
-            date: dateKey
-        });
-    }
-
-    const updates = {
-        total_messages: row.total_messages + (payload.event_type ? 1 : 0),
-        llm_calls: row.llm_calls + (payload.metadata?.ai_model ? 1 : 0),
-        cache_hits: row.cache_hits + (payload.metadata?.cache_hit ? 1 : 0),
-        keyword_matches: row.keyword_matches + (payload.metadata?.keyword_match ? 1 : 0),
-        cost_estimate: Number(row.cost_estimate) + Number(payload.metadata?.cost_estimate || 0)
-    };
-
-    await row.update(updates);
-
-    return row;
-};
-
-const logMetric = async (userId, shopId, payload) => {
-    await verifyShopAccess(userId, shopId);
-
-    const date = payload.timestamp ? new Date(payload.timestamp) : new Date();
-    const dateKey = date.toISOString().split('T')[0];
-
-    let row = await Analytics.findOne({
-        where: {
-            shop_id: shopId,
-            date: dateKey
-        }
-    });
-
-    if (!row) {
-        row = await Analytics.create({
-            shop_id: shopId,
-            date: dateKey
-        });
-    }
-
-    if (payload.metric_type === 'response_time') {
-        await row.update({
-            cost_estimate: Number(row.cost_estimate)
-        });
-    }
-
-    return row;
-};
-
-const getDashboardAnalytics = async (userId, shopId) => {
-    await verifyShopAccess(userId, shopId);
-
-    const rows = await Analytics.findAll({
-        where: { shop_id: shopId },
-        order: [['date', 'ASC']]
-    });
-
-    const totals = rows.reduce(
-        (acc, row) => {
-            acc.total_messages += row.total_messages;
-            acc.llm_calls += row.llm_calls;
-            acc.cache_hits += row.cache_hits;
-            acc.keyword_matches += row.keyword_matches;
-            acc.cost_estimate += Number(row.cost_estimate);
-            return acc;
-        },
-        {
+    // Atomically create row for this day if it doesn't exist yet
+    await Analytics.findOrCreate({
+        where: { shop_id: shopId, date: dateKey },
+        defaults: {
             total_messages: 0,
             llm_calls: 0,
             cache_hits: 0,
             keyword_matches: 0,
             cost_estimate: 0
         }
-    );
+    });
 
-    return {
-        totals,
-        rows
+    // Build increments — all are SQL-level (UPDATE SET col = col + n), never stale reads
+    const increments = {};
+    if (payload.event_type === 'message')          increments.total_messages  = 1;
+    if (payload.metadata?.ai_model)                increments.llm_calls       = 1;
+    if (payload.metadata?.cache_hit)               increments.cache_hits      = 1;
+    if (payload.metadata?.keyword_match)           increments.keyword_matches = 1;
+    const cost = Number(payload.metadata?.cost_estimate || 0);
+    if (cost > 0)                                  increments.cost_estimate   = cost;
+
+    if (Object.keys(increments).length > 0) {
+        await Analytics.increment(increments, { where: { shop_id: shopId, date: dateKey } });
+    }
+
+    // Invalidate cached dashboard so next read reflects the new event
+    await cacheService.deleteForShop(shopId, METRICS_CACHE_KEY).catch(() => {});
+
+    return Analytics.findOne({ where: { shop_id: shopId, date: dateKey } });
+};
+
+/**
+ * Log a raw metric (e.g. response_time) for a shop day-bucket.
+ * Uses the same atomic findOrCreate pattern as logEvent.
+ */
+const logMetric = async (shopId, payload) => {
+    const date = payload.timestamp ? new Date(payload.timestamp) : new Date();
+    const dateKey = date.toISOString().split('T')[0];
+
+    await Analytics.findOrCreate({
+        where: { shop_id: shopId, date: dateKey },
+        defaults: {
+            total_messages: 0,
+            llm_calls: 0,
+            cache_hits: 0,
+            keyword_matches: 0,
+            cost_estimate: 0
+        }
+    });
+
+    // Currently only response_time is handled; extend as needed
+    if (payload.metric_type === 'response_time' && Number(payload.value) > 0) {
+        // response_time metrics are stored elsewhere; placeholder for future columns
+    }
+
+    await cacheService.deleteForShop(shopId, METRICS_CACHE_KEY).catch(() => {});
+};
+
+/**
+ * Get aggregated analytics totals for a shop.
+ * Uses a single SQL SUM query instead of loading all rows into memory.
+ */
+const getDashboardAnalytics = async (shopId) => {
+    const result = await Analytics.findOne({
+        attributes: [
+            [fn('COALESCE', fn('SUM', col('total_messages')),  0), 'total_messages'],
+            [fn('COALESCE', fn('SUM', col('llm_calls')),       0), 'llm_calls'],
+            [fn('COALESCE', fn('SUM', col('cache_hits')),      0), 'cache_hits'],
+            [fn('COALESCE', fn('SUM', col('keyword_matches')), 0), 'keyword_matches'],
+            [fn('COALESCE', fn('SUM', col('cost_estimate')),   0), 'cost_estimate'],
+        ],
+        where: { shop_id: shopId },
+        raw: true
+    });
+
+    const totals = {
+        total_messages:  Number(result?.total_messages  || 0),
+        llm_calls:       Number(result?.llm_calls       || 0),
+        cache_hits:      Number(result?.cache_hits      || 0),
+        keyword_matches: Number(result?.keyword_matches || 0),
+        cost_estimate:   Number(result?.cost_estimate   || 0),
     };
+
+    return { totals };
 };
 
-module.exports = {
-    logEvent,
-    logMetric,
-    getDashboardAnalytics
-};
+module.exports = { logEvent, logMetric, getDashboardAnalytics };

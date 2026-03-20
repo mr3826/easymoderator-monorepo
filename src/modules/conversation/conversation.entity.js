@@ -61,6 +61,11 @@ const Conversation = sequelize.define('Conversation', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     },
+    hitl: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        comment: 'Human-in-the-loop: true = agent handling, AI auto-replies paused'
+    },
     metadata: {
         type: DataTypes.JSON,
         defaultValue: {}
@@ -106,6 +111,11 @@ const Message = sequelize.define('Message', {
     ai_confidence: {
         type: DataTypes.DECIMAL(3, 2),
         allowNull: true
+    },
+    message_tag: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        comment: 'Meta message tag for out-of-24h-window messages'
     },
     created_at: {
         type: DataTypes.DATE,
