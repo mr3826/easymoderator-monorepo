@@ -5,10 +5,11 @@
  *
  * The conversations table was originally created by Sequelize sync() before
  * the migration system was established. The Sequelize model now defines
- * role, message, intent, confidence, llm_used, cache_hit, keyword_match columns
- * that may not exist in the production database.
+ * role, message, intent, confidence, llm_used, cache_hit, keyword_match, metadata
+ * columns that may not exist in the production database.
  *
- * Idempotent: each ALTER is wrapped in try/catch so re-running is safe.
+ * Idempotent: each statement is wrapped in try/catch so re-running is safe.
+ * Uses the same PostgreSQL ENUM types Sequelize creates via sync().
  */
 
 module.exports = {
@@ -20,12 +21,25 @@ module.exports = {
       /already exists/i.test(e.message) ||
       /column.*already exists/i.test(e.message);
 
-    // ── conversations table ──────────────────────────────────────────────
+    // ── 1. Create ENUM types used by Sequelize (idempotent) ─────────────
+    // Sequelize names PostgreSQL enum types as "enum_{tableName}_{fieldName}"
 
-    // role: required for chatbot message classification
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_conversations_role') THEN
+          CREATE TYPE "enum_conversations_role" AS ENUM('user', 'assistant', 'system');
+        END IF;
+      END$$;
+    `);
+    console.log('  ✓ enum_conversations_role type ready');
+
+    // ── 2. conversations table columns ───────────────────────────────────
+
+    // role: required for chatbot message classification (NOT NULL, ENUM)
     try {
       await sequelize.query(
-        `ALTER TABLE conversations ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'user'`
+        `ALTER TABLE conversations ADD COLUMN role "enum_conversations_role" NOT NULL DEFAULT 'user'`
       );
       console.log('  ✓ conversations.role added');
     } catch (err) {
@@ -36,7 +50,7 @@ module.exports = {
       }
     }
 
-    // message: the triggering message content for this conversation
+    // message: the triggering message content for this conversation (NOT NULL, TEXT)
     try {
       await sequelize.query(
         `ALTER TABLE conversations ADD COLUMN message TEXT NOT NULL DEFAULT ''`
@@ -52,9 +66,7 @@ module.exports = {
 
     // intent: last detected intent
     try {
-      await sequelize.query(
-        `ALTER TABLE conversations ADD COLUMN intent VARCHAR(50)`
-      );
+      await sequelize.query(`ALTER TABLE conversations ADD COLUMN intent VARCHAR(50)`);
       console.log('  ✓ conversations.intent added');
     } catch (err) {
       if (alreadyExists(err)) {
@@ -66,9 +78,7 @@ module.exports = {
 
     // confidence: intent confidence score
     try {
-      await sequelize.query(
-        `ALTER TABLE conversations ADD COLUMN confidence INTEGER`
-      );
+      await sequelize.query(`ALTER TABLE conversations ADD COLUMN confidence INTEGER`);
       console.log('  ✓ conversations.confidence added');
     } catch (err) {
       if (alreadyExists(err)) {
@@ -132,13 +142,11 @@ module.exports = {
       }
     }
 
-    // ── messages table ───────────────────────────────────────────────────
+    // ── 3. messages table columns ────────────────────────────────────────
 
     // ai_suggestion and ai_confidence for storing model outputs
     try {
-      await sequelize.query(
-        `ALTER TABLE messages ADD COLUMN ai_suggestion TEXT`
-      );
+      await sequelize.query(`ALTER TABLE messages ADD COLUMN ai_suggestion TEXT`);
       console.log('  ✓ messages.ai_suggestion added');
     } catch (err) {
       if (alreadyExists(err)) {
@@ -149,9 +157,7 @@ module.exports = {
     }
 
     try {
-      await sequelize.query(
-        `ALTER TABLE messages ADD COLUMN ai_confidence DECIMAL(3,2)`
-      );
+      await sequelize.query(`ALTER TABLE messages ADD COLUMN ai_confidence DECIMAL(3,2)`);
       console.log('  ✓ messages.ai_confidence added');
     } catch (err) {
       if (alreadyExists(err)) {
@@ -163,7 +169,6 @@ module.exports = {
   },
 
   down: async (sequelize) => {
-    // These are additive-only migrations — dropping columns would risk data loss
-    console.log('  ⚠️  down() is a no-op: use ALTER TABLE to drop columns manually if needed');
+    console.log('  ⚠️  down() is a no-op: drop columns/types manually if needed');
   }
 };

@@ -133,7 +133,8 @@ class AIChatbotController {
             console.error('Process message error:', error);
             res.status(500).json({
                 success: false,
-                error: 'Failed to process message'
+                error: 'Failed to process message',
+                _debug: error.message  // temporary: remove after debugging
             });
         }
     }
