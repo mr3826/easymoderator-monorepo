@@ -82,7 +82,7 @@ class AIChatbotController {
 
             } else {
                 // Process new message for intent classification
-                const intentResult = await this.processNewIntent(
+                const intentResult = await AIChatbotController.processNewIntent(
                     message,
                     conversation_history,
                     entities,
@@ -99,7 +99,7 @@ class AIChatbotController {
             const thresholdFraction = aiSettings.confidence_threshold / 100;
             const gateFailed = !shouldContinueOrderSession && confidence < thresholdFraction;
             if (gateFailed) {
-                response = this.buildVerificationRequest(detectedLanguage, message);
+                response = AIChatbotController.buildVerificationRequest(detectedLanguage, message);
             }
 
             // Step 5: Store AI response
@@ -190,7 +190,7 @@ class AIChatbotController {
         const hasOrderIntent = orderKeywords.some(keyword => lowerMessage.includes(keyword));
 
         if (hasOrderIntent) {
-            const productInfo = this.extractProductInfo(message, entities);
+            const productInfo = AIChatbotController.extractProductInfo(message, entities);
             const sessionResult = await OrderSessionService.startOrderSession({
                 shop_id,
                 customer_channel_id,
@@ -209,7 +209,7 @@ class AIChatbotController {
         const hasGreeting = greetings.some(greeting => lowerMessage.includes(greeting));
 
         if (hasGreeting) {
-            return { response: this.generateGreetingResponse(language, aiSettings), confidence: 0.90 };
+            return { response: AIChatbotController.generateGreetingResponse(language, aiSettings), confidence: 0.90 };
         }
 
         const helpKeywords = [
@@ -219,10 +219,10 @@ class AIChatbotController {
         const hasHelpIntent = helpKeywords.some(keyword => lowerMessage.includes(keyword));
 
         if (hasHelpIntent) {
-            return { response: this.generateHelpResponse(language, aiSettings), confidence: 0.80 };
+            return { response: AIChatbotController.generateHelpResponse(language, aiSettings), confidence: 0.80 };
         }
 
-        return { response: this.generateDefaultResponse(language, aiSettings), confidence: 0.30 };
+        return { response: AIChatbotController.generateDefaultResponse(language, aiSettings), confidence: 0.30 };
     }
 
     /**
