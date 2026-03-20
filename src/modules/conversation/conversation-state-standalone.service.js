@@ -1,15 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const { DataTypes } = require('sequelize');
-const { Sequelize } = require('sequelize');
+const { sequelize } = require('../../utils/database/database-setup');
 
-// Create a simple database connection for conversations
-const sequelize = new Sequelize({
-    dialect: 'sqlite',
-    storage: './database.sqlite',
-    logging: false
-});
-
-// Define Customer model directly
+// Customer model — mirrors production schema (customers table)
 const Customer = sequelize.define('Customer', {
     id: {
         type: DataTypes.UUID,
@@ -20,19 +13,17 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.UUID,
         allowNull: false
     },
-    channel_id: {
-        type: DataTypes.STRING,
-        allowNull: false,
-        unique: true
-    },
-    channel: {
+    channel_type: {
         type: DataTypes.STRING(20),
+        allowNull: false
+    },
+    channel_user_id: {
+        type: DataTypes.STRING,
         allowNull: false
     },
     name: {
         type: DataTypes.STRING,
-        allowNull: false,
-        defaultValue: 'Customer'
+        allowNull: true
     },
     phone: {
         type: DataTypes.STRING,
@@ -40,10 +31,6 @@ const Customer = sequelize.define('Customer', {
     },
     email: {
         type: DataTypes.STRING,
-        allowNull: true
-    },
-    address: {
-        type: DataTypes.TEXT,
         allowNull: true
     },
     metadata: {
@@ -57,7 +44,7 @@ const Customer = sequelize.define('Customer', {
     timestamps: true
 });
 
-// Define Conversation model directly
+// Conversation model — mirrors production schema (conversations table)
 const Conversation = sequelize.define('Conversation', {
     id: {
         type: DataTypes.UUID,
@@ -70,20 +57,41 @@ const Conversation = sequelize.define('Conversation', {
     },
     customer_id: {
         type: DataTypes.UUID,
-        allowNull: false
+        allowNull: true
     },
     channel: {
         type: DataTypes.STRING(20),
         allowNull: false
     },
+    title: {
+        type: DataTypes.STRING(255),
+        allowNull: true
+    },
     status: {
-        type: DataTypes.ENUM('ACTIVE', 'NEEDS_HUMAN', 'CLOSED'),
+        type: DataTypes.STRING(20),
         allowNull: false,
-        defaultValue: 'ACTIVE'
+        defaultValue: 'active'
+    },
+    role: {
+        type: DataTypes.ENUM('user', 'assistant', 'system'),
+        allowNull: false,
+        defaultValue: 'user'
+    },
+    message: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        defaultValue: ''
+    },
+    intent: {
+        type: DataTypes.STRING(50),
+        allowNull: true
+    },
+    confidence: {
+        type: DataTypes.INTEGER,
+        allowNull: true
     },
     metadata: {
         type: DataTypes.JSON,
-        allowNull: true,
         defaultValue: {}
     }
 }, {
@@ -92,7 +100,7 @@ const Conversation = sequelize.define('Conversation', {
     timestamps: true
 });
 
-// Define Message model directly
+// Message model — mirrors production schema (messages table)
 const Message = sequelize.define('Message', {
     id: {
         type: DataTypes.UUID,
@@ -108,7 +116,7 @@ const Message = sequelize.define('Message', {
         allowNull: false
     },
     sender: {
-        type: DataTypes.ENUM('customer', 'ai', 'system'),
+        type: DataTypes.ENUM('customer', 'ai', 'business'),
         allowNull: false
     },
     external_id: {
@@ -123,7 +131,8 @@ const Message = sequelize.define('Message', {
 }, {
     tableName: 'messages',
     underscored: true,
-    timestamps: true
+    timestamps: true,
+    updatedAt: false
 });
 
 // Set up associations
@@ -131,11 +140,6 @@ Conversation.hasMany(Message, { foreignKey: 'conversation_id', as: 'messages' })
 Message.belongsTo(Conversation, { foreignKey: 'conversation_id', as: 'conversation' });
 Customer.hasMany(Conversation, { foreignKey: 'customer_id', as: 'conversations' });
 Conversation.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
-
-// Sync models (force to recreate with correct schema)
-Customer.sync({ force: true });
-Conversation.sync({ force: true });
-Message.sync({ force: true });
 
 // Import OrderSessionService
 const OrderSessionService = require('../order/order-session-standalone.service');
@@ -148,7 +152,7 @@ class ConversationStateService {
         const {
             shop_id,
             customer_channel_id,
-            platform, // messenger, instagram, whatsapp
+            platform,
             message,
             sender_type = 'customer',
             metadata = {}
@@ -159,7 +163,7 @@ class ConversationStateService {
             let customer = await Customer.findOne({
                 where: {
                     shop_id,
-                    channel_id: customer_channel_id
+                    channel_user_id: customer_channel_id
                 }
             });
 
@@ -167,12 +171,11 @@ class ConversationStateService {
                 customer = await Customer.create({
                     id: uuidv4(),
                     shop_id,
-                    channel_id: customer_channel_id,
-                    channel: platform === 'facebook' ? 'messenger' : platform,
+                    channel_user_id: customer_channel_id,
+                    channel_type: platform === 'facebook' ? 'messenger' : platform,
                     name: 'Customer',
                     phone: null,
                     email: null,
-                    address: null,
                     metadata: {}
                 });
             }
@@ -191,16 +194,18 @@ class ConversationStateService {
             const conversationTimeout = 24 * 60 * 60 * 1000; // 24 hours
 
             // Create new conversation if doesn't exist or is too old
-            if (!conversation || 
+            if (!conversation ||
                 (messageTime - conversation.updated_at) > conversationTimeout ||
-                conversation.status === 'CLOSED') {
-                
+                conversation.status === 'closed') {
+
                 conversation = await Conversation.create({
                     id: uuidv4(),
                     shop_id,
                     customer_id: customer.id,
                     channel: platform === 'facebook' ? 'messenger' : platform,
-                    status: 'ACTIVE',
+                    status: 'active',
+                    role: 'user',
+                    message: message,
                     metadata: {
                         platform,
                         started_at: messageTime.toISOString(),
@@ -216,7 +221,7 @@ class ConversationStateService {
                 id: uuidv4(),
                 conversation_id: conversation.id,
                 content: message,
-                sender: sender_type,
+                sender: sender_type === 'ai' ? 'ai' : 'customer',
                 external_id: metadata.message_id || null,
                 metadata: {
                     ...metadata,
@@ -250,7 +255,7 @@ class ConversationStateService {
 
             // Check for active order session
             const activeOrderSession = await OrderSessionService.getActiveSession(
-                shop_id, 
+                shop_id,
                 customer_channel_id
             );
 
@@ -259,6 +264,9 @@ class ConversationStateService {
                 conversation_id: conversation.id,
                 customer_id: customer.id,
                 message_id: messageRecord.id,
+                shop_id,
+                customer_channel_id,
+                platform,
                 conversation_state: {
                     status: conversation.status,
                     language: conversation.metadata.language_detected,
@@ -270,8 +278,8 @@ class ConversationStateService {
                 customer_info: {
                     id: customer.id,
                     name: customer.name,
-                    channel_id: customer.channel_id,
-                    platform: platform
+                    channel_id: customer.channel_user_id,
+                    platform
                 }
             };
 
@@ -351,9 +359,9 @@ class ConversationStateService {
                 conversation_state: {
                     status: conversation.status,
                     last_intent: intent,
-                    language: language,
-                    confidence: confidence,
-                    automation_mode: automation_mode
+                    language,
+                    confidence,
+                    automation_mode
                 }
             };
 
@@ -374,7 +382,7 @@ class ConversationStateService {
             }
 
             await conversation.update({
-                status: 'NEEDS_HUMAN',
+                status: 'needs_human',
                 metadata: {
                     ...conversation.metadata,
                     handoff_reason: reason,
@@ -383,12 +391,12 @@ class ConversationStateService {
                 }
             });
 
-            // Log handoff in messages
+            // Log handoff as a business message
             await Message.create({
                 id: uuidv4(),
                 conversation_id: conversationId,
                 content: `[SYSTEM] Conversation marked for human review - Reason: ${reason}`,
-                sender: 'system',
+                sender: 'business',
                 external_id: null,
                 metadata: {
                     type: 'handoff',
@@ -399,7 +407,7 @@ class ConversationStateService {
 
             return {
                 success: true,
-                status: 'NEEDS_HUMAN',
+                status: 'needs_human',
                 handoff_reason: reason
             };
 
@@ -434,7 +442,7 @@ class ConversationStateService {
                 });
 
                 history = messages.map(msg => ({
-                    role: msg.sender === 'customer' ? 'user' : 
+                    role: msg.sender === 'customer' ? 'user' :
                           msg.sender === 'ai' ? 'assistant' : 'system',
                     content: msg.content,
                     timestamp: msg.created_at,
@@ -445,7 +453,7 @@ class ConversationStateService {
             // Check for active order session
             const activeOrderSession = await OrderSessionService.getActiveSession(
                 conversation.shop_id,
-                conversation.customer.channel_id
+                conversation.customer.channel_user_id
             );
 
             return {
@@ -453,7 +461,7 @@ class ConversationStateService {
                 customer: {
                     id: conversation.customer.id,
                     name: conversation.customer.name,
-                    channel_id: conversation.customer.channel_id,
+                    channel_id: conversation.customer.channel_user_id,
                     platform: conversation.channel
                 },
                 state: {
@@ -480,10 +488,10 @@ class ConversationStateService {
     static detectLanguage(message) {
         const banglaRegex = /[\u0980-\u09FF]/;
         const englishRegex = /[a-zA-Z]/;
-        
+
         const hasBangla = banglaRegex.test(message);
         const hasEnglish = englishRegex.test(message);
-        
+
         if (hasBangla && hasEnglish) {
             return 'mixed';
         } else if (hasBangla) {
@@ -491,7 +499,7 @@ class ConversationStateService {
         } else if (hasEnglish) {
             return 'en';
         }
-        
+
         return 'unknown';
     }
 
@@ -500,30 +508,30 @@ class ConversationStateService {
      */
     static extractEntities(message) {
         const entities = {};
-        
+
         // Phone numbers
         const phoneRegex = /01[3-9]\d{8}/g;
         const phones = message.match(phoneRegex);
         if (phones) {
             entities.phone_numbers = phones;
         }
-        
+
         // Prices (BDT format)
         const priceRegex = /[৳]?(\d+(?:,\d{3})*(?:\.\d{2})?|\d+)/g;
         const prices = message.match(priceRegex);
         if (prices) {
             entities.prices = prices;
         }
-        
+
         // Product keywords
         const productKeywords = ['dress', 'shirt', 'panjabi', 'saree', 'kameez', 'পোশাক', 'ড্রেস', 'শার্ট'];
-        const foundProducts = productKeywords.filter(keyword => 
+        const foundProducts = productKeywords.filter(keyword =>
             message.toLowerCase().includes(keyword.toLowerCase())
         );
         if (foundProducts.length > 0) {
             entities.product_types = foundProducts;
         }
-        
+
         return entities;
     }
 }

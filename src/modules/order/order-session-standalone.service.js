@@ -1,13 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { DataTypes } = require('sequelize');
-const { Sequelize } = require('sequelize');
-
-// Create a simple database connection for order sessions
-const sequelize = new Sequelize({
-    dialect: 'sqlite',
-    storage: './database.sqlite',
-    logging: false
-});
+const { sequelize } = require('../../utils/database/database-setup');
 
 // Define OrderSession model directly
 const OrderSession = sequelize.define('OrderSession', {
@@ -93,10 +86,7 @@ const OrderSession = sequelize.define('OrderSession', {
     timestamps: true
 });
 
-// Sync the model (create table if it doesn't exist)
-OrderSession.sync({ force: true }).then(() => {
-    console.log('✅ OrderSession table synced');
-});
+// Table is managed by migrations — no sync needed here
 
 class OrderSessionService {
     /**
