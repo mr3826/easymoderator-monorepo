@@ -47,6 +47,7 @@ const getShop = async (req, res, next) => {
 
 /**
  * Get business info for current shop
+ * ai_settings are now included by knowledgeService.getKnowledge — no stitching needed here.
  */
 const getBusinessInfo = async (req, res, next) => {
     try {
@@ -57,16 +58,6 @@ const getBusinessInfo = async (req, res, next) => {
         }
 
         const data = await knowledgeService.getKnowledge(userId, shopId);
-        
-        // Get AI settings for n8n workflow
-        const aiSettings = await shopService.getShopAiSettings(shopId);
-        
-        // Add ai_settings to the response
-        if (data && data.data) {
-            data.data.ai_settings = aiSettings;
-        } else if (data) {
-            data.ai_settings = aiSettings;
-        }
 
         res.status(200).json({
             success: true,
@@ -135,7 +126,11 @@ const updateShop = async (req, res, next) => {
             throw new AppError(errors.array()[0].msg, 400);
         }
 
-        const { shopId, ...updateData } = req.body;
+        // Always use the shop from the authenticated token — never trust shopId from the body.
+        const shopId = req.user.shopId;
+        const updateData = { ...req.body };
+        delete updateData.id;      // immutable
+        delete updateData.shopId;  // strip if accidentally sent
         const shop = await shopService.updateShopById(shopId, req.user.userId, updateData);
 
         res.status(200).json({
@@ -262,6 +257,140 @@ const switchShop = async (req, res, next) => {
     }
 };
 
+// Allowed model IDs — validated server-side so callers can't store arbitrary strings.
+const ALLOWED_LLM_MODELS = new Set([
+    'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
+    'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
+    'gemini-1.5-pro', 'gemini-1.5-flash',
+    'deepseek-chat'
+]);
+
+/**
+ * GET /shop/llm-config
+ */
+const getLLMConfig = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        res.status(200).json({
+            success: true,
+            data: {
+                model: aiSettings.llm_model || 'gpt-4o-mini',
+                temperature: aiSettings.llm_temperature ?? 0.7
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/llm-config
+ */
+const updateLLMConfig = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const { model, temperature } = req.body;
+
+        if (!model || !ALLOWED_LLM_MODELS.has(model)) {
+            throw new AppError(`Invalid model. Allowed: ${[...ALLOWED_LLM_MODELS].join(', ')}`, 400);
+        }
+        if (temperature !== undefined && (typeof temperature !== 'number' || temperature < 0 || temperature > 2)) {
+            throw new AppError('temperature must be a number between 0 and 2', 400);
+        }
+
+        const shop = await shopService.getShopById(shopId, req.user.userId);
+        const currentSettings = shop.settings || {};
+        const currentAI = currentSettings.ai || {};
+
+        await shopService.updateShopById(shopId, req.user.userId, {
+            settings: {
+                ...currentSettings,
+                ai: {
+                    ...currentAI,
+                    llm_model: model,
+                    ...(temperature !== undefined && { llm_temperature: temperature })
+                }
+            }
+        });
+
+        res.status(200).json({ success: true, data: { model, temperature } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Allowed values for AI behaviour fields — validated server-side.
+const ALLOWED_AUTOMATION_MODES = new Set(['DRAFT', 'AUTO', 'MANUAL']);
+const ALLOWED_LANGUAGES        = new Set(['mixed', 'en', 'bn']);
+const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms']);
+
+/**
+ * GET /shop/ai-settings
+ */
+const getAISettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        res.status(200).json({ success: true, data: aiSettings });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/ai-settings
+ */
+const updateAISettings = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const {
+            automation_mode, confidence_threshold, auto_reply_enabled,
+            max_auto_order_value, ask_email, primary_language,
+            required_fields, handoff_settings
+        } = req.body;
+
+        if (automation_mode !== undefined && !ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
+            throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
+        }
+        if (confidence_threshold !== undefined && (typeof confidence_threshold !== 'number' || confidence_threshold < 0 || confidence_threshold > 100)) {
+            throw new AppError('confidence_threshold must be a number between 0 and 100', 400);
+        }
+        if (max_auto_order_value !== undefined && (typeof max_auto_order_value !== 'number' || max_auto_order_value < 0)) {
+            throw new AppError('max_auto_order_value must be a non-negative number', 400);
+        }
+        if (primary_language !== undefined && !ALLOWED_LANGUAGES.has(primary_language)) {
+            throw new AppError(`primary_language must be one of: ${[...ALLOWED_LANGUAGES].join(', ')}`, 400);
+        }
+        if (handoff_settings?.notification_channel !== undefined && !ALLOWED_NOTIF_CHANNELS.has(handoff_settings.notification_channel)) {
+            throw new AppError(`notification_channel must be one of: ${[...ALLOWED_NOTIF_CHANNELS].join(', ')}`, 400);
+        }
+
+        const updates = {};
+        if (automation_mode      !== undefined) updates.automation_mode      = automation_mode;
+        if (confidence_threshold !== undefined) updates.confidence_threshold = confidence_threshold;
+        if (auto_reply_enabled   !== undefined) updates.auto_reply_enabled   = Boolean(auto_reply_enabled);
+        if (max_auto_order_value !== undefined) updates.max_auto_order_value = max_auto_order_value;
+        if (ask_email            !== undefined) updates.ask_email            = Boolean(ask_email);
+        if (primary_language     !== undefined) updates.primary_language     = primary_language;
+        if (required_fields      !== undefined) updates.required_fields      = required_fields;
+        if (handoff_settings     !== undefined) updates.handoff_settings     = handoff_settings;
+
+        const data = await shopService.updateShopAiSettings(shopId, userId, updates);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const validateTenant = async (req, res, next) => {
     try {
         const { tenantId } = req.params;
@@ -308,6 +437,10 @@ module.exports = {
     switchShop,
     getBusinessInfo,
     updateBusinessInfo,
+    getLLMConfig,
+    updateLLMConfig,
+    getAISettings,
+    updateAISettings,
     validateTenant,
     validateTenantShop
 };

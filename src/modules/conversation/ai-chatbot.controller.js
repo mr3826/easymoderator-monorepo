@@ -3,6 +3,21 @@ const ConversationStateService = require('./conversation-state-standalone.servic
 const OrderSessionService = require('../order/order-session-standalone.service');
 const intentRouter = require('../ai/intent-router.service');
 const knowledgeService = require('../knowledge/knowledge.service');
+const shopService = require('../shop/shop.service');
+const channelService = require('../channel/channel.service');
+const cacheService = require('../../utils/cache.service');
+
+// Thin cached wrapper — delegates to the canonical shop service so there is
+// a single source of truth for AI settings (stored under shop.settings.ai).
+async function getShopAISettings(shopId) {
+    const cacheKey = 'ai_settings';
+    const cached = await cacheService.getForShop(shopId, cacheKey);
+    if (cached) return cached;
+
+    const settings = await shopService.getShopAiSettings(shopId) || {};
+    await cacheService.setForShop(shopId, cacheKey, settings, 300);
+    return settings;
+}
 
 class AIChatbotController {
     /**
@@ -69,14 +84,14 @@ class AIChatbotController {
             const detectedLanguage = ConversationStateService.detectLanguage(message);
             const entities = ConversationStateService.extractEntities(message);
 
-            // Step 3: Get shop AI settings (using defaults for now)
-            const aiSettings = {
-                automation_mode: 'DRAFT',
-                confidence_threshold: 60,
-                payment_methods: ['COD', 'bKash', 'Nagad'],
-                ask_email: false,
-                primary_language: 'mixed'
-            };
+            // Step 3: Load shop AI settings merged with channel-level overrides.
+            // Shop settings are the base; channel settings win for per-channel toggles
+            // (e.g. draftOrdersOnly on WhatsApp but not on Facebook).
+            const [shopAISettings, channelAISettings] = await Promise.all([
+                getShopAISettings(shop_id),
+                channelService.getChannelAISettings(shop_id, platform)
+            ]);
+            const aiSettings = { ...shopAISettings, ...channelAISettings };
 
             // Step 4: Determine if we should continue order session or process new intent
             let response;
@@ -149,6 +164,8 @@ class AIChatbotController {
                     order_session_continued: shouldContinueOrderSession,
                     confidence,
                     gate_triggered: gateFailed,
+                    channel: platform,
+                    ai_model: aiSettings.llm_model || 'gpt-4o-mini',
                     ai_settings: aiSettings
                 }
             });
@@ -178,8 +195,7 @@ class AIChatbotController {
             // Load shop knowledge to build the system prompt (cached by Anthropic prompt caching)
             let shopKnowledge = null;
             try {
-                // getKnowledge requires userId; use a system-level bypass by querying knowledge directly
-                shopKnowledge = await knowledgeService.queryKnowledge({ query: message, shop_id, limit: 3 });
+                shopKnowledge = await knowledgeService.getKnowledgeForAI(shop_id);
             } catch (_) { /* ignore */ }
 
             const systemPrompt = intentRouter.buildSystemPrompt(

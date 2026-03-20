@@ -51,6 +51,18 @@ router.get('/business-info', shopController.getBusinessInfo);
 // PUT /shop/business-info - Update business info for current shop
 router.put('/business-info', shopBusinessInfoValidator, shopController.updateBusinessInfo);
 
+// GET /shop/llm-config - Get LLM model configuration for this shop
+router.get('/llm-config', shopController.getLLMConfig);
+
+// PUT /shop/llm-config - Update LLM model configuration
+router.put('/llm-config', shopController.updateLLMConfig);
+
+// GET /shop/ai-settings - Get AI behaviour settings
+router.get('/ai-settings', shopController.getAISettings);
+
+// PUT /shop/ai-settings - Update AI behaviour settings
+router.put('/ai-settings', shopController.updateAISettings);
+
 // Tenant validation routes
 router.get('/tenant/:tenantId/validate', tenantValidateValidator, shopController.validateTenant);
 router.get('/tenant/:tenantId/shop/:shopId/validate', tenantShopValidateValidator, shopController.validateTenantShop);

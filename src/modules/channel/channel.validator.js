@@ -1,5 +1,19 @@
 const Joi = require('joi');
 
+// Schema-locked settings object — only known AI-behaviour keys accepted.
+// This prevents prompt-injection via arbitrary JSON in the settings field.
+const channelSettingsSchema = Joi.object({
+    display_name:              Joi.string().trim().max(100).optional(),
+    businessManagerId:         Joi.string().trim().max(64).optional(),
+    aiAutoReply:               Joi.boolean().optional(),
+    requireApproval:           Joi.boolean().optional(),
+    businessHours:             Joi.boolean().optional(),
+    allowOrderCreation:        Joi.boolean().optional(),
+    autoDetectProducts:        Joi.boolean().optional(),
+    draftOrdersOnly:           Joi.boolean().optional(),
+    requireManualConfirmation: Joi.boolean().optional(),
+}).options({ allowUnknown: false });  // reject any extra keys
+
 class ChannelValidator {
     createChannel = {
         body: Joi.object({
@@ -9,11 +23,11 @@ class ChannelValidator {
             page_id: Joi.string().trim().optional().max(100),
             access_token: Joi.string().trim().optional(),
             systemUserToken: Joi.string().trim().optional(),
-            businessManagerId: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().max(64).optional(),
             verify_token: Joi.string().trim().optional(),
             webhook_secret: Joi.string().trim().optional(),
-            config: Joi.object().optional(),
-            settings: Joi.object().optional()
+            config: channelSettingsSchema.optional(),
+            settings: channelSettingsSchema.optional()
         }).custom((value, helpers) => {
             const hasLegacy = Boolean(value.channel_type && value.page_id && value.access_token);
             const hasFrontend = Boolean(value.type && value.systemUserToken);
@@ -37,13 +51,11 @@ class ChannelValidator {
             page_id: Joi.string().trim().optional().max(100),
             access_token: Joi.string().trim().optional(),
             systemUserToken: Joi.string().trim().optional(),
-            businessManagerId: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().max(64).optional(),
             verify_token: Joi.string().trim().optional(),
             webhook_secret: Joi.string().trim().optional(),
-            settings: Joi.object().optional().messages({
-                'object.base': 'Settings must be an object'
-            }),
-            config: Joi.object().optional(),
+            settings: channelSettingsSchema.optional(),
+            config: channelSettingsSchema.optional(),
             is_active: Joi.boolean().optional()
         })
     };
@@ -81,11 +93,11 @@ class ChannelValidator {
             page_id: Joi.string().trim().optional().max(100),
             access_token: Joi.string().trim().optional(),
             systemUserToken: Joi.string().trim().optional(),
-            businessManagerId: Joi.string().trim().optional(),
+            businessManagerId: Joi.string().trim().max(64).optional(),
             verify_token: Joi.string().trim().optional(),
             webhook_secret: Joi.string().trim().optional(),
-            config: Joi.object().optional(),
-            settings: Joi.object().optional()
+            config: channelSettingsSchema.optional(),
+            settings: channelSettingsSchema.optional()
         }).custom((value, helpers) => {
             const hasLegacy = Boolean(value.channel_type && value.page_id && value.access_token);
             const hasFrontend = Boolean(value.type && value.systemUserToken);

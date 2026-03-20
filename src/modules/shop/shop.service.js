@@ -307,13 +307,16 @@ const getShopAiSettings = async (shopId) => {
         return null;
     }
 
-    // Return AI settings from the settings JSON field, with defaults
+    // Return AI settings from the settings JSON field, with defaults.
+    // Key is `settings.ai` — used by both the chatbot pipeline and this service.
     const defaultSettings = {
         automation_mode: 'DRAFT',
         confidence_threshold: 60,
         auto_reply_enabled: true,
         max_auto_order_value: 5000,
         ask_email: false,
+        primary_language: 'mixed',
+        payment_methods: ['COD', 'bKash', 'Nagad'],
         required_fields: {
             customer_name: true,
             mobile_number: true,
@@ -331,8 +334,31 @@ const getShopAiSettings = async (shopId) => {
 
     return {
         ...defaultSettings,
-        ...(shop.settings?.ai_control || {})
+        ...(shop.settings?.ai || {})
     };
+};
+
+/**
+ * Update shop AI behaviour settings (writes to settings.ai, preserves other settings keys)
+ */
+const updateShopAiSettings = async (shopId, userId, updates) => {
+    const shop = await Shop.findByPk(shopId);
+    if (!shop) throw new AppError('Shop not found', 404);
+
+    const currentSettings = shop.settings || {};
+    const currentAI = currentSettings.ai || {};
+
+    // Deep-merge required_fields and handoff_settings sub-objects
+    const newAI = { ...currentAI, ...updates };
+    if (updates.required_fields) {
+        newAI.required_fields = { ...(currentAI.required_fields || {}), ...updates.required_fields };
+    }
+    if (updates.handoff_settings) {
+        newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...updates.handoff_settings };
+    }
+
+    await shop.update({ settings: { ...currentSettings, ai: newAI } });
+    return newAI;
 };
 
 module.exports = {
@@ -345,5 +371,6 @@ module.exports = {
     removeUserFromShop,
     updateUserRole,
     getUserRoleInShop,
-    getShopAiSettings
+    getShopAiSettings,
+    updateShopAiSettings
 };

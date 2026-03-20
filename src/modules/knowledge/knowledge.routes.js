@@ -9,12 +9,18 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', validate(knowledgeValidator.getKnowledge), knowledgeController.getKnowledge);
-router.put('/business-info', validate(knowledgeValidator.updateBusinessInfo), knowledgeController.updateBusinessInfo);
+// Business info is managed via PUT /shop/business-info — keeping GET /knowledge/ as the read endpoint.
 router.put('/branding', validate(knowledgeValidator.updateBrandingRules), knowledgeController.updateBrandingRules);
 router.post('/faq/search', knowledgeController.searchFaq);
 router.get('/shop-settings/:shopId/policies', knowledgeController.getPolicies);
 router.post('/language/normalize', knowledgeController.normalizeLanguage);
-router.post('/language/cache-learning', knowledgeController.cacheLanguageLearning);
+// Writing to the shared Banglish dictionary is restricted to admins to prevent poisoning.
+router.post('/language/cache-learning', (req, res, next) => {
+    if (req.user?.role !== 'admin') {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required.' } });
+    }
+    next();
+}, knowledgeController.cacheLanguageLearning);
 router.post('/query', knowledgeController.queryKnowledge);
 
 router.get('/faqs', knowledgeController.listFaqs);
@@ -23,7 +29,6 @@ router.patch('/faqs/:id', validate(knowledgeValidator.updateFaq), knowledgeContr
 router.delete('/faqs/:id', validate(knowledgeValidator.deleteFaq), knowledgeController.deleteFaq);
 
 router.get('/gaps', knowledgeController.listGaps);
-router.put('/gaps', validate(knowledgeValidator.updateGaps), knowledgeController.updateGaps);
 
 router.get('/documents', knowledgeController.listDocuments);
 router.post('/documents', validate(knowledgeValidator.createDocument), knowledgeController.createDocument);

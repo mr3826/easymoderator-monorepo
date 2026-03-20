@@ -22,7 +22,7 @@ const Channel = sequelize.define('Channel', {
     },
     page_id: {
         type: DataTypes.STRING(100),
-        allowNull: false
+        allowNull: true
     },
     access_token: {
         type: DataTypes.TEXT,
@@ -83,6 +83,10 @@ const Channel = sequelize.define('Channel', {
     is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+    token_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     },
     settings: {
         type: DataTypes.JSON,

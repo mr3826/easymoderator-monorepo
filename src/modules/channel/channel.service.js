@@ -1,6 +1,7 @@
-const { Channel } = require('../entities');
+const { Channel, Conversation } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { UserShop } = require('../entities');
+const { Op, fn, col } = require('sequelize');
 
 /**
  * Verify user has access to shop
@@ -38,7 +39,7 @@ const buildPageId = (payload) => {
         || payload.accountId
         || payload.businessManagerId
         || payload.business_manager_id
-        || 'system-user';
+        || null;
 };
 
 const normalizeChannelPayload = (payload) => {
@@ -74,9 +75,12 @@ const mapChannel = (channel) => {
         status: channel.is_active ? 'active' : 'inactive',
         connected,
         config: {
-            systemUserToken: channel.access_token,
+            // Never return the decrypted token to the client.
+            // The frontend only needs to know whether a token is stored.
+            hasToken: Boolean(channel.access_token),
             businessManagerId: channel.settings?.businessManagerId || null
         },
+        token_expires_at: channel.token_expires_at ? channel.token_expires_at.toISOString() : null,
         last_sync: channel.updated_at ? channel.updated_at.toISOString() : null,
         message_count: 0,
         created_at: channel.created_at,
@@ -84,13 +88,28 @@ const mapChannel = (channel) => {
         channel_id: channel.id,
         channel_type: channel.channel_type,
         is_active: channel.is_active,
-        credentials: {
-            page_id: channel.page_id,
-            access_token: channel.access_token
-        },
         webhook_verify_token: channel.verify_token,
         settings: channel.settings || {}
     };
+};
+
+/**
+ * Fetch the most recent conversation updated_at per channel type for a shop.
+ * Returns a map of channelType → ISO string (or null if no conversations).
+ */
+const getLastMessageTimes = async (shopId) => {
+    try {
+        // Conversation.channel stores the frontend type ('facebook', 'whatsapp', 'instagram')
+        const rows = await Conversation.findAll({
+            attributes: ['channel', [fn('MAX', col('updated_at')), 'last_at']],
+            where: { shop_id: shopId },
+            group: ['channel'],
+            raw: true
+        });
+        return Object.fromEntries(rows.map(r => [r.channel, r.last_at ? new Date(r.last_at).toISOString() : null]));
+    } catch (_) {
+        return {};
+    }
 };
 
 /**
@@ -99,12 +118,17 @@ const mapChannel = (channel) => {
 const getChannels = async (userId, shopId) => {
     await verifyShopAccess(userId, shopId);
 
-    const channels = await Channel.findAll({
-        where: { shop_id: shopId },
-        order: [['created_at', 'ASC']]
-    });
+    const [channels, lastMessageTimes] = await Promise.all([
+        Channel.findAll({ where: { shop_id: shopId }, order: [['created_at', 'ASC']] }),
+        getLastMessageTimes(shopId)
+    ]);
 
-    return channels.map(mapChannel);
+    return channels.map(channel => {
+        const mapped = mapChannel(channel);
+        const frontendType = mapChannelTypeToFrontend(channel.channel_type);
+        mapped.last_sync = lastMessageTimes[frontendType] || mapped.last_sync;
+        return mapped;
+    });
 };
 
 /**
@@ -139,6 +163,30 @@ const getChannelByType = async (userId, shopId, channelType) => {
 };
 
 /**
+ * Verify a Meta System User token is valid by calling the Graph API /me endpoint.
+ * Throws AppError with a user-facing message on failure.
+ * Skipped in test environment to avoid real network calls.
+ */
+const verifyMetaToken = async (accessToken, channelType) => {
+    if (process.env.NODE_ENV === 'test') return;
+
+    try {
+        const url = `https://graph.facebook.com/v21.0/me?access_token=${encodeURIComponent(accessToken)}&fields=id,name`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            const reason = data.error?.message || `HTTP ${res.status}`;
+            throw new AppError(`Meta token validation failed: ${reason}`, 400);
+        }
+    } catch (err) {
+        if (err instanceof AppError) throw err;
+        // Network timeout or unreachable — warn but don't block (avoids false rejections)
+        console.warn(`Meta token pre-validation skipped (network error): ${err.message}`);
+    }
+};
+
+/**
  * Create a new channel
  */
 const createChannel = async (userId, shopId, channelData) => {
@@ -153,6 +201,9 @@ const createChannel = async (userId, shopId, channelData) => {
     if (!access_token) {
         throw new AppError('System user token is required', 400);
     }
+
+    // Verify the token is valid with Meta before storing
+    await verifyMetaToken(access_token, channel_type);
 
     // Check if channel type already exists for this shop
     const existingChannel = await Channel.findOne({
@@ -170,6 +221,7 @@ const createChannel = async (userId, shopId, channelData) => {
         access_token,
         verify_token: verify_token || null,
         webhook_secret: webhook_secret || null,
+        token_expires_at: channelData.token_expires_at || null,
         settings: settings || {},
         is_active: true
     });
@@ -191,7 +243,7 @@ const updateChannel = async (channelId, userId, shopId, updateData) => {
         throw new AppError('Channel not found', 404);
     }
 
-    const { page_id, access_token, verify_token, webhook_secret, settings, is_active, systemUserToken, businessManagerId, config } = updateData;
+    const { page_id, access_token, verify_token, webhook_secret, settings, is_active, systemUserToken, businessManagerId, config, token_expires_at } = updateData;
     const mergedSettings = {
         ...(channel.settings || {}),
         ...(settings || config || {})
@@ -210,6 +262,7 @@ const updateChannel = async (channelId, userId, shopId, updateData) => {
         channel.settings = mergedSettings;
     }
     if (is_active !== undefined) channel.is_active = is_active;
+    if (token_expires_at !== undefined) channel.token_expires_at = token_expires_at;
 
     await channel.save();
 
@@ -222,6 +275,11 @@ const updateChannel = async (channelId, userId, shopId, updateData) => {
 const connectChannel = async (userId, shopId, payload) => {
     await verifyShopAccess(userId, shopId);
     const normalizedPayload = normalizeChannelPayload(payload);
+
+    // Validate token with Meta before upsert
+    if (normalizedPayload.access_token) {
+        await verifyMetaToken(normalizedPayload.access_token, normalizedPayload.channel_type);
+    }
 
     const existingChannel = await Channel.findOne({
         where: { shop_id: shopId, channel_type: normalizedPayload.channel_type }
@@ -267,7 +325,10 @@ const disconnectChannel = async (channelId, userId, shopId) => {
         throw new AppError('Channel not found', 404);
     }
 
+    // Clear the token so it cannot be reactivated accidentally without reconnecting.
+    // The channel row is preserved (for audit / settings history) but is inert.
     channel.is_active = false;
+    channel.access_token = null;
     await channel.save();
 
     return mapChannel(channel);
@@ -291,10 +352,41 @@ const deleteChannel = async (channelId, userId, shopId) => {
     return { message: 'Channel deleted successfully' };
 };
 
+/**
+ * Return the channel-level AI behaviour settings for a given shop + platform.
+ * Used by the chatbot pipeline to apply per-channel overrides on top of
+ * shop-level AI settings. Never throws — returns {} on miss so callers can
+ * spread safely.
+ */
+const getChannelAISettings = async (shopId, platform) => {
+    const channelType = mapChannelTypeFromFrontend(platform);
+    try {
+        const channel = await Channel.findOne({
+            where: { shop_id: shopId, channel_type: channelType, is_active: true },
+            attributes: ['settings']
+        });
+        if (!channel) return {};
+        const s = channel.settings || {};
+        // Return only the known AI-behaviour keys; ignore free-form metadata.
+        return {
+            ...(s.aiAutoReply          !== undefined && { aiAutoReply:          s.aiAutoReply }),
+            ...(s.requireApproval      !== undefined && { requireApproval:      s.requireApproval }),
+            ...(s.businessHours        !== undefined && { businessHours:        s.businessHours }),
+            ...(s.allowOrderCreation   !== undefined && { allowOrderCreation:   s.allowOrderCreation }),
+            ...(s.autoDetectProducts   !== undefined && { autoDetectProducts:   s.autoDetectProducts }),
+            ...(s.draftOrdersOnly      !== undefined && { draftOrdersOnly:      s.draftOrdersOnly }),
+            ...(s.requireManualConfirmation !== undefined && { requireManualConfirmation: s.requireManualConfirmation }),
+        };
+    } catch (_) {
+        return {};
+    }
+};
+
 module.exports = {
     getChannels,
     getChannelById,
     getChannelByType,
+    getChannelAISettings,
     createChannel,
     updateChannel,
     deleteChannel,
