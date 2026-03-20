@@ -119,6 +119,46 @@ const Product = sequelize.define('Product', {
     is_active: {
         type: DataTypes.BOOLEAN,
         defaultValue: true
+    },
+
+    // ---------------------------------------------------------------------------
+    // AI analysis columns — set at upload time by vision LLM, used for search
+    // only. Live product facts (price, quantity, in_stock) are always read
+    // from the fields above — never from ai_* columns.
+    // ---------------------------------------------------------------------------
+    ai_description: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    ai_tags: {
+        type: DataTypes.JSON,
+        allowNull: false,
+        defaultValue: []
+    },
+    ai_category: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    ai_color_primary: {
+        type: DataTypes.STRING(50),
+        allowNull: true
+    },
+    ai_material: {
+        type: DataTypes.STRING(100),
+        allowNull: true
+    },
+    ai_attributes: {
+        type: DataTypes.JSON,
+        allowNull: false,
+        defaultValue: {}
+    },
+    ai_search_text: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    ai_processed_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
 }, {
     tableName: 'products',

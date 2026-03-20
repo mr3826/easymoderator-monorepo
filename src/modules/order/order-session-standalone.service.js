@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
+const productSearch = require('../product/product-search.service');
 
 // Define OrderSession model directly
 const OrderSession = sequelize.define('OrderSession', {
@@ -131,6 +132,29 @@ class OrderSessionService {
             } else {
                 // Mark old session as abandoned
                 await existingSession.update({ status: 'ABANDONED' });
+            }
+        }
+
+        // Stock gate: re-check live stock before starting order
+        // product_info.id is set when the LLM identified a specific DB product
+        if (product_info && product_info.id) {
+            const stockCheck = await productSearch.checkStock(product_info.id, shop_id);
+            if (!stockCheck.available) {
+                return {
+                    session_id: null,
+                    prompt: this.buildOutOfStockPrompt(stockCheck.reason, product_info),
+                    out_of_stock: true,
+                    resumed: false
+                };
+            }
+            // Refresh live price/stock from DB into product_info (prevents stale data)
+            if (stockCheck.product) {
+                product_info = {
+                    ...product_info,
+                    price:    stockCheck.product.price,
+                    quantity: stockCheck.product.quantity,
+                    in_stock: stockCheck.product.in_stock
+                };
             }
         }
 
@@ -381,6 +405,15 @@ class OrderSessionService {
             return 'Nagad';
         }
         return null;
+    }
+
+    static buildOutOfStockPrompt(reason, productInfo) {
+        const name = productInfo?.name || 'এই পণ্যটি';
+        return `দুঃখিত! "${name}" এখন ${reason || 'স্টক আউট'}। 😔\n\n` +
+            `আমাদের অন্য পণ্যগুলো দেখতে চান? অথবা অন্য কোনো সাহায্য লাগলে জানান!\n\n` +
+            `---\n` +
+            `Sorry! "${name}" is currently ${reason || 'out of stock'}. 😔\n` +
+            `Would you like to see our other products, or can I help you with something else?`;
     }
 
     static generateOrderSummary(session, stepData) {

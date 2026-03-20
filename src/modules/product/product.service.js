@@ -5,6 +5,7 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { queueProductProcessing } = require('./product-ai.service');
 // Atomic stock update utility
 const updateProductStock = async (shopId, sku, delta, transaction = null) => {
     // Find product by shop and SKU
@@ -241,6 +242,9 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
             });
         }
 
+        // Queue async AI image processing (fire-and-forget, non-blocking)
+        queueProductProcessing(product.id, shopId);
+
         // Fetch product with category
         return await getProductById(product.id, userId, shopId);
     } catch (error) {
@@ -289,6 +293,12 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
 
     // Update product
     await product.update(updateData);
+
+    // Re-queue AI processing if images changed
+    const imagesChanged = updateData.images !== undefined || updateData.image_url !== undefined;
+    if (imagesChanged) {
+        queueProductProcessing(productId, shopId);
+    }
 
     // Fetch updated product with category
     return await getProductById(productId, userId, shopId);
