@@ -1,12 +1,15 @@
 const express = require('express');
 const { body } = require('express-validator');
 const OrderSessionController = require('./order-session.controller');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 
+// Order sessions are tenant-scoped resources and require authentication.
+router.use(authenticate);
+
 // Validation middleware
 const validateStartSession = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
     body('customer_channel_id').notEmpty().withMessage('customer_channel_id is required'),
     body('channel').optional().isIn(['messenger', 'instagram', 'whatsapp']).withMessage('Invalid channel'),
     body('initial_message').optional().isString(),

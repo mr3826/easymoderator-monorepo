@@ -49,7 +49,13 @@ const updateOrder = async (req, res, next) => {
             });
         }
 
-        const { order_id, ...updateData } = req.body;
+        const order_id = req.body.order_id || req.body.id || req.query.order_id || req.query.id;
+        if (!order_id) {
+            throw new AppError('Order ID is required', 400);
+        }
+        const updateData = { ...req.body };
+        delete updateData.order_id;
+        delete updateData.id;
         const order = await orderService.updateOrder(
             order_id,
             req.user.userId,
@@ -82,7 +88,10 @@ const getOrder = async (req, res, next) => {
             });
         }
 
-        const { orderId } = req.query;
+        const orderId = req.query.order_id || req.query.id;
+        if (!orderId) {
+            throw new AppError('Order ID is required', 400);
+        }
         const order = await orderService.getOrderById(
             orderId,
             req.user.userId,
@@ -147,7 +156,10 @@ const deleteOrder = async (req, res, next) => {
             });
         }
 
-        const { orderId } = req.body;
+        const orderId = req.body.order_id || req.body.id || req.query.order_id || req.query.id;
+        if (!orderId) {
+            throw new AppError('Order ID is required', 400);
+        }
         const result = await orderService.deleteOrder(
             orderId,
             req.user.userId,

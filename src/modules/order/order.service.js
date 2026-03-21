@@ -41,7 +41,8 @@ const generateOrderNumber = async (shopId, transaction = null) => {
             { replacements: { shopId } }
         );
         const nextNumber = rows && rows[0] ? rows[0].next_number : 1;
-        return `ORD-${nextNumber.toString().padStart(3, '0')}`;
+        const shopPrefix = String(shopId).replace(/-/g, '').slice(0, 8).toUpperCase();
+        return `ORD-${shopPrefix}-${nextNumber.toString().padStart(6, '0')}`;
     }
 
     // SQLite: transaction + SELECT then UPDATE
@@ -65,7 +66,8 @@ const generateOrderNumber = async (shopId, transaction = null) => {
             );
         }
         if (!transaction) await t.commit();
-        return `ORD-${nextNumber.toString().padStart(3, '0')}`;
+        const shopPrefix = String(shopId).replace(/-/g, '').slice(0, 8).toUpperCase();
+        return `ORD-${shopPrefix}-${nextNumber.toString().padStart(6, '0')}`;
     } catch (err) {
         if (!transaction) await t.rollback();
         throw err;
@@ -125,8 +127,8 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
             if (product.track_quantity && !product.allow_backorder && product.quantity < item.quantity) {
                 throw new AppError(`Insufficient stock for product: ${product.name}`, 400);
             }
-            // Use provided price (manual override) or product price
-            const unitPrice = item.price !== undefined ? parseFloat(item.price) : parseFloat(product.price);
+            // Use server-side catalog price to prevent client-side price tampering.
+            const unitPrice = parseFloat(product.price);
             const itemTotal = unitPrice * item.quantity;
             subtotal += itemTotal;
             validItems.push({
@@ -204,9 +206,6 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
             order.usage_transaction_id = usageResult.transactionId;
             await order.save();
         } catch (usageErr) {
-            if (usageErr.code === 'USAGE_LIMIT_EXCEEDED') {
-                throw usageErr;
-            }
             logger.error('Failed to track usage', usageErr);
         }
         // Enforce payment state consistency
@@ -293,6 +292,8 @@ const getOrderById = async (orderId, userId, shopId) => {
  */
 const listOrders = async (userId, shopId, filters = {}) => {
     await verifyShopAccess(userId, shopId);
+    const dialect = sequelize.getDialect();
+    const likeOp = dialect === 'postgres' ? Op.iLike : Op.like;
 
     const whereClause = {
         shop_id: shopId
@@ -332,18 +333,25 @@ const listOrders = async (userId, shopId, filters = {}) => {
     ];
 
     if (filters.search) {
-        const search = filters.search.toLowerCase();
+        const search = String(filters.search).trim();
         whereClause[Op.or] = [
-            { order_number: { [Op.iLike]: `%${search}%` } },
-            { '$customer.name$': { [Op.iLike]: `%${search}%` } },
-            { '$customer.phone$': { [Op.iLike]: `%${search}%` } }
+            { order_number: { [likeOp]: `%${search}%` } },
+            { '$customer.name$': { [likeOp]: `%${search}%` } },
+            { '$customer.phone$': { [likeOp]: `%${search}%` } }
         ];
     }
+
+    const page = Math.max(1, Number(filters.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(filters.limit || 20)));
+    const offset = (page - 1) * limit;
 
     const orders = await Order.findAll({
         where: whereClause,
         include: includeOptions,
-        order: [['created_at', 'DESC']]
+        order: [['created_at', 'DESC']],
+        limit,
+        offset,
+        distinct: true
     });
 
     return orders;

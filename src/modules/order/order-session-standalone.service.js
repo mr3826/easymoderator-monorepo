@@ -101,8 +101,9 @@ class OrderSessionService {
             channel = 'messenger',
             initial_message,
             entities = {},
-            product_info = null
+            product_info: incomingProductInfo = null
         } = data;
+        let product_info = incomingProductInfo;
 
         // Default AI settings
         const defaultAiSettings = {
@@ -187,9 +188,9 @@ class OrderSessionService {
     /**
      * Process a step in the order flow
      */
-    static async processStep(sessionId, answer, rawMessage = null) {
+    static async processStep(sessionId, shopId, answer, rawMessage = null) {
         const session = await OrderSession.findOne({
-            where: { id: sessionId, status: 'ACTIVE' }
+            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
         });
 
         if (!session) {
@@ -286,13 +287,13 @@ class OrderSessionService {
             case 'ORDER_SUMMARY':
                 const orderConfirmation = this.extractConfirmation(answer);
                 if (orderConfirmation) {
-                    // For now, just mark as completed without creating actual order
+                    // Mark conversation session complete. Actual order creation is handled by the order module.
                     await session.update({
                         status: 'COMPLETED',
                         final_summary: this.generateOrderSummary(session, step_data)
                     });
                     completed = true;
-                    prompt = `অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ORD-${Date.now().toString().slice(-8)}\n\nOrder completed successfully! Order number: ORD-${Date.now().toString().slice(-8)}`;
+                    prompt = 'ধন্যবাদ! আপনার অর্ডার রিকোয়েস্ট গ্রহণ করা হয়েছে। আমাদের টিম দ্রুত নিশ্চিত করবে।\n\nThank you! Your order request has been received and will be confirmed shortly.';
                 } else {
                     nextStep = 'COLLECTING_NOTES';
                     prompt = 'কি পরিবর্তন করতে চান? / What would you like to change?';
@@ -332,9 +333,9 @@ class OrderSessionService {
     /**
      * Get session state
      */
-    static async getSessionState(sessionId) {
+    static async getSessionState(sessionId, shopId) {
         const session = await OrderSession.findOne({
-            where: { id: sessionId }
+            where: { id: sessionId, shop_id: shopId }
         });
 
         if (!session) {
@@ -353,9 +354,9 @@ class OrderSessionService {
     /**
      * Cancel session
      */
-    static async cancelSession(sessionId) {
+    static async cancelSession(sessionId, shopId) {
         const session = await OrderSession.findOne({
-            where: { id: sessionId }
+            where: { id: sessionId, shop_id: shopId }
         });
 
         if (!session) {

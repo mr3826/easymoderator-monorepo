@@ -16,7 +16,6 @@ class OrderSessionController {
             }
 
             const {
-                shop_id,
                 customer_id,
                 customer_channel_id,
                 channel,
@@ -24,6 +23,7 @@ class OrderSessionController {
                 entities,
                 product_info
             } = req.body;
+            const shop_id = req.user.shopId;
 
             const result = await OrderSessionService.startOrderSession({
                 shop_id,
@@ -62,9 +62,10 @@ class OrderSessionController {
             }
 
             const { id } = req.params;
+            const shopId = req.user.shopId;
             const { answer, raw_message } = req.body;
 
-            const result = await OrderSessionService.processStep(id, answer, raw_message);
+            const result = await OrderSessionService.processStep(id, shopId, answer, raw_message);
 
             res.json({
                 success: true,
@@ -84,16 +85,17 @@ class OrderSessionController {
      */
     static async getActiveSession(req, res) {
         try {
-            const { shop_id, customer_id } = req.query;
+            const shop_id = req.user.shopId;
+            const customerChannelId = req.query.customer_channel_id || req.query.customer_id;
 
-            if (!shop_id || !customer_id) {
+            if (!shop_id || !customerChannelId) {
                 return res.status(400).json({
                     success: false,
-                    error: 'shop_id and customer_id are required'
+                    error: 'customer_channel_id is required'
                 });
             }
 
-            const session = await OrderSessionService.getActiveSession(shop_id, customer_id);
+            const session = await OrderSessionService.getActiveSession(shop_id, customerChannelId);
 
             if (!session) {
                 return res.json({
@@ -127,8 +129,9 @@ class OrderSessionController {
     static async getSessionState(req, res) {
         try {
             const { id } = req.params;
+            const shopId = req.user.shopId;
 
-            const state = await OrderSessionService.getSessionState(id);
+            const state = await OrderSessionService.getSessionState(id, shopId);
 
             res.json({
                 success: true,
@@ -149,9 +152,10 @@ class OrderSessionController {
     static async confirmOrder(req, res) {
         try {
             const { id } = req.params;
+            const shopId = req.user.shopId;
 
             // This is essentially the same as processing the final confirmation step
-            const result = await OrderSessionService.processStep(id, 'YES');
+            const result = await OrderSessionService.processStep(id, shopId, 'YES');
 
             res.json({
                 success: true,
@@ -172,8 +176,9 @@ class OrderSessionController {
     static async cancelSession(req, res) {
         try {
             const { id } = req.params;
+            const shopId = req.user.shopId;
 
-            const result = await OrderSessionService.cancelSession(id);
+            const result = await OrderSessionService.cancelSession(id, shopId);
 
             res.json({
                 success: true,

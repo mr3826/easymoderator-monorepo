@@ -62,11 +62,13 @@ class OrderValidator {
     };
 
     updateOrder = {
-        body: Joi.object({
-            orderId: Joi.string().uuid().required().messages({
+        params: Joi.object({
+            id: Joi.string().uuid().required().messages({
                 'string.uuid': 'Order ID must be a valid UUID',
                 'any.required': 'Order ID is required'
-            }),
+            })
+        }),
+        body: Joi.object({
             order_status: Joi.string().valid('draft', 'confirmed', 'processing', 'completed', 'cancelled').optional().messages({
                 'any.only': 'Invalid order status'
             }),
@@ -77,6 +79,8 @@ class OrderValidator {
                 'any.only': 'Invalid fulfillment status'
             }),
             note: Joi.string().trim().allow('').optional()
+        }).min(1).messages({
+            'object.min': 'At least one field to update is required'
         })
     };
 
@@ -147,11 +151,11 @@ class OrderValidator {
         body: Joi.object({
             order_id: Joi.string().uuid().optional(),
             id: Joi.string().uuid().optional()
-        }),
+        }).or('order_id', 'id'),
         query: Joi.object({
             order_id: Joi.string().uuid().optional(),
             id: Joi.string().uuid().optional()
-        })
+        }).or('order_id', 'id')
     };
 
     // GET /order/get - expects id in query
@@ -159,7 +163,7 @@ class OrderValidator {
         query: Joi.object({
             order_id: Joi.string().uuid().optional(),
             id: Joi.string().uuid().optional()
-        })
+        }).or('order_id', 'id')
     };
 }
 
