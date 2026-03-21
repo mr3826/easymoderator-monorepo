@@ -226,6 +226,16 @@ class AIChatbotController {
         // --- Keyword-based fallback (original logic) ---
         const lowerMessage = message.toLowerCase().trim();
 
+        // WhatsApp image-only messages arrive as '[image]' because the Graph API
+        // download step isn't implemented. Give a helpful nudge instead of
+        // falling through to a confusing default response.
+        if (lowerMessage === '[image]') {
+            const imgResponse = language === 'bn'
+                ? '📸 ছবিটি পেয়েছি! কিন্তু এই মুহূর্তে ছবি প্রসেস করতে পারছি না। আপনি কি পণ্যের নাম বা বর্ণনা লিখে জানাবেন? যেমন: "লাল শার্টের দাম কত?"'
+                : '📸 Got your image! Unfortunately I can\'t process images from WhatsApp directly. Could you describe what you\'re looking for? e.g. "price of red shirt" or "do you have blue dress?"';
+            return { response: imgResponse, confidence: 0.85 };
+        }
+
         const orderKeywords = [
             'order', 'buy', 'purchase', 'অর্ডার', 'কিনতে', 'নিবে', 'চাই',
             'দাম', 'price', 'cost', 'কত', 'available'

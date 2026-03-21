@@ -78,10 +78,10 @@ const generateOrderNumber = async (shopId, transaction = null) => {
  * Create a new order
  * CRITICAL: Tracks usage for billing on successful creation
  */
-const createOrder = async (userId, shopId, orderData, requestId = null) => {
-    const logger = createLogger(requestId, shopId, userId);
-    await verifyShopAccess(userId, shopId);
-
+/**
+ * Core order creation logic — shared by createOrder (user-auth) and createOrderInternal (chatbot/automated).
+ */
+const _createOrderCore = async (shopId, orderData, logger, requestId = null) => {
     // USAGE_LIMIT_EXCEEDED check BEFORE creating the DB transaction
     await subscriptionService.checkOrderLimit(shopId);
 
@@ -162,6 +162,7 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
             shop_id: shopId,
             customer_id: orderData.customer_id,
             customer_name: orderData.customer_name,
+            customer_phone: orderData.customer_phone || null,
             order_number: orderNumber,
             channel: orderData.channel || 'manual',
             order_status: 'draft',
@@ -172,6 +173,8 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
             tax: tax,
             delivery_fee: deliveryFee,
             total: total,
+            delivery_address: orderData.delivery_address || null,
+            payment_method: orderData.payment_method || null,
             note: orderData.note,
             idempotency_key: requestId || null
         }, { transaction });
@@ -223,6 +226,24 @@ const createOrder = async (userId, shopId, orderData, requestId = null) => {
         try { await transaction.rollback(); } catch (_) { /* already committed */ }
         throw err;
     }
+};
+
+/**
+ * Create order — requires authenticated user (verifies shop access).
+ */
+const createOrder = async (userId, shopId, orderData, requestId = null) => {
+    const logger = createLogger(requestId, shopId, userId);
+    await verifyShopAccess(userId, shopId);
+    return _createOrderCore(shopId, orderData, logger, requestId);
+};
+
+/**
+ * Create order from internal/automated flows (chatbot, webhooks) — bypasses user auth.
+ * All other guards (subscription limit, RTO Shield, stock, COD cap) still apply.
+ */
+const createOrderInternal = async (shopId, orderData, requestId = null) => {
+    const logger = createLogger(requestId, shopId, null);
+    return _createOrderCore(shopId, orderData, logger, requestId);
 };
 
 /**
@@ -603,6 +624,7 @@ const createReturnRequest = async (userId, shopId, orderId, payload) => {
 
 module.exports = {
     createOrder,
+    createOrderInternal,
     updateOrder,
     getOrderById,
     listOrders,
