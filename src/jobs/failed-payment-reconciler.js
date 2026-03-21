@@ -2,7 +2,7 @@ const BaseJob = require('./base-job');
 const { Invoice, Subscription, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
-const emailService = require('../../utils/email.service');
+const emailService = require('../utils/email.service');
 
 /**
  * Failed Payment Reconciler Job
