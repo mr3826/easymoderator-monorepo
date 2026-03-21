@@ -131,20 +131,10 @@ jobs:
             DATABASE_URL_FINAL="${DATABASE_URL:-$DB_URL_DEFAULT}"
             REDIS_URL_FINAL="${REDIS_URL:-$REDIS_URL_DEFAULT}"
 
-            # Resolve CHANNEL_ENCRYPTION_KEY with safe fallbacks.
-            # Priority: GitHub secret -> previous .env.prod value -> generated 32-byte hex key.
-            EXISTING_CHANNEL_KEY=""
-            if [ -f .env.prod ]; then
-              EXISTING_CHANNEL_KEY=$(grep -E '^CHANNEL_ENCRYPTION_KEY=' .env.prod | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
-            fi
-
+            # Guarantee CHANNEL_ENCRYPTION_KEY is present for app startup.
             CHANNEL_ENCRYPTION_KEY_FINAL="${CHANNEL_ENCRYPTION_KEY:-}"
-            if [ -z "$CHANNEL_ENCRYPTION_KEY_FINAL" ] && [ -n "$EXISTING_CHANNEL_KEY" ]; then
-              CHANNEL_ENCRYPTION_KEY_FINAL="$EXISTING_CHANNEL_KEY"
-            fi
-
-            if ! echo "$CHANNEL_ENCRYPTION_KEY_FINAL" | grep -Eq '^[A-Fa-f0-9]{64}$'; then
-              CHANNEL_ENCRYPTION_KEY_FINAL=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            if [ -z "$CHANNEL_ENCRYPTION_KEY_FINAL" ]; then
+              CHANNEL_ENCRYPTION_KEY_FINAL=$(openssl rand -hex 32)
             fi
 
             # Write .env.prod using printf to avoid heredoc YAML conflicts
