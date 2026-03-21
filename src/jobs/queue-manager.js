@@ -137,8 +137,10 @@ class QueueManager {
                 host: parsed.hostname,
                 port: parsed.port ? parseInt(parsed.port, 10) : 6379,
                 db: 0,
-                maxRetriesPerRequest: 3,
-                enableReadyCheck: true
+                // Bull requires subscriber/bclient Redis connections to allow
+                // unlimited retries and no ready check override.
+                maxRetriesPerRequest: null,
+                enableReadyCheck: false
             };
 
             if (parsed.password) {
