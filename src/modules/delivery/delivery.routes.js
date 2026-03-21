@@ -82,6 +82,7 @@ router.get(
  */
 router.put(
     '/:provider/metadata',
+    validate(deliveryValidators.updateMetadata),
     deliveryController.updateMetadata
 );
 

@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const paymentController = require('./payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
 const {
@@ -14,8 +15,19 @@ const validate = require('../../middleware/validate.middleware');
 
 const router = express.Router();
 
+const paymentCallbackRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many callback requests, please retry later.'
+    }
+});
+
 // Payment callback middleware: IP allowlist + POST only (applied to all callback routes)
-const paymentCallbackAuth = [paymentCallbackPostOnly, paymentGatewayIpAllowlist];
+const paymentCallbackAuth = [paymentCallbackRateLimiter, paymentCallbackPostOnly, paymentGatewayIpAllowlist];
 
 // Payment configuration routes (require authentication)
 router.get('/config', authenticate, paymentController.getPaymentConfigs);

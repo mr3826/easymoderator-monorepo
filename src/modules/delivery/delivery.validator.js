@@ -105,6 +105,31 @@ const deliveryValidators = {
     }),
 
     /**
+     * Validate metadata update request
+     */
+    updateMetadata: Joi.object({
+        metadata: Joi.object({
+            store_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            stores: Joi.array()
+                .max(100)
+                .items(
+                    Joi.object({
+                        store_id: Joi.alternatives().try(Joi.string(), Joi.number()).required(),
+                        store_name: Joi.string().allow('', null).optional()
+                    }).unknown(true)
+                )
+                .optional(),
+            balance: Joi.number().min(0).optional()
+        })
+            .max(20)
+            .required()
+            .messages({
+                'object.base': 'metadata must be an object',
+                'any.required': 'metadata is required'
+            })
+    }),
+
+    /**
      * Validate update delivery settings request
      */
     updateSettings: Joi.object({
@@ -133,7 +158,7 @@ const deliveryValidators = {
                 Joi.object({
                     zone: Joi.string()
                         .valid('inside_dhaka', 'sub_dhaka', 'outside_dhaka')
-                        .optional()
+                        .required()
                         .messages({
                             'any.only': 'area_pricing.zone must be inside_dhaka, sub_dhaka, or outside_dhaka'
                         }),
@@ -171,25 +196,48 @@ const deliveryValidators = {
             .items(
                 Joi.object({
                     from_kg: Joi.number()
-                        .optional()
+                        .min(0)
+                        .required()
                         .messages({
                             'number.base': 'weight_tiers.from_kg must be a number'
                         }),
                     to_kg: Joi.number()
-                        .optional()
+                        .min(0)
+                        .required()
                         .messages({
                             'number.base': 'weight_tiers.to_kg must be a number'
                         }),
                     extra_charge: Joi.number()
-                        .optional()
+                        .min(0)
+                        .required()
                         .messages({
                             'number.base': 'weight_tiers.extra_charge must be a number'
                         })
                 })
             )
             .optional()
+            .custom((tiers, helpers) => {
+                const sorted = [...tiers].sort((a, b) => a.from_kg - b.from_kg);
+
+                for (let i = 0; i < sorted.length; i += 1) {
+                    const tier = sorted[i];
+                    if (tier.from_kg >= tier.to_kg) {
+                        return helpers.error('any.invalid', { message: 'weight_tiers.from_kg must be less than weight_tiers.to_kg' });
+                    }
+
+                    if (i > 0) {
+                        const previous = sorted[i - 1];
+                        if (tier.from_kg < previous.to_kg) {
+                            return helpers.error('any.invalid', { message: 'weight_tiers must not overlap' });
+                        }
+                    }
+                }
+
+                return tiers;
+            })
             .messages({
-                'array.base': 'weight_tiers must be an array'
+                'array.base': 'weight_tiers must be an array',
+                'any.invalid': 'Invalid weight tier configuration'
             })
     })
 };

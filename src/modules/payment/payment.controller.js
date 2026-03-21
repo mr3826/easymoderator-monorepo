@@ -220,7 +220,7 @@ async function handleAamarPayFail(req, res, next) {
  */
 async function handleSSLCommerzSuccess(req, res, next) {
     try {
-        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        const result = await paymentService.verifySSLCommerzCallback(req.body);
 
         if (result.type === 'invoice') {
             const status = result.success ? 'success' : 'failed';
@@ -241,7 +241,7 @@ async function handleSSLCommerzSuccess(req, res, next) {
  */
 async function handleSSLCommerzFail(req, res, next) {
     try {
-        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        const result = await paymentService.verifySSLCommerzCallback(req.body);
         if (result.type === 'invoice') {
             return res.redirect(`${process.env.FRONTEND_URL}/subscription?payment=failed`);
         }
@@ -256,7 +256,7 @@ async function handleSSLCommerzFail(req, res, next) {
  */
 async function handleSSLCommerzIPN(req, res, next) {
     try {
-        const result = await paymentService.verifySSLCommerzCallback(req.body, req.body.shop_id);
+        const result = await paymentService.verifySSLCommerzCallback(req.body);
         
         res.status(200).json({
             success: result.success,

@@ -631,7 +631,7 @@ async function verifyAamarPayCallback(callbackData) {
  * Verify SSLCommerz payment callback — P2-7: server-side POST only (no query-string validation).
  * Callers must pass req.body; GET/query params must not be used.
  */
-async function verifySSLCommerzCallback(callbackData, shopId) {
+async function verifySSLCommerzCallback(callbackData) {
     const { tran_id, val_id, status } = callbackData;
 
     if (!tran_id) {
@@ -678,9 +678,7 @@ async function verifySSLCommerzCallback(callbackData, shopId) {
     const orderNumber = tran_id.split('-')[0];
 
     // Find order
-    const order = await Order.findOne({
-        where: { order_number: orderNumber, shop_id: shopId }
-    });
+    const order = await Order.findOne({ where: { order_number: orderNumber } });
 
     if (!order) {
         throw new AppError('Order not found', 404);
@@ -704,6 +702,10 @@ async function verifySSLCommerzCallback(callbackData, shopId) {
     // Validate transaction with SSLCommerz
     try {
         if (status === 'VALID' || status === 'VALIDATED') {
+            if (callbackData.store_id && callbackData.store_id !== store_id) {
+                throw new AppError('Invalid SSLCommerz store ID', 403);
+            }
+
             const validationUrl = `${baseUrl}/validator/api/validationserverAPI.php?val_id=${val_id}&store_id=${store_id}&store_passwd=${store_password}&format=json`;
             const validation = await axios.get(validationUrl);
 
