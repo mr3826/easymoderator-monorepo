@@ -153,6 +153,9 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
             });
         }
     } catch (err) {
+        if (err instanceof AppError) {
+            throw err;
+        }
         // Robust error handling
         throw new AppError('Payment config update failed: ' + err.message, 500);
     }

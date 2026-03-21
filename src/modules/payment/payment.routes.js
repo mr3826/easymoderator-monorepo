@@ -4,6 +4,7 @@ const paymentController = require('./payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
 const {
     paymentGatewayIpAllowlist,
+    paymentCallbackHmacVerify,
     paymentCallbackPostOnly
 } = require('../../middleware/payment-callback-auth.middleware');
 const {
@@ -27,7 +28,12 @@ const paymentCallbackRateLimiter = rateLimit({
 });
 
 // Payment callback middleware: IP allowlist + POST only (applied to all callback routes)
-const paymentCallbackAuth = [paymentCallbackRateLimiter, paymentCallbackPostOnly, paymentGatewayIpAllowlist];
+const paymentCallbackAuth = [
+    paymentCallbackRateLimiter,
+    paymentCallbackPostOnly,
+    paymentGatewayIpAllowlist,
+    paymentCallbackHmacVerify
+];
 
 // Payment configuration routes (require authentication)
 router.get('/config', authenticate, paymentController.getPaymentConfigs);
