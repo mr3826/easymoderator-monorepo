@@ -144,11 +144,7 @@ jobs:
             fi
 
             if ! echo "$CHANNEL_ENCRYPTION_KEY_FINAL" | grep -Eq '^[A-Fa-f0-9]{64}$'; then
-              CHANNEL_ENCRYPTION_KEY_FINAL=$(python3 - <<'PY'
-              import secrets
-              print(secrets.token_hex(32))
-              PY
-)
+              CHANNEL_ENCRYPTION_KEY_FINAL=$(python3 -c "import secrets; print(secrets.token_hex(32))")
             fi
 
             # Write .env.prod using printf to avoid heredoc YAML conflicts
