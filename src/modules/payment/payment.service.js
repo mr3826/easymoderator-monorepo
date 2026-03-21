@@ -82,8 +82,6 @@ async function getPaymentConfigs(shopId, userId) {
         gateway: config.gateway,
         is_enabled: config.is_enabled,
         config: config.config,
-        // Never return actual credentials, only indicate if they're set
-        has_credentials: config.credentials != null && Object.keys(config.credentials).length > 0,
         created_at: config.created_at,
         updated_at: config.updated_at
     }));
