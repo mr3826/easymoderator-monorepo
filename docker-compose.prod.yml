@@ -35,6 +35,18 @@ services:
     networks:
       - easymod-network
 
+  worker:
+    image: ${ECR_IMAGE}
+    restart: unless-stopped
+    command: ["npm", "run", "start:worker"]
+    env_file:
+      - .env.prod
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - easymod-network
+
 volumes:
   postgres_data:
   redis_data:

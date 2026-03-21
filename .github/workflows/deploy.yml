@@ -5,10 +5,34 @@ on:
     branches:
       - main
 
+concurrency:
+  group: easymod-backend-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  test:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
   build-and-push:
     name: Build And Push To ECR
     runs-on: ubuntu-latest
+    needs: test
     outputs:
       ecr-image: ${{ steps.image.outputs.ecr-image }}
     steps:
@@ -78,6 +102,7 @@ jobs:
           JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           WF1_WEBHOOK_URL: ${{ secrets.WF1_WEBHOOK_URL }}
           INTERNAL_WEBHOOK_SECRET: ${{ secrets.INTERNAL_WEBHOOK_SECRET }}
           META_WEBHOOK_APP_SECRET: ${{ secrets.META_WEBHOOK_APP_SECRET }}
@@ -85,7 +110,7 @@ jobs:
           EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
           EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
           GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
-          Google_Gemini_Api_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
@@ -97,11 +122,13 @@ jobs:
           SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          AWS_REGION: ap-south-1
+          AWS_SECRET_NAME: easymod/production
         with:
           host: 3.111.186.159
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY
+          envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION,AWS_SECRET_NAME,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,CHANNEL_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,GEMINI_API_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY
           script: |
             set -eo pipefail
 
@@ -149,6 +176,7 @@ jobs:
               printf 'JWT_REFRESH_EXPIRES_IN="%s"\n'  "${JWT_REFRESH_EXPIRES_IN}"
               printf 'SESSION_SECRET="%s"\n'          "${SESSION_SECRET}"
               printf 'PAYMENT_ENCRYPTION_KEY="%s"\n'  "${PAYMENT_ENCRYPTION_KEY}"
+              printf 'CHANNEL_ENCRYPTION_KEY="%s"\n'  "${CHANNEL_ENCRYPTION_KEY}"
               printf 'DELIVERY_ENCRYPTION_KEY="%s"\n' "${DELIVERY_ENCRYPTION_KEY}"
               printf 'WF1_WEBHOOK_URL="%s"\n'         "${WF1_WEBHOOK_URL}"
               printf 'INTERNAL_WEBHOOK_SECRET="%s"\n' "${INTERNAL_WEBHOOK_SECRET}"
@@ -157,10 +185,12 @@ jobs:
               printf 'EMBEDDING_PROVIDER="%s"\n'      "${EMBEDDING_PROVIDER}"
               printf 'EMBEDDING_MODEL="%s"\n'         "${EMBEDDING_MODEL}"
               printf 'GEMINI_EMBEDDING_MODEL="%s"\n'  "${GEMINI_EMBEDDING_MODEL}"
-              printf 'Google_Gemini_Api_KEY="%s"\n'   "${Google_Gemini_Api_KEY}"
+              printf 'GEMINI_API_KEY="%s"\n'          "${GEMINI_API_KEY}"
               printf 'OPENAI_API_KEY="%s"\n'          "${OPENAI_API_KEY}"
               printf 'FRONTEND_URL="%s"\n'            "${FRONTEND_URL}"
               printf 'BASE_URL="%s"\n'                "${BASE_URL}"
+              printf 'AWS_REGION="%s"\n'              "${AWS_REGION}"
+              printf 'AWS_SECRET_NAME="%s"\n'         "${AWS_SECRET_NAME}"
               printf 'SMTP_HOST="%s"\n'               "${SMTP_HOST}"
               printf 'SMTP_PORT="%s"\n'               "${SMTP_PORT}"
               printf 'SMTP_USER="%s"\n'               "${SMTP_USER}"
@@ -177,8 +207,8 @@ jobs:
               | docker login --username AWS --password-stdin \
                 441250065813.dkr.ecr.ap-south-1.amazonaws.com
 
-            # Pull new backend image
-            docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend
+            # Pull new images
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend worker
 
             # Start / restart postgres and redis
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d postgres redis
@@ -199,8 +229,8 @@ jobs:
             # Run migrations (depends on base tables existing)
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
 
-            # Start/restart backend
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend
+            # Start/restart backend and worker
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend worker
 
             # Clean up old images
             docker image prune -af --filter "until=72h"
@@ -219,8 +249,29 @@ jobs:
               if [ "$i" = "20" ]; then
                 echo "ERROR: Backend failed health check after 20 attempts"
                 docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 backend
+                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 worker
                 exit 1
               fi
               sleep 3
             done
+
+            # Verify worker is running and stable
+            echo "Verifying worker service is running..."
+            for i in $(seq 1 10); do
+              WORKER_RUNNING=$(docker compose --env-file .env.prod -f docker-compose.prod.yml \
+                ps --status running --services worker 2>/dev/null || true)
+
+              if [ "${WORKER_RUNNING}" = "worker" ]; then
+                echo "Worker is running (attempt $i)"
+                break
+              fi
+
+              if [ "$i" = "10" ]; then
+                echo "ERROR: Worker failed to reach running state"
+                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=100 worker
+                exit 1
+              fi
+              sleep 3
+            done
+
             echo "Deployment complete."

@@ -40,7 +40,7 @@ if id -u ubuntu >/dev/null 2>&1; then
   usermod -aG docker ubuntu
 fi
 
-mkdir -p /app/easymod-backend
-chown -R ubuntu:ubuntu /app/easymod-backend
+mkdir -p /home/ubuntu/easymod-backend
+chown -R ubuntu:ubuntu /home/ubuntu/easymod-backend
 
 echo "Bootstrap complete. Re-login to apply docker group membership for ubuntu user."

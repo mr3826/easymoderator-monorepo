@@ -176,7 +176,7 @@ Tests use in-memory mocks for Sequelize and Redis — no real DB connection requ
 
 Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.yml`).
 
-**Flow:** push to `main` → build Docker image → push to ECR → SSH to EC2 → run migrations → bring up new container → post-deploy health check.
+**Flow:** push to `main` → run test suite → build Docker image → push to ECR → SSH to EC2 → run migrations → bring up backend + worker containers → post-deploy backend + worker health checks.
 
 ### First-time server setup
 
@@ -190,7 +190,7 @@ Deployments are fully automated via GitHub Actions (`.github/workflows/deploy.ym
 3. **GitHub Secrets** — set these in the repo's Settings → Secrets and variables → Actions:
    - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
    - `EC2_SSH_KEY` (private key PEM content)
-   - All application secrets (see `.env.example`)
+   - All application secrets (see `.env.example`), including `CHANNEL_ENCRYPTION_KEY`
 
 ### Manual deploy
 
@@ -203,6 +203,20 @@ docker push <ecr-uri>/easymod-backend:latest
 # On EC2
 cd /home/ubuntu/easymod-backend
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+```
+
+### Rollback (manual)
+
+```bash
+# On EC2: set previous known-good image tag in .env.prod
+sed -i 's|^ECR_IMAGE=.*|ECR_IMAGE="<ecr-uri>/easymod-backend:<known-good-sha>"|' .env.prod
+
+# Recreate app services with previous image
+docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend worker
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend worker
+
+# Verify readiness
+curl -fsS http://localhost:3000/health/ready
 ```
 
 ---
@@ -229,7 +243,7 @@ npm run start:worker       # Start queue worker process
 
 Queue names: `dailyOverage`, `monthlyReset`, `invoiceGenerator`, `paymentReconciler`
 
-In production, the worker runs as a separate Docker service (`easymod-queue-worker` in `ecosystem.config.js`).
+In production, the worker runs as a separate Docker Compose service (`worker` in `docker-compose.prod.yml`).
 
 ---
 
