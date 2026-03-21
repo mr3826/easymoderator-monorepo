@@ -185,8 +185,8 @@ jobs:
               | docker login --username AWS --password-stdin \
                 441250065813.dkr.ecr.ap-south-1.amazonaws.com
 
-            # Pull new backend image
-            docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend
+            # Pull new backend and worker images
+            docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend worker
 
             # Start / restart postgres and redis
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d postgres redis
@@ -207,8 +207,8 @@ jobs:
             # Run migrations (depends on base tables existing)
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
 
-            # Start/restart backend
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend
+            # Start/restart backend and worker
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend worker
 
             # Clean up old images
             docker image prune -af --filter "until=72h"
@@ -227,8 +227,25 @@ jobs:
               if [ "$i" = "20" ]; then
                 echo "ERROR: Backend failed health check after 20 attempts"
                 docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 backend
+                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 worker
                 exit 1
               fi
               sleep 3
+            done
+
+            # Verify worker container is running
+            echo "Waiting for worker to be running..."
+            for i in $(seq 1 15); do
+              WORKER_STATUS=$(docker compose --env-file .env.prod -f docker-compose.prod.yml ps --status running --services worker 2>/dev/null || true)
+              if [ "$WORKER_STATUS" = "worker" ]; then
+                echo "Worker is running (attempt $i)"
+                break
+              fi
+              if [ "$i" = "15" ]; then
+                echo "ERROR: Worker failed to reach running state"
+                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=80 worker
+                exit 1
+              fi
+              sleep 2
             done
             echo "Deployment complete."
