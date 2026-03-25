@@ -22,6 +22,58 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+      - name: Retrieve secrets from AWS Secrets Manager
+        id: secrets
+        run: |
+          # Get all secrets for Easy Moderator
+          SECRETS_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "easymoderator/production" \
+            --query SecretString \
+            --output text)
+          
+          # Output key secrets for other steps
+          echo "ec2_host=$(echo $SECRETS_JSON | jq -r '.EC2_HOST')" >> $GITHUB_OUTPUT
+          echo "ssh_key=$(echo $SECRETS_JSON | jq -r '.SSH_PRIVATE_KEY')" >> $GITHUB_OUTPUT
+          
+          # Export all secrets as environment variables
+          echo "POSTGRES_DB=$(echo $SECRETS_JSON | jq -r '.POSTGRES_DB')" >> $GITHUB_ENV
+          echo "POSTGRES_USER=$(echo $SECRETS_JSON | jq -r '.POSTGRES_USER')" >> $GITHUB_ENV
+          echo "POSTGRES_PASSWORD=$(echo $SECRETS_JSON | jq -r '.POSTGRES_PASSWORD')" >> $GITHUB_ENV
+          echo "DATABASE_URL=$(echo $SECRETS_JSON | jq -r '.DATABASE_URL')" >> $GITHUB_ENV
+          echo "REDIS_URL=$(echo $SECRETS_JSON | jq -r '.REDIS_URL')" >> $GITHUB_ENV
+          echo "PORT=$(echo $SECRETS_JSON | jq -r '.PORT')" >> $GITHUB_ENV
+          echo "CORS_ORIGINS=$(echo $SECRETS_JSON | jq -r '.CORS_ORIGINS')" >> $GITHUB_ENV
+          echo "FRONTEND_URL=$(echo $SECRETS_JSON | jq -r '.FRONTEND_URL')" >> $GITHUB_ENV
+          echo "BASE_URL=$(echo $SECRETS_JSON | jq -r '.BASE_URL')" >> $GITHUB_ENV
+          echo "BODY_SIZE_LIMIT=$(echo $SECRETS_JSON | jq -r '.BODY_SIZE_LIMIT')" >> $GITHUB_ENV
+          echo "ALLOW_SELF_SIGNED_TLS=$(echo $SECRETS_JSON | jq -r '.ALLOW_SELF_SIGNED_TLS')" >> $GITHUB_ENV
+          echo "JWT_ACCESS_SECRET=$(echo $SECRETS_JSON | jq -r '.JWT_ACCESS_SECRET')" >> $GITHUB_ENV
+          echo "JWT_REFRESH_SECRET=$(echo $SECRETS_JSON | jq -r '.JWT_REFRESH_SECRET')" >> $GITHUB_ENV
+          echo "JWT_ACCESS_EXPIRES_IN=$(echo $SECRETS_JSON | jq -r '.JWT_ACCESS_EXPIRES_IN')" >> $GITHUB_ENV
+          echo "JWT_REFRESH_EXPIRES_IN=$(echo $SECRETS_JSON | jq -r '.JWT_REFRESH_EXPIRES_IN')" >> $GITHUB_ENV
+          echo "SESSION_SECRET=$(echo $SECRETS_JSON | jq -r '.SESSION_SECRET')" >> $GITHUB_ENV
+          echo "PAYMENT_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.PAYMENT_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "CHANNEL_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.CHANNEL_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "WF1_WEBHOOK_URL=$(echo $SECRETS_JSON | jq -r '.WF1_WEBHOOK_URL')" >> $GITHUB_ENV
+          echo "INTERNAL_WEBHOOK_SECRET=$(echo $SECRETS_JSON | jq -r '.INTERNAL_WEBHOOK_SECRET')" >> $GITHUB_ENV
+          echo "META_WEBHOOK_APP_SECRET=$(echo $SECRETS_JSON | jq -r '.META_WEBHOOK_APP_SECRET')" >> $GITHUB_ENV
+          echo "META_WEBHOOK_VERIFY_TOKEN=$(echo $SECRETS_JSON | jq -r '.META_WEBHOOK_VERIFY_TOKEN')" >> $GITHUB_ENV
+          echo "EMBEDDING_PROVIDER=$(echo $SECRETS_JSON | jq -r '.EMBEDDING_PROVIDER')" >> $GITHUB_ENV
+          echo "EMBEDDING_MODEL=$(echo $SECRETS_JSON | jq -r '.EMBEDDING_MODEL')" >> $GITHUB_ENV
+          echo "GEMINI_EMBEDDING_MODEL=$(echo $SECRETS_JSON | jq -r '.GEMINI_EMBEDDING_MODEL')" >> $GITHUB_ENV
+          echo "Google_Gemini_Api_KEY=$(echo $SECRETS_JSON | jq -r '.GOOGLE_GEMINI_API_KEY')" >> $GITHUB_ENV
+          echo "OPENAI_API_KEY=$(echo $SECRETS_JSON | jq -r '.OPENAI_API_KEY')" >> $GITHUB_ENV
+          echo "PINECONE_API_KEY=$(echo $SECRETS_JSON | jq -r '.PINECONE_API_KEY')" >> $GITHUB_ENV
+          echo "PINECONE_INDEX=$(echo $SECRETS_JSON | jq -r '.PINECONE_INDEX')" >> $GITHUB_ENV
+          echo "PINECONE_NAMESPACE=$(echo $SECRETS_JSON | jq -r '.PINECONE_NAMESPACE')" >> $GITHUB_ENV
+          echo "SMTP_HOST=$(echo $SECRETS_JSON | jq -r '.SMTP_HOST')" >> $GITHUB_ENV
+          echo "SMTP_PORT=$(echo $SECRETS_JSON | jq -r '.SMTP_PORT')" >> $GITHUB_ENV
+          echo "SMTP_USER=$(echo $SECRETS_JSON | jq -r '.SMTP_USER')" >> $GITHUB_ENV
+          echo "SMTP_PASS=$(echo $SECRETS_JSON | jq -r '.SMTP_PASS')" >> $GITHUB_ENV
+          echo "SMTP_SECURE=$(echo $SECRETS_JSON | jq -r '.SMTP_SECURE')" >> $GITHUB_ENV
+          echo "EMAIL_FROM=$(echo $SECRETS_JSON | jq -r '.EMAIL_FROM')" >> $GITHUB_ENV
+          echo "DELIVERY_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.DELIVERY_ENCRYPTION_KEY')" >> $GITHUB_ENV
+
       - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password --region ap-south-1 \
@@ -46,14 +98,70 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Retrieve secrets from AWS Secrets Manager
+        run: |
+          # Get all secrets for Easy Moderator
+          SECRETS_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "easymoderator/production" \
+            --query SecretString \
+            --output text)
+          
+          # Export all secrets as environment variables
+          echo "EC2_HOST=$(echo $SECRETS_JSON | jq -r '.EC2_HOST')" >> $GITHUB_ENV
+          echo "SSH_PRIVATE_KEY=$(echo $SECRETS_JSON | jq -r '.SSH_PRIVATE_KEY')" >> $GITHUB_ENV
+          echo "POSTGRES_DB=$(echo $SECRETS_JSON | jq -r '.POSTGRES_DB')" >> $GITHUB_ENV
+          echo "POSTGRES_USER=$(echo $SECRETS_JSON | jq -r '.POSTGRES_USER')" >> $GITHUB_ENV
+          echo "POSTGRES_PASSWORD=$(echo $SECRETS_JSON | jq -r '.POSTGRES_PASSWORD')" >> $GITHUB_ENV
+          echo "DATABASE_URL=$(echo $SECRETS_JSON | jq -r '.DATABASE_URL')" >> $GITHUB_ENV
+          echo "REDIS_URL=$(echo $SECRETS_JSON | jq -r '.REDIS_URL')" >> $GITHUB_ENV
+          echo "PORT=$(echo $SECRETS_JSON | jq -r '.PORT')" >> $GITHUB_ENV
+          echo "CORS_ORIGINS=$(echo $SECRETS_JSON | jq -r '.CORS_ORIGINS')" >> $GITHUB_ENV
+          echo "FRONTEND_URL=$(echo $SECRETS_JSON | jq -r '.FRONTEND_URL')" >> $GITHUB_ENV
+          echo "BASE_URL=$(echo $SECRETS_JSON | jq -r '.BASE_URL')" >> $GITHUB_ENV
+          echo "BODY_SIZE_LIMIT=$(echo $SECRETS_JSON | jq -r '.BODY_SIZE_LIMIT')" >> $GITHUB_ENV
+          echo "ALLOW_SELF_SIGNED_TLS=$(echo $SECRETS_JSON | jq -r '.ALLOW_SELF_SIGNED_TLS')" >> $GITHUB_ENV
+          echo "JWT_ACCESS_SECRET=$(echo $SECRETS_JSON | jq -r '.JWT_ACCESS_SECRET')" >> $GITHUB_ENV
+          echo "JWT_REFRESH_SECRET=$(echo $SECRETS_JSON | jq -r '.JWT_REFRESH_SECRET')" >> $GITHUB_ENV
+          echo "JWT_ACCESS_EXPIRES_IN=$(echo $SECRETS_JSON | jq -r '.JWT_ACCESS_EXPIRES_IN')" >> $GITHUB_ENV
+          echo "JWT_REFRESH_EXPIRES_IN=$(echo $SECRETS_JSON | jq -r '.JWT_REFRESH_EXPIRES_IN')" >> $GITHUB_ENV
+          echo "SESSION_SECRET=$(echo $SECRETS_JSON | jq -r '.SESSION_SECRET')" >> $GITHUB_ENV
+          echo "PAYMENT_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.PAYMENT_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "CHANNEL_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.CHANNEL_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "WF1_WEBHOOK_URL=$(echo $SECRETS_JSON | jq -r '.WF1_WEBHOOK_URL')" >> $GITHUB_ENV
+          echo "INTERNAL_WEBHOOK_SECRET=$(echo $SECRETS_JSON | jq -r '.INTERNAL_WEBHOOK_SECRET')" >> $GITHUB_ENV
+          echo "META_WEBHOOK_APP_SECRET=$(echo $SECRETS_JSON | jq -r '.META_WEBHOOK_APP_SECRET')" >> $GITHUB_ENV
+          echo "META_WEBHOOK_VERIFY_TOKEN=$(echo $SECRETS_JSON | jq -r '.META_WEBHOOK_VERIFY_TOKEN')" >> $GITHUB_ENV
+          echo "EMBEDDING_PROVIDER=$(echo $SECRETS_JSON | jq -r '.EMBEDDING_PROVIDER')" >> $GITHUB_ENV
+          echo "EMBEDDING_MODEL=$(echo $SECRETS_JSON | jq -r '.EMBEDDING_MODEL')" >> $GITHUB_ENV
+          echo "GEMINI_EMBEDDING_MODEL=$(echo $SECRETS_JSON | jq -r '.GEMINI_EMBEDDING_MODEL')" >> $GITHUB_ENV
+          echo "Google_Gemini_Api_KEY=$(echo $SECRETS_JSON | jq -r '.GOOGLE_GEMINI_API_KEY')" >> $GITHUB_ENV
+          echo "OPENAI_API_KEY=$(echo $SECRETS_JSON | jq -r '.OPENAI_API_KEY')" >> $GITHUB_ENV
+          echo "PINECONE_API_KEY=$(echo $SECRETS_JSON | jq -r '.PINECONE_API_KEY')" >> $GITHUB_ENV
+          echo "PINECONE_INDEX=$(echo $SECRETS_JSON | jq -r '.PINECONE_INDEX')" >> $GITHUB_ENV
+          echo "PINECONE_NAMESPACE=$(echo $SECRETS_JSON | jq -r '.PINECONE_NAMESPACE')" >> $GITHUB_ENV
+          echo "SMTP_HOST=$(echo $SECRETS_JSON | jq -r '.SMTP_HOST')" >> $GITHUB_ENV
+          echo "SMTP_PORT=$(echo $SECRETS_JSON | jq -r '.SMTP_PORT')" >> $GITHUB_ENV
+          echo "SMTP_USER=$(echo $SECRETS_JSON | jq -r '.SMTP_USER')" >> $GITHUB_ENV
+          echo "SMTP_PASS=$(echo $SECRETS_JSON | jq -r '.SMTP_PASS')" >> $GITHUB_ENV
+          echo "SMTP_SECURE=$(echo $SECRETS_JSON | jq -r '.SMTP_SECURE')" >> $GITHUB_ENV
+          echo "EMAIL_FROM=$(echo $SECRETS_JSON | jq -r '.EMAIL_FROM')" >> $GITHUB_ENV
+          echo "DELIVERY_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.DELIVERY_ENCRYPTION_KEY')" >> $GITHUB_ENV
+
       - name: Copy docker-compose to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: 3.111.186.159
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ env.EC2_HOST }}
+          username: ec2-user
+          key: ${{ env.SSH_PRIVATE_KEY }}
           source: docker-compose.prod.yml
-          target: /home/ubuntu/easymod-backend/
+          target: /home/ec2-user/easymod-backend/
 
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
@@ -61,47 +169,47 @@ jobs:
           ECR_IMAGE: ${{ needs.build-and-push.outputs.ecr-image }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
-          PORT: ${{ secrets.PORT }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          BASE_URL: ${{ secrets.BASE_URL }}
-          BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT }}
-          ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
-          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
-          JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
-          JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-          PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
-          CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
-          WF1_WEBHOOK_URL: ${{ secrets.WF1_WEBHOOK_URL }}
-          INTERNAL_WEBHOOK_SECRET: ${{ secrets.INTERNAL_WEBHOOK_SECRET }}
-          META_WEBHOOK_APP_SECRET: ${{ secrets.META_WEBHOOK_APP_SECRET }}
-          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
-          EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
-          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
-          GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
-          Google_Gemini_Api_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX: ${{ secrets.PINECONE_INDEX }}
-          PINECONE_NAMESPACE: ${{ secrets.PINECONE_NAMESPACE }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          REDIS_URL: ${{ env.REDIS_URL }}
+          PORT: ${{ env.PORT }}
+          CORS_ORIGINS: ${{ env.CORS_ORIGINS }}
+          FRONTEND_URL: ${{ env.FRONTEND_URL }}
+          BASE_URL: ${{ env.BASE_URL }}
+          BODY_SIZE_LIMIT: ${{ env.BODY_SIZE_LIMIT }}
+          ALLOW_SELF_SIGNED_TLS: ${{ env.ALLOW_SELF_SIGNED_TLS }}
+          JWT_ACCESS_SECRET: ${{ env.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ env.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN: ${{ env.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN: ${{ env.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET: ${{ env.SESSION_SECRET }}
+          PAYMENT_ENCRYPTION_KEY: ${{ env.PAYMENT_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY: ${{ env.CHANNEL_ENCRYPTION_KEY }}
+          WF1_WEBHOOK_URL: ${{ env.WF1_WEBHOOK_URL }}
+          INTERNAL_WEBHOOK_SECRET: ${{ env.INTERNAL_WEBHOOK_SECRET }}
+          META_WEBHOOK_APP_SECRET: ${{ env.META_WEBHOOK_APP_SECRET }}
+          META_WEBHOOK_VERIFY_TOKEN: ${{ env.META_WEBHOOK_VERIFY_TOKEN }}
+          EMBEDDING_PROVIDER: ${{ env.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL: ${{ env.EMBEDDING_MODEL }}
+          GEMINI_EMBEDDING_MODEL: ${{ env.GEMINI_EMBEDDING_MODEL }}
+          Google_Gemini_Api_KEY: ${{ env.Google_Gemini_Api_KEY }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+          PINECONE_API_KEY: ${{ env.PINECONE_API_KEY }}
+          PINECONE_INDEX: ${{ env.PINECONE_INDEX }}
+          PINECONE_NAMESPACE: ${{ env.PINECONE_NAMESPACE }}
+          SMTP_HOST: ${{ env.SMTP_HOST }}
+          SMTP_PORT: ${{ env.SMTP_PORT }}
+          SMTP_USER: ${{ env.SMTP_USER }}
+          SMTP_PASS: ${{ env.SMTP_PASS }}
+          SMTP_SECURE: ${{ env.SMTP_SECURE }}
+          EMAIL_FROM: ${{ env.EMAIL_FROM }}
+          DELIVERY_ENCRYPTION_KEY: ${{ env.DELIVERY_ENCRYPTION_KEY }}
         with:
-          host: 3.111.186.159
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ env.EC2_HOST }}
+          username: ec2-user
+          key: ${{ env.SSH_PRIVATE_KEY }}
           envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,CHANNEL_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY
           script: |
             set -eo pipefail
