@@ -33,7 +33,6 @@ jobs:
           
           # Output key secrets for other steps
           echo "ec2_host=$(echo $SECRETS_JSON | jq -r '.EC2_HOST')" >> $GITHUB_OUTPUT
-          echo "ssh_key=$(echo $SECRETS_JSON | jq -r '.SSH_PRIVATE_KEY')" >> $GITHUB_OUTPUT
           
           # Export all secrets as environment variables
           echo "POSTGRES_DB=$(echo $SECRETS_JSON | jq -r '.POSTGRES_DB')" >> $GITHUB_ENV
@@ -159,7 +158,7 @@ jobs:
         with:
           host: ${{ env.EC2_HOST }}
           username: ec2-user
-          key: ${{ env.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: docker-compose.prod.yml
           target: /home/ec2-user/easymod-backend/
 
@@ -209,7 +208,7 @@ jobs:
         with:
           host: ${{ env.EC2_HOST }}
           username: ec2-user
-          key: ${{ env.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,CHANNEL_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY
           script: |
             set -eo pipefail
