@@ -114,7 +114,6 @@ jobs:
           
           # Export all secrets as environment variables
           echo "EC2_HOST=$(echo $SECRETS_JSON | jq -r '.EC2_HOST')" >> $GITHUB_ENV
-          echo "SSH_PRIVATE_KEY=$(echo $SECRETS_JSON | jq -r '.SSH_PRIVATE_KEY')" >> $GITHUB_ENV
           echo "POSTGRES_DB=$(echo $SECRETS_JSON | jq -r '.POSTGRES_DB')" >> $GITHUB_ENV
           echo "POSTGRES_USER=$(echo $SECRETS_JSON | jq -r '.POSTGRES_USER')" >> $GITHUB_ENV
           echo "POSTGRES_PASSWORD=$(echo $SECRETS_JSON | jq -r '.POSTGRES_PASSWORD')" >> $GITHUB_ENV
