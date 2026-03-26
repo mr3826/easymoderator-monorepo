@@ -106,20 +106,24 @@ module.exports = {
                 `);
             });
 
-            // Index on ai_tags for tag-based search (jsonb_path_ops for JSONB containment queries)
-            try {
+            // Ensure ai_tags is JSONB (may be JSON if column was created by Sequelize sync)
+            await sequelize.query(`
+                ALTER TABLE products
+                ALTER COLUMN ai_tags TYPE JSONB USING ai_tags::text::jsonb;
+            `).catch(() => {}); // no-op if already JSONB
+
+            // Index on ai_tags for tag-based search
+            await sequelize.query(`
+                CREATE INDEX IF NOT EXISTS products_ai_tags_idx
+                ON products USING GIN (ai_tags jsonb_path_ops)
+                WHERE deleted_at IS NULL;
+            `).catch(async () => {
+                // Fallback without partial index if column still isn't JSONB
                 await sequelize.query(`
                     CREATE INDEX IF NOT EXISTS products_ai_tags_idx
-                    ON products USING GIN (ai_tags jsonb_path_ops)
-                    WHERE deleted_at IS NULL;
-                `);
-            } catch (err) {
-                // Fallback: skip partial index if ai_tags isn't JSONB yet (e.g. column type mismatch)
-                await sequelize.query(`
-                    CREATE INDEX IF NOT EXISTS products_ai_tags_idx
-                    ON products USING GIN (ai_tags jsonb_path_ops);
-                `);
-            }
+                    ON products USING GIN (ai_tags);
+                `).catch(() => {}); // skip entirely if still failing
+            });
         } else {
             // SQLite: Simple FTS index (basic text search)
             try {
