@@ -280,17 +280,6 @@ class DeliveryController {
             integration.is_connected = false;
             await integration.save();
 
-            // TODO: Log audit event
-            // await auditLog({
-            //     user_id: userId,
-            //     shop_id: shopId,
-            //     action: 'delivery_provider_disconnected',
-            //     resource_type: 'delivery_integration',
-            //     resource_id: integration.id,
-            //     old_values: { is_connected: true },
-            //     new_values: { is_connected: false }
-            // });
-
             res.json({
                 success: true,
                 message: `${provider === 'pathao' ? 'Pathao' : 'Steadfast'} disconnected successfully`
