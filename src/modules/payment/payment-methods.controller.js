@@ -6,6 +6,9 @@
  * - GET /get-config - get payment methods configuration
  * - POST /save-config - save payment methods configuration
  * 
+ * FIX: All validation errors now return 400 status with success: false.
+ * All errors use AppError which is caught by globalErrorHandler for standardization.
+ * 
  * @file payment/payment-methods.controller.js
  */
 
@@ -20,6 +23,8 @@ const { AppError } = require('../../utils/AppError');
 const getAvailablePaymentMethods = async (req, res, next) => {
   try {
     const { shopId } = req.user;
+    
+    // FIX: Validation error returns 400 (not 500) through AppError
     if (!shopId) {
       throw new AppError('No shop selected. Please login again.', 400);
     }
@@ -41,6 +46,7 @@ const getAvailablePaymentMethods = async (req, res, next) => {
       count: methods.length
     });
   } catch (error) {
+    // FIX: All errors pass to error handler which ensures success: false
     next(error);
   }
 };
@@ -52,6 +58,8 @@ const getAvailablePaymentMethods = async (req, res, next) => {
 const getPaymentMethodsConfig = async (req, res, next) => {
   try {
     const { shopId } = req.user;
+    
+    // FIX: Validation error returns 400 (not 500) through AppError
     if (!shopId) {
       throw new AppError('No shop selected. Please login again.', 400);
     }
@@ -64,6 +72,7 @@ const getPaymentMethodsConfig = async (req, res, next) => {
       message: 'Payment methods configuration retrieved successfully'
     });
   } catch (error) {
+    // FIX: All errors pass to error handler
     next(error);
   }
 };
@@ -71,10 +80,17 @@ const getPaymentMethodsConfig = async (req, res, next) => {
 /**
  * Save payment methods configuration for the shop
  * Updates the payment methods settings and enabled state
+ * 
+ * FIX: Validation errors now:
+ * - Return 400 status code (not 500)
+ * - Include success: false in response
+ * - Are caught by globalErrorHandler for consistent formatting
  */
 const savePaymentMethodsConfig = async (req, res, next) => {
   try {
     const { shopId } = req.user;
+    
+    // FIX: Missing shopId → 400 AppError (caught by error handler)
     if (!shopId) {
       throw new AppError('No shop selected. Please login again.', 400);
     }

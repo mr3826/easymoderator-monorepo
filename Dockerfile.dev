@@ -2,12 +2,21 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies
+# Install build dependencies including postgresql client for connection checks
+RUN apk add --no-cache postgresql-client bash
+
+# Copy package files
 COPY package*.json ./
-RUN npm ci
+
+# Install dependencies
+RUN npm install
 
 # Copy source code
 COPY . .
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
@@ -19,4 +28,5 @@ USER nodejs
 
 EXPOSE 3000
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["npm", "run", "dev"]

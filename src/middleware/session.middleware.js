@@ -31,10 +31,14 @@ function createSessionMiddleware() {
         });
         console.log('✅ Session store: Redis');
     } else {
-        if (config.env === 'production' || config.env === 'staging') {
-            throw new Error('Redis is required for sessions in production/staging');
+        if (config.env === 'production') {
+            throw new Error('Redis is required for sessions in production');
         }
-        console.warn('⚠️  Session store: Memory (not recommended for production)');
+        if (config.env === 'staging') {
+            console.warn('⚠️  Session store: Memory (using in-memory for staging test)');
+        } else {
+            console.warn('⚠️  Session store: Memory (not recommended for production)');
+        }
     }
 
     return session(sessionConfig);

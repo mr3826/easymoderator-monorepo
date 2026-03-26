@@ -35,8 +35,24 @@ process.on('uncaughtException', (err) => {
 
         // Ensure Redis is available for production/staging
         if (config.env === 'production' || config.env === 'staging') {
-            const redis = getRedisClient();
-            await redis.ping();
+            try {
+                const redis = getRedisClient();
+                if (redis) {
+                    // Wait 1 second for connection to establish before ping
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    await redis.ping();
+                    console.log('✅ Redis connection verified');
+                } else {
+                    console.warn('⚠️  Redis not available, but continuing (may affect performance)');
+                }
+            } catch (redisErr) {
+                console.warn('⚠️  Redis verification failed:', redisErr.message);
+                if (config.env === 'production') {
+                    throw redisErr; // Fail hard in production
+                }
+                // Continue in staging with degraded mode
+                console.warn('Continuing in staging with in-memory fallback...');
+            }
         }
 
         // Sync models (disable in production or use migrations)

@@ -47,9 +47,9 @@ function getRedisClient() {
         return redisClient;
     }
 
-    // Bypass Redis in development if not configured or connection fails
-    if (!config.redisUrl && config.env === 'development') {
-        console.warn('⚠️  Redis not configured - using in-memory fallback for development');
+    // Bypass Redis in development/staging if not configured or connection fails
+    if (!config.redisUrl && (config.env === 'development' || config.env === 'staging')) {
+        console.warn('⚠️  Redis not configured - using in-memory fallback');
         return null;
     }
 

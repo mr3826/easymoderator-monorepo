@@ -13,9 +13,17 @@ const hasRedisConfig = !!(
     (config.redisHost && config.redisHost !== 'localhost' && config.redisHost !== '127.0.0.1')
 );
 
+// Allow staging to use memory store if Redis not explicitly configured
+const forceMemoryStore = (config.env === 'staging' || config.env === 'development') && !process.env.REDIS_URL;
+
+// DEBUG
+if (config.env === 'staging' || config.env === 'development') {
+    console.log(`[REDIS DEBUG] env=${config.env}, REDIS_URL=${process.env.REDIS_URL}, redisHost=${config.redisHost}, hasRedisConfig=${hasRedisConfig}, forceMemoryStore=${forceMemoryStore}`);
+}
+
 let sessionRedis, cacheRedis, rateLimitRedis, legacyRedis;
 
-if (hasRedisConfig) {
+if (hasRedisConfig && !forceMemoryStore) {
     const Redis = require('ioredis');
 
     const baseOpts = config.redisUrl

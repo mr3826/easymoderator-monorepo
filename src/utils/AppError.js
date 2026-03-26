@@ -1,77 +1,79 @@
-class AppError extends Error {
-    constructor(message, statusCode) {
-        super(message);
-        this.statusCode = statusCode;
-        this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
-        this.isOperational = true;
+const { createLogger } = require('./structured-logger');
+const logger = createLogger('AppError');
 
-        Error.captureStackTrace(this, this.constructor);
-    }
+const SENSITIVE_PATTERNS = [
+  /postgresql:\/\/[^\s]+/gi, /mysql:\/\/[^\s]+/gi, /mongodb:\/\/[^\s]+/gi,
+  /api[_-]?key[\s:='"]*[\w\-./=]+/gi, /(bearer|token)[\s:='"]*[\w\-./=]+/gi,
+  /AKIA[0-9A-Z]{16}/g, /sk_[a-z0-9]{24,}/gi, /pk_[a-z0-9]{24,}/gi,
+  /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[\w\-/.=+]+/g,
+  /\+?[0-9]{1,3}[\s.-]?[0-9]{3}[\s.-]?[0-9]{3}[\s.-]?[0-9]{4}/g,
+  /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g
+];
+
+const sanitizeErrorMessage = (message) => {
+  if (!message || typeof message !== 'string') return 'An error occurred';
+  let sanitized = message;
+  SENSITIVE_PATTERNS.forEach(p => { if (p.test(sanitized)) sanitized = sanitized.replace(p, '[REDACTED]'); });
+  sanitized = sanitized.replace(/shop_[a-zA-Z0-9]{10,}/gi, '[SHOP_ID]')
+    .replace(/user_[a-zA-Z0-9]{10,}/gi, '[USER_ID]')
+    .replace(/integration_[a-zA-Z0-9]{10,}/gi, '[INTEGRATION_ID]')
+    .replace(/txn_[a-zA-Z0-9]{10,}/gi, '[TXN_ID]')
+    .replace(/\/(?:home|var|opt|srv|usr)\/.+/gi, '[FILE_PATH]');
+  if (sanitized.length > 1000) sanitized = sanitized.substring(0, 1000) + '...[truncated]';
+  return sanitized;
+};
+
+class AppError extends Error {
+  constructor(message, status = 500, code = 'INTERNAL_ERROR', details = {}) {
+    super(message);
+    this.name = 'AppError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+    Error.captureStackTrace(this, this.constructor);
+  }
+
+  toJSON(requestId = 'unknown') {
+    return {
+      success: false,
+      message: sanitizeErrorMessage(this.message),
+      code: this.code,
+      requestId,
+      timestamp: this.timestamp
+    };
+  }
+
+  getFullContext() {
+    return {
+      name: this.name,
+      message: this.message,
+      status: this.status,
+      code: this.code,
+      details: this.details,
+      stack: this.stack,
+      timestamp: this.timestamp
+    };
+  }
 }
 
-/**
- * Sanitize error messages to remove sensitive information
- * @param {string} message - Original error message
- * @returns {string} Sanitized message
- */
-const sanitizeErrorMessage = (message) => {
-    if (!message) return 'An error occurred';
-    
-    // Remove passwords, API keys, tokens, etc. - remove the entire key=value or key: value
-    let sanitized = String(message)
-        .replace(/password\s*=\s*[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/api[_-]?key\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/token\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/authorization\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/bearer\s+[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/secret\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
-        .replace(/key\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
-        // Also remove standalone passwords/keys/tokens
-        .replace(/(\bpassword\b.*?[:=].*?)[\s,;)]/gi, '[REDACTED] ')
-        .replace(/\bpassword\b/gi, '[REDACTED]')
-        .replace(/\bsecret\b/gi, '[REDACTED]');
-    
-    return sanitized;
-};
-
 const globalErrorHandler = (err, req, res, next) => {
-    err.statusCode = err.statusCode || 500;
-    err.status = err.status || 'error';
-
-    const requestId = req.requestId || req.headers['x-request-id'] || res.getHeader('X-Request-ID') || null;
-    const path = req.originalUrl;
-    const method = req.method;
-
-    if (req.logger) {
-        req.logger.error('Unhandled error', err, {
-            method,
-            path,
-            statusCode: err.statusCode,
-            requestId
-        });
-    } else {
-        console.error('Unhandled error:', {
-            method,
-            path,
-            statusCode: err.statusCode,
-            message: err.message,
-            requestId,
-            stack: err.stack
-        });
-    }
-
-    // Standardized error response with success: false and sanitized message
-    res.status(err.statusCode).json({
-        success: false,
-        message: sanitizeErrorMessage(err.message),
-        code: err.statusCode.toString(),
-        requestId,
-        path,
-        method
-    });
+  const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
+  let appError = err;
+  if (!(err instanceof AppError)) {
+    appError = new AppError(err.message || 'Internal Server Error', err.status || 500, 'INTERNAL_ERROR', { originalError: err.name });
+  }
+  const statusCode = appError.status || 500;
+  const logContext = { ...appError.getFullContext(), requestId, method: req.method, url: req.originalUrl, clientIp: req.ip };
+  if (statusCode >= 500) logger.error('Server error', logContext);
+  else logger.warn('Client error', logContext);
+  const response = appError.toJSON(requestId);
+  res.status(statusCode).json(response);
 };
 
-module.exports = {
-    AppError,
-    globalErrorHandler,
+const sendSuccess = (res, data, status = 200, message = 'Success') => {
+  const requestId = res.req?.requestId || res.req?.headers?.['x-request-id'] || 'unknown';
+  res.status(status).json({ success: true, data, message, requestId, timestamp: new Date().toISOString() });
 };
+
+module.exports = { AppError, globalErrorHandler, sendSuccess, sanitizeErrorMessage };
