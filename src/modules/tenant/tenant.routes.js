@@ -33,4 +33,13 @@ router.get('/:tenantId/validate',
     tenantController.validateTenant
 );
 
+// GET /tenant/white-label - Get white-label branding config for current shop
+router.get('/white-label', tenantController.getWhiteLabel);
+
+// PUT /tenant/white-label - Update white-label branding config for current shop
+router.put('/white-label', tenantController.updateWhiteLabel);
+
+// GET /tenant/white-label/css - Get CSS custom properties for current shop branding
+router.get('/white-label/css', tenantController.getWhiteLabelCss);
+
 module.exports = router;

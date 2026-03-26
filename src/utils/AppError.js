@@ -9,6 +9,31 @@ class AppError extends Error {
     }
 }
 
+/**
+ * Sanitize error messages to remove sensitive information
+ * @param {string} message - Original error message
+ * @returns {string} Sanitized message
+ */
+const sanitizeErrorMessage = (message) => {
+    if (!message) return 'An error occurred';
+    
+    // Remove passwords, API keys, tokens, etc. - remove the entire key=value or key: value
+    let sanitized = String(message)
+        .replace(/password\s*=\s*[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/api[_-]?key\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/token\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/authorization\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/bearer\s+[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/secret\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
+        .replace(/key\s*[=:]\s*[^\s,;)]+/gi, '[REDACTED]')
+        // Also remove standalone passwords/keys/tokens
+        .replace(/(\bpassword\b.*?[:=].*?)[\s,;)]/gi, '[REDACTED] ')
+        .replace(/\bpassword\b/gi, '[REDACTED]')
+        .replace(/\bsecret\b/gi, '[REDACTED]');
+    
+    return sanitized;
+};
+
 const globalErrorHandler = (err, req, res, next) => {
     err.statusCode = err.statusCode || 500;
     err.status = err.status || 'error';
@@ -35,16 +60,14 @@ const globalErrorHandler = (err, req, res, next) => {
         });
     }
 
+    // Standardized error response with success: false and sanitized message
     res.status(err.statusCode).json({
         success: false,
-        data: null,
-        error: {
-            code: err.statusCode.toString(),
-            message: err.message,
-            requestId,
-            path,
-            method
-        }
+        message: sanitizeErrorMessage(err.message),
+        code: err.statusCode.toString(),
+        requestId,
+        path,
+        method
     });
 };
 

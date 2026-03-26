@@ -407,6 +407,56 @@ const getChannelConfig = async (req, res, next) => {
     }
 };
 
+/**
+ * Bug Fix: Facebook Token Auto-Refresh
+ * GET /channel/expiring-tokens[?withinDays=7]
+ * Returns channels for the authenticated shop whose tokens expire within
+ * the specified window (default 7 days), including already-expired tokens.
+ */
+const getExpiringTokens = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const withinDays = parseInt(req.query.withinDays, 10) || 7;
+        if (withinDays < 1 || withinDays > 90) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'withinDays must be between 1 and 90'
+                }
+            });
+        }
+
+        const channels = await channelService.getExpiringChannels(
+            req.user.userId,
+            shopId,
+            withinDays
+        );
+
+        res.status(200).json({
+            success: true,
+            data: channels,
+            meta: {
+                total: channels.length,
+                within_days: withinDays,
+                checked_at: new Date().toISOString()
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getChannels,
@@ -416,6 +466,18 @@ module.exports = {
     deleteChannelById,
     connectChannelByType,
     disconnectChannelById,
+    getExpiringTokens,
+    // Bug #10: unified full config (connection + AI behaviour) in one call
+    getChannelFullConfig: async (req, res, next) => {
+        try {
+            const { shopId } = req.user;
+            const { id } = req.params;
+            const config = await channelService.getChannelFullConfig(id, req.user.userId, shopId);
+            res.json({ success: true, data: config });
+        } catch (error) {
+            next(error);
+        }
+    },
     // Legacy methods for backward compatibility
     getChannelsLegacy,
     createChannel,

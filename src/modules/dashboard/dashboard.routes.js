@@ -12,6 +12,9 @@ router.use(authenticate);
 // RESTful routes
 router.get('/', validate(dashboardValidator.getDashboardMetrics), dashboardController.getDashboardMetricsRest);
 
+// Bug #15: separate chart route — loaded lazily after KPI summary renders
+router.get('/chart', dashboardController.getDashboardChart);
+
 // Analytics endpoints
 router.post('/analytics/events', dashboardController.logAnalyticsEvent);
 router.post('/analytics/metrics', dashboardController.logAnalyticsMetric);

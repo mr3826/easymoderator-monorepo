@@ -160,10 +160,33 @@ const getDashboardMetrics = async (req, res, next) => {
     }
 };
 
+/**
+ * Bug #15: Lazy chart endpoint — returns only the GROUP-BY order-per-day data.
+ * Called after the KPI summary is already rendered so the heavy query doesn't
+ * block the initial page paint.
+ */
+const getDashboardChart = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+        const period    = parseInt(req.query.period) || 30;
+        const chartData = await dashboardService.getDashboardChart(shopId, period);
+        res.status(200).json({ success: true, data: chartData });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getDashboardMetricsRest,
     getDashboardMetricsById,
+    getDashboardChart,
     logAnalyticsEvent,
     logAnalyticsMetric,
     getAnalyticsDashboard,

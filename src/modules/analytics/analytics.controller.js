@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const KnowledgeGap = require('./knowledge-gap.entity');
+const enhancedAnalyticsService = require('./analytics-enhanced.service');
 
 class AnalyticsController {
     /**
@@ -70,6 +71,78 @@ class AnalyticsController {
         } catch (error) {
             console.error('Get knowledge gaps error:', error);
             res.status(500).json({ success: false, error: 'Failed to get knowledge gaps' });
+        }
+    }
+
+    /**
+     * GET /api/analytics/top-unanswered
+     * Returns the most common unanswered questions for the shop.
+     */
+    static async getTopUnansweredQuestions(req, res) {
+        try {
+            const shop_id = req.user?.shopId || req.query.shop_id;
+            if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
+
+            const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+            const data = await enhancedAnalyticsService.getTopUnansweredQuestions(shop_id, limit);
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error('getTopUnansweredQuestions error:', error);
+            res.status(500).json({ success: false, error: 'Failed to get unanswered questions' });
+        }
+    }
+
+    /**
+     * GET /api/analytics/peak-hours
+     * Returns message volume grouped by hour-of-day over the past N days.
+     */
+    static async getPeakHours(req, res) {
+        try {
+            const shop_id = req.user?.shopId || req.query.shop_id;
+            if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
+
+            const days = Math.min(parseInt(req.query.days) || 30, 365);
+            const data = await enhancedAnalyticsService.getPeakHours(shop_id, days);
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error('getPeakHours error:', error);
+            res.status(500).json({ success: false, error: 'Failed to get peak hours' });
+        }
+    }
+
+    /**
+     * GET /api/analytics/intent-breakdown
+     * Returns conversation count grouped by detected intent.
+     */
+    static async getIntentBreakdown(req, res) {
+        try {
+            const shop_id = req.user?.shopId || req.query.shop_id;
+            if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
+
+            const days = Math.min(parseInt(req.query.days) || 30, 365);
+            const data = await enhancedAnalyticsService.getIntentBreakdown(shop_id, days);
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error('getIntentBreakdown error:', error);
+            res.status(500).json({ success: false, error: 'Failed to get intent breakdown' });
+        }
+    }
+
+    /**
+     * GET /api/analytics/confidence-distribution
+     * Returns AI confidence scores bucketed into 0-25, 25-50, 50-75, 75-100 ranges.
+     */
+    static async getConfidenceDistribution(req, res) {
+        try {
+            const shop_id = req.user?.shopId || req.query.shop_id;
+            if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
+
+            const days = Math.min(parseInt(req.query.days) || 30, 365);
+            const data = await enhancedAnalyticsService.getConfidenceDistribution(shop_id, days);
+            res.json({ success: true, data });
+        } catch (error) {
+            console.error('getConfidenceDistribution error:', error);
+            res.status(500).json({ success: false, error: 'Failed to get confidence distribution' });
         }
     }
 }

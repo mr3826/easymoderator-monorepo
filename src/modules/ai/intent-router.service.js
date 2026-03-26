@@ -23,10 +23,15 @@ const ragService = require('../rag/rag.service');
 const { MemoryCache } = require('../../config/memory-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
+// Bug #1: persist summaries through the Conversation model so they survive
+// across server restarts and multi-worker deployments
+const { Conversation } = require('../conversation/conversation.entity');
 
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '300', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
-const SUMMARY_THRESHOLD = parseInt(process.env.SUMMARY_THRESHOLD || '10', 10);
+// FIX BUG #1: Increase summary threshold from 10 to 20 to maintain more conversation context.
+// Keeps recent turns verbatim longer, reducing chance AI forgets context.
+const SUMMARY_THRESHOLD = parseInt(process.env.SUMMARY_THRESHOLD || '20', 10);
 const ROUTER_DISABLED = process.env.INTENT_ROUTER_DISABLED === 'true';
 // Fix #15: configurable FAQ cap in system prompt (was hard-coded 20)
 const MAX_FAQ_IN_PROMPT = parseInt(process.env.MAX_FAQ_IN_PROMPT || '50', 10);
@@ -71,28 +76,63 @@ const buildSummary = async (history) => {
  * Get or build a rolling conversation summary.
  * The summary covers all turns except the latest SUMMARY_THRESHOLD/2 ones
  * (those are kept verbatim for recency).
+ *
+ * Bug #1 fix: two-layer persistence —
+ *   L1: in-process MemoryCache (fast, lost on restart)
+ *   L2: Conversation.metadata.ai_summary (DB, survives restarts + multi-worker)
  */
 const getOrBuildSummary = async (conversationId, history) => {
     if (!conversationId || !history || history.length <= SUMMARY_THRESHOLD) return null;
 
+    // L1: check in-process cache
     const cacheKey = summaryCacheKey(conversationId);
     const cached = await intentCache.get(cacheKey);
     if (cached) return cached;
 
+    // L2: check DB metadata (survives restart / other workers)
+    try {
+        const conv = await Conversation.findByPk(conversationId, {
+            attributes: ['metadata']
+        });
+        if (conv?.metadata?.ai_summary) {
+            // Warm in-process cache from DB value
+            await intentCache.setex(cacheKey, 1800, conv.metadata.ai_summary);
+            return conv.metadata.ai_summary;
+        }
+    } catch (_) { /* non-fatal — fall through to rebuild */ }
+
+    // Build fresh summary from older turns
     const olderTurns = history.slice(0, history.length - Math.floor(SUMMARY_THRESHOLD / 2));
     const summary = await buildSummary(olderTurns);
 
-    // Cache for 30 minutes
+    // Write through: L1 cache + L2 DB
     await intentCache.setex(cacheKey, 1800, summary);
+    try {
+        await Conversation.update(
+            { metadata: { ai_summary: summary, ai_summary_at: new Date().toISOString() } },
+            { where: { id: conversationId } }
+        );
+    } catch (_) { /* non-fatal — cache is still warm */ }
+
     return summary;
 };
 
 /**
  * Invalidate the summary cache when a new message arrives.
  * Called externally after each message ingestion.
+ * Clears both L1 and the DB field so the next call rebuilds with fresh history.
  */
 const invalidateSummary = async (conversationId) => {
     await intentCache.del(summaryCacheKey(conversationId));
+    try {
+        const conv = await Conversation.findByPk(conversationId, { attributes: ['id', 'metadata'] });
+        if (conv?.metadata?.ai_summary) {
+            const newMeta = { ...conv.metadata };
+            delete newMeta.ai_summary;
+            delete newMeta.ai_summary_at;
+            await conv.update({ metadata: newMeta });
+        }
+    } catch (_) { /* non-fatal */ }
 };
 
 // ---------------------------------------------------------------------------
@@ -110,6 +150,7 @@ const invalidateSummary = async (conversationId) => {
  * @param {string} [params.language]       - Detected language (en / bn / mixed)
  * @param {string} [params.systemPrompt]   - Pre-built system prompt (shop knowledge)
  * @param {string} [params.preferredProvider] - Force a specific LLM provider
+ * @param {number} [params.confidenceThreshold] - Per-shop FAQ match threshold (0–1, overrides env default)
  * @returns {Promise<{ response: string, confidence: number, source: string, provider?: string }>}
  */
 const route = async ({
@@ -120,8 +161,17 @@ const route = async ({
     language = 'mixed',
     systemPrompt = '',
     preferredProvider,
-    imageUrls = []
+    imageUrls = [],
+    // Bug #11: accept per-shop threshold so shops can tune for Banglish noise.
+    // Falls back to SEMANTIC_THRESHOLD (env var) if not provided.
+    confidenceThreshold
 }) => {
+    // Resolve effective threshold: per-shop value wins over global env default.
+    // Shop stores it as 0–100 integer (e.g. 75 means 0.75); convert accordingly.
+    const effectiveThreshold = confidenceThreshold != null
+        ? (confidenceThreshold > 1 ? confidenceThreshold / 100 : confidenceThreshold)
+        : SEMANTIC_THRESHOLD;
+
     if (ROUTER_DISABLED) {
         return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls });
     }
@@ -148,7 +198,8 @@ const route = async ({
         });
 
         const topHit = ragResult?.results?.[0];
-        if (topHit && topHit.score >= SEMANTIC_THRESHOLD) {
+        // Bug #11: use per-shop threshold instead of global constant
+        if (topHit && topHit.score >= effectiveThreshold) {
             const faqContent = topHit.content;
             // Build a concise answer using the FAQ snippet + LLM polish
             const { text: answer, provider } = await llmService.chat({
@@ -369,10 +420,18 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false)
         ? 'The customer has sent an image. Look at the image carefully. Identify the product shown, describe it, and help the customer with their query about it (price, availability, ordering, etc.). Respond contextually about the product in the image.'
         : '';
 
+    // FIX BUG #1: Add explicit instructions to use conversation history for context continuity
+    const contextInstruction = `IMPORTANT: Use the conversation history above to maintain context. 
+- Reference previous questions and answers to avoid repetition
+- Acknowledge what was already discussed
+- Maintain consistency with earlier statements
+- Use customer info and past preferences when relevant`;
+
     return [
         `You are a helpful customer service assistant for ${businessInfo.shopName || 'this shop'}.`,
         langInstruction,
         imageInstruction,
+        contextInstruction,
         businessInfo.address ? `Address: ${businessInfo.address}` : '',
         businessInfo.phone ? `Phone: ${businessInfo.phone}` : '',
         businessInfo.openingHours ? `Hours: ${businessInfo.openingHours}` : '',

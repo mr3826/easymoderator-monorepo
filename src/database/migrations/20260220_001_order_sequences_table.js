@@ -17,13 +17,18 @@ module.exports = {
           next_number INTEGER NOT NULL DEFAULT 1
         )
       `);
-      await sequelize.query(`
-        INSERT INTO order_sequences (shop_id, next_number)
-        SELECT shop_id, COALESCE(MAX(CAST(SUBSTRING(order_number FROM 5) AS INTEGER)), 0) + 1
-        FROM orders WHERE order_number IS NOT NULL AND order_number ~ '^ORD-[0-9]+$'
-        GROUP BY shop_id
-        ON CONFLICT (shop_id) DO NOTHING
-      `);
+      try {
+        await sequelize.query(`
+          INSERT INTO order_sequences (shop_id, next_number)
+          SELECT shop_id, COALESCE(MAX(CAST(SUBSTRING(order_number FROM 5) AS INTEGER)), 0) + 1
+          FROM orders WHERE order_number IS NOT NULL AND order_number ~ '^ORD-[0-9]+$'
+          GROUP BY shop_id
+          ON CONFLICT (shop_id) DO NOTHING
+        `);
+      } catch (error) {
+        // Orders table doesn't exist yet, which is fine
+        console.log('Orders table not found, skipping order sequence initialization');
+      }
     } else {
       await sequelize.query(`
         CREATE TABLE IF NOT EXISTS order_sequences (
@@ -32,21 +37,26 @@ module.exports = {
           FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
         )
       `);
-      const [rows] = await sequelize.query(`
-        SELECT shop_id, order_number FROM orders WHERE order_number IS NOT NULL ORDER BY created_at DESC
-      `);
-      const maxByShop = {};
-      for (const r of rows || []) {
-        if (r.shop_id && r.order_number && /^ORD-\d+$/.test(r.order_number)) {
-          const n = parseInt(r.order_number.replace('ORD-', ''), 10);
-          if (!(r.shop_id in maxByShop) || maxByShop[r.shop_id] < n) maxByShop[r.shop_id] = n;
+      try {
+        const [rows] = await sequelize.query(`
+          SELECT shop_id, order_number FROM orders WHERE order_number IS NOT NULL ORDER BY created_at DESC
+        `);
+        const maxByShop = {};
+        for (const r of rows || []) {
+          if (r.shop_id && r.order_number && /^ORD-\d+$/.test(r.order_number)) {
+            const n = parseInt(r.order_number.replace('ORD-', ''), 10);
+            if (!(r.shop_id in maxByShop) || maxByShop[r.shop_id] < n) maxByShop[r.shop_id] = n;
+          }
         }
-      }
-      for (const [sid, maxNum] of Object.entries(maxByShop)) {
-        await sequelize.query(
-          'INSERT OR REPLACE INTO order_sequences (shop_id, next_number) VALUES (?, ?)',
-          { replacements: [sid, maxNum + 1] }
-        );
+        for (const [sid, maxNum] of Object.entries(maxByShop)) {
+          await sequelize.query(
+            'INSERT OR REPLACE INTO order_sequences (shop_id, next_number) VALUES (?, ?)',
+            { replacements: [sid, maxNum + 1] }
+          );
+        }
+      } catch (error) {
+        // Orders table doesn't exist yet, which is fine
+        console.log('Orders table not found, skipping order sequence initialization');
       }
     }
   },

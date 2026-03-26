@@ -175,6 +175,7 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             total: total,
             delivery_address: orderData.delivery_address || null,
             payment_method: orderData.payment_method || null,
+            payment_method_id: orderData.paymentMethodId || orderData.payment_method_id || null,
             note: orderData.note,
             idempotency_key: requestId || null
         }, { transaction });
@@ -247,7 +248,9 @@ const createOrderInternal = async (shopId, orderData, requestId = null) => {
 };
 
 /**
- * Update an order (Status/Note only for now)
+ * Update an order
+ * Only allowed when order_status is 'pending' or 'draft'.
+ * Records an audit log entry of what changed.
  */
 const updateOrder = async (orderId, userId, shopId, updateData) => {
     await verifyShopAccess(userId, shopId);
@@ -260,17 +263,58 @@ const updateOrder = async (orderId, userId, shopId, updateData) => {
         throw new AppError('Order not found', 404);
     }
 
-    // Allow updating statuses and note
-    const allowedUpdates = ['order_status', 'payment_status', 'fulfillment_status', 'note'];
+    // Block edits once order has moved beyond editable states
+    const NON_EDITABLE_STATUSES = ['shipped', 'delivered', 'cancelled'];
+    if (NON_EDITABLE_STATUSES.includes(order.order_status)) {
+        throw new AppError(
+            `Cannot edit order with status '${order.order_status}'. Only orders not yet shipped can be edited.`,
+            409
+        );
+    }
+
+    // Allow updating statuses, note, and agent-editable fields
+    const allowedUpdates = [
+        'order_status', 'payment_status', 'fulfillment_status', 'note',
+        'quantity', 'notes', 'delivery_address', 'customer_phone', 'customer_name', 'payment_method'
+    ];
     const updates = {};
+    const auditChanges = {};
 
     Object.keys(updateData).forEach(key => {
-        if (allowedUpdates.includes(key)) {
-            updates[key] = updateData[key];
+        if (allowedUpdates.includes(key) && updateData[key] !== undefined) {
+            const oldValue = order[key];
+            const newValue = updateData[key];
+            if (oldValue !== newValue) {
+                auditChanges[key] = { from: oldValue, to: newValue };
+            }
+            updates[key] = newValue;
         }
     });
 
+    if (Object.keys(updates).length === 0) {
+        return await getOrderById(orderId, userId, shopId);
+    }
+
+    // Persist the changes and append audit trail to metadata
+    const existingMeta = order.metadata || {};
+    const auditLog = existingMeta.audit_log || [];
+    auditLog.push({
+        changed_by: userId,
+        changed_at: new Date().toISOString(),
+        changes: auditChanges
+    });
+    updates.metadata = { ...existingMeta, audit_log: auditLog };
+
     await order.update(updates);
+
+    // B2: When status changes to 'shipped', send tracking notification
+    if (auditChanges.order_status && auditChanges.order_status.to === 'shipped') {
+        const orderTrackingService = require('./order-tracking.service');
+        const trackingNumber = updateData.tracking_number || null;
+        orderTrackingService.sendTrackingNotification(order, shopId, { trackingNumber }).catch(err => {
+            console.warn('Tracking notification failed:', err.message);
+        });
+    }
 
     return await getOrderById(orderId, userId, shopId);
 };

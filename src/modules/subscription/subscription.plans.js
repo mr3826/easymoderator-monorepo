@@ -21,8 +21,16 @@ const PRICING_TIERS = Object.freeze({
             advanced_ai: false,
             priority_support: false,
             custom_branding: false,
-            rate_limit_per_minute: 10
-        }
+            rate_limit_per_minute: 10,
+            // Language support
+            allowed_languages: Object.freeze(['en']),
+            language_autodetect: false,
+            // Automation modes this plan may use
+            allowed_automation_modes: Object.freeze(['DRAFT'])
+        },
+        // AI settings keys this plan may write via PUT /shop/ai-settings or PUT /shop/llm-config.
+        // Any key not listed here will be rejected with HTTP 403.
+        ai_settings_access: Object.freeze(['automation_mode', 'auto_reply_enabled'])
     },
     [PlanCode.GROWTH]: {
         code: PlanCode.GROWTH,
@@ -37,8 +45,16 @@ const PRICING_TIERS = Object.freeze({
             advanced_ai: true,
             priority_support: false,
             custom_branding: false,
-            rate_limit_per_minute: 30
-        }
+            rate_limit_per_minute: 30,
+            allowed_languages: Object.freeze(['en', 'bn']),
+            language_autodetect: false,
+            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
+        },
+        ai_settings_access: Object.freeze([
+            'automation_mode', 'auto_reply_enabled', 'primary_language',
+            'confidence_threshold', 'max_auto_order_value',
+            'handoff_settings', 'payment_methods'
+        ])
     },
     [PlanCode.PRO]: {
         code: PlanCode.PRO,
@@ -53,8 +69,17 @@ const PRICING_TIERS = Object.freeze({
             advanced_ai: true,
             priority_support: true,
             custom_branding: false,
-            rate_limit_per_minute: 60
-        }
+            rate_limit_per_minute: 60,
+            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
+            language_autodetect: true,
+            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
+        },
+        ai_settings_access: Object.freeze([
+            'automation_mode', 'auto_reply_enabled', 'primary_language',
+            'confidence_threshold', 'max_auto_order_value',
+            'handoff_settings', 'payment_methods',
+            'required_fields', 'llm_model', 'llm_temperature'
+        ])
     },
     [PlanCode.BUSINESS]: {
         code: PlanCode.BUSINESS,
@@ -69,8 +94,17 @@ const PRICING_TIERS = Object.freeze({
             advanced_ai: true,
             priority_support: true,
             custom_branding: true,
-            rate_limit_per_minute: 120
-        }
+            rate_limit_per_minute: 120,
+            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
+            language_autodetect: true,
+            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
+        },
+        ai_settings_access: Object.freeze([
+            'automation_mode', 'auto_reply_enabled', 'primary_language',
+            'confidence_threshold', 'max_auto_order_value',
+            'handoff_settings', 'payment_methods',
+            'required_fields', 'llm_model', 'llm_temperature'
+        ])
     }
 });
 
@@ -98,6 +132,37 @@ const getTierByPlanName = (planName) => {
     return Object.values(PRICING_TIERS).find((tier) => tier.name.toLowerCase() === normalized) || null;
 };
 
+/**
+ * Return the set of AI settings keys this plan is allowed to write.
+ * Falls back to FREE tier on unknown plan codes (fail-safe).
+ * @param {string} planCode
+ * @returns {Set<string>}
+ */
+const getAiSettingsAccess = (planCode) => {
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    return new Set(tier.ai_settings_access);
+};
+
+/**
+ * Return the allowed primary_language values for this plan.
+ * @param {string} planCode
+ * @returns {Set<string>}
+ */
+const getAllowedLanguages = (planCode) => {
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    return new Set(tier.features.allowed_languages);
+};
+
+/**
+ * Return the allowed automation_mode values for this plan.
+ * @param {string} planCode
+ * @returns {Set<string>}
+ */
+const getAllowedAutomationModes = (planCode) => {
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    return new Set(tier.features.allowed_automation_modes);
+};
+
 module.exports = {
     PlanCode,
     UNLIMITED,
@@ -105,5 +170,8 @@ module.exports = {
     isUnlimitedLimit,
     isLimitExceeded,
     getTierByCode,
-    getTierByPlanName
+    getTierByPlanName,
+    getAiSettingsAccess,
+    getAllowedLanguages,
+    getAllowedAutomationModes
 };

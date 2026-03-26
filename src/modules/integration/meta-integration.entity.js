@@ -60,6 +60,12 @@ const MetaIntegration = sequelize.define('MetaIntegration', {
     unique: true,
     comment: 'Unique per-tenant verify token used for Meta webhook subscription handshake'
   },
+  // Bug #6: track when the long-lived token expires (Meta tokens live ~60 days)
+  token_expires_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the stored access token expires — null means unknown/non-expiring'
+  },
 }, {
   tableName: 'meta_integrations',
   indexes: [

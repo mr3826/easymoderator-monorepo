@@ -1,4 +1,5 @@
 const orderService = require('./order.service');
+const returnService = require('./return.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 
@@ -414,6 +415,9 @@ const createOrderRest = async (req, res, next) => {
 
 /**
  * RESTful: Update order by ID
+ * Only orders in 'pending' or 'draft' status can be edited.
+ * Edits to 'processing', 'shipped', or 'delivered' orders are rejected with 409.
+ * All changes are recorded in the order metadata audit_log.
  */
 const updateOrderById = async (req, res, next) => {
     try {
@@ -477,6 +481,184 @@ const deleteOrderById = async (req, res, next) => {
     }
 };
 
+/**
+ * Feature: Send tracking notification to customer
+ * POST /orders/:id/send-tracking
+ */
+const sendTrackingNotification = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { id } = req.params;
+        const { trackingNumber, courier, estimatedDelivery } = req.body;
+
+        if (!trackingNumber || !courier) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'trackingNumber and courier are required'
+                }
+            });
+        }
+
+        const orderTrackingService = require('./order-tracking.service');
+        const result = await orderTrackingService.sendTrackingNotification(id, shopId, {
+            trackingNumber,
+            courier,
+            estimatedDelivery: estimatedDelivery || null
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Bug #7: Bulk order import.
+ * POST /orders/bulk
+ * Body: { orders: [ { customer_name, customer_phone, delivery_address, items: [...], ... } ] }
+ * Returns per-row results so the frontend can show which rows succeeded and which failed.
+ */
+const bulkCreateOrders = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+
+        const { orders } = req.body;
+        if (!Array.isArray(orders) || orders.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'orders must be a non-empty array' }
+            });
+        }
+
+        if (orders.length > 500) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Maximum 500 orders per bulk import' }
+            });
+        }
+
+        const results = await Promise.allSettled(
+            orders.map((orderData, index) =>
+                orderService.createOrder(req.user.userId, shopId, orderData)
+                    .then(order => ({ index: index + 1, success: true, order_id: order.id, order_number: order.order_number }))
+                    .catch(err => ({ index: index + 1, success: false, error: err.message }))
+            )
+        );
+
+        const settled = results.map(r => r.value);
+        const succeeded = settled.filter(r => r.success).length;
+        const failed    = settled.filter(r => !r.success).length;
+
+        res.status(207).json({
+            success: true,
+            summary: { total: orders.length, succeeded, failed },
+            results: settled
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * D3: Initiate a return request for a delivered order
+ * POST /orders/:orderId/return
+ * Body: { customerId?, reason }
+ */
+const initiateReturn = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+
+        const { orderId } = req.params;
+        const { customerId, reason } = req.body;
+
+        const result = await returnService.initiateReturn(shopId, orderId, customerId, reason);
+        res.status(201).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * D3: Update return status for an order
+ * PATCH /orders/:orderId/return/status
+ * Body: { status }
+ */
+const updateReturnStatus = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+
+        const { orderId } = req.params;
+        const { status } = req.body;
+
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'status is required' }
+            });
+        }
+
+        const result = await returnService.updateReturnStatus(shopId, orderId, status);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * D3: List all return requests for the shop
+ * GET /orders/returns
+ */
+const getReturnRequests = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+
+        const filters = req.query;
+        const returns = await returnService.getReturnRequests(shopId, filters);
+        res.status(200).json({ success: true, data: returns });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getOrders,
@@ -487,6 +669,11 @@ module.exports = {
     createOrderRest,
     updateOrderById,
     deleteOrderById,
+    bulkCreateOrders,
+    // Return automation (D3)
+    initiateReturn,
+    updateReturnStatus,
+    getReturnRequests,
     // Legacy methods (for backward compatibility)
     createOrder,
     updateOrder,

@@ -14,6 +14,8 @@ router.use(authenticate);
 // RESTful routes
 router.get('/', validate(channelValidator.getChannels), channelController.getChannels);
 router.get('/config/:channelType', channelController.getChannelConfig);
+// Bug #10: full config endpoint — connection status + AI behaviour in one shot
+router.get('/:id/full-config', channelController.getChannelFullConfig);
 router.get('/:id', validate(channelValidator.getChannelById), channelController.getChannelById);
 router.post('/connect', validate(channelValidator.connectChannel), channelController.connectChannelByType);
 router.post('/:id/disconnect', validate(channelValidator.disconnectChannel), channelController.disconnectChannelById);

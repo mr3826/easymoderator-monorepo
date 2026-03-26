@@ -4,6 +4,24 @@ const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 const { setAuthCookies } = require('../../utils/auth-cookies');
+const { getAiSettingsAccess, getAllowedLanguages, getAllowedAutomationModes } = require('../subscription/subscription.plans');
+const cacheService = require('../../utils/cache.service');
+
+// Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
+// Fails open to 'FREE' so plan checks never lock out users due to DB errors.
+async function getShopPlanCode(shopId) {
+    try {
+        const cached = await cacheService.getForShop(shopId, 'subscription:plan_code');
+        if (cached) return cached;
+        const { Subscription } = require('../entities');
+        const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
+        const planCode = sub?.plan_code || 'FREE';
+        await cacheService.setForShop(shopId, 'subscription:plan_code', planCode, 300);
+        return planCode;
+    } catch (_) {
+        return 'FREE';
+    }
+}
 
 /**
  * Get all shops for user
@@ -294,6 +312,16 @@ const updateLLMConfig = async (req, res, next) => {
         const { shopId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
 
+        // Plan gate — LLM model/temperature config requires Pro or Business
+        const planCode = await getShopPlanCode(shopId);
+        const planAccess = getAiSettingsAccess(planCode);
+        if (!planAccess.has('llm_model')) {
+            throw new AppError(
+                `Your current plan (${planCode}) does not include LLM model configuration. Upgrade to Pro or Business.`,
+                403
+            );
+        }
+
         const { model, temperature } = req.body;
 
         if (!model || !ALLOWED_LLM_MODELS.has(model)) {
@@ -337,8 +365,23 @@ const getAISettings = async (req, res, next) => {
         const { shopId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
 
-        const aiSettings = await shopService.getShopAiSettings(shopId);
-        res.status(200).json({ success: true, data: aiSettings });
+        const [aiSettings, planCode] = await Promise.all([
+            shopService.getShopAiSettings(shopId),
+            getShopPlanCode(shopId)
+        ]);
+
+        // Include plan capabilities so the frontend can render locked fields
+        const { getTierByCode } = require('../subscription/subscription.plans');
+        const tier = getTierByCode(planCode) || getTierByCode('FREE');
+        const planCapabilities = {
+            plan_code: planCode,
+            ai_settings_access: [...tier.ai_settings_access],
+            allowed_languages: [...tier.features.allowed_languages],
+            allowed_automation_modes: [...tier.features.allowed_automation_modes],
+            language_autodetect: tier.features.language_autodetect
+        };
+
+        res.status(200).json({ success: true, data: aiSettings, plan_capabilities: planCapabilities });
     } catch (error) {
         next(error);
     }
@@ -355,20 +398,61 @@ const updateAISettings = async (req, res, next) => {
         const {
             automation_mode, confidence_threshold, auto_reply_enabled,
             max_auto_order_value, ask_email, primary_language,
-            required_fields, handoff_settings
+            required_fields, handoff_settings, payment_methods
         } = req.body;
 
-        if (automation_mode !== undefined && !ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
-            throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
+        // ── Plan-based access enforcement ─────────────────────────────────────
+        const planCode = await getShopPlanCode(shopId);
+        const planAccess = getAiSettingsAccess(planCode);
+        const planLanguages = getAllowedLanguages(planCode);
+        const planAutomationModes = getAllowedAutomationModes(planCode);
+
+        // Fields that require explicit plan access (beyond basic on/off)
+        const planGatedFields = {
+            confidence_threshold, max_auto_order_value, handoff_settings,
+            required_fields, payment_methods
+        };
+        for (const [field, value] of Object.entries(planGatedFields)) {
+            if (value !== undefined && !planAccess.has(field)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) does not include access to '${field}'. Upgrade to configure this setting.`,
+                    403
+                );
+            }
         }
+
+        // Automation mode — format check first, then plan check
+        if (automation_mode !== undefined) {
+            if (!ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
+                throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
+            }
+            if (!planAutomationModes.has(automation_mode)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) only supports automation modes: ${[...planAutomationModes].join(', ')}.`,
+                    403
+                );
+            }
+        }
+
+        // Language — format check first, then plan check
+        if (primary_language !== undefined) {
+            if (!ALLOWED_LANGUAGES.has(primary_language)) {
+                throw new AppError(`primary_language must be one of: ${[...ALLOWED_LANGUAGES].join(', ')}`, 400);
+            }
+            if (!planLanguages.has(primary_language)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) supports these languages: ${[...planLanguages].join(', ')}. Upgrade to use '${primary_language}'.`,
+                    403
+                );
+            }
+        }
+
+        // ── Value-range validations ────────────────────────────────────────────
         if (confidence_threshold !== undefined && (typeof confidence_threshold !== 'number' || confidence_threshold < 0 || confidence_threshold > 100)) {
             throw new AppError('confidence_threshold must be a number between 0 and 100', 400);
         }
         if (max_auto_order_value !== undefined && (typeof max_auto_order_value !== 'number' || max_auto_order_value < 0)) {
             throw new AppError('max_auto_order_value must be a non-negative number', 400);
-        }
-        if (primary_language !== undefined && !ALLOWED_LANGUAGES.has(primary_language)) {
-            throw new AppError(`primary_language must be one of: ${[...ALLOWED_LANGUAGES].join(', ')}`, 400);
         }
         if (handoff_settings?.notification_channel !== undefined && !ALLOWED_NOTIF_CHANNELS.has(handoff_settings.notification_channel)) {
             throw new AppError(`notification_channel must be one of: ${[...ALLOWED_NOTIF_CHANNELS].join(', ')}`, 400);
@@ -383,9 +467,45 @@ const updateAISettings = async (req, res, next) => {
         if (primary_language     !== undefined) updates.primary_language     = primary_language;
         if (required_fields      !== undefined) updates.required_fields      = required_fields;
         if (handoff_settings     !== undefined) updates.handoff_settings     = handoff_settings;
+        if (payment_methods      !== undefined) updates.payment_methods      = payment_methods;
 
         const data = await shopService.updateShopAiSettings(shopId, userId, updates);
         res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /shop/ai-settings/intent-thresholds
+ * Return per-intent confidence thresholds for the current shop.
+ */
+const getIntentThresholds = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        const intentThresholds = aiSettings.intentThresholds || {};
+        res.status(200).json({ success: true, data: intentThresholds });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/ai-settings/intent-thresholds
+ * Update per-intent confidence thresholds.
+ * Body: { greeting: 70, refund: 90, product_inquiry: 65 }
+ */
+const updateIntentThresholds = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const intentThresholdService = require('../ai/intent-threshold.service');
+        const updated = await intentThresholdService.updateIntentThresholds(shopId, req.body);
+        res.status(200).json({ success: true, data: updated });
     } catch (error) {
         next(error);
     }
@@ -425,6 +545,40 @@ const validateTenantShop = async (req, res, next) => {
     }
 };
 
+/**
+ * GET /shop/settings/ai-defaults
+ * Returns the canonical DEFAULT_AI_SETTINGS so the frontend can show them
+ * without making per-shop DB reads.
+ */
+const getAiDefaults = async (req, res, next) => {
+    try {
+        const defaults = shopService.getAiDefaults();
+        res.status(200).json({ success: true, data: defaults });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /shop/branding-preset
+ * Apply a named branding preset to the shop's AI settings.
+ * Body: { preset: 'FRIENDLY' | 'PROFESSIONAL' | 'FUN' }
+ */
+const applyBrandingPreset = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const { preset } = req.body;
+        if (!preset) throw new AppError('preset is required', 400);
+
+        const branding = await shopService.applyBrandingPreset(shopId, preset.toUpperCase());
+        res.status(200).json({ success: true, data: branding });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getUserShops,
     getShop,
@@ -442,5 +596,9 @@ module.exports = {
     getAISettings,
     updateAISettings,
     validateTenant,
-    validateTenantShop
+    validateTenantShop,
+    getIntentThresholds,
+    updateIntentThresholds,
+    getAiDefaults,
+    applyBrandingPreset
 };

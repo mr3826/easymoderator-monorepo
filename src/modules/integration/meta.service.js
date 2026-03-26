@@ -109,6 +109,80 @@ class MetaService {
   }
 
   /**
+   * Bug #6: Exchange a short-lived token for a long-lived one via Meta Graph API.
+   * Meta long-lived tokens last ~60 days; call this after any OAuth flow.
+   */
+  async exchangeForLongLivedToken(shortLivedToken) {
+    try {
+      const response = await axios.get(
+        `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/oauth/access_token`,
+        {
+          params: {
+            grant_type: 'fb_exchange_token',
+            client_id: process.env.META_APP_ID,
+            client_secret: process.env.META_APP_SECRET,
+            fb_exchange_token: shortLivedToken
+          }
+        }
+      );
+      const { access_token, expires_in } = response.data;
+      // expires_in is in seconds; convert to absolute Date
+      const expiresAt = expires_in
+        ? new Date(Date.now() + expires_in * 1000)
+        : null;
+      return { access_token, expiresAt };
+    } catch (error) {
+      // Fall back to using the original token rather than breaking the flow
+      console.warn('[meta.service] Token exchange failed, using original token:', error.message);
+      return { access_token: shortLivedToken, expiresAt: null };
+    }
+  }
+
+  /**
+   * Bug #6: Refresh a stored long-lived token before it expires.
+   * Meta allows refreshing by exchanging it again — same endpoint works.
+   */
+  async refreshTokenForIntegration(integration) {
+    try {
+      const currentToken = this.decryptToken(integration.access_token);
+      const { access_token: newToken, expiresAt } = await this.exchangeForLongLivedToken(currentToken);
+      const encryptedToken = this.encryptToken(newToken);
+      await integration.update({
+        access_token: encryptedToken,
+        token_expires_at: expiresAt,
+        status: 'CONNECTED'
+      });
+      return integration;
+    } catch (error) {
+      await integration.update({ status: 'ERROR' });
+      throw new AppError('Failed to refresh Meta token', 500);
+    }
+  }
+
+  /**
+   * Bug #6: Proactively refresh any integrations whose token expires within 7 days.
+   * Call this from a daily cron job.
+   */
+  async refreshExpiringTokens() {
+    const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const { Op } = require('sequelize');
+    const expiring = await MetaIntegration.findAll({
+      where: {
+        status: 'CONNECTED',
+        token_expires_at: { [Op.lte]: sevenDaysFromNow }
+      }
+    });
+    const results = await Promise.allSettled(
+      expiring.map(integration => this.refreshTokenForIntegration(integration))
+    );
+    const failed = results.filter(r => r.status === 'rejected').length;
+    if (failed > 0) {
+      console.error(`[meta.service] Token refresh: ${failed}/${expiring.length} integrations failed`);
+    }
+    return { refreshed: expiring.length - failed, failed };
+  }
+
+  /**
    * Create or update Meta integration
    */
   async createIntegration(shopId, platform, metaAssetId, displayName, accessToken) {
@@ -118,8 +192,11 @@ class MetaService {
       throw new AppError('This Meta asset is already connected to another shop', 409);
     }
 
-    // Encrypt token
-    const encryptedToken = this.encryptToken(accessToken);
+    // Bug #6: exchange for long-lived token on connect
+    const { access_token: longLivedToken, expiresAt } =
+      await this.exchangeForLongLivedToken(accessToken);
+
+    const encryptedToken = this.encryptToken(longLivedToken);
 
     // Create or update integration
     const [integration, created] = await MetaIntegration.upsert({
@@ -128,6 +205,7 @@ class MetaService {
       meta_asset_id: metaAssetId,
       display_name: displayName,
       access_token: encryptedToken,
+      token_expires_at: expiresAt,
       status: 'CONNECTED'
     }, {
       returning: true

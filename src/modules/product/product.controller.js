@@ -1,4 +1,6 @@
 const productService = require('./product.service');
+const productLinkService = require('./product-link.service');
+const upsellService = require('./product-upsell.service');
 
 /**
  * RESTful: Get products with pagination and filters
@@ -371,6 +373,125 @@ const listProducts = async (req, res, next) => {
     }
 };
 
+/**
+ * Detect product mentions in AI response text and return product cards.
+ * POST /products/detect-mentions
+ * Body: { text, shopId? }
+ */
+const detectMentions = async (req, res, next) => {
+    try {
+        const { text, shopId: bodyShopId } = req.body;
+        const shopId = bodyShopId || req.user.shopId;
+
+        if (!text) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'text is required'
+                }
+            });
+        }
+
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'shopId is required'
+                }
+            });
+        }
+
+        const result = await productLinkService.enrichResponseWithProductCards(text, shopId);
+
+        res.status(200).json({
+            success: true,
+            productCards: result.productCards
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * B4: Bulk update products — price, status, is_active.
+ * PATCH /products/bulk
+ * Body: { productIds: [], updates: { price?, status?, is_active? } }
+ */
+const bulkUpdateProducts = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'No shop selected. Please login again.'
+                }
+            });
+        }
+
+        const { productIds, updates } = req.body;
+        const result = await productService.bulkUpdateProducts(shopId, productIds, updates || {});
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /products/:productId/upsells
+ * Return co-purchase upsell recommendations for a single product.
+ */
+const getProductUpsells = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+        const { productId } = req.params;
+        const limit = parseInt(req.query.limit, 10) || 3;
+        const data = await upsellService.getCopurchasedProducts(shopId, productId, limit);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /products/upsells
+ * Return upsell recommendations for a set of products (e.g. cart).
+ * Body: { productIds: [] }
+ */
+const getUpsellsForCart = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+        const { productIds = [] } = req.body;
+        if (!Array.isArray(productIds)) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'productIds must be an array' }
+            });
+        }
+        const limit = parseInt(req.query.limit, 10) || 3;
+        const data = await upsellService.getUpsellRecommendations(shopId, productIds, limit);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getProducts,
@@ -379,6 +500,10 @@ module.exports = {
     updateProductById,
     deleteProductById,
     extractProducts,
+    detectMentions,
+    bulkUpdateProducts,
+    getProductUpsells,
+    getUpsellsForCart,
     // Legacy methods (for backward compatibility)
     createProduct,
     updateProduct,

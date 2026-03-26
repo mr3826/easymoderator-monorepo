@@ -233,6 +233,14 @@ class ConversationController {
                 { hitl, status }
             );
 
+            // ✅ NEW: Send escalation auto-reply when HITL is enabled (conversation escalated)
+            if (hitl === true) {
+                // Send auto-reply asynchronously without blocking response
+                conversationService.sendEscalationAutoReply(conversationId, shopId).catch(err => {
+                    console.warn(`Escalation auto-reply failed: ${err.message}`);
+                });
+            }
+
             // Notify other agent tabs of HITL change
             if (hitl !== undefined) {
                 sseManager.emit(shopId, 'hitl_changed', {
@@ -408,6 +416,63 @@ class ConversationController {
                     code: 'DEDUP_CHECK_FAILED',
                     message: error.message
                 }
+            });
+        }
+    }
+    /**
+     * B3: Bulk update status for multiple conversations.
+     * PATCH /conversations/bulk-status
+     * Body: { conversationIds: [], status: '' }
+     */
+    async bulkUpdateStatus(req, res) {
+        try {
+            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
+                });
+            }
+
+            const { conversationIds, status } = req.body;
+            const result = await conversationService.bulkUpdateStatus(shopId, conversationIds, status);
+
+            res.json({ success: true, data: result });
+        } catch (error) {
+            const statusCode = error.statusCode || 500;
+            res.status(statusCode).json({
+                success: false,
+                error: { code: 'BULK_UPDATE_FAILED', message: error.message }
+            });
+        }
+    }
+
+    /**
+     * Bug #2: Full-history inbox search.
+     * GET /conversations/search?q=<query>&page=1&limit=20
+     */
+    async searchConversations(req, res) {
+        try {
+            const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+            if (!shopId) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
+                });
+            }
+            const { q, page, limit } = req.query;
+            if (!q) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'VALIDATION_ERROR', message: 'q (search query) is required' }
+                });
+            }
+            const results = await conversationService.searchConversations(shopId, q, { page, limit });
+            res.json({ success: true, data: results });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                error: { code: 'SEARCH_FAILED', message: error.message }
             });
         }
     }

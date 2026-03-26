@@ -1,4 +1,5 @@
 const tenantService = require('./tenant.service');
+const whiteLabelService = require('./white-label.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 
@@ -115,9 +116,58 @@ const validateTenant = async (req, res, next) => {
     }
 };
 
+/**
+ * GET /tenant/white-label
+ * Return the white-label branding config for the current shop (from token).
+ */
+const getWhiteLabel = async (req, res, next) => {
+    try {
+        const shopId = req.user?.shopId;
+        if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
+        const data = await whiteLabelService.getWhiteLabelConfig(shopId);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /tenant/white-label
+ * Update the white-label branding config for the current shop.
+ * Body: { brandName?, logoUrl?, primaryColor?, accentColor?, faviconUrl? }
+ */
+const updateWhiteLabel = async (req, res, next) => {
+    try {
+        const shopId = req.user?.shopId;
+        if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
+        const data = await whiteLabelService.updateWhiteLabelConfig(shopId, req.body);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /tenant/white-label/css
+ * Return CSS custom properties string for the shop's branding colours.
+ */
+const getWhiteLabelCss = async (req, res, next) => {
+    try {
+        const shopId = req.user?.shopId;
+        if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
+        const css = await whiteLabelService.getCssVariables(shopId);
+        res.status(200).json({ success: true, data: { css } });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getTenant,
     getTenantShops,
     getTenantShop,
-    validateTenant
+    validateTenant,
+    getWhiteLabel,
+    updateWhiteLabel,
+    getWhiteLabelCss
 };

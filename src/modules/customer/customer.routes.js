@@ -122,4 +122,32 @@ router.delete(
     auditLogMiddleware('DELETE', 'CUSTOMER')
 );
 
+// ─── Customer Memory routes ─────────────────────────────────────────────────
+
+const customerMemoryService = require('./customer-memory.service');
+
+// GET /customer/:customerId/memory - Get customer preferences/memory
+router.get('/:customerId/memory', async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const { customerId } = req.params;
+        const memory = await customerMemoryService.getCustomerMemory(shopId, customerId);
+        res.status(200).json({ success: true, data: memory || null });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /customer/:customerId/memory/context - Get AI personalization context string
+router.get('/:customerId/memory/context', async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const { customerId } = req.params;
+        const context = await customerMemoryService.getPersonalizationContext(shopId, customerId);
+        res.status(200).json({ success: true, data: { context } });
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;

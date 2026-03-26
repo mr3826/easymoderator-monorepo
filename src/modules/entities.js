@@ -2,8 +2,11 @@ const User = require('./user/user.entity');
 const Tenant = require('./tenant/tenant.entity');
 const Shop = require('./shop/shop.entity');
 const UserShop = require('./user-shop/user-shop.entity');
+const Session = require('./auth/session.entity');
 const Category = require('./category/category.entity');
 const Product = require('./product/product.entity');
+// Bug #5: relational variant table (replaces flat JSON array in Product.variants)
+const ProductVariant = require('./product/product-variant.entity');
 const Customer = require('./customer/customer.entity');
 const Order = require('./order/order.entity');
 const OrderReturn = require('./order/order-return.entity');
@@ -26,6 +29,11 @@ const BanglishDictionary = require('./language/banglish-dictionary.entity');
 const Analytics = require('./analytics/analytics.entity');
 const KnowledgeGap = require('./analytics/knowledge-gap.entity');
 const SupportTicket = require('./support/support-ticket.entity');
+const ResponseTemplate = require('./template/response-template.entity');
+const CustomerPreference = require('./customer/customer-preference.entity');
+const Campaign = require('./campaign/campaign.entity');
+const FormSchema = require('./form-builder/form-schema.entity');
+const ApiKey = require('./api-access/api-key.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -45,6 +53,30 @@ Shop.belongsToMany(User, {
 // Define belongsTo relationships for UserShop
 UserShop.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 UserShop.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+
+// Define User-Session relationship
+User.hasMany(Session, {
+    foreignKey: 'user_id',
+    as: 'sessions',
+    onDelete: 'CASCADE'
+});
+
+Session.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+});
+
+// Define Shop-Session relationship
+Shop.hasMany(Session, {
+    foreignKey: 'shop_id',
+    as: 'sessions',
+    onDelete: 'CASCADE'
+});
+
+Session.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop'
+});
 
 // Define Tenant-Shop relationship
 Tenant.hasMany(Shop, {
@@ -283,6 +315,28 @@ Shop.hasMany(KnowledgeGap, { foreignKey: 'shop_id', as: 'knowledge_gaps' });
 SupportTicket.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(SupportTicket, { foreignKey: 'shop_id', as: 'support_tickets' });
 
+// Define response template relationships
+ResponseTemplate.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(ResponseTemplate, { foreignKey: 'shop_id', as: 'response_templates' });
+
+// Define customer preference relationships
+CustomerPreference.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CustomerPreference.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+Customer.hasOne(CustomerPreference, { foreignKey: 'customer_id', as: 'preference' });
+Shop.hasMany(CustomerPreference, { foreignKey: 'shop_id', as: 'customer_preferences' });
+
+// Define campaign relationships
+Campaign.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(Campaign, { foreignKey: 'shop_id', as: 'campaigns' });
+
+// Define form schema relationships
+FormSchema.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(FormSchema, { foreignKey: 'shop_id', as: 'form_schemas' });
+
+// Define API key relationships
+ApiKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(ApiKey, { foreignKey: 'shop_id', as: 'api_keys', onDelete: 'CASCADE' });
+
 // Export entities
 module.exports = {
     User,
@@ -291,6 +345,7 @@ module.exports = {
     UserShop,
     Category,
     Product,
+    ProductVariant,
     Customer,
     Order,
     OrderReturn,
@@ -313,5 +368,10 @@ module.exports = {
     BanglishDictionary,
     Analytics,
     KnowledgeGap,
-    SupportTicket
+    SupportTicket,
+    ResponseTemplate,
+    CustomerPreference,
+    Campaign,
+    FormSchema,
+    ApiKey
 };

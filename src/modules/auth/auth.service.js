@@ -280,6 +280,14 @@ const authenticateUser = async (email, password) => {
     // Successful login — clear any failed attempt counters
     await clearFailedLogins(email);
 
+    // 2FA check — if enabled, return a short-lived temp token instead of full JWT
+    if (user.settings?.totp_enabled) {
+        const { saveTempToken } = require('./totp.service');
+        const tempToken = crypto.randomBytes(32).toString('hex');
+        await saveTempToken(user.id, tempToken);
+        return { requires2fa: true, tempToken };
+    }
+
     // Check if user has any shops
     if (!user.shops || user.shops.length === 0) {
         throw new AppError('User has no associated shops', 403);

@@ -1,4 +1,4 @@
-const { Product, Category, Shop, UserShop } = require('../entities');
+const { Product, ProductVariant, Category, Shop, UserShop } = require('../entities');
 const crypto = require('crypto');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
@@ -340,16 +340,24 @@ const getProductById = async (productId, userId, shopId) => {
         where: {
             id: productId,
             shop_id: shopId
-        }
+        },
+        // Bug #5: include relational variants instead of relying on JSON blob
+        include: [
+            {
+                model: ProductVariant,
+                as: 'product_variants',
+                where: { is_active: true },
+                required: false,
+                order: [['created_at', 'ASC']]
+            }
+        ]
     });
 
     if (!product) {
         throw new AppError('Product not found', 404);
     }
 
-    // Transform to match API response format - category should be just the ID (string)
     const productData = product.toJSON ? product.toJSON() : product;
-    
     return productData;
 };
 
@@ -398,6 +406,7 @@ const listProducts = async (userId, shopId, filters = {}) => {
     }
 
     // Get all products with filters
+    // Bug #5: also include relational variants
     const products = await Product.findAll({
         where: whereClause,
         include: [
@@ -405,6 +414,12 @@ const listProducts = async (userId, shopId, filters = {}) => {
                 model: Category,
                 as: 'category_ref',
                 attributes: ['id', 'name']
+            },
+            {
+                model: ProductVariant,
+                as: 'product_variants',
+                where: { is_active: true },
+                required: false
             }
         ],
         order: [
@@ -494,8 +509,24 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
         throw new AppError('No tabular data found in the uploaded file.', 400);
     }
 
+    // Bug #9: validate required columns before touching any row data.
+    const mappedFields = headers.filter(Boolean);
+    if (!mappedFields.includes('name')) {
+        throw new AppError(
+            'CSV is missing a required "name" column. Accepted aliases: name, product, product_name, title.',
+            400
+        );
+    }
+    if (!mappedFields.includes('price')) {
+        throw new AppError(
+            'CSV is missing a required "price" column. Accepted aliases: price, unit_price, selling_price, sale_price.',
+            400
+        );
+    }
+
     const products = [];
     let skipped = 0;
+    const rowErrors = [];
     const limitedRows = rows.slice(0, MAX_EXTRACT_ROWS);
 
     for (const row of limitedRows) {
@@ -544,8 +575,18 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
             }
         });
 
+        const rowIndex = limitedRows.indexOf(row) + 2; // +1 header, +1 for 1-based display
+
         if (!product.name) {
             skipped += 1;
+            rowErrors.push({ row: rowIndex, error: 'Missing product name' });
+            continue;
+        }
+
+        // Bug #9: validate price is a positive number when present
+        if (product.price !== null && (product.price < 0 || !Number.isFinite(product.price))) {
+            skipped += 1;
+            rowErrors.push({ row: rowIndex, error: `Invalid price "${product.price}" — must be a positive number` });
             continue;
         }
 
@@ -565,9 +606,47 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
         stats: {
             total: rows.length,
             parsed: products.length,
-            skipped
+            skipped,
+            // Surface row-level errors so the frontend can show which rows failed
+            rowErrors: rowErrors.length > 0 ? rowErrors : undefined
         }
     };
+};
+
+/**
+ * B4: Bulk update products — price, status, is_active.
+ * Only updates products belonging to the given shopId.
+ *
+ * @param {string} shopId
+ * @param {string[]} productIds
+ * @param {object} updates - may contain: price, status, is_active
+ * @returns {{ updated: number }}
+ */
+const bulkUpdateProducts = async (shopId, productIds, updates) => {
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+        throw new AppError('productIds must be a non-empty array', 400);
+    }
+
+    const ALLOWED_FIELDS = ['price', 'status', 'is_active'];
+    const safeUpdates = {};
+    for (const field of ALLOWED_FIELDS) {
+        if (updates[field] !== undefined) {
+            safeUpdates[field] = updates[field];
+        }
+    }
+
+    if (Object.keys(safeUpdates).length === 0) {
+        throw new AppError('No valid update fields provided. Allowed: price, status, is_active', 400);
+    }
+
+    const [updatedCount] = await Product.update(safeUpdates, {
+        where: {
+            id: { [Op.in]: productIds },
+            shop_id: shopId
+        }
+    });
+
+    return { updated: updatedCount };
 };
 
 module.exports = {
@@ -578,5 +657,6 @@ module.exports = {
     listProducts,
     searchProducts,
     verifyShopAccess,
-    extractProductsFromContent
+    extractProductsFromContent,
+    bulkUpdateProducts
 };

@@ -13,6 +13,16 @@ router.use(authenticate);
 router.get('/', validate(productValidator.getProducts), productController.getProducts);
 router.post('/ai-extract', validate(productValidator.aiExtract), productController.extractProducts);
 router.post('/search', productController.searchProducts);
+router.post('/detect-mentions', productController.detectMentions);
+// B4: Bulk update products — must be before /:id to avoid param capture
+router.patch('/bulk', productController.bulkUpdateProducts);
+
+// Upsell routes — must be before /:id to avoid param capture
+// POST /products/upsells — recommendations for a cart/set of products
+router.post('/upsells', productController.getUpsellsForCart);
+// GET /products/:productId/upsells — recommendations for a single product
+router.get('/:productId/upsells', productController.getProductUpsells);
+
 router.get('/:id', validate(productValidator.getProductById), productController.getProductById);
 router.post('/', validate(productValidator.createProduct), productController.createProductRest);
 router.patch('/:id', validate(productValidator.updateProduct), productController.updateProductById);

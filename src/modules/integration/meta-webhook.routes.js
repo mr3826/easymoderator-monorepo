@@ -295,7 +295,7 @@ router.post('/reply', express.json(), async (req, res) => {
       }
     }
 
-    const { conversation_id, message, platform, recipient_id } = req.body;
+    const { conversation_id, message, platform, recipient_id, idempotency_key } = req.body;
 
     if (!conversation_id || !message) {
       return res.status(400).json({ error: 'conversation_id and message are required' });
@@ -308,12 +308,22 @@ router.post('/reply', express.json(), async (req, res) => {
     }
     const shop_id = conversation.shop_id;
 
+    // Idempotency: if caller supplied a key, check for an existing reply before creating
+    if (idempotency_key) {
+      const existing = await Message.findOne({
+        where: { conversation_id, sender: 'ai', external_id: idempotency_key }
+      });
+      if (existing) {
+        return res.status(200).json({ success: true, message_id: existing.id, conversation_id, duplicate: true });
+      }
+    }
+
     // Store the bot reply as a message record
     const botMessage = await Message.create({
       conversation_id,
       content: message,
       sender: 'ai',
-      external_id: null
+      external_id: idempotency_key || null
     });
 
     // Send reply to customer via Meta Graph API
@@ -613,38 +623,54 @@ async function forwardToWorkflow(event) {
     headers['X-Internal-Webhook-Secret'] = workflowSecret;
   }
 
-  try {
-    const res = await fetch(workflowWebhookUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(event)
-    });
+  // Bug #4: exponential-backoff retry before dead-lettering.
+  // Delays: 500 ms → 2 s → 8 s (3 attempts total).
+  const MAX_ATTEMPTS = 3;
+  let lastError = null;
 
-    if (!res.ok) {
-      throw new Error(`Workflow responded with HTTP ${res.status}`);
-    }
-
-    console.log(`Forwarded ${event.platform} event to workflow for shop ${event.shop_id}`);
-  } catch (error) {
-    console.error(`forwardToWorkflow: delivery failed for shop ${event.shop_id}:`, error.message);
-
-    // Dead-letter: persist failed event for manual replay or retry job
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      await FailedWorkflowForward.create({
-        id: uuidv4(),
-        shop_id: event.shop_id,
-        platform: event.platform || 'unknown',
-        event_data: JSON.stringify(event),
-        error: error.message,
-        attempt: 1,
-        resolved: false
+      const res = await fetch(workflowWebhookUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(event)
       });
-      console.warn(`forwardToWorkflow: event written to dead-letter queue for shop ${event.shop_id}`);
-    } catch (dlqErr) {
-      // Last-resort: if even DLQ write fails, log everything for manual recovery
-      console.error('forwardToWorkflow: DLQ write also failed:', dlqErr.message);
-      console.error('DEAD_LETTER_FALLBACK', JSON.stringify({ shop_id: event.shop_id, platform: event.platform, error: error.message }));
+
+      if (!res.ok) {
+        throw new Error(`Workflow responded with HTTP ${res.status}`);
+      }
+
+      console.log(`Forwarded ${event.platform} event to workflow for shop ${event.shop_id} (attempt ${attempt})`);
+      return; // success — stop retrying
+    } catch (err) {
+      lastError = err;
+      console.warn(`forwardToWorkflow: attempt ${attempt}/${MAX_ATTEMPTS} failed for shop ${event.shop_id}:`, err.message);
+
+      if (attempt < MAX_ATTEMPTS) {
+        // Exponential backoff: 500 ms * 4^(attempt-1)
+        const delayMs = 500 * Math.pow(4, attempt - 1);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
+  }
+
+  // All attempts exhausted — write to dead-letter queue
+  console.error(`forwardToWorkflow: all ${MAX_ATTEMPTS} attempts failed for shop ${event.shop_id}:`, lastError.message);
+  try {
+    await FailedWorkflowForward.create({
+      id: uuidv4(),
+      shop_id: event.shop_id,
+      platform: event.platform || 'unknown',
+      event_data: JSON.stringify(event),
+      error: lastError.message,
+      attempt: MAX_ATTEMPTS,
+      resolved: false
+    });
+    console.warn(`forwardToWorkflow: event written to dead-letter queue for shop ${event.shop_id}`);
+  } catch (dlqErr) {
+    // Last-resort: if even DLQ write fails, log everything for manual recovery
+    console.error('forwardToWorkflow: DLQ write also failed:', dlqErr.message);
+    console.error('DEAD_LETTER_FALLBACK', JSON.stringify({ shop_id: event.shop_id, platform: event.platform, error: lastError.message }));
   }
 }
 

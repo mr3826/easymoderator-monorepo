@@ -110,6 +110,20 @@ const Order = sequelize.define('Order', {
         type: DataTypes.STRING(30),
         allowNull: true
     },
+    payment_method_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'payment_configs',
+            key: 'id'
+        },
+        onDelete: 'SET NULL'
+    },
+    // Bug #12: track when payment was confirmed (null = not yet paid)
+    paid_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     note: {
         type: DataTypes.TEXT,
         allowNull: true

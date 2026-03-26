@@ -21,6 +21,12 @@ router.post('/delete', validate(orderValidator.legacyDelete), orderController.de
 router.post('/draft', validate(orderValidator.createOrder), orderController.createDraftOrder);
 router.post('/confirm', validate(orderValidator.confirmOrder), orderController.confirmOrder);
 
+// Bug #7: bulk order creation — must be before /:id to avoid param capture
+router.post('/bulk', orderController.bulkCreateOrders);
+
+// D3: Return requests — static path must be before /:id to avoid param capture
+router.get('/returns', orderController.getReturnRequests);
+
 // RESTful routes
 router.get('/', validate(orderValidator.getOrders), orderController.getOrders);
 router.get('/by-customer/:customerId', orderController.getOrdersByCustomer);
@@ -29,6 +35,9 @@ router.post('/', validate(orderValidator.createOrder), orderController.createOrd
 router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
 router.patch('/:orderId/cancel', orderController.cancelOrder);
 router.post('/:orderId/return-request', orderController.createReturnRequest);
+// D3: Return automation endpoints
+router.post('/:orderId/return', orderController.initiateReturn);
+router.patch('/:orderId/return/status', orderController.updateReturnStatus);
 router.delete('/:id', validate(orderValidator.deleteOrder), orderController.deleteOrderById);
 
 module.exports = router;

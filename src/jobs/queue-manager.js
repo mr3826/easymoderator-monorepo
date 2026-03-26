@@ -112,7 +112,11 @@ class QueueManager {
                         `[DLQ] Job ${name} #${job.id} exhausted all retries after ` +
                         `${job.attemptsMade} attempts. Error: ${err.message}`
                     );
-                    // TODO: emit to alerting channel (PagerDuty, Slack, etc.)
+                    // Alert via Slack when DLQ overflows
+                    QueueManager.sendSlackAlert(
+                        `[DLQ] Job \`${name}\` #${job.id} exhausted all ${job.attemptsMade} retries.\n` +
+                        `Error: \`${err.message}\``
+                    ).catch(() => {});
                 } else {
                     console.warn(
                         `⚠️  Job ${name} #${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`
@@ -264,6 +268,20 @@ class QueueManager {
         const promises = Object.values(this.queues).map(queue => queue.close());
         await Promise.all(promises);
         console.log('Queue manager closed');
+    }
+
+    /**
+     * Send a Slack alert via SLACK_ALERT_WEBHOOK_URL.
+     * No-op if the env var is not set.
+     */
+    static async sendSlackAlert(text) {
+        const url = process.env.SLACK_ALERT_WEBHOOK_URL;
+        if (!url) return;
+        await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
     }
 }
 

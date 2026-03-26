@@ -645,7 +645,7 @@ describe('Product API', () => {
             });
             const partial = await productService.extractProductsFromContent(USER_ID, SHOP_ID, {
                 content_type: 'text/csv',
-                content: 'name\nOnly Name',
+                content: 'name,price\nOnly Name,100',
             });
             if (full.products.length > 0 && partial.products.length > 0) {
                 expect(full.products[0].confidence).toBeGreaterThan(partial.products[0].confidence);

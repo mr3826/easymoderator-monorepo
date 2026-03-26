@@ -57,7 +57,11 @@ class OrderValidator {
             fulfillment_status: Joi.string().valid('unfulfilled', 'fulfilled', 'cancelled', 'partially_fulfilled').optional().messages({
                 'any.only': 'Invalid fulfillment status'
             }),
-            note: Joi.string().trim().allow('').optional()
+            note: Joi.string().trim().allow('').optional(),
+            paymentMethodId: Joi.string().uuid().optional().messages({
+                'string.uuid': 'Payment method ID must be a valid UUID'
+            }),
+            payment_method: Joi.string().trim().max(30).optional()
         })
     };
 

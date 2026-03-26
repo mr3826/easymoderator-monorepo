@@ -382,11 +382,87 @@ const getChannelAISettings = async (shopId, platform) => {
     }
 };
 
+/**
+ * Bug #10: Unified channel config — returns connection status AND AI behaviour
+ * settings in a single response so the frontend doesn't need two separate
+ * components (Channels modal + ChatSettings) to configure one channel.
+ *
+ * Callers can use this to render a single "Channel Setup" panel.
+ */
+const getChannelFullConfig = async (channelId, userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const channel = await Channel.findOne({ where: { id: channelId, shop_id: shopId } });
+    if (!channel) throw new AppError('Channel not found', 404);
+
+    const s = channel.settings || {};
+    return {
+        // Connection / identity
+        id:           channel.id,
+        channel_type: mapChannelTypeToFrontend(channel.channel_type),
+        display_name: channel.display_name,
+        is_active:    channel.is_active,
+        page_id:      channel.page_id,
+        status:       channel.status,
+        connected_at: channel.connected_at,
+        // AI behaviour (previously only visible in ChatSettings)
+        aiAutoReply:              s.aiAutoReply              ?? true,
+        requireApproval:          s.requireApproval          ?? false,
+        draftOrdersOnly:          s.draftOrdersOnly          ?? false,
+        allowOrderCreation:       s.allowOrderCreation       ?? true,
+        autoDetectProducts:       s.autoDetectProducts       ?? true,
+        requireManualConfirmation: s.requireManualConfirmation ?? false,
+        businessHours:            s.businessHours            ?? null,
+    };
+};
+
+/**
+ * Bug Fix: Facebook Token Auto-Refresh
+ * Returns all active channels (across all shops) whose token_expires_at is within
+ * the next `withinDays` days, including already-expired tokens.
+ * Used by the token-refresh-check scheduled job AND exposed as an admin endpoint.
+ *
+ * For a shop-scoped call the caller must pass userId + shopId to enforce access control.
+ */
+const getExpiringChannels = async (userId, shopId, withinDays = 7) => {
+    await verifyShopAccess(userId, shopId);
+
+    const now = new Date();
+    const threshold = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+
+    const channels = await Channel.findAll({
+        where: {
+            shop_id: shopId,
+            is_active: true,
+            token_expires_at: {
+                [Op.not]: null,
+                [Op.lte]: threshold
+            }
+        },
+        order: [['token_expires_at', 'ASC']]
+    });
+
+    return channels.map(channel => {
+        const expiresAt = new Date(channel.token_expires_at);
+        const isExpired = expiresAt <= now;
+        const daysUntilExpiry = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
+        return {
+            ...mapChannel(channel),
+            token_expires_at: expiresAt.toISOString(),
+            is_expired: isExpired,
+            days_until_expiry: daysUntilExpiry,
+            action_required: true
+        };
+    });
+};
+
 module.exports = {
     getChannels,
     getChannelById,
     getChannelByType,
     getChannelAISettings,
+    getChannelFullConfig,
+    getExpiringChannels,
     createChannel,
     updateChannel,
     deleteChannel,

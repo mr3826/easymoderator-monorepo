@@ -105,14 +105,21 @@ class ConversationStateService {
                 }
             });
 
-            // Get conversation history for context (last 10 messages)
-            const recentMessages = await Message.findAll({
+            // FIX BUG #1: Get last 11 messages, exclude the newest (current message),
+            // and use the 10 previous messages as context history.
+            // This ensures the current message is not duplicated when passed to LLM.
+            const allRecentMessages = await Message.findAll({
                 where: { conversation_id: conversation.id },
                 order: [['created_at', 'DESC']],
-                limit: 10
+                limit: 11
             });
 
-            const conversationHistory = recentMessages.reverse().map(msg => ({
+            // Find and remove the current message (most recent) from history
+            // The rest become the context history (up to 10 messages)
+            const previousMessages = allRecentMessages.filter(msg => msg.id !== messageRecord.id);
+            const recentMessages = previousMessages.slice(0, 10).reverse();
+
+            const conversationHistory = recentMessages.map(msg => ({
                 role: msg.sender === 'customer' ? 'user' : 'assistant',
                 message: msg.content,
                 content: msg.content,

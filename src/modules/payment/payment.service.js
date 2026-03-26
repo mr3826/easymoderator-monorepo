@@ -45,11 +45,10 @@ const confirmCodPayment = async (orderId, userId, shopId) => {
         throw new AppError(`Payment status is already ${order.payment_status}`, 400);
     }
 
-    // Update payment status to unpaid (COD confirmed but not yet paid)
-    await order.update({ payment_status: 'unpaid' });
+    // Bug #12: COD "confirm" means delivery collected — status → 'paid'.
+    // 'unpaid' was wrong and inconsistent with gateway payments; removing it.
+    await order.update({ payment_status: 'paid', paid_at: new Date() });
 
-    // TODO: In a real implementation, this would trigger finalization
-    // For now, just return the updated order
     return order;
 };
 
@@ -616,14 +615,11 @@ async function verifyAamarPayCallback(callbackData) {
 
     // Verify payment status
     if (pay_status === 'Successful' && status_code === '2') {
-        await order.update({
-            payment_status: 'paid'
-        });
+        // Bug #12: record when payment was confirmed
+        await order.update({ payment_status: 'paid', paid_at: new Date() });
         return { success: true, order };
     } else {
-        await order.update({
-            payment_status: 'failed'
-        });
+        await order.update({ payment_status: 'failed' });
         return { success: false, order };
     }
 }
@@ -711,22 +707,17 @@ async function verifySSLCommerzCallback(callbackData) {
             const validation = await axios.get(validationUrl);
 
             if (validation.data && validation.data.status === 'VALID') {
-                await order.update({
-                    payment_status: 'paid'
-                });
+                // Bug #12: record when payment was confirmed
+                await order.update({ payment_status: 'paid', paid_at: new Date() });
                 return { success: true, order };
             }
         }
 
-        await order.update({
-            payment_status: 'failed'
-        });
+        await order.update({ payment_status: 'failed' });
         return { success: false, order };
     } catch (error) {
         console.error('SSLCommerz validation error:', error.message);
-        await order.update({
-            payment_status: 'failed'
-        });
+        await order.update({ payment_status: 'failed' });
         return { success: false, order };
     }
 }

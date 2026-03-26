@@ -1,6 +1,7 @@
 const { User, Shop, UserShop, Tenant } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
+const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
 
 /**
  * Get all shops for a user
@@ -112,6 +113,21 @@ const updateShopById = async (shopId, userId, updateData) => {
 
     if (updateData.shop_name && !updateData.name) {
         updateData.name = updateData.shop_name;
+    }
+
+    // Bug #13: keep settings.businessInfo.shopName in sync with the shop name column
+    // so Knowledge Base and ManageShop always show the same value.
+    const newShopName = updateData.shop_name || updateData.name;
+    if (newShopName) {
+        const currentSettings = shop.settings || {};
+        const currentBusinessInfo = currentSettings.businessInfo || {};
+        updateData.settings = {
+            ...currentSettings,
+            businessInfo: {
+                ...currentBusinessInfo,
+                shopName: newShopName
+            }
+        };
     }
 
     await shop.update(updateData);
@@ -309,28 +325,8 @@ const getShopAiSettings = async (shopId) => {
 
     // Return AI settings from the settings JSON field, with defaults.
     // Key is `settings.ai` — used by both the chatbot pipeline and this service.
-    const defaultSettings = {
-        automation_mode: 'DRAFT',
-        confidence_threshold: 60,
-        auto_reply_enabled: true,
-        max_auto_order_value: 5000,
-        ask_email: false,
-        primary_language: 'mixed',
-        payment_methods: ['COD', 'bKash', 'Nagad'],
-        required_fields: {
-            customer_name: true,
-            mobile_number: true,
-            delivery_address: true,
-            payment_method: true,
-            email_address: false,
-            special_instructions: false
-        },
-        handoff_settings: {
-            trigger_keywords: ['complain', 'problem', 'issue'],
-            notification_channel: 'in_app',
-            cooldown_minutes: 30
-        }
-    };
+    // DRAFT mode is deprecated: auto_send_enabled defaults to true at 75% confidence.
+    const defaultSettings = { ...DEFAULT_AI_SETTINGS };
 
     return {
         ...defaultSettings,
@@ -356,9 +352,82 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     if (updates.handoff_settings) {
         newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...updates.handoff_settings };
     }
+    // ✅ NEW: Deep-merge intent_confidence_map to preserve per-intent settings
+    if (updates.intent_confidence_map) {
+        newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...updates.intent_confidence_map };
+    }
 
     await shop.update({ settings: { ...currentSettings, ai: newAI } });
     return newAI;
+};
+
+/**
+ * ✅ NEW: Get effective confidence threshold for a specific intent
+ * Falls back to global confidence_threshold if no intent-specific override exists
+ * 
+ * @param {string} shopId - Shop ID
+ * @param {string} intent - Intent type (e.g., 'product_inquiry', 'complaint')
+ * @returns {Promise<number>} - Threshold as 0-100 integer
+ */
+const getEffectiveThresholdForIntent = async (shopId, intent) => {
+    const aiSettings = await getShopAiSettings(shopId);
+    if (!aiSettings) return 60; // Default fallback
+
+    // Check if there's a per-intent override
+    const intentMap = aiSettings.intent_confidence_map || {};
+    if (intentMap[intent] !== undefined) {
+        return intentMap[intent];
+    }
+
+    // Fall back to global threshold
+    return aiSettings.confidence_threshold || 60;
+};
+
+/**
+ * Return the canonical AI defaults (used by GET /shop/settings/ai-defaults).
+ * No DB access needed — these are static defaults.
+ */
+const getAiDefaults = () => ({ ...DEFAULT_AI_SETTINGS });
+
+/**
+ * Apply a named branding preset to a shop's AI settings.
+ * Merges preset values into settings.ai.branding.
+ *
+ * @param {string} shopId
+ * @param {string} presetName - 'FRIENDLY' | 'PROFESSIONAL' | 'FUN'
+ * @returns {Promise<object>} Updated branding object
+ */
+const applyBrandingPreset = async (shopId, presetName) => {
+    const { BRANDING_PRESETS } = require('./branding-presets');
+
+    const preset = BRANDING_PRESETS[presetName];
+    if (!preset) {
+        throw new AppError(
+            `Unknown branding preset "${presetName}". Valid options: ${Object.keys(BRANDING_PRESETS).join(', ')}`,
+            400
+        );
+    }
+
+    const shop = await Shop.findByPk(shopId);
+    if (!shop) throw new AppError('Shop not found', 404);
+
+    const currentSettings = shop.settings || {};
+    const currentAI = currentSettings.ai || {};
+    const currentBranding = currentAI.branding || {};
+
+    const newBranding = { ...currentBranding, ...preset, preset: presetName };
+
+    await shop.update({
+        settings: {
+            ...currentSettings,
+            ai: {
+                ...currentAI,
+                branding: newBranding
+            }
+        }
+    });
+
+    return newBranding;
 };
 
 module.exports = {
@@ -372,5 +441,8 @@ module.exports = {
     updateUserRole,
     getUserRoleInShop,
     getShopAiSettings,
-    updateShopAiSettings
+    updateShopAiSettings,
+    getEffectiveThresholdForIntent,
+    getAiDefaults,
+    applyBrandingPreset
 };

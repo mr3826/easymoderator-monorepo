@@ -29,6 +29,12 @@ router.get(
     conversationController.getEventStream
 );
 
+// Bug #2: full-history search — must be before /:conversationId
+router.get('/search', conversationController.searchConversations);
+
+// B3: Bulk status update — must be before /:conversationId to avoid param capture
+router.patch('/bulk-status', conversationController.bulkUpdateStatus);
+
 router.post(
     '/messages/check-duplicate',
     conversationController.checkDuplicate

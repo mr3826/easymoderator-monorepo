@@ -63,6 +63,18 @@ router.get('/ai-settings', shopController.getAISettings);
 // PUT /shop/ai-settings - Update AI behaviour settings
 router.put('/ai-settings', shopController.updateAISettings);
 
+// GET /shop/ai-settings/intent-thresholds - Get per-intent confidence thresholds
+router.get('/ai-settings/intent-thresholds', shopController.getIntentThresholds);
+
+// PUT /shop/ai-settings/intent-thresholds - Update per-intent confidence thresholds
+router.put('/ai-settings/intent-thresholds', shopController.updateIntentThresholds);
+
+// GET /shop/settings/ai-defaults - Return canonical AI defaults (DRAFT mode deprecated)
+router.get('/settings/ai-defaults', shopController.getAiDefaults);
+
+// POST /shop/branding-preset - Apply a named branding preset (FRIENDLY | PROFESSIONAL | FUN)
+router.post('/branding-preset', shopController.applyBrandingPreset);
+
 // Tenant validation routes
 router.get('/tenant/:tenantId/validate', tenantValidateValidator, shopController.validateTenant);
 router.get('/tenant/:tenantId/shop/:shopId/validate', tenantShopValidateValidator, shopController.validateTenantShop);

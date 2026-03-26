@@ -6,6 +6,7 @@ const knowledgeService = require('../knowledge/knowledge.service');
 const shopService = require('../shop/shop.service');
 const channelService = require('../channel/channel.service');
 const cacheService = require('../../utils/cache.service');
+const promptSanitizer = require('../ai/prompt-sanitizer.service');
 
 // Thin cached wrapper — delegates to the canonical shop service so there is
 // a single source of truth for AI settings (stored under shop.settings.ai).
@@ -119,9 +120,15 @@ class AIChatbotController {
                 });
 
             } else {
+                // Sanitize customer message before feeding into AI pipeline
+                const sanitizedMessage = promptSanitizer.sanitize(message);
+                if (promptSanitizer.wasInjectionAttempt(message, sanitizedMessage)) {
+                    console.warn(`[PromptSanitizer] Injection attempt detected from shop=${shop_id} conv=${conversation_id}`);
+                }
+
                 // Process new message for intent classification
                 const intentResult = await AIChatbotController.processNewIntent(
-                    message,
+                    sanitizedMessage,
                     conversation_history,
                     entities,
                     detectedLanguage,
@@ -137,7 +144,12 @@ class AIChatbotController {
             // Threshold stored as 0-100 integer; confidence is 0.0-1.0 float
             const thresholdFraction = aiSettings.confidence_threshold / 100;
             const gateFailed = !shouldContinueOrderSession && confidence < thresholdFraction;
-            if (gateFailed) {
+            
+            // ✅ NEW: Auto-send if confidence >= auto_send_confidence_threshold (skips DRAFT)
+            const autoSendThreshold = (aiSettings.auto_send_confidence_threshold || 85) / 100;
+            const shouldAutoSend = confidence >= autoSendThreshold && aiSettings.automation_mode === 'DRAFT';
+            
+            if (gateFailed && !shouldAutoSend) {
                 response = AIChatbotController.buildVerificationRequest(detectedLanguage, message);
             }
 
@@ -149,7 +161,8 @@ class AIChatbotController {
                 entities,
                 order_session_active: !!active_order_session,
                 confidence,
-                gate_triggered: gateFailed
+                gate_triggered: gateFailed,
+                auto_sent: shouldAutoSend  // ✅ NEW: Track if auto-sent
             });
 
             // Step 6: Return response
@@ -164,6 +177,7 @@ class AIChatbotController {
                     order_session_continued: shouldContinueOrderSession,
                     confidence,
                     gate_triggered: gateFailed,
+                    auto_sent: shouldAutoSend,  // ✅ NEW: Indicate if auto-sent
                     channel: platform,
                     ai_model: aiSettings.llm_model || 'gpt-4o-mini',
                     ai_settings: aiSettings
@@ -204,6 +218,12 @@ class AIChatbotController {
                 hasImages
             );
 
+            // ✅ NEW: Map model_preset to preferredProvider
+            // 'standard' = use cheap providers (Gemini, GPT-4o-mini)
+            // 'advanced' = use powerful providers (Claude, GPT-4o)
+            const modelPreset = aiSettings.model_preset || 'standard';
+            const preferredProvider = modelPreset === 'advanced' ? 'anthropic' : 'gemini';
+
             const routerResult = await intentRouter.route({
                 shopId: shop_id,
                 message,
@@ -211,7 +231,11 @@ class AIChatbotController {
                 history: conversationHistory,
                 language,
                 systemPrompt,
-                imageUrls
+                imageUrls,
+                preferredProvider,  // ✅ NEW: Pass model preset as provider hint
+                // Bug #11: pass per-shop confidence threshold so FAQ matching
+                // uses the value the shop owner configured, not the global env default
+                confidenceThreshold: aiSettings.confidence_threshold
             });
 
             // Invalidate summary cache so next message gets fresh context

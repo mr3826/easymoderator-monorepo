@@ -11,10 +11,33 @@ const config = require('./config/config');
 const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
+const commentToDmWebhookRoutes = require('./modules/integration/comment-to-dm-webhook.routes');
 const { AppError, globalErrorHandler } = require('./utils/AppError');
 const { requestContextMiddleware } = require('./middleware/request-context.middleware');
 const createSessionMiddleware = require('./middleware/session.middleware');
 const xssSanitize = require('./middleware/xss-sanitize.middleware');
+
+const cacheService = require('./utils/cache.service');
+const { PRICING_TIERS } = require('./modules/subscription/subscription.plans');
+
+// Quick JWT shopId peek — no signature verification, only for rate-limit key derivation.
+// Security decisions still rely on the full auth middleware inside routes.
+function getShopIdFromRequest(req) {
+    try {
+        let token = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        } else if (req.cookies?.access_token) {
+            token = req.cookies.access_token;
+        }
+        if (!token) return null;
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+        return payload.shopId || null;
+    } catch (_) {
+        return null;
+    }
+}
 
 const app = express();
 
@@ -72,14 +95,36 @@ if (config.env !== 'test') {
         return undefined; // express-rate-limit default: MemoryStore
     };
 
-    const apiLimiter = rateLimit({
-        windowMs: 15 * 60 * 1000, // 15 minutes
-        max: 500,
+    // Per-shop rate limiter — keyed by shopId when authenticated, falls back to IP.
+    // Per-plan limits come from PRICING_TIERS.features.rate_limit_per_minute (cached 5 min).
+    const shopRateLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000, // 15-minute window
+        keyGenerator: (req) => {
+            const shopId = getShopIdFromRequest(req);
+            return shopId ? `t:shop:${shopId}` : req.ip;
+        },
+        max: async (req) => {
+            const shopId = getShopIdFromRequest(req);
+            if (!shopId) return 500; // unauthenticated — global baseline
+            try {
+                const cached = await cacheService.getForShop(shopId, 'subscription:plan_ratelimit');
+                if (cached !== null) return cached;
+                const { Subscription } = require('./modules/entities');
+                const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
+                const planCode = (sub?.plan_code || 'FREE').toUpperCase();
+                const ratePerMin = PRICING_TIERS[planCode]?.features?.rate_limit_per_minute ?? 10;
+                const limit = ratePerMin * 15;
+                await cacheService.setForShop(shopId, 'subscription:plan_ratelimit', limit, 300);
+                return limit;
+            } catch (_) {
+                return 500; // fail open
+            }
+        },
         standardHeaders: true,
         legacyHeaders: false,
-        store: buildStore('rl:api:')
+        store: buildStore('rl:shop:')
     });
-    app.use(apiLimiter);
+    app.use(shopRateLimiter);
 
     // Stricter rate limiting for auth endpoints (per IP)
     if (config.env !== 'development') {
@@ -97,6 +142,7 @@ if (config.env !== 'test') {
 
 // Webhook routes (must be before JSON parsing middleware)
 app.use('/webhooks/meta', metaWebhookRoutes);
+app.use('/webhooks/meta/comment-to-dm', commentToDmWebhookRoutes);
 
 // Body parsing
 app.use(express.json({ limit: config.bodySizeLimit }));

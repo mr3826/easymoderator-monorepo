@@ -4,12 +4,12 @@
  * Migration: Add chatbot-required columns to conversations and messages tables
  *
  * The conversations table was originally created by Sequelize sync() before
- * the migration system was established. The Sequelize model now defines
+ * migration system was established. The Sequelize model now defines
  * role, message, intent, confidence, llm_used, cache_hit, keyword_match, metadata
- * columns that may not exist in the production database.
+ * columns that may not exist in production database.
  *
  * Idempotent: each statement is wrapped in try/catch so re-running is safe.
- * Uses the same PostgreSQL ENUM types Sequelize creates via sync().
+ * Uses SQLite compatible syntax.
  */
 
 module.exports = {
@@ -21,26 +21,30 @@ module.exports = {
       /already exists/i.test(e.message) ||
       /column.*already exists/i.test(e.message);
 
-    // ── 1. Create ENUM types used by Sequelize (idempotent) ─────────────
-    // Sequelize names PostgreSQL enum types as "enum_{tableName}_{fieldName}"
+    const dialect = sequelize.getDialect();
+    
+    // ── 1. conversations table columns ───────────────────────────────────
 
-    await sequelize.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_conversations_role') THEN
-          CREATE TYPE "enum_conversations_role" AS ENUM('user', 'assistant', 'system');
-        END IF;
-      END$$;
-    `);
-    console.log('  ✓ enum_conversations_role type ready');
-
-    // ── 2. conversations table columns ───────────────────────────────────
-
-    // role: required for chatbot message classification (NOT NULL, ENUM)
+    // role: required for chatbot message classification (NOT NULL, TEXT for SQLite)
     try {
-      await sequelize.query(
-        `ALTER TABLE conversations ADD COLUMN role "enum_conversations_role" NOT NULL DEFAULT 'user'`
-      );
+      if (dialect === 'postgres') {
+        await sequelize.query(`
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_conversations_role') THEN
+              CREATE TYPE "enum_conversations_role" AS ENUM('user', 'assistant', 'system');
+            END IF;
+          END$$;
+        `);
+        await sequelize.query(
+          `ALTER TABLE conversations ADD COLUMN role "enum_conversations_role" NOT NULL DEFAULT 'user'`
+        );
+      } else {
+        // SQLite uses TEXT with CHECK constraint for ENUM simulation
+        await sequelize.query(
+          `ALTER TABLE conversations ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'assistant', 'system'))`
+        );
+      }
       console.log('  ✓ conversations.role added');
     } catch (err) {
       if (alreadyExists(err)) {
@@ -50,7 +54,7 @@ module.exports = {
       }
     }
 
-    // message: the triggering message content for this conversation (NOT NULL, TEXT)
+    // message: triggering message content for this conversation (NOT NULL, TEXT)
     try {
       await sequelize.query(
         `ALTER TABLE conversations ADD COLUMN message TEXT NOT NULL DEFAULT ''`
@@ -128,10 +132,11 @@ module.exports = {
       }
     }
 
-    // metadata JSON column
+    // metadata JSON column (JSON for SQLite, JSONB for PostgreSQL)
     try {
+      const jsonType = dialect === 'postgres' ? 'JSONB' : 'JSON';
       await sequelize.query(
-        `ALTER TABLE conversations ADD COLUMN metadata JSONB DEFAULT '{}'`
+        `ALTER TABLE conversations ADD COLUMN metadata ${jsonType} DEFAULT '{}'`
       );
       console.log('  ✓ conversations.metadata added');
     } catch (err) {
