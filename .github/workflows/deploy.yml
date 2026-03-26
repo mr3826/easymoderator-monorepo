@@ -1,3 +1,48 @@
+# =============================================================================
+# INFRASTRUCTURE GUIDE FOR CODING AGENTS
+# =============================================================================
+# ENVIRONMENT: AWS Mumbai (ap-south-1) | FREE TIER | Amazon Linux 2023
+#
+# INSTANCES:
+#   easymod-backend  i-02a7d70b4919b1d90  13.204.116.162  (this server)
+#   n8n-server       i-0558c69f658411924  3.111.66.89
+#   redis-server     i-0d81b9ffcb515d482  172.31.33.128 (VPC private)
+#
+# LIVE URLS:
+#   https://easymod.tech            → frontend (Amplify)
+#   https://api.easymod.tech        → this backend (port 3000)
+#   https://n8n.easymod.tech        → n8n workflows (port 5678)
+#
+# HEALTH CHECK:
+#   curl https://api.easymod.tech/health/ready
+#   Expected: {"status":"ready","database":"connected","redis":"connected"}
+#
+# START ALL INSTANCES (if stopped):
+#   GET https://kj7i710huj.execute-api.ap-south-1.amazonaws.com/prod/start
+#
+# STOP ALL INSTANCES:
+#   GET https://kj7i710huj.execute-api.ap-south-1.amazonaws.com/prod/stop
+#   NOTE: Instances auto-stop after 30 mins idle (CloudWatch alarm)
+#
+# SSH ACCESS:
+#   ssh -i easymod-key.pem ec2-user@13.204.116.162   (backend)
+#   ssh -i easymod-key.pem ec2-user@3.111.66.89      (n8n)
+#   ssh -i easymod-key.pem ec2-user@<redis-public-ip> (redis)
+#
+# REDIS PORTS (internal VPC only):
+#   easymod → 172.31.33.128:6379
+#   n8n     → 172.31.33.128:6380
+#
+# SECRETS: AWS Secrets Manager → easymoderator/production (ap-south-1)
+# ECR:     441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend
+# IAM:     easymod-ec2-role (ECR read + Secrets Manager read attached)
+#
+# BEFORE DEPLOYING - ensure instances are running:
+#   aws ec2 describe-instances --instance-ids i-02a7d70b4919b1d90 i-0d81b9ffcb515d482 \
+#     --region ap-south-1 --query "Reservations[*].Instances[*].State.Name"
+#   Both must be "running" before this workflow succeeds.
+# =============================================================================
+
 name: Deploy Backend To AWS
 
 on:
