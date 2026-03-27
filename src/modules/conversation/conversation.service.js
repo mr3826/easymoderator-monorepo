@@ -113,18 +113,25 @@ class ConversationService {
                 offset
             });
 
-            const messages = results.rows.map((message) => ({
+            const messages = results.rows.map((message) => {
+                // message_type is stored inside metadata to remain backward compatible with existing schema
+                // and old rows that predate attachment support.
+                const messageType = message.metadata?.message_type || 'text';
+
+                return {
                 id: message.id,
                 conversation_id: message.conversation_id,
                 content: message.content,
                 sender: message.sender === 'business' ? 'agent' : message.sender,
-                message_type: 'text',
+                message_type: messageType,
+                metadata: message.metadata || null,
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
                 message_tag: message.message_tag || null,
                 created_at: message.created_at,
                 updated_at: message.updated_at || message.created_at
-            }));
+                };
+            });
 
             return {
                 messages,
@@ -238,6 +245,10 @@ class ConversationService {
                 conversation_id: conversationId,
                 content: messageData.content || messageData.message || '',
                 sender,
+                metadata: {
+                    ...(messageData.metadata || {}),
+                    message_type: messageData.message_type || 'text'
+                },
                 ai_suggestion: messageData.ai_suggestion || null,
                 ai_confidence: messageData.ai_confidence || null,
                 message_tag: messageData.message_tag || null,
@@ -249,7 +260,8 @@ class ConversationService {
                 conversation_id: message.conversation_id,
                 content: message.content,
                 sender: sender === 'business' ? 'agent' : sender,
-                message_type: 'text',
+                message_type: message.metadata?.message_type || messageData.message_type || 'text',
+                metadata: message.metadata || null,
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
                 message_tag: message.message_tag || null,

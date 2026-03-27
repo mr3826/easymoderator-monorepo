@@ -117,6 +117,11 @@ const Message = sequelize.define('Message', {
         allowNull: true,
         comment: 'Meta message tag for out-of-24h-window messages'
     },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: {}
+    },
     created_at: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW

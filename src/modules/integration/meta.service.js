@@ -264,6 +264,83 @@ class MetaService {
   }
 
   /**
+   * Build the Facebook OAuth authorization URL for the popup window.
+   * @param {string} state - CSRF state token (caller stores this in Redis before calling)
+   * @param {string} channelType - 'facebook' | 'instagram'
+   */
+  buildOAuthUrl(state, channelType) {
+    const scopes = channelType === 'instagram'
+      ? 'pages_show_list,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_read_engagement,pages_manage_metadata'
+      : 'pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
+
+    const params = new URLSearchParams({
+      client_id: config.metaAppId,
+      redirect_uri: config.metaOAuthRedirectUri,
+      scope: scopes,
+      response_type: 'code',
+      state
+    });
+    return `https://www.facebook.com/${META_CONFIG.graphApiVersion}/dialog/oauth?${params}`;
+  }
+
+  /**
+   * Exchange an OAuth auth code for a short-lived user token, then extend to long-lived (~60 days).
+   * Reuses the existing exchangeForLongLivedToken method.
+   * @param {string} code - Auth code from Facebook OAuth redirect
+   */
+  async exchangeCodeForUserToken(code) {
+    const response = await axios.get(
+      `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/oauth/access_token`,
+      {
+        params: {
+          client_id: config.metaAppId,
+          client_secret: config.metaAppSecret,
+          redirect_uri: config.metaOAuthRedirectUri,
+          code
+        }
+      }
+    );
+    return this.exchangeForLongLivedToken(response.data.access_token);
+  }
+
+  /**
+   * Get all Pages the authenticated user manages, including linked Instagram business accounts.
+   * @param {string} userAccessToken - Long-lived user access token
+   * @returns {Array} Array of page objects with id, name, category, picture, instagram_business_account
+   */
+  async getManagedPages(userAccessToken) {
+    const response = await axios.get(
+      `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/me/accounts`,
+      {
+        params: {
+          fields: 'id,name,category,picture{url},instagram_business_account{id,name,username}',
+          access_token: userAccessToken
+        }
+      }
+    );
+    return response.data.data || [];
+  }
+
+  /**
+   * Get the Page-scoped access token for a specific Page.
+   * Page access tokens are needed to send messages and subscribe webhooks.
+   * @param {string} pageId - Facebook Page ID
+   * @param {string} userAccessToken - Long-lived user access token
+   */
+  async getPageAccessToken(pageId, userAccessToken) {
+    const response = await axios.get(
+      `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/${pageId}`,
+      {
+        params: {
+          fields: 'access_token',
+          access_token: userAccessToken
+        }
+      }
+    );
+    return response.data.access_token;
+  }
+
+  /**
    * Unsubscribe from webhooks
    */
   async unsubscribeFromWebhooks(accessToken, assetId, platform) {

@@ -1,5 +1,6 @@
 const PlanCode = Object.freeze({
     FREE: 'FREE',
+    STARTER: 'STARTER',
     GROWTH: 'GROWTH',
     PRO: 'PRO',
     BUSINESS: 'BUSINESS'
@@ -32,6 +33,32 @@ const PRICING_TIERS = Object.freeze({
         // Any key not listed here will be rejected with HTTP 403.
         ai_settings_access: Object.freeze(['automation_mode', 'auto_reply_enabled'])
     },
+    [PlanCode.STARTER]: {
+        code: PlanCode.STARTER,
+        name: 'Starter',
+        priceBdtMonthly: 299,
+        conversationsLimit: 300,
+        ordersLimit: 150,
+        productsLimit: 200,
+        keyFeature: 'RTO Shield + Facebook',
+        features: {
+            image_understanding: false,
+            advanced_ai: false,
+            priority_support: false,
+            custom_branding: false,
+            rto_shield: true,
+            rate_limit_per_minute: 15,
+            // Single channel: Facebook only
+            allowed_channels: Object.freeze(['facebook']),
+            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
+            language_autodetect: false,
+            allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL'])
+        },
+        ai_settings_access: Object.freeze([
+            'automation_mode', 'auto_reply_enabled', 'primary_language',
+            'payment_methods', 'tone_persona'
+        ])
+    },
     [PlanCode.GROWTH]: {
         code: PlanCode.GROWTH,
         name: 'Growth',
@@ -53,7 +80,7 @@ const PRICING_TIERS = Object.freeze({
         ai_settings_access: Object.freeze([
             'automation_mode', 'auto_reply_enabled', 'primary_language',
             'confidence_threshold', 'max_auto_order_value',
-            'handoff_settings', 'payment_methods'
+            'handoff_settings', 'payment_methods', 'tone_persona'
         ])
     },
     [PlanCode.PRO]: {

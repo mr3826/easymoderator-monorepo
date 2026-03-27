@@ -163,7 +163,8 @@ app.use(createSessionMiddleware());
 // P2-3: CSRF — csrf-csrf (Double Submit Cookie); cookie-parser must be before this
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.sessionSecret,
-    getSessionIdentifier: (req) => req.session?.id || req.ip || 'anonymous',
+    // Use express-session's canonical session ID. req.session.id is not guaranteed.
+    getSessionIdentifier: (req) => req.sessionID || req.session?.id || req.ip || 'anonymous',
     cookieOptions: {
           httpOnly: true, // Secure: CSRF token in httpOnly cookie + X-CSRF-TOKEN header
         sameSite: 'lax',

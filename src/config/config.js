@@ -47,7 +47,9 @@ if (env === 'production') {
         'FRONTEND_URL',
         'META_WEBHOOK_APP_SECRET',
         'PAYMENT_ENCRYPTION_KEY',
-        'CHANNEL_ENCRYPTION_KEY'   // required: encrypts Meta System User tokens at rest
+        'CHANNEL_ENCRYPTION_KEY',  // required: encrypts Meta System User tokens at rest
+        'META_APP_ID',             // required: Meta OAuth app ID
+        'META_APP_SECRET'          // required: Meta OAuth app secret
     ].forEach(requireEnv);
 }
 
@@ -91,6 +93,9 @@ module.exports = {
     workflowUrl: process.env.MAKE_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL || process.env.WF1_WEBHOOK_URL || '',
     workflowOutboundSecret: process.env.MAKE_INTERNAL_AUTH || process.env.INTERNAL_WEBHOOK_SECRET || '',
     metaWebhookAppSecret: process.env.META_WEBHOOK_APP_SECRET,
+    metaAppId: process.env.META_APP_ID,
+    metaAppSecret: process.env.META_APP_SECRET,
+    metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI,
     internalWebhookSecret: process.env.INTERNAL_WEBHOOK_SECRET || '',
     // Cookie config for httpOnly token storage
     cookieDomain: process.env.COOKIE_DOMAIN || undefined,

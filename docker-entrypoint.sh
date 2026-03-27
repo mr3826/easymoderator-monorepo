@@ -32,13 +32,21 @@ if [ ! -d "node_modules" ] || [ ! -f "node_modules/.package-lock.json" ]; then
   echo "✓ Dependencies installed"
 fi
 
-# Run database sync/migrations
-echo "Syncing database schema..."
-npm run db:sync || echo "Note: db:sync may not be available, continuing..."
+# Run database sync/migrations (optional in local Docker)
+if [ "$SKIP_DB_SYNC" = "true" ]; then
+  echo "Skipping database sync (SKIP_DB_SYNC=true)"
+else
+  echo "Syncing database schema..."
+  npm run db:sync || echo "Note: db:sync may not be available, continuing..."
+fi
 
-# Seed admin user if database is empty
-echo "Seeding admin user..."
-npm run seed:admin
+# Seed admin user (optional in local Docker)
+if [ "$SKIP_SEED_ADMIN" = "true" ]; then
+  echo "Skipping admin seed (SKIP_SEED_ADMIN=true)"
+else
+  echo "Seeding admin user..."
+  npm run seed:admin || echo "Note: seed:admin failed, continuing..."
+fi
 
 echo ""
 echo "=========================================="

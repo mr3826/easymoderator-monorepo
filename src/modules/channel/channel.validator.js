@@ -118,6 +118,43 @@ class ChannelValidator {
             })
         })
     };
+
+    // Meta OAuth endpoints
+    initiateOAuth = {
+        body: Joi.object({
+            channelType: Joi.string().valid('facebook', 'instagram').required().messages({
+                'any.only': 'channelType must be facebook or instagram',
+                'any.required': 'channelType is required'
+            })
+        })
+    };
+
+    oauthCallback = {
+        body: Joi.object({
+            code: Joi.string().trim().min(10).required().messages({
+                'any.required': 'OAuth code is required'
+            }),
+            state: Joi.string().trim().length(64).required().messages({
+                'string.length': 'Invalid state token',
+                'any.required': 'State token is required'
+            })
+        })
+    };
+
+    connectOAuthPage = {
+        body: Joi.object({
+            pageId: Joi.string().trim().max(50).required().messages({
+                'any.required': 'pageId is required'
+            }),
+            pageName: Joi.string().trim().max(200).required().messages({
+                'any.required': 'pageName is required'
+            }),
+            tempToken: Joi.string().trim().length(64).required().messages({
+                'string.length': 'Invalid temp token',
+                'any.required': 'tempToken is required'
+            })
+        })
+    };
 }
 
 module.exports = new ChannelValidator();

@@ -115,14 +115,20 @@ const updateShopById = async (shopId, userId, updateData) => {
         updateData.name = updateData.shop_name;
     }
 
+    // Always deep-merge settings instead of replacing — preserves unrelated keys.
+    const currentSettings = shop.settings || {};
+    if (updateData.settings) {
+        updateData.settings = { ...currentSettings, ...updateData.settings };
+    }
+
     // Bug #13: keep settings.businessInfo.shopName in sync with the shop name column
     // so Knowledge Base and ManageShop always show the same value.
     const newShopName = updateData.shop_name || updateData.name;
     if (newShopName) {
-        const currentSettings = shop.settings || {};
-        const currentBusinessInfo = currentSettings.businessInfo || {};
+        const mergedSettings = updateData.settings || currentSettings;
+        const currentBusinessInfo = mergedSettings.businessInfo || {};
         updateData.settings = {
-            ...currentSettings,
+            ...mergedSettings,
             businessInfo: {
                 ...currentBusinessInfo,
                 shopName: newShopName

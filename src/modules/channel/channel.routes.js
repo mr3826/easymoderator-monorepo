@@ -1,5 +1,6 @@
 const express = require('express');
 const channelController = require('./channel.controller');
+const channelOAuthController = require('./channel.oauth.controller');
 const channelValidator = require('./channel.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
@@ -10,6 +11,22 @@ const router = express.Router();
 
 // All channel routes require authentication
 router.use(authenticate);
+
+// ── Meta OAuth routes ────────────────────────────────────────────────────────
+// IMPORTANT: These must be declared BEFORE router.get('/:id', ...) to prevent
+// the string "oauth" from being matched as a UUID path parameter.
+router.post('/oauth/initiate',
+  validate(channelValidator.initiateOAuth),
+  channelOAuthController.initiateOAuth
+);
+router.post('/oauth/callback',
+  validate(channelValidator.oauthCallback),
+  channelOAuthController.handleOAuthCallback
+);
+router.post('/oauth/connect-page',
+  validate(channelValidator.connectOAuthPage),
+  channelOAuthController.connectOAuthPage
+);
 
 // RESTful routes
 router.get('/', validate(channelValidator.getChannels), channelController.getChannels);

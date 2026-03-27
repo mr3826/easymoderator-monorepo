@@ -51,6 +51,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-backend-main
+  cancel-in-progress: true
+
 jobs:
   build-and-push:
     name: Build And Push To ECR
@@ -118,6 +122,9 @@ jobs:
           echo "SMTP_SECURE=$(echo $SECRETS_JSON | jq -r '.SMTP_SECURE')" >> $GITHUB_ENV
           echo "EMAIL_FROM=$(echo $SECRETS_JSON | jq -r '.EMAIL_FROM')" >> $GITHUB_ENV
           echo "DELIVERY_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.DELIVERY_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "META_APP_ID=$(echo $SECRETS_JSON | jq -r '.META_APP_ID')" >> $GITHUB_ENV
+          echo "META_APP_SECRET=$(echo $SECRETS_JSON | jq -r '.META_APP_SECRET')" >> $GITHUB_ENV
+          echo "META_OAUTH_REDIRECT_URI=$(echo $SECRETS_JSON | jq -r '.META_OAUTH_REDIRECT_URI')" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
         run: |
@@ -197,6 +204,9 @@ jobs:
           echo "SMTP_SECURE=$(echo $SECRETS_JSON | jq -r '.SMTP_SECURE')" >> $GITHUB_ENV
           echo "EMAIL_FROM=$(echo $SECRETS_JSON | jq -r '.EMAIL_FROM')" >> $GITHUB_ENV
           echo "DELIVERY_ENCRYPTION_KEY=$(echo $SECRETS_JSON | jq -r '.DELIVERY_ENCRYPTION_KEY')" >> $GITHUB_ENV
+          echo "META_APP_ID=$(echo $SECRETS_JSON | jq -r '.META_APP_ID')" >> $GITHUB_ENV
+          echo "META_APP_SECRET=$(echo $SECRETS_JSON | jq -r '.META_APP_SECRET')" >> $GITHUB_ENV
+          echo "META_OAUTH_REDIRECT_URI=$(echo $SECRETS_JSON | jq -r '.META_OAUTH_REDIRECT_URI')" >> $GITHUB_ENV
 
       - name: Copy docker-compose to server
         uses: appleboy/scp-action@v0.1.7
@@ -211,8 +221,6 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           ECR_IMAGE: ${{ needs.build-and-push.outputs.ecr-image }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           POSTGRES_DB: ${{ env.POSTGRES_DB }}
           POSTGRES_USER: ${{ env.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
@@ -238,7 +246,7 @@ jobs:
           EMBEDDING_PROVIDER: ${{ env.EMBEDDING_PROVIDER }}
           EMBEDDING_MODEL: ${{ env.EMBEDDING_MODEL }}
           GEMINI_EMBEDDING_MODEL: ${{ env.GEMINI_EMBEDDING_MODEL }}
-          Google_Gemini_Api_KEY: ${{ env.Google_Gemini_Api_KEY }}
+          GEMINI_API_KEY: ${{ env.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ env.PINECONE_API_KEY }}
           PINECONE_INDEX: ${{ env.PINECONE_INDEX }}
@@ -250,13 +258,17 @@ jobs:
           SMTP_SECURE: ${{ env.SMTP_SECURE }}
           EMAIL_FROM: ${{ env.EMAIL_FROM }}
           DELIVERY_ENCRYPTION_KEY: ${{ env.DELIVERY_ENCRYPTION_KEY }}
+          META_APP_ID: ${{ env.META_APP_ID }}
+          META_APP_SECRET: ${{ env.META_APP_SECRET }}
+          META_OAUTH_REDIRECT_URI: ${{ env.META_OAUTH_REDIRECT_URI }}
         with:
           host: ${{ env.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: ECR_IMAGE,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,CHANNEL_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,Google_Gemini_Api_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY
+          envs: ECR_IMAGE,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,REDIS_URL,PORT,CORS_ORIGINS,FRONTEND_URL,BASE_URL,BODY_SIZE_LIMIT,ALLOW_SELF_SIGNED_TLS,JWT_ACCESS_SECRET,JWT_REFRESH_SECRET,JWT_ACCESS_EXPIRES_IN,JWT_REFRESH_EXPIRES_IN,SESSION_SECRET,PAYMENT_ENCRYPTION_KEY,CHANNEL_ENCRYPTION_KEY,WF1_WEBHOOK_URL,INTERNAL_WEBHOOK_SECRET,META_WEBHOOK_APP_SECRET,META_WEBHOOK_VERIFY_TOKEN,EMBEDDING_PROVIDER,EMBEDDING_MODEL,GEMINI_EMBEDDING_MODEL,GEMINI_API_KEY,OPENAI_API_KEY,PINECONE_API_KEY,PINECONE_INDEX,PINECONE_NAMESPACE,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASS,SMTP_SECURE,EMAIL_FROM,DELIVERY_ENCRYPTION_KEY,META_APP_ID,META_APP_SECRET,META_OAUTH_REDIRECT_URI
           script: |
             set -eo pipefail
+            echo "✓ Preflight: All required secrets validated at job start"
 
             # Install Docker if not present
             if ! command -v docker &> /dev/null; then
@@ -325,7 +337,8 @@ jobs:
               printf 'EMBEDDING_PROVIDER="%s"\n'      "${EMBEDDING_PROVIDER}"
               printf 'EMBEDDING_MODEL="%s"\n'         "${EMBEDDING_MODEL}"
               printf 'GEMINI_EMBEDDING_MODEL="%s"\n'  "${GEMINI_EMBEDDING_MODEL}"
-              printf 'Google_Gemini_Api_KEY="%s"\n'   "${Google_Gemini_Api_KEY}"
+              printf 'GEMINI_API_KEY="%s"\n'           "${GEMINI_API_KEY}"
+              printf 'Google_Gemini_Api_KEY="%s"\n'   "${GEMINI_API_KEY}"
               printf 'OPENAI_API_KEY="%s"\n'          "${OPENAI_API_KEY}"
               printf 'FRONTEND_URL="%s"\n'            "${FRONTEND_URL}"
               printf 'BASE_URL="%s"\n'                "${BASE_URL}"
@@ -338,6 +351,9 @@ jobs:
               printf 'PINECONE_API_KEY="%s"\n'        "${PINECONE_API_KEY}"
               printf 'PINECONE_INDEX="%s"\n'          "${PINECONE_INDEX}"
               printf 'PINECONE_NAMESPACE="%s"\n'      "${PINECONE_NAMESPACE}"
+              printf 'META_APP_ID="%s"\n'             "${META_APP_ID}"
+              printf 'META_APP_SECRET="%s"\n'         "${META_APP_SECRET}"
+              printf 'META_OAUTH_REDIRECT_URI="%s"\n' "${META_OAUTH_REDIRECT_URI}"
             } > .env.prod
 
             # Login to ECR
@@ -409,3 +425,5 @@ jobs:
               sleep 2
             done
             echo "Deployment complete."
+
+

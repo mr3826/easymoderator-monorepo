@@ -2,28 +2,35 @@
  * Shop AI Defaults
  *
  * Canonical default values for shop AI settings.
- * DRAFT mode is deprecated — auto_send_enabled defaults to true with a 75%
- * confidence threshold so all new shops send automatically.
+ * New shops default to DRAFT mode so sellers build trust before enabling AUTO.
+ *
+ * tone_persona options:
+ *   'formal'        — Professional, neutral English/Bangla
+ *   'friendly_bd'   — Warm Banglish, informal apu/vai addressing (default for BD)
+ *   'shop_assistant'— Helpful but slightly formal, product-focused
  */
 
 const DEFAULT_AI_SETTINGS = {
-    // Auto-send is ON by default; DRAFT mode is hidden/deprecated.
-    auto_send_enabled: true,
-    auto_send_confidence_threshold: 75,
+    // DRAFT mode ON by default — sellers approve before AI replies auto-send.
+    auto_send_enabled: false,
+    auto_send_confidence_threshold: 85,
 
-    // draft_mode_enabled is kept for DB backward-compat but never exposed in UI.
-    draft_mode_enabled: false,
+    draft_mode_enabled: true,
 
-    automation_mode: 'AUTO',
-    confidence_threshold: 60,
+    automation_mode: 'DRAFT',
+    confidence_threshold: 75,
     model_preset: 'standard',           // 'standard' (cheap) | 'advanced' (powerful)
     auto_reply_enabled: true,
     max_auto_order_value: 5000,
     ask_email: false,
     primary_language: 'mixed',
+
+    // BD market: warm, informal Banglish persona by default
+    tone_persona: 'friendly_bd',        // 'formal' | 'friendly_bd' | 'shop_assistant'
+
     payment_methods: ['COD', 'bKash', 'Nagad'],
     escalation_reply_template:
-        "Thank you for reaching out! Your request has been forwarded to our team. We'll respond within 2 hours.",
+        "ধন্যবাদ আপনার message এর জন্য! আমরা শীঘ্রই আপনার সাথে যোগাযোগ করব। (Thank you! Our team will respond within 2 hours.)",
     intent_confidence_map: {},
     required_fields: {
         customer_name: true,
@@ -34,7 +41,7 @@ const DEFAULT_AI_SETTINGS = {
         special_instructions: false
     },
     handoff_settings: {
-        trigger_keywords: ['complain', 'problem', 'issue'],
+        trigger_keywords: ['complain', 'problem', 'issue', 'complaint', 'angry', 'refund'],
         notification_channel: 'in_app',
         cooldown_minutes: 30
     }

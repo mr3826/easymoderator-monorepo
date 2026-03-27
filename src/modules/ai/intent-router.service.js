@@ -400,8 +400,41 @@ Analyze this product image and return ONLY a JSON object (no markdown, no explan
  * @param {string} language
  * @returns {string}
  */
-const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false) => {
+// BD-market persona instruction blocks
+const TONE_PERSONA_INSTRUCTIONS = {
+    friendly_bd: `You are a helpful Bangladeshi shop assistant for {shopName}.
+Personality rules:
+- Respond naturally in Banglish (mix of Bengali and English, like real BD sellers do)
+- Use warm, informal addressing: "Apu", "Vai", "Bhai", "Boss" based on context
+- Keep replies SHORT — 1-3 sentences max, like WhatsApp/Facebook chat
+- Sound like a real person, NOT a call center or chatbot
+- Common phrases to use naturally:
+  • Confirming order: "Ji apu, apnar order confirm hoyeche ✅"
+  • Asking address: "Address ta deben please? 🙏"
+  • Product available: "Ji, stock ache! Ebar order korte paren"
+  • Out of stock: "Sorry apu, ekhon stock nai. 2-3 din por available hobe"
+  • Payment: "Advance ta bKash/Nagad korte hobe: 01XXXXXXXXX"
+  • Delivery time: "Dhaka te 1-2 din, dhaka er bairer 2-3 din lagbe"
+  • Gratitude: "Dhonnobad apu! 😊 Apnar order ta shorto process kore dibo"
+- Never use formal phrases like "Dear Customer", "We regret to inform you", "Please be advised"
+- If you don't know an answer, say: "Ek second wait koren, check kore bolchi"`,
+
+    shop_assistant: `You are a helpful shop assistant for {shopName}.
+- Be friendly and professional
+- Respond in the customer's language (Bangla, English, or Banglish)
+- Keep responses concise and helpful
+- Focus on product information and order assistance`,
+
+    formal: `You are a professional customer service representative for {shopName}.
+- Respond formally and politely
+- Use proper Bangla or English as appropriate
+- Maintain a professional tone at all times`
+};
+
+const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false, tonePersona = 'friendly_bd') => {
     const { businessInfo = {}, brandingRules = {}, faqs = [] } = shopKnowledge || {};
+
+    const shopName = businessInfo.shopName || 'this shop';
 
     const langInstruction =
         language === 'bn'
@@ -420,22 +453,27 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false)
         ? 'The customer has sent an image. Look at the image carefully. Identify the product shown, describe it, and help the customer with their query about it (price, availability, ordering, etc.). Respond contextually about the product in the image.'
         : '';
 
-    // FIX BUG #1: Add explicit instructions to use conversation history for context continuity
-    const contextInstruction = `IMPORTANT: Use the conversation history above to maintain context. 
+    const contextInstruction = `IMPORTANT: Use the conversation history above to maintain context.
 - Reference previous questions and answers to avoid repetition
 - Acknowledge what was already discussed
 - Maintain consistency with earlier statements
 - Use customer info and past preferences when relevant`;
 
+    // Resolve persona: explicit tonePersona > brandingRules.tone > default
+    const resolvedPersona = tonePersona || brandingRules.tone_persona || 'friendly_bd';
+    const personaTemplate = TONE_PERSONA_INSTRUCTIONS[resolvedPersona] || TONE_PERSONA_INSTRUCTIONS.friendly_bd;
+    const personaInstruction = personaTemplate.replace('{shopName}', shopName);
+
     return [
-        `You are a helpful customer service assistant for ${businessInfo.shopName || 'this shop'}.`,
+        personaInstruction,
         langInstruction,
         imageInstruction,
         contextInstruction,
         businessInfo.address ? `Address: ${businessInfo.address}` : '',
         businessInfo.phone ? `Phone: ${businessInfo.phone}` : '',
         businessInfo.openingHours ? `Hours: ${businessInfo.openingHours}` : '',
-        brandingRules.tone ? `Tone: ${brandingRules.tone}` : '',
+        // Legacy tone override (if shop set a custom freeform tone)
+        brandingRules.tone && !TONE_PERSONA_INSTRUCTIONS[brandingRules.tone] ? `Tone: ${brandingRules.tone}` : '',
         faqSection ? `\n--- Frequently Asked Questions ---\n${faqSection}` : ''
     ].filter(Boolean).join('\n');
 };

@@ -215,7 +215,8 @@ class AIChatbotController {
             const systemPrompt = intentRouter.buildSystemPrompt(
                 shopKnowledge || {},
                 language,
-                hasImages
+                hasImages,
+                aiSettings.tone_persona || 'friendly_bd'
             );
 
             // ✅ NEW: Map model_preset to preferredProvider

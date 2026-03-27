@@ -25,8 +25,15 @@ class ConversationValidator {
             customer_id: Joi.string().uuid().required(),
             channel: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web', 'webchat').optional(),
             channel_type: Joi.string().valid('whatsapp', 'telegram', 'messenger', 'instagram', 'web', 'webchat').optional(),
+            role: Joi.string().valid('user', 'assistant', 'system').default('user'),
+            message: Joi.string().required(),
             title: Joi.string().max(255),
             status: Joi.string().valid('active', 'closed', 'archived').default('active'),
+            intent: Joi.string().max(50).optional(),
+            intent_confidence: Joi.number().min(0).max(1).optional(),
+            normalized_message: Joi.string().optional(),
+            entities: Joi.object().optional(),
+            response_metadata: Joi.object().optional(),
             metadata: Joi.object()
         }).or('channel', 'channel_type')
     };
