@@ -6,6 +6,8 @@ const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { queueProductProcessing } = require('./product-ai.service');
+const { embedProduct, removeProductEmbedding } = require('./product-embedding.service');
+const { removeProductIndex: removeClipIndex } = require('./clip-client.service');
 // Atomic stock update utility
 const updateProductStock = async (shopId, sku, delta, transaction = null) => {
     // Find product by shop and SKU
@@ -294,10 +296,13 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
     // Update product
     await product.update(updateData);
 
-    // Re-queue AI processing if images changed
     const imagesChanged = updateData.images !== undefined || updateData.image_url !== undefined;
     if (imagesChanged) {
+        // Images changed: re-run full vision pipeline (extracts ai_* attributes + re-embeds)
         queueProductProcessing(productId, shopId);
+    } else {
+        // Text/price/category/tag changes: re-embed immediately so vector store stays current
+        setImmediate(() => embedProduct(productId, shopId).catch(() => {}));
     }
 
     // Fetch updated product with category
@@ -325,6 +330,10 @@ const deleteProduct = async (productId, userId, shopId) => {
 
     // Delete product
     await product.destroy();
+
+    // Remove from vector store and CLIP cache (fire-and-forget)
+    setImmediate(() => removeProductEmbedding(productId, shopId));
+    setImmediate(() => removeClipIndex(productId, shopId));
 
     return { message: 'Product deleted successfully' };
 };
@@ -645,6 +654,15 @@ const bulkUpdateProducts = async (shopId, productIds, updates) => {
             shop_id: shopId
         }
     });
+
+    // Re-embed affected products so vector store reflects updated name/price/status
+    if (updatedCount > 0) {
+        setImmediate(async () => {
+            for (const productId of productIds) {
+                await embedProduct(productId, shopId).catch(() => {});
+            }
+        });
+    }
 
     return { updated: updatedCount };
 };

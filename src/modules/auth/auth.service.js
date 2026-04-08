@@ -1,4 +1,5 @@
-const { User, Shop, UserShop, Tenant } = require('../entities');
+const { User, Shop, UserShop, Tenant, PasswordResetToken } = require('../entities');
+const { Op } = require('sequelize');
 const { hashPassword, comparePassword } = require('../../utils/password.util');
 const { generateAccessToken, generateRefreshToken } = require('../../utils/jwt.util');
 const { sequelize } = require('../../utils/database/database-setup');
@@ -9,23 +10,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../../utils/email.service');
 
-const RESET_TOKEN_TTL = '1h';
-
-const buildResetSecret = (user) => `${config.jwtResetSecret}${user.password}`;
-
-const generateResetToken = (user) => {
-    return jwt.sign({ userId: user.id, email: user.email }, buildResetSecret(user), {
-        expiresIn: RESET_TOKEN_TTL
-    });
-};
-
-const verifyResetToken = (token, user) => {
-    try {
-        return jwt.verify(token, buildResetSecret(user));
-    } catch (error) {
-        throw new AppError('Invalid or expired reset token', 400);
-    }
-};
+const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 // ── Token blacklist (Redis) ────────────────────────────────────────────
 
@@ -359,23 +344,42 @@ const authenticateUser = async (email, password) => {
 };
 
 /**
- * Request a password reset email
+ * Request a password reset email.
+ * Generates a cryptographically random one-time token, stores its SHA-256 hash
+ * in the database, and emails the raw token in a reset link.
  */
 const requestPasswordReset = async (email) => {
     const user = await User.findOne({ where: { email } });
     if (!user) {
+        // Always return the same response to prevent email enumeration
         return { sent: false };
     }
 
-    const token = generateResetToken(user);
+    // Invalidate any existing unused tokens for this user
+    await PasswordResetToken.destroy({
+        where: { user_id: user.id, used_at: null },
+    });
+
+    // Generate one-time token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+    await PasswordResetToken.create({
+        user_id: user.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+    });
+
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(token)}`;
+    const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
     const subject = 'Reset your EasyMod password';
-    const text = `You requested a password reset. Use the link below to set a new password:\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`;
+    const text = `You requested a password reset. Use the link below to set a new password:\n\n${resetUrl}\n\nThis link expires in 1 hour. If you did not request this, you can ignore this email.`;
     const html = `
         <p>You requested a password reset.</p>
         <p><a href="${resetUrl}">Reset your password</a></p>
+        <p>This link expires in 1 hour.</p>
         <p>If you did not request this, you can ignore this email.</p>
     `;
 
@@ -385,23 +389,42 @@ const requestPasswordReset = async (email) => {
 };
 
 /**
- * Reset password using a token
+ * Reset password using a one-time token.
+ * Looks up by SHA-256 hash, verifies it is unused and not expired,
+ * then atomically marks the token used and updates the password.
  */
-const resetPassword = async (token, newPassword) => {
-    const decoded = jwt.decode(token);
-    if (!decoded || !decoded.userId) {
+const resetPassword = async (rawToken, newPassword) => {
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const record = await PasswordResetToken.findOne({
+        where: {
+            token_hash: tokenHash,
+            used_at: null,
+            expires_at: { [Op.gt]: new Date() },
+        },
+    });
+
+    if (!record) {
         throw new AppError('Invalid or expired reset token', 400);
     }
 
-    const user = await User.findOne({ where: { id: decoded.userId } });
+    const user = await User.findByPk(record.user_id);
     if (!user) {
         throw new AppError('Invalid or expired reset token', 400);
     }
 
-    verifyResetToken(token, user);
-
     const hashedPassword = await hashPassword(newPassword);
-    await user.update({ password: hashedPassword, refresh_token: null });
+
+    // Atomically mark token used and update password
+    const t = await sequelize.transaction();
+    try {
+        await record.update({ used_at: new Date() }, { transaction: t });
+        await user.update({ password: hashedPassword, refresh_token: null }, { transaction: t });
+        await t.commit();
+    } catch (err) {
+        await t.rollback();
+        throw err;
+    }
 
     return { success: true };
 };

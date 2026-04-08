@@ -6,32 +6,22 @@
  *   2. Semantic FAQ search — vector similarity against shop FAQ knowledge base
  *   3. LLM call — full chat completion with RAG context + conversation summary
  *
- * Stateful conversation summaries:
- *   When a conversation exceeds SUMMARY_THRESHOLD messages the older turns are
- *   compressed into a rolling summary stored in the cache, keeping the active
- *   context window small and cheap.
+ * Context window: last 10 messages passed verbatim. No LLM summarization —
+ *   BD F-commerce conversations are 3–8 turns; step_data holds all order state.
  *
  * Environment variables:
  *   INTENT_CACHE_TTL_SECONDS    (default: 300)  — how long to cache responses
  *   SEMANTIC_SCORE_THRESHOLD    (default: 0.82) — min cosine score for FAQ hit
- *   SUMMARY_THRESHOLD           (default: 10)   — turns before summarisation
  *   INTENT_ROUTER_DISABLED      set to "true" to skip routing (use LLM directly)
  */
 
 const llmService = require('./llm.service');
-const ragService = require('../rag/rag.service');
 const { MemoryCache } = require('../../config/memory-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
-// Bug #1: persist summaries through the Conversation model so they survive
-// across server restarts and multi-worker deployments
-const { Conversation } = require('../conversation/conversation.entity');
-
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '300', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
-// FIX BUG #1: Increase summary threshold from 10 to 20 to maintain more conversation context.
-// Keeps recent turns verbatim longer, reducing chance AI forgets context.
-const SUMMARY_THRESHOLD = parseInt(process.env.SUMMARY_THRESHOLD || '20', 10);
+const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
 const ROUTER_DISABLED = process.env.INTENT_ROUTER_DISABLED === 'true';
 // Fix #15: configurable FAQ cap in system prompt (was hard-coded 20)
 const MAX_FAQ_IN_PROMPT = parseInt(process.env.MAX_FAQ_IN_PROMPT || '50', 10);
@@ -39,101 +29,29 @@ const MAX_FAQ_IN_PROMPT = parseInt(process.env.MAX_FAQ_IN_PROMPT || '50', 10);
 // Dedicated cache bucket for intent routing
 const intentCache = new MemoryCache();
 
+// Keywords that indicate the message is about a product (price, availability, order).
+// Used to skip the DB product-search on messages like "hello", "thanks", "how are you".
+const PRODUCT_INTENT_KEYWORDS = [
+    // English
+    'available', 'price', 'cost', 'stock', 'buy', 'order', 'purchase',
+    'want', 'need', 'looking', 'show', 'color', 'colour', 'size', 'delivery',
+    'shipping', 'discount', 'offer', 'product', 'item',
+    // Banglish / Bengali
+    'ache', 'nai', 'daam', 'dam', 'lagbe', 'nibo', 'chai', 'dekhao',
+    'pabo', 'koto', 'takar', 'taka', 'paoa', 'pawa', 'deliver', 'stock'
+];
+
+const hasProductIntent = (message) => {
+    const lower = message.toLowerCase();
+    return PRODUCT_INTENT_KEYWORDS.some(kw => lower.includes(kw));
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const normalisedKey = (shopId, message) =>
     `intent:${shopId}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`;
-
-const summaryCacheKey = (conversationId) => `conv_summary:${conversationId}`;
-
-/**
- * Compress older conversation turns into a rolling text summary using the LLM.
- * Returns the summary string.
- */
-const buildSummary = async (history) => {
-    if (!history || history.length === 0) return '';
-
-    const transcript = history
-        .map((m) => `${m.role === 'user' ? 'Customer' : 'AI'}: ${m.content || m.message}`)
-        .join('\n');
-
-    try {
-        const { text } = await llmService.chat({
-            systemPrompt: 'Summarise the following customer support conversation in 2–3 sentences, focusing on intent, ordered products, delivery address, and any open issues.',
-            messages: [{ role: 'user', content: transcript }],
-            maxTokens: 300
-        });
-        return text.trim();
-    } catch (_) {
-        // If LLM unavailable, return a simple last-N transcript
-        return transcript.split('\n').slice(-6).join('\n');
-    }
-};
-
-/**
- * Get or build a rolling conversation summary.
- * The summary covers all turns except the latest SUMMARY_THRESHOLD/2 ones
- * (those are kept verbatim for recency).
- *
- * Bug #1 fix: two-layer persistence —
- *   L1: in-process MemoryCache (fast, lost on restart)
- *   L2: Conversation.metadata.ai_summary (DB, survives restarts + multi-worker)
- */
-const getOrBuildSummary = async (conversationId, history) => {
-    if (!conversationId || !history || history.length <= SUMMARY_THRESHOLD) return null;
-
-    // L1: check in-process cache
-    const cacheKey = summaryCacheKey(conversationId);
-    const cached = await intentCache.get(cacheKey);
-    if (cached) return cached;
-
-    // L2: check DB metadata (survives restart / other workers)
-    try {
-        const conv = await Conversation.findByPk(conversationId, {
-            attributes: ['metadata']
-        });
-        if (conv?.metadata?.ai_summary) {
-            // Warm in-process cache from DB value
-            await intentCache.setex(cacheKey, 1800, conv.metadata.ai_summary);
-            return conv.metadata.ai_summary;
-        }
-    } catch (_) { /* non-fatal — fall through to rebuild */ }
-
-    // Build fresh summary from older turns
-    const olderTurns = history.slice(0, history.length - Math.floor(SUMMARY_THRESHOLD / 2));
-    const summary = await buildSummary(olderTurns);
-
-    // Write through: L1 cache + L2 DB
-    await intentCache.setex(cacheKey, 1800, summary);
-    try {
-        await Conversation.update(
-            { metadata: { ai_summary: summary, ai_summary_at: new Date().toISOString() } },
-            { where: { id: conversationId } }
-        );
-    } catch (_) { /* non-fatal — cache is still warm */ }
-
-    return summary;
-};
-
-/**
- * Invalidate the summary cache when a new message arrives.
- * Called externally after each message ingestion.
- * Clears both L1 and the DB field so the next call rebuilds with fresh history.
- */
-const invalidateSummary = async (conversationId) => {
-    await intentCache.del(summaryCacheKey(conversationId));
-    try {
-        const conv = await Conversation.findByPk(conversationId, { attributes: ['id', 'metadata'] });
-        if (conv?.metadata?.ai_summary) {
-            const newMeta = { ...conv.metadata };
-            delete newMeta.ai_summary;
-            delete newMeta.ai_summary_at;
-            await conv.update({ metadata: newMeta });
-        }
-    } catch (_) { /* non-fatal */ }
-};
 
 // ---------------------------------------------------------------------------
 // Core routing
@@ -188,43 +106,70 @@ const route = async ({
     }
 
     // ------------------------------------------------------------------
-    // Stage 2: Semantic FAQ search
+    // Stage 2: Keyword FAQ search (fast DB lookup — no vector infrastructure)
+    // BD shops have 10-50 FAQs; SQL keyword match is sufficient and instant.
     // ------------------------------------------------------------------
     try {
-        const ragResult = await ragService.queryData({
-            query: message,
-            limit: 3,
-            shopId
-        });
+        const { FaqResponse } = require('../entities');
+        const { Op } = require('sequelize');
 
-        const topHit = ragResult?.results?.[0];
-        // Bug #11: use per-shop threshold instead of global constant
-        if (topHit && topHit.score >= effectiveThreshold) {
-            const faqContent = topHit.content;
-            // Build a concise answer using the FAQ snippet + LLM polish
-            const { text: answer, provider } = await llmService.chat({
-                systemPrompt: systemPrompt || 'You are a helpful shop assistant. Answer using the provided FAQ content.',
-                messages: [
-                    {
-                        role: 'user',
-                        content: `FAQ context:\n${faqContent}\n\nCustomer question: ${message}\n\nRespond in language: ${language}`
-                    }
-                ],
-                preferredProvider,
-                maxTokens: 512
+        // Tokenise: keep ASCII words + Bengali Unicode chars, drop punctuation
+        const tokens = message
+            .toLowerCase()
+            .replace(/[^\w\u0980-\u09FF\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 2);
+
+        if (tokens.length > 0) {
+            const orClauses = tokens.flatMap(token => [
+                { category:    { [Op.iLike]: `%${token}%` } },
+                { template_en: { [Op.iLike]: `%${token}%` } },
+                { template_bn: { [Op.iLike]: `%${token}%` } }
+            ]);
+
+            const candidates = await FaqResponse.findAll({
+                where: { shop_id: shopId, is_active: true, [Op.or]: orClauses },
+                order: [['priority', 'DESC'], ['use_count', 'DESC']],
+                limit: 5
             });
 
-            // Fix #16: Track FAQ hit — best-effort, non-blocking
-            const docId = topHit.metadata?.documentId;
-            if (docId && docId.startsWith('faq-')) {
-                incrementFaqHit(parseInt(docId.replace('faq-', ''), 10));
-            }
+            if (candidates.length > 0) {
+                // Score each FAQ by fraction of query tokens that appear in its text
+                const scored = candidates.map(faq => {
+                    const hay = [faq.category, faq.template_en, faq.template_bn]
+                        .filter(Boolean).join(' ').toLowerCase();
+                    const hits = tokens.filter(t => hay.includes(t)).length;
+                    return { faq, score: hits / tokens.length };
+                });
+                scored.sort((a, b) => b.score - a.score);
+                const best = scored[0];
 
-            await intentCache.setex(cacheKey, CACHE_TTL, answer);
-            return { response: answer, confidence: topHit.score, source: 'faq', provider };
+                // Accept if ≥30% of tokens matched, or at least 2 absolute keyword hits
+                const hitCount = Math.round(best.score * tokens.length);
+                if (best.score >= 0.3 || hitCount >= 2) {
+                    const faqContent = [best.faq.category, best.faq.template_en, best.faq.template_bn]
+                        .filter(Boolean).join('\n');
+
+                    const { text: answer, provider } = await llmService.chat({
+                        systemPrompt: systemPrompt || 'You are a helpful shop assistant. Answer using the provided FAQ content.',
+                        messages: [{
+                            role: 'user',
+                            content: `FAQ context:\n${faqContent}\n\nCustomer question: ${message}\n\nRespond in language: ${language}`
+                        }],
+                        preferredProvider,
+                        maxTokens: 512
+                    });
+
+                    // Fix #16: Track FAQ hit — best-effort, non-blocking
+                    incrementFaqHit(best.faq.id);
+
+                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, answer);
+                    return { response: answer, confidence: best.score, source: 'faq', provider };
+                }
+            }
         }
     } catch (_) {
-        // RAG unavailable — fall through to full LLM
+        // DB unavailable — fall through to full LLM
     }
 
     // ------------------------------------------------------------------
@@ -234,21 +179,9 @@ const route = async ({
 };
 
 const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [] }) => {
-    // Build active context: rolling summary + recent turns
-    const summary = await getOrBuildSummary(conversationId, history);
-    const recentTurns = history.length > SUMMARY_THRESHOLD
-        ? history.slice(-Math.floor(SUMMARY_THRESHOLD / 2))
-        : history;
+    const recentTurns = history.slice(-CONTEXT_WINDOW);
 
     const llmMessages = [];
-
-    if (summary) {
-        llmMessages.push({
-            role: 'user',
-            content: `[Conversation summary so far]\n${summary}`
-        });
-        llmMessages.push({ role: 'assistant', content: 'Understood.' });
-    }
 
     for (const turn of recentTurns) {
         llmMessages.push({
@@ -303,10 +236,9 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     } else {
         llmMessages.push({ role: 'user', content: message });
 
-        // Text-query product search: inject live product data as grounded context.
-        // Runs for every text message; empty results = no injection (non-product queries
-        // like "hello" return no rows so the guard below keeps the prompt clean).
-        if (shopId) {
+        // Text-query product search: only run when the message looks like a product query.
+        // Skips DB lookup for greetings, thanks, and other non-product messages.
+        if (shopId && hasProductIntent(message)) {
             const textProducts = await productSearch.searchByAttributes({
                 shopId,
                 query: message,
@@ -327,15 +259,14 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         }
     }
 
-    // For vision requests: prefer OpenAI (gpt-4o-mini) then Gemini, skip Deepseek
+    // For vision requests: prefer OpenAI (gpt-4o has better vision than Gemini Flash for product images)
     const effectiveProvider = imageUrls.length > 0 ? (preferredProvider || 'openai') : preferredProvider;
 
     const { text: response, provider } = await llmService.chat({
         systemPrompt: groundedSystemPrompt,
         messages: llmMessages,
         preferredProvider: effectiveProvider,
-        maxTokens: 768,
-        skipProviders: imageUrls.length > 0 ? ['deepseek'] : []
+        maxTokens: 768
     });
 
     if (cacheKey) {
@@ -373,7 +304,6 @@ Analyze this product image and return ONLY a JSON object (no markdown, no explan
                 ]
             }],
             preferredProvider: 'openai',
-            skipProviders: ['deepseek'],
             maxTokens: 150
         });
 
@@ -478,4 +408,4 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
     ].filter(Boolean).join('\n');
 };
 
-module.exports = { route, buildSystemPrompt, invalidateSummary, getOrBuildSummary };
+module.exports = { route, buildSystemPrompt };

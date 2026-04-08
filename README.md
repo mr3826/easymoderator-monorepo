@@ -93,7 +93,7 @@ src/
 │   ├── product/              Product catalog
 │   ├── category/             Product categories
 │   ├── customer/             Customer profiles
-│   ├── payment/              bKash, Nagad, SSLCommerz, aamarpay
+│   ├── payment/              bKash, Nagad, Rocket, COD
 │   ├── subscription/         Usage tracking + billing
 │   ├── conversation/         Chat threads
 │   ├── channel/              WhatsApp / Facebook channels

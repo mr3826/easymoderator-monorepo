@@ -6,7 +6,7 @@ const { AppError } = require('../../utils/AppError');
 
 // Meta API configuration
 const META_CONFIG = {
-  graphApiVersion: 'v18.0'
+  graphApiVersion: 'v21.0'
 };
 
 class MetaService {
@@ -121,7 +121,8 @@ class MetaService {
             grant_type: 'fb_exchange_token',
             client_id: process.env.META_APP_ID,
             client_secret: process.env.META_APP_SECRET,
-            fb_exchange_token: shortLivedToken
+            fb_exchange_token: shortLivedToken,
+            appsecret_proof: this._buildAppSecretProof(shortLivedToken)
           }
         }
       );
@@ -304,6 +305,17 @@ class MetaService {
   }
 
   /**
+   * Generate appsecret_proof for server-side Graph API calls.
+   * Meta requires this when "Require App Secret" is enabled in the App Dashboard.
+   * @param {string} accessToken
+   */
+  _buildAppSecretProof(accessToken) {
+    return crypto.createHmac('sha256', config.metaAppSecret || process.env.META_APP_SECRET)
+      .update(accessToken)
+      .digest('hex');
+  }
+
+  /**
    * Get all Pages the authenticated user manages, including linked Instagram business accounts.
    * @param {string} userAccessToken - Long-lived user access token
    * @returns {Array} Array of page objects with id, name, category, picture, instagram_business_account
@@ -314,7 +326,8 @@ class MetaService {
       {
         params: {
           fields: 'id,name,category,picture{url},instagram_business_account{id,name,username}',
-          access_token: userAccessToken
+          access_token: userAccessToken,
+          appsecret_proof: this._buildAppSecretProof(userAccessToken)
         }
       }
     );
@@ -333,7 +346,8 @@ class MetaService {
       {
         params: {
           fields: 'access_token',
-          access_token: userAccessToken
+          access_token: userAccessToken,
+          appsecret_proof: this._buildAppSecretProof(userAccessToken)
         }
       }
     );

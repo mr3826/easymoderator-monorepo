@@ -1,6 +1,6 @@
 const DeliveryIntegration = require('./delivery-integration.entity');
 const PathaoProvider = require('./providers/pathao.provider');
-const SteadfastProvider = require('./providers/steadfast.provider');
+const { COURIER_REGISTRY } = require('./providers/provider.registry');
 const deliveryService = require('./delivery.service');
 const { AppError } = require('../../utils/AppError');
 const { Shop } = require('../entities');
@@ -101,12 +101,13 @@ class DeliveryController {
             const deliverySettings = applyDeliveryDefaults(shop?.settings?.delivery || {});
 
             // Build provider list
-            const providers = ['pathao', 'steadfast'].map(providerName => {
+            const providers = Object.keys(COURIER_REGISTRY).map(providerName => {
                 const integration = integrations.find(i => i.provider === providerName);
+                const providerMeta = COURIER_REGISTRY[providerName];
                 
                 return {
                     provider: providerName,
-                    display_name: providerName === 'pathao' ? 'Pathao Courier' : 'Steadfast Courier',
+                    display_name: `${providerMeta.label} Courier`,
                     is_connected: integration ? integration.is_connected : false,
                     is_active: integration ? integration.is_active : false,
                     metadata: integration ? integration.metadata : {},
@@ -180,14 +181,11 @@ class DeliveryController {
             });
 
             // Validate credentials with provider
-            let ProviderClass;
-            if (provider === 'pathao') {
-                ProviderClass = PathaoProvider;
-            } else if (provider === 'steadfast') {
-                ProviderClass = SteadfastProvider;
-            } else {
+            const providerMeta = COURIER_REGISTRY[provider];
+            if (!providerMeta) {
                 throw new AppError('Invalid provider', 400);
             }
+            const ProviderClass = providerMeta.Provider;
 
             const providerInstance = new ProviderClass(credentials, is_sandbox);
             const validation = await providerInstance.validateCredentials();
@@ -242,7 +240,7 @@ class DeliveryController {
 
             res.json({
                 success: true,
-                message: `${provider === 'pathao' ? 'Pathao' : 'Steadfast'} connected successfully`,
+                message: `${providerMeta.label} connected successfully`,
                 data: {
                     provider: integration.provider,
                     is_connected: integration.is_connected,
@@ -282,7 +280,7 @@ class DeliveryController {
 
             res.json({
                 success: true,
-                message: `${provider === 'pathao' ? 'Pathao' : 'Steadfast'} disconnected successfully`
+                message: `${COURIER_REGISTRY[provider]?.label || provider} disconnected successfully`
             });
         } catch (error) {
             next(error);
@@ -347,14 +345,11 @@ class DeliveryController {
                 throw new AppError('Provider not connected', 400);
             }
 
-            let ProviderClass;
-            if (provider === 'pathao') {
-                ProviderClass = PathaoProvider;
-            } else if (provider === 'steadfast') {
-                ProviderClass = SteadfastProvider;
-            } else {
+            const providerMeta = COURIER_REGISTRY[provider];
+            if (!providerMeta) {
                 throw new AppError('Invalid provider', 400);
             }
+            const ProviderClass = providerMeta.Provider;
 
             const providerInstance = new ProviderClass(integration.credentials);
             const validation = await providerInstance.validateCredentials();

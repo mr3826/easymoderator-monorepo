@@ -73,7 +73,17 @@ const Conversation = sequelize.define('Conversation', {
 }, {
     tableName: 'conversations',
     underscored: true,
-    timestamps: true
+    timestamps: true,
+    indexes: [
+        {
+            // Inbox list query: filter by shop + channel + status
+            fields: ['shop_id', 'channel', 'status']
+        },
+        {
+            // 24h window lookup on every inbound webhook: most recent conv for a customer
+            fields: ['shop_id', 'customer_id', 'channel', 'created_at']
+        }
+    ]
 });
 
 const Message = sequelize.define('Message', {
@@ -130,7 +140,19 @@ const Message = sequelize.define('Message', {
     tableName: 'messages',
     underscored: true,
     timestamps: true,
-    updatedAt: false
+    updatedAt: false,
+    indexes: [
+        {
+            // Message list for a conversation (most common query)
+            fields: ['conversation_id', 'created_at']
+        },
+        {
+            // Idempotency: fast lookup by external platform message ID
+            unique: true,
+            fields: ['external_id'],
+            where: { external_id: { [require('sequelize').Op.ne]: null } }
+        }
+    ]
 });
 
 module.exports = {

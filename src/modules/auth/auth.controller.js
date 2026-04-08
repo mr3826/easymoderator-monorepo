@@ -34,7 +34,7 @@ const signin = async (req, res, next) => {
         const { email, password } = req.body;
         const result = await authService.authenticateUser(email, password);
 
-        // Set httpOnly cookies
+        // Set httpOnly cookies — tokens must NOT be returned in the response body
         setAuthCookies(res, result.accessToken, result.refreshToken);
 
         const { accessToken, refreshToken, ...safeResult } = result;
@@ -42,13 +42,7 @@ const signin = async (req, res, next) => {
         res.status(200).json({
             success: true,
             message: 'Login successful',
-            data: {
-                ...safeResult,
-                tokens: {
-                    access_token: accessToken,
-                    refresh_token: refreshToken
-                }
-            }
+            data: safeResult
         });
     } catch (error) {
         next(error);

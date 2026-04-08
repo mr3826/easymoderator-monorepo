@@ -3,6 +3,7 @@ const Tenant = require('./tenant/tenant.entity');
 const Shop = require('./shop/shop.entity');
 const UserShop = require('./user-shop/user-shop.entity');
 const Session = require('./auth/session.entity');
+const PasswordResetToken = require('./auth/password-reset-token.entity');
 const Category = require('./category/category.entity');
 const Product = require('./product/product.entity');
 // Bug #5: relational variant table (replaces flat JSON array in Product.variants)
@@ -34,6 +35,11 @@ const CustomerPreference = require('./customer/customer-preference.entity');
 const Campaign = require('./campaign/campaign.entity');
 const FormSchema = require('./form-builder/form-schema.entity');
 const ApiKey = require('./api-access/api-key.entity');
+const TrxIDLog = require('./payment/trx-id-log.entity');
+const PaymentTransaction = require('./entities/payment-transaction.entity');
+const OwnerNotification = require('./entities/owner-notification.entity');
+const OrderInvoice = require('./entities/invoice.entity');
+const DeliveryTracking = require('./entities/delivery-tracking.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -337,6 +343,34 @@ Shop.hasMany(FormSchema, { foreignKey: 'shop_id', as: 'form_schemas' });
 ApiKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(ApiKey, { foreignKey: 'shop_id', as: 'api_keys', onDelete: 'CASCADE' });
 
+// TrxIDLog — MFS payment screenshot audit trail
+TrxIDLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+TrxIDLog.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Shop.hasMany(TrxIDLog, { foreignKey: 'shop_id', as: 'trx_logs' });
+Order.hasMany(TrxIDLog, { foreignKey: 'order_id', as: 'trx_logs' });
+
+// Payment Transaction relationships
+PaymentTransaction.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+PaymentTransaction.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Shop.hasMany(PaymentTransaction, { foreignKey: 'shop_id', as: 'payment_transactions' });
+Order.hasMany(PaymentTransaction, { foreignKey: 'order_id', as: 'payment_transactions' });
+
+// Owner Notification relationships
+OwnerNotification.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(OwnerNotification, { foreignKey: 'shop_id', as: 'owner_notifications' });
+
+// Order Invoice relationships
+OrderInvoice.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+OrderInvoice.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Shop.hasMany(OrderInvoice, { foreignKey: 'shop_id', as: 'order_invoices' });
+Order.hasMany(OrderInvoice, { foreignKey: 'order_id', as: 'invoices' });
+
+// Delivery Tracking relationships
+DeliveryTracking.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+DeliveryTracking.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Shop.hasMany(DeliveryTracking, { foreignKey: 'shop_id', as: 'delivery_tracking' });
+Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking' });
+
 // Export entities
 module.exports = {
     User,
@@ -373,5 +407,11 @@ module.exports = {
     CustomerPreference,
     Campaign,
     FormSchema,
-    ApiKey
+    ApiKey,
+    TrxIDLog,
+    PaymentTransaction,
+    OwnerNotification,
+    OrderInvoice,
+    DeliveryTracking,
+    PasswordResetToken
 };

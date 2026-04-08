@@ -1,369 +1,152 @@
-# =============================================================================
-# INFRASTRUCTURE GUIDE FOR CODING AGENTS
-# =============================================================================
-# ENVIRONMENT: AWS Mumbai (ap-south-1) | FREE TIER | Amazon Linux 2023
-#
-# INSTANCES:
-#   easymod-backend  i-02a7d70b4919b1d90  13.204.116.162  (this server)
-#   n8n-server       i-0558c69f658411924  3.111.66.89
-#   redis-server     i-0d81b9ffcb515d482  172.31.33.128 (VPC private)
-#
-# LIVE URLS:
-#   https://easymod.tech            → frontend (Amplify)
-#   https://api.easymod.tech        → this backend (port 3000)
-#   https://n8n.easymod.tech        → n8n workflows (port 5678)
-#
-# HEALTH CHECK:
-#   curl https://api.easymod.tech/health/ready
-#   Expected: {"status":"ready","database":"connected","redis":"connected"}
-#
-# START ALL INSTANCES (if stopped):
-#   GET https://kj7i710huj.execute-api.ap-south-1.amazonaws.com/prod/start
-#
-# STOP ALL INSTANCES:
-#   GET https://kj7i710huj.execute-api.ap-south-1.amazonaws.com/prod/stop
-#   NOTE: Instances auto-stop after 30 mins idle (CloudWatch alarm)
-#
-# SSH ACCESS:
-#   ssh -i easymod-key.pem ec2-user@13.204.116.162   (backend)
-#   ssh -i easymod-key.pem ec2-user@3.111.66.89      (n8n)
-#   ssh -i easymod-key.pem ec2-user@<redis-public-ip> (redis)
-#
-# REDIS PORTS (internal VPC only):
-#   easymod → 172.31.33.128:6379
-#   n8n     → 172.31.33.128:6380
-#
-# SECRETS: AWS Secrets Manager → easymoderator/production (ap-south-1)
-# ECR:     441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend
-# IAM:     easymod-ec2-role (ECR read + Secrets Manager read attached)
-#
-# BEFORE DEPLOYING - ensure instances are running:
-#   aws ec2 describe-instances --instance-ids i-02a7d70b4919b1d90 i-0d81b9ffcb515d482 \
-#     --region ap-south-1 --query "Reservations[*].Instances[*].State.Name"
-#   Both must be "running" before this workflow succeeds.
-# NOTE FOR CODING AGENTS:
-#   DB indexes defined in Sequelize models are not live until schema changes run.
-#   Run the next migration or sequelize.sync() to apply index changes to the live DB.
-# =============================================================================
-
-name: Deploy Backend To AWS
+name: Deploy Backend to GCP Cloud Run
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-backend-main
+  group: deploy-backend-${{ github.ref }}
   cancel-in-progress: true
 
+# Required for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: easymod-backend
+  SERVICE_NAME: easymod-backend
+  SERVICE_ACCOUNT: easymod-backend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+
 jobs:
-  build-and-push:
-    name: Build And Push To ECR
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
-    outputs:
-      ecr-image: ${{ steps.image.outputs.ecr-image }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/setup-node@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          node-version: "20"
+          cache: "npm"
 
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region ap-south-1 \
-            | docker login --username AWS --password-stdin \
-              441250065813.dkr.ecr.ap-south-1.amazonaws.com
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build and push image
+      - name: Run tests
+        run: npm test -- --passWithNoTests --forceExit
+
+  build-and-deploy:
+    name: Build, Push & Deploy
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Build and push Docker image
         id: image
-        run: |
-          ECR_IMAGE="441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:${{ github.sha }}"
-          docker build -t "$ECR_IMAGE" .
-          docker tag "$ECR_IMAGE" "441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:latest"
-          docker push "$ECR_IMAGE"
-          docker push "441250065813.dkr.ecr.ap-south-1.amazonaws.com/easymod-backend:latest"
-          echo "ecr-image=$ECR_IMAGE" >> "$GITHUB_OUTPUT"
-
-  deploy:
-    name: Deploy On EC2
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
-
-      - name: Resolve EC2 host from AWS Secrets Manager
-        run: |
-          EC2_HOST=$(aws secretsmanager get-secret-value \
-            --secret-id "easymoderator/production" \
-            --query SecretString \
-            --output text | jq -r '.EC2_HOST')
-          echo "EC2_HOST=$EC2_HOST" >> $GITHUB_ENV
-
-      - name: Ensure required EC2 instances are running
-        run: |
-          set -euo pipefail
-          aws ec2 start-instances \
-            --region ap-south-1 \
-            --instance-ids i-02a7d70b4919b1d90 i-0d81b9ffcb515d482 >/dev/null || true
-          aws ec2 wait instance-running \
-            --region ap-south-1 \
-            --instance-ids i-02a7d70b4919b1d90 i-0d81b9ffcb515d482
-
-      - name: Copy docker-compose to server (retry)
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/easymod_deploy_key
-          chmod 600 ~/.ssh/easymod_deploy_key
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          for attempt in 1 2 3 4 5; do
-            if scp -i ~/.ssh/easymod_deploy_key -o ConnectTimeout=30 -o StrictHostKeyChecking=accept-new docker-compose.prod.yml ec2-user@${EC2_HOST}:/home/ec2-user/easymod-backend/docker-compose.prod.yml; then
-              echo "docker-compose copy succeeded on attempt ${attempt}"
-              break
-            fi
-            if [ "$attempt" -eq 5 ]; then
-              echo "ERROR: failed to copy docker-compose.prod.yml after 5 attempts"
-              exit 1
-            fi
-            echo "SCP attempt ${attempt} failed. Retrying in 10s..."
-            sleep 10
-          done
-
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1
         env:
-          ECR_IMAGE: ${{ needs.build-and-push.outputs.ecr-image }}
-        with:
-          host: ${{ env.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: ECR_IMAGE
-          script: |
-            set -eo pipefail
-            echo "✓ Preflight: All required secrets validated at job start"
+          IMAGE: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app
+        run: |
+          IMAGE_TAG="${IMAGE}:${{ github.sha }}"
+          IMAGE_LATEST="${IMAGE}:latest"
 
-            # Install Docker if not present
-            if ! command -v docker &> /dev/null; then
-              sudo yum install -y docker
-              sudo systemctl enable docker
-              sudo systemctl start docker
-              sudo usermod -aG docker ec2-user
+          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+          docker push "$IMAGE_TAG"
+          docker push "$IMAGE_LATEST"
+
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Shadow deploy (no traffic yet)
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="${{ steps.image.outputs.image_tag }}" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --vpc-connector=easymod-connector \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars="NODE_ENV=production,PORT=3000,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --min-instances=1 \
+            --max-instances=10 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --no-traffic
+
+      - name: Run database migrations (Cloud Run Job)
+        run: |
+          JOB_NAME="migrate-${GITHUB_SHA:0:10}"
+
+          gcloud run jobs create "$JOB_NAME" \
+            --image="${{ steps.image.outputs.image_tag }}" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --vpc-connector=easymod-connector \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --command="node" \
+            --args="src/database/migrate.js,up" \
+            --max-retries=1 \
+            --task-timeout=300 2>/dev/null || \
+          gcloud run jobs update "$JOB_NAME" \
+            --image="${{ steps.image.outputs.image_tag }}" \
+            --region=${{ env.REGION }}
+
+          gcloud run jobs execute "$JOB_NAME" \
+            --region=${{ env.REGION }} \
+            --wait
+
+      - name: Shift 100% traffic to new revision
+        run: |
+          LATEST_REVISION=$(gcloud run revisions list \
+            --service=${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --sort-by="~metadata.creationTimestamp" \
+            --limit=1 \
+            --format="value(metadata.name)")
+
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --to-revisions="${LATEST_REVISION}=100"
+
+          echo "Traffic shifted to revision: $LATEST_REVISION"
+
+      - name: Health check
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+
+          echo "Checking: ${BACKEND_URL}/health/ready"
+          for i in $(seq 1 20); do
+            STATUS=$(curl -sf "${BACKEND_URL}/health/ready" -o /dev/null -w "%{http_code}" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed on attempt $i"
+              exit 0
             fi
-
-            # Install docker compose plugin if not present
-            if ! docker compose version &> /dev/null; then
-              sudo mkdir -p /usr/local/lib/docker/cli-plugins
-              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
-              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-            fi
-
-            # Install AWS CLI v2 if not present
-            if ! command -v aws &> /dev/null; then
-              sudo yum install -y -q unzip
-              curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-              unzip -q /tmp/awscliv2.zip -d /tmp
-              sudo /tmp/aws/install
-              rm -rf /tmp/awscliv2.zip /tmp/aws
-            fi
-
-            cd /home/ec2-user/easymod-backend
-
-            if ! command -v jq &> /dev/null; then
-              sudo yum install -y jq
-            fi
-
-            # Fetch production secrets directly on EC2 using instance IAM role.
-            SECRETS_JSON=$(aws secretsmanager get-secret-value \
-              --region ap-south-1 \
-              --secret-id "easymoderator/production" \
-              --query SecretString \
-              --output text)
-
-            POSTGRES_DB=$(echo "$SECRETS_JSON" | jq -r '.POSTGRES_DB')
-            POSTGRES_USER=$(echo "$SECRETS_JSON" | jq -r '.POSTGRES_USER')
-            POSTGRES_PASSWORD=$(echo "$SECRETS_JSON" | jq -r '.POSTGRES_PASSWORD')
-            DATABASE_URL=$(echo "$SECRETS_JSON" | jq -r '.DATABASE_URL // empty')
-            REDIS_URL=$(echo "$SECRETS_JSON" | jq -r '.REDIS_URL // empty')
-            PORT=$(echo "$SECRETS_JSON" | jq -r '.PORT // "3000"')
-            CORS_ORIGINS=$(echo "$SECRETS_JSON" | jq -r '.CORS_ORIGINS')
-            FRONTEND_URL=$(echo "$SECRETS_JSON" | jq -r '.FRONTEND_URL')
-            BASE_URL=$(echo "$SECRETS_JSON" | jq -r '.BASE_URL')
-            BODY_SIZE_LIMIT=$(echo "$SECRETS_JSON" | jq -r '.BODY_SIZE_LIMIT // "10mb"')
-            ALLOW_SELF_SIGNED_TLS=$(echo "$SECRETS_JSON" | jq -r '.ALLOW_SELF_SIGNED_TLS // "false"')
-            JWT_ACCESS_SECRET=$(echo "$SECRETS_JSON" | jq -r '.JWT_ACCESS_SECRET')
-            JWT_REFRESH_SECRET=$(echo "$SECRETS_JSON" | jq -r '.JWT_REFRESH_SECRET')
-            JWT_ACCESS_EXPIRES_IN=$(echo "$SECRETS_JSON" | jq -r '.JWT_ACCESS_EXPIRES_IN')
-            JWT_REFRESH_EXPIRES_IN=$(echo "$SECRETS_JSON" | jq -r '.JWT_REFRESH_EXPIRES_IN')
-            SESSION_SECRET=$(echo "$SECRETS_JSON" | jq -r '.SESSION_SECRET')
-            PAYMENT_ENCRYPTION_KEY=$(echo "$SECRETS_JSON" | jq -r '.PAYMENT_ENCRYPTION_KEY')
-            CHANNEL_ENCRYPTION_KEY=$(echo "$SECRETS_JSON" | jq -r '.CHANNEL_ENCRYPTION_KEY // empty')
-            DELIVERY_ENCRYPTION_KEY=$(echo "$SECRETS_JSON" | jq -r '.DELIVERY_ENCRYPTION_KEY')
-            WF1_WEBHOOK_URL=$(echo "$SECRETS_JSON" | jq -r '.WF1_WEBHOOK_URL // empty')
-            INTERNAL_WEBHOOK_SECRET=$(echo "$SECRETS_JSON" | jq -r '.INTERNAL_WEBHOOK_SECRET // empty')
-            META_WEBHOOK_APP_SECRET=$(echo "$SECRETS_JSON" | jq -r '.META_WEBHOOK_APP_SECRET')
-            META_WEBHOOK_VERIFY_TOKEN=$(echo "$SECRETS_JSON" | jq -r '.META_WEBHOOK_VERIFY_TOKEN')
-            EMBEDDING_PROVIDER=$(echo "$SECRETS_JSON" | jq -r '.EMBEDDING_PROVIDER // empty')
-            EMBEDDING_MODEL=$(echo "$SECRETS_JSON" | jq -r '.EMBEDDING_MODEL // empty')
-            GEMINI_EMBEDDING_MODEL=$(echo "$SECRETS_JSON" | jq -r '.GEMINI_EMBEDDING_MODEL // empty')
-            GEMINI_API_KEY=$(echo "$SECRETS_JSON" | jq -r '.GOOGLE_GEMINI_API_KEY // empty')
-            OPENAI_API_KEY=$(echo "$SECRETS_JSON" | jq -r '.OPENAI_API_KEY // empty')
-            PINECONE_API_KEY=$(echo "$SECRETS_JSON" | jq -r '.PINECONE_API_KEY // empty')
-            PINECONE_INDEX=$(echo "$SECRETS_JSON" | jq -r '.PINECONE_INDEX // empty')
-            PINECONE_NAMESPACE=$(echo "$SECRETS_JSON" | jq -r '.PINECONE_NAMESPACE // empty')
-            SMTP_HOST=$(echo "$SECRETS_JSON" | jq -r '.SMTP_HOST // empty')
-            SMTP_PORT=$(echo "$SECRETS_JSON" | jq -r '.SMTP_PORT // empty')
-            SMTP_USER=$(echo "$SECRETS_JSON" | jq -r '.SMTP_USER // empty')
-            SMTP_PASS=$(echo "$SECRETS_JSON" | jq -r '.SMTP_PASS // empty')
-            SMTP_SECURE=$(echo "$SECRETS_JSON" | jq -r '.SMTP_SECURE // "false"')
-            EMAIL_FROM=$(echo "$SECRETS_JSON" | jq -r '.EMAIL_FROM // empty')
-            META_APP_ID=$(echo "$SECRETS_JSON" | jq -r '.META_APP_ID // empty')
-            META_APP_SECRET=$(echo "$SECRETS_JSON" | jq -r '.META_APP_SECRET // empty')
-            META_OAUTH_REDIRECT_URI=$(echo "$SECRETS_JSON" | jq -r '.META_OAUTH_REDIRECT_URI // empty')
-
-            # URL-encode the DB password so special chars are safe in the connection URL
-            ENCODED_PG_PASS=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "${POSTGRES_PASSWORD}")
-            DB_URL_DEFAULT="postgresql://${POSTGRES_USER}:${ENCODED_PG_PASS}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
-            REDIS_URL_DEFAULT="redis://redis:6379"
-            DATABASE_URL_FINAL="${DATABASE_URL:-$DB_URL_DEFAULT}"
-            REDIS_URL_FINAL="${REDIS_URL:-$REDIS_URL_DEFAULT}"
-
-            # Guarantee CHANNEL_ENCRYPTION_KEY is present for app startup.
-            CHANNEL_ENCRYPTION_KEY_FINAL="${CHANNEL_ENCRYPTION_KEY:-}"
-            if [ -z "$CHANNEL_ENCRYPTION_KEY_FINAL" ]; then
-              CHANNEL_ENCRYPTION_KEY_FINAL=$(openssl rand -hex 32)
-            fi
-
-            # Write .env.prod using printf to avoid heredoc YAML conflicts
-            {
-              printf 'ECR_IMAGE="%s"\n'               "${ECR_IMAGE}"
-              printf 'POSTGRES_DB="%s"\n'             "${POSTGRES_DB}"
-              printf 'POSTGRES_USER="%s"\n'           "${POSTGRES_USER}"
-              printf 'POSTGRES_PASSWORD="%s"\n'       "${POSTGRES_PASSWORD}"
-              printf 'PORT="%s"\n'                    "${PORT:-3000}"
-              printf 'NODE_ENV=production\n'
-              printf 'DATABASE_URL="%s"\n'            "${DATABASE_URL_FINAL}"
-              printf 'REDIS_URL="%s"\n'               "${REDIS_URL_FINAL}"
-              printf 'BODY_SIZE_LIMIT="%s"\n'         "${BODY_SIZE_LIMIT:-10mb}"
-              printf 'ALLOW_SELF_SIGNED_TLS="%s"\n'   "${ALLOW_SELF_SIGNED_TLS:-false}"
-              printf 'CORS_ORIGINS="%s"\n'            "${CORS_ORIGINS}"
-              printf 'JWT_ACCESS_SECRET="%s"\n'       "${JWT_ACCESS_SECRET}"
-              printf 'JWT_REFRESH_SECRET="%s"\n'      "${JWT_REFRESH_SECRET}"
-              printf 'JWT_ACCESS_EXPIRES_IN="%s"\n'   "${JWT_ACCESS_EXPIRES_IN}"
-              printf 'JWT_REFRESH_EXPIRES_IN="%s"\n'  "${JWT_REFRESH_EXPIRES_IN}"
-              printf 'SESSION_SECRET="%s"\n'          "${SESSION_SECRET}"
-              printf 'PAYMENT_ENCRYPTION_KEY="%s"\n'  "${PAYMENT_ENCRYPTION_KEY}"
-              printf 'CHANNEL_ENCRYPTION_KEY="%s"\n'  "${CHANNEL_ENCRYPTION_KEY_FINAL}"
-              printf 'DELIVERY_ENCRYPTION_KEY="%s"\n' "${DELIVERY_ENCRYPTION_KEY}"
-              printf 'WF1_WEBHOOK_URL="%s"\n'         "${WF1_WEBHOOK_URL}"
-              printf 'INTERNAL_WEBHOOK_SECRET="%s"\n' "${INTERNAL_WEBHOOK_SECRET}"
-              printf 'META_WEBHOOK_APP_SECRET="%s"\n' "${META_WEBHOOK_APP_SECRET}"
-              printf 'META_WEBHOOK_VERIFY_TOKEN="%s"\n' "${META_WEBHOOK_VERIFY_TOKEN}"
-              printf 'EMBEDDING_PROVIDER="%s"\n'      "${EMBEDDING_PROVIDER}"
-              printf 'EMBEDDING_MODEL="%s"\n'         "${EMBEDDING_MODEL}"
-              printf 'GEMINI_EMBEDDING_MODEL="%s"\n'  "${GEMINI_EMBEDDING_MODEL}"
-              printf 'GEMINI_API_KEY="%s"\n'           "${GEMINI_API_KEY}"
-              printf 'Google_Gemini_Api_KEY="%s"\n'   "${GEMINI_API_KEY}"
-              printf 'OPENAI_API_KEY="%s"\n'          "${OPENAI_API_KEY}"
-              printf 'FRONTEND_URL="%s"\n'            "${FRONTEND_URL}"
-              printf 'BASE_URL="%s"\n'                "${BASE_URL}"
-              printf 'SMTP_HOST="%s"\n'               "${SMTP_HOST}"
-              printf 'SMTP_PORT="%s"\n'               "${SMTP_PORT}"
-              printf 'SMTP_USER="%s"\n'               "${SMTP_USER}"
-              printf 'SMTP_PASS="%s"\n'               "${SMTP_PASS}"
-              printf 'SMTP_SECURE="%s"\n'             "${SMTP_SECURE:-false}"
-              printf 'EMAIL_FROM="%s"\n'              "${EMAIL_FROM}"
-              printf 'PINECONE_API_KEY="%s"\n'        "${PINECONE_API_KEY}"
-              printf 'PINECONE_INDEX="%s"\n'          "${PINECONE_INDEX}"
-              printf 'PINECONE_NAMESPACE="%s"\n'      "${PINECONE_NAMESPACE}"
-              printf 'META_APP_ID="%s"\n'             "${META_APP_ID}"
-              printf 'META_APP_SECRET="%s"\n'         "${META_APP_SECRET}"
-              printf 'META_OAUTH_REDIRECT_URI="%s"\n' "${META_OAUTH_REDIRECT_URI}"
-            } > .env.prod
-
-            # Login to ECR
-            aws ecr get-login-password --region ap-south-1 \
-              | docker login --username AWS --password-stdin \
-                441250065813.dkr.ecr.ap-south-1.amazonaws.com
-
-            # Pull new backend and worker images
-            docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend worker
-
-            # Start / restart postgres and redis
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d postgres redis
-
-            # Wait for postgres to be ready (up to 30s)
-            echo "Waiting for postgres..."
-            for i in $(seq 1 15); do
-              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
-                pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" && break
-              sleep 2
-            done
-
-            # Sync base schema (creates tables defined in Sequelize models, e.g. shops)
-            # Use force:false so Sequelize respects FK ordering when creating fresh tables
-            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend \
-              node -e "require('module-alias/register');require('src/modules/entities');const{sequelize}=require('src/utils/database/database-setup');sequelize.sync({force:false}).then(()=>{console.log('Sync complete');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})"
-
-            # Run migrations (depends on base tables existing)
-            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backend npm run migrate
-
-            # Start/restart backend and worker
-            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d backend worker
-
-            # Clean up old images
-            docker image prune -af --filter "until=72h"
-
-            # Post-deploy health check (up to 60s)
-            echo "Waiting for backend to be healthy..."
-            for i in $(seq 1 20); do
-              STATUS=$(docker compose --env-file .env.prod -f docker-compose.prod.yml \
-                exec -T backend node -e \
-                "require('http').get('http://localhost:3000/health/ready',(r)=>{process.stdout.write(String(r.statusCode));process.exit(0)}).on('error',()=>{process.stdout.write('000');process.exit(0)})" \
-                2>/dev/null || echo "000")
-              if [ "$STATUS" = "200" ]; then
-                echo "Backend is healthy (attempt $i)"
-                break
-              fi
-              if [ "$i" = "20" ]; then
-                echo "ERROR: Backend failed health check after 20 attempts"
-                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 backend
-                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=50 worker
-                exit 1
-              fi
-              sleep 3
-            done
-
-            # Verify worker container is running
-            echo "Waiting for worker to be running..."
-            for i in $(seq 1 15); do
-              WORKER_STATUS=$(docker compose --env-file .env.prod -f docker-compose.prod.yml ps --status running --services worker 2>/dev/null || true)
-              if [ "$WORKER_STATUS" = "worker" ]; then
-                echo "Worker is running (attempt $i)"
-                break
-              fi
-              if [ "$i" = "15" ]; then
-                echo "ERROR: Worker failed to reach running state"
-                docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=80 worker
-                exit 1
-              fi
-              sleep 2
-            done
-            echo "Deployment complete."
-
-
+            echo "Attempt $i: status=$STATUS — retrying in 5s..."
+            sleep 5
+          done
+          echo "ERROR: Health check failed after 20 attempts"
+          exit 1

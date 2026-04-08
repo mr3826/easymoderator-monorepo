@@ -140,30 +140,8 @@ const updateBusinessInfo = async (userId, shopId, data) => {
         shopUpdates.name = data.shopName.trim();
     }
 
-    const businessText = [
-        `Shop Name: ${businessInfo.shopName}`,
-        `Address: ${businessInfo.address}`,
-        `Phone: ${businessInfo.phone}`,
-        `Opening Hours: ${businessInfo.openingHours}`,
-        `Delivery Areas: ${businessInfo.deliveryAreas.join(', ')}`,
-        `Payment Methods: ${businessInfo.paymentMethods.join(', ')}`
-    ].join('\n');
-
-    const newHash = crypto.createHash('sha256').update(businessText).digest('hex');
-    const staleRAG = newHash !== settings.businessInfoHash;
-
-    shopUpdates.settings = { ...shopUpdates.settings, businessInfoHash: newHash };
-
     await shop.update(shopUpdates);
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
-
-    // Non-blocking RAG ingestion — skip if content hasn't changed
-    if (staleRAG) {
-        ragService.ingestData({
-            text: businessText,
-            metadata: { documentId: `business-${shopId}`, shopId, type: 'business' }
-        }).catch(err => console.warn('RAG ingest (business-info) failed:', err.message));
-    }
 
     return { businessInfo };
 };
@@ -177,16 +155,6 @@ const updateBrandingRules = async (userId, shopId, brandingRules) => {
     const settings = normalizeObject(shop.settings);
     await shop.update({ settings: { ...settings, brandingRules: brandingRules || {} } });
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
-
-    // Fix #8: Non-blocking
-    const brandingText = Object.entries(brandingRules || {})
-        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-        .join('\n');
-
-    ragService.ingestData({
-        text: brandingText,
-        metadata: { documentId: `branding-${shopId}`, shopId, type: 'branding' }
-    }).catch(err => console.warn('RAG ingest (branding) failed:', err.message));
 
     return { brandingRules };
 };
@@ -216,15 +184,6 @@ const createFaq = async (userId, shopId, faq) => {
 
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
 
-    // Fix #8: Non-blocking
-    if (newFaq.is_active) {
-        const text = `Category: ${newFaq.category}\nBN: ${newFaq.template_bn || ''}\nEN: ${newFaq.template_en || ''}`;
-        ragService.ingestData({
-            text,
-            metadata: { documentId: `faq-${newFaq.id}`, shopId, type: 'faq', category: newFaq.category }
-        }).catch(err => console.warn(`RAG ingest (faq-${newFaq.id}) failed:`, err.message));
-    }
-
     return formatFaq(newFaq);
 };
 
@@ -248,17 +207,6 @@ const updateFaq = async (userId, shopId, faqId, updates) => {
 
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
 
-    // Fix #8: Non-blocking
-    if (faq.is_active) {
-        const text = `Category: ${faq.category}\nBN: ${faq.template_bn || ''}\nEN: ${faq.template_en || ''}`;
-        ragService.ingestData({
-            text,
-            metadata: { documentId: `faq-${faq.id}`, shopId, type: 'faq', category: faq.category }
-        }).catch(err => console.warn(`RAG ingest (faq-${faq.id}) failed:`, err.message));
-    } else {
-        ragService.deletePoint(`faq-${faq.id}`, shopId).catch(() => {});
-    }
-
     return formatFaq(faq);
 };
 
@@ -266,7 +214,6 @@ const deleteFaq = async (userId, shopId, faqId) => {
     await verifyShopAccess(userId, shopId);
     await FaqResponse.destroy({ where: { id: faqId, shop_id: shopId } });
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
-    ragService.deletePoint(`faq-${faqId}`, shopId).catch(() => {});
     return { message: 'FAQ deleted successfully' };
 };
 
@@ -398,54 +345,26 @@ const deleteDocument = async (userId, shopId, documentId) => {
 
 // ── FAQ search ────────────────────────────────────────────────────────────────
 
-/**
- * Fix #9: Semantic FAQ search via RAG with ILIKE fallback.
- */
 const searchFaq = async (userId, shopId, payload) => {
     await verifyShopAccess(userId, shopId);
 
     const query = payload.query || payload.category || '';
-
-    // Stage 1: Semantic RAG search
-    if (query) {
-        try {
-            const ragResult = await ragService.queryData({ query, limit: payload.limit || 5, shopId });
-            const hits = (ragResult.results || []).filter(r =>
-                r.score >= 0.6 && r.metadata?.documentId?.startsWith('faq-')
-            );
-
-            if (hits.length > 0) {
-                const faqIds = hits.map(h => parseInt(h.metadata.documentId.replace('faq-', ''), 10));
-                const faqs = await FaqResponse.findAll({
-                    where: { id: { [Op.in]: faqIds }, shop_id: shopId, is_active: true }
-                });
-                // Preserve RAG ranking order
-                const faqMap = new Map(faqs.map(f => [f.id, f]));
-                return faqIds
-                    .filter(id => faqMap.has(id))
-                    .map((id, idx) => ({
-                        ...formatFaq(faqMap.get(id)),
-                        relevance_score: hits[idx]?.score || 0.8
-                    }));
-            }
-        } catch (_) {
-            // RAG unavailable — fall through to text search
-        }
-    }
-
-    // Stage 2: ILIKE text fallback
     const whereClause = { shop_id: shopId, is_active: true };
     if (payload.category) whereClause.category = payload.category;
     if (query) {
         whereClause[Op.or] = [
+            { category:    { [Op.iLike]: `%${query}%` } },
             { template_en: { [Op.iLike]: `%${query}%` } },
-            { template_bn: { [Op.iLike]: `%${query}%` } },
-            { category: { [Op.iLike]: `%${query}%` } }
+            { template_bn: { [Op.iLike]: `%${query}%` } }
         ];
     }
 
-    const faqs = await FaqResponse.findAll({ where: whereClause, order: [['priority', 'DESC']] });
-    return faqs.map(faq => ({ ...formatFaq(faq), relevance_score: 0.8 }));
+    const faqs = await FaqResponse.findAll({
+        where: whereClause,
+        order: [['priority', 'DESC'], ['use_count', 'DESC']],
+        limit: payload.limit || 10
+    });
+    return faqs.map(faq => ({ ...formatFaq(faq), relevance_score: 0.9 }));
 };
 
 // ── Hit tracking ──────────────────────────────────────────────────────────────

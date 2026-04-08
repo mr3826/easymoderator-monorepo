@@ -328,6 +328,59 @@ class ConversationService {
         }
     }
 
+    async bulkUpdateStatus(shopId, conversationIds = [], status) {
+        try {
+            if (!shopId) {
+                const error = new Error('Shop ID is required');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (!Array.isArray(conversationIds) || conversationIds.length === 0) {
+                const error = new Error('conversationIds must be a non-empty array');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const allowedStatuses = new Set([
+                'active',
+                'closed',
+                'archived',
+                'unanswered',
+                'pending_order',
+                'completed',
+                'followed_up'
+            ]);
+
+            if (!allowedStatuses.has(status)) {
+                const error = new Error('Invalid status');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const [updatedCount] = await Conversation.update(
+                { status },
+                {
+                    where: {
+                        shop_id: shopId,
+                        id: {
+                            [Op.in]: conversationIds
+                        }
+                    }
+                }
+            );
+
+            return {
+                requested: conversationIds.length,
+                updated: updatedCount,
+                skipped: Math.max(conversationIds.length - updatedCount, 0),
+                status
+            };
+        } catch (error) {
+            throw error;
+        }
+    }
+
     /**
      * Bug #2 Fix: Full-history search across conversations AND messages.
      * Searches customer name, phone, conversation title, and message content.

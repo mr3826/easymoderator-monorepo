@@ -331,12 +331,13 @@ const getShopAiSettings = async (shopId) => {
 
     // Return AI settings from the settings JSON field, with defaults.
     // Key is `settings.ai` — used by both the chatbot pipeline and this service.
-    // DRAFT mode is deprecated: auto_send_enabled defaults to true at 75% confidence.
+    // shop_created_at is included so callers can enforce the 48h onboarding DRAFT window.
     const defaultSettings = { ...DEFAULT_AI_SETTINGS };
 
     return {
         ...defaultSettings,
-        ...(shop.settings?.ai || {})
+        ...(shop.settings?.ai || {}),
+        shop_created_at: shop.created_at
     };
 };
 

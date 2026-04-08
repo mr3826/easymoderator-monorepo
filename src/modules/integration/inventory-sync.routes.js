@@ -29,9 +29,21 @@ router.post('/sync', authenticate, async (req, res, next) => {
     const { provider } = req.query;
 
     if (!provider) {
+      // Default to google_sheets for BD F-commerce shops
+      req.query.provider = 'google_sheets';
+    }
+
+    if (provider && provider !== 'google_sheets') {
       return res.status(400).json({
         success: false,
-        error: 'provider query parameter required (shopify, woocommerce, or google_sheets)'
+        error: 'Only google_sheets is supported. Shopify/WooCommerce are not enabled.'
+      });
+    }
+
+    if (!provider) {
+      return res.status(400).json({
+        success: false,
+        error: 'provider query parameter required. Use: google_sheets'
       });
     }
 

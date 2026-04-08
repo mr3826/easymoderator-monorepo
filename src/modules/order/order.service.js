@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 const deliveryService = require('../delivery/delivery.service');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { invalidate: invalidateStock } = require('../product/stock-status-guard.service');
 
 /**
  * Verify user has access to shop
@@ -194,6 +195,8 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
                     by: validItem.quantity,
                     transaction
                 });
+                // Invalidate Redis stock cache after commit (fire-and-forget)
+                setImmediate(() => invalidateStock(shopId, validItem.product_id));
             }
         }
         // Final usage limit check before commit (defense in depth)

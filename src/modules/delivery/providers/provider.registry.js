@@ -15,6 +15,7 @@
 
 const PathaoProvider = require('./pathao.provider');
 const SteadfastProvider = require('./steadfast.provider');
+const RedXProvider = require('./redx.provider');
 
 const COURIER_REGISTRY = {
     pathao: {
@@ -84,6 +85,38 @@ const COURIER_REGISTRY = {
             'unknown': 'unknown'
         },
         credentialFields: ['api_key', 'secret_key']
+    },
+
+    redx: {
+        Provider: RedXProvider,
+        label: 'RedX',
+        normalizePayload: (orderData, metadata = {}) => ({
+            customer_name: orderData.customer_name,
+            customer_phone: orderData.customer_phone,
+            delivery_area: orderData.delivery_address,
+            delivery_area_id: metadata.delivery_area_id || null,
+            cash_collection_amount: orderData.total || 0,
+            parcel_weight: orderData.item_weight || 500, // grams
+            merchant_invoice_id: orderData.order_number,
+            special_instruction: orderData.note || '',
+            value: orderData.item_value || orderData.total || 0
+        }),
+        normalizeResponse: (response) => ({
+            consignment_id: response.tracking_code,
+            tracking_code: response.tracking_code,
+            status: response.status
+        }),
+        statusMap: {
+            'Initiated':         'pending',
+            'Picked Up':         'picked_up',
+            'In Transit':        'in_transit',
+            'Delivered':         'delivered',
+            'Cancelled':         'cancelled',
+            'Returned':          'returned',
+            'Partially Returned':'partial_returned',
+            'Hold':              'hold'
+        },
+        credentialFields: ['api_key']
     }
 };
 

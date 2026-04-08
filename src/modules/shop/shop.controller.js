@@ -6,6 +6,7 @@ const { AppError } = require('../../utils/AppError');
 const { setAuthCookies } = require('../../utils/auth-cookies');
 const { getAiSettingsAccess, getAllowedLanguages, getAllowedAutomationModes } = require('../subscription/subscription.plans');
 const cacheService = require('../../utils/cache.service');
+const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
 
 // Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
 // Fails open to 'FREE' so plan checks never lock out users due to DB errors.
@@ -280,7 +281,8 @@ const ALLOWED_LLM_MODELS = new Set([
     'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
     'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
     'gemini-1.5-pro', 'gemini-1.5-flash',
-    'deepseek-chat'
+    'deepseek-chat',
+    'Qwen/Qwen2.5-0.5B-Instruct'
 ]);
 
 /**
@@ -579,6 +581,85 @@ const applyBrandingPreset = async (req, res, next) => {
     }
 };
 
+// ---------------------------------------------------------------------------
+// Automation Settings (n8n / Make.com webhook URL per shop)
+// ---------------------------------------------------------------------------
+
+const getAutomationSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const { Shop } = require('./shop.entity');
+        const shop = await Shop.findByPk(shopId, {
+            attributes: ['id', 'workflow_webhook_url', 'workflow_webhook_secret']
+        });
+        if (!shop) throw new AppError('Shop not found', 404);
+        res.status(200).json({
+            success: true,
+            data: {
+                workflow_webhook_url: shop.workflow_webhook_url || null,
+                has_webhook_secret: Boolean(shop.workflow_webhook_secret)
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updateAutomationSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const { workflow_webhook_url, workflow_webhook_secret } = req.body;
+        const { Shop } = require('./shop.entity');
+        const shop = await Shop.findByPk(shopId);
+        if (!shop) throw new AppError('Shop not found', 404);
+        const updates = {};
+        if (workflow_webhook_url !== undefined) {
+            updates.workflow_webhook_url = workflow_webhook_url || null;
+        }
+        if (workflow_webhook_secret !== undefined) {
+            updates.workflow_webhook_secret = workflow_webhook_secret || null;
+        }
+        await shop.update(updates);
+        res.status(200).json({
+            success: true,
+            data: {
+                workflow_webhook_url: shop.workflow_webhook_url || null,
+                has_webhook_secret: Boolean(shop.workflow_webhook_secret)
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// BD Settings (Bangladesh-specific MFS + Google Sheets config)
+// ---------------------------------------------------------------------------
+
+const getBdSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const settings = await getBdSettingsHelper(shopId);
+        res.status(200).json({ success: true, data: settings });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updateBdSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const updated = await updateBdSettingsHelper(shopId, req.body);
+        res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getUserShops,
     getShop,
@@ -600,5 +681,9 @@ module.exports = {
     getIntentThresholds,
     updateIntentThresholds,
     getAiDefaults,
-    applyBrandingPreset
+    applyBrandingPreset,
+    getBdSettings,
+    updateBdSettings,
+    getAutomationSettings,
+    updateAutomationSettings
 };

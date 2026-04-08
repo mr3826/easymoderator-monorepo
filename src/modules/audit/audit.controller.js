@@ -99,8 +99,15 @@ const cleanupIdempotencyKeys = async (req, res, next) => {
             });
         }
 
-        // TODO: Add admin role check here
-        // For now, allow any authenticated user
+        if (req.user?.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                error: {
+                    code: 'FORBIDDEN',
+                    message: 'Admin role required.'
+                }
+            });
+        }
 
         const deletedCount = await auditService.cleanupExpiredIdempotencyKeys();
 

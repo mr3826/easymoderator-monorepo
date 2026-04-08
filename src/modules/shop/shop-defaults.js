@@ -2,7 +2,9 @@
  * Shop AI Defaults
  *
  * Canonical default values for shop AI settings.
- * New shops default to DRAFT mode so sellers build trust before enabling AUTO.
+ * New shops default to AUTO mode — the bot sends directly.
+ * DRAFT is enforced automatically for the first 48h (onboarding window) so
+ * the merchant can see what the bot says before it goes fully live.
  *
  * tone_persona options:
  *   'formal'        — Professional, neutral English/Bangla
@@ -11,13 +13,10 @@
  */
 
 const DEFAULT_AI_SETTINGS = {
-    // DRAFT mode ON by default — sellers approve before AI replies auto-send.
-    auto_send_enabled: false,
-    auto_send_confidence_threshold: 85,
+    auto_send_enabled: true,
+    auto_send_confidence_threshold: 75,
 
-    draft_mode_enabled: true,
-
-    automation_mode: 'DRAFT',
+    automation_mode: 'AUTO',
     confidence_threshold: 75,
     model_preset: 'standard',           // 'standard' (cheap) | 'advanced' (powerful)
     auto_reply_enabled: true,

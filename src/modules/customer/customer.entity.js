@@ -65,6 +65,15 @@ const Customer = sequelize.define('Customer', {
         {
             unique: true,
             fields: ['shop_id', 'email']
+        },
+        {
+            // Primary webhook lookup: find-or-create customer on every inbound message
+            unique: true,
+            fields: ['shop_id', 'channel_type', 'channel_user_id']
+        },
+        {
+            // Data-deletion callback: delete by channel_user_id across all shops
+            fields: ['channel_user_id']
         }
     ],
     hooks: {

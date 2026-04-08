@@ -28,9 +28,32 @@ const Subscription = sequelize.define('Subscription', {
         defaultValue: 0
     },
     billing_cycle: {
-        type: DataTypes.ENUM('monthly', 'yearly'),
+        type: DataTypes.ENUM('monthly', 'yearly', 'per_order'),
         allowNull: false,
         defaultValue: 'monthly'
+    },
+    // Partner (per_order) billing fields
+    billing_model: {
+        type: DataTypes.ENUM('flat_monthly', 'per_order'),
+        allowNull: false,
+        defaultValue: 'flat_monthly'
+    },
+    // ৳ charged per delivered order (null for flat plans)
+    per_order_charge_bdt: {
+        type: DataTypes.DECIMAL(6, 2),
+        allowNull: true,
+        defaultValue: null
+    },
+    // Running count of delivered orders in current weekly billing window
+    partner_orders_this_week: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    // Accumulated charge (partner_orders_this_week × per_order_charge_bdt)
+    // Reset to 0 after each weekly invoice is generated
+    partner_pending_invoice_amount: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0
     },
     status: {
         type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended'),

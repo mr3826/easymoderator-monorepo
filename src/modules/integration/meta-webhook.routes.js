@@ -6,6 +6,7 @@ const config = require('../../config/config');
 const MetaIntegration = require('./meta-integration.entity');
 const { Customer } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
+const { sequelize } = require('../../utils/database/database-setup');
 
 const router = express.Router();
 
@@ -208,7 +209,8 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
         // and channel_type is 'messenger' or 'instagram'
         const deletedCount = await Customer.destroy({
           where: {
-            channel_user_id: facebookUserId
+            channel_user_id: facebookUserId,
+            channel_type: ['messenger', 'instagram']
           }
         });
         console.log(`Data deletion callback: deleted ${deletedCount} customer record(s) for Facebook user ${facebookUserId} (code: ${confirmationCode})`);
@@ -269,7 +271,12 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
       try {
         await Customer.update(
           { metadata: require('sequelize').literal(`jsonb_set(COALESCE(metadata, '{}'), '{deauthorized}', 'true')`) },
-          { where: { channel_user_id: facebookUserId } }
+          {
+            where: {
+              channel_user_id: facebookUserId,
+              channel_type: ['messenger', 'instagram']
+            }
+          }
         );
         console.log(`Deauthorize callback: marked customer ${facebookUserId} as deauthorized`);
       } catch (err) {
@@ -318,6 +325,20 @@ router.post('/reply', express.json(), async (req, res) => {
       }
     }
 
+    // Enforce Meta's 24-hour messaging window for Facebook/Instagram (check BEFORE storing)
+    if (recipient_id && platform && ['messenger', 'facebook', 'instagram'].includes(platform)) {
+      const lastCustomerMsg = await Message.findOne({
+        where: { conversation_id, sender: 'customer' },
+        order: [['created_at', 'DESC']]
+      });
+      if (lastCustomerMsg) {
+        const hoursElapsed = (Date.now() - new Date(lastCustomerMsg.created_at)) / (1000 * 60 * 60);
+        if (hoursElapsed > 24) {
+          return res.status(422).json({ error: 'Outside 24-hour messaging window. Cannot send message after 24 hours of last customer message.' });
+        }
+      }
+    }
+
     // Store the bot reply as a message record
     const botMessage = await Message.create({
       conversation_id,
@@ -334,6 +355,15 @@ router.post('/reply', express.json(), async (req, res) => {
         });
 
         if (integration && integration.access_token) {
+          // Block delivery if token is known to be expired — caller gets actionable error
+          if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
+            console.error(`[reply] Token expired for shop ${shop_id} platform ${platform} at ${integration.token_expires_at}`);
+            return res.status(503).json({
+              error: 'Meta access token expired. Please reconnect the channel.',
+              code: 'TOKEN_EXPIRED',
+              platform
+            });
+          }
           await sendMetaReply(platform, integration.access_token, recipient_id, message);
           console.log(`Sent ${platform} reply to ${recipient_id} for shop ${shop_id}`);
         } else {
@@ -504,80 +534,83 @@ async function handleWhatsAppWebhook(payload) {
 async function storeIncomingMessage(event) {
   try {
     const { platform, shop_id, sender, message } = event;
+    const { Op } = require('sequelize');
 
     // Map platform name to channel_type ENUM value
     const channelType = platform === 'facebook' ? 'messenger' : platform;
 
-    // 1. Find or create customer by platform sender ID
-    const [customer] = await Customer.findOrCreate({
-      where: {
-        shop_id,
-        channel_type: channelType,
-        channel_user_id: sender
-      },
-      defaults: {
-        shop_id,
-        name: `${platform} user`,
-        phone: sender,
-        channel_type: channelType,
-        channel_user_id: sender,
-        metadata: { source: 'webhook', platform }
-      }
-    });
-
-    // 2. Find active conversation or create new one
-    // Look for a conversation from this customer in the last 24 hours
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    let conversation = await Conversation.findOne({
-      where: {
-        shop_id,
-        customer_id: customer.id,
-        channel: channelType,
-        created_at: { [require('sequelize').Op.gte]: oneDayAgo }
-      },
-      order: [['created_at', 'DESC']]
-    });
-
-    if (!conversation) {
-      conversation = await Conversation.create({
-        shop_id,
-        customer_id: customer.id,
-        channel: channelType,
-        role: 'user',
-        message: message,
-        metadata: { source: 'webhook', platform }
-      });
-    }
-
-    // 3. Store the message — idempotency: skip if external_id already recorded
+    // Idempotency check BEFORE opening transaction to avoid lock contention
     const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
     if (externalId) {
       const existing = await Message.findOne({ where: { external_id: externalId } });
       if (existing) {
         console.log(`Duplicate webhook event skipped (external_id=${externalId})`);
         return {
-          customer_id: customer.id,
-          customer_name: customer.name,
-          conversation_id: conversation.id,
+          customer_id: existing.customer_id,
+          customer_name: null,
+          conversation_id: existing.conversation_id,
           message_id: existing.id
         };
       }
     }
-    const msgRecord = await Message.create({
-      conversation_id: conversation.id,
-      content: message,
-      sender: 'customer',
-      external_id: externalId
+
+    // Wrap all 3 writes in a transaction — prevents orphaned customer/conversation on partial failure
+    return await sequelize.transaction(async (t) => {
+      // 1. Find or create customer by platform sender ID
+      const [customer] = await Customer.findOrCreate({
+        where: { shop_id, channel_type: channelType, channel_user_id: sender },
+        defaults: {
+          shop_id,
+          name: `${platform} user`,
+          phone: sender,
+          channel_type: channelType,
+          channel_user_id: sender,
+          metadata: { source: 'webhook', platform }
+        },
+        transaction: t
+      });
+
+      // 2. Find active conversation (last 24h) or create new one
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      let conversation = await Conversation.findOne({
+        where: {
+          shop_id,
+          customer_id: customer.id,
+          channel: channelType,
+          created_at: { [Op.gte]: oneDayAgo }
+        },
+        order: [['created_at', 'DESC']],
+        transaction: t
+      });
+
+      if (!conversation) {
+        conversation = await Conversation.create({
+          shop_id,
+          customer_id: customer.id,
+          channel: channelType,
+          role: 'user',
+          message: message,
+          metadata: { source: 'webhook', platform }
+        }, { transaction: t });
+      }
+
+      // 3. Store the message
+      const msgRecord = await Message.create({
+        conversation_id: conversation.id,
+        content: message,
+        sender: 'customer',
+        external_id: externalId
+      }, { transaction: t });
+
+      console.log(`Stored ${platform} message: customer=${customer.id}, conv=${conversation.id}, msg=${msgRecord.id}`);
+
+      return {
+        customer_id: customer.id,
+        customer_name: customer.name,
+        conversation_id: conversation.id,
+        message_id: msgRecord.id
+      };
     });
-
-    console.log(`Stored ${platform} message: customer=${customer.id}, conv=${conversation.id}, msg=${msgRecord.id}`);
-
-    return {
-      customer_id: customer.id,
-      customer_name: customer.name,
-      conversation_id: conversation.id,
-      message_id: msgRecord.id
-    };
   } catch (error) {
     console.error('Failed to store incoming message:', error.message);
     // storageFailed sentinel — callers must NOT forward to workflow without a conversation record

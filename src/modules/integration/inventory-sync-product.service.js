@@ -46,20 +46,14 @@ async function syncProductInventory(shopId, provider) {
       throw new AppError(`No sync configuration found for ${provider}`, 404);
     }
 
-    // Fetch inventory from external source
+    // Fetch inventory — only google_sheets and manual (DB) supported
     let externalInventory;
     switch (provider) {
-      case 'shopify':
-        externalInventory = await fetchShopifyProductInventory(config);
-        break;
-      case 'woocommerce':
-        externalInventory = await fetchWooCommerceProductInventory(config);
-        break;
       case 'google_sheets':
         externalInventory = await fetchGoogleSheetsProductInventory(config);
         break;
       default:
-        throw new AppError(`Unknown provider: ${provider}`, 400);
+        throw new AppError(`Unsupported provider: ${provider}. Use google_sheets.`, 400);
     }
 
     // Sync to app products
@@ -74,18 +68,34 @@ async function syncProductInventory(shopId, provider) {
 }
 
 /**
- * Get sync configuration for provider
+ * Get sync configuration for provider.
+ * For google_sheets, falls back to shop.settings.bd (where the BD Settings UI saves it).
  */
 async function getSyncConfig(shopId, provider) {
   const shop = await Shop.findByPk(shopId, {
-    attributes: ['inventory_config']
+    attributes: ['inventory_config', 'settings']
   });
 
-  if (!shop?.inventory_config?.[provider]) {
-    return null;
+  if (!shop) return null;
+
+  // Primary: explicit inventory_config
+  if (shop.inventory_config?.[provider]) {
+    return shop.inventory_config[provider];
   }
 
-  return shop.inventory_config[provider];
+  // Fallback for google_sheets: read from shop.settings.bd (BD Settings UI)
+  if (provider === 'google_sheets') {
+    const bd = shop.settings?.bd || {};
+    if (bd.google_sheet_id) {
+      return {
+        spreadsheet_id: bd.google_sheet_id,
+        sheet_name: bd.google_sheet_range || 'Sheet1',
+        api_key: process.env.GOOGLE_SHEETS_API_KEY || null
+      };
+    }
+  }
+
+  return null;
 }
 
 /**

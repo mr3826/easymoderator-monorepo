@@ -182,11 +182,72 @@ const getDashboardChart = async (req, res, next) => {
     }
 };
 
+/**
+ * GET /api/dashboard/queue
+ * Real-time today's action queue for BD F-commerce shop owners.
+ * Returns counts for: unread conversations, orders awaiting payment,
+ * orders ready to dispatch, and at-risk (RTO) deliveries.
+ */
+const getTodayQueue = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'No shop selected.' } });
+        }
+
+        const { Op } = require('sequelize');
+        const { Order, Conversation } = require('../entities');
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const [unreadCount, pendingPaymentCount, readyToDispatchCount] = await Promise.all([
+            // Unanswered conversations (customer waiting for reply)
+            Conversation.count({ where: { shop_id: shopId, status: 'unanswered' } }),
+            // Orders placed but payment not confirmed yet
+            Order.count({ where: { shop_id: shopId, payment_status: 'pending', order_status: { [Op.notIn]: ['cancelled', 'refunded'] } } }),
+            // Orders confirmed/paid but not yet dispatched
+            Order.count({ where: { shop_id: shopId, order_status: { [Op.in]: ['placed', 'confirmed'] }, fulfillment_status: { [Op.notIn]: ['dispatched', 'shipped', 'delivered'] } } })
+        ]);
+
+        // At-risk orders: today's orders where courier hasn't picked up yet (use fulfilled orders with no tracking update)
+        const atRiskOrders = await Order.findAll({
+            where: {
+                shop_id: shopId,
+                order_status: 'fulfilled',
+                fulfillment_status: { [Op.in]: ['attempted', 'returned'] }
+            },
+            attributes: ['id', 'customer_name', 'customer_phone', 'fulfillment_status', 'courier_tracking_id'],
+            limit: 10,
+            order: [['updated_at', 'DESC']]
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                unread_count: unreadCount,
+                pending_payment_count: pendingPaymentCount,
+                ready_to_dispatch_count: readyToDispatchCount,
+                at_risk_orders: atRiskOrders.map(o => ({
+                    id: o.id,
+                    customer_name: o.customer_name,
+                    customer_phone: o.customer_phone,
+                    status: o.fulfillment_status,
+                    tracking_id: o.courier_tracking_id
+                }))
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getDashboardMetricsRest,
     getDashboardMetricsById,
     getDashboardChart,
+    getTodayQueue,
     logAnalyticsEvent,
     logAnalyticsMetric,
     getAnalyticsDashboard,

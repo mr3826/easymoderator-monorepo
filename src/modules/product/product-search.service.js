@@ -275,8 +275,42 @@ const extractColors = (variants) => {
     return [...colors];
 };
 
+/**
+ * Fetch live product records by a list of IDs.
+ * Used by the RAG tier to convert vector-store hits (product_id metadata)
+ * into full DB records with current price, stock, and variants.
+ *
+ * @param {string[]} productIds
+ * @param {string} shopId
+ * @returns {Promise<ProductResult[]>}
+ */
+const getProductsByIds = async (productIds, shopId) => {
+    if (!productIds.length) return [];
+    const results = await sequelize.query(`
+        SELECT
+            id, name, name_bn, category, price, compare_at_price,
+            quantity, in_stock, is_active, variants, images, image_url,
+            tags, brand, description, ai_description, ai_tags,
+            ai_category, ai_color_primary, ai_material, ai_attributes
+        FROM products
+        WHERE shop_id = :shopId
+          AND id IN (:productIds)
+          AND deleted_at IS NULL
+          AND is_active = true
+        LIMIT 10
+    `, {
+        replacements: { shopId, productIds },
+        type: QueryTypes.SELECT
+    }).catch(err => {
+        console.error('[ProductSearch] getProductsByIds error:', err.message);
+        return [];
+    });
+    return results.map(formatProduct);
+};
+
 module.exports = {
     searchByAttributes,
+    getProductsByIds,
     getProductLive,
     checkStock,
     formatProductsForLlm

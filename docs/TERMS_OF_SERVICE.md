@@ -128,6 +128,38 @@ Your data is used to:
 - **Method:** Refund to original payment method
 - **Conditions:** No refunds for used service periods
 
+### 7.4 Partner Plan Billing (Pay-Per-Order Model)
+
+#### Charging and Billing
+- **Monthly Fee:** Zero monthly subscription fee
+- **Per-Order Charge:** ৳22 charged for each order reaching `status = 'delivered'`
+- **No Charge Conditions:** No charges for cancelled orders, RTO (Return-to-Origin), returned orders, or pending orders
+- **Invoice Cycle:** Invoices auto-generated every 7 days (weekly)
+- **Invoice Content:** Detailed breakdown of delivered orders and corresponding charges
+
+#### Payment Terms
+- **Payment Due Date:** 14 days from invoice date
+- **Accepted Methods:** Same as standard subscription plans (bKash, Nagad, Rocket, COD, Card, Bank Transfer)
+- **Late Payment:** Notifications sent at 7, 10, and 14 days
+- **Grace Period:** Service continues until 14 days past due
+
+#### Non-Payment Handling
+- **Service Pause:** After 14 days without payment, service automatically pauses
+- **Data Retention:** Conversation history and configurations remain visible for data export
+- **Reactivation:** Full service resumes upon payment of outstanding balance
+- **No Deletion:** Account data is not deleted during service pause
+
+#### Key Protections for Merchants
+- **Fraud Prevention:** Cancelled and RTO orders never incur charges
+- **Transparency:** Real-time view of delivered orders and pending charges in dashboard
+- **Flexibility:** Switch to fixed monthly plans at any time
+- **No Hidden Fees:** Only per-delivered-order charge; no setup, maintenance, or operational fees
+
+#### Billing Disputes
+- **Dispute Window:** 30 days from invoice date to dispute charges
+- **Verification:** We will verify order delivery status via partner logistics API
+- **Resolution:** Disputes resolved within 5 business days
+
 ## 8. Intellectual Property Rights
 
 ### 8.1 Our Rights

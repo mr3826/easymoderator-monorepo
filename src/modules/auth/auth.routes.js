@@ -11,6 +11,43 @@ const validate = require('../../middleware/validate.middleware');
 
 const router = express.Router();
 
+// Rate limiters for password reset (prevent email enumeration / spam)
+let forgotPasswordIpLimiter;
+let forgotPasswordEmailLimiter;
+if (config.env !== 'test') {
+    try {
+        const { rateLimitRedis } = require('../../config/redis');
+        const makeStore = (prefix) => rateLimitRedis && typeof rateLimitRedis.call === 'function'
+            ? new RedisStore({ prefix, sendCommand: (...args) => rateLimitRedis.call(...args) })
+            : undefined;
+
+        forgotPasswordIpLimiter = rateLimit({
+            windowMs: 60 * 60 * 1000, // 1 hour
+            max: 3,
+            message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many password reset requests. Try again in 1 hour.' } },
+            standardHeaders: true,
+            legacyHeaders: false,
+            store: makeStore('rl:fp-ip:'),
+            keyGenerator: (req) => req.ip,
+        });
+
+        forgotPasswordEmailLimiter = rateLimit({
+            windowMs: 60 * 60 * 1000, // 1 hour
+            max: 1,
+            message: { success: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many password reset requests for this email. Try again in 1 hour.' } },
+            standardHeaders: true,
+            legacyHeaders: false,
+            store: makeStore('rl:fp-email:'),
+            keyGenerator: (req) => (req.body?.email || req.ip).toLowerCase(),
+        });
+    } catch (error) {
+        console.error('Failed to initialize forgot-password rate limiters:', error);
+    }
+}
+
+const fpIpLimiter    = forgotPasswordIpLimiter    || ((req, res, next) => next());
+const fpEmailLimiter = forgotPasswordEmailLimiter || ((req, res, next) => next());
+
 // Specific rate limiter for refresh endpoint (stricter than general auth)
 let refreshRateLimiter;
 if (config.env !== 'test') {
@@ -60,8 +97,13 @@ router.post('/refresh',
 // GET /auth/me - Get current auth context
 router.get('/me', authenticate, authController.me);
 
-// POST /auth/forgot-password - Request password reset email
-router.post('/forgot-password', validate(forgotPasswordValidator), authController.forgotPassword);
+// POST /auth/forgot-password - Request password reset email (rate limited per IP + per email)
+router.post('/forgot-password',
+    fpIpLimiter,
+    fpEmailLimiter,
+    validate(forgotPasswordValidator),
+    authController.forgotPassword
+);
 
 // POST /auth/reset-password - Reset password with token
 router.post('/reset-password', validate(resetPasswordValidator), authController.resetPassword);

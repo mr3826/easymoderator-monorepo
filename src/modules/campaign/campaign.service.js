@@ -2,6 +2,27 @@ const { Campaign, Customer, Order, UserShop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { Op } = require('sequelize');
 
+const CAMPAIGN_MAX_RECIPIENTS = Number(process.env.CAMPAIGN_MAX_RECIPIENTS || 500);
+
+const hasCampaignConsent = (customer) => {
+    const metadata = customer?.metadata || {};
+
+    // Consent can be expressed with any of these metadata flags.
+    if (metadata.marketing_opt_out === true || metadata.unsubscribed === true) {
+        return false;
+    }
+
+    if (
+        metadata.marketing_opt_in === true ||
+        metadata.campaign_consent === true ||
+        metadata.consent === true
+    ) {
+        return true;
+    }
+
+    return false;
+};
+
 /**
  * Verify user has access to the shop
  */
@@ -106,7 +127,12 @@ const runCampaign = async (shopId, campaignId) => {
 
     // Build customer query from segment_filter
     const customerWhere = { shop_id: shopId };
-    const { minOrders, paymentMethod } = campaign.segment_filter || {};
+    const {
+        minOrders,
+        paymentMethod,
+        requireConsent = true,
+        recipientCap = CAMPAIGN_MAX_RECIPIENTS
+    } = campaign.segment_filter || {};
 
     // Find matching customers
     let matchingCustomers;
@@ -119,22 +145,15 @@ const runCampaign = async (shopId, campaignId) => {
 
         const orders = await Order.findAll({
             where: orderWhere,
-            attributes: ['customer_id'],
+            attributes: ['customer_id', [Order.sequelize.fn('COUNT', Order.sequelize.col('id')), 'order_count']],
             group: ['customer_id'],
-            having: { customer_id: { [Op.ne]: null } }
+            having: {
+                customer_id: { [Op.ne]: null },
+                order_count: { [Op.gte]: Number(minOrders) }
+            }
         });
 
-        // Count per customer
-        const orderCountMap = {};
-        for (const o of orders) {
-            const cid = o.customer_id;
-            if (!cid) continue;
-            orderCountMap[cid] = (orderCountMap[cid] || 0) + 1;
-        }
-
-        const eligibleIds = Object.entries(orderCountMap)
-            .filter(([, count]) => count >= minOrders)
-            .map(([id]) => id);
+        const eligibleIds = orders.map((o) => o.customer_id).filter(Boolean);
 
         customerWhere.id = { [Op.in]: eligibleIds };
     } else if (paymentMethod) {
@@ -149,10 +168,23 @@ const runCampaign = async (shopId, campaignId) => {
 
     matchingCustomers = await Customer.findAll({
         where: customerWhere,
-        attributes: ['id']
+        attributes: ['id', 'metadata']
     });
 
-    const totalRecipients = matchingCustomers.length;
+    const eligibleCustomers = requireConsent
+        ? matchingCustomers.filter(hasCampaignConsent)
+        : matchingCustomers;
+
+    const cappedRecipients = Math.min(Number(recipientCap) || CAMPAIGN_MAX_RECIPIENTS, CAMPAIGN_MAX_RECIPIENTS);
+
+    if (eligibleCustomers.length > cappedRecipients) {
+        throw new AppError(
+            `Campaign recipient limit exceeded: ${eligibleCustomers.length} recipients selected, max allowed is ${cappedRecipients}`,
+            429
+        );
+    }
+
+    const totalRecipients = eligibleCustomers.length;
 
     // Set status to running and record total recipients
     await campaign.update({ status: 'running', total_recipients: totalRecipients });

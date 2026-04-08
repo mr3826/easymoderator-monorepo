@@ -19,7 +19,7 @@ const confirmCodPaymentValidator = Joi.object({
  */
 const savePaymentConfigValidator = Joi.object({
     gateway: Joi.string()
-        .valid('cod', 'aamarpay', 'sslcommerz', 'self-mfs')
+        .valid('cod', 'aamarpay', 'sslcommerz', 'self-mfs', 'bkash', 'nagad', 'rocket')
         .required()
         .messages({
             'any.only': 'Invalid payment gateway',

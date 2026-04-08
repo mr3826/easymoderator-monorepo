@@ -6,7 +6,9 @@ const knowledgeService = require('../knowledge/knowledge.service');
 const shopService = require('../shop/shop.service');
 const channelService = require('../channel/channel.service');
 const cacheService = require('../../utils/cache.service');
-const promptSanitizer = require('../ai/prompt-sanitizer.service');
+const { isTooLong } = require('../ai/prompt-sanitizer.service');
+const { SupportTicket } = require('../entities');
+const { createLogger } = require('../../utils/structured-logger');
 
 // Thin cached wrapper — delegates to the canonical shop service so there is
 // a single source of truth for AI settings (stored under shop.settings.ai).
@@ -66,6 +68,13 @@ class AIChatbotController {
                 });
             }
 
+            if (isTooLong(message)) {
+                return res.status(400).json({
+                    success: false,
+                    errors: [{ msg: 'Message exceeds maximum length of 500 characters' }]
+                });
+            }
+
             // Step 1: Ingest message and get conversation state
             const ingestionResult = await ConversationStateService.ingestMessage({
                 shop_id,
@@ -104,8 +113,9 @@ class AIChatbotController {
                 shouldContinueOrderSession = true;
                 const stepResult = await OrderSessionService.processStep(
                     active_order_session.id,
+                    shop_id,
                     message,
-                    message
+                    imageUrls.length ? { imageUrl: imageUrls[0] } : null
                 );
 
                 response = stepResult.prompt;
@@ -120,15 +130,9 @@ class AIChatbotController {
                 });
 
             } else {
-                // Sanitize customer message before feeding into AI pipeline
-                const sanitizedMessage = promptSanitizer.sanitize(message);
-                if (promptSanitizer.wasInjectionAttempt(message, sanitizedMessage)) {
-                    console.warn(`[PromptSanitizer] Injection attempt detected from shop=${shop_id} conv=${conversation_id}`);
-                }
-
                 // Process new message for intent classification
                 const intentResult = await AIChatbotController.processNewIntent(
-                    sanitizedMessage,
+                    message,
                     conversation_history,
                     entities,
                     detectedLanguage,
@@ -144,14 +148,18 @@ class AIChatbotController {
             // Threshold stored as 0-100 integer; confidence is 0.0-1.0 float
             const thresholdFraction = aiSettings.confidence_threshold / 100;
             const gateFailed = !shouldContinueOrderSession && confidence < thresholdFraction;
-            
-            // ✅ NEW: Auto-send if confidence >= auto_send_confidence_threshold (skips DRAFT)
-            const autoSendThreshold = (aiSettings.auto_send_confidence_threshold || 85) / 100;
-            const shouldAutoSend = confidence >= autoSendThreshold && aiSettings.automation_mode === 'DRAFT';
-            
-            if (gateFailed && !shouldAutoSend) {
+
+            if (gateFailed) {
                 response = AIChatbotController.buildVerificationRequest(detectedLanguage, message);
             }
+
+            // Onboarding window: first 48h after shop creation → force DRAFT so merchant
+            // can see what the bot says before going fully live.
+            const shopCreatedAt = aiSettings.shop_created_at;
+            const isOnboarding = shopCreatedAt
+                && (Date.now() - new Date(shopCreatedAt).getTime()) < 48 * 60 * 60 * 1000;
+            const effectiveMode = isOnboarding ? 'DRAFT' : (aiSettings.automation_mode || 'AUTO');
+            const isDraft = effectiveMode === 'DRAFT';
 
             // Step 5: Store AI response
             await ConversationStateService.storeAIResponse(conversation_id, response, {
@@ -162,7 +170,8 @@ class AIChatbotController {
                 order_session_active: !!active_order_session,
                 confidence,
                 gate_triggered: gateFailed,
-                auto_sent: shouldAutoSend  // ✅ NEW: Track if auto-sent
+                is_draft: isDraft,
+                is_onboarding: !!isOnboarding
             });
 
             // Step 6: Return response
@@ -177,7 +186,8 @@ class AIChatbotController {
                     order_session_continued: shouldContinueOrderSession,
                     confidence,
                     gate_triggered: gateFailed,
-                    auto_sent: shouldAutoSend,  // ✅ NEW: Indicate if auto-sent
+                    is_draft: isDraft,
+                    is_onboarding: !!isOnboarding,
                     channel: platform,
                     ai_model: aiSettings.llm_model || 'gpt-4o-mini',
                     ai_settings: aiSettings
@@ -221,9 +231,9 @@ class AIChatbotController {
 
             // ✅ NEW: Map model_preset to preferredProvider
             // 'standard' = use cheap providers (Gemini, GPT-4o-mini)
-            // 'advanced' = use powerful providers (Claude, GPT-4o)
+            // 'advanced' = prefer self-hosted vLLM first
             const modelPreset = aiSettings.model_preset || 'standard';
-            const preferredProvider = modelPreset === 'advanced' ? 'anthropic' : 'gemini';
+            const preferredProvider = modelPreset === 'advanced' ? 'vllm' : 'gemini';
 
             const routerResult = await intentRouter.route({
                 shopId: shop_id,
@@ -238,9 +248,6 @@ class AIChatbotController {
                 // uses the value the shop owner configured, not the global env default
                 confidenceThreshold: aiSettings.confidence_threshold
             });
-
-            // Invalidate summary cache so next message gets fresh context
-            await intentRouter.invalidateSummary(conversation_id).catch(() => {});
 
             return { response: routerResult.response, confidence: routerResult.confidence };
         } catch (llmError) {
@@ -288,6 +295,26 @@ class AIChatbotController {
 
         if (hasGreeting) {
             return { response: AIChatbotController.generateGreetingResponse(language, aiSettings), confidence: 0.90 };
+        }
+
+        // --- Check for order modification/return intents ---
+        const modificationIntents = AIChatbotController.detectModificationIntents(message);
+        if (modificationIntents.detected) {
+            await AIChatbotController.escalateToHumanAgent({
+                shop_id,
+                conversation_id,
+                customer_channel_id,
+                platform,
+                message,
+                intent: modificationIntents.intent,
+                reason: modificationIntents.reason,
+                customer_info: ingestionResult.sender_info
+            });
+            
+            return { 
+                response: AIChatbotController.generateEscalationMessage(language, modificationIntents.intent), 
+                confidence: 0.95 
+            };
         }
 
         const helpKeywords = [
@@ -424,6 +451,172 @@ class AIChatbotController {
     /**
      * Mark conversation for human handoff
      */
+    /**
+     * Detect order modification/return intents
+     */
+    static detectModificationIntents(message) {
+        const lowerMessage = message.toLowerCase().trim();
+        
+        const modificationPatterns = {
+            'order_modification': [
+                'change', 'modify', 'update', 'edit', 'পরিবর্তন', 'পরিবর্তন করো',
+                'address change', 'change address', 'ঠিকানা পরিবর্তন',
+                'phone change', 'change phone', 'ফোন পরিবর্তন'
+            ],
+            'return_request': [
+                'return', 'refund', 'cancel', 'ফেরত', 'বাতিল', 'ফেরত চাই',
+                'send back', 'take back', 'ফেরত পাঠাতে'
+            ],
+            'complaint': [
+                'complaint', 'problem', 'issue', 'wrong', 'defective', 'অভিযোগ',
+                'wrong product', 'defective product', 'ভুল পণ্য', 'ত্রুটিপূর্ণ পণ্য'
+            ],
+            'delay_inquiry': [
+                'delay', 'late', 'when', 'status', 'দেরি', 'কবে', 'কখন',
+                'delivery status', 'order status', 'ডেলিভারি স্ট্যাটাস'
+            ]
+        };
+
+        for (const [intent, keywords] of Object.entries(modificationPatterns)) {
+            if (keywords.some(keyword => lowerMessage.includes(keyword))) {
+                return {
+                    detected: true,
+                    intent,
+                    reason: `Customer wants to ${intent.replace('_', ' ')}`
+                };
+            }
+        }
+
+        return { detected: false };
+    }
+
+    /**
+     * Escalate to human agent
+     */
+    static async escalateToHumanAgent(escalationData) {
+        const logger = createLogger();
+        
+        try {
+            // Create support ticket
+            const ticket = await SupportTicket.create({
+                shop_id: escalationData.shop_id,
+                conversation_id: escalationData.conversation_id,
+                customer_channel_id: escalationData.customer_channel_id,
+                platform: escalationData.platform,
+                type: escalationData.intent,
+                status: 'pending',
+                priority: 'medium',
+                message: escalationData.message,
+                customer_info: escalationData.customer_info,
+                metadata: {
+                    escalated_at: new Date(),
+                    escalation_reason: escalationData.reason,
+                    ai_detected_intent: escalationData.intent
+                }
+            });
+
+            // Mark conversation for human handoff
+            await ConversationStateService.markForHumanHandoff(
+                escalationData.conversation_id,
+                escalationData.reason,
+                {
+                    ticket_id: ticket.id,
+                    intent: escalationData.intent
+                }
+            );
+
+            logger.info('Escalated to human agent', {
+                shopId: escalationData.shop_id,
+                conversationId: escalationData.conversation_id,
+                intent: escalationData.intent,
+                ticketId: ticket.id
+            });
+
+            return ticket;
+
+        } catch (error) {
+            logger.error('Failed to escalate to human agent', {
+                error: error.message,
+                escalationData
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * Generate escalation message
+     */
+    static generateEscalationMessage(language, intent) {
+        const messages = {
+            'order_modification': {
+                bn: 'আপনার অর্ডার পরিবর্তনের অনুরোধ পেয়েছে। অনুগ্রহ করে অপেক্ষা করুন, আমাদের একজন প্রতিনিধি শীঘ্রই আপনার সাথে যোগাযোগ করবেন।',
+                en: 'Your order modification request has been received. Please wait, one of our representatives will contact you shortly.'
+            },
+            'return_request': {
+                bn: 'আপনার ফেরতের অনুরোধ পেয়েছে। অনুগ্রহ করে অপেক্ষা করুন, আমাদের একজন প্রতিনিধি শীঘ্রই আপনার সাথে যোগাযোগ করবেন।',
+                en: 'Your return request has been received. Please wait, one of our representatives will contact you shortly.'
+            },
+            'complaint': {
+                bn: 'আপনার অভিযোগ পেয়েছে। অনুগ্রহ করে অপেক্ষা করুন, আমাদের একজন প্রতিনিধি শীঘ্রই আপনার সাথে যোগাযোগ করবেন।',
+                en: 'Your complaint has been received. Please wait, one of our representatives will contact you shortly.'
+            },
+            'delay_inquiry': {
+                bn: 'আপনার অনুসন্ধান পেয়েছে। অনুগ্রহ করে অপেক্ষা করুন, আমাদের একজন প্রতিনিধি শীঘ্রই আপনার সাথে যোগাযোগ করবেন।',
+                en: 'Your inquiry has been received. Please wait, one of our representatives will contact you shortly.'
+            }
+        };
+
+        const messageSet = messages[intent] || messages['order_modification'];
+        return messageSet[language] || messageSet['en'];
+    }
+
+    /**
+     * Handle self-MFS payment confirmation
+     */
+    static async handleSelfMfsPayment(req, res) {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    errors: errors.array()
+                });
+            }
+
+            const { conversation_id } = req.params;
+            const { transaction_id, customer_message, screenshot_url } = req.body;
+
+            // Get active order session
+            const session = await OrderSessionService.getActiveSession(req.body.shop_id, req.body.customer_channel_id);
+            
+            if (!session || session.status !== 'ACTIVE') {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No active order session found'
+                });
+            }
+
+            // Handle self-MFS payment
+            await OrderSessionService.handleSelfMfsPayment(session, {
+                transactionId: transaction_id,
+                message: customer_message,
+                screenshotUrl: screenshot_url
+            });
+
+            res.json({
+                success: true,
+                message: 'Payment confirmation sent to shop owner'
+            });
+
+        } catch (error) {
+            console.error('Self-MFS payment handling error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to process payment confirmation'
+            });
+        }
+    }
+
     static async markForHumanHandoff(req, res) {
         try {
             const errors = validationResult(req);

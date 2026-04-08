@@ -17,6 +17,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.docker.example
+.env.docker
+gcp-key.json
+secret.json
+secret.*.json
 
 # Build
 /dist

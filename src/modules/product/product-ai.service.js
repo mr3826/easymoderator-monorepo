@@ -13,6 +13,8 @@
 
 const Product = require('./product.entity');
 const llmService = require('../ai/llm.service');
+const { embedProduct } = require('./product-embedding.service');
+const { indexProductImage } = require('./clip-client.service');
 
 const ATTRIBUTE_EXTRACTION_PROMPT = `You are a product image analyzer for an e-commerce platform.
 Analyze the product image and return ONLY a JSON object (no markdown, no explanation) with these fields:
@@ -96,6 +98,14 @@ const processProduct = async (productId, shopId) => {
             ai_search_text:  searchParts.join(' ').toLowerCase(),
             ai_processed_at: new Date()
         });
+
+        // Upsert enriched product into vector store for RAG-based inbox matching
+        await embedProduct(productId, shopId);
+
+        // Sprint 4: Index primary image into CLIP service for Tier 1 visual matching
+        if (primaryImageUrl) {
+            setImmediate(() => indexProductImage(productId, shopId, primaryImageUrl).catch(() => {}));
+        }
 
         return true;
     } catch (err) {

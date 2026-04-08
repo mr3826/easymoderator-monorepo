@@ -28,10 +28,10 @@ module.exports = {
          ON rto_blacklist(phone, COALESCE(shop_id, ''))`
       );
     } else {
-      // PostgreSQL: use COALESCE expression index
+      // PostgreSQL: cast shop_id to text for the index to avoid UUID issues
       await sequelize.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_rto_phone_shop
-         ON rto_blacklist(phone, COALESCE(shop_id, ''))`
+         ON rto_blacklist(phone, COALESCE(shop_id::text, ''))`
       );
     }
     await sequelize.query(

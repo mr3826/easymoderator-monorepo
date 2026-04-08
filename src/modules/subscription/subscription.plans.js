@@ -1,136 +1,246 @@
-const PlanCode = Object.freeze({
-    FREE: 'FREE',
-    STARTER: 'STARTER',
-    GROWTH: 'GROWTH',
-    PRO: 'PRO',
-    BUSINESS: 'BUSINESS'
-});
+/**
+ * Easy Moderator subscription plan definitions.
+ *
+ * Active plans:
+ * - STARTER: flat monthly (499 BDT)
+ * - GROWTH: flat monthly (1499 BDT)
+ * - SCALE: flat monthly (3499 BDT)
+ * - PARTNER: pay-per-delivered-order (22 BDT)
+ */
 
 const UNLIMITED = -1;
 
+const PlanCode = Object.freeze({
+    STARTER: 'STARTER',
+    GROWTH: 'GROWTH',
+    SCALE: 'SCALE',
+    PARTNER: 'PARTNER'
+});
+
+const BASE_FEATURES = Object.freeze({
+    facebook_channel: false,
+    whatsapp_channel: false,
+    instagram_channel: false,
+    max_facebook_pages: 1,
+    max_whatsapp_numbers: 0,
+    max_instagram_accounts: 0,
+    comment_auto_reply: false,
+    banglish_ai: true,
+    tone_persona: false,
+    image_understanding: false,
+    voice_note_transcription: false,
+    campaign_broadcast: false,
+    max_campaigns_per_month: 0,
+    rto_shield: true,
+    rto_shield_level: 'basic',
+    delivery_auto_zone: false,
+    all_bd_gateways: false,
+    analytics_days: 7,
+    analytics_export: false,
+    fcommerce_kpis: false,
+    customer_journey_timeline: false,
+    whatsapp_catalog_sync: false,
+    priority_support: false,
+    api_access: false,
+    advanced_ai: false,
+    allowed_channels: Object.freeze(['facebook']),
+    allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
+    allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL']),
+    rate_limit_per_minute: 15
+});
+
 const PRICING_TIERS = Object.freeze({
-    [PlanCode.FREE]: {
-        code: PlanCode.FREE,
-        name: 'Free',
-        priceBdtMonthly: 0,
-        conversationsLimit: 100,
-        ordersLimit: 50,
-        productsLimit: 100,
-        keyFeature: 'Basic AI chat',
-        features: {
-            image_understanding: false,
-            advanced_ai: false,
-            priority_support: false,
-            custom_branding: false,
-            rate_limit_per_minute: 10,
-            // Language support
-            allowed_languages: Object.freeze(['en']),
-            language_autodetect: false,
-            // Automation modes this plan may use
-            allowed_automation_modes: Object.freeze(['DRAFT'])
-        },
-        // AI settings keys this plan may write via PUT /shop/ai-settings or PUT /shop/llm-config.
-        // Any key not listed here will be rejected with HTTP 403.
-        ai_settings_access: Object.freeze(['automation_mode', 'auto_reply_enabled'])
-    },
     [PlanCode.STARTER]: {
         code: PlanCode.STARTER,
         name: 'Starter',
-        priceBdtMonthly: 299,
-        conversationsLimit: 300,
-        ordersLimit: 150,
-        productsLimit: 200,
-        keyFeature: 'RTO Shield + Facebook',
-        features: {
-            image_understanding: false,
-            advanced_ai: false,
-            priority_support: false,
-            custom_branding: false,
-            rto_shield: true,
-            rate_limit_per_minute: 15,
-            // Single channel: Facebook only
-            allowed_channels: Object.freeze(['facebook']),
-            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
-            language_autodetect: false,
-            allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL'])
-        },
-        ai_settings_access: Object.freeze([
-            'automation_mode', 'auto_reply_enabled', 'primary_language',
-            'payment_methods', 'tone_persona'
-        ])
-    },
-    [PlanCode.GROWTH]: {
-        code: PlanCode.GROWTH,
-        name: 'Growth',
-        priceBdtMonthly: 999,
-        conversationsLimit: 1000,
-        ordersLimit: 500,
-        productsLimit: 1000,
-        keyFeature: 'RTO Shield + Pathao',
-        features: {
-            image_understanding: true,
-            advanced_ai: true,
-            priority_support: false,
-            custom_branding: false,
-            rate_limit_per_minute: 30,
-            allowed_languages: Object.freeze(['en', 'bn']),
-            language_autodetect: false,
-            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
-        },
-        ai_settings_access: Object.freeze([
-            'automation_mode', 'auto_reply_enabled', 'primary_language',
-            'confidence_threshold', 'max_auto_order_value',
-            'handoff_settings', 'payment_methods', 'tone_persona'
-        ])
-    },
-    [PlanCode.PRO]: {
-        code: PlanCode.PRO,
-        name: 'Pro',
-        priceBdtMonthly: 2499,
-        conversationsLimit: 5000,
-        ordersLimit: 2000,
-        productsLimit: 5000,
-        keyFeature: 'All channels + Analytics',
-        features: {
-            image_understanding: true,
-            advanced_ai: true,
-            priority_support: true,
-            custom_branding: false,
-            rate_limit_per_minute: 60,
-            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
-            language_autodetect: true,
-            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
-        },
-        ai_settings_access: Object.freeze([
-            'automation_mode', 'auto_reply_enabled', 'primary_language',
-            'confidence_threshold', 'max_auto_order_value',
-            'handoff_settings', 'payment_methods',
-            'required_fields', 'llm_model', 'llm_temperature'
-        ])
-    },
-    [PlanCode.BUSINESS]: {
-        code: PlanCode.BUSINESS,
-        name: 'Business',
-        priceBdtMonthly: 5999,
+        billingModel: 'flat_monthly',
+        priceBdtMonthly: 499,
+        priceBdtYearly: 4990,
+        perOrderChargeBdt: null,
+        extraChannelPriceBdt: null,
         conversationsLimit: UNLIMITED,
         ordersLimit: UNLIMITED,
         productsLimit: UNLIMITED,
-        keyFeature: 'White-label + API',
-        features: {
-            image_understanding: true,
-            advanced_ai: true,
-            priority_support: true,
-            custom_branding: true,
-            rate_limit_per_minute: 120,
-            allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
-            language_autodetect: true,
-            allowed_automation_modes: Object.freeze(['DRAFT', 'AUTO', 'MANUAL'])
-        },
+        maxIncludedChannels: 1,
+        keyFeature: 'AI Inbox + RTO Shield',
+        features: Object.freeze({
+            ...BASE_FEATURES
+        }),
         ai_settings_access: Object.freeze([
-            'automation_mode', 'auto_reply_enabled', 'primary_language',
-            'confidence_threshold', 'max_auto_order_value',
-            'handoff_settings', 'payment_methods',
-            'required_fields', 'llm_model', 'llm_temperature'
+            'automation_mode',
+            'auto_reply_enabled',
+            'primary_language',
+            'confidence_threshold'
+        ])
+    },
+
+    [PlanCode.GROWTH]: {
+        code: PlanCode.GROWTH,
+        name: 'Growth',
+        billingModel: 'flat_monthly',
+        priceBdtMonthly: 1499,
+        priceBdtYearly: 14990,
+        perOrderChargeBdt: null,
+        extraChannelPriceBdt: 200,
+        conversationsLimit: UNLIMITED,
+        ordersLimit: UNLIMITED,
+        productsLimit: UNLIMITED,
+        maxIncludedChannels: 3,
+        keyFeature: 'Auto-Reply + Broadcast + 3 channels',
+        features: Object.freeze({
+            ...BASE_FEATURES,
+            facebook_channel: true,
+            whatsapp_channel: true,
+            instagram_channel: true,
+            max_facebook_pages: 2,
+            max_whatsapp_numbers: 1,
+            max_instagram_accounts: 1,
+            comment_auto_reply: true,
+            tone_persona: true,
+            image_understanding: true,
+            voice_note_transcription: true,
+            campaign_broadcast: true,
+            max_campaigns_per_month: UNLIMITED,
+            rto_shield_level: 'advanced',
+            delivery_auto_zone: true,
+            all_bd_gateways: true,
+            analytics_days: 30,
+            analytics_export: true,
+            fcommerce_kpis: true,
+            customer_journey_timeline: true,
+            priority_support: true,
+            advanced_ai: true,
+            allowed_channels: Object.freeze(['facebook', 'whatsapp', 'instagram']),
+            allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL', 'AUTO']),
+            rate_limit_per_minute: 40
+        }),
+        ai_settings_access: Object.freeze([
+            'automation_mode',
+            'auto_reply_enabled',
+            'primary_language',
+            'confidence_threshold',
+            'max_auto_order_value',
+            'handoff_settings',
+            'payment_methods',
+            'tone_persona'
+        ])
+    },
+
+    [PlanCode.SCALE]: {
+        code: PlanCode.SCALE,
+        name: 'Scale',
+        billingModel: 'flat_monthly',
+        priceBdtMonthly: 3499,
+        priceBdtYearly: 34990,
+        perOrderChargeBdt: null,
+        extraChannelPriceBdt: null,
+        conversationsLimit: UNLIMITED,
+        ordersLimit: UNLIMITED,
+        productsLimit: UNLIMITED,
+        maxIncludedChannels: UNLIMITED,
+        keyFeature: 'Everything + API + Catalog Sync',
+        features: Object.freeze({
+            ...BASE_FEATURES,
+            facebook_channel: true,
+            whatsapp_channel: true,
+            instagram_channel: true,
+            max_facebook_pages: UNLIMITED,
+            max_whatsapp_numbers: UNLIMITED,
+            max_instagram_accounts: UNLIMITED,
+            comment_auto_reply: true,
+            tone_persona: true,
+            image_understanding: true,
+            voice_note_transcription: true,
+            campaign_broadcast: true,
+            max_campaigns_per_month: UNLIMITED,
+            rto_shield_level: 'advanced',
+            delivery_auto_zone: true,
+            all_bd_gateways: true,
+            analytics_days: 90,
+            analytics_export: true,
+            fcommerce_kpis: true,
+            customer_journey_timeline: true,
+            whatsapp_catalog_sync: true,
+            priority_support: true,
+            api_access: true,
+            advanced_ai: true,
+            allowed_channels: Object.freeze(['facebook', 'whatsapp', 'instagram']),
+            allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL', 'AUTO']),
+            rate_limit_per_minute: 80
+        }),
+        ai_settings_access: Object.freeze([
+            'automation_mode',
+            'auto_reply_enabled',
+            'primary_language',
+            'confidence_threshold',
+            'max_auto_order_value',
+            'handoff_settings',
+            'payment_methods',
+            'tone_persona',
+            'required_fields',
+            'llm_model',
+            'llm_temperature',
+            'api_enable',
+            'custom_webhook'
+        ])
+    },
+
+    [PlanCode.PARTNER]: {
+        code: PlanCode.PARTNER,
+        name: 'Partner',
+        billingModel: 'per_order',
+        priceBdtMonthly: 0,
+        priceBdtYearly: 0,
+        perOrderChargeBdt: 22,
+        extraChannelPriceBdt: null,
+        conversationsLimit: UNLIMITED,
+        ordersLimit: UNLIMITED,
+        productsLimit: UNLIMITED,
+        maxIncludedChannels: UNLIMITED,
+        keyFeature: 'No monthly fee, pay 22 BDT per delivered order',
+        features: Object.freeze({
+            ...BASE_FEATURES,
+            facebook_channel: true,
+            whatsapp_channel: true,
+            instagram_channel: true,
+            max_facebook_pages: UNLIMITED,
+            max_whatsapp_numbers: UNLIMITED,
+            max_instagram_accounts: UNLIMITED,
+            comment_auto_reply: true,
+            tone_persona: true,
+            image_understanding: true,
+            voice_note_transcription: true,
+            campaign_broadcast: true,
+            max_campaigns_per_month: UNLIMITED,
+            rto_shield_level: 'advanced',
+            delivery_auto_zone: true,
+            all_bd_gateways: true,
+            analytics_days: 90,
+            analytics_export: true,
+            fcommerce_kpis: true,
+            customer_journey_timeline: true,
+            whatsapp_catalog_sync: true,
+            priority_support: true,
+            api_access: true,
+            advanced_ai: true,
+            allowed_channels: Object.freeze(['facebook', 'whatsapp', 'instagram']),
+            allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL', 'AUTO']),
+            rate_limit_per_minute: 100
+        }),
+        ai_settings_access: Object.freeze([
+            'automation_mode',
+            'auto_reply_enabled',
+            'primary_language',
+            'confidence_threshold',
+            'max_auto_order_value',
+            'handoff_settings',
+            'payment_methods',
+            'tone_persona',
+            'required_fields',
+            'llm_model',
+            'llm_temperature',
+            'api_enable',
+            'custom_webhook'
         ])
     }
 });
@@ -138,55 +248,51 @@ const PRICING_TIERS = Object.freeze({
 const isUnlimitedLimit = (limit) => limit === UNLIMITED || limit === null || limit < 0;
 
 const isLimitExceeded = (used, limit) => {
-    if (isUnlimitedLimit(limit)) {
-        return false;
-    }
+    if (isUnlimitedLimit(limit)) return false;
     return used > limit;
 };
 
-const getTierByCode = (planCode) => {
-    if (!planCode) {
-        return null;
+const normalizePlanCode = (planCode) => {
+    const normalized = String(planCode || '').toUpperCase();
+    if (normalized === 'FREE' || normalized === 'PRO' || normalized === 'BUSINESS') {
+        return PlanCode.STARTER;
     }
-    return PRICING_TIERS[String(planCode).toUpperCase()] || null;
+    return normalized;
+};
+
+const getTierByCode = (planCode) => {
+    if (!planCode) return null;
+    return PRICING_TIERS[normalizePlanCode(planCode)] || null;
 };
 
 const getTierByPlanName = (planName) => {
-    if (!planName) {
-        return null;
-    }
+    if (!planName) return null;
     const normalized = String(planName).trim().toLowerCase();
     return Object.values(PRICING_TIERS).find((tier) => tier.name.toLowerCase() === normalized) || null;
 };
 
-/**
- * Return the set of AI settings keys this plan is allowed to write.
- * Falls back to FREE tier on unknown plan codes (fail-safe).
- * @param {string} planCode
- * @returns {Set<string>}
- */
+const isPerOrderBilling = (planCode) => {
+    const tier = getTierByCode(planCode);
+    return tier?.billingModel === 'per_order';
+};
+
+const getPerOrderCharge = (planCode) => {
+    const tier = getTierByCode(planCode);
+    return tier?.perOrderChargeBdt ?? 0;
+};
+
 const getAiSettingsAccess = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.STARTER];
     return new Set(tier.ai_settings_access);
 };
 
-/**
- * Return the allowed primary_language values for this plan.
- * @param {string} planCode
- * @returns {Set<string>}
- */
 const getAllowedLanguages = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.STARTER];
     return new Set(tier.features.allowed_languages);
 };
 
-/**
- * Return the allowed automation_mode values for this plan.
- * @param {string} planCode
- * @returns {Set<string>}
- */
 const getAllowedAutomationModes = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.FREE];
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.STARTER];
     return new Set(tier.features.allowed_automation_modes);
 };
 
@@ -198,6 +304,8 @@ module.exports = {
     isLimitExceeded,
     getTierByCode,
     getTierByPlanName,
+    isPerOrderBilling,
+    getPerOrderCharge,
     getAiSettingsAccess,
     getAllowedLanguages,
     getAllowedAutomationModes

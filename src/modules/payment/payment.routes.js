@@ -59,4 +59,9 @@ router.post('/sslcommerz/fail', paymentCallbackAuth, paymentController.handleSSL
 router.post('/sslcommerz/cancel', paymentCallbackAuth, paymentController.handleSSLCommerzFail);
 router.post('/sslcommerz/ipn', paymentCallbackAuth, paymentController.handleSSLCommerzIPN);
 
+// Rocket callbacks (no auth required - external callbacks)
+// Rocket MFS payment gateway for Bangladesh
+router.post('/rocket/callback', paymentCallbackAuth, paymentController.handleRocketCallback);
+router.post('/rocket/webhook', paymentCallbackAuth, paymentController.handleRocketWebhook);
+
 module.exports = router;

@@ -38,7 +38,9 @@ module.exports = {
     handleAamarPayFail,
     handleSSLCommerzSuccess,
     handleSSLCommerzFail,
-    handleSSLCommerzIPN
+    handleSSLCommerzIPN,
+    handleRocketCallback,
+    handleRocketWebhook
 };
 
 /**
@@ -261,6 +263,47 @@ async function handleSSLCommerzIPN(req, res, next) {
         res.status(200).json({
             success: result.success,
             message: result.success ? 'Payment verified' : 'Payment failed'
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+}
+
+/**
+ * Handle Rocket payment callback
+ * Called when customer completes payment checkout
+ */
+async function handleRocketCallback(req, res, next) {
+    try {
+        const result = await paymentService.verifyRocketCallback(req.body);
+        
+        res.status(200).json({
+            success: result.success,
+            message: result.success ? 'Payment callback processed' : 'Payment callback failed',
+            transaction_id: result.transaction_id
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+}
+
+/**
+ * Handle Rocket webhook notification
+ * Called for asynchronous payment status updates
+ */
+async function handleRocketWebhook(req, res, next) {
+    try {
+        const result = await paymentService.verifyRocketWebhook(req.body);
+        
+        res.status(200).json({
+            success: result.success,
+            message: result.success ? 'Webhook processed' : 'Webhook processing failed'
         });
     } catch (error) {
         res.status(400).json({

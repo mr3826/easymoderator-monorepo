@@ -33,7 +33,7 @@ const verifyHmacSignature = (rawBody, receivedSignature, secret) => {
 const getWebhookSecret = async (req, webhookType = 'default', integrationId = null) => {
   if (integrationId) {
     try {
-      const Integration = require(../modules/integration/-integration.entity);
+      const Integration = require('../modules/integration/meta-integration.entity');
       const integration = await Integration.findByPk(integrationId);
       if (integration && integration.status === 'CONNECTED') {
         const secretField = webhookType === 'meta' ? 'app_secret' : 'webhook_secret';
@@ -47,7 +47,7 @@ const getWebhookSecret = async (req, webhookType = 'default', integrationId = nu
     }
   }
   if (req.headers['x-webhook-secret']) return req.headers['x-webhook-secret'];
-  const envKey = ${webhookType.toUpperCase()}_WEBHOOK_SECRET;
+  const envKey = `${webhookType.toUpperCase()}_WEBHOOK_SECRET`;
   return process.env[envKey] || null;
 };
 const verifyWebhookSignature = (webhookType = 'incoming', options = {}) => {

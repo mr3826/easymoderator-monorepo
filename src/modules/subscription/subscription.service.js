@@ -12,7 +12,9 @@ const {
     isUnlimitedLimit,
     isLimitExceeded,
     getTierByCode,
-    getTierByPlanName
+    getTierByPlanName,
+    isPerOrderBilling,
+    getPerOrderCharge
 } = require('./subscription.plans');
 
 /**
@@ -103,21 +105,24 @@ const createDefaultSubscription = async (shopId) => {
     const now = new Date();
     const nextMonth = new Date(now);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
-    const freeTier = PRICING_TIERS[PlanCode.FREE];
+    // New shops default to STARTER (free trial handled separately)
+    const starterTier = PRICING_TIERS[PlanCode.STARTER];
 
     return await Subscription.create({
         shop_id: shopId,
-        plan_name: freeTier.name,
-        plan_price: freeTier.priceBdtMonthly,
+        plan_name: starterTier.name,
+        plan_price: starterTier.priceBdtMonthly,
         billing_cycle: 'monthly',
+        billing_model: starterTier.billingModel,
+        per_order_charge_bdt: starterTier.perOrderChargeBdt,
         status: 'active',
-        conversations_limit: freeTier.conversationsLimit,
-        orders_limit: freeTier.ordersLimit,
-        products_limit: freeTier.productsLimit,
+        conversations_limit: starterTier.conversationsLimit,
+        orders_limit: starterTier.ordersLimit,
+        products_limit: starterTier.productsLimit,
         current_period_start: now,
         current_period_end: nextMonth,
         next_billing_date: nextMonth,
-        features: freeTier.features
+        features: starterTier.features
     });
 };
 
@@ -211,6 +216,9 @@ const updatePlan = async (shopId, userId, planData) => {
         current_period_end: nextPeriod,
         next_billing_date: nextPeriod
     });
+
+    // Invalidate cached subscription/limits so the next request reflects the new plan
+    await cacheService.clearForShop(shopId);
 
     return subscription;
 };
@@ -527,6 +535,9 @@ const resetUsageCounters = async (subscriptionId) => {
         extra_charge: 0
     });
 
+    // Invalidate cached limits so the reset is immediately visible
+    await cacheService.clearForShop(subscription.shop_id);
+
     return subscription;
 };
 
@@ -675,11 +686,62 @@ const deliverConversationPackCredit = async (invoice) => {
     );
 };
 
+/**
+ * PARTNER PLAN: Charge per delivered order.
+ *
+ * Called by order.service.js whenever an order transitions to order_status = 'delivered'.
+ * Atomically increments the weekly accumulator fields on the subscription.
+ * The Sunday partnerWeeklyInvoice Bull job reads these and generates an invoice.
+ *
+ * Cancelled / RTO / pending orders must NEVER call this function.
+ *
+ * @param {string} shopId  - Shop UUID
+ * @param {string} orderId - Order UUID (for audit trail)
+ * @returns {Promise<{ charged: boolean, amount: number, weekTotal: number }>}
+ */
+const chargePartnerOrder = async (shopId, orderId) => {
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    if (!subscription) return { charged: false, amount: 0, weekTotal: 0 };
+
+    // Only PARTNER (per_order billing model) shops are charged here
+    if (subscription.billing_model !== 'per_order') {
+        return { charged: false, amount: 0, weekTotal: 0 };
+    }
+
+    const chargeAmount = parseFloat(subscription.per_order_charge_bdt || 22);
+
+    // Atomic increment — safe under concurrent deliveries
+    await Subscription.increment(
+        {
+            partner_orders_this_week: 1,
+            partner_pending_invoice_amount: chargeAmount
+        },
+        { where: { shop_id: shopId } }
+    );
+
+    // Refresh to get updated totals
+    await subscription.reload();
+
+    const logger = createLogger('partner-charge', shopId);
+    logger.info('Partner order charge applied', {
+        orderId,
+        chargeAmount,
+        weekTotal: parseFloat(subscription.partner_pending_invoice_amount)
+    });
+
+    return {
+        charged: true,
+        amount: chargeAmount,
+        weekTotal: parseFloat(subscription.partner_pending_invoice_amount)
+    };
+};
+
 module.exports = {
     getSubscription,
     updatePlan,
     trackUsage,
     checkOrderLimit,
+    chargePartnerOrder,
     requestConversationPack,
     getInvoices,
     getInvoiceById,

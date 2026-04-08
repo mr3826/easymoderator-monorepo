@@ -22,7 +22,9 @@ const JOB_MAP = {
     'daily_overage_calculator': jobs.DailyOverageCalculator,
     'monthly_usage_reset': jobs.MonthlyUsageReset,
     'invoice_generator': jobs.InvoiceGenerator,
-    'failed_payment_reconciler': jobs.FailedPaymentReconciler
+    'failed_payment_reconciler': jobs.FailedPaymentReconciler,
+    'token_refresh_check': jobs.TokenRefreshCheckJob,
+    'google_sheets_sync': jobs.GoogleSheetsSyncJob  // Schedule: cron '0 * * * *' (every hour)
 };
 
 async function runJob() {

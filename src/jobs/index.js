@@ -10,11 +10,13 @@ const MonthlyUsageReset = require('./monthly-usage-reset');
 const InvoiceGenerator = require('./invoice-generator');
 const FailedPaymentReconciler = require('./failed-payment-reconciler');
 const TokenRefreshCheckJob = require('./token-refresh-check.job');
+const GoogleSheetsSyncJob = require('./google-sheets-sync.job');
 
 module.exports = {
     DailyOverageCalculator,
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
-    TokenRefreshCheckJob
+    TokenRefreshCheckJob,
+    GoogleSheetsSyncJob
 };

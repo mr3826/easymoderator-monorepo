@@ -49,7 +49,8 @@ if (env === 'production') {
         'PAYMENT_ENCRYPTION_KEY',
         'CHANNEL_ENCRYPTION_KEY',  // required: encrypts Meta System User tokens at rest
         'META_APP_ID',             // required: Meta OAuth app ID
-        'META_APP_SECRET'          // required: Meta OAuth app secret
+        'META_APP_SECRET',         // required: Meta OAuth app secret
+        'INTERNAL_WEBHOOK_SECRET'  // required: authenticates n8n/Make reply callbacks
     ].forEach(requireEnv);
 }
 
