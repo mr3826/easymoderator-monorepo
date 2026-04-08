@@ -88,7 +88,7 @@ jest.mock('src/modules/subscription/subscription.service', () => ({
     getSubscriptionStatus: jest.fn(() => Promise.resolve({ plan: 'pro', isActive: true })),
 }));
 jest.mock('src/utils/structured-logger', () => ({
-    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), logUsage: jest.fn() })),
+    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
 }));
 jest.mock('src/modules/shop/shop.service', () => ({
     getShopAiSettings:    jest.fn(() => Promise.resolve({})),
@@ -412,7 +412,7 @@ describe('Category API', () => {
         it('verifyShopAccess throws 403 for non-member user', async () => {
             UserShop.findOne.mockResolvedValueOnce(null);
             await expect(categoryService.verifyShopAccess(USER_ID, SHOP_ID))
-                .rejects.toMatchObject({ statusCode: 403 });
+                .rejects.toMatchObject({ status: 403 });
         });
 
         it('createCategory sets parent_category_id to null for root categories', async () => {
@@ -445,7 +445,7 @@ describe('Category API', () => {
         it('deleteCategory throws 404 when category not found', async () => {
             Category.findOne.mockResolvedValueOnce(null);
             await expect(categoryService.deleteCategory(CAT2_ID, USER_ID, SHOP_ID))
-                .rejects.toMatchObject({ statusCode: 404 });
+                .rejects.toMatchObject({ status: 404 });
         });
 
         it('getCategoryById returns category with subcategories', async () => {
@@ -457,7 +457,7 @@ describe('Category API', () => {
         it('getSubcategoryById throws 404 when subcategory not in parent', async () => {
             Category.findOne.mockResolvedValueOnce(null);
             await expect(categoryService.getSubcategoryById(CAT_ID, CAT2_ID, USER_ID, SHOP_ID))
-                .rejects.toMatchObject({ statusCode: 404 });
+                .rejects.toMatchObject({ status: 404 });
         });
 
         it('listCategories only queries root-level categories (parent_category_id: null)', async () => {

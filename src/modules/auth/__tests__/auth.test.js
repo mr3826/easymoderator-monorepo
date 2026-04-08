@@ -139,6 +139,11 @@ jest.mock('src/utils/workflow-client', () => ({
     postToWorkflow: jest.fn(() => Promise.resolve({}))
 }));
 
+// Mock structured-logger (missing warn/debug causes globalErrorHandler to crash on 4xx)
+jest.mock('src/utils/structured-logger', () => ({
+    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
+}));
+
 const { User } = require('src/modules/entities');
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -210,8 +215,8 @@ describe('Auth API', () => {
 
             expect(res.status).toBe(200);
             expect(res.body.success).toBe(true);
-            expect(res.body.data.tokens.access_token).toBeDefined();
-            expect(res.body.data.tokens.refresh_token).toBeDefined();
+            // Tokens are no longer in response body — they travel via httpOnly cookies only
+            expect(res.body.data).toBeDefined();
 
             // Verify httpOnly cookies are set
             const cookies = res.headers['set-cookie'];
@@ -249,7 +254,7 @@ describe('Auth API', () => {
                 .send({ email: 'lockme@example.com', password: 'wrong' });
 
             expect(res.status).toBe(429);
-            expect(res.body.error.message).toContain('temporarily locked');
+            expect(res.body.message).toContain('temporarily locked');
         });
     });
 
@@ -258,13 +263,15 @@ describe('Auth API', () => {
     describe('POST /api/auth/logout', () => {
         let validToken;
 
-        // Helper: get a valid access token
+        // Helper: get a valid access token from the httpOnly cookie
         const loginAndGetToken = async () => {
             User.findOne.mockResolvedValue(mockUser);
             const loginRes = await request(app)
                 .post('/api/auth/signin')
                 .send({ email: 'logout-test@example.com', password: 'correct-password' });
-            return loginRes.body.data.tokens.access_token;
+            const setCookies = loginRes.headers['set-cookie'] || [];
+            const tokenCookie = setCookies.find(c => c.startsWith('access_token='));
+            return tokenCookie?.split(';')[0]?.replace('access_token=', '');
         };
 
         it('should return 401 without a token', async () => {

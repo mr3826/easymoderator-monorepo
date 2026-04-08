@@ -75,6 +75,9 @@ jest.mock('src/modules/rag/rag.service',  () => ({ ingestData: jest.fn(() => Pro
 jest.mock('src/utils/cache.service',      () => ({ getForShop: jest.fn(() => Promise.resolve(null)), setForShop: jest.fn(), deleteForShop: jest.fn() }));
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
 jest.mock('src/utils/workflow-client',    () => ({ postToWorkflow: jest.fn(() => Promise.resolve({})) }));
+jest.mock('src/utils/structured-logger', () => ({
+    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
+}));
 
 // ── Inject authenticated user ──────────────────────────────────────────────
 jest.mock('src/middleware/auth.middleware', () => ({
@@ -82,7 +85,7 @@ jest.mock('src/middleware/auth.middleware', () => ({
     checkSubscriptionStatus: (req, res, next) => next(),
 }));
 
-const { Shop, UserShop } = require('src/modules/entities');
+const { Shop, UserShop, Subscription } = require('src/modules/entities');
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +103,7 @@ describe('Shop AI Settings API', () => {
 
         Shop.findByPk.mockResolvedValue(mockShop);
         UserShop.findOne.mockResolvedValue({ ...mockUserShop, shop: { ...mockShop, toJSON: () => ({ id: 'shop-1' }) } });
+        Subscription.findOne.mockResolvedValue({ plan_code: 'SCALE' });
     });
 
     // ── GET /shop/ai-settings ─────────────────────────────────────────────
@@ -121,8 +125,8 @@ describe('Shop AI Settings API', () => {
 
             expect(res.status).toBe(200);
             const data = res.body.data;
-            expect(data.automation_mode).toBe('DRAFT');
-            expect(data.confidence_threshold).toBe(60);
+            expect(data.automation_mode).toBe('AUTO');
+            expect(data.confidence_threshold).toBe(75);
             expect(data.required_fields).toHaveProperty('customer_name');
         });
 

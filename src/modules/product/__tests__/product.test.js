@@ -60,6 +60,7 @@ jest.mock('src/utils/database/database-setup', () => ({
 // ── Mock entities ──────────────────────────────────────────────────────────
 jest.mock('src/modules/entities', () => ({
     Product:             { findOne: jest.fn(), findByPk: jest.fn(), findAll: jest.fn(() => Promise.resolve([])), create: jest.fn(), update: jest.fn(), destroy: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn() },
+    ProductVariant:      { findOne: jest.fn(), findAll: jest.fn(() => Promise.resolve([])), create: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn() },
     Category:            { findOne: jest.fn(), findByPk: jest.fn(), findAll: jest.fn(() => Promise.resolve([])), create: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn() },
     Shop:                { findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn() },
     UserShop:            { findOne: jest.fn(), findAll: jest.fn(() => Promise.resolve([])), create: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn() },
@@ -87,13 +88,20 @@ jest.mock('src/modules/product/product-ai.service', () => ({
     queueProductProcessing: jest.fn(),
     processPendingProducts: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('src/modules/product/product-embedding.service', () => ({
+    embedProduct:            jest.fn(() => Promise.resolve()),
+    removeProductEmbedding:  jest.fn(() => Promise.resolve()),
+}));
+jest.mock('src/modules/product/clip-client.service', () => ({
+    removeProductIndex: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('src/modules/subscription/subscription.service', () => ({
     trackUsage:            jest.fn(() => Promise.resolve({ transactionId: 'txn-1', isRetry: false })),
     checkUsageLimit:       jest.fn(() => Promise.resolve({ allowed: true })),
     getSubscriptionStatus: jest.fn(() => Promise.resolve({ plan: 'pro', isActive: true })),
 }));
 jest.mock('src/utils/structured-logger', () => ({
-    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), logUsage: jest.fn() })),
+    createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
 }));
 jest.mock('src/modules/shop/shop.service', () => ({
     getShopAiSettings:    jest.fn(() => Promise.resolve({})),
@@ -582,26 +590,26 @@ describe('Product API', () => {
         it('verifyShopAccess throws 403 when user is not a member of the shop', async () => {
             UserShop.findOne.mockResolvedValueOnce(null);
             await expect(productService.verifyShopAccess(USER_ID, SHOP_ID))
-                .rejects.toMatchObject({ statusCode: 403 });
+                .rejects.toMatchObject({ status: 403 });
         });
 
         it('createProduct throws 404 when category_id references a non-existent category', async () => {
             Category.findOne.mockResolvedValueOnce(null);
             await expect(productService.createProduct(USER_ID, SHOP_ID, {
                 name: 'Test', price: 100, category_id: CAT2_ID,
-            })).rejects.toMatchObject({ statusCode: 404 });
+            })).rejects.toMatchObject({ status: 404 });
         });
 
         it('updateProduct returns 404 when product does not exist', async () => {
             Product.findOne.mockReset().mockResolvedValueOnce(null);
             await expect(productService.updateProduct(OTHER_PROD_ID, USER_ID, SHOP_ID, { name: 'X' }))
-                .rejects.toMatchObject({ statusCode: 404 });
+                .rejects.toMatchObject({ status: 404 });
         });
 
         it('deleteProduct returns 404 when product does not exist', async () => {
             Product.findOne.mockReset().mockResolvedValueOnce(null);
             await expect(productService.deleteProduct(OTHER_PROD_ID, USER_ID, SHOP_ID))
-                .rejects.toMatchObject({ statusCode: 404 });
+                .rejects.toMatchObject({ status: 404 });
         });
 
         it('listProducts returns products with status field', async () => {
