@@ -11,8 +11,8 @@ spec:
         # Keep at least 1 instance warm to avoid cold starts on a SaaS product
         autoscaling.knative.dev/minScale: "1"
         autoscaling.knative.dev/maxScale: "10"
-        # VPC connector for private access to Cloud SQL and Memorystore
-        run.googleapis.com/vpc-access-connector: projects/gen-lang-client-0405487706/locations/us-central1/connectors/easymod-connector
+        # Direct VPC egress for private access to Cloud SQL and Memorystore (no VPC connector needed)
+        run.googleapis.com/network-interfaces: '[{"network":"easymod-vpc","subnetwork":"easymod-subnet"}]'
         run.googleapis.com/vpc-access-egress: private-ranges-only
         run.googleapis.com/execution-environment: gen2
     spec:

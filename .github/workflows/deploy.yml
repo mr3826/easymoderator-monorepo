@@ -80,7 +80,8 @@ jobs:
             --image="${{ steps.image.outputs.image_tag }}" \
             --region=${{ env.REGION }} \
             --service-account=${{ env.SERVICE_ACCOUNT }} \
-            --vpc-connector=easymod-connector \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
             --vpc-egress=private-ranges-only \
             --set-env-vars="NODE_ENV=production,PORT=3000,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
             --min-instances=1 \
@@ -102,7 +103,8 @@ jobs:
             --image="${{ steps.image.outputs.image_tag }}" \
             --region=${{ env.REGION }} \
             --service-account=${{ env.SERVICE_ACCOUNT }} \
-            --vpc-connector=easymod-connector \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
             --vpc-egress=private-ranges-only \
             --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
             --command="node" \
