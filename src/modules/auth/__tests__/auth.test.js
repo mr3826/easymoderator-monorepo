@@ -7,13 +7,8 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 
 // ── Mock Redis config (prevents real ioredis connections) ────────────────
 jest.mock('src/config/redis', () => ({
-    createRedisClient: jest.fn(() => ({
-        on: jest.fn(), get: jest.fn(() => Promise.resolve(null)),
-        set: jest.fn(() => Promise.resolve('OK')), del: jest.fn(() => Promise.resolve(1)),
-        setex: jest.fn(() => Promise.resolve('OK')), expire: jest.fn(() => Promise.resolve(1)),
-        ttl: jest.fn(() => Promise.resolve(900)), incr: jest.fn(() => Promise.resolve(1)),
-        quit: jest.fn(() => Promise.resolve()), status: 'ready'
-    }))
+    sessionRedis: null, cacheRedis: null, rateLimitRedis: null, legacyRedis: null,
+    closeAllRedis: jest.fn(), checkRedisAvailability: jest.fn(() => ({}))
 }));
 
 // ── Mock Redis ─────────────────────────────────────────────────────────
