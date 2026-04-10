@@ -1,7 +1,8 @@
 require('module-alias/register');
 require('dotenv').config();
 
-const { sequelize } = require('../utils/database/database-setup');
+// sequelize is initialized after secrets are loaded (see async IIFE below)
+let sequelize;
 
 /**
  * Migration System for Schema Changes
@@ -188,6 +189,11 @@ const rollbackAllMigrations = async () => {
 const command = process.argv[2];
 
 (async () => {
+  // Load secrets from GCP Secret Manager before config.js is required
+  await require('../config/secrets-loader')();
+  // Initialize sequelize after secrets are loaded
+  ({ sequelize } = require('../utils/database/database-setup'));
+
   try {
     switch (command) {
       case 'up':
