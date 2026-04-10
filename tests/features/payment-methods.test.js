@@ -60,13 +60,8 @@ const createTestApp = () => {
 
   // Mock error handler - MUST be after routes to catch thrown errors
   app.use((err, req, res, next) => {
-    if (err instanceof AppError) {
-      return res.status(err.statusCode).json({
-        success: false,
-        message: sanitizeErrorMessage(err.message)
-      });
-    }
-    res.status(err.statusCode || 500).json({
+    const statusCode = err.status || err.statusCode || 500;
+    res.status(statusCode).json({
       success: false,
       message: sanitizeErrorMessage(err.message) || 'Internal Server Error'
     });
@@ -192,13 +187,8 @@ describe('Payment Methods Controller - Unit Tests', () => {
 
       // Error handler AFTER route
       appWithoutShop.use((err, req, res, next) => {
-        if (err instanceof AppError) {
-          return res.status(err.statusCode).json({
-            success: false,
-            message: sanitizeErrorMessage(err.message)
-          });
-        }
-        res.status(err.statusCode || 500).json({
+            const statusCode = err.status || err.statusCode || 500;
+        res.status(statusCode).json({
           success: false,
           message: sanitizeErrorMessage(err.message) || 'Internal Server Error'
         });
@@ -331,13 +321,8 @@ describe('Payment Methods Controller - Unit Tests', () => {
 
       // Error handler AFTER route
       appWithoutShop.use((err, req, res, next) => {
-        if (err instanceof AppError) {
-          return res.status(err.statusCode).json({
-            success: false,
-            message: sanitizeErrorMessage(err.message)
-          });
-        }
-        res.status(err.statusCode || 500).json({
+            const statusCode = err.status || err.statusCode || 500;
+        res.status(statusCode).json({
           success: false,
           message: sanitizeErrorMessage(err.message) || 'Internal Server Error'
         });
@@ -499,13 +484,8 @@ describe('Payment Methods Controller - Unit Tests', () => {
 
       // Error handler AFTER route
       appWithoutShop.use((err, req, res, next) => {
-        if (err instanceof AppError) {
-          return res.status(err.statusCode).json({
-            success: false,
-            message: sanitizeErrorMessage(err.message)
-          });
-        }
-        res.status(err.statusCode || 500).json({
+            const statusCode = err.status || err.statusCode || 500;
+        res.status(statusCode).json({
           success: false,
           message: sanitizeErrorMessage(err.message) || 'Internal Server Error'
         });
@@ -808,18 +788,10 @@ describe('Payment Methods - E2E Tests', () => {
       
       // Error handler AFTER route
       appNoAuth.use((err, req, res, next) => {
-        // Handle AppError with proper status codes
-        if (err instanceof AppError) {
-          return res.status(err.statusCode).json({
-            success: false,
-            message: sanitizeErrorMessage(err.message)
-          });
-        }
-        // For other errors, return 400 (bad request) or 401 (unauthorized) based on error type
-        const statusCode = err.statusCode || 400;
-        res.status(statusCode).json({ 
-          success: false, 
-          message: sanitizeErrorMessage(err.message || 'Unauthorized') 
+        const statusCode = err.status || err.statusCode || 400;
+        res.status(statusCode).json({
+          success: false,
+          message: sanitizeErrorMessage(err.message || 'Unauthorized')
         });
       });
 
@@ -851,13 +823,8 @@ describe('Payment Methods - E2E Tests', () => {
 
       // Error handler AFTER route
       appMultiShop.use((err, req, res, next) => {
-        if (err instanceof AppError) {
-          return res.status(err.statusCode).json({
-            success: false,
-            message: sanitizeErrorMessage(err.message)
-          });
-        }
-        res.status(err.statusCode || 500).json({
+        const statusCode = err.status || err.statusCode || 500;
+        res.status(statusCode).json({
           success: false,
           message: sanitizeErrorMessage(err.message)
         });

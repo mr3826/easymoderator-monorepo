@@ -389,13 +389,8 @@ const createTestApp = (includeWebhook = false) => {
 
   // Error handler AFTER routes - must catch thrown errors
   app.use((err, req, res, next) => {
-    if (err instanceof AppError) {
-      return res.status(err.statusCode).json({
-        success: false,
-        message: sanitizeErrorMessage(err.message)
-      });
-    }
-    res.status(err.statusCode || 500).json({
+    const statusCode = err.status || err.statusCode || 500;
+    res.status(statusCode).json({
       success: false,
       message: sanitizeErrorMessage(err.message) || 'Internal Server Error'
     });

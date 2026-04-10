@@ -4,7 +4,11 @@ module.exports = {
     testPathIgnorePatterns: [
         '/node_modules/',
         // Integration tests that require a real database connection
-        'subscription/__tests__/usage-tracking.test.js'
+        'subscription/__tests__/usage-tracking.test.js',
+        // Uses chai (ESM-only) and requires live DB — true integration test
+        'tests/smart-payment-detection.test.js',
+        // Long-running E2E test (>5min) — requires live infrastructure
+        'tests/features/voice-processing.test.js',
     ],
     moduleNameMapper: {
         '^src/(.*)$': '<rootDir>/src/$1'
