@@ -20,6 +20,7 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh';
+process.env.SESSION_SECRET = 'test-session-secret';
 process.env.PINECONE_API_KEY = 'test-pinecone-key';
 process.env.PINECONE_INDEX = 'test-index';
 process.env.EMBEDDING_PROVIDER = 'local'; // local so no real OpenAI calls
