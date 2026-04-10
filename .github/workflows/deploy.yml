@@ -83,7 +83,7 @@ jobs:
             --network=easymod-vpc \
             --subnet=easymod-subnet \
             --vpc-egress=private-ranges-only \
-            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-,ALLOW_SELF_SIGNED_TLS=true" \
             --min-instances=1 \
             --max-instances=10 \
             --concurrency=80 \
