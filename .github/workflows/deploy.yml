@@ -76,36 +76,29 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          # Use --no-traffic only if the service already exists (not first deploy)
-          if gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --quiet 2>/dev/null; then
-            TRAFFIC_FLAG="--no-traffic"
-            echo "Existing service detected — deploying with --no-traffic"
-          else
-            TRAFFIC_FLAG=""
-            echo "New service — deploying with full traffic"
-          fi
-
-          gcloud run deploy ${{ env.SERVICE_NAME }}             --image="${{ steps.image.outputs.image_tag }}"             --region=${{ env.REGION }}             --service-account=${{ env.SERVICE_ACCOUNT }}             --network=easymod-vpc             --subnet=easymod-subnet             --vpc-egress=private-ranges-only             --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-"             --min-instances=1             --max-instances=10             --concurrency=80             --cpu=1             --memory=1Gi             --timeout=300             --port=3000             --platform=managed             --allow-unauthenticated             $TRAFFIC_FLAG
-
-      - name: Run database migrations (Cloud Run Job)
-        run: |
-          JOB_NAME="migrate-${GITHUB_SHA:0:10}"
-
-          gcloud run jobs create "$JOB_NAME"             --image="${{ steps.image.outputs.image_tag }}"             --region=${{ env.REGION }}             --service-account=${{ env.SERVICE_ACCOUNT }}             --network=easymod-vpc             --subnet=easymod-subnet             --vpc-egress=private-ranges-only             --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-"             --command="node"             --args="src/database/migrate.js,up"             --max-retries=1             --task-timeout=300 2>/dev/null ||           gcloud run jobs update "$JOB_NAME"             --image="${{ steps.image.outputs.image_tag }}"             --region=${{ env.REGION }}
-
-          gcloud run jobs execute "$JOB_NAME"             --region=${{ env.REGION }}             --wait
-
-      - name: Shift 100% traffic to new revision
-        run: |
-          LATEST_REVISION=$(gcloud run revisions list             --service=${{ env.SERVICE_NAME }}             --region=${{ env.REGION }}             --sort-by="~metadata.creationTimestamp"             --limit=1             --format="value(metadata.name)")
-
-          gcloud run services update-traffic ${{ env.SERVICE_NAME }}             --region=${{ env.REGION }}             --to-revisions="${LATEST_REVISION}=100"
-
-          echo "Traffic shifted to revision: $LATEST_REVISION"
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="${{ steps.image.outputs.image_tag }}" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --min-instances=1 \
+            --max-instances=10 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --platform=managed \
+            --allow-unauthenticated
 
       - name: Health check
         run: |
-          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }}             --region=${{ env.REGION }}             --format="value(status.url)")
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
 
           echo "Checking: ${BACKEND_URL}/health/ready"
           for i in $(seq 1 20); do
