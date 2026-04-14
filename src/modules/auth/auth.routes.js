@@ -117,7 +117,19 @@ router.post('/2fa/setup', authenticate, totpController.setup);
 // POST /auth/2fa/enable  — activate with first token (requires auth)
 router.post('/2fa/enable', authenticate, totpController.enable);
 // POST /auth/2fa/verify  — step-2 login (no auth header — uses tempToken in body)
-router.post('/2fa/verify', totpController.verify);
+// Rate limited to prevent brute force (1M possible 6-digit codes)
+const totpVerifyLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 5, // 5 attempts per 5 minutes per IP
+    message: {
+        success: false,
+        error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many 2FA attempts. Please try again later.' }
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip
+});
+router.post('/2fa/verify', totpVerifyLimiter, totpController.verify);
 // POST /auth/2fa/disable — turn off 2FA (requires auth)
 router.post('/2fa/disable', authenticate, totpController.disable);
 

@@ -1,6 +1,7 @@
 const { AppError } = require('../utils/AppError');
 const { verifyAccessToken } = require('../utils/jwt.util');
 const { isTokenBlacklisted } = require('../modules/auth/auth.service');
+const { User } = require('../modules/entities');
 const cacheService = require('../utils/cache.service');
 
 /**
@@ -33,7 +34,17 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Token has been revoked. Please login again.', 401);
         }
 
-        // 4. Attach user data to request
+        // 4. Verify token_version to invalidate tokens after password reset
+        if (decoded.tokenVersion) {
+            const user = await User.findByPk(decoded.userId, {
+                attributes: ['token_version']
+            });
+            if (!user || user.token_version !== decoded.tokenVersion) {
+                throw new AppError('Token has been invalidated. Please login again.', 401);
+            }
+        }
+
+        // 5. Attach user data to request
         req.user = {
             userId: decoded.userId,
             email: decoded.email,
