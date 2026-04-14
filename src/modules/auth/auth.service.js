@@ -25,7 +25,7 @@ const blacklistToken = async (token, decoded) => {
     if (!redis) return; // graceful no-op if Redis unavailable in dev
 
     const now = Math.floor(Date.now() / 1000);
-    const ttl = decoded.exp ? decoded.exp - now : 86400; // fallback 1 day
+    const ttl = decoded.exp ? Math.max(0, decoded.exp - now) : 0;
     if (ttl > 0) {
         await redis.setex(`${TOKEN_BLACKLIST_PREFIX}${token}`, ttl, '1');
     }
@@ -189,16 +189,17 @@ const createUserWithShop = async (userData) => {
         // Set the first shop as last logged shop
         await user.update({ last_logged_shop_id: shop.id });
 
-        // Generate tokens with shopId included
+        // Generate tokens with shopId and token_version included
         const accessToken = generateAccessToken({
             userId: user.id,
             email: user.email,
-            shopId: shop.id
+            shopId: shop.id,
+            tokenVersion: user.token_version
         });
         const refreshToken = generateRefreshToken({ userId: user.id });
 
-        // Hash and save refresh token
-        const hashedRefreshToken = await hashPassword(refreshToken);
+        // Hash and save refresh token using SHA-256 (not bcrypt - too expensive for high-entropy tokens)
+        const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
         await user.update({ refresh_token: hashedRefreshToken });
 
         // Return user data without password
@@ -298,16 +299,17 @@ const authenticateUser = async (email, password) => {
     // Update last logged shop
     await user.update({ last_logged_shop_id: loggedShopId });
 
-    // Generate tokens with shopId included
+    // Generate tokens with shopId and token_version included
     const accessToken = generateAccessToken({
         userId: user.id,
         email: user.email,
-        shopId: loggedShopId
+        shopId: loggedShopId,
+        tokenVersion: user.token_version
     });
     const refreshToken = generateRefreshToken({ userId: user.id });
 
-    // Hash and save refresh token
-    const hashedRefreshToken = await hashPassword(refreshToken);
+    // Hash and save refresh token using SHA-256 (not bcrypt)
+    const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
     await user.update({ refresh_token: hashedRefreshToken });
 
     // Get the logged shop details
@@ -415,11 +417,16 @@ const resetPassword = async (rawToken, newPassword) => {
 
     const hashedPassword = await hashPassword(newPassword);
 
-    // Atomically mark token used and update password
+    // Atomically mark token used, update password, and increment token_version
+    // Incrementing token_version invalidates all existing access tokens
     const t = await sequelize.transaction();
     try {
         await record.update({ used_at: new Date() }, { transaction: t });
-        await user.update({ password: hashedPassword, refresh_token: null }, { transaction: t });
+        await user.update({
+            password: hashedPassword,
+            refresh_token: null,
+            token_version: sequelize.literal('token_version + 1')
+        }, { transaction: t });
         await t.commit();
     } catch (err) {
         await t.rollback();
@@ -445,15 +452,24 @@ const validateRefreshToken = async (refreshToken) => {
             throw new AppError('Invalid refresh token', 401);
         }
 
-        // Compare refresh token with stored hash
-        const isTokenValid = await comparePassword(refreshToken, user.refresh_token);
-        if (!isTokenValid) {
+        // Compare refresh token with stored hash using SHA-256 (not bcrypt - too expensive)
+        const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        if (tokenHash !== user.refresh_token) {
             throw new AppError('Invalid refresh token', 401);
         }
 
-        const shopId = user.last_logged_shop_id || null;
-        // Generate new access token (include shopId when available)
-        const accessToken = generateAccessToken({ userId: user.id, email: user.email, shopId });
+        // Require valid shopId - reject if user has no active shop session
+        if (!user.last_logged_shop_id) {
+            throw new AppError('No active shop session found. Please login again.', 401);
+        }
+
+        // Generate new access token with shopId and token_version
+        const accessToken = generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            shopId: user.last_logged_shop_id,
+            tokenVersion: user.token_version
+        });
 
         return { accessToken };
     } catch (error) {

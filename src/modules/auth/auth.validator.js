@@ -51,10 +51,9 @@ const signinValidator = Joi.object({
 
 const refreshTokenValidator = Joi.object({
     refresh_token: Joi.string()
-        .required()
+        .optional()
         .messages({
-            'any.required': 'Refresh token is required',
-            'string.empty': 'Refresh token is required'
+            'string.empty': 'Refresh token cannot be empty'
         })
 });
 

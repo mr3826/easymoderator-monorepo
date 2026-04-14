@@ -28,8 +28,9 @@ const setAuthCookies = (res, accessToken, refreshToken) => {
 };
 
 const clearAuthCookies = (res) => {
-    res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth' });
+    const opts = (path) => ({ path, ...(config.cookieDomain && { domain: config.cookieDomain }) });
+    res.clearCookie('access_token', opts('/'));
+    res.clearCookie('refresh_token', opts('/auth'));
 };
 
 module.exports = {

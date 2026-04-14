@@ -6,6 +6,7 @@ const totpService = require('./totp.service');
 const { AppError } = require('../../utils/AppError');
 const { generateAccessToken, generateRefreshToken } = require('../../utils/jwt.util');
 const { hashPassword } = require('../../utils/password.util');
+const { setAuthCookies } = require('../../utils/auth-cookies');
 const { User, Shop } = require('../entities');
 
 /**
@@ -59,15 +60,23 @@ const verify = async (req, res, next) => {
         if (!user) throw new AppError('User not found', 404);
 
         const shopId = user.last_logged_shop_id || null;
+        if (!shopId) {
+            throw new AppError('No active shop session found. Please login again.', 401);
+        }
+
         const accessToken = generateAccessToken({ userId: user.id, email: user.email, shopId });
         const refreshToken = generateRefreshToken({ userId: user.id });
 
-        const hashedRefreshToken = await hashPassword(refreshToken);
+        // Use SHA-256 for refresh token storage (not bcrypt - too expensive for high-entropy tokens)
+        const hashedRefreshToken = require('crypto').createHash('sha256').update(refreshToken).digest('hex');
         await user.update({ refresh_token: hashedRefreshToken });
+
+        // Set httpOnly cookies - never return tokens in response body
+        setAuthCookies(res, accessToken, refreshToken);
 
         res.status(200).json({
             success: true,
-            data: { accessToken, refreshToken }
+            data: { authenticated: true }
         });
     } catch (error) {
         next(error);

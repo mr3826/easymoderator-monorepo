@@ -15,7 +15,10 @@ const { getRedisClient } = require('../../utils/redis-client');
 // ── Encryption helpers ──────────────────────────────────────────────────────
 
 const getEncryptionKey = () => {
-    const secret = process.env.APP_SECRET || process.env.JWT_SECRET || 'easymod-totp-default-secret';
+    const secret = process.env.APP_SECRET || process.env.JWT_SECRET;
+    if (!secret) {
+        throw new Error('APP_SECRET or JWT_SECRET environment variable is required for TOTP encryption');
+    }
     // Derive a 32-byte key from the secret
     return crypto.createHash('sha256').update(secret).digest();
 };

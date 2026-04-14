@@ -42,6 +42,11 @@ const User = sequelize.define('User', {
             model: 'shops',
             key: 'id'
         }
+    },
+    token_version: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1
     }
 }, {
     tableName: 'users',

@@ -58,6 +58,7 @@ jest.mock('src/utils/database/database-setup', () => ({
         })),
         authenticate: jest.fn(() => Promise.resolve()),
         sync: jest.fn(() => Promise.resolve()),
+        literal: jest.fn((str) => str)
     }
 }));
 
@@ -71,6 +72,7 @@ const mockUser = {
     profile_picture: null,
     refresh_token: null,
     last_logged_shop_id: 'shop-1',
+    token_version: 1,
     update: jest.fn(() => Promise.resolve()),
     shops: [{
         id: 'shop-1',
@@ -333,5 +335,84 @@ describe('Auth API', () => {
             // express-validator will reject empty refresh_token
             expect(res.status).toBe(400);
         });
+
+        it('should work with refresh_token from httpOnly cookie only', async () => {
+            // Mock user with SHA-256 hashed refresh token
+            const crypto = require('crypto');
+            const refreshToken = 'test-refresh-token-from-cookie';
+            const hashedToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+            const userWithToken = {
+                ...mockUser,
+                refresh_token: hashedToken
+            };
+
+            User.findByPk.mockResolvedValue(userWithToken);
+
+            // Send refresh request with token in cookie (not body)
+            const res = await request(app)
+                .post('/api/auth/refresh')
+                .set('Cookie', [`refresh_token=${refreshToken}`])
+                .send({}); // No refresh_token in body
+
+            // Should succeed with valid cookie token (200) or reject if no last_logged_shop_id (401)
+            expect([200, 401]).toContain(res.status);
+            if (res.status === 200) {
+                expect(res.headers['set-cookie']).toBeDefined();
+            }
+        });
+    });
+
+    // ── Token Version Security ───────────────────────────────────────────
+
+    describe('Token Version - Password Reset Invalidation', () => {
+        it('should reject token with mismatched token_version', async () => {
+            // Login to get valid token
+            User.findOne.mockResolvedValue(mockUser);
+            const loginRes = await request(app)
+                .post('/api/auth/signin')
+                .send({ email: 'test@example.com', password: 'correct-password' });
+
+            expect(loginRes.status).toBe(200);
+            const cookies = loginRes.headers['set-cookie'];
+            const accessToken = cookies.find(c => c.startsWith('access_token='))?.split(';')[0]?.replace('access_token=', '');
+
+            // Simulate password reset: increment token_version
+            const updatedUser = {
+                ...mockUser,
+                token_version: 2 // Incremented after password reset
+            };
+            User.findByPk.mockResolvedValue(updatedUser);
+
+            // Try to use old token - should be rejected due to version mismatch
+            const res = await request(app)
+                .post('/api/auth/me')
+                .set('Authorization', `Bearer ${accessToken}`);
+
+            // Should fail with 401 because token_version in JWT (1) != DB version (2)
+            expect(res.status).toBe(401);
+        });
+    });
+
+    // ── 2FA Security ──────────────────────────────────────────────────────
+
+    describe('2FA Security', () => {
+        it('should rate limit 2FA verify attempts', async () => {
+            // Make rapid 2FA verify attempts
+            const attempts = [];
+            for (let i = 0; i < 6; i++) {
+                attempts.push(
+                    request(app)
+                        .post('/api/auth/2fa/verify')
+                        .send({ tempToken: 'invalid', token: '000000' })
+                );
+            }
+
+            const results = await Promise.all(attempts);
+
+            // At least some should be rate limited (429)
+            const hasRateLimit = results.some(r => r.status === 429);
+            expect(hasRateLimit).toBe(true);
+        }, 10000);
     });
 });

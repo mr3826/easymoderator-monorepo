@@ -143,8 +143,8 @@ const createSession = async (user, shopId, req) => {
 
         return {
             sessionId: session.id,
-            sessionToken,
             expiresAt: session.expires_at
+            // Note: sessionToken is NOT returned - it remains server-side only
         };
     } catch (error) {
         await transaction.rollback();
