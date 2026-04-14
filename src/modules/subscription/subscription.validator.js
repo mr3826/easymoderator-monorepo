@@ -40,16 +40,16 @@ const updatePlanValidator = [
         .withMessage('Billing cycle must be either monthly or yearly'),
     body('conversations_limit')
         .optional()
-        .isInt({ min: 0 })
-        .withMessage('Conversations limit must be a positive integer'),
+        .isInt({ min: -1 })
+        .withMessage('Conversations limit must be a positive integer or -1 for unlimited'),
     body('orders_limit')
         .optional()
-        .isInt({ min: 0 })
-        .withMessage('Orders limit must be a positive integer'),
+        .isInt({ min: -1 })
+        .withMessage('Orders limit must be a positive integer or -1 for unlimited'),
     body('products_limit')
         .optional()
-        .isInt({ min: 0 })
-        .withMessage('Products limit must be a positive integer'),
+        .isInt({ min: -1 })
+        .withMessage('Products limit must be a positive integer or -1 for unlimited'),
     body('features')
         .optional()
         .isObject()
