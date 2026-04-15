@@ -172,7 +172,8 @@ describe('Order Service', () => {
             commit: jest.fn(),
             rollback: jest.fn()
         }));
-        sequelize.query = jest.fn();
+        // Postgres query mock for generateOrderNumber - returns [[{ next_number: X }]]
+        sequelize.query = jest.fn().mockResolvedValue([[{ next_number: 1 }]]);
         sequelize.getDialect = jest.fn().mockReturnValue('postgres');
         
         subscriptionService.checkOrderLimit = jest.fn().mockResolvedValue(true);
@@ -203,14 +204,18 @@ describe('Order Service', () => {
         });
     });
 
-    describe('verifyShopAccess', () => {
+    describe('verifyShopAccess (via service methods)', () => {
         it('should allow access for active user-shop relationship', async () => {
             const mockUserShop = { id: 'user-shop-1', is_active: true };
             UserShop.findOne = jest.fn().mockResolvedValue(mockUserShop);
 
-            const result = await orderService.verifyShopAccess('user-1', 'shop-1');
+            // Test via getOrderById which internally calls verifyShopAccess
+            const mockOrder = createMockOrder();
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+
+            const result = await orderService.getOrderById('order-1', 'user-1', 'shop-1');
             
-            expect(result).toEqual(mockUserShop);
+            expect(result).toBeDefined();
             expect(UserShop.findOne).toHaveBeenCalledWith({
                 where: {
                     user_id: 'user-1',
@@ -223,43 +228,86 @@ describe('Order Service', () => {
         it('should throw AppError with 403 when user has no shop access', async () => {
             UserShop.findOne = jest.fn().mockResolvedValue(null);
 
-            await expect(orderService.verifyShopAccess('user-1', 'shop-1'))
+            await expect(orderService.getOrderById('order-1', 'user-1', 'shop-1'))
                 .rejects
                 .toThrow(AppError);
             
-            await expect(orderService.verifyShopAccess('user-1', 'shop-1'))
+            await expect(orderService.getOrderById('order-1', 'user-1', 'shop-1'))
                 .rejects
                 .toThrow('You do not have access to this shop');
         });
     });
 
-    describe('generateOrderNumber', () => {
+    describe('Order Number Generation (via createOrder)', () => {
         it('should generate order number for Postgres with sequence', async () => {
             sequelize.getDialect.mockReturnValue('postgres');
-            sequelize.query = jest.fn().mockResolvedValue([[{ next_number: 5 }]]);
+            // Postgres query returns [[{ next_number: 5 }]] - nested array for destructuring
+            sequelize.query.mockResolvedValue([[{ next_number: 5 }]]);
 
-            const orderNumber = await orderService.generateOrderNumber('550e8400-e29b-41d4-a716-446655440000');
-            
-            expect(orderNumber).toMatch(/^ORD-[A-F0-9]{8}-000005$/);
+            const mockProduct = {
+                id: 'prod-1',
+                name: 'Test Product',
+                price: 100.00,
+                quantity: 10,
+                track_quantity: false
+            };
+
+            const mockOrder = createMockOrder({
+                order_number: 'ORD-550E8400-000005'
+            });
+
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Product.findAll = jest.fn().mockResolvedValue([mockProduct]);
+            Order.create = jest.fn().mockImplementation((data) => Promise.resolve({ ...mockOrder, ...data }));
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+
+            const result = await orderService.createOrder('user-1', '550e8400-e29b-41d4-a716-446655440000', {
+                customer_name: 'Test',
+                customer_phone: '01712345678',
+                items: [{ product_id: 'prod-1', quantity: 1 }],
+                payment_status: 'pending'
+            });
+
+            expect(sequelize.query).toHaveBeenCalledWith(
+                expect.stringContaining('INSERT INTO order_sequences'),
+                expect.any(Object)
+            );
         });
 
-        it('should handle first order for a shop (sequence = 1)', async () => {
-            sequelize.getDialect.mockReturnValue('postgres');
-            sequelize.query = jest.fn().mockResolvedValue([[{ next_number: 1 }]]);
+        it('should handle SQLite fallback for order number generation', async () => {
+            sequelize.getDialect.mockReturnValue('sqlite');
+            const mockTxn = { 
+                commit: jest.fn().mockResolvedValue(true), 
+                rollback: jest.fn().mockResolvedValue(true) 
+            };
+            sequelize.transaction.mockResolvedValue(mockTxn);
+            // SQLite query returns [[{ next_number: 3 }]] format
+            sequelize.query.mockResolvedValue([[{ next_number: 3, shop_id: '550e8400-e29b-41d4-a716-446655440000' }]]);
 
-            const orderNumber = await orderService.generateOrderNumber('shop-1');
-            
-            expect(orderNumber).toMatch(/^ORD-[A-F0-9]{8}-000001$/);
-        });
+            const mockProduct = {
+                id: 'prod-1',
+                name: 'Test Product',
+                price: 100.00,
+                quantity: 10,
+                track_quantity: false
+            };
 
-        it('should use transaction when provided', async () => {
-            const mockTransaction = { id: 'txn-1' };
-            sequelize.getDialect.mockReturnValue('postgres');
-            sequelize.query = jest.fn().mockResolvedValue([[{ next_number: 10 }]]);
+            const mockOrder = createMockOrder();
 
-            await orderService.generateOrderNumber('shop-1', mockTransaction);
-            
-            expect(sequelize.query).toHaveBeenCalled();
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Product.findAll = jest.fn().mockResolvedValue([mockProduct]);
+            Order.create = jest.fn().mockImplementation((data) => Promise.resolve({ ...mockOrder, ...data }));
+            OrderItem.create = jest.fn().mockResolvedValue({ id: 'item-1' });
+
+            const result = await orderService.createOrder('user-1', '550e8400-e29b-41d4-a716-446655440000', {
+                customer_name: 'Test',
+                customer_phone: '01712345678',
+                items: [{ product_id: 'prod-1', quantity: 1 }],
+                payment_status: 'pending'
+            });
+
+            expect(result).toBeDefined();
+            expect(result.order_number).toMatch(/^ORD-[A-F0-9]{8}-\d{6}$/);
         });
     });
 

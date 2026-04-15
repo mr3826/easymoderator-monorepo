@@ -1,0 +1,64 @@
+/**
+ * HTTP Status Codes
+ * Centralized constants to avoid magic numbers across the codebase
+ */
+
+const HTTP_STATUS = {
+  // Success (2xx)
+  OK: 200,
+  CREATED: 201,
+  ACCEPTED: 202,
+  NO_CONTENT: 204,
+
+  // Client Errors (4xx)
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  CONFLICT: 409,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+
+  // Server Errors (5xx)
+  INTERNAL_SERVER_ERROR: 500,
+  NOT_IMPLEMENTED: 501,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
+  GATEWAY_TIMEOUT: 504
+};
+
+// Validation Constants
+const VALIDATION = {
+  MAX_NAME_LENGTH: 255,
+  MAX_SKU_LENGTH: 100,
+  MAX_DESCRIPTION_LENGTH: 2000,
+  MAX_TAG_LENGTH: 50,
+  MAX_TAGS: 20,
+  MAX_VARIANT_NAME_LENGTH: 100,
+  MAX_IMAGE_SIZE_MB: 5,
+  MAX_IMAGES_PER_PRODUCT: 10
+};
+
+// Pagination Constants
+const PAGINATION = {
+  DEFAULT_PAGE: 1,
+  DEFAULT_LIMIT: 20,
+  MAX_LIMIT: 100,
+  MAX_OFFSET: 10000
+};
+
+// Timeout Constants (in milliseconds)
+const TIMEOUTS = {
+  DEFAULT_API_TIMEOUT: 30000,
+  AI_PROCESSING_TIMEOUT: 60000,
+  FILE_UPLOAD_TIMEOUT: 120000,
+  SEARCH_TIMEOUT: 10000
+};
+
+module.exports = {
+  HTTP_STATUS,
+  VALIDATION,
+  PAGINATION,
+  TIMEOUTS
+};
