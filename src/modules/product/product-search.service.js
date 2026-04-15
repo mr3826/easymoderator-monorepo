@@ -12,7 +12,121 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
 /**
+ * Builds full-text search query from all available signals
+ * @param {Object} params - Search parameters
+ * @returns {string} Sanitized tsquery string
+ */
+const buildSearchQuery = ({ query, category, color, material, tags = [] }) => {
+    const searchTerms = [query, category, color, material, ...(tags || [])].filter(Boolean);
+    return searchTerms
+        .map(t => t.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF\s]/g, '').trim())
+        .filter(Boolean)
+        .join(' | ');  // OR semantics — match any term
+};
+
+/**
+ * Checks if search has meaningful attributes
+ * @param {string} tsQuery - Built search query
+ * @param {string} category - Category filter
+ * @param {string} color - Color filter
+ * @returns {boolean} True if search has no useful attributes
+ */
+const hasNoSearchAttributes = (tsQuery, category, color) => !tsQuery && !category && !color;
+
+/**
+ * Builds SQL query replacements object
+ * @param {Object} params - Search parameters
+ * @param {string} tsQuery - Built search query
+ * @returns {Object} Query replacements
+ */
+const buildQueryReplacements = ({ shopId, category, color, material, limit }, tsQuery) => ({
+    shopId,
+    category: category || '',
+    color: color || '',
+    material: material || '',
+    categoryWild: `%${category || ''}%`,
+    colorWild: `%${color || ''}%`,
+    materialWild: `%${material || ''}%`,
+    tsQuery,
+    tsQuerySafe: sanitizeTsQuery(tsQuery),
+    limit
+});
+
+/**
+ * Gets the search SQL query string
+ * @returns {string} SQL query
+ */
+const getSearchSql = () => `
+    SELECT
+        p.id,
+        p.name,
+        p.name_bn,
+        p.category,
+        p.price,
+        p.compare_at_price,
+        p.quantity,
+        p.in_stock,
+        p.is_active,
+        p.variants,
+        p.images,
+        p.image_url,
+        p.tags,
+        p.brand,
+        p.description,
+        p.ai_description,
+        p.ai_tags,
+        p.ai_category,
+        p.ai_color_primary,
+        p.ai_material,
+        p.ai_attributes,
+        -- relevance score
+        (
+            CASE WHEN p.ai_category ILIKE :category THEN 4 ELSE 0 END +
+            CASE WHEN p.ai_color_primary ILIKE :color THEN 3 ELSE 0 END +
+            CASE WHEN p.ai_material ILIKE :material THEN 2 ELSE 0 END +
+            CASE WHEN :tsQuery != '' THEN
+                ts_rank(
+                    to_tsvector('english',
+                        coalesce(p.name,'') || ' ' ||
+                        coalesce(p.ai_search_text,'') || ' ' ||
+                        coalesce(p.ai_category,'') || ' ' ||
+                        coalesce(p.ai_color_primary,'') || ' ' ||
+                        coalesce(p.ai_material,'') || ' ' ||
+                        coalesce(p.category,'')
+                    ),
+                    to_tsquery('english', :tsQuerySafe)
+                ) * 10
+            ELSE 0 END
+        ) AS relevance
+    FROM products p
+    WHERE
+        p.shop_id = :shopId
+        AND p.deleted_at IS NULL
+        AND p.is_active = true
+        AND (
+            p.ai_category ILIKE :categoryWild
+            OR p.ai_color_primary ILIKE :colorWild
+            OR p.ai_material ILIKE :materialWild
+            OR p.category ILIKE :categoryWild
+            OR (
+                :tsQuery != '' AND
+                to_tsvector('english',
+                    coalesce(p.name,'') || ' ' ||
+                    coalesce(p.ai_search_text,'') || ' ' ||
+                    coalesce(p.ai_category,'') || ' ' ||
+                    coalesce(p.ai_color_primary,'') || ' ' ||
+                    coalesce(p.ai_material,'') || ' ' ||
+                    coalesce(p.category,'')
+                ) @@ to_tsquery('english', :tsQuerySafe)
+            )
+        )
+    ORDER BY relevance DESC, p.quantity DESC, p.created_at DESC
+    LIMIT :limit
+`;
+
+/**
  * Search products for a shop using vision-extracted attributes.
+ * Refactored to reduce complexity - orchestration only.
  *
  * @param {object} params
  * @param {string} params.shopId
@@ -24,100 +138,22 @@ const { QueryTypes } = require('sequelize');
  * @param {number} [params.limit]         - max results (default 5)
  * @returns {Promise<ProductResult[]>}
  */
-const searchByAttributes = async ({ shopId, category, color, material, query, tags = [], limit = 5 }) => {
-    // Build full-text search query from all available signals
-    const searchTerms = [query, category, color, material, ...(tags || [])].filter(Boolean);
-    const tsQuery = searchTerms
-        .map(t => t.toLowerCase().replace(/[^a-z0-9\u0980-\u09FF\s]/g, '').trim())
-        .filter(Boolean)
-        .join(' | ');  // OR semantics — match any term
+const searchByAttributes = async (params) => {
+    const { shopId, category, color, limit = 5 } = params;
 
-    if (!tsQuery && !category && !color) {
-        // No useful attributes — return active products sorted by recent
+    const tsQuery = buildSearchQuery(params);
+
+    if (hasNoSearchAttributes(tsQuery, category, color)) {
         return fallbackSearch(shopId, limit);
     }
 
-    const results = await sequelize.query(`
-        SELECT
-            p.id,
-            p.name,
-            p.name_bn,
-            p.category,
-            p.price,
-            p.compare_at_price,
-            p.quantity,
-            p.in_stock,
-            p.is_active,
-            p.variants,
-            p.images,
-            p.image_url,
-            p.tags,
-            p.brand,
-            p.description,
-            p.ai_description,
-            p.ai_tags,
-            p.ai_category,
-            p.ai_color_primary,
-            p.ai_material,
-            p.ai_attributes,
-            -- relevance score
-            (
-                CASE WHEN p.ai_category ILIKE :category THEN 4 ELSE 0 END +
-                CASE WHEN p.ai_color_primary ILIKE :color THEN 3 ELSE 0 END +
-                CASE WHEN p.ai_material ILIKE :material THEN 2 ELSE 0 END +
-                CASE WHEN :tsQuery != '' THEN
-                    ts_rank(
-                        to_tsvector('english',
-                            coalesce(p.name,'') || ' ' ||
-                            coalesce(p.ai_search_text,'') || ' ' ||
-                            coalesce(p.ai_category,'') || ' ' ||
-                            coalesce(p.ai_color_primary,'') || ' ' ||
-                            coalesce(p.ai_material,'') || ' ' ||
-                            coalesce(p.category,'')
-                        ),
-                        to_tsquery('english', :tsQuerySafe)
-                    ) * 10
-                ELSE 0 END
-            ) AS relevance
-        FROM products p
-        WHERE
-            p.shop_id = :shopId
-            AND p.deleted_at IS NULL
-            AND p.is_active = true
-            AND (
-                p.ai_category ILIKE :categoryWild
-                OR p.ai_color_primary ILIKE :colorWild
-                OR p.ai_material ILIKE :materialWild
-                OR p.category ILIKE :categoryWild
-                OR (
-                    :tsQuery != '' AND
-                    to_tsvector('english',
-                        coalesce(p.name,'') || ' ' ||
-                        coalesce(p.ai_search_text,'') || ' ' ||
-                        coalesce(p.ai_category,'') || ' ' ||
-                        coalesce(p.ai_color_primary,'') || ' ' ||
-                        coalesce(p.ai_material,'') || ' ' ||
-                        coalesce(p.category,'')
-                    ) @@ to_tsquery('english', :tsQuerySafe)
-                )
-            )
-        ORDER BY relevance DESC, p.quantity DESC, p.created_at DESC
-        LIMIT :limit
-    `, {
-        replacements: {
-            shopId,
-            category:     category || '',
-            color:        color || '',
-            material:     material || '',
-            categoryWild: `%${category || ''}%`,
-            colorWild:    `%${color || ''}%`,
-            materialWild: `%${material || ''}%`,
-            tsQuery:      tsQuery,
-            tsQuerySafe:  sanitizeTsQuery(tsQuery),
-            limit
-        },
-        type: QueryTypes.SELECT
-    }).catch(err => {
+    const results = await sequelize.query(
+        getSearchSql(),
+        {
+            replacements: buildQueryReplacements(params, tsQuery),
+            type: QueryTypes.SELECT
+        }
+    ).catch(err => {
         console.error('[ProductSearch] Query error:', err.message);
         return [];
     });

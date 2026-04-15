@@ -1,6 +1,32 @@
 const productService = require('./product.service');
 const productLinkService = require('./product-link.service');
 const upsellService = require('./product-upsell.service');
+const { HTTP_STATUS } = require('../../constants/http-status');
+
+/**
+ * Helper: Returns a standard validation error response for missing shop
+ * @returns {Object} Standard error response object
+ */
+const getNoShopError = () => ({
+    success: false,
+    error: {
+        code: 'VALIDATION_ERROR',
+        message: 'No shop selected. Please login again.'
+    }
+});
+
+/**
+ * Helper: Returns a standard validation error response with custom message
+ * @param {string} message - Custom error message
+ * @returns {Object} Standard error response object
+ */
+const getValidationError = (message) => ({
+    success: false,
+    error: {
+        code: 'VALIDATION_ERROR',
+        message
+    }
+});
 
 /**
  * RESTful: Get products with pagination and filters
@@ -9,19 +35,13 @@ const getProducts = async (req, res, next) => {
     try {
         const { userId, shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const options = req.query; // Already validated
         const result = await productService.listProducts(userId, shopId, options);
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: result
         });
@@ -37,19 +57,13 @@ const getProductById = async (req, res, next) => {
     try {
         const { userId, shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { id } = req.params; // Already validated
         const product = await productService.getProductById(id, userId, shopId);
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: product
         });
@@ -65,13 +79,7 @@ const createProductRest = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const product = await productService.createProduct(
@@ -80,7 +88,7 @@ const createProductRest = async (req, res, next) => {
             req.body // Already validated
         );
 
-        res.status(201).json({
+        res.status(HTTP_STATUS.CREATED).json({
             success: true,
             data: product
         });
@@ -96,13 +104,7 @@ const updateProductById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { id } = req.params; // Already validated
@@ -113,7 +115,7 @@ const updateProductById = async (req, res, next) => {
             req.body // Already validated
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: product
         });
@@ -129,13 +131,7 @@ const deleteProductById = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { id } = req.params; // Already validated
@@ -145,7 +141,7 @@ const deleteProductById = async (req, res, next) => {
             shopId
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             ...result
         });
@@ -161,13 +157,7 @@ const extractProducts = async (req, res, next) => {
     try {
         const { userId, shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const result = await productService.extractProductsFromContent(
@@ -176,7 +166,7 @@ const extractProducts = async (req, res, next) => {
             req.body
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: result
         });
@@ -192,13 +182,7 @@ const createProduct = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const product = await productService.createProduct(
@@ -207,7 +191,7 @@ const createProduct = async (req, res, next) => {
             req.body // Already validated
         );
 
-        res.status(201).json({
+        res.status(HTTP_STATUS.CREATED).json({
             success: true,
             data: product
         });
@@ -223,13 +207,7 @@ const updateProduct = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { productId, ...updateData } = req.body;
@@ -240,7 +218,7 @@ const updateProduct = async (req, res, next) => {
             updateData
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: product
         });
@@ -256,13 +234,7 @@ const deleteProduct = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { productId } = req.body;
@@ -272,7 +244,7 @@ const deleteProduct = async (req, res, next) => {
             shopId
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             ...result
         });
@@ -288,13 +260,7 @@ const searchProducts = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const result = await productService.searchProducts(
@@ -303,7 +269,7 @@ const searchProducts = async (req, res, next) => {
             req.body
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             products: result,
             total: result.length,
             page: 1
@@ -320,13 +286,7 @@ const getProduct = async (req, res, next) => {
     try {
         const { userId, shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { productId } = req.query;
@@ -336,7 +296,7 @@ const getProduct = async (req, res, next) => {
             shopId
         );
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: product
         });
@@ -352,19 +312,13 @@ const listProducts = async (req, res, next) => {
     try {
         const { userId, shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const options = req.query;
         const result = await productService.listProducts(userId, shopId, options);
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             data: result
         });
@@ -384,28 +338,16 @@ const detectMentions = async (req, res, next) => {
         const shopId = bodyShopId || req.user.shopId;
 
         if (!text) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'text is required'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('text is required'));
         }
 
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'shopId is required'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('shopId is required'));
         }
 
         const result = await productLinkService.enrichResponseWithProductCards(text, shopId);
 
-        res.status(200).json({
+        res.status(HTTP_STATUS.OK).json({
             success: true,
             productCards: result.productCards
         });
@@ -423,19 +365,13 @@ const bulkUpdateProducts = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: {
-                    code: 'VALIDATION_ERROR',
-                    message: 'No shop selected. Please login again.'
-                }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
 
         const { productIds, updates } = req.body;
         const result = await productService.bulkUpdateProducts(shopId, productIds, updates || {});
 
-        res.status(200).json({ success: true, data: result });
+        res.status(HTTP_STATUS.OK).json({ success: true, data: result });
     } catch (error) {
         next(error);
     }
@@ -449,15 +385,12 @@ const getProductUpsells = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
         const { productId } = req.params;
         const limit = parseInt(req.query.limit, 10) || 3;
         const data = await upsellService.getCopurchasedProducts(shopId, productId, limit);
-        res.status(200).json({ success: true, data });
+        res.status(HTTP_STATUS.OK).json({ success: true, data });
     } catch (error) {
         next(error);
     }
@@ -472,21 +405,15 @@ const getUpsellsForCart = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
         }
         const { productIds = [] } = req.body;
         if (!Array.isArray(productIds)) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'productIds must be an array' }
-            });
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('productIds must be an array'));
         }
         const limit = parseInt(req.query.limit, 10) || 3;
         const data = await upsellService.getUpsellRecommendations(shopId, productIds, limit);
-        res.status(200).json({ success: true, data });
+        res.status(HTTP_STATUS.OK).json({ success: true, data });
     } catch (error) {
         next(error);
     }

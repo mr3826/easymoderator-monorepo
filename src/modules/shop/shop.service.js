@@ -2,6 +2,7 @@ const { User, Shop, UserShop, Tenant } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
+const { validateAISettings, validateSettings, sanitizeSettings } = require('./shop-settings.validator');
 
 /**
  * Get all shops for a user
@@ -348,6 +349,9 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     const shop = await Shop.findByPk(shopId);
     if (!shop) throw new AppError('Shop not found', 404);
 
+    // Validate updates before applying
+    validateAISettings(updates);
+
     const currentSettings = shop.settings || {};
     const currentAI = currentSettings.ai || {};
 
@@ -359,12 +363,16 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     if (updates.handoff_settings) {
         newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...updates.handoff_settings };
     }
-    // ✅ NEW: Deep-merge intent_confidence_map to preserve per-intent settings
+    // Deep-merge intent_confidence_map to preserve per-intent settings
     if (updates.intent_confidence_map) {
         newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...updates.intent_confidence_map };
     }
 
-    await shop.update({ settings: { ...currentSettings, ai: newAI } });
+    // Sanitize and validate complete settings
+    const sanitizedSettings = sanitizeSettings({ ...currentSettings, ai: newAI });
+    validateSettings(sanitizedSettings);
+
+    await shop.update({ settings: sanitizedSettings });
     return newAI;
 };
 
