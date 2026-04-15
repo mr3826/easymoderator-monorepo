@@ -1,15 +1,16 @@
 const Joi = require('joi');
+const { VALIDATION, PAGINATION } = require('../../constants/http-status');
 
 class ProductValidator {
     createProduct = {
         body: Joi.object({
-            name: Joi.string().trim().required().max(255).messages({
+            name: Joi.string().trim().required().max(VALIDATION.MAX_NAME_LENGTH).messages({
                 'string.empty': 'Product name is required',
-                'string.max': 'Product name must not exceed 255 characters'
+                'string.max': `Product name must not exceed ${VALIDATION.MAX_NAME_LENGTH} characters`
             }),
             description: Joi.string().trim().optional(),
-            sku: Joi.string().trim().optional().max(100).messages({
-                'string.max': 'SKU must not exceed 100 characters'
+            sku: Joi.string().trim().optional().max(VALIDATION.MAX_SKU_LENGTH).messages({
+                'string.max': `SKU must not exceed ${VALIDATION.MAX_SKU_LENGTH} characters`
             }),
             category_id: Joi.string().uuid().optional().messages({
                 'string.uuid': 'Category ID must be a valid UUID'
@@ -53,8 +54,8 @@ class ProductValidator {
             seo_description: Joi.string().trim().optional().max(160),
             ai_generated: Joi.boolean().optional(),
             confidence: Joi.number().min(0).max(1).optional(),
-            brand: Joi.string().trim().optional().max(100).messages({
-                'string.max': 'Brand must not exceed 100 characters'
+            brand: Joi.string().trim().optional().max(VALIDATION.MAX_SKU_LENGTH).messages({
+                'string.max': `Brand must not exceed ${VALIDATION.MAX_SKU_LENGTH} characters`
             }),
             allow_discounts: Joi.boolean().optional(),
             charge_tax: Joi.boolean().optional(),
@@ -70,12 +71,12 @@ class ProductValidator {
             })
         }),
         body: Joi.object({
-            name: Joi.string().trim().optional().max(255).messages({
-                'string.max': 'Product name must not exceed 255 characters'
+            name: Joi.string().trim().optional().max(VALIDATION.MAX_NAME_LENGTH).messages({
+                'string.max': `Product name must not exceed ${VALIDATION.MAX_NAME_LENGTH} characters`
             }),
             description: Joi.string().trim().optional(),
-            sku: Joi.string().trim().optional().max(100).messages({
-                'string.max': 'SKU must not exceed 100 characters'
+            sku: Joi.string().trim().optional().max(VALIDATION.MAX_SKU_LENGTH).messages({
+                'string.max': `SKU must not exceed ${VALIDATION.MAX_SKU_LENGTH} characters`
             }),
             category_id: Joi.string().uuid().optional().messages({
                 'string.uuid': 'Category ID must be a valid UUID'
@@ -118,8 +119,8 @@ class ProductValidator {
             seo_description: Joi.string().trim().optional().max(160),
             ai_generated: Joi.boolean().optional(),
             confidence: Joi.number().min(0).max(1).optional(),
-            brand: Joi.string().trim().optional().max(100).messages({
-                'string.max': 'Brand must not exceed 100 characters'
+            brand: Joi.string().trim().optional().max(VALIDATION.MAX_SKU_LENGTH).messages({
+                'string.max': `Brand must not exceed ${VALIDATION.MAX_SKU_LENGTH} characters`
             }),
             allow_discounts: Joi.boolean().optional(),
             charge_tax: Joi.boolean().optional(),
@@ -131,7 +132,7 @@ class ProductValidator {
     getProducts = {
         query: Joi.object({
             page: Joi.number().integer().min(1).default(1),
-            limit: Joi.number().integer().min(1).max(100).default(20),
+            limit: Joi.number().integer().min(1).max(PAGINATION.MAX_LIMIT).default(PAGINATION.DEFAULT_LIMIT),
             category_id: Joi.string().uuid().optional(),
             is_active: Joi.boolean().optional(),
             search: Joi.string().trim().optional(),
@@ -166,7 +167,7 @@ class ProductValidator {
         body: Joi.object({
             filename: Joi.string().trim().optional(),
             content_type: Joi.string().trim().optional(),
-            content: Joi.string().trim().required().max(2000000).messages({
+            content: Joi.string().trim().required().max(VALIDATION.MAX_CONTENT_LENGTH || 2000000).messages({
                 'string.empty': 'Uploaded content is required',
                 'string.max': 'Uploaded content exceeds the maximum size'
             })
@@ -179,7 +180,7 @@ class ProductValidator {
         body: Joi.object({
             product_id: Joi.string().uuid().optional(),
             id: Joi.string().uuid().optional(),
-            name: Joi.string().trim().optional().max(255),
+            name: Joi.string().trim().optional().max(VALIDATION.MAX_NAME_LENGTH),
             description: Joi.string().trim().optional(),
             price: Joi.number().positive().optional(),
             quantity: Joi.number().integer().min(0).optional(),

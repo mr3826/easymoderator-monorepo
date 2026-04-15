@@ -8,6 +8,7 @@ const { createLogger } = require('../../utils/structured-logger');
 const { queueProductProcessing } = require('./product-ai.service');
 const { embedProduct, removeProductEmbedding } = require('./product-embedding.service');
 const { removeProductIndex: removeClipIndex } = require('./clip-client.service');
+const { HTTP_STATUS } = require('../../constants/http-status');
 // Atomic stock update utility
 const updateProductStock = async (shopId, sku, delta, transaction = null) => {
     // Find product by shop and SKU
@@ -15,7 +16,7 @@ const updateProductStock = async (shopId, sku, delta, transaction = null) => {
         where: { shop_id: shopId, sku },
         transaction
     });
-    if (!product) throw new AppError('Product not found', 404);
+    if (!product) throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
     // Use atomic increment/decrement
     await product.increment('quantity', { by: delta, transaction });
     return product.reload({ transaction });
@@ -160,7 +161,7 @@ const verifyShopAccess = async (userId, shopId) => {
     });
 
     if (!userShop) {
-        throw new AppError('You do not have access to this shop', 403);
+        throw new AppError('You do not have access to this shop', HTTP_STATUS.FORBIDDEN);
     }
 
     return userShop;
@@ -191,7 +192,7 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
         });
 
         if (!category) {
-            throw new AppError('Category not found', 404);
+            throw new AppError('Category not found', HTTP_STATUS.NOT_FOUND);
         }
     }
 
@@ -271,7 +272,7 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
     });
 
     if (!product) {
-        throw new AppError('Product not found', 404);
+        throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Handle track_quantity: if not tracking, clear quantity
@@ -289,7 +290,7 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
         });
 
         if (!category) {
-            throw new AppError('Category not found', 404);
+            throw new AppError('Category not found', HTTP_STATUS.NOT_FOUND);
         }
     }
 
@@ -325,7 +326,7 @@ const deleteProduct = async (productId, userId, shopId) => {
     });
 
     if (!product) {
-        throw new AppError('Product not found', 404);
+        throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Delete product
@@ -363,7 +364,7 @@ const getProductById = async (productId, userId, shopId) => {
     });
 
     if (!product) {
-        throw new AppError('Product not found', 404);
+        throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const productData = product.toJSON ? product.toJSON() : product;
@@ -498,40 +499,151 @@ const searchProducts = async (userId, shopId, payload = {}) => {
 };
 
 /**
+ * Detects the delimiter based on filename and content type
+ * @param {string} filename - Name of the uploaded file
+ * @param {string} contentType - MIME type of the content
+ * @returns {string} The detected delimiter (tab or comma)
+ */
+const detectDelimiter = (filename, contentType) => {
+    const lowerName = filename.toLowerCase();
+    const isTsv = lowerName.endsWith('.tsv') || contentType === 'text/tab-separated-values';
+    return isTsv ? '\t' : ',';
+};
+
+/**
+ * Validates that required columns are present in the headers
+ * @param {string[]} headers - Array of column headers
+ * @throws {AppError} If required columns are missing
+ */
+const validateRequiredColumns = (headers) => {
+    const mappedFields = headers.filter(Boolean);
+
+    if (!mappedFields.includes('name')) {
+        throw new AppError(
+            'CSV is missing a required "name" column. Accepted aliases: name, product, product_name, title.',
+            HTTP_STATUS.BAD_REQUEST
+        );
+    }
+
+    if (!mappedFields.includes('price')) {
+        throw new AppError(
+            'CSV is missing a required "price" column. Accepted aliases: price, unit_price, selling_price, sale_price.',
+            HTTP_STATUS.BAD_REQUEST
+        );
+    }
+};
+
+/**
+ * Creates an empty product object with default values
+ * @returns {Object} Empty product object
+ */
+const createEmptyProduct = () => ({
+    id: crypto.randomUUID(),
+    name: null,
+    sku: null,
+    price: null,
+    category: null,
+    description: null,
+    tags: [],
+    variants: [],
+    quantity: null,
+    brand: null,
+    weight: null,
+    weight_unit: null
+});
+
+/**
+ * Applies a single field value to a product object
+ * @param {Object} product - Product object to update
+ * @param {string} field - Field name
+ * @param {*} value - Field value
+ */
+const applyFieldValue = (product, field, value) => {
+    if (value === undefined || value === null || value === '') return;
+
+    const fieldParsers = {
+        tags: parseTags,
+        variants: parseVariants,
+        price: parsePrice,
+        weight: parsePrice,
+        quantity: (v) => Number.parseInt(String(v), 10),
+        weight_unit: (v) => String(v).trim().toLowerCase(),
+        default: (v) => String(v).trim()
+    };
+
+    const parser = fieldParsers[field] || fieldParsers.default;
+    product[field] = parser(value);
+};
+
+/**
+ * Validates a single product row
+ * @param {Object} product - Product to validate
+ * @param {number} rowIndex - Row index for error reporting
+ * @returns {Object|null} Error object if invalid, null if valid
+ */
+const validateProductRow = (product, rowIndex) => {
+    if (!product.name) {
+        return { row: rowIndex, error: 'Missing product name' };
+    }
+
+    if (product.price !== null && (product.price < 0 || !Number.isFinite(product.price))) {
+        return { row: rowIndex, error: `Invalid price "${product.price}" — must be a positive number` };
+    }
+
+    return null;
+};
+
+/**
+ * Builds a product object from a row of data
+ * @param {string[]} row - Row data array
+ * @param {string[]} headers - Column headers
+ * @returns {Object} Built product object
+ */
+const buildProductFromRow = (row, headers) => {
+    const product = createEmptyProduct();
+
+    headers.forEach((field, index) => {
+        if (!field) return;
+        applyFieldValue(product, field, row[index]);
+    });
+
+    return product;
+};
+
+/**
+ * Creates a processed product with metadata
+ * @param {Object} product - Base product object
+ * @returns {Object} Product with metadata
+ */
+const createProcessedProduct = (product) => ({
+    ...product,
+    status: 'pending',
+    ai_generated: true,
+    confidence: calculateConfidence(product),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+});
+
+/**
  * Extract products from uploaded content without persisting
+ * Refactored to reduce complexity - orchestration only
  */
 const extractProductsFromContent = async (userId, shopId, payload) => {
     await verifyShopAccess(userId, shopId);
 
     const { content, filename = '', content_type = '' } = payload;
-    const lowerName = filename.toLowerCase();
-    const isCsv = lowerName.endsWith('.csv') || content_type === 'text/csv';
-    const isTsv = lowerName.endsWith('.tsv') || content_type === 'text/tab-separated-values';
-    const delimiter = isTsv ? '\t' : ',';
+    const delimiter = detectDelimiter(filename, content_type);
 
-    if (!isCsv && !isTsv && !content) {
-        throw new AppError('Unsupported or empty content for extraction.', 400);
+    if (!content) {
+        throw new AppError('Unsupported or empty content for extraction.', HTTP_STATUS.BAD_REQUEST);
     }
 
     const { headers, rows } = parseDelimited(content, delimiter);
     if (headers.length === 0 || rows.length === 0) {
-        throw new AppError('No tabular data found in the uploaded file.', 400);
+        throw new AppError('No tabular data found in the uploaded file.', HTTP_STATUS.BAD_REQUEST);
     }
 
-    // Bug #9: validate required columns before touching any row data.
-    const mappedFields = headers.filter(Boolean);
-    if (!mappedFields.includes('name')) {
-        throw new AppError(
-            'CSV is missing a required "name" column. Accepted aliases: name, product, product_name, title.',
-            400
-        );
-    }
-    if (!mappedFields.includes('price')) {
-        throw new AppError(
-            'CSV is missing a required "price" column. Accepted aliases: price, unit_price, selling_price, sale_price.',
-            400
-        );
-    }
+    validateRequiredColumns(headers);
 
     const products = [];
     let skipped = 0;
@@ -539,75 +651,17 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
     const limitedRows = rows.slice(0, MAX_EXTRACT_ROWS);
 
     for (const row of limitedRows) {
-        const product = {
-            id: crypto.randomUUID(),
-            name: null,
-            sku: null,
-            price: null,
-            category: null,
-            description: null,
-            tags: [],
-            variants: [],
-            quantity: null,
-            brand: null,
-            weight: null,
-            weight_unit: null
-        };
-
-        headers.forEach((field, index) => {
-            if (!field) return;
-            const value = row[index];
-            if (value === undefined || value === null || value === '') return;
-
-            switch (field) {
-                case 'tags':
-                    product.tags = parseTags(value);
-                    break;
-                case 'variants':
-                    product.variants = parseVariants(value);
-                    break;
-                case 'price':
-                    product.price = parsePrice(value);
-                    break;
-                case 'quantity':
-                    product.quantity = Number.parseInt(String(value), 10);
-                    break;
-                case 'weight':
-                    product.weight = parsePrice(value);
-                    break;
-                case 'weight_unit':
-                    product.weight_unit = String(value).trim().toLowerCase();
-                    break;
-                default:
-                    product[field] = String(value).trim();
-                    break;
-            }
-        });
-
         const rowIndex = limitedRows.indexOf(row) + 2; // +1 header, +1 for 1-based display
+        const product = buildProductFromRow(row, headers);
 
-        if (!product.name) {
+        const error = validateProductRow(product, rowIndex);
+        if (error) {
             skipped += 1;
-            rowErrors.push({ row: rowIndex, error: 'Missing product name' });
+            rowErrors.push(error);
             continue;
         }
 
-        // Bug #9: validate price is a positive number when present
-        if (product.price !== null && (product.price < 0 || !Number.isFinite(product.price))) {
-            skipped += 1;
-            rowErrors.push({ row: rowIndex, error: `Invalid price "${product.price}" — must be a positive number` });
-            continue;
-        }
-
-        const confidence = calculateConfidence(product);
-        products.push({
-            ...product,
-            status: 'pending',
-            ai_generated: true,
-            confidence,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        });
+        products.push(createProcessedProduct(product));
     }
 
     return {
@@ -616,7 +670,6 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
             total: rows.length,
             parsed: products.length,
             skipped,
-            // Surface row-level errors so the frontend can show which rows failed
             rowErrors: rowErrors.length > 0 ? rowErrors : undefined
         }
     };
@@ -633,7 +686,7 @@ const extractProductsFromContent = async (userId, shopId, payload) => {
  */
 const bulkUpdateProducts = async (shopId, productIds, updates) => {
     if (!Array.isArray(productIds) || productIds.length === 0) {
-        throw new AppError('productIds must be a non-empty array', 400);
+        throw new AppError('productIds must be a non-empty array', HTTP_STATUS.BAD_REQUEST);
     }
 
     const ALLOWED_FIELDS = ['price', 'status', 'is_active'];
@@ -645,7 +698,7 @@ const bulkUpdateProducts = async (shopId, productIds, updates) => {
     }
 
     if (Object.keys(safeUpdates).length === 0) {
-        throw new AppError('No valid update fields provided. Allowed: price, status, is_active', 400);
+        throw new AppError('No valid update fields provided. Allowed: price, status, is_active', HTTP_STATUS.BAD_REQUEST);
     }
 
     const [updatedCount] = await Product.update(safeUpdates, {

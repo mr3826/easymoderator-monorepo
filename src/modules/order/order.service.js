@@ -8,6 +8,20 @@ const { createLogger } = require('../../utils/structured-logger');
 const { invalidate: invalidateStock } = require('../product/stock-status-guard.service');
 
 /**
+ * Constants for order processing
+ */
+const DEFAULT_COD_MAX_AMOUNT = 50000; // BDT
+const DEFAULT_CURRENCY = 'BDT';
+const ORDER_NUMBER_PAD_LENGTH = 6;
+const SHOP_PREFIX_LENGTH = 8;
+const RTO_RISK_THRESHOLD = 70;
+
+// State machine definitions
+const ORDER_STATES = ['draft', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
+const PAYMENT_STATES = ['pending', 'paid', 'unpaid', 'refunded', 'partially_paid'];
+const COD_PAYMENT_STATUSES = ['unpaid', 'pending', null, undefined];
+
+/**
  * Verify user has access to shop
  */
 const verifyShopAccess = async (userId, shopId) => {
@@ -80,85 +94,234 @@ const generateOrderNumber = async (shopId, transaction = null) => {
  * CRITICAL: Tracks usage for billing on successful creation
  */
 /**
+ * Check if order is COD (Cash on Delivery)
+ */
+const isCodOrder = (paymentStatus) => COD_PAYMENT_STATUSES.includes(paymentStatus);
+
+/**
+ * Run RTO Shield check for COD orders
+ */
+const runRtoShieldCheck = async (customerPhone, shopId) => {
+    if (!customerPhone) return { blocked: false };
+
+    const RtoShieldService = require('../rto-shield/rto-shield.service');
+    const result = await RtoShieldService.checkPhone(customerPhone, shopId);
+
+    if (result.flagged && result.risk_score >= RTO_RISK_THRESHOLD) {
+        return {
+            blocked: true,
+            reason: `Order blocked by RTO Shield: ${result.reason} (risk score: ${result.risk_score})`
+        };
+    }
+
+    return { blocked: false };
+};
+
+/**
+ * Validate order items and calculate totals
+ */
+const validateItemsAndCalculateTotals = async (items, shopId, transaction) => {
+    const itemIds = items.map((item) => item.product_id);
+    const products = await Product.findAll({
+        where: { id: { [Op.in]: itemIds }, shop_id: shopId },
+        transaction
+    });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    let subtotal = 0;
+    const validItems = [];
+
+    for (const item of items) {
+        const product = productMap.get(item.product_id);
+        if (!product) {
+            throw new AppError(`Product not found: ${item.product_id}`, 404);
+        }
+
+        // Verify stock if tracking enabled
+        const insufficientStock = product.track_quantity &&
+                                 !product.allow_backorder &&
+                                 product.quantity < item.quantity;
+        if (insufficientStock) {
+            throw new AppError(`Insufficient stock for product: ${product.name}`, 400);
+        }
+
+        // Use server-side catalog price to prevent client-side price tampering
+        const unitPrice = parseFloat(product.price);
+        const itemTotal = unitPrice * item.quantity;
+        subtotal += itemTotal;
+
+        validItems.push({
+            product_id: product.id,
+            quantity: item.quantity,
+            price: unitPrice,
+            total: itemTotal,
+            productInstance: product
+        });
+    }
+
+    return { validItems, subtotal };
+};
+
+/**
+ * Calculate order totals from subtotal and adjustments
+ */
+const calculateOrderTotals = (subtotal, discount = 0, tax = 0, deliveryFee = 0) => ({
+    subtotal,
+    discount: parseFloat(discount || 0),
+    tax: parseFloat(tax || 0),
+    deliveryFee: parseFloat(deliveryFee || 0),
+    total: subtotal - parseFloat(discount || 0) + parseFloat(tax || 0) + parseFloat(deliveryFee || 0)
+});
+
+/**
+ * Validate COD order doesn't exceed max amount
+ */
+const validateCodOrderAmount = (total, currency = DEFAULT_CURRENCY) => {
+    const codMax = parseInt(process.env.COD_ORDER_MAX_VALUE || String(DEFAULT_COD_MAX_AMOUNT), 10);
+
+    if (total > codMax) {
+        throw new AppError(
+            `COD orders cannot exceed ${currency} ${codMax.toLocaleString()}. Please use an online payment method for large orders.`,
+            422
+        );
+    }
+};
+
+/**
+ * Create order items and deduct stock atomically
+ */
+const createOrderItemsAndDeductStock = async (orderId, validItems, shopId, transaction) => {
+    for (const item of validItems) {
+        await OrderItem.create({
+            order_id: orderId,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            price: item.price,
+            total: item.total
+        }, { transaction });
+
+        // Atomic stock deduction
+        if (item.productInstance.track_quantity) {
+            await item.productInstance.decrement('quantity', {
+                by: item.quantity,
+                transaction
+            });
+            // Invalidate Redis stock cache after commit (fire-and-forget with retry)
+            invalidateStockWithRetry(shopId, item.product_id);
+        }
+    }
+};
+
+/**
+ * Invalidate stock cache with basic retry logic
+ */
+const invalidateStockWithRetry = async (shopId, productId, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            await invalidateStock(shopId, productId);
+            return;
+        } catch (err) {
+            if (attempt === maxRetries) {
+                console.error(`Failed to invalidate stock cache after ${maxRetries} attempts`, err);
+                return;
+            }
+            // Exponential backoff: 100ms, 200ms, 400ms
+            await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt - 1)));
+        }
+    }
+};
+
+/**
+ * Enforce state consistency on order
+ */
+const enforceStateConsistency = async (order) => {
+    let needsSave = false;
+
+    if (!PAYMENT_STATES.includes(order.payment_status)) {
+        order.payment_status = 'pending';
+        needsSave = true;
+    }
+
+    if (!ORDER_STATES.includes(order.order_status)) {
+        order.order_status = 'draft';
+        needsSave = true;
+    }
+
+    if (needsSave) {
+        await order.save();
+    }
+};
+
+/**
+ * Track order usage after successful creation
+ */
+const trackOrderUsage = async (order, shopId, requestId, logger) => {
+    try {
+        const usageResult = await subscriptionService.trackUsage(
+            shopId,
+            'orders',
+            1,
+            requestId
+        );
+        order.usage_transaction_id = usageResult.transactionId;
+        await order.save();
+    } catch (usageErr) {
+        logger.error('Failed to track usage', usageErr);
+    }
+};
+
+/**
  * Core order creation logic — shared by createOrder (user-auth) and createOrderInternal (chatbot/automated).
+ * Refactored for clarity, testability, and maintainability.
  */
 const _createOrderCore = async (shopId, orderData, logger, requestId = null) => {
     // USAGE_LIMIT_EXCEEDED check BEFORE creating the DB transaction
     await subscriptionService.checkOrderLimit(shopId);
 
     // RTO Shield: check phone blacklist for COD orders before opening transaction
-    const isCodOrder = !orderData.payment_status || orderData.payment_status === 'unpaid' || orderData.payment_status === 'pending';
-    if (isCodOrder && orderData.customer_phone) {
-        const RtoShieldService = require('../rto-shield/rto-shield.service');
-        const rtoResult = await RtoShieldService.checkPhone(orderData.customer_phone, shopId);
-        if (rtoResult.flagged && rtoResult.risk_score >= 70) {
-            throw new AppError(
-                `Order blocked by RTO Shield: ${rtoResult.reason} (risk score: ${rtoResult.risk_score})`,
-                422
-            );
+    const codOrder = isCodOrder(orderData.payment_status);
+    if (codOrder) {
+        const rtoCheck = await runRtoShieldCheck(orderData.customer_phone, shopId);
+        if (rtoCheck.blocked) {
+            throw new AppError(rtoCheck.reason, 422);
         }
     }
 
-    // Strict state machine definition
-    const ORDER_STATES = ['draft', 'placed', 'paid', 'fulfilled', 'cancelled', 'refunded'];
-    const PAYMENT_STATES = ['pending', 'paid', 'unpaid', 'refunded', 'partially_paid'];
-
     // Idempotency key check
     if (requestId) {
-        const existingOrder = await Order.findOne({ where: { shop_id: shopId, idempotency_key: requestId } });
+        const existingOrder = await Order.findOne({
+            where: { shop_id: shopId, idempotency_key: requestId }
+        });
         if (existingOrder) return existingOrder;
     }
 
     const transaction = await sequelize.transaction();
+
     try {
-        // 1. Fetch all products in one query (N+1 fix)
-        const itemIds = orderData.items.map((item) => item.product_id);
-        const products = await Product.findAll({
-            where: { id: { [Op.in]: itemIds }, shop_id: shopId },
+        // 1. Validate items and calculate subtotal
+        const { validItems, subtotal } = await validateItemsAndCalculateTotals(
+            orderData.items,
+            shopId,
             transaction
-        });
-        const productMap = new Map(products.map((p) => [p.id, p]));
+        );
 
-        let subtotal = 0;
-        const validItems = [];
-        for (const item of orderData.items) {
-            const product = productMap.get(item.product_id);
-            if (!product) throw new AppError(`Product not found: ${item.product_id}`, 404);
-            // Verify stock if tracking enabled
-            if (product.track_quantity && !product.allow_backorder && product.quantity < item.quantity) {
-                throw new AppError(`Insufficient stock for product: ${product.name}`, 400);
-            }
-            // Use server-side catalog price to prevent client-side price tampering.
-            const unitPrice = parseFloat(product.price);
-            const itemTotal = unitPrice * item.quantity;
-            subtotal += itemTotal;
-            validItems.push({
-                product_id: product.id,
-                quantity: item.quantity,
-                price: unitPrice,
-                total: itemTotal,
-                productInstance: product
-            });
-        }
-        const discount = parseFloat(orderData.discount || 0);
-        const tax = parseFloat(orderData.tax || 0);
-        const deliveryFee = parseFloat(orderData.delivery_fee || 0);
-        const total = subtotal - discount + tax + deliveryFee;
+        // 2. Calculate order totals
+        const totals = calculateOrderTotals(
+            subtotal,
+            orderData.discount,
+            orderData.tax,
+            orderData.delivery_fee
+        );
 
-        // M8: COD order value cap — configurable via COD_ORDER_MAX_VALUE env (default 50000 BDT)
-        if (isCodOrder) {
-            const COD_MAX = parseInt(process.env.COD_ORDER_MAX_VALUE || '50000', 10);
-            if (total > COD_MAX) {
-                throw new AppError(
-                    `COD orders cannot exceed ৳${COD_MAX.toLocaleString()}. Please use an online payment method for large orders.`,
-                    422
-                );
-            }
+        // 3. Validate COD order amount
+        if (codOrder) {
+            validateCodOrderAmount(totals.total);
         }
 
-        // 2. Generate Order Number
+        // 4. Generate Order Number
         const orderNumber = await generateOrderNumber(shopId, transaction);
-        // 3. Create Order
+
+        // 5. Create Order
         const order = await Order.create({
             shop_id: shopId,
             customer_id: orderData.customer_id,
@@ -169,62 +332,32 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             order_status: 'draft',
             payment_status: orderData.payment_status || 'pending',
             fulfillment_status: orderData.fulfillment_status || 'unfulfilled',
-            subtotal: subtotal,
-            discount: discount,
-            tax: tax,
-            delivery_fee: deliveryFee,
-            total: total,
+            subtotal: totals.subtotal,
+            discount: totals.discount,
+            tax: totals.tax,
+            delivery_fee: totals.deliveryFee,
+            total: totals.total,
             delivery_address: orderData.delivery_address || null,
             payment_method: orderData.payment_method || null,
             payment_method_id: orderData.paymentMethodId || orderData.payment_method_id || null,
             note: orderData.note,
             idempotency_key: requestId || null
         }, { transaction });
-        // 4. Create Order Items and update stock atomically
-        for (const validItem of validItems) {
-            await OrderItem.create({
-                order_id: order.id,
-                product_id: validItem.product_id,
-                quantity: validItem.quantity,
-                price: validItem.price,
-                total: validItem.total
-            }, { transaction });
-            // Atomic stock deduction
-            if (validItem.productInstance.track_quantity) {
-                await validItem.productInstance.decrement('quantity', {
-                    by: validItem.quantity,
-                    transaction
-                });
-                // Invalidate Redis stock cache after commit (fire-and-forget)
-                setImmediate(() => invalidateStock(shopId, validItem.product_id));
-            }
-        }
-        // Final usage limit check before commit (defense in depth)
+
+        // 6. Create Order Items and update stock atomically
+        await createOrderItemsAndDeductStock(order.id, validItems, shopId, transaction);
+
+        // 7. Final usage limit check before commit (defense in depth)
         await subscriptionService.checkOrderLimit(shopId);
+
         await transaction.commit();
-        // ATOMIC: Track usage ONLY after successful DB commit
-        try {
-            const usageResult = await subscriptionService.trackUsage(
-                shopId,
-                'orders',
-                1,
-                requestId
-            );
-            order.usage_transaction_id = usageResult.transactionId;
-            await order.save();
-        } catch (usageErr) {
-            logger.error('Failed to track usage', usageErr);
-        }
-        // Enforce payment state consistency
-        if (!PAYMENT_STATES.includes(order.payment_status)) {
-            order.payment_status = 'pending';
-            await order.save();
-        }
-        // Enforce strict order state machine
-        if (!ORDER_STATES.includes(order.order_status)) {
-            order.order_status = 'draft';
-            await order.save();
-        }
+
+        // 8. Track usage after successful commit
+        await trackOrderUsage(order, shopId, requestId, logger);
+
+        // 9. Enforce state consistency
+        await enforceStateConsistency(order);
+
         return order;
     } catch (err) {
         try { await transaction.rollback(); } catch (_) { /* already committed */ }
