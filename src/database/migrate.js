@@ -46,6 +46,7 @@ const migrations = [
   require('./migrations/20260331_001_create_trx_id_logs'),
   require('./migrations/20260408_001_add_password_reset_tokens'),
   require('./migrations/20260414_001_add_user_token_version'),
+  require('./migrations/20260418_001_add_conversation_resolution_fields'),
 ];
 
 const createMigrationsTable = async () => {
@@ -192,6 +193,17 @@ const rollbackAllMigrations = async () => {
   
   console.log('✅ All migrations rolled back successfully!');
 };
+
+/**
+ * Exported for use by server.js startup — runs pending migrations using a
+ * caller-supplied sequelize instance (avoids double secrets-load).
+ */
+const runMigrationsWithSequelize = async (seq) => {
+  sequelize = seq;
+  await runMigrations();
+};
+
+module.exports = { runMigrationsWithSequelize };
 
 // CLI interface
 const command = process.argv[2];

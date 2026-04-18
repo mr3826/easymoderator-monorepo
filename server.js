@@ -55,7 +55,17 @@ process.on('uncaughtException', (err) => {
             }
         }
 
-        // Sync models (disable in production or use migrations)
+        // Run pending migrations on every startup (idempotent — skips already-run)
+        try {
+            const { runMigrationsWithSequelize } = require('src/database/migrate');
+            await runMigrationsWithSequelize(sequelize);
+        } catch (migrateErr) {
+            console.error('⚠️  Migration error during startup:', migrateErr.message);
+            // Only block startup in production; dev/staging can continue with warnings
+            if (config.env === 'production') throw migrateErr;
+        }
+
+        // Sync models in development to pick up any model-only changes
         if (config.env === 'development') {
             await sequelize.sync({ force: false });
         }
