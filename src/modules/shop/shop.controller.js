@@ -279,10 +279,7 @@ const switchShop = async (req, res, next) => {
 // Allowed model IDs — validated server-side so callers can't store arbitrary strings.
 const ALLOWED_LLM_MODELS = new Set([
     'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
-    'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
-    'gemini-1.5-pro', 'gemini-1.5-flash',
-    'deepseek-chat',
-    'Qwen/Qwen2.5-0.5B-Instruct'
+    'gemini-1.5-pro', 'gemini-1.5-flash'
 ]);
 
 /**
@@ -589,7 +586,7 @@ const getAutomationSettings = async (req, res, next) => {
     try {
         const { shopId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
-        const { Shop } = require('./shop.entity');
+        const Shop = require('./shop.entity');
         const shop = await Shop.findByPk(shopId, {
             attributes: ['id', 'workflow_webhook_url', 'workflow_webhook_secret']
         });
@@ -611,7 +608,7 @@ const updateAutomationSettings = async (req, res, next) => {
         const { shopId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
         const { workflow_webhook_url, workflow_webhook_secret } = req.body;
-        const { Shop } = require('./shop.entity');
+        const Shop = require('./shop.entity');
         const shop = await Shop.findByPk(shopId);
         if (!shop) throw new AppError('Shop not found', 404);
         const updates = {};

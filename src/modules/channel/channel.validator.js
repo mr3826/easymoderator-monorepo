@@ -137,7 +137,8 @@ class ChannelValidator {
             state: Joi.string().trim().length(64).required().messages({
                 'string.length': 'Invalid state token',
                 'any.required': 'State token is required'
-            })
+            }),
+            channelType: Joi.string().valid('facebook', 'instagram', 'whatsapp').optional()
         })
     };
 
