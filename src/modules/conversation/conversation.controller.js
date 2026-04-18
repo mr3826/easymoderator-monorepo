@@ -226,11 +226,11 @@ class ConversationController {
                 });
             }
 
-            const { hitl, status } = req.body;
+            const { hitl, status, assignee_id, resolution_note } = req.body;
             const conversation = await conversationService.updateConversation(
                 conversationId,
                 shopId,
-                { hitl, status }
+                { hitl, status, assignee_id, resolution_note }
             );
 
             // ✅ NEW: Send escalation auto-reply when HITL is enabled (conversation escalated)

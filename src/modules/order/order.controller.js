@@ -2,6 +2,7 @@ const orderService = require('./order.service');
 const returnService = require('./return.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
+const deliveryService = require('../delivery/delivery.service');
 
 /**
  * Create a new order (legacy)
@@ -659,6 +660,60 @@ const getReturnRequests = async (req, res, next) => {
     }
 };
 
+const bookCourier = async (req, res, next) => {
+    try {
+        const { orderId } = req.params;
+        const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+        const { provider, recipient_name, recipient_phone, recipient_address, cod_amount, weight_kg, item_description } = req.body;
+
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Shop ID required' } });
+        }
+
+        const { Order } = require('../entities');
+        const order = await Order.findOne({ where: { id: orderId, shop_id: shopId } });
+        if (!order) {
+            return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } });
+        }
+
+        const orderData = {
+            order_number: order.id.slice(0, 8).toUpperCase(),
+            recipient_name: recipient_name || order.customer_name,
+            recipient_phone: recipient_phone || order.customer_phone,
+            recipient_address: recipient_address || (typeof order.delivery_address === 'object' ? `${order.delivery_address.street_address}, ${order.delivery_address.upazila}, ${order.delivery_address.district}` : order.delivery_address),
+            cod_amount: cod_amount ?? order.total,
+            weight: weight_kg || 0.5,
+            note: item_description || '',
+        };
+
+        const result = await deliveryService.createDeliveryOrder(shopId, orderData, provider || null);
+
+        // Persist tracking info on the order
+        await order.update({
+            delivery_provider: result.provider || provider,
+            delivery_consignment_id: result.consignment_id,
+            delivery_tracking_code: result.tracking_code,
+            delivery_dispatched_at: new Date(),
+        });
+
+        res.json({
+            success: true,
+            data: {
+                tracking_id: result.tracking_code || result.consignment_id,
+                consignment_id: result.consignment_id,
+                provider: result.provider || provider,
+                booked_at: new Date().toISOString(),
+            }
+        });
+    } catch (error) {
+        const statusCode = error.message?.includes('No active delivery') ? 400 : 500;
+        res.status(statusCode).json({
+            success: false,
+            error: { code: 'COURIER_BOOKING_FAILED', message: error.message }
+        });
+    }
+};
+
 module.exports = {
     // RESTful methods
     getOrders,
@@ -681,5 +736,6 @@ module.exports = {
     listOrders,
     deleteOrder,
     createDraftOrder,
-    confirmOrder
+    confirmOrder,
+    bookCourier
 };

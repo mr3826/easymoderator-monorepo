@@ -288,7 +288,12 @@ class ConversationService {
             if (updates.status !== undefined) {
                 fields.status = updates.status;
                 fields.metadata = { ...(conversation.metadata || {}), status: updates.status };
+                if (updates.status === 'closed' && !conversation.resolved_at) {
+                    fields.resolved_at = new Date();
+                }
             }
+            if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
+            if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
 
             await conversation.update(fields);
 

@@ -657,6 +657,29 @@ const updateBdSettings = async (req, res, next) => {
     }
 };
 
+const getShopAgents = async (req, res, next) => {
+    try {
+        const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Shop ID required' } });
+        }
+        const { UserShop, User } = require('../entities');
+        const members = await UserShop.findAll({
+            where: { shop_id: shopId, is_active: true },
+            include: [{ model: User, attributes: ['id', 'full_name', 'email'] }]
+        });
+        const agents = members.map((m) => ({
+            id: m.User.id,
+            name: m.User.full_name,
+            email: m.User.email,
+            role: m.role
+        }));
+        res.json({ success: true, data: agents });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getUserShops,
     getShop,
@@ -682,5 +705,6 @@ module.exports = {
     getBdSettings,
     updateBdSettings,
     getAutomationSettings,
-    updateAutomationSettings
+    updateAutomationSettings,
+    getShopAgents
 };

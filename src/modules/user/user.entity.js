@@ -47,6 +47,11 @@ const User = sequelize.define('User', {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 1
+    },
+    settings: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: {}
     }
 }, {
     tableName: 'users',

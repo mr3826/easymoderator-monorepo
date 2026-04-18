@@ -358,6 +358,23 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
         // 9. Enforce state consistency
         await enforceStateConsistency(order);
 
+        // 10. Push notification to shop owner (fire-and-forget — never blocks order creation)
+        setImmediate(() => {
+            try {
+                const queueManager = require('../../jobs/queue-manager');
+                if (queueManager.queues.notifications) {
+                    queueManager.queues.notifications.add({
+                        shopId,
+                        payload: {
+                            title: 'নতুন অর্ডার',
+                            body: `অর্ডার #${order.order_number} এসেছে`,
+                            data: { orderId: order.id, type: 'new_order' }
+                        }
+                    }).catch(() => {});
+                }
+            } catch (_) { /* notification failure must never affect order */ }
+        });
+
         return order;
     } catch (err) {
         try { await transaction.rollback(); } catch (_) { /* already committed */ }
@@ -635,24 +652,21 @@ const confirmOrder = async (orderId, userId, shopId) => {
 
     // --- EMAIL LOGIC ---
     try {
-        // Try to get customer email
+        const { orderConfirmationEmail } = require('../../utils/email-templates/order-confirmation');
         let customerEmail = null;
+        let customerObj = null;
         if (order.customer_id) {
-            // Enforce tenant scoping
-            const customer = await Customer.findOne({ where: { id: order.customer_id, shop_id: order.shop_id } });
-            if (customer && customer.email) customerEmail = customer.email;
+            customerObj = await Customer.findOne({ where: { id: order.customer_id, shop_id: order.shop_id } });
+            if (customerObj?.email) customerEmail = customerObj.email;
         }
-        // Fallback: check order.customer_email if present
         if (!customerEmail && order.customer_email) customerEmail = order.customer_email;
 
-        if (customerEmail && invoice) {
-            const subject = `Invoice for your order ${order.order_number}`;
-            const text = `Dear ${order.customer_name || 'Customer'},\n\nThank you for your order.\n\nInvoice Number: ${invoice.invoice_number}\nOrder Number: ${order.order_number}\nTotal: ${order.total}\n\nPlease pay by: ${invoice.due_date.toDateString()}\n\nThank you.`;
-            const html = `<p>Dear ${order.customer_name || 'Customer'},</p><p>Thank you for your order.</p><ul><li><b>Invoice Number:</b> ${invoice.invoice_number}</li><li><b>Order Number:</b> ${order.order_number}</li><li><b>Total:</b> ${order.total}</li></ul><p>Please pay by: <b>${invoice.due_date.toDateString()}</b></p><p>Thank you.</p>`;
-            await sendEmail({ to: customerEmail, subject, text, html });
+        if (customerEmail) {
+            const { subject, html, text } = orderConfirmationEmail(order, customerObj || { name: order.customer_name, phone: order.customer_phone });
+            await sendEmail({ to: customerEmail, subject, html, text });
         }
     } catch (err) {
-        console.error('Invoice email send failed:', err.message);
+        console.error('Order confirmation email failed:', err.message);
     }
     // Return order (with invoice info if needed)
 
@@ -768,9 +782,21 @@ const cancelOrder = async (userId, shopId, orderId, reason, customerId) => {
         throw new AppError('Customer verification failed', 403);
     }
 
-    await order.update({
-        order_status: 'cancelled',
-        note: reason ? `Cancelled: ${reason}` : order.note
+    await sequelize.transaction(async (transaction) => {
+        await order.update(
+            { order_status: 'cancelled', note: reason ? `Cancelled: ${reason}` : order.note },
+            { transaction }
+        );
+
+        // Restore inventory for tracked products
+        const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
+        for (const item of items) {
+            const product = await Product.findByPk(item.product_id, { transaction });
+            if (product?.track_quantity) {
+                await product.increment('quantity', { by: item.quantity, transaction });
+                invalidateStockWithRetry(shopId, item.product_id);
+            }
+        }
     });
 
     return order;

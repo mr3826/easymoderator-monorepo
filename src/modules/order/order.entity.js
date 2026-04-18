@@ -76,7 +76,19 @@ const Order = sequelize.define('Order', {
     },
     delivery_address: {
         type: DataTypes.TEXT,
-        allowNull: true
+        allowNull: true,
+        get() {
+            const raw = this.getDataValue('delivery_address');
+            if (!raw) return null;
+            try {
+                return JSON.parse(raw);
+            } catch {
+                return raw;
+            }
+        },
+        set(value) {
+            this.setDataValue('delivery_address', typeof value === 'object' && value !== null ? JSON.stringify(value) : value);
+        }
     },
     delivery_zone: {
         type: DataTypes.STRING(20),

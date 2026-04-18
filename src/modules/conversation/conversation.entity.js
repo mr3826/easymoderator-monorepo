@@ -66,6 +66,19 @@ const Conversation = sequelize.define('Conversation', {
         defaultValue: false,
         comment: 'Human-in-the-loop: true = agent handling, AI auto-replies paused'
     },
+    assignee_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        comment: 'Shop team member assigned to this conversation'
+    },
+    resolution_note: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    resolved_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     metadata: {
         type: DataTypes.JSON,
         defaultValue: {}

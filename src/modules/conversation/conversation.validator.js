@@ -64,8 +64,10 @@ class ConversationValidator {
         }),
         body: Joi.object({
             hitl: Joi.boolean(),
-            status: Joi.string().valid('active', 'closed', 'archived')
-        }).or('hitl', 'status')
+            status: Joi.string().valid('active', 'closed', 'archived'),
+            assignee_id: Joi.string().uuid().allow(null),
+            resolution_note: Joi.string().max(1000).allow('', null)
+        }).min(1)
     };
 
     updateConversationStatus = {

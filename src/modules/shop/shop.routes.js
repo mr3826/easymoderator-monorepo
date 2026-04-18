@@ -87,6 +87,9 @@ router.get('/bd-settings', shopController.getBdSettings);
 // PUT /shop/bd-settings - Update BD-specific settings
 router.put('/bd-settings', shopController.updateBdSettings);
 
+// GET /shop/agents - List team members for the current shop (used by inbox assignment)
+router.get('/agents', shopController.getShopAgents);
+
 // Tenant validation routes
 router.get('/tenant/:tenantId/validate', tenantValidateValidator, shopController.validateTenant);
 router.get('/tenant/:tenantId/shop/:shopId/validate', tenantShopValidateValidator, shopController.validateTenantShop);

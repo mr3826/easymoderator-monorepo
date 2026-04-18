@@ -35,6 +35,8 @@ router.post('/', validate(orderValidator.createOrder), orderController.createOrd
 router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
 router.patch('/:orderId/cancel', orderController.cancelOrder);
 router.post('/:orderId/return-request', orderController.createReturnRequest);
+// Courier booking
+router.post('/:orderId/book-courier', orderController.bookCourier);
 // D3: Return automation endpoints
 router.post('/:orderId/return', orderController.initiateReturn);
 router.patch('/:orderId/return/status', orderController.updateReturnStatus);

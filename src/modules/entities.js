@@ -40,6 +40,7 @@ const PaymentTransaction = require('./entities/payment-transaction.entity');
 const OwnerNotification = require('./entities/owner-notification.entity');
 const OrderInvoice = require('./entities/invoice.entity');
 const DeliveryTracking = require('./entities/delivery-tracking.entity');
+const PushSubscription = require('./notification/push-subscription.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -371,6 +372,10 @@ DeliveryTracking.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Shop.hasMany(DeliveryTracking, { foreignKey: 'shop_id', as: 'delivery_tracking' });
 Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking' });
 
+// Push Subscription relationships
+PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
+
 // Export entities
 module.exports = {
     User,
@@ -413,5 +418,6 @@ module.exports = {
     OwnerNotification,
     OrderInvoice,
     DeliveryTracking,
+    PushSubscription,
     PasswordResetToken
 };
