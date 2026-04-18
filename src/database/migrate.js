@@ -38,6 +38,14 @@ const migrations = [
   require('./migrations/20260320_004_add_hitl_and_message_tag'),
   require('./migrations/20260320_005_add_faq_use_count'),
   require('./migrations/20260321_001_channel_configs_hardening'),
+  require('./migrations/20260321_002_performance_indexes'),
+  require('./migrations/20260325_001_add_conversation_status_enum'),
+  require('./migrations/20260325_002_add_feature_tables'),
+  require('./migrations/20260326_001_add_product_indexes'),
+  require('./migrations/20260326_002_add_metadata_costcap'),
+  require('./migrations/20260331_001_create_trx_id_logs'),
+  require('./migrations/20260408_001_add_password_reset_tokens'),
+  require('./migrations/20260414_001_add_user_token_version'),
 ];
 
 const createMigrationsTable = async () => {

@@ -8,104 +8,48 @@
 'use strict';
 
 module.exports = {
-  up: async (queryInterface, Sequelize) => {
-    console.log('⏳ Starting migration: add_metadata_costcap');
+  name: '20260326_002_add_metadata_costcap',
 
+  up: async (sequelize) => {
+    const qi = sequelize.getQueryInterface();
     try {
-      // Add metadata JSONB column to Messages table
-      // This stores:
-      // {
-      //   llmCallCount: number,      // Incremented each LLM call
-      //   costCapExceeded: boolean,  // True if 2+ calls reached
-      //   escalationReason: string,  // Why it was escalated
-      //   tokenUsage: {              // Token tracking
-      //     inputTokens: number,
-      //     outputTokens: number,
-      //     totalTokens: number
-      //   },
-      //   providers: Array,           // Providers tried (for audit trail)
-      //   failureHistory: Array       // Failures before escalation
-      // }
-
-      console.log('  → Adding metadata JSONB column to messages');
-      await queryInterface.addColumn(
-        'messages',
-        'metadata',
-        {
-          type: Sequelize.JSON,
-          defaultValue: {},
-          allowNull: false,
-          comment: 'Cost cap tracking, token usage, escalation reasons'
-        }
-      );
-
-      // Add cost_cap_status column for quick querying
-      console.log('  → Adding cost_cap_status column');
-      await queryInterface.addColumn(
-        'messages',
-        'cost_cap_status',
-        {
-          type: Sequelize.ENUM('PENDING', 'LLM_CALLS_1', 'LLM_CALLS_2', 'ESCALATED', 'RESOLVED'),
-          defaultValue: 'PENDING',
-          allowNull: false,
-          comment: 'Quick status check for cost cap queries'
-        }
-      );
-
-      // Add index for quick query filtering
-      console.log('  → Adding index on shop_id + cost_cap_status');
-      await queryInterface.addIndex(
-        'messages',
-        { fields: ['shop_id', 'cost_cap_status'] },
-        {
-          name: 'idx_msg_shop_costcap',
-          unique: false
-        }
-      );
-
-      // Add index for created_at to track daily costs
-      console.log('  → Adding index on shop_id + created_at');
-      await queryInterface.addIndex(
-        'messages',
-        { fields: ['shop_id', 'created_at'] },
-        {
-          name: 'idx_msg_shop_date',
-          unique: false
-        }
-      );
-
-      console.log('✅ Migration complete');
-
-    } catch (error) {
-      console.error('❌ Migration failed:', error.message);
-      throw error;
+      await qi.addColumn('messages', 'metadata', {
+        type: 'JSONB',
+        defaultValue: {},
+        allowNull: false,
+      });
+    } catch (err) {
+      if (!err.message.toLowerCase().includes('already exists')) throw err;
     }
+    try {
+      await sequelize.query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_messages_cost_cap_status') THEN
+            CREATE TYPE enum_messages_cost_cap_status AS ENUM ('PENDING','LLM_CALLS_1','LLM_CALLS_2','ESCALATED','RESOLVED');
+          END IF;
+        END $$;
+      `);
+      await qi.addColumn('messages', 'cost_cap_status', {
+        type: 'enum_messages_cost_cap_status',
+        defaultValue: 'PENDING',
+        allowNull: false,
+      });
+    } catch (err) {
+      if (!err.message.toLowerCase().includes('already exists')) throw err;
+    }
+    for (const [name, fields] of [['idx_msg_shop_costcap', ['shop_id', 'cost_cap_status']], ['idx_msg_shop_date', ['shop_id', 'created_at']]]) {
+      try { await qi.addIndex('messages', fields, { name }); } catch (_) {}
+    }
+    console.log('✅ add_metadata_costcap migration done');
   },
 
-  down: async (queryInterface, Sequelize) => {
-    console.log('⏳ Rolling back migration: add_metadata_costcap');
-
-    try {
-      // Remove indexes first
-      console.log('  → Dropping index idx_msg_shop_costcap');
-      await queryInterface.removeIndex('messages', 'idx_msg_shop_costcap');
-
-      console.log('  → Dropping index idx_msg_shop_date');
-      await queryInterface.removeIndex('messages', 'idx_msg_shop_date');
-
-      // Remove columns
-      console.log('  → Removing cost_cap_status column');
-      await queryInterface.removeColumn('messages', 'cost_cap_status');
-
-      console.log('  → Removing metadata column');
-      await queryInterface.removeColumn('messages', 'metadata');
-
-      console.log('✅ Rollback complete');
-
-    } catch (error) {
-      console.error('❌ Rollback failed:', error.message);
-      throw error;
+  down: async (sequelize) => {
+    const qi = sequelize.getQueryInterface();
+    for (const name of ['idx_msg_shop_costcap', 'idx_msg_shop_date']) {
+      try { await qi.removeIndex('messages', name); } catch (_) {}
     }
+    try { await qi.removeColumn('messages', 'cost_cap_status'); } catch (_) {}
+    try { await qi.removeColumn('messages', 'metadata'); } catch (_) {}
   }
 };
 
