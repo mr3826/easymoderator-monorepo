@@ -1,6 +1,7 @@
 const { body, validationResult } = require('express-validator');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { getShopById } = require('../shop/shop.service');
+const queueManager = require('../../jobs/queue-manager');
 
 class NotificationController {
     /**
@@ -108,31 +109,20 @@ class NotificationController {
                 });
             }
 
-            // TODO: Implement actual push notification logic
-            // This would integrate with FCM, web push, or other notification services
-            // For now, we'll just log the notification
-            
-            const notification = {
-                shop_id,
-                type,
-                title,
-                body,
-                data,
-                timestamp: new Date().toISOString()
-            };
-
-            console.log('📱 Push notification:', notification);
-
-            // In production, you would:
-            // 1. Get shop owner's device tokens from database
-            // 2. Send via FCM for mobile devices
-            // 3. Send via web push for browsers
-            // 4. Store notification in database for history
+            // Enqueue push notification — sendPushToShop handles web + FCM delivery
+            let jobId = null;
+            if (queueManager.queues.notifications) {
+                const job = await queueManager.queues.notifications.add({
+                    shopId: shop_id,
+                    payload: { title, body, data }
+                });
+                jobId = job.id;
+            }
 
             res.json({
                 success: true,
-                message: 'Notification sent successfully',
-                notification_id: `notif_${Date.now()}_${shop_id}`
+                message: 'Notification queued',
+                notification_id: jobId || `notif_${Date.now()}_${shop_id}`
             });
         } catch (error) {
             console.error('Send push notification error:', error);

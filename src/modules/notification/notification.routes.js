@@ -1,8 +1,12 @@
 const express = require('express');
 const { body } = require('express-validator');
 const NotificationController = require('./notification.controller');
+const pushSubscriptionRoutes = require('./push-subscription.routes');
 
 const router = express.Router();
+
+// Push subscription management (register / unregister device tokens)
+router.use(pushSubscriptionRoutes);
 
 // Validation middleware
 const validateMarkHandoff = [
