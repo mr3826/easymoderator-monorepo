@@ -13,11 +13,7 @@ module.exports = {
   up: async (sequelize) => {
     const qi = sequelize.getQueryInterface();
     try {
-      await qi.addColumn('messages', 'metadata', {
-        type: 'JSONB',
-        defaultValue: {},
-        allowNull: false,
-      });
+      await sequelize.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'`);
     } catch (err) {
       if (!err.message.toLowerCase().includes('already exists')) throw err;
     }

@@ -20,11 +20,7 @@ module.exports = {
       /constraint|already exists|duplicate|column.*already/i.test(e.message);
 
     try {
-      await qi.addColumn('users', 'settings', {
-        type: 'JSONB',
-        allowNull: true,
-        defaultValue: {},
-      });
+      await sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'`);
       console.log('  ✓ users.settings added');
     } catch (err) {
       if (alreadyExists(err)) {

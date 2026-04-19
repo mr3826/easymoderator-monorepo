@@ -28,12 +28,9 @@ module.exports = {
             comment: 'LLM-generated product description for search (set once at upload)'
         });
 
-        await addIfMissing('ai_tags', {
-            type: dialect === 'postgres' ? DataTypes.JSONB : DataTypes.JSON,
-            allowNull: false,
-            defaultValue: [],
-            comment: 'LLM-generated tags e.g. ["saree","blue","embroidery"]'
-        });
+        if (!tableDesc['ai_tags']) {
+            await sequelize.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS ai_tags ${dialect === 'postgres' ? 'JSONB' : 'TEXT'} NOT NULL DEFAULT '[]'`);
+        }
 
         await addIfMissing('ai_category', {
             type: DataTypes.STRING(100),
@@ -53,12 +50,9 @@ module.exports = {
             comment: 'Material / fabric detected from product image'
         });
 
-        await addIfMissing('ai_attributes', {
-            type: dialect === 'postgres' ? DataTypes.JSONB : DataTypes.JSON,
-            allowNull: false,
-            defaultValue: {},
-            comment: 'Flexible key-value attributes e.g. {style:"traditional",pattern:"floral"}'
-        });
+        if (!tableDesc['ai_attributes']) {
+            await sequelize.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS ai_attributes ${dialect === 'postgres' ? 'JSONB' : 'TEXT'} NOT NULL DEFAULT '{}'`);
+        }
 
         await addIfMissing('ai_search_text', {
             type: DataTypes.TEXT,

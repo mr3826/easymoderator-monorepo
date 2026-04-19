@@ -14,23 +14,9 @@ module.exports = {
     const { DataTypes } = require('sequelize');
     const queryInterface = sequelize.getQueryInterface();
 
-    await queryInterface.addColumn('shops', 'branding_rules', {
-      type: DataTypes.JSON,
-      allowNull: true,
-      defaultValue: {}
-    }).catch(() => {});
-
-    await queryInterface.addColumn('shops', 'knowledge_faqs', {
-      type: DataTypes.JSON,
-      allowNull: true,
-      defaultValue: []
-    }).catch(() => {});
-
-    await queryInterface.addColumn('shops', 'knowledge_gaps', {
-      type: DataTypes.JSON,
-      allowNull: true,
-      defaultValue: []
-    }).catch(() => {});
+    await sequelize.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS branding_rules JSONB DEFAULT '{}'`).catch(() => {});
+    await sequelize.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS knowledge_faqs JSONB DEFAULT '[]'`).catch(() => {});
+    await sequelize.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS knowledge_gaps JSONB DEFAULT '[]'`).catch(() => {});
   },
 
   down: async (sequelize) => {
