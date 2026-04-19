@@ -15,13 +15,14 @@ module.exports = {
       { fields: ['shop_id', 'name'],              name: 'idx_product_shop_name' },
       { fields: ['shop_id', 'sku'],               name: 'idx_product_shop_sku' },
       { fields: ['shop_id', 'category'],          name: 'idx_product_shop_category' },
-      { fields: ['shop_id', 'quantity_in_stock'], name: 'idx_product_shop_quantity' },
+      { fields: ['shop_id', 'quantity'], name: 'idx_product_shop_quantity' },
     ];
     for (const { fields, name } of indexDefs) {
       try {
         await qi.addIndex('products', fields, { name });
       } catch (err) {
-        if (!err.message.toLowerCase().includes('already exists')) throw err;
+        const msg = err.message.toLowerCase();
+        if (!msg.includes('already exists') && !msg.includes('does not exist')) throw err;
       }
     }
     console.log('✅ add_product_indexes migration done');
