@@ -17,8 +17,8 @@ module.exports = {
     // Create inventory_sync_configs table
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS inventory_sync_configs (
-        id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
+        id UUID PRIMARY KEY,
+        shop_id UUID NOT NULL,
         provider VARCHAR(50) NOT NULL,
         credentials ${jsonType} NOT NULL,
         config ${jsonType} DEFAULT '{}',
@@ -26,7 +26,6 @@ module.exports = {
         last_sync TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
         UNIQUE(shop_id, provider)
       )
     `);
@@ -36,9 +35,9 @@ module.exports = {
     // Create inventory_sync_logs table
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS inventory_sync_logs (
-        id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
-        product_id TEXT,
+        id UUID PRIMARY KEY,
+        shop_id UUID NOT NULL,
+        product_id UUID,
         sku VARCHAR(100),
         title VARCHAR(255),
         old_quantity INTEGER,
@@ -46,9 +45,7 @@ module.exports = {
         source VARCHAR(50),
         sync_type VARCHAR(50),
         notes TEXT DEFAULT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE,
-        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
