@@ -24,7 +24,7 @@ module.exports = {
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS subscriptions (
         id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
+        shop_id UUID NOT NULL,
         plan_name TEXT NOT NULL DEFAULT 'Free',
         plan_price DECIMAL(10,2) NOT NULL DEFAULT 0,
         billing_cycle TEXT NOT NULL DEFAULT 'monthly',
@@ -46,7 +46,7 @@ module.exports = {
         cancelled_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE ON UPDATE CASCADE
+        CONSTRAINT fk_subscriptions_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
     
@@ -85,7 +85,7 @@ module.exports = {
       CREATE TABLE IF NOT EXISTS invoices (
         id TEXT PRIMARY KEY,
         subscription_id TEXT NOT NULL,
-        shop_id TEXT NOT NULL,
+        shop_id UUID NOT NULL,
         invoice_number TEXT NOT NULL,
         billing_period TEXT NOT NULL,
         invoice_type TEXT NOT NULL DEFAULT 'monthly_subscription',
@@ -101,8 +101,8 @@ module.exports = {
         notes TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE ON UPDATE CASCADE,
-        FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE ON UPDATE CASCADE
+        CONSTRAINT fk_invoices_subscription FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE,
+        CONSTRAINT fk_invoices_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
     

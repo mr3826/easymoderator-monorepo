@@ -22,7 +22,7 @@ module.exports = {
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS usage_events (
         id TEXT PRIMARY KEY,
-        shop_id TEXT NOT NULL,
+        shop_id UUID NOT NULL,
         resource_type TEXT NOT NULL,
         request_id TEXT NOT NULL,
         delta INTEGER NOT NULL DEFAULT 1,
@@ -33,7 +33,7 @@ module.exports = {
         error_message TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         committed_at TIMESTAMPTZ,
-        FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE ON UPDATE CASCADE
+        CONSTRAINT fk_usage_events_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
       )
     `);
     
