@@ -207,7 +207,8 @@ const runMigrationsWithSequelize = async (seq) => {
 
 module.exports = { runMigrationsWithSequelize };
 
-// CLI interface
+// CLI interface — only runs when invoked directly (node migrate.js), not when require()'d
+if (require.main === module) {
 const command = process.argv[2];
 
 (async () => {
@@ -265,3 +266,4 @@ Rules:
     process.exit(1);
   }
 })();
+} // end require.main === module
