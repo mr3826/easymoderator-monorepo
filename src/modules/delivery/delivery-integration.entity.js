@@ -18,8 +18,6 @@ const getDeliveryEncryptionKey = () => {
     return crypto.createHash('sha256').update('default-delivery-encryption-key-change-me').digest();
 };
 
-const DELIVERY_ENCRYPTION_KEY = getDeliveryEncryptionKey();
-
 const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
     id: {
         type: DataTypes.UUID,
@@ -47,10 +45,11 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
             if (!value) return null;
             try {
                 const algorithm = 'aes-256-cbc';
+                const key = getDeliveryEncryptionKey();
                 const parts = value.split(':');
                 const iv = Buffer.from(parts[0], 'hex');
                 const encrypted = parts[1];
-                const decipher = crypto.createDecipheriv(algorithm, DELIVERY_ENCRYPTION_KEY, iv);
+                const decipher = crypto.createDecipheriv(algorithm, key, iv);
                 let decrypted = decipher.update(encrypted, 'hex', 'utf8');
                 decrypted += decipher.final('utf8');
                 return JSON.parse(decrypted);
@@ -66,8 +65,9 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
             }
             try {
                 const algorithm = 'aes-256-cbc';
+                const key = getDeliveryEncryptionKey();
                 const iv = crypto.randomBytes(16);
-                const cipher = crypto.createCipheriv(algorithm, DELIVERY_ENCRYPTION_KEY, iv);
+                const cipher = crypto.createCipheriv(algorithm, key, iv);
                 let encrypted = cipher.update(JSON.stringify(value), 'utf8', 'hex');
                 encrypted += cipher.final('hex');
                 this.setDataValue('credentials', iv.toString('hex') + ':' + encrypted);
