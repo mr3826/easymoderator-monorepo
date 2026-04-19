@@ -23,7 +23,7 @@ module.exports = {
     // Create subscriptions table
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS subscriptions (
-        id TEXT PRIMARY KEY,
+        id UUID PRIMARY KEY,
         shop_id UUID NOT NULL,
         plan_name TEXT NOT NULL DEFAULT 'Free',
         plan_price DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -84,7 +84,7 @@ module.exports = {
     await sequelize.query(`
       CREATE TABLE IF NOT EXISTS invoices (
         id TEXT PRIMARY KEY,
-        subscription_id TEXT NOT NULL,
+        subscription_id UUID NOT NULL,
         shop_id UUID NOT NULL,
         invoice_number TEXT NOT NULL,
         billing_period TEXT NOT NULL,
