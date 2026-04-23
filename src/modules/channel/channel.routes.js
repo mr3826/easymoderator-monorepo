@@ -28,6 +28,9 @@ router.post('/oauth/connect-page',
   channelOAuthController.connectOAuthPage
 );
 
+// Debug routes (must be before /:id to avoid route collision)
+router.get('/debug/page-id/:pageId', channelController.debugChannelByPageId);
+
 // RESTful routes
 router.get('/', validate(channelValidator.getChannels), channelController.getChannels);
 router.get('/config/:channelType', channelController.getChannelConfig);

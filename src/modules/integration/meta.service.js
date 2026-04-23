@@ -16,20 +16,13 @@ class MetaService {
    */
   async subscribeToWebhooks(accessToken, assetId, platform) {
     try {
-      const subscriptionData = {
-        object: platform === 'facebook' ? 'page' : platform,
-        callback_url: `${process.env.BASE_URL || 'http://localhost:3000'}/webhooks/meta`,
-        verify_token: process.env.META_WEBHOOK_VERIFY_TOKEN,
-        fields: this.getWebhookFields(platform)
-      };
-
       const response = await axios.post(
         `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/${assetId}/subscribed_apps`,
         null,
         {
           params: {
             access_token: accessToken,
-            ...subscriptionData
+            subscribed_fields: this.getWebhookFields(platform)
           }
         }
       );

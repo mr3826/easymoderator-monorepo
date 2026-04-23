@@ -457,6 +457,55 @@ const getExpiringTokens = async (req, res, next) => {
     }
 };
 
+/**
+ * Debug endpoint: Check if channel exists for a page ID
+ */
+const debugChannelByPageId = async (req, res, next) => {
+    try {
+        const { pageId } = req.params;
+        const { Channel } = require('../entities');
+        const MetaIntegration = require('../integration/meta-integration.entity');
+
+        // Check Channel table
+        const channel = await Channel.findOne({
+            where: { page_id: pageId },
+            attributes: ['id', 'shop_id', 'channel_type', 'page_id', 'is_active', 'created_at', 'updated_at']
+        });
+
+        // Check MetaIntegration table
+        const integration = await MetaIntegration.findOne({
+            where: { meta_asset_id: pageId },
+            attributes: ['id', 'shop_id', 'platform', 'meta_asset_id', 'display_name', 'status', 'created_at', 'updated_at']
+        });
+
+        return res.json({
+            success: true,
+            pageId,
+            channel: channel ? {
+                found: true,
+                id: channel.id,
+                shop_id: channel.shop_id,
+                channel_type: channel.channel_type,
+                is_active: channel.is_active,
+                created_at: channel.created_at,
+                updated_at: channel.updated_at
+            } : { found: false },
+            integration: integration ? {
+                found: true,
+                id: integration.id,
+                shop_id: integration.shop_id,
+                platform: integration.platform,
+                display_name: integration.display_name,
+                status: integration.status,
+                created_at: integration.created_at,
+                updated_at: integration.updated_at
+            } : { found: false }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getChannels,
@@ -467,6 +516,7 @@ module.exports = {
     connectChannelByType,
     disconnectChannelById,
     getExpiringTokens,
+    debugChannelByPageId,
     // Bug #10: unified full config (connection + AI behaviour) in one call
     getChannelFullConfig: async (req, res, next) => {
         try {

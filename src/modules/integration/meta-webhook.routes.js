@@ -428,32 +428,49 @@ async function sendMetaReply(platform, accessToken, recipientId, messageText) {
 async function handlePageWebhook(payload) {
   for (const entry of payload.entry) {
     const pageId = entry.id;
+    console.log(`[webhook] Processing Facebook page ${pageId}, ${entry.messaging?.length || 0} messaging events`);
 
     const integration = await MetaIntegration.findOne({
       where: { meta_asset_id: pageId, platform: 'facebook', status: 'CONNECTED' }
     });
 
-    if (!integration) continue;
+    if (!integration) {
+      console.warn(`[webhook] No connected Facebook integration for page ${pageId} — message dropped`);
+      continue;
+    }
 
     for (const messaging of entry.messaging) {
-      // Skip echo events (page's own outbound messages reflected back by Meta)
-      if (messaging.message?.is_echo) continue;
-      const messageText = messaging.message?.text || null;
-      const attachments = messaging.message?.attachments || [];
-      // Skip non-message events (read receipts, delivery confirmations, etc.)
-      if (!messageText && attachments.length === 0) continue;
+      try {
+        // Skip echo events (page's own outbound messages reflected back by Meta)
+        if (messaging.message?.is_echo) {
+          console.debug(`[webhook] Skipped echo event from ${messaging.sender.id}`);
+          continue;
+        }
+        const messageText = messaging.message?.text || null;
+        const attachments = messaging.message?.attachments || [];
 
-      const normalizedEvent = {
-        platform: 'facebook',
-        shop_id: integration.shop_id,
-        sender: messaging.sender.id,
-        message: messageText || '',
-        attachments,
-        timestamp: new Date(messaging.timestamp),
-        raw_event: messaging
-      };
+        // Skip non-message events (read receipts, delivery confirmations, etc.)
+        if (!messageText && attachments.length === 0) {
+          console.debug(`[webhook] Skipped non-message event (no text/attachments) from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
+          continue;
+        }
 
-      await storeIncomingMessage(normalizedEvent);
+        const normalizedEvent = {
+          platform: 'facebook',
+          shop_id: integration.shop_id,
+          sender: messaging.sender.id,
+          message: messageText || '',
+          attachments,
+          timestamp: new Date(messaging.timestamp),
+          raw_event: messaging
+        };
+
+        console.log(`[webhook] Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
+        await storeIncomingMessage(normalizedEvent);
+      } catch (err) {
+        console.error(`[webhook] Failed to process message from ${messaging.sender.id}:`, err.message, err.stack);
+        throw err;
+      }
     }
   }
 }
@@ -467,7 +484,10 @@ async function handleInstagramWebhook(payload) {
       where: { meta_asset_id: igAccountId, platform: 'instagram', status: 'CONNECTED' }
     });
 
-    if (!integration) continue;
+    if (!integration) {
+      console.warn(`[webhook] No connected Instagram integration for account ${igAccountId} — message dropped`);
+      continue;
+    }
 
     for (const message of entry.messaging) {
       // Skip echo events (page's own outbound messages reflected back by Meta)
@@ -615,5 +635,46 @@ async function storeIncomingMessage(event) {
     throw error;
   }
 }
+
+// Debug endpoint to verify webhook subscriptions
+router.get('/debug/subscriptions/:pageId', async (req, res) => {
+  try {
+    const { pageId } = req.params;
+    const integration = await MetaIntegration.findOne({
+      where: { meta_asset_id: pageId }
+    });
+
+    if (!integration) {
+      return res.status(404).json({
+        error: 'No integration found',
+        meta_asset_id: pageId
+      });
+    }
+
+    const metaService = require('./meta.service');
+    const accessToken = metaService.decryptToken(integration.access_token);
+
+    // Check subscribed apps
+    const response = await require('axios').get(
+      `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`,
+      { params: { access_token: accessToken, fields: 'id,name' } }
+    );
+
+    res.json({
+      integration: {
+        shop_id: integration.shop_id,
+        platform: integration.platform,
+        status: integration.status,
+        meta_asset_id: integration.meta_asset_id
+      },
+      subscription_response: response.data
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      hint: 'Check that the page access token is still valid'
+    });
+  }
+});
 
 module.exports = router;
