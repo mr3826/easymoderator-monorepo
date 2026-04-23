@@ -39,7 +39,7 @@ const Channel = sequelize.define('Channel', {
     },
     access_token: {
         type: DataTypes.TEXT,
-        allowNull: false,
+        allowNull: true,
         get() {
             const value = this.getDataValue('access_token');
             if (!value) return null;

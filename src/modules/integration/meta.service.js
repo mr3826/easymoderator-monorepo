@@ -216,6 +216,48 @@ class MetaService {
   }
 
   /**
+   * Upsert a MetaIntegration record for a given shop + platform.
+   * Unlike createIntegration(), this allows reconnecting the same page or swapping
+   * to a different page for the same platform without throwing on a duplicate asset.
+   * Throws only if the asset ID is already claimed by a DIFFERENT shop.
+   */
+  async upsertIntegration(shopId, platform, metaAssetId, displayName, accessToken) {
+    // Block cross-shop asset reuse
+    const conflicting = await MetaIntegration.findOne({ where: { meta_asset_id: metaAssetId } });
+    if (conflicting && conflicting.shop_id !== shopId) {
+      throw new AppError('This Meta asset is already connected to another shop', 409);
+    }
+
+    const { access_token: longLivedToken, expiresAt } =
+      await this.exchangeForLongLivedToken(accessToken);
+    const encryptedToken = this.encryptToken(longLivedToken);
+
+    // Find by shop_id + platform so reconnecting the same (or different) page works cleanly
+    let integration = await MetaIntegration.findOne({ where: { shop_id: shopId, platform } });
+    if (integration) {
+      await integration.update({
+        meta_asset_id: metaAssetId,
+        display_name: displayName,
+        access_token: encryptedToken,
+        token_expires_at: expiresAt,
+        status: 'CONNECTED'
+      });
+    } else {
+      integration = await MetaIntegration.create({
+        shop_id: shopId,
+        platform,
+        meta_asset_id: metaAssetId,
+        display_name: displayName,
+        access_token: encryptedToken,
+        token_expires_at: expiresAt,
+        status: 'CONNECTED'
+      });
+    }
+
+    return integration;
+  }
+
+  /**
    * Get integration status for shop
    */
   async getShopIntegrations(shopId) {

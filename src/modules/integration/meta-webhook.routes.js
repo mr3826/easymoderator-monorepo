@@ -436,6 +436,8 @@ async function handlePageWebhook(payload) {
     if (!integration) continue;
 
     for (const messaging of entry.messaging) {
+      // Skip echo events (page's own outbound messages reflected back by Meta)
+      if (messaging.message?.is_echo) continue;
       const messageText = messaging.message?.text || null;
       const attachments = messaging.message?.attachments || [];
       // Skip non-message events (read receipts, delivery confirmations, etc.)
@@ -468,6 +470,8 @@ async function handleInstagramWebhook(payload) {
     if (!integration) continue;
 
     for (const message of entry.messaging) {
+      // Skip echo events (page's own outbound messages reflected back by Meta)
+      if (message.message?.is_echo) continue;
       const messageText = message.message?.text || null;
       const attachments = message.message?.attachments || [];
       if (!messageText && attachments.length === 0) continue;
@@ -558,7 +562,6 @@ async function storeIncomingMessage(event) {
         defaults: {
           shop_id,
           name: `${platform} user`,
-          phone: sender,
           channel_type: channelType,
           channel_user_id: sender,
           metadata: { source: 'webhook', platform }
@@ -608,7 +611,8 @@ async function storeIncomingMessage(event) {
       };
     });
   } catch (error) {
-    console.error('Failed to store incoming message:', error.message);
+    console.error('Failed to store incoming message:', error.message, { platform: event?.platform, shop_id: event?.shop_id, sender: event?.sender, stack: error.stack });
+    throw error;
   }
 }
 

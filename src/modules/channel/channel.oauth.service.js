@@ -129,6 +129,10 @@ class ChannelOAuthService {
       systemUserToken: pageAccessToken
     });
 
+    // Upsert MetaIntegration so the webhook handler can route incoming messages to this shop.
+    // Must succeed before we return — without it, no conversations will be created.
+    await metaService.upsertIntegration(shopId, channelType, finalPageId, pageName, pageAccessToken);
+
     // Subscribe page to Meta webhooks — fire-and-forget so a webhook failure doesn't block the user
     metaService.subscribeToWebhooks(pageAccessToken, pageId, channelType)
       .catch(err => console.warn('[channel.oauth] Webhook subscription failed (non-fatal):', err.message));

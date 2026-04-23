@@ -334,6 +334,17 @@ const disconnectChannel = async (channelId, userId, shopId) => {
     channel.access_token = null;
     await channel.save();
 
+    // Also mark the MetaIntegration as DISCONNECTED so the webhook stops routing messages.
+    const MetaIntegration = require('../integration/meta-integration.entity');
+    const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+    const platform = platformMap[channel.channel_type];
+    if (platform) {
+        await MetaIntegration.update(
+            { status: 'DISCONNECTED' },
+            { where: { shop_id: shopId, platform } }
+        ).catch(err => console.warn('[disconnectChannel] MetaIntegration update failed:', err.message));
+    }
+
     return mapChannel(channel);
 };
 

@@ -49,6 +49,7 @@ const migrations = [
   require('./migrations/20260418_001_add_conversation_resolution_fields'),
   require('./migrations/20260418_002_add_order_courier_fields'),
   require('./migrations/20260418_003_add_user_settings_and_last_shop'),
+  require('./migrations/20260423_001_channel_access_token_nullable'),
 ];
 
 const createMigrationsTable = async () => {
