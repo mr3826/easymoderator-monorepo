@@ -299,7 +299,6 @@ async function initializeServicesForTest(config = {}) {
     db: mockDb,
     redis: mockRedis,
     llmConfig: config.llmConfig || {
-      anthropic: { apiKey: 'mock' },
       openai: { apiKey: 'mock' },
       gemini: { apiKey: 'mock' }
     },

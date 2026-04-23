@@ -63,8 +63,7 @@ const processProduct = async (productId, shopId) => {
                     ]
                 }
             ],
-            preferredProvider: 'openai',  // GPT-4o-mini for vision
-            skipProviders: ['deepseek'],
+            preferredProvider: 'openai',  // GPT-4o for vision
             maxTokens: 300
         });
 

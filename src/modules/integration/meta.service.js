@@ -331,7 +331,25 @@ class MetaService {
         }
       }
     );
-    return response.data.data || [];
+    const pages = response.data.data || [];
+    console.log(`[meta.service] getManagedPages returned ${pages.length} page(s)`);
+    return pages;
+  }
+
+  /**
+   * Check which permissions were actually granted in the user's access token.
+   * Used to surface a specific error when pages_show_list is missing.
+   * @param {string} userToken
+   * @returns {string[]} Array of granted permission names
+   */
+  async checkPermissions(userToken) {
+    const response = await axios.get(
+      `https://graph.facebook.com/${META_CONFIG.graphApiVersion}/me/permissions`,
+      { params: { access_token: userToken } }
+    );
+    return (response.data.data || [])
+      .filter(p => p.status === 'granted')
+      .map(p => p.permission);
   }
 
   /**

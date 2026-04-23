@@ -75,12 +75,6 @@ router.get('/settings/ai-defaults', shopController.getAiDefaults);
 // POST /shop/branding-preset - Apply a named branding preset (FRIENDLY | PROFESSIONAL | FUN)
 router.post('/branding-preset', shopController.applyBrandingPreset);
 
-// GET /shop/automation - Get automation webhook settings (n8n/Make.com)
-router.get('/automation', shopController.getAutomationSettings);
-
-// PUT /shop/automation - Update automation webhook URL + secret
-router.put('/automation', shopController.updateAutomationSettings);
-
 // GET /shop/bd-settings - Get BD-specific settings (MFS, Google Sheets)
 router.get('/bd-settings', shopController.getBdSettings);
 

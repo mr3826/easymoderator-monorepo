@@ -83,7 +83,7 @@ class FailedPaymentReconciler extends BaseJob {
                     results.subscriptionsPastDue++;
                 }
 
-                // Send reminder notification (TODO: implement email service)
+                // Send billing failure reminder via Nodemailer (email.service.js)
                 if (!dryRun && action.action !== 'none') {
                     await this.sendReminderNotification(invoice, action.action);
                 }

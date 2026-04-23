@@ -9,6 +9,7 @@ const config = require('../../config/config');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../../utils/email.service');
+const { passwordResetEmail } = require('../../utils/email-templates/password-reset');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -376,16 +377,8 @@ const requestPasswordReset = async (email) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
-    const subject = 'Reset your EasyMod password';
-    const text = `You requested a password reset. Use the link below to set a new password:\n\n${resetUrl}\n\nThis link expires in 1 hour. If you did not request this, you can ignore this email.`;
-    const html = `
-        <p>You requested a password reset.</p>
-        <p><a href="${resetUrl}">Reset your password</a></p>
-        <p>This link expires in 1 hour.</p>
-        <p>If you did not request this, you can ignore this email.</p>
-    `;
-
-    await emailService.sendEmail({ to: user.email, subject, text, html });
+    const { subject, html, text } = passwordResetEmail(resetUrl);
+    await emailService.sendEmail({ to: user.email, subject, html, text });
 
     return { sent: true };
 };

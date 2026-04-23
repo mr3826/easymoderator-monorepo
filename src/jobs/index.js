@@ -11,6 +11,7 @@ const InvoiceGenerator = require('./invoice-generator');
 const FailedPaymentReconciler = require('./failed-payment-reconciler');
 const TokenRefreshCheckJob = require('./token-refresh-check.job');
 const GoogleSheetsSyncJob = require('./google-sheets-sync.job');
+const CourierReconciliationJob = require('./courier-reconciliation.job');
 
 module.exports = {
     DailyOverageCalculator,
@@ -18,5 +19,6 @@ module.exports = {
     InvoiceGenerator,
     FailedPaymentReconciler,
     TokenRefreshCheckJob,
-    GoogleSheetsSyncJob
+    GoogleSheetsSyncJob,
+    CourierReconciliationJob
 };

@@ -3,7 +3,7 @@
  *
  * Priority: Gemini (multimodal, primary) → OpenAI (fallback)
  *
- * Gemini 1.5 Flash is the primary provider: it handles image+text (product photos),
+ * Gemini 2.0 Flash is the primary provider: it handles image+text (product photos),
  * has good Bengali language support, and is cost-effective. OpenAI is the fallback.
  *
  * Each provider is tried in order; if a provider throws or returns an error
@@ -12,14 +12,14 @@
  * Environment variables:
  *   GEMINI_API_KEY      — enables Google Gemini (primary)
  *   OPENAI_API_KEY      — enables OpenAI GPT-4o / GPT-4o-mini (fallback)
- *   LLM_DEFAULT_MODEL_GEMINI     (default: gemini-1.5-flash)
+ *   LLM_DEFAULT_MODEL_GEMINI     (default: gemini-2.0-flash)
  *   LLM_DEFAULT_MODEL_OPENAI     (default: gpt-4o-mini)
  *   LLM_MAX_TOKENS               (default: 1024)
  *   LLM_TEMPERATURE              (default: 0.3)
  */
 
 const OPENAI_MODEL = process.env.LLM_DEFAULT_MODEL_OPENAI || 'gpt-4o-mini';
-const GEMINI_MODEL = process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-1.5-flash';
+const GEMINI_MODEL = process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-2.0-flash';
 
 // ---------------------------------------------------------------------------
 // Vision helpers

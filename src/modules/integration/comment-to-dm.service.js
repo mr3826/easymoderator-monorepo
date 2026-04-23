@@ -30,6 +30,14 @@ const logger = createLogger('CommentToDM');
  */
 async function processCommentWebhook(webhookData, shopId) {
   try {
+    const { Subscription } = require('../entities');
+    const { getTierByCode } = require('../subscription/subscription.plans');
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    const tier = getTierByCode(subscription?.plan_code);
+    if (!tier?.features?.comment_auto_reply) {
+      return { success: false, message: 'Comment-to-DM not available on current plan' };
+    }
+
     const { entry } = webhookData;
 
     if (!entry || entry.length === 0) {
@@ -84,6 +92,24 @@ async function handleCommentEvent(event, shopId) {
     if (!shouldProcess) {
       logger.info('Comment skipped due to validation', { commentId });
       return { success: false, reason: 'validation_failed' };
+    }
+
+    // Apply filter_type / keyword matching
+    const config = await getCommentToDMConfig(shopId);
+    if (!config.enabled) {
+      return { success: false, reason: 'feature_disabled' };
+    }
+    if (config.filter_type === 'questions' && !commentText.includes('?')) {
+      logger.info('Comment skipped — not a question', { commentId });
+      return { success: false, reason: 'not_a_question' };
+    }
+    if (config.filter_type === 'keywords') {
+      const lowerText = commentText.toLowerCase();
+      const matched = config.trigger_keywords.some(kw => lowerText.includes(kw));
+      if (!matched) {
+        logger.info('Comment skipped — no keyword match', { commentId, keywords: config.trigger_keywords });
+        return { success: false, reason: 'no_keyword_match' };
+      }
     }
 
     // Get or create customer record
@@ -293,32 +319,57 @@ async function sendWelcomeDMToCustomer(shopId, facebookUserId, customerName, cha
 
 /**
  * Configure comment-to-DM automation for a shop
- * Enables/disables the feature and sets welcome message
+ * Enables/disables the feature, sets welcome message, filter type, and trigger keywords
  */
 async function configureCommentToDM(shopId, config) {
   try {
+    const { Subscription } = require('../entities');
+    const { getTierByCode } = require('../subscription/subscription.plans');
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    const tier = getTierByCode(subscription?.plan_code);
+    if (!tier?.features?.comment_auto_reply) {
+      throw new AppError('Comment-to-DM is not available on your current plan. Upgrade to Growth or higher.', 403);
+    }
+
     const shop = await Shop.findByPk(shopId);
 
     if (!shop) {
       throw new AppError('Shop not found', 404);
     }
 
-    // Update shop settings
     const settings = shop.settings || {};
     settings.ai = settings.ai || {};
     settings.ai.comment_to_dm_enabled = config.enabled !== false;
-    settings.ai.comment_dm_welcome_template = config.welcomeTemplate ||
-      settings.ai.comment_dm_welcome_template;
+
+    if (config.welcomeTemplate !== undefined) {
+      settings.ai.comment_dm_welcome_template = config.welcomeTemplate;
+    }
+
+    // filter_type: 'all' | 'questions' | 'keywords'
+    if (config.filter_type !== undefined) {
+      settings.ai.comment_dm_filter_type = config.filter_type;
+    }
+
+    // trigger_keywords: string[] — only used when filter_type === 'keywords'
+    if (Array.isArray(config.trigger_keywords)) {
+      settings.ai.comment_dm_trigger_keywords = config.trigger_keywords
+        .map(k => k.trim().toLowerCase())
+        .filter(k => k.length > 0);
+    }
 
     shop.settings = settings;
     await shop.save();
 
-    logger.info('Comment-to-DM configuration updated', { shopId, enabled: config.enabled });
+    logger.info('Comment-to-DM configuration updated', {
+      shopId, enabled: config.enabled, filterType: config.filter_type
+    });
 
     return {
       success: true,
       enabled: settings.ai.comment_to_dm_enabled,
-      welcomeTemplate: settings.ai.comment_dm_welcome_template
+      welcomeTemplate: settings.ai.comment_dm_welcome_template,
+      filter_type: settings.ai.comment_dm_filter_type || 'all',
+      trigger_keywords: settings.ai.comment_dm_trigger_keywords || []
     };
   } catch (error) {
     logger.error('Error configuring comment-to-DM', { shopId, error });
@@ -344,7 +395,9 @@ async function getCommentToDMConfig(shopId) {
     return {
       enabled: aiSettings.comment_to_dm_enabled !== false,
       welcomeTemplate: aiSettings.comment_dm_welcome_template ||
-        'Hi! 👋 Thanks for reaching out. How can I help you today?'
+        'Hi! 👋 Thanks for reaching out. How can I help you today?',
+      filter_type: aiSettings.comment_dm_filter_type || 'all',
+      trigger_keywords: aiSettings.comment_dm_trigger_keywords || ['price', 'দাম', 'কত', 'আছে']
     };
   } catch (error) {
     logger.error('Error fetching comment-to-DM config', { shopId, error });

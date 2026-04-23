@@ -24,7 +24,8 @@ const JOB_MAP = {
     'invoice_generator': jobs.InvoiceGenerator,
     'failed_payment_reconciler': jobs.FailedPaymentReconciler,
     'token_refresh_check': jobs.TokenRefreshCheckJob,
-    'google_sheets_sync': jobs.GoogleSheetsSyncJob  // Schedule: cron '0 * * * *' (every hour)
+    'google_sheets_sync': jobs.GoogleSheetsSyncJob,  // Schedule: cron '0 * * * *' (every hour)
+    'courier_reconciliation': jobs.CourierReconciliationJob  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
 };
 
 async function runJob() {

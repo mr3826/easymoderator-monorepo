@@ -41,6 +41,9 @@ const OwnerNotification = require('./entities/owner-notification.entity');
 const OrderInvoice = require('./entities/invoice.entity');
 const DeliveryTracking = require('./entities/delivery-tracking.entity');
 const PushSubscription = require('./notification/push-subscription.entity');
+const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.entity');
+const CourierCodCollection = require('./reconciliation/courier-collection.entity');
+const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -419,5 +422,8 @@ module.exports = {
     OrderInvoice,
     DeliveryTracking,
     PushSubscription,
-    PasswordResetToken
+    PasswordResetToken,
+    CustomerDeliveryStats,
+    CourierCodCollection,
+    ReconciliationDispute
 };

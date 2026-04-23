@@ -451,9 +451,7 @@ async function handlePageWebhook(payload) {
         raw_event: messaging
       };
 
-      // Store in database then forward to automation workflow (Make/n8n)
-      const stored = await storeIncomingMessage(normalizedEvent);
-      if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
+      await storeIncomingMessage(normalizedEvent);
     }
   }
 }
@@ -484,8 +482,7 @@ async function handleInstagramWebhook(payload) {
         raw_event: message
       };
 
-      const stored = await storeIncomingMessage(normalizedEvent);
-      if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
+      await storeIncomingMessage(normalizedEvent);
     }
   }
 }
@@ -518,8 +515,7 @@ async function handleWhatsAppWebhook(payload) {
             raw_event: message
           };
 
-          const stored = await storeIncomingMessage(normalizedEvent);
-          if (!stored.storageFailed) await forwardToWorkflow({ ...normalizedEvent, ...stored });
+          await storeIncomingMessage(normalizedEvent);
         }
       }
     }
@@ -613,97 +609,6 @@ async function storeIncomingMessage(event) {
     });
   } catch (error) {
     console.error('Failed to store incoming message:', error.message);
-    // storageFailed sentinel — callers must NOT forward to workflow without a conversation record
-    return { customer_id: null, conversation_id: null, message_id: null, storageFailed: true };
-  }
-}
-
-// Forward normalized event to the shop's automation workflow (Make.com / n8n).
-// Priority: shop.workflow_webhook_url (per-tenant DB) → global env fallback.
-// On failure: writes to failed_workflow_forwards dead-letter table.
-async function forwardToWorkflow(event) {
-  const FailedWorkflowForward = require('./failed-workflow-forward.entity');
-  const { v4: uuidv4 } = require('uuid');
-
-  // Resolve per-tenant workflow URL from shop record
-  let workflowWebhookUrl = null;
-  let workflowSecret = null;
-
-  try {
-    const Shop = require('../shop/shop.entity');
-    const shop = await Shop.findOne({ where: { id: event.shop_id } });
-    if (shop && shop.workflow_webhook_url) {
-      workflowWebhookUrl = shop.workflow_webhook_url;
-      workflowSecret = shop.workflow_webhook_secret;
-    }
-  } catch (lookupErr) {
-    console.error(`forwardToWorkflow: shop lookup failed for shop ${event.shop_id}:`, lookupErr.message);
-  }
-
-  // Fallback to global env vars for backward compatibility
-  if (!workflowWebhookUrl) {
-    workflowWebhookUrl = process.env.MAKE_WEBHOOK_URL || process.env.N8N_WEBHOOK_URL || process.env.WF1_WEBHOOK_URL;
-    workflowSecret = workflowSecret || process.env.MAKE_INTERNAL_AUTH || process.env.INTERNAL_WEBHOOK_SECRET;
-  }
-
-  if (!workflowWebhookUrl) {
-    console.warn(`forwardToWorkflow: no workflow URL configured for shop ${event.shop_id}, skipping`);
-    return;
-  }
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (workflowSecret) {
-    headers['X-Internal-Webhook-Secret'] = workflowSecret;
-  }
-
-  // Bug #4: exponential-backoff retry before dead-lettering.
-  // Delays: 500 ms → 2 s → 8 s (3 attempts total).
-  const MAX_ATTEMPTS = 3;
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(workflowWebhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(event)
-      });
-
-      if (!res.ok) {
-        throw new Error(`Workflow responded with HTTP ${res.status}`);
-      }
-
-      console.log(`Forwarded ${event.platform} event to workflow for shop ${event.shop_id} (attempt ${attempt})`);
-      return; // success — stop retrying
-    } catch (err) {
-      lastError = err;
-      console.warn(`forwardToWorkflow: attempt ${attempt}/${MAX_ATTEMPTS} failed for shop ${event.shop_id}:`, err.message);
-
-      if (attempt < MAX_ATTEMPTS) {
-        // Exponential backoff: 500 ms * 4^(attempt-1)
-        const delayMs = 500 * Math.pow(4, attempt - 1);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-    }
-  }
-
-  // All attempts exhausted — write to dead-letter queue
-  console.error(`forwardToWorkflow: all ${MAX_ATTEMPTS} attempts failed for shop ${event.shop_id}:`, lastError.message);
-  try {
-    await FailedWorkflowForward.create({
-      id: uuidv4(),
-      shop_id: event.shop_id,
-      platform: event.platform || 'unknown',
-      event_data: JSON.stringify(event),
-      error: lastError.message,
-      attempt: MAX_ATTEMPTS,
-      resolved: false
-    });
-    console.warn(`forwardToWorkflow: event written to dead-letter queue for shop ${event.shop_id}`);
-  } catch (dlqErr) {
-    // Last-resort: if even DLQ write fails, log everything for manual recovery
-    console.error('forwardToWorkflow: DLQ write also failed:', dlqErr.message);
-    console.error('DEAD_LETTER_FALLBACK', JSON.stringify({ shop_id: event.shop_id, platform: event.platform, error: lastError.message }));
   }
 }
 

@@ -1,6 +1,9 @@
-const { Campaign, Customer, Order, UserShop } = require('../entities');
+const { Campaign, Customer, Order, UserShop, Channel } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { Op } = require('sequelize');
+const { createLogger } = require('../../utils/structured-logger');
+
+const logger = createLogger('CampaignService');
 
 const CAMPAIGN_MAX_RECIPIENTS = Number(process.env.CAMPAIGN_MAX_RECIPIENTS || 500);
 
@@ -74,7 +77,22 @@ const scheduleCampaign = async (shopId, campaignId, scheduledAt) => {
         throw new AppError(`Cannot schedule a campaign with status '${campaign.status}'`, 400);
     }
 
-    await campaign.update({ status: 'scheduled', scheduled_at: new Date(scheduledAt) });
+    const scheduledDate = new Date(scheduledAt);
+    await campaign.update({ status: 'scheduled', scheduled_at: scheduledDate });
+
+    // Enqueue a delayed trigger job that will call runCampaign at the scheduled time
+    const delay = Math.max(0, scheduledDate.getTime() - Date.now());
+    const queueManager = require('../../jobs/queue-manager');
+    if (queueManager.queues.campaignSend && delay > 0) {
+        // We add a sentinel "trigger" job that, when processed, calls runCampaign.
+        // This avoids having to store all recipient jobs until the schedule fires.
+        await queueManager.queues.campaignSend.add(
+            { _trigger: true, shopId, campaignId: campaign.id },
+            { delay, attempts: 1, jobId: `trigger-${campaign.id}` }
+        );
+        logger.info(`Campaign ${campaign.id} scheduled for ${scheduledDate.toISOString()}`, { shopId, delay });
+    }
+
     return campaign;
 };
 
@@ -168,7 +186,7 @@ const runCampaign = async (shopId, campaignId) => {
 
     matchingCustomers = await Customer.findAll({
         where: customerWhere,
-        attributes: ['id', 'metadata']
+        attributes: ['id', 'channel_type', 'channel_user_id', 'metadata']
     });
 
     const eligibleCustomers = requireConsent
@@ -189,7 +207,41 @@ const runCampaign = async (shopId, campaignId) => {
     // Set status to running and record total recipients
     await campaign.update({ status: 'running', total_recipients: totalRecipients });
 
-    // TODO: Enqueue actual message sending as a background job
+    // Fetch the shop's Messenger/Instagram channel for the page access token
+    const channel = await Channel.findOne({
+        where: {
+            shop_id: shopId,
+            channel_type: { [Op.in]: ['messenger', 'instagram'] }
+        }
+    });
+
+    if (!channel || !channel.page_id || !channel.access_token) {
+        await campaign.update({ status: 'failed' });
+        throw new AppError('No connected Facebook/Instagram channel found for this shop', 422);
+    }
+
+    // Enqueue one job per eligible recipient
+    const queueManager = require('../../jobs/queue-manager');
+    if (queueManager.queues.campaignSend) {
+        const jobs = eligibleCustomers.map((customer) => ({
+            data: {
+                shopId,
+                campaignId: campaign.id,
+                customerId: customer.id,
+                channelType: customer.channel_type,
+                channelUserId: customer.channel_user_id,
+                pageId: channel.page_id,
+                accessToken: channel.access_token,
+                message: campaign.message_template
+            },
+            opts: { attempts: 3, backoff: { type: 'exponential', delay: 2000 } }
+        }));
+
+        await queueManager.queues.campaignSend.addBulk(jobs);
+        logger.info(`Campaign ${campaign.id}: queued ${jobs.length} send jobs`, { shopId });
+    } else {
+        logger.warn('Campaign send queue not available — Redis may be offline', { shopId });
+    }
 
     return campaign;
 };

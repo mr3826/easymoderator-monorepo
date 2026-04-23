@@ -14,43 +14,60 @@ const { Shop } = require('../entities');
  */
 const TIER_MODEL_MAP = {
   'starter': {
-    model: 'gpt-4o-mini',
+    model: 'gemini-2.0-flash',
     reason: 'Fast, cost-effective for simple queries',
     maxTokens: 512,
     temperature: 0.3,
-    provider: 'openai'
+    provider: 'gemini',
+    fallback: {
+      model: 'gpt-4o-mini',
+      reason: 'OpenAI fallback for reliability',
+      maxTokens: 512,
+      temperature: 0.3,
+      provider: 'openai'
+    }
   },
   'growth': {
-    model: 'gpt-4o-mini',
-    reason: 'Balanced speed and cost',
+    model: 'gemini-2.0-flash',
+    reason: 'Balanced speed and cost with Gemini',
     maxTokens: 1024,
     temperature: 0.3,
-    provider: 'openai',
+    provider: 'gemini',
     fallback: {
-      model: 'claude-3-5-haiku-20241022',
-      reason: 'Better reasoning for complex queries',
+      model: 'gpt-4o-mini',
+      reason: 'OpenAI fallback for complex queries',
       maxTokens: 1024,
       temperature: 0.5,
-      provider: 'anthropic'
+      provider: 'openai'
     }
   },
   'scale': {
-    model: 'claude-3-5-haiku-20241022',
-    reason: 'Superior reasoning and context understanding',
+    model: 'gemini-1.5-pro',
+    reason: 'Superior multimodal reasoning and context',
     maxTokens: 2048,
     temperature: 0.5,
-    provider: 'anthropic',
-    enableCaching: true,
-    cacheMaxAge: 3600
+    provider: 'gemini',
+    fallback: {
+      model: 'gpt-4o',
+      reason: 'OpenAI GPT-4o fallback',
+      maxTokens: 2048,
+      temperature: 0.5,
+      provider: 'openai'
+    }
   },
   'enterprise': {
-    model: 'claude-3-5-haiku-20241022',
-    reason: 'Enterprise-grade reasoning with advanced features',
+    model: 'gemini-1.5-pro',
+    reason: 'Enterprise-grade Gemini with full context window',
     maxTokens: 4096,
     temperature: 0.5,
-    provider: 'anthropic',
-    enableCaching: true,
-    cacheMaxAge: 7200
+    provider: 'gemini',
+    fallback: {
+      model: 'gpt-4o',
+      reason: 'OpenAI GPT-4o enterprise fallback',
+      maxTokens: 4096,
+      temperature: 0.5,
+      provider: 'openai'
+    }
   }
 };
 
@@ -134,9 +151,9 @@ function calculateCostTier(tier) {
 async function selectLLMByIntentAndTier(shopId, intent) {
   const tierConfig = await selectLLMByTier(shopId);
   
-  // High-reasoning intents benefit from Claude
+  // High-reasoning intents use the tier's OpenAI fallback for reliability
   const reasoningIntents = ['complaint', 'negotiation', 'dispute', 'escalation'];
-  
+
   if (reasoningIntents.includes(intent) && tierConfig.fallback) {
     return {
       ...tierConfig.fallback,
@@ -161,10 +178,10 @@ async function selectLLMByIntentAndTier(shopId, intent) {
 async function isModelAllowedForTier(shopId, requestedModel) {
   try {
     const allowedModels = {
-      'starter': ['gpt-4o-mini', 'gpt-3.5-turbo'],
-      'growth': ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-haiku-20241022'],
-      'scale': ['claude-3-5-haiku-20241022', 'claude-opus-4-1', 'gpt-4o'],
-      'enterprise': ['claude-opus-4-1', 'claude-3-5-haiku-20241022', 'gpt-4o']
+      'starter': ['gemini-2.0-flash', 'gpt-4o-mini'],
+      'growth': ['gemini-2.0-flash', 'gpt-4o-mini', 'gpt-4o'],
+      'scale': ['gemini-1.5-pro', 'gemini-2.0-flash', 'gpt-4o'],
+      'enterprise': ['gemini-1.5-pro', 'gemini-2.0-flash', 'gpt-4o']
     };
 
     const shop = await Shop.findByPk(shopId, {

@@ -1,6 +1,8 @@
-const { Order, UserShop } = require('../entities');
+const { Order, OrderItem, Product, UserShop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
+const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
+const { invalidate: invalidateStock } = require('../product/stock-status-guard.service');
 
 /**
  * Verify user has access to the shop
@@ -75,11 +77,29 @@ const updateReturnStatus = async (shopId, orderId, status) => {
         throw new AppError('No return request found for this order', 404);
     }
 
-    await order.update({
-        metadata: {
-            ...existingMeta,
-            returnStatus: status,
-            returnStatusUpdatedAt: new Date()
+    await sequelize.transaction(async (transaction) => {
+        await order.update(
+            {
+                metadata: {
+                    ...existingMeta,
+                    returnStatus: status,
+                    returnStatusUpdatedAt: new Date()
+                }
+            },
+            { transaction }
+        );
+
+        // Restore inventory when return is approved
+        if (status === 'approved') {
+            const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
+            for (const item of items) {
+                const product = await Product.findByPk(item.product_id, { transaction });
+                if (product?.track_quantity) {
+                    await product.increment('quantity', { by: item.quantity, transaction });
+                    // Fire-and-forget cache invalidation after transaction commits
+                    setImmediate(() => invalidateStock(shopId, item.product_id).catch(() => {}));
+                }
+            }
         }
     });
 

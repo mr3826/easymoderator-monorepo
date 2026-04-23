@@ -344,7 +344,7 @@ beforeEach(() => {
     // Default LLM response
     mockLlmService.chat.mockResolvedValue({
         text: 'I can help you with that. Please let me know more details.',
-        provider: 'anthropic',
+        provider: 'gemini',
     });
 });
 
@@ -395,7 +395,7 @@ describe('Stage 2 — FAQ match via RAG (score ≥ 0.82)', () => {
         // LLM polishes the FAQ answer
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'We deliver to Dhaka and Chittagong. Delivery takes 2-3 business days. 📦',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         // Act
@@ -418,7 +418,7 @@ describe('Stage 2 — FAQ match via RAG (score ≥ 0.82)', () => {
     test('FAQ hit counter is incremented after a stage-2 match', async () => {
         const { FaqResponse } = require('src/modules/entities');
 
-        mockLlmService.chat.mockResolvedValueOnce({ text: 'We deliver to Dhaka and Chittagong.', provider: 'anthropic' });
+        mockLlmService.chat.mockResolvedValueOnce({ text: 'We deliver to Dhaka and Chittagong.', provider: 'gemini' });
 
         // Use a message that keyword-matches the delivery FAQ (category: 'What are your delivery areas?')
         await chatbotPost(baseBody('delivery areas dhaka chittagong'));
@@ -457,7 +457,7 @@ describe('Stage 3 — LLM fallback (no high-confidence FAQ)', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'That is a great question! Let me help you.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('tell me about your return policy'));
@@ -488,7 +488,7 @@ describe('Stage 3 — LLM fallback (no high-confidence FAQ)', () => {
         mockRagService.queryData.mockRejectedValueOnce(new Error('Pinecone connection timeout'));
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'How can I help you today?',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('hello, any promotions?'));
@@ -512,7 +512,7 @@ describe('Stage 1 — Response cache', () => {
                 metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: SHOP_ID },
             }],
         });
-        mockLlmService.chat.mockResolvedValue({ text: 'We deliver to Dhaka and Chittagong!', provider: 'anthropic' });
+        mockLlmService.chat.mockResolvedValue({ text: 'We deliver to Dhaka and Chittagong!', provider: 'gemini' });
 
         const msg = 'what cities do you deliver to?';
 
@@ -609,7 +609,7 @@ describe('Confidence gate', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'I think maybe you need something.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         // Chatbot controller reads ai_settings from shop; inject a low threshold by
@@ -648,7 +648,7 @@ describe('Multi-language support', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'আমি আপনাকে কীভাবে সাহায্য করতে পারি?',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('হ্যালো'));
@@ -662,7 +662,7 @@ describe('Multi-language support', () => {
         ConversationStateService.detectLanguage.mockReturnValueOnce('mixed');
 
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
-        mockLlmService.chat.mockResolvedValueOnce({ text: 'Sure, I can help!', provider: 'anthropic' });
+        mockLlmService.chat.mockResolvedValueOnce({ text: 'Sure, I can help!', provider: 'gemini' });
 
         const res = await chatbotPost(baseBody('delivery kothay kore?'));
 
@@ -701,7 +701,7 @@ describe('System prompt — FAQ injection', () => {
 
     test('buildSystemPrompt injects business info and FAQs into LLM call', async () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] }); // no RAG match
-        mockLlmService.chat.mockResolvedValueOnce({ text: 'We close at 9pm.', provider: 'anthropic' });
+        mockLlmService.chat.mockResolvedValueOnce({ text: 'We close at 9pm.', provider: 'gemini' });
 
         await chatbotPost(baseBody('what time do you close?'));
 
@@ -718,7 +718,7 @@ describe('System prompt — FAQ injection', () => {
         ]);
 
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
-        mockLlmService.chat.mockResolvedValueOnce({ text: 'Check our delivery FAQ.', provider: 'anthropic' });
+        mockLlmService.chat.mockResolvedValueOnce({ text: 'Check our delivery FAQ.', provider: 'gemini' });
 
         await chatbotPost(baseBody('where do you ship?'));
 
@@ -764,7 +764,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'Yes, we have a Blue Cotton Shirt for ৳850. It is in stock (20 available).',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('blue cotton shirts available?'));
@@ -800,7 +800,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'The Red Silk Saree is currently out of stock.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('red silk sarees available price?'));
@@ -822,7 +822,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'Hello! How can I help you today?',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('hello'));
@@ -843,7 +843,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'Let me check what we have available.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('what shirts do you have?'));
@@ -866,7 +866,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValueOnce({ results: [] });
         mockLlmService.chat.mockResolvedValueOnce({
             text: 'We have blue shirts in sizes S, M, and L.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const res = await chatbotPost(baseBody('blue shirts size available?'));
@@ -885,7 +885,7 @@ describe('Product query — text-based product search', () => {
         mockRagService.queryData.mockResolvedValue({ results: [] });
         mockLlmService.chat.mockResolvedValue({
             text: 'Blue Cotton Shirt is ৳850.',
-            provider: 'anthropic',
+            provider: 'gemini',
         });
 
         const msg = 'price of blue cotton shirt?';

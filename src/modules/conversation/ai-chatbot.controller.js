@@ -229,11 +229,10 @@ class AIChatbotController {
                 aiSettings.tone_persona || 'friendly_bd'
             );
 
-            // ✅ NEW: Map model_preset to preferredProvider
-            // 'standard' = use cheap providers (Gemini, GPT-4o-mini)
-            // 'advanced' = prefer self-hosted vLLM first
+            // Map model_preset to preferredProvider
+            // 'standard' = Gemini (cost-effective), 'advanced' = Gemini 1.5 Pro
             const modelPreset = aiSettings.model_preset || 'standard';
-            const preferredProvider = modelPreset === 'advanced' ? 'vllm' : 'gemini';
+            const preferredProvider = modelPreset === 'advanced' ? 'gemini-pro' : 'gemini';
 
             const routerResult = await intentRouter.route({
                 shopId: shop_id,

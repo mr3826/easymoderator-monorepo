@@ -192,6 +192,9 @@ const verifyMetaToken = async (accessToken, channelType) => {
 const createChannel = async (userId, shopId, channelData) => {
     await verifyShopAccess(userId, shopId);
 
+    const { checkChannelLimit } = require('../subscription/subscription.service');
+    await checkChannelLimit(shopId);
+
     const { channel_type, page_id, access_token, verify_token, webhook_secret, settings } = normalizeChannelPayload(channelData);
 
     if (!channel_type) {

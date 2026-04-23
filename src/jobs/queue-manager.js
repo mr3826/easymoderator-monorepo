@@ -98,6 +98,41 @@ class QueueManager {
             });
         });
 
+        // Campaign Send Queue — one job per recipient, rate-limited to stay under Meta's 200/hr/page limit
+        this.queues.campaignSend = new Queue('campaign-send', {
+            ...baseQueueConfig,
+            defaultJobOptions: {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 2000 }, // 2s → 4s → 8s
+                removeOnComplete: 200,
+                removeOnFail: 500
+            },
+            // 180 sends per hour per queue, safely below Meta's 200/hr page limit
+            limiter: { max: 180, duration: 3600000 }
+        });
+        this.queues.campaignSend.process(async (job) => {
+            const { processCampaignSend } = require('./campaign-sender.job');
+            return await processCampaignSend(job);
+        });
+
+        // Push Notification Queue — fire-and-forget, no retries needed (expired subs auto-cleaned)
+        this.queues.notifications = new Queue('notifications', {
+            ...baseQueueConfig,
+            defaultJobOptions: {
+                attempts: 2,
+                backoff: { type: 'fixed', delay: 3000 },
+                removeOnComplete: 50,
+                removeOnFail: 100
+            },
+            // Respect Meta + FCM rate limits: max 50 notification batches / 10s per queue
+            limiter: { max: 50, duration: 10000 }
+        });
+        this.queues.notifications.process(async (job) => {
+            const { sendPushToShop } = require('../services/push-notification.service');
+            const { shopId, payload } = job.data;
+            return await sendPushToShop(shopId, payload);
+        });
+
         // Unified event listeners: log completions, surface DLQ-bound failures
         Object.entries(this.queues).forEach(([name, queue]) => {
             queue.on('completed', (job, result) => {

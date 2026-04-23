@@ -1,6 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
 const RtoBlacklist = require('./rto-blacklist.entity');
+const CustomerDeliveryStats = require('./customer-delivery-stats.entity');
+
+// Auto-flag threshold: ≥3 attempts AND ≥40% RTO rate
+const AUTO_FLAG_MIN_ATTEMPTS = 3;
+const AUTO_FLAG_RTO_RATE = 0.4;
 
 /**
  * Normalize a BD phone number to 01XXXXXXXXX format.
@@ -127,6 +132,47 @@ class RtoShieldService {
       data: rows,
       pagination: { total: count, page, limit, total_pages: Math.ceil(count / limit) }
     };
+  }
+
+  /**
+   * Record a delivery outcome and auto-update risk score when RTO rate crosses threshold.
+   * Called by the delivery webhook handler for delivered / returned / failed_delivery statuses.
+   * @param {string} phone - Customer phone (any BD format)
+   * @param {string} shopId - Shop UUID
+   * @param {boolean} isRto - true = failed/returned; false = successful delivery
+   */
+  static async trackDeliveryOutcome(phone, shopId, isRto) {
+    const normalized = normalizePhone(phone);
+    if (!normalized || !BD_PHONE_RE.test(normalized)) return;
+
+    const [stats] = await CustomerDeliveryStats.findOrCreate({
+      where: { phone: normalized, shop_id: shopId },
+      defaults: { id: uuidv4(), phone: normalized, shop_id: shopId }
+    });
+
+    const updates = { delivery_attempts: stats.delivery_attempts + 1 };
+    if (isRto) {
+      updates.rto_count = stats.rto_count + 1;
+      updates.last_rto_at = new Date();
+    } else {
+      updates.last_delivered_at = new Date();
+    }
+    await stats.update(updates);
+
+    const newAttempts = updates.delivery_attempts;
+    const newRtoCount = isRto ? updates.rto_count : stats.rto_count;
+    const rtoRate = newRtoCount / newAttempts;
+
+    if (newAttempts >= AUTO_FLAG_MIN_ATTEMPTS && rtoRate >= AUTO_FLAG_RTO_RATE) {
+      const riskScore = Math.min(100, Math.round(rtoRate * 100));
+      await RtoShieldService.addToBlacklist({
+        phone: normalized,
+        reason: `Auto-flagged: ${newRtoCount} RTOs out of ${newAttempts} deliveries`,
+        risk_score: riskScore,
+        is_global: false,
+        shop_id: shopId
+      });
+    }
   }
 
   /**

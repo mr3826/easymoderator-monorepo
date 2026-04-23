@@ -20,26 +20,22 @@ class CostCapService {
    * Calculate token cost for a message
    * @private
    * @param {number} tokenCount - Number of tokens
-   * @param {string} provider - LLM provider (anthropic, openai, gemini)
+   * @param {string} provider - LLM provider (gemini, openai)
    * @param {string} model - Model name
    * @returns {number} Cost in dollars
    */
   _calculateTokenCost(tokenCount, provider, model) {
-    // Pricing as of 2024 (update as needed)
+    // Pricing as of 2025 (update as needed)
     const pricing = {
-      anthropic: {
-        'claude-3-opus': { input: 0.015, output: 0.075 },
-        'claude-3-sonnet': { input: 0.003, output: 0.015 },
-        'claude-3-haiku': { input: 0.00025, output: 0.00125 }
+      gemini: {
+        'gemini-2.0-flash': { input: 0.0001, output: 0.0004 },
+        'gemini-1.5-flash': { input: 0.000075, output: 0.0003 },
+        'gemini-1.5-pro': { input: 0.00125, output: 0.005 }
       },
       openai: {
-        'gpt-4-turbo-preview': { input: 0.01, output: 0.03 },
-        'gpt-4': { input: 0.03, output: 0.06 },
+        'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+        'gpt-4o': { input: 0.005, output: 0.015 },
         'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 }
-      },
-      gemini: {
-        'gemini-pro': { input: 0.0005, output: 0.0015 },
-        'gemini-pro-vision': { input: 0.0005, output: 0.0015 }
       }
     };
 

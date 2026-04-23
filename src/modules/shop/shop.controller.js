@@ -279,7 +279,7 @@ const switchShop = async (req, res, next) => {
 // Allowed model IDs — validated server-side so callers can't store arbitrary strings.
 const ALLOWED_LLM_MODELS = new Set([
     'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
-    'gemini-1.5-pro', 'gemini-1.5-flash'
+    'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'
 ]);
 
 /**
@@ -579,59 +579,6 @@ const applyBrandingPreset = async (req, res, next) => {
 };
 
 // ---------------------------------------------------------------------------
-// Automation Settings (n8n / Make.com webhook URL per shop)
-// ---------------------------------------------------------------------------
-
-const getAutomationSettings = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) throw new AppError('No shop selected', 400);
-        const Shop = require('./shop.entity');
-        const shop = await Shop.findByPk(shopId, {
-            attributes: ['id', 'workflow_webhook_url', 'workflow_webhook_secret']
-        });
-        if (!shop) throw new AppError('Shop not found', 404);
-        res.status(200).json({
-            success: true,
-            data: {
-                workflow_webhook_url: shop.workflow_webhook_url || null,
-                has_webhook_secret: Boolean(shop.workflow_webhook_secret)
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const updateAutomationSettings = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) throw new AppError('No shop selected', 400);
-        const { workflow_webhook_url, workflow_webhook_secret } = req.body;
-        const Shop = require('./shop.entity');
-        const shop = await Shop.findByPk(shopId);
-        if (!shop) throw new AppError('Shop not found', 404);
-        const updates = {};
-        if (workflow_webhook_url !== undefined) {
-            updates.workflow_webhook_url = workflow_webhook_url || null;
-        }
-        if (workflow_webhook_secret !== undefined) {
-            updates.workflow_webhook_secret = workflow_webhook_secret || null;
-        }
-        await shop.update(updates);
-        res.status(200).json({
-            success: true,
-            data: {
-                workflow_webhook_url: shop.workflow_webhook_url || null,
-                has_webhook_secret: Boolean(shop.workflow_webhook_secret)
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// ---------------------------------------------------------------------------
 // BD Settings (Bangladesh-specific MFS + Google Sheets config)
 // ---------------------------------------------------------------------------
 
@@ -704,7 +651,5 @@ module.exports = {
     applyBrandingPreset,
     getBdSettings,
     updateBdSettings,
-    getAutomationSettings,
-    updateAutomationSettings,
     getShopAgents
 };

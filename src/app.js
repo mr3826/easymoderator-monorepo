@@ -12,6 +12,7 @@ const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
 const commentToDmWebhookRoutes = require('./modules/integration/comment-to-dm-webhook.routes');
+const courierWebhookRoutes = require('./modules/webhooks/courier-webhook.routes');
 const { AppError, globalErrorHandler } = require('./utils/AppError');
 const { requestContextMiddleware } = require('./middleware/request-context.middleware');
 const createSessionMiddleware = require('./middleware/session.middleware');
@@ -143,6 +144,7 @@ if (config.env !== 'test') {
 // Webhook routes (must be before JSON parsing middleware)
 app.use('/webhooks/meta', metaWebhookRoutes);
 app.use('/webhooks/meta/comment-to-dm', commentToDmWebhookRoutes);
+app.use('/webhooks/delivery', courierWebhookRoutes);
 
 // Body parsing
 app.use(express.json({ limit: config.bodySizeLimit }));

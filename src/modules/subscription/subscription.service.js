@@ -736,11 +736,30 @@ const chargePartnerOrder = async (shopId, orderId) => {
     };
 };
 
+const checkChannelLimit = async (shopId) => {
+    const { Channel } = require('../entities');
+    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    if (!subscription) return;
+    const tier = getTierByCode(subscription.plan_code);
+    if (!tier || isUnlimitedLimit(tier.maxIncludedChannels)) return;
+    const activeCount = await Channel.count({ where: { shop_id: shopId, is_active: true } });
+    if (activeCount >= tier.maxIncludedChannels) {
+        const n = tier.maxIncludedChannels;
+        const error = new AppError(
+            `Channel limit reached (${n} channel${n === 1 ? '' : 's'} on ${tier.name} plan). Upgrade to add more.`,
+            402
+        );
+        error.code = 'CHANNEL_LIMIT_EXCEEDED';
+        throw error;
+    }
+};
+
 module.exports = {
     getSubscription,
     updatePlan,
     trackUsage,
     checkOrderLimit,
+    checkChannelLimit,
     chargePartnerOrder,
     requestConversationPack,
     getInvoices,

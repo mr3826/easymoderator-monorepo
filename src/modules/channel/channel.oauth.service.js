@@ -50,10 +50,21 @@ class ChannelOAuthService {
     // Exchange code → long-lived user access token
     const { access_token: userToken } = await metaService.exchangeCodeForUserToken(code);
 
+    // Verify pages_show_list was granted — if missing, /me/accounts silently returns []
+    const grantedPerms = await metaService.checkPermissions(userToken);
+    if (!grantedPerms.includes('pages_show_list')) {
+      throw new AppError('pages_show_list permission was not granted. Please reconnect and allow page access.', 403);
+    }
+
     // Fetch Pages this user manages (with linked Instagram accounts)
     const rawPages = await metaService.getManagedPages(userToken);
 
-    const pages = rawPages.map(p => ({
+    // For Instagram, only pages with a linked Instagram Business Account can receive DMs
+    const filteredPages = stateData.channelType === 'instagram'
+      ? rawPages.filter(p => p.instagram_business_account?.id)
+      : rawPages;
+
+    const pages = filteredPages.map(p => ({
       id: p.id,
       name: p.name,
       category: p.category || null,

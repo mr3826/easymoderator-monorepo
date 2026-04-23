@@ -8,6 +8,7 @@ const { DeliveryTracking, Order, Shop, Channel } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const deliveryService = require('./delivery.service');
+const RtoShieldService = require('../rto-shield/rto-shield.service');
 
 class DeliveryTrackingService {
     constructor() {
@@ -159,12 +160,22 @@ class DeliveryTrackingService {
                     order_status: 'delivered'
                 });
                 await this.handleSuccessfulDelivery(tracking);
+                RtoShieldService.trackDeliveryOutcome(
+                    tracking.order.customer_phone, tracking.shop_id, false
+                ).catch(() => {});
             } else if (normalizedStatus.includes('cancelled') || normalizedStatus === 'returned') {
                 await tracking.order.update({
                     fulfillment_status: 'cancelled',
                     order_status: 'cancelled'
                 });
                 await this.handleFailedDelivery(tracking);
+                RtoShieldService.trackDeliveryOutcome(
+                    tracking.order.customer_phone, tracking.shop_id, true
+                ).catch(() => {});
+            } else if (normalizedStatus === 'failed_delivery') {
+                RtoShieldService.trackDeliveryOutcome(
+                    tracking.order.customer_phone, tracking.shop_id, true
+                ).catch(() => {});
             }
 
             // Send customer notification

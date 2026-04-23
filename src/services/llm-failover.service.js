@@ -11,9 +11,8 @@ const FAILOVER_CONSTANTS = {
   PROVIDER_TIMEOUT_MS: 400, TOTAL_TIMEOUT_MS: 3000,
   SUCCESS_WEIGHT: 0.7, SPEED_WEIGHT: 0.3, BASELINE_LATENCY_MS: 200,
   PROVIDERS: {
-    anthropic: { name: 'anthropic', timeout_ms: 400, model: 'claude-3-sonnet-20240229' },
-    openai: { name: 'openai', timeout_ms: 400, model: 'gpt-4-turbo-preview' },
-    gemini: { name: 'gemini', timeout_ms: 400, model: 'gemini-pro' }
+    gemini: { name: 'gemini', timeout_ms: 400, model: 'gemini-2.0-flash' },
+    openai: { name: 'openai', timeout_ms: 400, model: 'gpt-4o-mini' }
   }
 };
 
@@ -85,7 +84,7 @@ class LLMFailoverService {
     Object.entries(FAILOVER_CONSTANTS.PROVIDERS).forEach(([key]) => {
       this.healthScores[key] = new ProviderHealth(key);
     });
-    this.providerOrder = options.providerOrder || ['anthropic', 'openai', 'gemini'];
+    this.providerOrder = options.providerOrder || ['gemini', 'openai'];
     this.clients = options.clients || {};
   }
 
@@ -158,22 +157,10 @@ class LLMFailoverService {
 
   async _executeProviderCall(providerName, client, options) {
     switch (providerName) {
-      case 'anthropic': return await this._callAnthropic(client, options);
       case 'openai': return await this._callOpenAI(client, options);
       case 'gemini': return await this._callGemini(client, options);
       default: throw new Error(`Unknown: ${providerName}`);
     }
-  }
-
-  async _callAnthropic(client, options) {
-    const resp = await client.messages.create({
-      model: FAILOVER_CONSTANTS.PROVIDERS.anthropic.model,
-      max_tokens: options.max_tokens || 2000,
-      temperature: options.temperature || 0.7,
-      messages: options.messages,
-      system: options.messages.find(m => m.role === 'system')?.content
-    });
-    return { content: resp.content[0].text, model: resp.model, inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens };
   }
 
   async _callOpenAI(client, options) {
