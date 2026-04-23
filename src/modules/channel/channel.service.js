@@ -74,6 +74,7 @@ const mapChannel = (channel) => {
         type: frontendType,
         status: channel.is_active ? 'active' : 'inactive',
         connected,
+        page_id: channel.page_id || null,
         config: {
             // Never return the decrypted token to the client.
             // The frontend only needs to know whether a token is stored.
