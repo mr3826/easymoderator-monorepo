@@ -61,4 +61,7 @@ router.delete('/:id',
     auditLogMiddleware('DELETE', 'CHANNEL')
 );
 
+// Admin: Manually subscribe channel to Meta webhooks (for manual page_id updates)
+router.post('/:id/subscribe-webhooks', channelController.subscribeChannelToWebhooks);
+
 module.exports = router;

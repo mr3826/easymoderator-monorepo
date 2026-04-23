@@ -506,6 +506,72 @@ const debugChannelByPageId = async (req, res, next) => {
     }
 };
 
+/**
+ * Admin: Manually subscribe a channel to Meta webhooks
+ * Used when page_id is manually updated and webhook subscription needs to be re-initialized
+ */
+const subscribeChannelToWebhooks = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
+            });
+        }
+
+        const { id } = req.params;
+        const channel = await channelService.getChannelById(id, req.user.userId, shopId);
+
+        if (!channel.page_id) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'VALIDATION_ERROR', message: 'Channel has no page_id configured' }
+            });
+        }
+
+        // Import services here to avoid circular dependency
+        const metaService = require('../integration/meta.service');
+        const { Channel } = require('../entities');
+
+        // Get the Channel record with encrypted token
+        const dbChannel = await Channel.findOne({ where: { id, shop_id: shopId } });
+        if (!dbChannel || !dbChannel.access_token) {
+            return res.status(400).json({
+                success: false,
+                error: { code: 'MISSING_TOKEN', message: 'Channel has no access token' }
+            });
+        }
+
+        // Decrypt token
+        const accessToken = metaService.decryptToken(dbChannel.access_token);
+
+        // Determine platform
+        const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+        const platform = platformMap[dbChannel.channel_type] || 'facebook';
+
+        // Upsert MetaIntegration
+        await metaService.upsertIntegration(
+            shopId,
+            platform,
+            dbChannel.page_id,
+            channel.name || 'Channel',
+            accessToken
+        );
+
+        // Subscribe to webhooks
+        await metaService.subscribeToWebhooks(accessToken, dbChannel.page_id, platform);
+
+        res.status(200).json({
+            success: true,
+            message: 'Channel subscribed to Meta webhooks',
+            data: { channel_id: id, page_id: dbChannel.page_id, platform }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getChannels,
@@ -517,6 +583,7 @@ module.exports = {
     disconnectChannelById,
     getExpiringTokens,
     debugChannelByPageId,
+    subscribeChannelToWebhooks,
     // Bug #10: unified full config (connection + AI behaviour) in one call
     getChannelFullConfig: async (req, res, next) => {
         try {
