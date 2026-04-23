@@ -153,7 +153,8 @@ class ChannelValidator {
             tempToken: Joi.string().trim().length(64).required().messages({
                 'string.length': 'Invalid temp token',
                 'any.required': 'tempToken is required'
-            })
+            }),
+            channelType: Joi.string().valid('facebook', 'instagram', 'whatsapp').optional()
         })
     };
 }
