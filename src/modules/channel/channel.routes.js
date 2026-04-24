@@ -64,4 +64,7 @@ router.delete('/:id',
 // Admin: Manually subscribe channel to Meta webhooks (for manual page_id updates)
 router.post('/:id/subscribe-webhooks', channelController.subscribeChannelToWebhooks);
 
+// Test: fire a synthetic message through the full pipeline (no Meta required)
+router.post('/:id/test-pipeline', channelController.testChannelPipeline);
+
 module.exports = router;

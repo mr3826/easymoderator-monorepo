@@ -599,6 +599,72 @@ const subscribeChannelToWebhooks = async (req, res, next) => {
     }
 };
 
+/**
+ * Fire a synthetic message through the full pipeline to verify the backend works
+ * end-to-end without needing Meta to deliver a real webhook.
+ * Returns conversation_id if created — proves the DB pipeline is healthy.
+ */
+const testChannelPipeline = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const { id } = req.params;
+        const { Channel } = require('../entities');
+        const MetaIntegration = require('../integration/meta-integration.entity');
+
+        const dbChannel = await Channel.findOne({ where: { id, shop_id: shopId } });
+        if (!dbChannel) {
+            return res.status(404).json({ success: false, error: { message: 'Channel not found' } });
+        }
+
+        const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+        const platform = platformMap[dbChannel.channel_type] || 'facebook';
+
+        // Check MetaIntegration exists
+        const integration = await MetaIntegration.findOne({
+            where: { shop_id: shopId, platform, status: 'CONNECTED' },
+            attributes: ['id', 'meta_asset_id', 'status']
+        });
+
+        const { storeIncomingMessage } = require('../integration/meta-webhook.routes');
+
+        // Fire a synthetic message through the real pipeline
+        const fakeEvent = {
+            platform,
+            shop_id: shopId,
+            sender: `test_user_${Date.now()}`,
+            message: 'Pipeline test message — safe to delete',
+            attachments: [],
+            timestamp: new Date(),
+            raw_event: { message: { mid: `test_mid_${Date.now()}` } }
+        };
+
+        const result = await storeIncomingMessage(fakeEvent);
+
+        res.json({
+            success: true,
+            pipeline_ok: true,
+            meta_integration: integration
+                ? { found: true, meta_asset_id: integration.meta_asset_id, status: integration.status }
+                : { found: false, hint: 'MetaIntegration record missing — disconnect and reconnect the channel' },
+            created: {
+                customer_id: result.customer_id,
+                conversation_id: result.conversation_id,
+                message_id: result.message_id
+            },
+            next_step: integration
+                ? 'Backend pipeline works. If real messages still dont arrive, the issue is in the Facebook App Dashboard — verify the webhook URL https://api.easymod.tech/webhooks/meta/ is saved and verified there.'
+                : 'MetaIntegration record is missing. Disconnect and reconnect the channel via OAuth.'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            pipeline_ok: false,
+            error: error.message,
+            hint: 'Backend pipeline failed. Share this error for further debugging.'
+        });
+    }
+};
+
 module.exports = {
     // RESTful methods
     getChannels,
@@ -611,6 +677,7 @@ module.exports = {
     getExpiringTokens,
     debugChannelByPageId,
     subscribeChannelToWebhooks,
+    testChannelPipeline,
     // Bug #10: unified full config (connection + AI behaviour) in one call
     getChannelFullConfig: async (req, res, next) => {
         try {

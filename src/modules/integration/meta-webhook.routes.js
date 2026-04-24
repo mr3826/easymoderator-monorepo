@@ -440,7 +440,7 @@ async function handlePageWebhook(payload) {
       continue;
     }
 
-    for (const messaging of entry.messaging) {
+    for (const messaging of (entry.messaging || [])) {
       // Skip echo events (page's own outbound messages reflected back by Meta)
       if (messaging.message?.is_echo) {
         console.debug(`[webhook] Skipped echo event from ${messaging.sender.id}`);
@@ -491,7 +491,7 @@ async function handleInstagramWebhook(payload) {
       continue;
     }
 
-    for (const message of entry.messaging) {
+    for (const message of (entry.messaging || [])) {
       if (message.message?.is_echo) continue;
       const messageText = message.message?.text || null;
       const attachments = message.message?.attachments || [];
@@ -686,4 +686,6 @@ router.get('/debug/subscriptions/:pageId', async (req, res) => {
   }
 });
 
+// Export storeIncomingMessage so the channel test endpoint can use it directly
 module.exports = router;
+module.exports.storeIncomingMessage = storeIncomingMessage;
