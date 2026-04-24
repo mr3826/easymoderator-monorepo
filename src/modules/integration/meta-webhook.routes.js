@@ -423,12 +423,20 @@ async function handlePageWebhook(payload) {
     const pageId = entry.id;
     console.log(`[webhook] Processing Facebook page ${pageId}, ${entry.messaging?.length || 0} messaging events`);
 
-    const integration = await MetaIntegration.findOne({
+    let integration = await MetaIntegration.findOne({
       where: { meta_asset_id: pageId, platform: 'facebook', status: 'CONNECTED' }
     });
 
     if (!integration) {
-      console.warn(`[webhook] No connected Facebook integration for page ${pageId} — message dropped`);
+      // Log all existing CONNECTED facebook integrations so we can debug page ID mismatches
+      const existing = await MetaIntegration.findAll({
+        where: { platform: 'facebook', status: 'CONNECTED' },
+        attributes: ['meta_asset_id', 'shop_id', 'display_name']
+      });
+      console.warn(
+        `[webhook] No CONNECTED facebook integration for page_id=${pageId}.`,
+        `Existing CONNECTED facebook integrations: ${JSON.stringify(existing.map(i => ({ meta_asset_id: i.meta_asset_id, shop_id: i.shop_id, name: i.display_name })))}`
+      );
       continue;
     }
 

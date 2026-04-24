@@ -26,10 +26,12 @@ class MetaService {
           }
         }
       );
-
       return response.data;
     } catch (error) {
-      throw new AppError('Failed to subscribe to webhooks', 500);
+      const metaMsg = error.response?.data?.error?.message || error.message;
+      const metaCode = error.response?.data?.error?.code;
+      console.error(`[meta.service] subscribeToWebhooks failed for asset ${assetId} (${platform}): [${metaCode}] ${metaMsg}`);
+      throw new AppError(`Meta webhook subscription failed: ${metaMsg}`, 500);
     }
   }
 

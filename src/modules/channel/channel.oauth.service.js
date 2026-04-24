@@ -133,14 +133,27 @@ class ChannelOAuthService {
     // Must succeed before we return — without it, no conversations will be created.
     await metaService.upsertIntegration(shopId, channelType, finalPageId, pageName, pageAccessToken);
 
-    // Subscribe page to Meta webhooks — await it so failure is surfaced in the response
-    let webhookSubscribed = true;
+    // Subscribe page to Meta webhooks and verify the subscription is live
+    let webhookSubscribed = false;
     let webhookWarning = null;
     try {
       await metaService.subscribeToWebhooks(pageAccessToken, pageId, channelType);
+
+      // Verify Meta actually registered the subscription
+      const axios = require('axios');
+      const verifyRes = await axios.get(
+        `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`,
+        { params: { access_token: pageAccessToken, fields: 'id,name' } }
+      );
+      webhookSubscribed = (verifyRes.data?.data?.length ?? 0) > 0;
+      if (!webhookSubscribed) {
+        webhookWarning = 'Subscription call succeeded but Meta reports no active subscriptions. Ensure the Webhook URL (https://api.easymod.tech/webhooks/meta/) and Verify Token are correctly configured in your Facebook App Dashboard → Webhooks tab.';
+        console.warn(`[channel.oauth] Subscription verified empty for page ${pageId}`);
+      } else {
+        console.log(`[channel.oauth] Webhook subscription verified active for page ${pageId}`);
+      }
     } catch (err) {
-      webhookSubscribed = false;
-      webhookWarning = 'Channel connected but webhook subscription failed. Messages may not arrive until you re-connect the channel.';
+      webhookWarning = `Webhook subscription failed: ${err.message}. Ensure your Facebook App has webhooks configured and the page access token has the pages_manage_metadata permission.`;
       console.error('[channel.oauth] Webhook subscription failed:', err.message);
     }
 
