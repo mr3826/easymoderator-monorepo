@@ -133,14 +133,21 @@ class ChannelOAuthService {
     // Must succeed before we return — without it, no conversations will be created.
     await metaService.upsertIntegration(shopId, channelType, finalPageId, pageName, pageAccessToken);
 
-    // Subscribe page to Meta webhooks — fire-and-forget so a webhook failure doesn't block the user
-    metaService.subscribeToWebhooks(pageAccessToken, pageId, channelType)
-      .catch(err => console.warn('[channel.oauth] Webhook subscription failed (non-fatal):', err.message));
+    // Subscribe page to Meta webhooks — await it so failure is surfaced in the response
+    let webhookSubscribed = true;
+    let webhookWarning = null;
+    try {
+      await metaService.subscribeToWebhooks(pageAccessToken, pageId, channelType);
+    } catch (err) {
+      webhookSubscribed = false;
+      webhookWarning = 'Channel connected but webhook subscription failed. Messages may not arrive until you re-connect the channel.';
+      console.error('[channel.oauth] Webhook subscription failed:', err.message);
+    }
 
     // Clean up temp token — single-use
     await cache._delete(`oauth:temp:${tempToken}`);
 
-    return channel;
+    return { ...channel.toJSON?.() ?? channel, webhookSubscribed, webhookWarning };
   }
 }
 

@@ -440,36 +440,37 @@ async function handlePageWebhook(payload) {
     }
 
     for (const messaging of entry.messaging) {
+      // Skip echo events (page's own outbound messages reflected back by Meta)
+      if (messaging.message?.is_echo) {
+        console.debug(`[webhook] Skipped echo event from ${messaging.sender.id}`);
+        continue;
+      }
+      const messageText = messaging.message?.text || null;
+      const attachments = messaging.message?.attachments || [];
+
+      // Skip non-message events (read receipts, delivery confirmations, etc.)
+      if (!messageText && attachments.length === 0) {
+        console.debug(`[webhook] Skipped non-message event (no text/attachments) from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
+        continue;
+      }
+
+      const normalizedEvent = {
+        platform: 'facebook',
+        shop_id: integration.shop_id,
+        sender: messaging.sender.id,
+        message: messageText || '',
+        attachments,
+        timestamp: new Date(messaging.timestamp),
+        raw_event: messaging
+      };
+
       try {
-        // Skip echo events (page's own outbound messages reflected back by Meta)
-        if (messaging.message?.is_echo) {
-          console.debug(`[webhook] Skipped echo event from ${messaging.sender.id}`);
-          continue;
-        }
-        const messageText = messaging.message?.text || null;
-        const attachments = messaging.message?.attachments || [];
-
-        // Skip non-message events (read receipts, delivery confirmations, etc.)
-        if (!messageText && attachments.length === 0) {
-          console.debug(`[webhook] Skipped non-message event (no text/attachments) from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
-          continue;
-        }
-
-        const normalizedEvent = {
-          platform: 'facebook',
-          shop_id: integration.shop_id,
-          sender: messaging.sender.id,
-          message: messageText || '',
-          attachments,
-          timestamp: new Date(messaging.timestamp),
-          raw_event: messaging
-        };
-
         console.log(`[webhook] Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
         await storeIncomingMessage(normalizedEvent);
       } catch (err) {
-        console.error(`[webhook] Failed to process message from ${messaging.sender.id}:`, err.message, err.stack);
-        throw err;
+        // Log but never re-throw — returning 500 to Meta triggers a retry storm.
+        // Each failed message is independently logged so one failure doesn't drop the rest.
+        console.error(`[webhook] Failed to store message from ${messaging.sender.id} (page ${pageId}):`, err.message, err.stack);
       }
     }
   }
@@ -490,7 +491,6 @@ async function handleInstagramWebhook(payload) {
     }
 
     for (const message of entry.messaging) {
-      // Skip echo events (page's own outbound messages reflected back by Meta)
       if (message.message?.is_echo) continue;
       const messageText = message.message?.text || null;
       const attachments = message.message?.attachments || [];
@@ -506,7 +506,11 @@ async function handleInstagramWebhook(payload) {
         raw_event: message
       };
 
-      await storeIncomingMessage(normalizedEvent);
+      try {
+        await storeIncomingMessage(normalizedEvent);
+      } catch (err) {
+        console.error(`[webhook] Failed to store Instagram message from ${message.sender.id} (account ${igAccountId}):`, err.message, err.stack);
+      }
     }
   }
 }
@@ -539,7 +543,11 @@ async function handleWhatsAppWebhook(payload) {
             raw_event: message
           };
 
-          await storeIncomingMessage(normalizedEvent);
+          try {
+            await storeIncomingMessage(normalizedEvent);
+          } catch (err) {
+            console.error(`[webhook] Failed to store WhatsApp message from ${message.from} (account ${whatsappAccountId}):`, err.message, err.stack);
+          }
         }
       }
     }
