@@ -507,8 +507,13 @@ const debugChannelByPageId = async (req, res, next) => {
 };
 
 /**
- * Admin: Manually subscribe a channel to Meta webhooks
- * Used when page_id is manually updated and webhook subscription needs to be re-initialized
+ * Manually re-subscribe a channel to Meta webhooks and sync MetaIntegration.
+ * Fixes the case where the automatic subscription during OAuth connect failed silently.
+ *
+ * Root-cause note: dbChannel.access_token is returned ALREADY DECRYPTED by the
+ * Sequelize AES-256-CBC getter on Channel.entity.js. Calling metaService.decryptToken()
+ * on it would try to re-decrypt plaintext as AES-256-GCM and always throw.
+ * We must use dbChannel.access_token directly.
  */
 const subscribeChannelToWebhooks = async (req, res, next) => {
     try {
@@ -521,51 +526,73 @@ const subscribeChannelToWebhooks = async (req, res, next) => {
         }
 
         const { id } = req.params;
-        const channel = await channelService.getChannelById(id, req.user.userId, shopId);
-
-        if (!channel.page_id) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'Channel has no page_id configured' }
-            });
-        }
-
-        // Import services here to avoid circular dependency
         const metaService = require('../integration/meta.service');
+        const MetaIntegration = require('../integration/meta-integration.entity');
         const { Channel } = require('../entities');
 
-        // Get the Channel record with encrypted token
         const dbChannel = await Channel.findOne({ where: { id, shop_id: shopId } });
-        if (!dbChannel || !dbChannel.access_token) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'MISSING_TOKEN', message: 'Channel has no access token' }
-            });
+        if (!dbChannel) {
+            return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Channel not found' } });
+        }
+        if (!dbChannel.access_token) {
+            return res.status(400).json({ success: false, error: { code: 'MISSING_TOKEN', message: 'Channel has no access token — please reconnect via OAuth' } });
+        }
+        if (!dbChannel.page_id) {
+            return res.status(400).json({ success: false, error: { code: 'MISSING_PAGE_ID', message: 'Channel has no page_id — please reconnect via OAuth' } });
         }
 
-        // Decrypt token
-        const accessToken = metaService.decryptToken(dbChannel.access_token);
+        // dbChannel.access_token is already plaintext — the Sequelize getter (AES-256-CBC)
+        // decrypts it automatically. Do NOT call metaService.decryptToken() here.
+        const accessToken = dbChannel.access_token;
 
-        // Determine platform
         const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
         const platform = platformMap[dbChannel.channel_type] || 'facebook';
+        const pageId = dbChannel.page_id;
 
-        // Upsert MetaIntegration
-        await metaService.upsertIntegration(
-            shopId,
-            platform,
-            dbChannel.page_id,
-            channel.name || 'Channel',
-            accessToken
-        );
+        // 1. Ensure MetaIntegration row exists and is CONNECTED so the webhook handler
+        //    can route incoming messages to this shop.
+        await metaService.upsertIntegration(shopId, platform, pageId, dbChannel.settings?.display_name || platform, accessToken);
 
-        // Subscribe to webhooks
-        await metaService.subscribeToWebhooks(accessToken, dbChannel.page_id, platform);
+        // 2. Subscribe the page to Meta webhooks (messages, postbacks, etc.)
+        let subscriptionResult = null;
+        let subscriptionError = null;
+        try {
+            subscriptionResult = await metaService.subscribeToWebhooks(accessToken, pageId, platform);
+        } catch (subErr) {
+            subscriptionError = subErr.message;
+            console.error(`[subscribeChannelToWebhooks] Subscription call to Meta failed for page ${pageId}:`, subErr.message);
+        }
+
+        // 3. Verify subscription is live by querying Meta directly
+        let metaSubscriptionStatus = null;
+        try {
+            const axios = require('axios');
+            const verifyRes = await axios.get(
+                `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`,
+                { params: { access_token: accessToken, fields: 'id,name' } }
+            );
+            metaSubscriptionStatus = verifyRes.data;
+        } catch (verifyErr) {
+            console.warn(`[subscribeChannelToWebhooks] Could not verify subscription for page ${pageId}:`, verifyErr.message);
+        }
+
+        const isSubscribed = metaSubscriptionStatus?.data?.length > 0;
 
         res.status(200).json({
             success: true,
-            message: 'Channel subscribed to Meta webhooks',
-            data: { channel_id: id, page_id: dbChannel.page_id, platform }
+            message: subscriptionError
+                ? `MetaIntegration synced but webhook subscription failed: ${subscriptionError}`
+                : isSubscribed
+                    ? 'Webhook subscribed and verified with Meta.'
+                    : 'Subscription call succeeded but Meta reports no active subscriptions — check the webhook URL in your Facebook App Dashboard.',
+            data: {
+                channel_id: id,
+                page_id: pageId,
+                platform,
+                meta_subscription_active: isSubscribed,
+                meta_subscribed_apps: metaSubscriptionStatus?.data || [],
+                subscription_error: subscriptionError || null
+            }
         });
     } catch (error) {
         next(error);

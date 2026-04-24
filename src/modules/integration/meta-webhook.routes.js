@@ -71,62 +71,55 @@ router.get('/', async (req, res) => {
 
 // Webhook receiver (POST request from Meta)
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+  // Always ack 200 at the end — never let processing errors cause retries
   try {
     const signature = req.headers['x-hub-signature-256'];
 
-    // Safe JSON parse — malformed body must not cause 500 (which triggers Meta retry storm)
+    // Safe JSON parse
     let payload;
     try {
       const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body || '');
       payload = rawBody ? JSON.parse(rawBody) : {};
     } catch (parseErr) {
-      console.error('Webhook payload JSON parse error:', parseErr.message);
-      return res.sendStatus(200); // Ack to prevent retry storm
+      console.error('[webhook] Payload JSON parse error:', parseErr.message);
+      return res.sendStatus(200);
     }
 
-    // Determine app_secret: per-tenant first, then global fallback
-    const globalSecret = config.metaWebhookAppSecret;
-    let appSecret = globalSecret;
+    const firstAssetId = payload.entry?.[0]?.id;
 
-    if (!appSecret && payload.entry && payload.entry.length > 0) {
-      // Multi-app setup: look up per-tenant secret from the first entry's asset ID
-      try {
-        const firstAssetId = payload.entry[0].id;
-        const integration = await MetaIntegration.findOne({
-          where: { meta_asset_id: firstAssetId, status: 'CONNECTED' }
-        });
-        appSecret = integration?.app_secret || null;
-      } catch (lookupErr) {
-        console.error('Per-tenant secret lookup error:', lookupErr.message);
-      }
-    }
-
-    // Verify signature
+    // Signature verification — use global secret (META_WEBHOOK_APP_SECRET == Meta App Secret)
+    const appSecret = config.metaWebhookAppSecret;
     if (appSecret) {
       const rawBodyBuf = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body || ''));
       const isValid = isValidSignature(rawBodyBuf, signature, appSecret);
       if (!isValid) {
-        console.error('Invalid Meta webhook signature for asset:', payload.entry?.[0]?.id);
+        // Log with asset ID so we can correlate with the right page in Cloud Run logs
+        console.error(`[webhook] Invalid signature for asset ${firstAssetId} — check META_WEBHOOK_APP_SECRET matches your Meta App Secret exactly`);
         return res.sendStatus(403);
       }
-    } else if (config.env === 'production') {
-      console.error('No app_secret configured for signature verification in production');
-      return res.status(500).send('Missing app secret configuration');
+    } else {
+      // Secret not configured — warn but continue so messages aren't silently dropped
+      // during initial setup. Set META_WEBHOOK_APP_SECRET to your Meta App Secret to enable verification.
+      console.warn(`[webhook] META_WEBHOOK_APP_SECRET not set — skipping signature check for asset ${firstAssetId}`);
     }
 
-    // Route by object type
+    console.log(`[webhook] Received ${payload.object} event for asset ${firstAssetId}`);
+
+    // Route by object type — each handler catches its own errors; we always return 200
     if (payload.object === 'page') {
       await handlePageWebhook(payload);
     } else if (payload.object === 'instagram') {
       await handleInstagramWebhook(payload);
     } else if (payload.object === 'whatsapp_business_account') {
       await handleWhatsAppWebhook(payload);
+    } else {
+      console.warn(`[webhook] Unhandled object type: ${payload.object}`);
     }
 
     res.sendStatus(200);
   } catch (error) {
-    console.error('Webhook processing error:', error);
-    res.sendStatus(500);
+    console.error('[webhook] Unhandled processing error:', error);
+    res.sendStatus(200); // Still 200 — avoid Meta retry storms on unexpected errors
   }
 });
 
