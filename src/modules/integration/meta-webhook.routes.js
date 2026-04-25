@@ -7,6 +7,7 @@ const MetaIntegration = require('./meta-integration.entity');
 const { Customer } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
+const sseManager = require('../../utils/sse-manager');
 
 // BullMQ message queue — lazy-loaded so the webhook handler still works if
 // Redis/BullMQ is unavailable (n8n workflow acts as fallback in that case).
@@ -524,6 +525,12 @@ async function handlePageWebhook(payload) {
       try {
         console.log(`[webhook] Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
         const storeResult = await storeIncomingMessage(normalizedEvent);
+        if (!storeResult.duplicate) {
+          sseManager.emit(integration.shop_id, 'new_message', {
+            conversation_id: storeResult.conversation_id,
+            message: storeResult.message
+          });
+        }
         dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
       } catch (err) {
         // Log but never re-throw — returning 500 to Meta triggers a retry storm.
@@ -566,6 +573,12 @@ async function handleInstagramWebhook(payload) {
 
       try {
         const storeResult = await storeIncomingMessage(normalizedEvent);
+        if (!storeResult.duplicate) {
+          sseManager.emit(integration.shop_id, 'new_message', {
+            conversation_id: storeResult.conversation_id,
+            message: storeResult.message
+          });
+        }
         dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
       } catch (err) {
         console.error(`[webhook] Failed to store Instagram message from ${message.sender.id} (account ${igAccountId}):`, err.message, err.stack);
@@ -604,6 +617,12 @@ async function handleWhatsAppWebhook(payload) {
 
           try {
             const storeResult = await storeIncomingMessage(normalizedEvent);
+            if (!storeResult.duplicate) {
+              sseManager.emit(integration.shop_id, 'new_message', {
+                conversation_id: storeResult.conversation_id,
+                message: storeResult.message
+              });
+            }
             dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
           } catch (err) {
             console.error(`[webhook] Failed to store WhatsApp message from ${message.from} (account ${whatsappAccountId}):`, err.message, err.stack);
@@ -637,7 +656,10 @@ async function storeIncomingMessage(event) {
           customer_id: existing.customer_id,
           customer_name: null,
           conversation_id: existing.conversation_id,
-          message_id: existing.id
+          message_id: existing.id,
+          message: existing,
+          shop_id: event.shop_id,
+          duplicate: true
         };
       }
     }
@@ -695,7 +717,9 @@ async function storeIncomingMessage(event) {
         customer_id: customer.id,
         customer_name: customer.name,
         conversation_id: conversation.id,
-        message_id: msgRecord.id
+        message_id: msgRecord.id,
+        message: msgRecord,
+        shop_id
       };
     });
   } catch (error) {

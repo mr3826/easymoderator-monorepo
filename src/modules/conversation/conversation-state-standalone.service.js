@@ -192,7 +192,7 @@ class ConversationStateService {
                 });
             }
 
-            return { success: true, message_id: message.id };
+            return { success: true, message_id: message.id, message };
 
         } catch (error) {
             console.error('Store AI response error:', error);

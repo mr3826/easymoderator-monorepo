@@ -27,6 +27,7 @@ const { Conversation, Message } = require('../modules/conversation/conversation.
 const ConversationStateService = require('../modules/conversation/conversation-state-standalone.service');
 const metaSendService = require('../modules/integration/meta-send.service');
 const { MetaRateLimitError } = require('../modules/integration/meta-send.service');
+const sseManager = require('../utils/sse-manager');
 
 // Lazy imports to avoid circular dependency issues at module load
 const getShopAISettings = async (shopId) => {
@@ -142,10 +143,16 @@ async function processMessageJob(job) {
     );
 
     // ── Store AI response ───────────────────────────────────────────────────
-    await ConversationStateService.storeAIResponse(conversationId, response, {
+    const aiStoreResult = await ConversationStateService.storeAIResponse(conversationId, response, {
         platform,
         confidence,
         automation_mode: aiSettings.automation_mode,
+    });
+
+    // Notify connected agent tabs about the AI response in real-time
+    sseManager.emit(shopId, 'new_message', {
+        conversation_id: conversationId,
+        message: aiStoreResult.message
     });
 
     // ── Guard 5: DRAFT mode — store but don't send ─────────────────────────
