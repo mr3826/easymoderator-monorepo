@@ -33,8 +33,6 @@ const SupportTicket = require('./support/support-ticket.entity');
 const ResponseTemplate = require('./template/response-template.entity');
 const CustomerPreference = require('./customer/customer-preference.entity');
 const Campaign = require('./campaign/campaign.entity');
-const FormSchema = require('./form-builder/form-schema.entity');
-const ApiKey = require('./api-access/api-key.entity');
 const TrxIDLog = require('./payment/trx-id-log.entity');
 const PaymentTransaction = require('./entities/payment-transaction.entity');
 const OwnerNotification = require('./entities/owner-notification.entity');
@@ -339,14 +337,6 @@ Shop.hasMany(CustomerPreference, { foreignKey: 'shop_id', as: 'customer_preferen
 Campaign.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(Campaign, { foreignKey: 'shop_id', as: 'campaigns' });
 
-// Define form schema relationships
-FormSchema.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
-Shop.hasMany(FormSchema, { foreignKey: 'shop_id', as: 'form_schemas' });
-
-// Define API key relationships
-ApiKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
-Shop.hasMany(ApiKey, { foreignKey: 'shop_id', as: 'api_keys', onDelete: 'CASCADE' });
-
 // TrxIDLog — MFS payment screenshot audit trail
 TrxIDLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 TrxIDLog.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
@@ -414,8 +404,6 @@ module.exports = {
     ResponseTemplate,
     CustomerPreference,
     Campaign,
-    FormSchema,
-    ApiKey,
     TrxIDLog,
     PaymentTransaction,
     OwnerNotification,

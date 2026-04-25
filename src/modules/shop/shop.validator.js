@@ -107,27 +107,6 @@ const updateRoleValidator = [
         .withMessage('Role must be either admin or staff')
 ];
 
-const tenantValidateValidator = [
-    param('tenantId')
-        .notEmpty()
-        .withMessage('Tenant ID is required')
-        .isUUID()
-        .withMessage('Invalid tenant ID')
-];
-
-const tenantShopValidateValidator = [
-    param('tenantId')
-        .notEmpty()
-        .withMessage('Tenant ID is required')
-        .isUUID()
-        .withMessage('Invalid tenant ID'),
-    param('shopId')
-        .notEmpty()
-        .withMessage('Shop ID is required')
-        .isUUID()
-        .withMessage('Invalid shop ID')
-];
-
 const shopBusinessInfoValidator = [
     body('shopName')
         .optional()
@@ -166,7 +145,5 @@ module.exports = {
     addUserValidator,
     removeUserValidator,
     updateRoleValidator,
-    tenantValidateValidator,
-    tenantShopValidateValidator,
     shopBusinessInfoValidator
 };

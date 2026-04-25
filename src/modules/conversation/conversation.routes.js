@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const conversationController = require('./conversation.controller');
-const supportController = require('../support/support.controller');
 const webhookController = require('../webhook/webhook.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
@@ -79,10 +78,5 @@ router.post(
     validate(conversationValidator.createMessage),
     conversationController.createMessage
 );
-
-// Support ticket endpoints
-router.post('/support-tickets', supportController.createTicket);
-router.get('/support-tickets/:ticketId', supportController.getTicket);
-router.post('/support-tickets/:ticketId/notify-agents', supportController.notifyAgents);
 
 module.exports = router;

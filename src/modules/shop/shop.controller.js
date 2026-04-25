@@ -1,5 +1,4 @@
 const shopService = require('./shop.service');
-const tenantService = require('../tenant/tenant.service');
 const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
@@ -510,40 +509,6 @@ const updateIntentThresholds = async (req, res, next) => {
     }
 };
 
-const validateTenant = async (req, res, next) => {
-    try {
-        const { tenantId } = req.params;
-        const tenant = await tenantService.getTenantById(tenantId);
-
-        res.status(200).json({
-            tenant_id: tenant.id,
-            is_active: tenant.is_active,
-            name: tenant.name,
-            settings: tenant.settings || {}
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const validateTenantShop = async (req, res, next) => {
-    try {
-        const { tenantId, shopId } = req.params;
-        const result = await tenantService.getTenantShop(tenantId, shopId);
-
-        res.status(200).json({
-            shop_id: result.shop.id,
-            tenant_id: result.tenant.id,
-            is_active: result.shop.is_active,
-            name: result.shop.name,
-            business_hours: result.shop.business_hours || {},
-            settings: result.shop.settings || {}
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
 /**
  * GET /shop/settings/ai-defaults
  * Returns the canonical DEFAULT_AI_SETTINGS so the frontend can show them
@@ -643,8 +608,6 @@ module.exports = {
     updateLLMConfig,
     getAISettings,
     updateAISettings,
-    validateTenant,
-    validateTenantShop,
     getIntentThresholds,
     updateIntentThresholds,
     getAiDefaults,
