@@ -8,6 +8,59 @@ const { Customer } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
 
+// BullMQ message queue — lazy-loaded so the webhook handler still works if
+// Redis/BullMQ is unavailable (n8n workflow acts as fallback in that case).
+let _messageQueue = null;
+function getMessageQueue() {
+    if (!_messageQueue) {
+        try {
+            _messageQueue = require('../../jobs/message-queue').messageQueue;
+        } catch (err) {
+            console.warn('[webhook] BullMQ message queue unavailable:', err.message);
+        }
+    }
+    return _messageQueue;
+}
+
+/**
+ * Dispatch a BullMQ job for AI processing after a message has been stored to DB.
+ * Uses jobId = shopId:externalId for BullMQ-level deduplication (layer 1 of 3).
+ * Non-blocking: errors are logged but never propagate back to the webhook handler.
+ */
+async function dispatchMessageJob(storeResult, event) {
+    const queue = getMessageQueue();
+    if (!queue) return; // BullMQ not available — n8n workflow handles AI processing
+
+    const { shop_id, sender, platform, message, attachments = [], raw_event } = event;
+    const { conversation_id, message_id, customer_id } = storeResult;
+    const externalId = raw_event?.message?.mid || raw_event?.id || null;
+
+    const jobId = externalId ? `${shop_id}:${externalId}` : undefined;
+
+    try {
+        await queue.add(
+            `msg:${shop_id}`,
+            {
+                shopId: shop_id,
+                conversationId: conversation_id,
+                messageId: message_id,
+                externalId,
+                message: message || '',
+                platform,
+                recipientId: sender,
+                senderInfo: { customer_id },
+                attachments,
+            },
+            {
+                jobId,
+                group: { id: shop_id }, // BullMQ v5 fair queueing per shop
+            }
+        );
+    } catch (err) {
+        console.error('[webhook] Failed to dispatch BullMQ job:', err.message, { shop_id, externalId });
+    }
+}
+
 const router = express.Router();
 
 // H8: Redis-backed rate limiter shared across all workers; falls back to MemoryStore
@@ -343,8 +396,10 @@ router.post('/reply', express.json(), async (req, res) => {
     // Send reply to customer via Meta Graph API
     if (recipient_id && platform) {
       try {
+        // Map 'messenger' (conversation channel_type) to 'facebook' (MetaIntegration platform)
+        const platformKey = (platform === 'facebook' || platform === 'messenger') ? 'facebook' : platform;
         const integration = await MetaIntegration.findOne({
-          where: { shop_id, platform: platform === 'facebook' ? 'facebook' : platform, status: 'CONNECTED' }
+          where: { shop_id, platform: platformKey, status: 'CONNECTED' }
         });
 
         if (integration && integration.access_token) {
@@ -357,7 +412,8 @@ router.post('/reply', express.json(), async (req, res) => {
               platform
             });
           }
-          await sendMetaReply(platform, integration.access_token, recipient_id, message);
+          const metaService = require('./meta.service');
+          await sendMetaReply(platform, metaService.decryptToken(integration.access_token), recipient_id, message);
           console.log(`Sent ${platform} reply to ${recipient_id} for shop ${shop_id}`);
         } else {
           console.warn(`No active ${platform} integration for shop ${shop_id}`);
@@ -467,7 +523,8 @@ async function handlePageWebhook(payload) {
 
       try {
         console.log(`[webhook] Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
-        await storeIncomingMessage(normalizedEvent);
+        const storeResult = await storeIncomingMessage(normalizedEvent);
+        dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
       } catch (err) {
         // Log but never re-throw — returning 500 to Meta triggers a retry storm.
         // Each failed message is independently logged so one failure doesn't drop the rest.
@@ -508,7 +565,8 @@ async function handleInstagramWebhook(payload) {
       };
 
       try {
-        await storeIncomingMessage(normalizedEvent);
+        const storeResult = await storeIncomingMessage(normalizedEvent);
+        dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
       } catch (err) {
         console.error(`[webhook] Failed to store Instagram message from ${message.sender.id} (account ${igAccountId}):`, err.message, err.stack);
       }
@@ -545,7 +603,8 @@ async function handleWhatsAppWebhook(payload) {
           };
 
           try {
-            await storeIncomingMessage(normalizedEvent);
+            const storeResult = await storeIncomingMessage(normalizedEvent);
+            dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
           } catch (err) {
             console.error(`[webhook] Failed to store WhatsApp message from ${message.from} (account ${whatsappAccountId}):`, err.message, err.stack);
           }

@@ -73,6 +73,18 @@ process.on('uncaughtException', (err) => {
         server = app.listen(config.port, '0.0.0.0', () => {
             console.log(`Server running on port ${config.port}`);
         });
+
+        // Start BullMQ message-processing worker in the same process.
+        // Cloud Run keeps min 1 instance alive, so the worker always has a host.
+        // It is started after the HTTP server so a failed worker doesn't block the health check.
+        let messageWorker = null;
+        try {
+            const { startWorker } = require('src/jobs/message-worker');
+            messageWorker = startWorker();
+        } catch (workerErr) {
+            console.warn('⚠️  BullMQ message worker failed to start (Redis unavailable?):', workerErr.message);
+        }
+
     } catch (error) {
         console.error('Unable to connect to the database:', error);
         process.exit(1);

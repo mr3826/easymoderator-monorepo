@@ -32,6 +32,7 @@
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "bull": "^4.12.0",
+    "bullmq": "^5.76.2",
     "connect-redis": "^7.1.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

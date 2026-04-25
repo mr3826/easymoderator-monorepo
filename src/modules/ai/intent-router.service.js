@@ -19,6 +19,7 @@ const llmService = require('./llm.service');
 const { MemoryCache } = require('../../config/memory-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
+const { scrubPII } = require('./prompt-sanitizer.service');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '300', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -102,6 +103,35 @@ const route = async ({
         const cachedResponse = await intentCache.get(cacheKey);
         if (cachedResponse) {
             return { response: cachedResponse, confidence: 1.0, source: 'cache' };
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Stage 1.5: Exact-match order lookup (DB query, zero LLM cost)
+    // Handles "where is my order 12345?" style queries — the most common
+    // BD f-commerce message type.
+    // ------------------------------------------------------------------
+    if (!imageUrls.length) {
+        const orderMatch = message.match(/\b(\d{5,8})\b/);
+        if (orderMatch) {
+            try {
+                const { Order } = require('../entities');
+                const order = await Order.findOne({
+                    where: { shop_id: shopId, order_number: orderMatch[1] },
+                    attributes: ['order_number', 'order_status', 'payment_status', 'delivery_status', 'delivery_tracking_code'],
+                });
+                if (order) {
+                    const statusLine = [
+                        `Order #${order.order_number}`,
+                        `Status: ${order.order_status || 'processing'}`,
+                        order.payment_status ? `Payment: ${order.payment_status}` : null,
+                        order.delivery_status ? `Delivery: ${order.delivery_status}` : null,
+                        order.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
+                    ].filter(Boolean).join(' | ');
+                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, statusLine);
+                    return { response: statusLine, confidence: 1.0, source: 'exact_match' };
+                }
+            } catch (_) { /* DB unavailable — fall through */ }
         }
     }
 
@@ -230,11 +260,11 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
 
         // Build vision content blocks for the final LLM call
         const contentBlocks = imageUrls.map(url => ({ type: 'image_url', url }));
-        const customerText = (message && message !== '[image]') ? message : 'What product is this? Can you help me?';
+        const customerText = scrubPII((message && message !== '[image]') ? message : 'What product is this? Can you help me?');
         contentBlocks.push({ type: 'text', text: customerText });
         llmMessages.push({ role: 'user', content: contentBlocks });
     } else {
-        llmMessages.push({ role: 'user', content: message });
+        llmMessages.push({ role: 'user', content: scrubPII(message) });
 
         // Text-query product search: only run when the message looks like a product query.
         // Skips DB lookup for greetings, thanks, and other non-product messages.

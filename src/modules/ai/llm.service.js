@@ -18,6 +18,8 @@
  *   LLM_TEMPERATURE              (default: 0.3)
  */
 
+const { circuitBreaker } = require('./circuit-breaker.service');
+
 const OPENAI_MODEL = process.env.LLM_DEFAULT_MODEL_OPENAI || 'gpt-4o-mini';
 const GEMINI_MODEL = process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-2.0-flash';
 
@@ -193,7 +195,7 @@ const chat = async (params) => {
     const errors = [];
     for (const { name, fn } of providers) {
         try {
-            const text = await fn(params);
+            const text = await circuitBreaker.callWithBreaker(name, () => fn(params));
             return { text, provider: name };
         } catch (err) {
             errors.push(`${name}: ${err.message}`);

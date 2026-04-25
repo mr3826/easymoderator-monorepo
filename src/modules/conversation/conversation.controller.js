@@ -1,6 +1,9 @@
 const conversationService = require('./conversation.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
+const { cacheRedis } = require('../../config/redis');
+
+const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 
 class ConversationController {
     async getConversations(req, res) {
@@ -195,6 +198,13 @@ class ConversationController {
 
             // Push real-time update to all open agent tabs for this shop
             sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message });
+
+            // AI pause: when a human agent sends a message, mute AI replies for 30 min.
+            // The BullMQ worker checks this key before running the AI pipeline.
+            const sender = messageData.sender || req.body.sender;
+            if (sender === 'business') {
+                cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1').catch(() => {});
+            }
 
             res.status(201).json({
                 success: true,
