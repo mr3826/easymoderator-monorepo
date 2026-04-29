@@ -64,9 +64,6 @@ router.use('/voice', voiceProcessingRoutes);
 router.use('/sentiment', sentimentRoutes);
 router.use('/templates', require('./template/response-template.routes'));
 router.use('/campaigns', require('./campaign/campaign.routes'));
-router.use('/form-schemas', require('./form-builder/form-schema.routes'));
-router.use('/api-keys', require('./api-access/api-key.routes'));
-router.use('/reconciliation', require('./reconciliation/reconciliation.routes'));
 router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
 
 module.exports = router;
