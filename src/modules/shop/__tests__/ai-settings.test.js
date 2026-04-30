@@ -109,7 +109,7 @@ describe('Shop AI Settings API', () => {
 
         Shop.findByPk.mockResolvedValue(mockShop);
         UserShop.findOne.mockResolvedValue({ ...mockUserShop, shop: { ...mockShop, toJSON: () => ({ id: 'shop-1' }) } });
-        Subscription.findOne.mockResolvedValue({ plan_code: 'SCALE' });
+        Subscription.findOne.mockResolvedValue({ plan_code: 'GROWTH' });
     });
 
     // ── GET /shop/ai-settings ─────────────────────────────────────────────

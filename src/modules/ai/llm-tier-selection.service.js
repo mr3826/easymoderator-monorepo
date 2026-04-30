@@ -41,20 +41,6 @@ const TIER_MODEL_MAP = {
       provider: 'openai'
     }
   },
-  'scale': {
-    model: 'gemini-1.5-pro',
-    reason: 'Superior multimodal reasoning and context',
-    maxTokens: 2048,
-    temperature: 0.5,
-    provider: 'gemini',
-    fallback: {
-      model: 'gpt-4o',
-      reason: 'OpenAI GPT-4o fallback',
-      maxTokens: 2048,
-      temperature: 0.5,
-      provider: 'openai'
-    }
-  },
   'enterprise': {
     model: 'gemini-1.5-pro',
     reason: 'Enterprise-grade Gemini with full context window',
@@ -131,7 +117,6 @@ function calculateCostTier(tier) {
   const costMap = {
     'starter': { estimatedCostPerReq: 0.0001, costProfile: 'budget' },    // GPT-4o-mini ~$0.15/1M tokens
     'growth': { estimatedCostPerReq: 0.0002, costProfile: 'balanced' },   // Mix of models
-    'scale': { estimatedCostPerReq: 0.0003, costProfile: 'premium' },     // Claude with caching
     'enterprise': { estimatedCostPerReq: 0.0004, costProfile: 'enterprise' } // Full features
   };
   
@@ -180,7 +165,6 @@ async function isModelAllowedForTier(shopId, requestedModel) {
     const allowedModels = {
       'starter': ['gemini-2.0-flash', 'gpt-4o-mini'],
       'growth': ['gemini-2.0-flash', 'gpt-4o-mini', 'gpt-4o'],
-      'scale': ['gemini-1.5-pro', 'gemini-2.0-flash', 'gpt-4o'],
       'enterprise': ['gemini-1.5-pro', 'gemini-2.0-flash', 'gpt-4o']
     };
 
