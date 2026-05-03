@@ -27,7 +27,7 @@ const KnowledgeGap = sequelize.define('KnowledgeGap', {
     },
     source: {
         type: DataTypes.STRING(100),
-        defaultValue: 'n8n_faq_handler'
+        defaultValue: 'ai_handler'
     }
 }, {
     tableName: 'knowledge_gaps',

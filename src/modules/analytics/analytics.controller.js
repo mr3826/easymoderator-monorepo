@@ -23,7 +23,7 @@ class AnalyticsController {
                 question,
                 platform,
                 language,
-                source: 'n8n_faq_handler'
+                source: 'ai_handler'
             });
 
             console.log(`📚 Knowledge gap logged for shop ${shop_id}: "${question}"`);

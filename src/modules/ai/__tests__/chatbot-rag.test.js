@@ -117,7 +117,6 @@ const mockShopInstance = {
             confidence_threshold: 50,  // Low threshold so RAG score 0.82+ clears the gate
         }
     },
-    workflow_webhook_url: null,
     ai_settings: null,
     update: jest.fn(() => Promise.resolve()),
 };

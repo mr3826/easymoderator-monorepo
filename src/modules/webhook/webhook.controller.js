@@ -1,7 +1,4 @@
-const crypto = require('crypto');
-const config = require('../../config/config');
 const { AppError } = require('../../utils/AppError');
-const { postToWorkflow } = require('../../utils/workflow-client');
 
 const validateWebhook = async (req, res, next) => {
     try {
@@ -11,39 +8,6 @@ const validateWebhook = async (req, res, next) => {
         }
 
         res.status(200).json({ valid: true });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const sendWebhookMessage = async (req, res, next) => {
-    try {
-        const response = await postToWorkflow(config.workflowUrl, {
-            type: 'send',
-            ...req.body
-        });
-
-        res.status(200).json({
-            message_id: response?.message_id || null,
-            status: response?.status || 'sent',
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-const retryWebhookMessage = async (req, res, next) => {
-    try {
-        const response = await postToWorkflow(config.workflowUrl, {
-            type: 'retry',
-            ...req.body
-        });
-
-        res.status(200).json({
-            success: true,
-            message_id: response?.message_id || null
-        });
     } catch (error) {
         next(error);
     }
@@ -153,8 +117,6 @@ const getWebhookLogs = async (req, res, next) => {
 
 module.exports = {
     validateWebhook,
-    sendWebhookMessage,
-    retryWebhookMessage,
     registerWebhook,
     getWebhooks,
     updateWebhook,

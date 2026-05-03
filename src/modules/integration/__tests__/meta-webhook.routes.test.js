@@ -1,8 +1,7 @@
 /**
  * Meta Webhook Routes — Unit Tests
  *
- * Covers: storeIncomingMessage (conversation pipeline), reply endpoint
- * (token decryption, platform mapping, 24h window), webhook GET verification,
+ * Covers: storeIncomingMessage (conversation pipeline), webhook GET verification,
  * and incoming webhook POST routing.
  */
 
@@ -11,8 +10,6 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret-32chars!!';
 process.env.META_APP_SECRET = 'test-app-secret';
 process.env.META_WEBHOOK_VERIFY_TOKEN = 'global-verify-token';
-process.env.INTERNAL_WEBHOOK_SECRET = 'internal-secret-xyz';
-
 // ── Mocks (before any require) ─────────────────────────────────────────────────
 
 jest.mock('src/config/redis', () => ({
@@ -30,7 +27,6 @@ jest.mock('src/utils/structured-logger', () => ({
 // Mock config
 jest.mock('src/config/config', () => ({
     metaWebhookAppSecret: null,  // disabled by default; override per test
-    internalWebhookSecret: 'internal-secret-xyz',
     jwtAccessSecret: 'test-jwt-access-secret-32chars!!',
     metaAppId: 'test-app-id',
     metaAppSecret: 'test-app-secret',
@@ -297,199 +293,6 @@ describe('GET /webhooks/meta (webhook verification)', () => {
             .expect(200);
 
         expect(res.text).toBe('ch-tenant');
-    });
-});
-
-// ── POST /webhooks/meta/reply ──────────────────────────────────────────────────
-
-describe('POST /webhooks/meta/reply', () => {
-    const replyBody = {
-        conversation_id: CONV_ID,
-        message: 'Here is your order update!',
-        platform: 'facebook',
-        recipient_id: 'fb-user-456',
-    };
-
-    beforeEach(() => {
-        jest.clearAllMocks();
-        global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
-
-        mockConversation.findOne.mockResolvedValue(buildConversation());
-        mockMessage.findOne.mockResolvedValue(null);
-        mockMessage.create.mockResolvedValue(buildMessage({ sender: 'ai' }));
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration());
-        mockMetaService.decryptToken.mockReturnValue('REAL_ACCESS_TOKEN');
-    });
-
-    it('returns 400 when conversation_id is missing', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ message: 'hello' })
-            .expect(400);
-    });
-
-    it('returns 400 when message is missing', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ conversation_id: CONV_ID })
-            .expect(400);
-    });
-
-    it('returns 403 when internal webhook secret is wrong', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'wrong-secret')
-            .send(replyBody)
-            .expect(403);
-    });
-
-    it('returns 404 when conversation is not found', async () => {
-        mockConversation.findOne.mockResolvedValue(null);
-
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(404);
-    });
-
-    it('CRITICAL: decrypts the stored token before sending to Meta', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(200);
-
-        // decryptToken must be called with the encrypted value from the DB
-        expect(mockMetaService.decryptToken).toHaveBeenCalledWith(ENCRYPTED_TOKEN);
-
-        // fetch (sendMetaReply) must receive the DECRYPTED token, not the raw encrypted string
-        expect(global.fetch).toHaveBeenCalledWith(
-            expect.any(String),
-            expect.objectContaining({
-                body: expect.stringContaining('REAL_ACCESS_TOKEN')
-            })
-        );
-        expect(global.fetch).not.toHaveBeenCalledWith(
-            expect.any(String),
-            expect.objectContaining({
-                body: expect.stringContaining(ENCRYPTED_TOKEN)
-            })
-        );
-    });
-
-    it('maps messenger platform to facebook MetaIntegration record', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ ...replyBody, platform: 'messenger' })
-            .expect(200);
-
-        expect(mockMetaIntegration.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({ platform: 'facebook' })
-            })
-        );
-    });
-
-    it('facebook platform also maps to facebook MetaIntegration record', async () => {
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ ...replyBody, platform: 'facebook' })
-            .expect(200);
-
-        expect(mockMetaIntegration.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({ platform: 'facebook' })
-            })
-        );
-    });
-
-    it('instagram platform is not remapped', async () => {
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration({ platform: 'instagram' }));
-
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ ...replyBody, platform: 'instagram' })
-            .expect(200);
-
-        expect(mockMetaIntegration.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({ platform: 'instagram' })
-            })
-        );
-    });
-
-    it('returns 503 and does not send when token is expired', async () => {
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration({ token_expires_at: yesterday }));
-
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(503);
-
-        expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    it('returns 422 when outside the 24-hour messaging window', async () => {
-        const oldMsg = buildMessage({
-            sender: 'customer',
-            created_at: new Date(Date.now() - 25 * 60 * 60 * 1000)
-        });
-        mockMessage.findOne.mockResolvedValue(oldMsg);
-
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(422);
-    });
-
-    it('stores the bot message and returns 200 even when Meta send fails', async () => {
-        global.fetch.mockRejectedValue(new Error('Meta API unavailable'));
-
-        const res = await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(200);
-
-        expect(res.body.success).toBe(true);
-        expect(mockMessage.create).toHaveBeenCalled();
-    });
-
-    it('deduplicates by idempotency_key — returns existing message without re-sending', async () => {
-        const existingBotMsg = buildMessage({ id: 'existing-bot-msg', sender: 'ai', external_id: 'idem-key-1' });
-        mockMessage.findOne.mockResolvedValue(existingBotMsg);
-
-        const res = await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send({ ...replyBody, idempotency_key: 'idem-key-1' })
-            .expect(200);
-
-        expect(res.body.duplicate).toBe(true);
-        expect(res.body.message_id).toBe('existing-bot-msg');
-        expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    it('still returns 200 when no integration found (message stored, send silently skipped)', async () => {
-        mockMetaIntegration.findOne.mockResolvedValue(null);
-
-        await request(app)
-            .post('/webhooks/meta/reply')
-            .set('x-internal-webhook-secret', 'internal-secret-xyz')
-            .send(replyBody)
-            .expect(200);
-
-        expect(mockMessage.create).toHaveBeenCalled();
-        expect(global.fetch).not.toHaveBeenCalled();
     });
 });
 

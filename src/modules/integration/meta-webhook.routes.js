@@ -9,8 +9,8 @@ const { Conversation, Message } = require('../conversation/conversation.entity')
 const { sequelize } = require('../../utils/database/database-setup');
 const sseManager = require('../../utils/sse-manager');
 
-// BullMQ message queue — lazy-loaded so the webhook handler still works if
-// Redis/BullMQ is unavailable (n8n workflow acts as fallback in that case).
+// BullMQ message queue — lazy-loaded so the webhook handler still works even if
+// Redis/BullMQ is temporarily unavailable at startup.
 let _messageQueue = null;
 function getMessageQueue() {
     if (!_messageQueue) {
@@ -30,7 +30,7 @@ function getMessageQueue() {
  */
 async function dispatchMessageJob(storeResult, event) {
     const queue = getMessageQueue();
-    if (!queue) return; // BullMQ not available — n8n workflow handles AI processing
+    if (!queue) return; // BullMQ not available — message silently skipped
 
     const { shop_id, sender, platform, message, attachments = [], raw_event } = event;
     const { conversation_id, message_id, customer_id } = storeResult;
@@ -338,149 +338,6 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
     return res.sendStatus(500);
   }
 });
-
-// n8n reply callback — stores bot response and sends to customer via Meta
-router.post('/reply', express.json(), async (req, res) => {
-  try {
-    if (config.internalWebhookSecret) {
-      const provided = req.headers['x-internal-webhook-secret'];
-      if (provided !== config.internalWebhookSecret) {
-        return res.status(403).json({ error: 'Invalid webhook secret' });
-      }
-    }
-
-    const { conversation_id, message, platform, recipient_id, idempotency_key } = req.body;
-
-    if (!conversation_id || !message) {
-      return res.status(400).json({ error: 'conversation_id and message are required' });
-    }
-
-    // H6: Derive shop_id from conversation — never trust caller-supplied shop_id
-    const conversation = await Conversation.findOne({ where: { id: conversation_id } });
-    if (!conversation) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
-    const shop_id = conversation.shop_id;
-
-    // Idempotency: if caller supplied a key, check for an existing reply before creating
-    if (idempotency_key) {
-      const existing = await Message.findOne({
-        where: { conversation_id, sender: 'ai', external_id: idempotency_key }
-      });
-      if (existing) {
-        return res.status(200).json({ success: true, message_id: existing.id, conversation_id, duplicate: true });
-      }
-    }
-
-    // Enforce Meta's 24-hour messaging window for Facebook/Instagram (check BEFORE storing)
-    if (recipient_id && platform && ['messenger', 'facebook', 'instagram'].includes(platform)) {
-      const lastCustomerMsg = await Message.findOne({
-        where: { conversation_id, sender: 'customer' },
-        order: [['created_at', 'DESC']]
-      });
-      if (lastCustomerMsg) {
-        const hoursElapsed = (Date.now() - new Date(lastCustomerMsg.created_at)) / (1000 * 60 * 60);
-        if (hoursElapsed > 24) {
-          return res.status(422).json({ error: 'Outside 24-hour messaging window. Cannot send message after 24 hours of last customer message.' });
-        }
-      }
-    }
-
-    // Store the bot reply as a message record
-    const botMessage = await Message.create({
-      conversation_id,
-      content: message,
-      sender: 'ai',
-      external_id: idempotency_key || null
-    });
-
-    // Send reply to customer via Meta Graph API
-    if (recipient_id && platform) {
-      try {
-        // Map 'messenger' (conversation channel_type) to 'facebook' (MetaIntegration platform)
-        const platformKey = (platform === 'facebook' || platform === 'messenger') ? 'facebook' : platform;
-        const integration = await MetaIntegration.findOne({
-          where: { shop_id, platform: platformKey, status: 'CONNECTED' }
-        });
-
-        if (integration && integration.access_token) {
-          // Block delivery if token is known to be expired — caller gets actionable error
-          if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
-            console.error(`[reply] Token expired for shop ${shop_id} platform ${platform} at ${integration.token_expires_at}`);
-            return res.status(503).json({
-              error: 'Meta access token expired. Please reconnect the channel.',
-              code: 'TOKEN_EXPIRED',
-              platform
-            });
-          }
-          const metaService = require('./meta.service');
-          await sendMetaReply(platform, metaService.decryptToken(integration.access_token), recipient_id, message);
-          console.log(`Sent ${platform} reply to ${recipient_id} for shop ${shop_id}`);
-        } else {
-          console.warn(`No active ${platform} integration for shop ${shop_id}`);
-        }
-      } catch (sendError) {
-        console.error('Failed to send Meta reply:', sendError.message);
-        // Message is still stored even if delivery fails
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message_id: botMessage.id,
-      conversation_id
-    });
-  } catch (error) {
-    console.error('Reply callback error:', error);
-    res.status(500).json({ error: 'Failed to process reply' });
-  }
-});
-
-// Send reply to customer via Meta Graph API
-async function sendMetaReply(platform, accessToken, recipientId, messageText) {
-  if (platform === 'whatsapp') {
-    // WhatsApp Cloud API
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    if (!phoneNumberId) {
-      console.warn('WHATSAPP_PHONE_NUMBER_ID not configured');
-      return;
-    }
-    const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: recipientId,
-        type: 'text',
-        text: { body: messageText }
-      })
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`WhatsApp send error ${res.status}: ${body}`);
-    }
-  } else {
-    // Facebook Messenger / Instagram — Send API
-    const res = await fetch('https://graph.facebook.com/v21.0/me/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text: messageText },
-        access_token: accessToken
-      })
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Messenger/Instagram send error ${res.status}: ${body}`);
-    }
-  }
-}
 
 // Handle Facebook Messenger webhooks
 async function handlePageWebhook(payload) {

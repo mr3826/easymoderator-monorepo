@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const conversationController = require('./conversation.controller');
-const webhookController = require('../webhook/webhook.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
 const { authenticate, checkSubscriptionStatus } = require('../../middleware/auth.middleware');
@@ -38,10 +37,6 @@ router.post(
     '/messages/check-duplicate',
     conversationController.checkDuplicate
 );
-
-router.post('/webhooks/validate', webhookController.validateWebhook);
-router.post('/webhooks/send', webhookController.sendWebhookMessage);
-router.post('/webhooks/retry', webhookController.retryWebhookMessage);
 
 router.post(
     '/',

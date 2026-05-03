@@ -80,8 +80,6 @@ const MOCK_INTEGRATION_WA = {
 const MOCK_SHOP = {
   id:                    TEST_SHOP_ID,
   shop_name:             'Dhaka Fashion House',
-  workflow_webhook_url:  null,
-  workflow_webhook_secret: null,
   ai_settings:           null,
   settings: {
     businessInfo: {
@@ -1209,11 +1207,7 @@ describe('Section 3 — Customer-Chatbot Chat Scenarios', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4 — Reply Webhook Scenarios
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Section 4 — Reply Webhook Scenarios', () => {
+describe.skip('Section 4 — Reply Webhook Scenarios (removed — /reply endpoint deleted)', () => {
   const recentMsg = () => ({
     id: TEST_MSG_ID,
     conversation_id: TEST_CONV_ID,
