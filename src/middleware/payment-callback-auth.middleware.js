@@ -64,7 +64,7 @@ const paymentCallbackHmacVerify = (req, res, next) => {
 
 /**
  * Require POST only for payment callbacks.
- * SSLCommerz/AamarPay validation must use POST body, not GET query string.
+ * Payment gateway validation must use POST body, not GET query string.
  */
 const paymentCallbackPostOnly = (req, res, next) => {
     if (req.method !== 'POST') {

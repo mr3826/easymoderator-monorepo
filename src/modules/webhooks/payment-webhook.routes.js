@@ -30,26 +30,6 @@ router.post(
 );
 
 /**
- * AamarPay Payment Webhook
- * POST /api/webhooks/aamarpay/payment-status
- */
-router.post(
-    '/aamarpay/payment-status',
-    validateWebhookSignature('aamarpay'),
-    paymentWebhookController.handleAamarPayWebhook
-);
-
-/**
- * SSLCommerz Payment Webhook
- * POST /api/webhooks/sslcommerz/payment-status
- */
-router.post(
-    '/sslcommerz/payment-status',
-    validateWebhookSignature('sslcommerz'),
-    paymentWebhookController.handleSSLCommerzWebhook
-);
-
-/**
  * Owner Payment Confirmation Webhook
  * POST /api/webhooks/owner/payment-confirmation/:notificationId/:action
  */

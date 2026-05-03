@@ -177,13 +177,26 @@ const analyzeSentiment = async (text, shopId) => {
         return { sentiment: 'neutral', confidence: 50, method: 'keyword' };
     }
 
-    // 1. Fast keyword pre-check for strong negative signals
+    // 1. Fast keyword pre-check — skip LLM for any strong signal
     const keywordResult = classifyByKeywords(text);
+
+    // Negative signals: always authoritative
     if (keywordResult.sentiment === 'angry' || keywordResult.sentiment === 'frustrated') {
         return { ...keywordResult, method: 'keyword' };
     }
 
-    // 2. LLM-based classification for nuanced cases
+    // Positive signal: keyword match is reliable enough; skip LLM
+    if (keywordResult.sentiment === 'positive') {
+        return { ...keywordResult, method: 'keyword' };
+    }
+
+    // Very short messages (≤ 30 chars) are almost always neutral greetings or
+    // simple queries — no need to spend tokens classifying them.
+    if (text.trim().length <= 30) {
+        return { sentiment: 'neutral', confidence: 65, method: 'keyword' };
+    }
+
+    // 2. LLM-based classification for genuinely ambiguous cases
     try {
         const llmResult = await classifyByLLM(text, shopId);
         return { ...llmResult, method: 'llm' };

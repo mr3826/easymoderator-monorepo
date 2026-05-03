@@ -121,8 +121,11 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
 
 /**
  * Call Google Gemini.
+ * When `cachedContentName` is provided, the system prompt has already been
+ * cached via the Gemini Context Cache API — omit `systemInstruction` and pass
+ * `cachedContent` instead to get the 75%-cheaper cache-hit pricing.
  */
-const callGemini = async ({ systemPrompt, messages, model, maxTokens }) => {
+const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedContentName }) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
@@ -140,7 +143,10 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens }) => {
         }
     };
 
-    if (systemPrompt) {
+    if (cachedContentName) {
+        // Use Gemini Context Cache — systemInstruction is already stored server-side
+        body.cachedContent = cachedContentName;
+    } else if (systemPrompt) {
         body.systemInstruction = { parts: [{ text: systemPrompt }] };
     }
 

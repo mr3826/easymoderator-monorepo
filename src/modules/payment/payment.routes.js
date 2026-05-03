@@ -9,8 +9,7 @@ const {
 } = require('../../middleware/payment-callback-auth.middleware');
 const {
     confirmCodPaymentValidator,
-    savePaymentConfigValidator,
-    initiatePaymentValidator
+    savePaymentConfigValidator
 } = require('./payment.validator');
 const validate = require('../../middleware/validate.middleware');
 
@@ -41,23 +40,8 @@ router.post('/config', authenticate, validate(savePaymentConfigValidator), payme
 router.post('/config/test', authenticate, validate(savePaymentConfigValidator), paymentController.testPaymentConnection);
 router.delete('/config/:gateway', authenticate, paymentController.deletePaymentConfig);
 
-// Payment initiation (requires authentication)
-router.post('/initiate', authenticate, validate(initiatePaymentValidator), paymentController.initiatePayment);
-
 // COD payment confirmation (requires authentication)
 router.post('/cod/confirm', authenticate, validate(confirmCodPaymentValidator), paymentController.confirmCodPayment);
-
-// AamarPay callbacks (no auth required - external callbacks)
-router.post('/aamarpay/success', paymentCallbackAuth, paymentController.handleAamarPaySuccess);
-router.post('/aamarpay/fail', paymentCallbackAuth, paymentController.handleAamarPayFail);
-router.post('/aamarpay/cancel', paymentCallbackAuth, paymentController.handleAamarPayFail);
-
-// SSLCommerz callbacks (no auth required - external callbacks)
-// Validation uses POST body only (not GET query string)
-router.post('/sslcommerz/success', paymentCallbackAuth, paymentController.handleSSLCommerzSuccess);
-router.post('/sslcommerz/fail', paymentCallbackAuth, paymentController.handleSSLCommerzFail);
-router.post('/sslcommerz/cancel', paymentCallbackAuth, paymentController.handleSSLCommerzFail);
-router.post('/sslcommerz/ipn', paymentCallbackAuth, paymentController.handleSSLCommerzIPN);
 
 // Rocket callbacks (no auth required - external callbacks)
 // Rocket MFS payment gateway for Bangladesh

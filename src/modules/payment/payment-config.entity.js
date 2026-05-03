@@ -42,7 +42,7 @@ const PaymentConfig = sequelize.define('PaymentConfig', {
         onUpdate: 'CASCADE'
     },
     gateway: {
-        type: DataTypes.ENUM('cod', 'aamarpay', 'sslcommerz', 'self-mfs'),
+        type: DataTypes.ENUM('cod', 'self-mfs'),
         allowNull: false
     },
     is_enabled: {

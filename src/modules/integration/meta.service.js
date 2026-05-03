@@ -410,6 +410,50 @@ class MetaService {
   }
 
   /**
+   * Send a plain-text message to a customer via Meta Graph API.
+   * Supports Messenger, Instagram (via Send API), and WhatsApp Cloud API.
+   * Throws on delivery failure so callers can log/handle appropriately.
+   */
+  async sendTextMessage(platform, accessToken, recipientId, messageText) {
+    if (platform === 'whatsapp') {
+      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      if (!phoneNumberId) {
+        console.warn('[meta.service] WHATSAPP_PHONE_NUMBER_ID not configured — cannot deliver WhatsApp message');
+        return;
+      }
+      const resp = await fetch(`https://graph.facebook.com/${META_CONFIG.graphApiVersion}/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: recipientId,
+          type: 'text',
+          text: { body: messageText }
+        })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(`WhatsApp delivery failed: ${err?.error?.message || resp.statusText}`);
+      }
+    } else {
+      // Facebook Messenger or Instagram — Send API
+      const resp = await fetch(`https://graph.facebook.com/${META_CONFIG.graphApiVersion}/me/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: recipientId },
+          message: { text: messageText },
+          access_token: accessToken
+        })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(`Messenger/Instagram delivery failed: ${err?.error?.message || resp.statusText}`);
+      }
+    }
+  }
+
+  /**
    * Unsubscribe from webhooks
    */
   async unsubscribeFromWebhooks(accessToken, assetId, platform) {

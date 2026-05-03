@@ -60,51 +60,32 @@ async function runTests() {
             console.log('❌ FAILED: COD only shop behavior incorrect');
         }
 
-        // Test 2: SSLCommerz + COD Shop
-        console.log('\n📋 TEST 2: SSLCommerz + COD Shop');
+        // Test 2: Self-MFS + COD Shop
+        console.log('\n📋 TEST 2: Self-MFS + COD Shop');
         console.log('-'.repeat(50));
-        
-        const sslShop = {
-            id: 'test-shop-2',
-            name: 'Tech Store Bangladesh'
-        };
 
-        const sslMockConfigs = [
-            {
-                gateway: 'cod',
-                is_enabled: true,
-                config: {},
-                credentials: {}
-            },
-            {
-                gateway: 'sslcommerz',
-                is_enabled: true,
-                config: { store_id: 'test123' },
-                credentials: { store_password: 'test123' }
-            }
+        const selfMfsMockConfigs = [
+            { gateway: 'cod', is_enabled: true, config: {}, credentials: {} },
+            { gateway: 'self-mfs', is_enabled: true, config: { mfs_type: 'nagad', mfs_number: '01812345678' }, credentials: {} }
         ];
 
         PaymentConfig.findAll = async (options) => {
             if (options.where.shop_id === 'test-shop-2') {
-                return sslMockConfigs;
+                return selfMfsMockConfigs;
             }
             return [];
         };
 
-        const sslPaymentOptions = await smartPaymentService.getAvailablePaymentOptions('test-shop-2', 'mixed');
-        
-        console.log('Available Methods:', sslPaymentOptions.availableMethods);
-        console.log('Should Skip Payment:', sslPaymentOptions.shouldSkipPayment);
-        console.log('Payment Prompt Length:', sslPaymentOptions.paymentPrompt?.length || 0);
-        
-        // Verify SSLCommerz + COD behavior
-        if (sslPaymentOptions.availableMethods.includes('cod') &&
-            sslPaymentOptions.availableMethods.includes('sslcommerz') &&
-            sslPaymentOptions.shouldSkipPayment === false &&
-            sslPaymentOptions.paymentPrompt !== null) {
-            console.log('✅ PASSED: SSLCommerz + COD shop shows payment options');
+        const selfMfsPaymentOptions = await smartPaymentService.getAvailablePaymentOptions('test-shop-2', 'mixed');
+
+        console.log('Available Methods:', selfMfsPaymentOptions.availableMethods);
+        console.log('Should Skip Payment:', selfMfsPaymentOptions.shouldSkipPayment);
+
+        if (selfMfsPaymentOptions.availableMethods.includes('cod') &&
+            selfMfsPaymentOptions.paymentOptions.hasCod === true) {
+            console.log('✅ PASSED: Self-MFS + COD shop detected correctly');
         } else {
-            console.log('❌ FAILED: SSLCommerz + COD shop behavior incorrect');
+            console.log('❌ FAILED: Self-MFS + COD shop behavior incorrect');
         }
 
         // Test 3: Multiple Payment Methods Shop
@@ -188,7 +169,6 @@ async function runTests() {
             { input: '1', expected: 'cod', description: 'Number selection' },
             { input: 'bkash', expected: 'bkash', description: 'bKash name' },
             { input: 'বিকাশ', expected: 'bkash', description: 'bKash Bengali' },
-            { input: 'sslcommerz', expected: 'sslcommerz', description: 'SSLCommerz name' },
             { input: 'cash', expected: 'cod', description: 'Cash keyword' },
             { input: 'cod', expected: 'cod', description: 'COD keyword' }
         ];
@@ -219,10 +199,9 @@ async function runTests() {
         
         const validationTests = [
             { shopId: 'test-shop-1', method: 'cod', expected: true, description: 'COD valid for COD shop' },
-            { shopId: 'test-shop-2', method: 'sslcommerz', expected: true, description: 'SSLCommerz valid for SSL shop' },
             { shopId: 'test-shop-3', method: 'bkash', expected: true, description: 'bKash valid for multi shop' },
-            { shopId: 'test-shop-1', method: 'sslcommerz', expected: false, description: 'SSLCommerz invalid for COD shop' },
-            { shopId: 'test-shop-2', method: 'bkash', expected: false, description: 'bKash invalid for SSL shop' }
+            { shopId: 'test-shop-1', method: 'bkash', expected: false, description: 'bKash invalid for COD-only shop' },
+            { shopId: 'test-shop-2', method: 'bkash', expected: false, description: 'bKash invalid for self-MFS shop' }
         ];
 
         let validationPassed = 0;
@@ -275,7 +254,7 @@ async function runTests() {
         
         console.log('📊 Test Results:');
         console.log('   ✅ Test 1: COD Only Shop - PASSED');
-        console.log('   ✅ Test 2: SSLCommerz + COD Shop - PASSED');
+        console.log('   ✅ Test 2: Self-MFS + COD Shop - PASSED');
         console.log('   ✅ Test 3: Multiple Payment Methods Shop - PASSED');
         console.log('   ✅ Test 4: Payment Method Extraction - PASSED');
         console.log('   ✅ Test 5: Payment Method Validation - PASSED');

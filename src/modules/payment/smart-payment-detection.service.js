@@ -94,30 +94,6 @@ class SmartPaymentDetectionService {
                     };
                     break;
 
-                case 'aamarpay':
-                    hasOnlinePayment = true;
-                    methodDetails.aamarpay = {
-                        type: 'online',
-                        gateway: 'aamarpay',
-                        name: 'AamarPay',
-                        nameBn: 'আমারপে',
-                        description: 'Pay online via AamarPay',
-                        descriptionBn: 'আমারপে দিয়ে অনলাইনে পেমেন্ট করুন'
-                    };
-                    break;
-
-                case 'sslcommerz':
-                    hasOnlinePayment = true;
-                    methodDetails.sslcommerz = {
-                        type: 'online',
-                        gateway: 'sslcommerz',
-                        name: 'SSLCommerz',
-                        nameBn: 'এসএসএলকমার্জ',
-                        description: 'Pay online via SSLCommerz',
-                        descriptionBn: 'এসএসএলকমার্জ দিয়ে অনলাইনে পেমেন্ট করুন'
-                    };
-                    break;
-
                 case 'self-mfs':
                     hasSelfMfs = hasSelfMfsConfig;
                     if (hasSelfMfsConfig) {
@@ -168,8 +144,6 @@ class SmartPaymentDetectionService {
         if (hasOnlinePayment) {
             if (methodDetails.bkash) availableMethods.push('bkash');
             if (methodDetails.nagad) availableMethods.push('nagad');
-            if (methodDetails.aamarpay) availableMethods.push('aamarpay');
-            if (methodDetails.sslcommerz) availableMethods.push('sslcommerz');
         }
         if (hasSelfMfs) {
             const mfsType = bdSettings.mfs_type;
@@ -269,8 +243,6 @@ class SmartPaymentDetectionService {
             'cod': 'automatic',
             'bkash': 'merchant_api',
             'nagad': 'merchant_api',
-            'aamarpay': 'gateway_api',
-            'sslcommerz': 'gateway_api',
             'bkash-self': 'owner_verification',
             'nagad-self': 'owner_verification',
             'rocket-self': 'owner_verification'
@@ -287,8 +259,6 @@ class SmartPaymentDetectionService {
             'cod': false,
             'bkash': true,
             'nagad': true,
-            'aamarpay': true,
-            'sslcommerz': true,
             'bkash-self': true,
             'nagad-self': true,
             'rocket-self': true
@@ -305,8 +275,6 @@ class SmartPaymentDetectionService {
             'cod': 'COLLECTING_NOTES',
             'bkash': 'AWAITING_ONLINE_PAYMENT',
             'nagad': 'AWAITING_ONLINE_PAYMENT',
-            'aamarpay': 'AWAITING_ONLINE_PAYMENT',
-            'sslcommerz': 'AWAITING_ONLINE_PAYMENT',
             'bkash-self': 'AWAITING_SELF_MFS_PAYMENT',
             'nagad-self': 'AWAITING_SELF_MFS_PAYMENT',
             'rocket-self': 'AWAITING_SELF_MFS_PAYMENT'
@@ -388,9 +356,7 @@ class SmartPaymentDetectionService {
         const keywordMap = {
             'cod': ['cod', 'cash', 'ক্যাশ', 'delivery', 'ডেলিভারি'],
             'bkash': ['bkash', 'বিকাশ', 'bikash'],
-            'nagad': ['nagad', 'নগদ', 'nogod'],
-            'aamarpay': ['aamarpay', 'আমারপে', 'amar'],
-            'sslcommerz': ['sslcommerz', 'ssl', 'এসএসএল']
+            'nagad': ['nagad', 'নগদ', 'nogod']
         };
 
         for (const [method, keywords] of Object.entries(keywordMap)) {

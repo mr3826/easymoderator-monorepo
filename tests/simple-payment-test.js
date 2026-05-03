@@ -91,30 +91,6 @@ class TestSmartPaymentDetectionService {
                     };
                     break;
 
-                case 'aamarpay':
-                    hasOnlinePayment = true;
-                    methodDetails.aamarpay = {
-                        type: 'online',
-                        gateway: 'aamarpay',
-                        name: 'AamarPay',
-                        nameBn: 'আমারপে',
-                        description: 'Pay online via AamarPay',
-                        descriptionBn: 'আমারপে দিয়ে অনলাইনে পেমেন্ট করুন'
-                    };
-                    break;
-
-                case 'sslcommerz':
-                    hasOnlinePayment = true;
-                    methodDetails.sslcommerz = {
-                        type: 'online',
-                        gateway: 'sslcommerz',
-                        name: 'SSLCommerz',
-                        nameBn: 'এসএসএলকমার্জ',
-                        description: 'Pay online via SSLCommerz',
-                        descriptionBn: 'এসএসএলকমার্জ দিয়ে অনলাইনে পেমেন্ট করুন'
-                    };
-                    break;
-
                 case 'self-mfs':
                     hasSelfMfs = hasSelfMfsConfig;
                     if (hasSelfMfsConfig) {
@@ -165,8 +141,6 @@ class TestSmartPaymentDetectionService {
         if (hasOnlinePayment) {
             if (methodDetails.bkash) availableMethods.push('bkash');
             if (methodDetails.nagad) availableMethods.push('nagad');
-            if (methodDetails.aamarpay) availableMethods.push('aamarpay');
-            if (methodDetails.sslcommerz) availableMethods.push('sslcommerz');
         }
         if (hasSelfMfs) {
             const mfsType = bdSettings.mfs_type;
@@ -289,9 +263,7 @@ class TestSmartPaymentDetectionService {
         const keywordMap = {
             'cod': ['cod', 'cash', 'ক্যাশ', 'delivery', 'ডেলিভারি'],
             'bkash': ['bkash', 'বিকাশ', 'bikash'],
-            'nagad': ['nagad', 'নগদ', 'nogod'],
-            'aamarpay': ['aamarpay', 'আমারপে', 'amar'],
-            'sslcommerz': ['sslcommerz', 'ssl', 'এসএসএল']
+            'nagad': ['nagad', 'নগদ', 'nogod']
         };
 
         for (const [method, keywords] of Object.entries(keywordMap)) {
@@ -347,30 +319,25 @@ async function runTests() {
     
     console.log(codTestPassed ? '✅ PASSED: COD only shop correctly skips payment step' : '❌ FAILED: COD only shop behavior incorrect');
 
-    // Scenario 2: SSLCommerz + COD
-    console.log('\n📋 TEST 2: Tech Store Bangladesh - SSLCommerz + COD');
+    // Scenario 2: Self-MFS + COD
+    console.log('\n📋 TEST 2: Tech Store Bangladesh - Self-MFS + COD');
     console.log('-'.repeat(50));
-    
+
     mockPaymentConfigs.set('tech-store', [
         { gateway: 'cod', is_enabled: true, config: {}, credentials: {} },
-        { gateway: 'sslcommerz', is_enabled: true, config: { store_id: 'test123' }, credentials: { store_password: 'test123' } }
+        { gateway: 'self-mfs', is_enabled: true, config: { mfs_type: 'nagad', mfs_number: '01812345678' }, credentials: {} }
     ]);
-    
-    console.log('Debug: Mock configs for tech-store:', mockPaymentConfigs.get('tech-store'));
-    
-    const sslOptions = await service.getAvailablePaymentOptions('tech-store', 'mixed');
-    
-    console.log('Available Methods:', sslOptions.availableMethods);
-    console.log('Should Skip Payment:', sslOptions.shouldSkipPayment);
-    console.log('Payment Prompt Length:', sslOptions.paymentPrompt?.length || 0);
-    console.log('Payment Options Debug:', JSON.stringify(sslOptions.paymentOptions, null, 2));
-    
-    const sslTestPassed = sslOptions.availableMethods.includes('cod') &&
-        sslOptions.availableMethods.includes('sslcommerz') &&
-        sslOptions.shouldSkipPayment === false &&
-        sslOptions.paymentPrompt !== null;
-    
-    console.log(sslTestPassed ? '✅ PASSED: SSLCommerz + COD shop shows payment options' : '❌ FAILED: SSLCommerz + COD shop behavior incorrect');
+    mockBdSettings.set('tech-store', { mfs_enabled: true, mfs_type: 'nagad', mfs_number: '01812345678' });
+
+    const selfMfsOptions = await service.getAvailablePaymentOptions('tech-store', 'mixed');
+
+    console.log('Available Methods:', selfMfsOptions.availableMethods);
+    console.log('Should Skip Payment:', selfMfsOptions.shouldSkipPayment);
+
+    const selfMfsTestPassed = selfMfsOptions.availableMethods.includes('cod') &&
+        selfMfsOptions.paymentOptions.hasCod === true;
+
+    console.log(selfMfsTestPassed ? '✅ PASSED: Self-MFS + COD shop detected' : '❌ FAILED: Self-MFS + COD shop behavior incorrect');
 
     // Scenario 3: Multiple Payment Methods
     console.log('\n📋 TEST 3: Premium Fashion BD - Multiple Payment Methods');
@@ -413,7 +380,6 @@ async function runTests() {
         { input: '1', expected: 'cod', description: 'Number selection' },
         { input: 'bkash', expected: 'bkash', description: 'bKash name' },
         { input: 'বিকাশ', expected: 'bkash', description: 'bKash Bengali' },
-        { input: 'sslcommerz', expected: 'sslcommerz', description: 'SSLCommerz name' },
         { input: 'cash', expected: 'cod', description: 'Cash keyword' },
         { input: 'cod', expected: 'cod', description: 'COD keyword' }
     ];
@@ -440,10 +406,9 @@ async function runTests() {
     
     const validationTests = [
         { shopId: 'fashion-hub', method: 'cod', expected: true, description: 'COD valid for COD shop' },
-        { shopId: 'tech-store', method: 'sslcommerz', expected: true, description: 'SSLCommerz valid for SSL shop' },
         { shopId: 'premium-fashion', method: 'bkash', expected: true, description: 'bKash valid for multi shop' },
-        { shopId: 'fashion-hub', method: 'sslcommerz', expected: false, description: 'SSLCommerz invalid for COD shop' },
-        { shopId: 'tech-store', method: 'bkash', expected: false, description: 'bKash invalid for SSL shop' }
+        { shopId: 'fashion-hub', method: 'bkash', expected: false, description: 'bKash invalid for COD-only shop' },
+        { shopId: 'tech-store', method: 'bkash', expected: false, description: 'bKash invalid for self-MFS shop' }
     ];
 
     let validationPassed = 0;

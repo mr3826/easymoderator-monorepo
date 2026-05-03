@@ -468,29 +468,11 @@ Type "YES" to confirm.`;
     }
 
     /**
-     * Initiate gateway API payment (AamarPay, SSLCommerz)
+     * Initiate gateway API payment (reserved for future gateway integrations)
      */
     static async initiateGatewayPayment(session, paymentMethod) {
         try {
-            // Prepare order data for payment
-            const orderData = {
-                id: session.id, // Use session ID as temporary order ID
-                order_number: await this.generateOrderNumber(session.shop_id),
-                customer_name: session.step_data.name,
-                customer_phone: session.step_data.phone,
-                total: (session.product_info?.price || 0) + (session.step_data.delivery_charge || 0),
-                shop_id: session.shop_id
-            };
-
-            let paymentResult;
-            
-            if (paymentMethod === 'aamarpay') {
-                const paymentService = require('../payment/payment.service');
-                paymentResult = await paymentService.initiateAamarPayPayment(session.shop_id, orderData);
-            } else if (paymentMethod === 'sslcommerz') {
-                const paymentService = require('../payment/payment.service');
-                paymentResult = await paymentService.initiateSSLCommerzPayment(session.shop_id, orderData);
-            }
+            const paymentResult = null; // No online gateway active — contact us for integration
 
             if (paymentResult?.success) {
                 // Update session with payment info

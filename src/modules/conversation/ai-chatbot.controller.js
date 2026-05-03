@@ -222,11 +222,18 @@ class AIChatbotController {
                 shopKnowledge = await knowledgeService.getKnowledgeForAI(shop_id);
             } catch (_) { /* ignore */ }
 
+            // Fetch only the FAQs relevant to this message (top 5) instead of
+            // dumping all 50 into the system prompt on every call.
+            const relevantFaqs = hasImages
+                ? null  // image flow doesn't benefit; fall back to full FAQ list
+                : await knowledgeService.getRelevantFaqs(shop_id, message, 5).catch(() => null);
+
             const systemPrompt = intentRouter.buildSystemPrompt(
                 shopKnowledge || {},
                 language,
                 hasImages,
-                aiSettings.tone_persona || 'friendly_bd'
+                aiSettings.tone_persona || 'friendly_bd',
+                relevantFaqs
             );
 
             // Map model_preset to preferredProvider

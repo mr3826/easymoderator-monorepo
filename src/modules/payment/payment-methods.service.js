@@ -74,18 +74,6 @@ function getPaymentMethodTemplate(gateway) {
       description: 'Collect payment when customer receives order',
       icon: 'cod',
       processingTime: 'On delivery'
-    },
-    aamarpay: {
-      displayName: 'Aamarpay',
-      description: 'Unified payment gateway',
-      icon: 'aamarpay',
-      processingTime: '1-3 minutes'
-    },
-    sslcommerz: {
-      displayName: 'SSLCommerz',
-      description: 'Secure payment gateway',
-      icon: 'sslcommerz',
-      processingTime: '1-3 minutes'
     }
   };
 
@@ -105,9 +93,7 @@ function getGatewayDisplayName(gateway) {
     bkash: 'bKash',
     nagad: 'Nagad',
     rocket: 'Rocket',
-    cod: 'Cash on Delivery',
-    aamarpay: 'Aamarpay',
-    sslcommerz: 'SSLCommerz'
+    cod: 'Cash on Delivery'
   };
   return names[gateway.toLowerCase()] || gateway;
 }
@@ -120,9 +106,7 @@ function getGatewayIcon(gateway) {
     bkash: 'bkash',
     nagad: 'nagad',
     rocket: 'rocket',
-    cod: 'cash',
-    aamarpay: 'aamarpay',
-    sslcommerz: 'sslcommerz'
+    cod: 'cash'
   };
   return icons[gateway.toLowerCase()] || 'payment';
 }
@@ -135,9 +119,7 @@ function getGatewayDescription(gateway) {
     bkash: 'Mobile money payment gateway - Fast and secure',
     nagad: 'Bangladesh mobile money service - Safe payment',
     rocket: 'Robi mobile money service - Quick checkout',
-    cod: 'Collect payment when customer receives order - No fees',
-    aamarpay: 'Unified payment gateway - Multiple options',
-    sslcommerz: 'Secure payment gateway - Card and mobile money'
+    cod: 'Collect payment when customer receives order - No fees'
   };
   return descriptions[gateway.toLowerCase()] || 'Payment method';
 }

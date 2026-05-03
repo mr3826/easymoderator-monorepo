@@ -20,7 +20,9 @@ const { MemoryCache } = require('../../config/memory-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
 const { scrubPII } = require('./prompt-sanitizer.service');
-const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '300', 10);
+const bertClient = require('./bert-client.service');
+const geminiCache = require('./gemini-cache.service');
+const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
 const ROUTER_DISABLED = process.env.INTENT_ROUTER_DISABLED === 'true';
@@ -53,6 +55,16 @@ const hasProductIntent = (message) => {
 
 const normalisedKey = (shopId, message) =>
     `intent:${shopId}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`;
+
+// Warm BD-market greeting responses (no LLM needed for simple hellos)
+const GREETING_REPLIES = {
+    bn:    'আসসালামু আলাইকুম! কেমন আছেন? কিভাবে সাহায্য করতে পারি? 😊',
+    en:    'Hello! How can I help you today? 😊',
+    mixed: 'Assalamu alaikum! Ki help korbo apnake? 😊',
+};
+
+const _greetingReply = (language = 'mixed') =>
+    GREETING_REPLIES[language] || GREETING_REPLIES.mixed;
 
 // ---------------------------------------------------------------------------
 // Core routing
@@ -132,6 +144,22 @@ const route = async ({
                     return { response: statusLine, confidence: 1.0, source: 'exact_match' };
                 }
             } catch (_) { /* DB unavailable — fall through */ }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Stage 1.8: BanglaBERT fast-path (local ML, ~0ms cost)
+    // Handles greetings with a templated reply so we skip the LLM entirely.
+    // High-confidence non-greeting intents set a hint for downstream stages.
+    // ------------------------------------------------------------------
+    if (!imageUrls.length) {
+        const bertResult = await bertClient.classify(message, shopId);
+        if (bertResult && bertResult.confidence >= 0.85) {
+            if (bertResult.primaryIntent === 'greeting') {
+                const greetingResponse = _greetingReply(language);
+                if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, greetingResponse);
+                return { response: greetingResponse, confidence: 0.9, source: 'bert' };
+            }
         }
     }
 
@@ -289,14 +317,40 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         }
     }
 
-    // For vision requests: prefer OpenAI (gpt-4o has better vision than Gemini Flash for product images)
-    const effectiveProvider = imageUrls.length > 0 ? (preferredProvider || 'openai') : preferredProvider;
+    const effectiveProvider = preferredProvider;
+
+    // Attempt to use Gemini context cache for the base system prompt.
+    // When a cache hit occurs, inject any dynamic product grounding as a
+    // prefixed context block in the messages array (Gemini reads cachedContent
+    // as its system context, so we must not also send systemInstruction).
+    const cachedContentName = await geminiCache.getOrCreate(shopId, systemPrompt).catch(() => null);
+
+    let finalSystemPrompt = groundedSystemPrompt;
+    let finalMessages = llmMessages;
+
+    if (cachedContentName) {
+        // The base system prompt is cached — only send dynamic grounding (if any)
+        // as a context-injection block prepended to the conversation.
+        const dynamicGrounding = groundedSystemPrompt !== systemPrompt
+            ? groundedSystemPrompt.slice(systemPrompt.length).trim()
+            : null;
+
+        finalSystemPrompt = null; // do not re-send the cached system prompt
+        if (dynamicGrounding) {
+            finalMessages = [
+                { role: 'user', content: `[Context for this message only]\n${dynamicGrounding}` },
+                { role: 'model', content: 'Understood. I will use this context.' },
+                ...llmMessages,
+            ];
+        }
+    }
 
     const { text: response, provider } = await llmService.chat({
-        systemPrompt: groundedSystemPrompt,
-        messages: llmMessages,
+        systemPrompt:      finalSystemPrompt,
+        messages:          finalMessages,
         preferredProvider: effectiveProvider,
-        maxTokens: 768
+        cachedContentName,
+        maxTokens:         768
     });
 
     if (cacheKey) {
@@ -333,7 +387,6 @@ Analyze this product image and return ONLY a JSON object (no markdown, no explan
                         : 'Identify the product shown in this image.' }
                 ]
             }],
-            preferredProvider: 'openai',
             maxTokens: 150
         });
 
@@ -391,7 +444,16 @@ Personality rules:
 - Maintain a professional tone at all times`
 };
 
-const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false, tonePersona = 'friendly_bd') => {
+/**
+ * @param {object}  shopKnowledge
+ * @param {string}  language
+ * @param {boolean} hasImages
+ * @param {string}  tonePersona
+ * @param {Array}   [relevantFaqs]  - Pre-filtered FAQs from RAG (top 3-5).
+ *                                    When provided, overrides the full faqs dump so
+ *                                    only query-relevant entries are sent to the LLM.
+ */
+const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false, tonePersona = 'friendly_bd', relevantFaqs = null) => {
     const { businessInfo = {}, brandingRules = {}, faqs = [] } = shopKnowledge || {};
 
     const shopName = businessInfo.shopName || 'this shop';
@@ -403,7 +465,9 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
             ? 'Always respond in English.'
             : 'Respond in the same language the customer uses (Bangla, English, or mixed Banglish).';
 
-    const faqSection = faqs.slice(0, MAX_FAQ_IN_PROMPT).map((f) => {
+    // Use pre-filtered RAG results when available; fall back to full FAQ dump.
+    const faqSource = relevantFaqs !== null ? relevantFaqs : faqs.slice(0, MAX_FAQ_IN_PROMPT);
+    const faqSection = faqSource.map((f) => {
         const q = f.category || f.question || '';
         const a = f.template_en || f.template_bn || f.answer || '';
         return `Q: ${q}\nA: ${a}`;

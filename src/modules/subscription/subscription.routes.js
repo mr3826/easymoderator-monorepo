@@ -30,9 +30,6 @@ router.get('/invoices', subscriptionController.getInvoices);
 // GET /subscription/invoices/:invoiceId - Get invoice by ID
 router.get('/invoices/:invoiceId', subscriptionController.getInvoiceById);
 
-// POST /subscription/invoices/:invoiceId/pay - Initiate payment for a pending invoice
-router.post('/invoices/:invoiceId/pay', subscriptionController.payInvoice);
-
 // GET /subscription/invoices/:invoiceId/pdf - Printable HTML invoice
 router.get('/invoices/:invoiceId/pdf', subscriptionController.getInvoicePdf);
 

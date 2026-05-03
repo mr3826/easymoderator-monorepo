@@ -55,26 +55,6 @@ const GATEWAY_TEMPLATES = {
     fields: [], // COD requires no configuration
     testEndpoint: null,
     icon: 'cod'
-  },
-  aamarpay: {
-    displayName: 'Aamarpay',
-    description: 'Unified payment gateway',
-    fields: [
-      { name: 'merchantId', label: 'Merchant ID', type: 'text', required: true },
-      { name: 'apiKey', label: 'API Key', type: 'password', required: true }
-    ],
-    testEndpoint: 'https://api.aamarpay.com/api/v1/merchant/verify',
-    icon: 'aamarpay'
-  },
-  sslcommerz: {
-    displayName: 'SSLCommerz',
-    description: 'Bangladesh payment gateway',
-    fields: [
-      { name: 'storeId', label: 'Store ID', type: 'text', required: true },
-      { name: 'storePassword', label: 'Store Password', type: 'password', required: true }
-    ],
-    testEndpoint: 'https://payment.sslcommerz.com/merchant/verify',
-    icon: 'sslcommerz'
   }
 };
 
@@ -272,10 +252,6 @@ async function testGatewayConnection(gateway, credentials, template) {
       return await testNagadConnection(credentials);
     case 'rocket':
       return await testRocketConnection(credentials);
-    case 'aamarpay':
-      return await testAamarpayConnection(credentials);
-    case 'sslcommerz':
-      return await testSSLCommerzConnection(credentials);
     default:
       return { success: true, message: 'Test not implemented for this gateway' };
   }
@@ -347,46 +323,6 @@ async function testRocketConnection(credentials) {
     return { success: true, message: 'Rocket connection verified' };
   } catch (error) {
     return { success: false, error: 'Invalid Rocket credentials' };
-  }
-}
-
-/**
- * Test Aamarpay connection
- */
-async function testAamarpayConnection(credentials) {
-  try {
-    const response = await axios.post(
-      'https://api.aamarpay.com/api/v1/merchant/verify',
-      { merchantId: credentials.merchantId },
-      {
-        headers: { 'Authorization': `Bearer ${credentials.apiKey}` },
-        timeout: 5000
-      }
-    );
-
-    return { success: true, message: 'Aamarpay connection verified' };
-  } catch (error) {
-    return { success: false, error: 'Invalid Aamarpay credentials' };
-  }
-}
-
-/**
- * Test SSLCommerz connection
- */
-async function testSSLCommerzConnection(credentials) {
-  try {
-    const response = await axios.post(
-      'https://payment.sslcommerz.com/merchant/verify',
-      {
-        store_id: credentials.storeId,
-        store_passwd: credentials.storePassword
-      },
-      { timeout: 5000 }
-    );
-
-    return { success: true, message: 'SSLCommerz connection verified' };
-  } catch (error) {
-    return { success: false, error: 'Invalid SSLCommerz credentials' };
   }
 }
 

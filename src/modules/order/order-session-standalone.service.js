@@ -108,17 +108,13 @@ const DEFAULT_ZONE_CHARGES = { inside_dhaka: 60, sub_dhaka: 80, outside_dhaka: 1
 
 // ─── Payment gateway config ───────────────────────────────────────────────────
 const GATEWAY_LABELS = {
-    'cod':       'ক্যাশ অন ডেলিভারি / Cash on Delivery (COD)',
-    'self-mfs':  'বিকাশ / নগদ / Mobile Banking (MFS)',
-    'aamarpay':  'AamarPay (অনলাইন পেমেন্ট / Online Payment)',
-    'sslcommerz':'SSLCommerz (অনলাইন পেমেন্ট / Online Payment)'
+    'cod':      'ক্যাশ অন ডেলিভারি / Cash on Delivery (COD)',
+    'self-mfs': 'বিকাশ / নগদ / Mobile Banking (MFS)'
 };
 // Payment status to use when creating the order per gateway
 const GATEWAY_PAYMENT_STATUS = {
-    'cod':       'unpaid',
-    'self-mfs':  'pending',
-    'aamarpay':  'pending',
-    'sslcommerz':'pending'
+    'cod':      'unpaid',
+    'self-mfs': 'pending'
 };
 
 class OrderSessionService {
@@ -674,8 +670,8 @@ class OrderSessionService {
 
         if (configs.length === 0) return ['cod'];
 
-        // Sort: cod first, then self-mfs, then online gateways
-        const ORDER = ['cod', 'self-mfs', 'aamarpay', 'sslcommerz'];
+        // Sort: cod first, then self-mfs
+        const ORDER = ['cod', 'self-mfs'];
         return configs
             .map(c => c.gateway)
             .sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
@@ -703,10 +699,8 @@ class OrderSessionService {
         }
 
         const keywordMap = {
-            'cod':       ['cod', 'cash', 'ক্যাশ', 'cash on delivery'],
-            'self-mfs':  ['bkash', 'বিকাশ', 'nagad', 'নগদ', 'mfs', 'mobile', 'self-mfs', 'self mfs'],
-            'aamarpay':  ['aamarpay', 'amar pay', 'আমারপে'],
-            'sslcommerz':['sslcommerz', 'ssl', 'sslc']
+            'cod':      ['cod', 'cash', 'ক্যাশ', 'cash on delivery'],
+            'self-mfs': ['bkash', 'বিকাশ', 'nagad', 'নগদ', 'mfs', 'mobile', 'self-mfs', 'self mfs']
         };
 
         for (const gw of gateways) {

@@ -10,6 +10,39 @@
 const { Shop } = require('../entities');
 
 /**
+ * Per-intent output token caps — avoids paying for 1024 tokens on a greeting.
+ * Intent names match BanglaBERT / intent-router sources ('greeting', 'price_query', etc.)
+ * Falls back to the tier's default maxTokens for unknown intents.
+ */
+const INTENT_TOKEN_LIMITS = {
+    greeting:            60,
+    order_status:       120,
+    price_query:        200,
+    availability_query: 200,
+    size_query:         180,
+    delivery_query:     150,
+    payment_intent:     250,
+    return_query:       200,
+    faq:                300,
+    general:            512,  // Starter ceiling
+    complex:           1024,  // Growth+ ceiling
+};
+
+/**
+ * Return the smallest safe token budget for a given intent, bounded by the
+ * tier's configured maxTokens so premium tiers are never downgraded.
+ *
+ * @param {string} intent  - Intent label (e.g. 'greeting', 'price_query')
+ * @param {number} tierMax - maxTokens from the tier config
+ * @returns {number}
+ */
+function getTokenLimitForIntent(intent, tierMax) {
+    const intentLimit = INTENT_TOKEN_LIMITS[intent];
+    if (!intentLimit) return tierMax;
+    return Math.min(intentLimit, tierMax);
+}
+
+/**
  * Map subscription tier to optimal LLM model configuration
  */
 const TIER_MODEL_MAP = {
@@ -210,6 +243,8 @@ module.exports = {
   isModelAllowedForTier,
   getAllTierConfigs,
   formatTierSelectionInfo,
+  getTokenLimitForIntent,
   TIER_MODEL_MAP,
+  INTENT_TOKEN_LIMITS,
   DEFAULT_TIER
 };

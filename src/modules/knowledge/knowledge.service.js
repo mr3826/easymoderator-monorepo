@@ -480,6 +480,54 @@ const getKnowledgeForAI = async (shopId) => {
     return result;
 };
 
+// ── Lightweight per-query FAQ relevance (for system-prompt cost optimisation) ──
+
+/**
+ * Return the top-N FAQs most relevant to the incoming message using SQL token
+ * matching (same approach as intent-router Stage 2).  Much cheaper than injecting
+ * all 50 FAQs into every system prompt.
+ *
+ * Falls back to an empty array so callers can degrade gracefully to the full FAQ
+ * list when no tokens match.
+ *
+ * @param {string} shopId
+ * @param {string} message  - Customer message text
+ * @param {number} [limit=5]
+ * @returns {Promise<Array>} Formatted FAQ objects compatible with buildSystemPrompt
+ */
+const getRelevantFaqs = async (shopId, message, limit = 5) => {
+    if (!shopId || !message) return [];
+
+    try {
+        const tokens = message
+            .toLowerCase()
+            .replace(/[^\wঀ-৿\s]/g, ' ')
+            .split(/\s+/)
+            .filter(t => t.length >= 3)
+            .slice(0, 8); // cap to avoid giant queries
+
+        if (tokens.length === 0) return [];
+
+        const conditions = tokens.map(token => ({
+            [Op.or]: [
+                { category:    { [Op.iLike]: `%${token}%` } },
+                { template_en: { [Op.iLike]: `%${token}%` } },
+                { template_bn: { [Op.iLike]: `%${token}%` } },
+            ]
+        }));
+
+        const rows = await FaqResponse.findAll({
+            where: { shop_id: shopId, is_active: true, [Op.or]: conditions },
+            order:  [['priority', 'DESC'], ['hit_count', 'DESC']],
+            limit,
+        });
+
+        return rows.map(formatFaq);
+    } catch (_) {
+        return [];
+    }
+};
+
 // ── RAG query (authenticated) ─────────────────────────────────────────────────
 
 /**
@@ -512,5 +560,6 @@ module.exports = {
     normalizeLanguage,
     cacheLanguageLearning,
     getKnowledgeForAI,
+    getRelevantFaqs,
     queryKnowledge
 };

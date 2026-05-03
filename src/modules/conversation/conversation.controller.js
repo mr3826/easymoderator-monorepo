@@ -1,9 +1,77 @@
 const conversationService = require('./conversation.service');
+const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
+const { Conversation: ConvModel, Customer: CustomerModel } = require('../entities');
+const MetaIntegration = require('../integration/meta-integration.entity');
+const metaService = require('../integration/meta.service');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
+
+// Channels that route through Meta Graph API for delivery
+const META_CHANNEL_PLATFORM = {
+    messenger: 'facebook',
+    facebook:  'facebook',
+    instagram: 'instagram',
+    whatsapp:  'whatsapp',
+};
+
+/**
+ * Deliver an outbound message to the customer's Meta channel.
+ * Looks up the conversation → customer channel_user_id → integration → sends via Graph API.
+ * Best-effort: never throws. Emits SSE `delivery_failed` event so agents see a warning toast
+ * when their reply doesn't reach the customer on Messenger/Instagram/WhatsApp.
+ */
+async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
+    let isMetaChannel = false;
+    let failureReason = null;
+    try {
+        const conversation = await ConvModel.findOne({
+            where: { id: conversationId, shop_id: shopId },
+            include: [{ model: CustomerModel, as: 'customer' }]
+        });
+        if (!conversation) return;
+
+        const platform = META_CHANNEL_PLATFORM[conversation.channel];
+        if (!platform) return; // webchat/telegram — no Meta delivery expected
+
+        isMetaChannel = true; // past this point: failures should surface to the agent
+
+        const recipientId = conversation.customer?.channel_user_id;
+        if (!recipientId) {
+            failureReason = 'Customer Meta ID missing — message saved but not delivered to Messenger';
+            return;
+        }
+
+        const integration = await MetaIntegration.findOne({
+            where: { shop_id: shopId, platform, status: 'CONNECTED' }
+        });
+        if (!integration) {
+            failureReason = `No active ${platform} integration — connect your page in Settings → Channels`;
+            return;
+        }
+
+        if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
+            failureReason = 'Access token expired — reconnect the channel in Settings → Channels';
+            return;
+        }
+
+        const accessToken = metaService.decryptToken(integration.access_token);
+        await metaService.sendTextMessage(platform, accessToken, recipientId, content);
+        console.log(`[inbox] Message delivered via ${platform} to ${recipientId} (conv: ${conversationId})`);
+    } catch (err) {
+        failureReason = err.message;
+        console.error(`[inbox] Meta delivery failed for conversation ${conversationId}: ${err.message}`);
+    } finally {
+        if (isMetaChannel && failureReason) {
+            sseManager.emit(shopId, 'delivery_failed', {
+                conversation_id: conversationId,
+                reason: failureReason
+            });
+        }
+    }
+}
 
 class ConversationController {
     async getConversations(req, res) {
@@ -200,10 +268,12 @@ class ConversationController {
             sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message });
 
             // AI pause: when a human agent sends a message, mute AI replies for 30 min.
-            // The BullMQ worker checks this key before running the AI pipeline.
+            // Frontend sends sender='agent'; service maps it to 'business' in DB — check both.
             const sender = messageData.sender || req.body.sender;
-            if (sender === 'business') {
+            if (sender === 'agent' || sender === 'business') {
                 cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1').catch(() => {});
+                // Deliver agent reply to customer via Meta Graph API (fire-and-forget)
+                deliverViaMetaIfApplicable(conversationId, shopId, message.content);
             }
 
             res.status(201).json({
@@ -243,11 +313,16 @@ class ConversationController {
                 { hitl, status, assignee_id, resolution_note }
             );
 
-            // ✅ NEW: Send escalation auto-reply when HITL is enabled (conversation escalated)
+            // Send escalation auto-reply when HITL is enabled, then broadcast + deliver to customer
             if (hitl === true) {
-                // Send auto-reply asynchronously without blocking response
-                conversationService.sendEscalationAutoReply(conversationId, shopId).catch(err => {
-                    console.warn(`Escalation auto-reply failed: ${err.message}`);
+                sendEscalationAutoReply(conversationId, shopId).then(autoReplyMsg => {
+                    if (!autoReplyMsg) return;
+                    // Let all agent tabs see the auto-reply in real-time
+                    sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
+                    // Deliver to the actual customer on Messenger/Instagram/WhatsApp
+                    deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content);
+                }).catch(err => {
+                    console.warn(`[escalation] Auto-reply failed: ${err.message}`);
                 });
             }
 

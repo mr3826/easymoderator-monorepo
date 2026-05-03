@@ -1,6 +1,6 @@
 /**
  * Payment Webhook Controller
- * Handles webhook callbacks from payment gateways (bKash, Nagad, AamarPay, SSLCommerz)
+ * Handles webhook callbacks from payment gateways (bKash, Nagad)
  * Updates payment status and triggers order confirmation
  */
 
@@ -110,68 +110,6 @@ class PaymentWebhookController {
 
         } catch (error) {
             this.logger.error('Nagad webhook error', { error: error.message });
-            res.status(500).json({ error: 'Webhook processing failed' });
-        }
-    }
-
-    /**
-     * Handle AamarPay payment status webhook
-     */
-    async handleAamarPayWebhook(req, res) {
-        try {
-            const callbackData = req.body;
-
-            this.logger.info('AamarPay webhook received', {
-                mer_txnid: callbackData.mer_txnid,
-                pay_status: callbackData.pay_status
-            });
-
-            // Use existing AamarPay verification logic
-            const result = await paymentService.verifyAamarPayCallback(callbackData);
-
-            if (result.success && result.order) {
-                await this.processSuccessfulPayment(null, {
-                    gateway: 'aamarpay',
-                    transactionId: callbackData.mer_txnid,
-                    order: result.order
-                });
-            }
-
-            res.status(200).json({ success: true });
-
-        } catch (error) {
-            this.logger.error('AamarPay webhook error', { error: error.message });
-            res.status(500).json({ error: 'Webhook processing failed' });
-        }
-    }
-
-    /**
-     * Handle SSLCommerz payment status webhook
-     */
-    async handleSSLCommerzWebhook(req, res) {
-        try {
-            const callbackData = req.body;
-
-            this.logger.info('SSLCommerz webhook received', {
-                tran_id: callbackData.tran_id,
-                status: callbackData.status
-            });
-
-            // Use existing SSLCommerz verification logic
-            const result = await paymentService.verifySSLCommerzCallback(callbackData);
-
-            if (result.success && result.order) {
-                await this.processSuccessfulPayment(null, {
-                    gateway: 'sslcommerz',
-                    transactionId: callbackData.tran_id,
-                    order: result.order
-                });
-            }
-
-            res.status(200).json({ success: true });
-
-        } catch (error) {
-            this.logger.error('SSLCommerz webhook error', { error: error.message });
             res.status(500).json({ error: 'Webhook processing failed' });
         }
     }

@@ -207,10 +207,6 @@ app.use((req, res, next) => {
         path.startsWith('/health') ||
         path === '/csrf' ||
         path === '/api/csrf' ||
-        path.startsWith('/payment/aamarpay') ||
-        path.startsWith('/api/payment/aamarpay') ||
-        path.startsWith('/payment/sslcommerz') ||
-        path.startsWith('/api/payment/sslcommerz')
         // NOTE: /order-session, /ai-chatbot, /notifications, /analytics
         // are browser-facing state-mutating routes — CSRF protection is enforced on these.
         // Automation callers (n8n/Make) must obtain a CSRF token via GET /csrf first.

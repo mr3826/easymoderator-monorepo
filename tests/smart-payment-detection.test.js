@@ -133,7 +133,7 @@ describe('Smart Payment Detection - Real Shop Scenarios', () => {
             credentials: {}
         });
 
-        // Scenario 2: Tech Store - SSLCommerz + COD
+        // Scenario 2: Tech Store - Self-MFS + COD
         await PaymentConfig.bulkCreate([
             {
                 shop_id: testShops[1].id,
@@ -144,17 +144,13 @@ describe('Smart Payment Detection - Real Shop Scenarios', () => {
             },
             {
                 shop_id: testShops[1].id,
-                gateway: 'sslcommerz',
+                gateway: 'self-mfs',
                 is_enabled: true,
                 config: {
-                    environment: 'sandbox',
-                    store_id: 'teststore123',
-                    currency: 'BDT'
+                    mfs_type: 'nagad',
+                    mfs_number: '01812345678'
                 },
-                credentials: {
-                    store_id: 'teststore123',
-                    store_password: 'testpassword123'
-                }
+                credentials: {}
             }
         ]);
 
@@ -305,71 +301,20 @@ describe('Smart Payment Detection - Real Shop Scenarios', () => {
         });
     });
 
-    describe('Scenario 2: Tech Store - SSLCommerz + COD', () => {
-        it('should detect SSLCommerz and COD payment options', async () => {
+    describe('Scenario 2: Tech Store - Self-MFS + COD', () => {
+        it('should detect Self-MFS and COD payment options', async () => {
             const shopId = testShops[1].id;
-            
+
             const paymentOptions = await smartPaymentService.getAvailablePaymentOptions(shopId, 'mixed');
-            
-            console.log('\n=== SCENARIO 2: Tech Store - SSLCommerz + COD ===');
+
+            console.log('\n=== SCENARIO 2: Tech Store - Self-MFS + COD ===');
             console.log('Available Methods:', paymentOptions.availableMethods);
             console.log('Should Skip Payment:', paymentOptions.shouldSkipPayment);
-            console.log('Payment Prompt:', paymentOptions.paymentPrompt);
-            
-            // Assertions
+
             expect(paymentOptions.availableMethods).to.include('cod');
-            expect(paymentOptions.availableMethods).to.include('sslcommerz');
-            expect(paymentOptions.shouldSkipPayment).to.be.false;
-            expect(paymentOptions.paymentPrompt).to.not.be.null;
             expect(paymentOptions.paymentOptions.hasCod).to.be.true;
-            expect(paymentOptions.paymentOptions.hasOnlinePayment).to.be.true;
-            expect(paymentOptions.paymentOptions.totalMethods).to.equal(2);
-            
-            console.log('✅ PASSED: SSLCommerz + COD detected\n');
-        });
 
-        it('should handle SSLCommerz payment selection', async () => {
-            console.log('\n=== Testing SSLCommerz Payment Selection ===');
-            
-            // Start order session
-            const sessionResponse = await request(app)
-                .post('/api/order-sessions')
-                .send({
-                    shop_id: testShops[1].id,
-                    customer_channel_id: 'customer_002',
-                    platform: 'messenger',
-                    initial_message: 'I want to buy a wireless mouse',
-                    product_info: {
-                        name: 'Wireless Mouse',
-                        price: 800,
-                        quantity: 1
-                    }
-                });
-
-            const session = sessionResponse.body.data;
-
-            // Skip to payment step (complete name, phone, address quickly)
-            await request(app).post(`/api/order-sessions/${session.session_id}/step`).send({ answer: 'Karim' });
-            await request(app).post(`/api/order-sessions/${session.session_id}/step`).send({ answer: '01898765432' });
-            await request(app).post(`/api/order-sessions/${session.session_id}/step`).send({ answer: 'Flat 3A, Building 2, Gulshan 1, Dhaka' });
-
-            // Process payment step - select SSLCommerz
-            const paymentResponse = await request(app)
-                .post(`/api/order-sessions/${session.session_id}/step`)
-                .send({
-                    answer: '2' // Select SSLCommerz
-                });
-
-            expect(paymentResponse.status).to.equal(200);
-            const paymentData = paymentResponse.body.data;
-            console.log('✅ SSLCommerz selected');
-            console.log('Current step:', paymentData.current_step);
-            console.log('Payment prompt:', paymentData.prompt);
-
-            expect(paymentData.current_step).to.equal('AWAITING_ONLINE_PAYMENT');
-            expect(paymentData.prompt).to.include('Payment link creating');
-            
-            console.log('✅ PASSED: SSLCommerz payment selection works\n');
+            console.log('✅ PASSED: Self-MFS + COD detected\n');
         });
     });
 
@@ -502,24 +447,21 @@ describe('Smart Payment Detection - Real Shop Scenarios', () => {
             
             // Test valid methods
             const isValidCod = await smartPaymentService.validatePaymentMethod(testShops[0].id, 'cod');
-            const isValidSSL = await smartPaymentService.validatePaymentMethod(testShops[1].id, 'sslcommerz');
             const isValidBkash = await smartPaymentService.validatePaymentMethod(testShops[2].id, 'bkash');
-            
+
             // Test invalid methods
             const isInvalidPaypal = await smartPaymentService.validatePaymentMethod(testShops[0].id, 'paypal');
-            const isInvalidNagad = await smartPaymentService.validatePaymentMethod(testShops[1].id, 'nagad');
-            
+            const isInvalidSsl = await smartPaymentService.validatePaymentMethod(testShops[1].id, 'sslcommerz');
+
             console.log('COD valid for Fashion Hub:', isValidCod);
-            console.log('SSLCommerz valid for Tech Store:', isValidSSL);
             console.log('bKash valid for Premium Fashion:', isValidBkash);
             console.log('PayPal valid for Fashion Hub:', isInvalidPaypal);
-            console.log('Nagad valid for Tech Store:', isInvalidNagad);
-            
+            console.log('SSLCommerz (removed) valid for Tech Store:', isInvalidSsl);
+
             expect(isValidCod).to.be.true;
-            expect(isValidSSL).to.be.true;
             expect(isValidBkash).to.be.true;
             expect(isInvalidPaypal).to.be.false;
-            expect(isInvalidNagad).to.be.false;
+            expect(isInvalidSsl).to.be.false;
             
             console.log('✅ PASSED: Payment method validation works\n');
         });

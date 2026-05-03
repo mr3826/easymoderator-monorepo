@@ -184,30 +184,6 @@ const incrementRateLimit = async (req, res, next) => {
 };
 
 /**
- * Initiate payment for a pending subscription invoice
- */
-const payInvoice = async (req, res, next) => {
-    try {
-        const { shopId, userId } = req.user;
-        if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
-
-        const { invoiceId } = req.params;
-        const { gateway } = req.body;
-
-        if (!gateway) throw new AppError('gateway is required (aamarpay or sslcommerz)', 400);
-
-        const paymentService = require('../payment/payment.service');
-        const result = await paymentService.initiateSubscriptionInvoicePayment(
-            invoiceId, shopId, userId, gateway
-        );
-
-        res.status(200).json({ success: true, data: result });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
  * Return an HTML invoice page suitable for browser printing / Save-as-PDF.
  * No external PDF library required — the browser handles rendering.
  */
@@ -340,6 +316,5 @@ module.exports = {
     getInvoiceById,
     checkRateLimit,
     incrementRateLimit,
-    payInvoice,
     getInvoicePdf
 };
