@@ -80,7 +80,6 @@ jest.mock('src/modules/analytics/knowledge-gap.entity', () => ({
 jest.mock('src/modules/rag/rag.service',  () => ({ ingestData: jest.fn(() => Promise.resolve()) }));
 jest.mock('src/utils/cache.service',      () => ({ getForShop: jest.fn(() => Promise.resolve(null)), setForShop: jest.fn(), deleteForShop: jest.fn() }));
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
-jest.mock('src/utils/workflow-client',    () => ({ postToWorkflow: jest.fn(() => Promise.resolve({})) }));
 jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
 }));

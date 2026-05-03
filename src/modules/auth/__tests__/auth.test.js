@@ -142,11 +142,6 @@ jest.mock('src/utils/password.util', () => ({
 // Mock session middleware to no-op
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
 
-// Mock workflow client
-jest.mock('src/utils/workflow-client', () => ({
-    postToWorkflow: jest.fn(() => Promise.resolve({}))
-}));
-
 // Mock structured-logger (missing warn/debug causes globalErrorHandler to crash on 4xx)
 jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),

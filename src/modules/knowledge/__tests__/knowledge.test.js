@@ -134,11 +134,6 @@ jest.mock('src/modules/shop/shop.service', () => ({
 // ── Mock session middleware ───────────────────────────────────────────────
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
 
-// ── Mock workflow client ──────────────────────────────────────────────────
-jest.mock('src/utils/workflow-client', () => ({
-    postToWorkflow: jest.fn(() => Promise.resolve({}))
-}));
-
 // ── Mock auth middleware — injects a test user ────────────────────────────
 const TEST_USER = { userId: 'user-1', shopId: 'shop-1', role: 'owner' };
 jest.mock('src/middleware/auth.middleware', () => ({

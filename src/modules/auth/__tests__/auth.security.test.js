@@ -129,9 +129,6 @@ jest.mock('src/utils/password.util', () => ({
 }));
 
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
-jest.mock('src/utils/workflow-client', () => ({
-    postToWorkflow: jest.fn(() => Promise.resolve({}))
-}));
 jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
 }));

@@ -144,10 +144,6 @@ jest.mock('src/utils/password.util', () => ({
     comparePassword: jest.fn(() => Promise.resolve(false))
 }));
 
-jest.mock('src/utils/workflow-client', () => ({
-    postToWorkflow: jest.fn(() => Promise.resolve({}))
-}));
-
 jest.mock('axios');
 const axios = require('axios');
 
