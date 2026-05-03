@@ -17,8 +17,8 @@ const channelSettingsSchema = Joi.object({
 class ChannelValidator {
     createChannel = {
         body: Joi.object({
-            channel_type: Joi.string().valid('messenger', 'whatsapp', 'instagram').optional(),
-            type: Joi.string().valid('facebook', 'whatsapp', 'instagram').optional(),
+            channel_type: Joi.string().valid('messenger', 'instagram').optional(),
+            type: Joi.string().valid('facebook', 'instagram').optional(),
             name: Joi.string().trim().optional(),
             page_id: Joi.string().trim().optional().max(100),
             access_token: Joi.string().trim().optional(),
@@ -87,8 +87,8 @@ class ChannelValidator {
 
     connectChannel = {
         body: Joi.object({
-            channel_type: Joi.string().valid('messenger', 'whatsapp', 'instagram').optional(),
-            type: Joi.string().valid('facebook', 'whatsapp', 'instagram').optional(),
+            channel_type: Joi.string().valid('messenger', 'instagram').optional(),
+            type: Joi.string().valid('facebook', 'instagram').optional(),
             name: Joi.string().trim().optional(),
             page_id: Joi.string().trim().optional().max(100),
             access_token: Joi.string().trim().optional(),
@@ -138,7 +138,7 @@ class ChannelValidator {
                 'string.length': 'Invalid state token',
                 'any.required': 'State token is required'
             }),
-            channelType: Joi.string().valid('facebook', 'instagram', 'whatsapp').optional()
+            channelType: Joi.string().valid('facebook', 'instagram').optional()
         })
     };
 
@@ -154,7 +154,7 @@ class ChannelValidator {
                 'string.length': 'Invalid temp token',
                 'any.required': 'tempToken is required'
             }),
-            channelType: Joi.string().valid('facebook', 'instagram', 'whatsapp').optional()
+            channelType: Joi.string().valid('facebook', 'instagram').optional()
         })
     };
 }

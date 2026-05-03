@@ -337,7 +337,7 @@ const disconnectChannel = async (channelId, userId, shopId) => {
 
     // Also mark the MetaIntegration as DISCONNECTED so the webhook stops routing messages.
     const MetaIntegration = require('../integration/meta-integration.entity');
-    const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+    const platformMap = { messenger: 'facebook', instagram: 'instagram' };
     const platform = platformMap[channel.channel_type];
     if (platform) {
         await MetaIntegration.update(

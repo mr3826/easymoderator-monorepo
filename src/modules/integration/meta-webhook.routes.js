@@ -8,6 +8,9 @@ const { Customer } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
 const sseManager = require('../../utils/sse-manager');
+const { createLogger } = require('../../utils/structured-logger');
+
+const logger = createLogger('MetaWebhook');
 
 // BullMQ message queue — lazy-loaded so the webhook handler still works even if
 // Redis/BullMQ is temporarily unavailable at startup.
@@ -17,7 +20,7 @@ function getMessageQueue() {
         try {
             _messageQueue = require('../../jobs/message-queue').messageQueue;
         } catch (err) {
-            console.warn('[webhook] BullMQ message queue unavailable:', err.message);
+            logger.warn('BullMQ message queue unavailable', { error: err.message });
         }
     }
     return _messageQueue;
@@ -30,7 +33,14 @@ function getMessageQueue() {
  */
 async function dispatchMessageJob(storeResult, event) {
     const queue = getMessageQueue();
-    if (!queue) return; // BullMQ not available — message silently skipped
+    if (!queue) {
+        logger.error('BullMQ unavailable — message stored in DB but AI pipeline skipped', {
+            shopId: event.shop_id,
+            platform: event.platform,
+            externalId: event.raw_event?.message?.mid || event.raw_event?.id || null
+        });
+        return;
+    }
 
     const { shop_id, sender, platform, message, attachments = [], raw_event } = event;
     const { conversation_id, message_id, customer_id } = storeResult;
@@ -58,7 +68,7 @@ async function dispatchMessageJob(storeResult, event) {
             }
         );
     } catch (err) {
-        console.error('[webhook] Failed to dispatch BullMQ job:', err.message, { shop_id, externalId });
+        logger.error('Failed to dispatch BullMQ job', { error: err.message, shop_id, externalId });
     }
 }
 
@@ -118,7 +128,7 @@ router.get('/', async (req, res) => {
     }
     return res.sendStatus(403);
   } catch (err) {
-    console.error('Webhook verify token lookup error:', err.message);
+    logger.error('Webhook verify token lookup error', { error: err.message });
     return res.sendStatus(500);
   }
 });
@@ -135,7 +145,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body || '');
       payload = rawBody ? JSON.parse(rawBody) : {};
     } catch (parseErr) {
-      console.error('[webhook] Payload JSON parse error:', parseErr.message);
+      logger.error('Payload JSON parse error', { error: parseErr.message });
       return res.sendStatus(200);
     }
 
@@ -148,31 +158,29 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       const isValid = isValidSignature(rawBodyBuf, signature, appSecret);
       if (!isValid) {
         // Log with asset ID so we can correlate with the right page in Cloud Run logs
-        console.error(`[webhook] Invalid signature for asset ${firstAssetId} — check META_WEBHOOK_APP_SECRET matches your Meta App Secret exactly`);
+        logger.error(`Invalid signature for asset ${firstAssetId} — check META_WEBHOOK_APP_SECRET matches your Meta App Secret exactly`);
         return res.sendStatus(403);
       }
     } else {
       // Secret not configured — warn but continue so messages aren't silently dropped
       // during initial setup. Set META_WEBHOOK_APP_SECRET to your Meta App Secret to enable verification.
-      console.warn(`[webhook] META_WEBHOOK_APP_SECRET not set — skipping signature check for asset ${firstAssetId}`);
+      logger.warn(`META_WEBHOOK_APP_SECRET not set — skipping signature check for asset ${firstAssetId}`);
     }
 
-    console.log(`[webhook] Received ${payload.object} event for asset ${firstAssetId}`);
+    logger.info(`Received ${payload.object} event for asset ${firstAssetId}`);
 
     // Route by object type — each handler catches its own errors; we always return 200
     if (payload.object === 'page') {
       await handlePageWebhook(payload);
     } else if (payload.object === 'instagram') {
       await handleInstagramWebhook(payload);
-    } else if (payload.object === 'whatsapp_business_account') {
-      await handleWhatsAppWebhook(payload);
     } else {
-      console.warn(`[webhook] Unhandled object type: ${payload.object}`);
+      logger.warn(`Unhandled object type: ${payload.object}`);
     }
 
     res.sendStatus(200);
   } catch (error) {
-    console.error('[webhook] Unhandled processing error:', error);
+    logger.error('Unhandled processing error', { error: error.message, stack: error.stack });
     res.sendStatus(200); // Still 200 — avoid Meta retry storms on unexpected errors
   }
 });
@@ -237,7 +245,7 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
 
     const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
     if (!appSecret) {
-      console.error('Data deletion callback: META_WEBHOOK_APP_SECRET not configured');
+      logger.error('Data deletion callback: META_WEBHOOK_APP_SECRET not configured');
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
@@ -260,9 +268,9 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
             channel_type: ['messenger', 'instagram']
           }
         });
-        console.log(`Data deletion callback: deleted ${deletedCount} customer record(s) for Facebook user ${facebookUserId} (code: ${confirmationCode})`);
+        logger.info(`Data deletion callback: deleted ${deletedCount} customer record(s) for Facebook user ${facebookUserId}`, { confirmationCode });
       } catch (deleteErr) {
-        console.error(`Data deletion callback: failed to delete records for Facebook user ${facebookUserId}:`, deleteErr.message);
+        logger.error(`Data deletion callback: failed to delete records for Facebook user ${facebookUserId}`, { error: deleteErr.message });
       }
     });
 
@@ -273,7 +281,7 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
       confirmation_code: confirmationCode
     });
   } catch (error) {
-    console.error('Data deletion callback error:', error);
+    logger.error('Data deletion callback error', { error: error.message });
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -300,7 +308,7 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
 
     const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
     if (!appSecret) {
-      console.error('Deauthorize callback: META_WEBHOOK_APP_SECRET not configured');
+      logger.error('Deauthorize callback: META_WEBHOOK_APP_SECRET not configured');
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
@@ -325,16 +333,16 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
             }
           }
         );
-        console.log(`Deauthorize callback: marked customer ${facebookUserId} as deauthorized`);
+        logger.info(`Deauthorize callback: marked customer ${facebookUserId} as deauthorized`);
       } catch (err) {
-        console.error(`Deauthorize callback: failed to update customer ${facebookUserId}:`, err.message);
+        logger.error(`Deauthorize callback: failed to update customer ${facebookUserId}`, { error: err.message });
       }
     });
 
     // Meta expects a 200; no specific body format required for deauthorize.
     return res.sendStatus(200);
   } catch (error) {
-    console.error('Deauthorize callback error:', error);
+    logger.error('Deauthorize callback error', { error: error.message });
     return res.sendStatus(500);
   }
 });
@@ -343,7 +351,7 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
 async function handlePageWebhook(payload) {
   for (const entry of payload.entry) {
     const pageId = entry.id;
-    console.log(`[webhook] Processing Facebook page ${pageId}, ${entry.messaging?.length || 0} messaging events`);
+    logger.info(`Processing Facebook page ${pageId}`, { eventCount: entry.messaging?.length || 0 });
 
     let integration = await MetaIntegration.findOne({
       where: { meta_asset_id: pageId, platform: 'facebook', status: 'CONNECTED' }
@@ -355,17 +363,16 @@ async function handlePageWebhook(payload) {
         where: { platform: 'facebook', status: 'CONNECTED' },
         attributes: ['meta_asset_id', 'shop_id', 'display_name']
       });
-      console.warn(
-        `[webhook] No CONNECTED facebook integration for page_id=${pageId}.`,
-        `Existing CONNECTED facebook integrations: ${JSON.stringify(existing.map(i => ({ meta_asset_id: i.meta_asset_id, shop_id: i.shop_id, name: i.display_name })))}`
-      );
+      logger.warn(`No CONNECTED facebook integration for page_id=${pageId}`, {
+        existing: existing.map(i => ({ meta_asset_id: i.meta_asset_id, shop_id: i.shop_id, name: i.display_name }))
+      });
       continue;
     }
 
     for (const messaging of (entry.messaging || [])) {
       // Skip echo events (page's own outbound messages reflected back by Meta)
       if (messaging.message?.is_echo) {
-        console.debug(`[webhook] Skipped echo event from ${messaging.sender.id}`);
+        logger.debug(`Skipped echo event from ${messaging.sender.id}`);
         continue;
       }
       const messageText = messaging.message?.text || null;
@@ -373,7 +380,7 @@ async function handlePageWebhook(payload) {
 
       // Skip non-message events (read receipts, delivery confirmations, etc.)
       if (!messageText && attachments.length === 0) {
-        console.debug(`[webhook] Skipped non-message event (no text/attachments) from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
+        logger.debug(`Skipped non-message event from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
         continue;
       }
 
@@ -388,7 +395,7 @@ async function handlePageWebhook(payload) {
       };
 
       try {
-        console.log(`[webhook] Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
+        logger.info(`Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
           sseManager.emit(integration.shop_id, 'new_message', {
@@ -400,7 +407,7 @@ async function handlePageWebhook(payload) {
       } catch (err) {
         // Log but never re-throw — returning 500 to Meta triggers a retry storm.
         // Each failed message is independently logged so one failure doesn't drop the rest.
-        console.error(`[webhook] Failed to store message from ${messaging.sender.id} (page ${pageId}):`, err.message, err.stack);
+        logger.error(`Failed to store message from ${messaging.sender.id} (page ${pageId})`, { error: err.message, stack: err.stack });
       }
     }
   }
@@ -416,7 +423,7 @@ async function handleInstagramWebhook(payload) {
     });
 
     if (!integration) {
-      console.warn(`[webhook] No connected Instagram integration for account ${igAccountId} — message dropped`);
+      logger.warn(`No connected Instagram integration for account ${igAccountId} — message dropped`);
       continue;
     }
 
@@ -446,53 +453,7 @@ async function handleInstagramWebhook(payload) {
         }
         dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
       } catch (err) {
-        console.error(`[webhook] Failed to store Instagram message from ${message.sender.id} (account ${igAccountId}):`, err.message, err.stack);
-      }
-    }
-  }
-}
-
-// Handle WhatsApp webhooks
-async function handleWhatsAppWebhook(payload) {
-  for (const entry of payload.entry) {
-    const whatsappAccountId = entry.id;
-
-    const integration = await MetaIntegration.findOne({
-      where: { meta_asset_id: whatsappAccountId, platform: 'whatsapp', status: 'CONNECTED' }
-    });
-
-    if (!integration) continue;
-
-    for (const change of entry.changes) {
-      if (change.field === 'messages' && change.value.messages) {
-        for (const message of change.value.messages) {
-          const messageText = message.text?.body || null;
-          const attachments = message.type !== 'text' ? [message] : [];
-          if (!messageText && attachments.length === 0) continue;
-
-          const normalizedEvent = {
-            platform: 'whatsapp',
-            shop_id: integration.shop_id,
-            sender: message.from,
-            message: messageText || '',
-            attachments,
-            timestamp: new Date(parseInt(message.timestamp) * 1000),
-            raw_event: message
-          };
-
-          try {
-            const storeResult = await storeIncomingMessage(normalizedEvent);
-            if (!storeResult.duplicate) {
-              sseManager.emit(integration.shop_id, 'new_message', {
-                conversation_id: storeResult.conversation_id,
-                message: storeResult.message
-              });
-            }
-            dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
-          } catch (err) {
-            console.error(`[webhook] Failed to store WhatsApp message from ${message.from} (account ${whatsappAccountId}):`, err.message, err.stack);
-          }
-        }
+        logger.error(`Failed to store Instagram message from ${message.sender.id} (account ${igAccountId})`, { error: err.message, stack: err.stack });
       }
     }
   }
@@ -516,7 +477,7 @@ async function storeIncomingMessage(event) {
     if (externalId) {
       const existing = await Message.findOne({ where: { external_id: externalId } });
       if (existing) {
-        console.log(`Duplicate webhook event skipped (external_id=${externalId})`);
+        logger.debug(`Duplicate webhook event skipped (external_id=${externalId})`);
         return {
           customer_id: existing.customer_id,
           customer_name: null,
@@ -582,7 +543,7 @@ async function storeIncomingMessage(event) {
       // Touch updated_at so the 24h window resets with every new customer message
       await conversation.update({ updated_at: new Date() }, { transaction: t });
 
-      console.log(`Stored ${platform} message: customer=${customer.id}, conv=${conversation.id}, msg=${msgRecord.id}`);
+      logger.info(`Stored ${platform} message`, { customerId: customer.id, convId: conversation.id, msgId: msgRecord.id });
 
       return {
         customer_id: customer.id,
@@ -594,51 +555,10 @@ async function storeIncomingMessage(event) {
       };
     });
   } catch (error) {
-    console.error('Failed to store incoming message:', error.message, { platform: event?.platform, shop_id: event?.shop_id, sender: event?.sender, stack: error.stack });
+    logger.error('Failed to store incoming message', { error: error.message, platform: event?.platform, shop_id: event?.shop_id, sender: event?.sender, stack: error.stack });
     throw error;
   }
 }
-
-// Debug endpoint to verify webhook subscriptions
-router.get('/debug/subscriptions/:pageId', async (req, res) => {
-  try {
-    const { pageId } = req.params;
-    const integration = await MetaIntegration.findOne({
-      where: { meta_asset_id: pageId }
-    });
-
-    if (!integration) {
-      return res.status(404).json({
-        error: 'No integration found',
-        meta_asset_id: pageId
-      });
-    }
-
-    const metaService = require('./meta.service');
-    const accessToken = metaService.decryptToken(integration.access_token);
-
-    // Check subscribed apps
-    const response = await require('axios').get(
-      `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`,
-      { params: { access_token: accessToken, fields: 'id,name' } }
-    );
-
-    res.json({
-      integration: {
-        shop_id: integration.shop_id,
-        platform: integration.platform,
-        status: integration.status,
-        meta_asset_id: integration.meta_asset_id
-      },
-      subscription_response: response.data
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: error.message,
-      hint: 'Check that the page access token is still valid'
-    });
-  }
-});
 
 // Export storeIncomingMessage so the channel test endpoint can use it directly
 module.exports = router;

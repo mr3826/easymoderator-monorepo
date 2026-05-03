@@ -26,7 +26,6 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +38,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test -- --passWithNoTests --forceExit
+        run: npm test -- --forceExit
 
   build-and-deploy:
     name: Build, Push & Deploy
@@ -84,7 +83,7 @@ jobs:
             --network=easymod-vpc \
             --subnet=easymod-subnet \
             --vpc-egress=private-ranges-only \
-            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-,ALLOW_SELF_SIGNED_TLS=true" \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
             --min-instances=1 \
             --max-instances=10 \
             --concurrency=80 \

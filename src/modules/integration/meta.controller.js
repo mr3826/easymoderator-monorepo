@@ -31,7 +31,7 @@ class MetaController {
       const shopId = req.shop.id;
       const userId = req.user.id;
 
-      if (!['facebook', 'instagram', 'whatsapp'].includes(platform)) {
+      if (!['facebook', 'instagram'].includes(platform)) {
         throw new AppError('Invalid platform specified', 400);
       }
 
@@ -61,7 +61,7 @@ class MetaController {
       const { platform, asset_id, display_name, access_token } = req.body;
       const shopId = req.shop.id;
 
-      if (!['facebook', 'instagram', 'whatsapp'].includes(platform)) {
+      if (!['facebook', 'instagram'].includes(platform)) {
         throw new AppError('Invalid platform specified', 400);
       }
 

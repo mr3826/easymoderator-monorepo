@@ -82,3 +82,7 @@ database.sqlite
 *.sqlite
 GITHUB_SECRETS.txt
 secrets-generated-*.txt
+
+# Local dev tools
+ngrok.exe
+start-ngrok.ps1

@@ -9,7 +9,7 @@ const router = express.Router();
 const validateKnowledgeGap = [
     body('question').notEmpty().withMessage('question is required'),
     body('shop_id').notEmpty().withMessage('shop_id is required'),
-    body('platform').isIn(['messenger', 'instagram', 'whatsapp']).withMessage('Invalid platform'),
+    body('platform').isIn(['messenger', 'instagram']).withMessage('Invalid platform'),
     body('language').optional().isIn(['en', 'bn', 'mixed']).withMessage('Invalid language')
 ];
 

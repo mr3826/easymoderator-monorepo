@@ -3,6 +3,9 @@ const crypto = require('crypto');
 const MetaIntegration = require('./meta-integration.entity');
 const config = require('../../config/config');
 const { AppError } = require('../../utils/AppError');
+const { createLogger } = require('../../utils/structured-logger');
+
+const logger = createLogger('MetaService');
 
 // Meta API configuration
 const META_CONFIG = {
@@ -30,7 +33,7 @@ class MetaService {
     } catch (error) {
       const metaMsg = error.response?.data?.error?.message || error.message;
       const metaCode = error.response?.data?.error?.code;
-      console.error(`[meta.service] subscribeToWebhooks failed for asset ${assetId} (${platform}): [${metaCode}] ${metaMsg}`);
+      logger.error(`subscribeToWebhooks failed for asset ${assetId} (${platform})`, { metaCode, metaMsg });
       throw new AppError(`Meta webhook subscription failed: ${metaMsg}`, 500);
     }
   }
@@ -44,8 +47,6 @@ class MetaService {
         return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads';
       case 'instagram':
         return 'messages,message_echoes';
-      case 'whatsapp':
-        return 'messages';
       default:
         return 'messages';
     }
@@ -56,7 +57,7 @@ class MetaService {
    */
   encryptToken(token) {
     const algorithm = 'aes-256-gcm';
-    const key = crypto.scryptSync(config.jwtAccessSecret, 'salt', 32);
+    const key = crypto.scryptSync(config.channelEncryptionKey, 'salt', 32);
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(algorithm, key, iv);
     cipher.setAAD(Buffer.from('meta-token'));
@@ -74,7 +75,7 @@ class MetaService {
   decryptToken(encryptedToken) {
     try {
       const algorithm = 'aes-256-gcm';
-      const key = crypto.scryptSync(config.jwtAccessSecret, 'salt', 32);
+      const key = crypto.scryptSync(config.channelEncryptionKey, 'salt', 32);
       const [ivHex, authTagHex, encrypted] = encryptedToken.split(':');
 
       const iv = Buffer.from(ivHex, 'hex');
@@ -129,7 +130,7 @@ class MetaService {
       return { access_token, expiresAt };
     } catch (error) {
       // Fall back to using the original token rather than breaking the flow
-      console.warn('[meta.service] Token exchange failed, using original token:', error.message);
+      logger.warn('Token exchange failed, using original token', { error: error.message });
       return { access_token: shortLivedToken, expiresAt: null };
     }
   }
@@ -173,7 +174,7 @@ class MetaService {
     );
     const failed = results.filter(r => r.status === 'rejected').length;
     if (failed > 0) {
-      console.error(`[meta.service] Token refresh: ${failed}/${expiring.length} integrations failed`);
+      logger.error(`Token refresh: ${failed}/${expiring.length} integrations failed`);
     }
     return { refreshed: expiring.length - failed, failed };
   }
@@ -262,7 +263,7 @@ class MetaService {
     });
 
     // Return status for all platforms
-    const platforms = ['facebook', 'instagram', 'whatsapp'];
+    const platforms = ['facebook', 'instagram'];
     return platforms.map(platform => {
       const integration = integrations.find(i => i.platform === platform);
       return {
@@ -292,7 +293,7 @@ class MetaService {
       await this.unsubscribeFromWebhooks(accessToken, integration.meta_asset_id, platform);
     } catch (error) {
       // Log but don't fail the disconnect
-      console.warn('Failed to unsubscribe from webhooks:', error.message);
+      logger.warn('Failed to unsubscribe from webhooks', { error: error.message });
     }
 
     // Update status
@@ -369,7 +370,7 @@ class MetaService {
       }
     );
     const pages = response.data.data || [];
-    console.log(`[meta.service] getManagedPages returned ${pages.length} page(s)`);
+    logger.info(`getManagedPages returned ${pages.length} page(s)`);
     return pages;
   }
 
@@ -415,41 +416,19 @@ class MetaService {
    * Throws on delivery failure so callers can log/handle appropriately.
    */
   async sendTextMessage(platform, accessToken, recipientId, messageText) {
-    if (platform === 'whatsapp') {
-      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-      if (!phoneNumberId) {
-        console.warn('[meta.service] WHATSAPP_PHONE_NUMBER_ID not configured — cannot deliver WhatsApp message');
-        return;
-      }
-      const resp = await fetch(`https://graph.facebook.com/${META_CONFIG.graphApiVersion}/${phoneNumberId}/messages`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: recipientId,
-          type: 'text',
-          text: { body: messageText }
-        })
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(`WhatsApp delivery failed: ${err?.error?.message || resp.statusText}`);
-      }
-    } else {
-      // Facebook Messenger or Instagram — Send API
-      const resp = await fetch(`https://graph.facebook.com/${META_CONFIG.graphApiVersion}/me/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipient: { id: recipientId },
-          message: { text: messageText },
-          access_token: accessToken
-        })
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(`Messenger/Instagram delivery failed: ${err?.error?.message || resp.statusText}`);
-      }
+    // Facebook Messenger or Instagram — Send API
+    const resp = await fetch(`https://graph.facebook.com/${META_CONFIG.graphApiVersion}/me/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { id: recipientId },
+        message: { text: messageText },
+        access_token: accessToken
+      })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(`Messenger/Instagram delivery failed: ${err?.error?.message || resp.statusText}`);
     }
   }
 

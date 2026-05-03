@@ -103,5 +103,6 @@ module.exports = {
     paymentGatewayIpAllowlist: process.env.PAYMENT_GATEWAY_IP_ALLOWLIST
         ? process.env.PAYMENT_GATEWAY_IP_ALLOWLIST.split(',').map(ip => ip.trim()).filter(Boolean)
         : [],
-    paymentCallbackHmacSecret: process.env.PAYMENT_CALLBACK_HMAC_SECRET || ''
+    paymentCallbackHmacSecret: process.env.PAYMENT_CALLBACK_HMAC_SECRET || '',
+    channelEncryptionKey: process.env.CHANNEL_ENCRYPTION_KEY
 };

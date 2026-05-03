@@ -545,7 +545,7 @@ const subscribeChannelToWebhooks = async (req, res, next) => {
         // decrypts it automatically. Do NOT call metaService.decryptToken() here.
         const accessToken = dbChannel.access_token;
 
-        const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+        const platformMap = { messenger: 'facebook', instagram: 'instagram' };
         const platform = platformMap[dbChannel.channel_type] || 'facebook';
         const pageId = dbChannel.page_id;
 
@@ -616,7 +616,7 @@ const testChannelPipeline = async (req, res, next) => {
             return res.status(404).json({ success: false, error: { message: 'Channel not found' } });
         }
 
-        const platformMap = { messenger: 'facebook', instagram: 'instagram', whatsapp: 'whatsapp' };
+        const platformMap = { messenger: 'facebook', instagram: 'instagram' };
         const platform = platformMap[dbChannel.channel_type] || 'facebook';
 
         // Check MetaIntegration exists

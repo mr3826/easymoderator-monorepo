@@ -52,48 +52,25 @@ async function checkAndRecord(pageId) {
     } catch (err) {
         if (err instanceof MetaRateLimitError) throw err;
         // Redis unavailable — skip rate check, log, proceed
-        console.warn('[meta-send] Rate limit check unavailable (Redis error):', err.message);
+        // Redis unavailable — skip rate check and proceed
+
     }
 }
 
 async function sendMetaReply(platform, accessToken, recipientId, messageText) {
-    const normPlatform = (platform === 'facebook' || platform === 'messenger') ? 'messenger' : platform;
-
-    if (normPlatform === 'whatsapp') {
-        const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-        if (!phoneNumberId) {
-            console.warn('[meta-send] WHATSAPP_PHONE_NUMBER_ID not configured — skipping WhatsApp reply');
-            return;
-        }
-        const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messaging_product: 'whatsapp',
-                to: recipientId,
-                type: 'text',
-                text: { body: messageText },
-            }),
-        });
-        if (!res.ok) {
-            const body = await res.text();
-            throw new Error(`WhatsApp send error ${res.status}: ${body}`);
-        }
-    } else {
-        // Facebook Messenger or Instagram — Send API
-        const res = await fetch('https://graph.facebook.com/v21.0/me/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                recipient: { id: recipientId },
-                message: { text: messageText },
-                access_token: accessToken,
-            }),
-        });
-        if (!res.ok) {
-            const body = await res.text();
-            throw new Error(`Messenger send error ${res.status}: ${body}`);
-        }
+    // Facebook Messenger or Instagram — Send API
+    const res = await fetch('https://graph.facebook.com/v21.0/me/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: { text: messageText },
+            access_token: accessToken,
+        }),
+    });
+    if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Messenger/Instagram send error ${res.status}: ${body}`);
     }
 }
 
@@ -103,7 +80,7 @@ async function sendMetaReply(platform, accessToken, recipientId, messageText) {
  *
  * @param {object} params
  * @param {string} params.shopId
- * @param {string} params.platform — 'facebook' | 'messenger' | 'instagram' | 'whatsapp'
+ * @param {string} params.platform — 'facebook' | 'messenger' | 'instagram'
  * @param {string} params.recipientId — Platform sender ID (customer's ID)
  * @param {string} params.message — Reply text
  */
@@ -116,7 +93,6 @@ async function sendWithRateLimit({ shopId, platform, recipientId, message }) {
     });
 
     if (!integration || !integration.access_token) {
-        console.warn(`[meta-send] No active ${platform} integration for shop ${shopId}`);
         return;
     }
 
