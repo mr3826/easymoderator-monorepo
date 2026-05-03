@@ -123,6 +123,31 @@ async function processMessageJob(job) {
         return { skipped: true, reason: 'manual_mode' };
     }
 
+    // ── Guard 5: Sentiment — auto-escalate angry/frustrated customers ──────
+    // Fast keyword pre-check first (no LLM cost); LLM used only for ambiguous cases.
+    try {
+        const { analyzeSentiment, shouldAutoEscalate } = require('../modules/ai/sentiment.service');
+        const sentimentResult = await analyzeSentiment(message, shopId);
+        if (shouldAutoEscalate(sentimentResult.sentiment)) {
+            console.log(`[worker] Auto-escalating conv ${conversationId}: sentiment=${sentimentResult.sentiment} (${sentimentResult.method})`);
+            await conversation.update({ hitl: true });
+            sseManager.emit(shopId, 'hitl_changed', { conversation_id: conversationId, hitl: true });
+            const { sendEscalationAutoReply } = require('../modules/conversation/escalation-auto-reply.service');
+            const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
+            if (autoReplyMsg) {
+                sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
+                // Deliver escalation message to customer via Meta
+                metaSendService.sendWithRateLimit({ shopId, platform, recipientId, message: autoReplyMsg.content }).catch(
+                    err => console.warn(`[worker] Escalation delivery failed: ${err.message}`)
+                );
+            }
+            return { skipped: true, reason: 'auto_escalated', sentiment: sentimentResult.sentiment };
+        }
+    } catch (sentimentErr) {
+        // Non-fatal — proceed with normal AI processing
+        console.warn(`[worker] Sentiment check failed (continuing): ${sentimentErr.message}`);
+    }
+
     // ── Run AI pipeline ─────────────────────────────────────────────────────
     const history = await loadConversationHistory(conversationId, messageId);
     const detectedLanguage = ConversationStateService.detectLanguage(message);

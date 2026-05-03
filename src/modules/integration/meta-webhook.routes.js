@@ -445,7 +445,7 @@ async function sendMetaReply(platform, accessToken, recipientId, messageText) {
       console.warn('WHATSAPP_PHONE_NUMBER_ID not configured');
       return;
     }
-    await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
@@ -458,9 +458,13 @@ async function sendMetaReply(platform, accessToken, recipientId, messageText) {
         text: { body: messageText }
       })
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`WhatsApp send error ${res.status}: ${body}`);
+    }
   } else {
     // Facebook Messenger / Instagram — Send API
-    await fetch('https://graph.facebook.com/v21.0/me/messages', {
+    const res = await fetch('https://graph.facebook.com/v21.0/me/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -471,6 +475,10 @@ async function sendMetaReply(platform, accessToken, recipientId, messageText) {
         access_token: accessToken
       })
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Messenger/Instagram send error ${res.status}: ${body}`);
+    }
   }
 }
 
@@ -679,16 +687,19 @@ async function storeIncomingMessage(event) {
         transaction: t
       });
 
-      // 2. Find active conversation (last 24h) or create new one
+      // 2. Find active conversation within the rolling 24h window or create a new one.
+      // The window is based on the LAST MESSAGE time (conversation.updated_at is touched
+      // whenever a new message is stored), not conversation creation time.
+      // This matches Meta's policy: "reply within 24h of the customer's last message."
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       let conversation = await Conversation.findOne({
         where: {
           shop_id,
           customer_id: customer.id,
           channel: channelType,
-          created_at: { [Op.gte]: oneDayAgo }
+          updated_at: { [Op.gte]: oneDayAgo }
         },
-        order: [['created_at', 'DESC']],
+        order: [['updated_at', 'DESC']],
         transaction: t
       });
 
@@ -703,13 +714,16 @@ async function storeIncomingMessage(event) {
         }, { transaction: t });
       }
 
-      // 3. Store the message
+      // 3. Store the message and touch conversation.updated_at so the 24h window is rolling
       const msgRecord = await Message.create({
         conversation_id: conversation.id,
         content: message,
         sender: 'customer',
         external_id: externalId
       }, { transaction: t });
+
+      // Touch updated_at so the 24h window resets with every new customer message
+      await conversation.update({ updated_at: new Date() }, { transaction: t });
 
       console.log(`Stored ${platform} message: customer=${customer.id}, conv=${conversation.id}, msg=${msgRecord.id}`);
 

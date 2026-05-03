@@ -127,11 +127,10 @@ const classifyByLLM = async (text, shopId) => {
         // Non-fatal — proceed with default
     }
 
-    const response = await chat(messages, {
-        system: SENTIMENT_SYSTEM_PROMPT,
-        temperature: 0.1,
-        maxTokens: 150,
-        modelPreset
+    const response = await chat({
+        systemPrompt: SENTIMENT_SYSTEM_PROMPT,
+        messages,
+        maxTokens: 150
     });
 
     // Extract text content from LLM response
