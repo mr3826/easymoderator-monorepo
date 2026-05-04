@@ -313,25 +313,31 @@ class ConversationController {
                 { hitl, status, assignee_id, resolution_note }
             );
 
-            // Send escalation auto-reply when HITL is enabled, then broadcast + deliver to customer
-            if (hitl === true) {
-                sendEscalationAutoReply(conversationId, shopId).then(autoReplyMsg => {
-                    if (!autoReplyMsg) return;
-                    // Let all agent tabs see the auto-reply in real-time
-                    sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                    // Deliver to the actual customer on Messenger/Instagram/WhatsApp
-                    deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content);
-                }).catch(err => {
-                    console.warn(`[escalation] Auto-reply failed: ${err.message}`);
-                });
-            }
-
-            // Notify other agent tabs of HITL change
+            // Notify other agent tabs of HITL change first so the banner appears immediately
             if (hitl !== undefined) {
                 sseManager.emit(shopId, 'hitl_changed', {
                     conversation_id: conversationId,
                     hitl: conversation.hitl
                 });
+            }
+
+            // Send escalation auto-reply synchronously so the agent response only returns
+            // after the customer notification attempt is complete (success or logged failure).
+            if (hitl === true) {
+                try {
+                    const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId);
+                    if (autoReplyMsg) {
+                        sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
+                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content);
+                    }
+                } catch (err) {
+                    // Non-fatal: HITL is already set; log and surface to the agent via SSE
+                    console.error(`[escalation] Auto-reply failed for conv ${conversationId}: ${err.message}`);
+                    sseManager.emit(shopId, 'delivery_failed', {
+                        conversation_id: conversationId,
+                        reason: `Escalation message not delivered to customer: ${err.message}`
+                    });
+                }
             }
 
             res.json({ success: true, data: conversation });

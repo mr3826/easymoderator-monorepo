@@ -36,6 +36,7 @@ class CircuitBreaker {
     async callWithBreaker(provider, fn) {
         const stateKey = `cb:state:${provider}`;
         const failKey = `cb:failures:${provider}`;
+        const timeoutMs = parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT_MS) || 30000;
 
         // Fast path: check if circuit is open
         let state;
@@ -48,9 +49,12 @@ class CircuitBreaker {
         }
 
         try {
-            const result = await fn();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs}ms`)), timeoutMs)
+            );
+            const result = await Promise.race([fn(), timeoutPromise]);
             // Success: reset failure counter
-            cacheRedis.del(failKey).catch(() => {});
+            cacheRedis.del(failKey).catch(err => console.warn('[circuit-breaker] Redis DEL failed', { error: err.message }));
             return result;
         } catch (err) {
             // Increment consecutive failure count

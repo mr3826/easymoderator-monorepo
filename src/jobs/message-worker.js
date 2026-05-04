@@ -20,7 +20,7 @@
  *   RUN_WORKER=true node src/jobs/message-worker.js
  */
 
-const { Worker } = require('bullmq');
+const { Worker, Queue } = require('bullmq');
 const { connection } = require('./message-queue');
 const { cacheRedis } = require('../config/redis');
 const { Conversation, Message } = require('../modules/conversation/conversation.entity');
@@ -106,7 +106,10 @@ async function processMessageJob(job) {
         where: { id: conversationId, shop_id: shopId },
         attributes: ['id', 'hitl', 'status'],
     });
-    if (!conversation) throw new Error(`Conversation ${conversationId} not found for shop ${shopId}`);
+    if (!conversation) {
+        console.warn(`[worker] Conversation ${conversationId} not found for shop ${shopId} — skipping job`);
+        return { skipped: true, reason: 'conversation_not_found' };
+    }
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
 
     // ── Guard 3: AI pause (30-min mute when agent sends manually) ──────────
@@ -125,27 +128,37 @@ async function processMessageJob(job) {
 
     // ── Guard 5: Sentiment — auto-escalate angry/frustrated customers ──────
     // Fast keyword pre-check first (no LLM cost); LLM used only for ambiguous cases.
-    try {
-        const { analyzeSentiment, shouldAutoEscalate } = require('../modules/ai/sentiment.service');
-        const sentimentResult = await analyzeSentiment(message, shopId);
-        if (shouldAutoEscalate(sentimentResult.sentiment)) {
-            console.log(`[worker] Auto-escalating conv ${conversationId}: sentiment=${sentimentResult.sentiment} (${sentimentResult.method})`);
-            await conversation.update({ hitl: true });
-            sseManager.emit(shopId, 'hitl_changed', { conversation_id: conversationId, hitl: true });
-            const { sendEscalationAutoReply } = require('../modules/conversation/escalation-auto-reply.service');
-            const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
-            if (autoReplyMsg) {
-                sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                // Deliver escalation message to customer via Meta
-                metaSendService.sendWithRateLimit({ shopId, platform, recipientId, message: autoReplyMsg.content }).catch(
-                    err => console.warn(`[worker] Escalation delivery failed: ${err.message}`)
-                );
-            }
-            return { skipped: true, reason: 'auto_escalated', sentiment: sentimentResult.sentiment };
+    // On any failure, default to treating the customer as negative/escalation-needed (safe fallback).
+    {
+        let sentimentResult;
+        try {
+            const { analyzeSentiment } = require('../modules/ai/sentiment.service');
+            sentimentResult = await analyzeSentiment(message, shopId);
+        } catch (sentimentErr) {
+            console.error(`[worker] Sentiment analysis failed, defaulting to escalation`, { error: sentimentErr.message });
+            sentimentResult = { sentiment: 'negative', score: -1, method: 'fallback' };
         }
-    } catch (sentimentErr) {
-        // Non-fatal — proceed with normal AI processing
-        console.warn(`[worker] Sentiment check failed (continuing): ${sentimentErr.message}`);
+        try {
+            const { shouldAutoEscalate } = require('../modules/ai/sentiment.service');
+            if (shouldAutoEscalate(sentimentResult.sentiment)) {
+                console.log(`[worker] Auto-escalating conv ${conversationId}: sentiment=${sentimentResult.sentiment} (${sentimentResult.method})`);
+                await conversation.update({ hitl: true });
+                sseManager.emit(shopId, 'hitl_changed', { conversation_id: conversationId, hitl: true });
+                const { sendEscalationAutoReply } = require('../modules/conversation/escalation-auto-reply.service');
+                const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
+                if (autoReplyMsg) {
+                    sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
+                    // Deliver escalation message to customer via Meta
+                    metaSendService.sendWithRateLimit({ shopId, platform, recipientId, message: autoReplyMsg.content }).catch(
+                        err => console.warn(`[worker] Escalation delivery failed: ${err.message}`)
+                    );
+                }
+                return { skipped: true, reason: 'auto_escalated', sentiment: sentimentResult.sentiment };
+            }
+        } catch (escalateErr) {
+            // If escalation itself fails, log and proceed with normal AI processing
+            console.error(`[worker] Auto-escalation handler failed (continuing)`, { error: escalateErr.message });
+        }
     }
 
     // ── Run AI pipeline ─────────────────────────────────────────────────────
@@ -218,12 +231,22 @@ function startWorker() {
         else console.log(`[worker] Job ${job.id} done — conv=${r?.conversationId} confidence=${r?.confidence}`);
     });
 
-    worker.on('failed', (job, err) => {
-        const isTerminal = job.attemptsMade >= (job.opts.attempts || 1);
-        if (isTerminal) {
-            console.error(`[worker/DLQ] Job ${job?.id} exhausted all retries. Error: ${err.message}`, { jobData: job?.data });
+    worker.on('failed', async (job, err) => {
+        console.error('[worker] Job failed', { jobId: job?.id, shopId: job?.data?.shopId, attempt: job?.attemptsMade, error: err.message });
+        if (job && job.attemptsMade >= (job.opts.attempts || 3)) {
+            try {
+                const dlqQueue = new Queue('message-dlq', { connection });
+                await dlqQueue.add('failed-job', {
+                    originalJobData: job.data,
+                    error: err.message,
+                    failedAt: new Date().toISOString()
+                });
+                console.error(`[worker/DLQ] Job ${job.id} moved to message-dlq after exhausting retries`);
+            } catch (dlqErr) {
+                console.error('[worker] Failed to add to DLQ', { error: dlqErr.message });
+            }
         } else {
-            console.warn(`[worker] Job ${job?.id} attempt ${job?.attemptsMade} failed: ${err.message}`);
+            console.warn(`[worker] Job ${job?.id} attempt ${job?.attemptsMade} failed (will retry): ${err.message}`);
         }
     });
 

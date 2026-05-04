@@ -1,6 +1,7 @@
 const BaseJob = require('./base-job');
 const { Channel, Shop } = require('../modules/entities');
 const { Op } = require('sequelize');
+const metaService = require('../modules/integration/meta.service');
 
 /**
  * Token Refresh Check Job
@@ -125,6 +126,22 @@ class TokenRefreshCheckJob extends BaseJob {
         }
 
         this.logger.info(`[${this.jobName}] Token refresh check complete`, results);
+
+        // Attempt programmatic refresh for any MetaIntegration tokens expiring within 7 days.
+        // Meta allows re-exchanging a long-lived token for a new one before it expires.
+        // Failures are logged and marked in the integration status — the channel warning
+        // above (written to shop settings) instructs the owner to reconnect manually if needed.
+        if (!dryRun) {
+            try {
+                const refreshResult = await metaService.refreshExpiringTokens();
+                this.logger.info(`[${this.jobName}] Meta token refresh complete`, refreshResult);
+                results.tokenRefresh = refreshResult;
+            } catch (refreshErr) {
+                this.logger.error(`[${this.jobName}] Meta token refresh failed`, { error: refreshErr.message });
+                results.tokenRefresh = { error: refreshErr.message };
+            }
+        }
+
         return results;
     }
 

@@ -307,11 +307,21 @@ class GuardrailService {
     }
 
     /**
-     * Toxicity score check (0–1 scale). Stub — integrate Perspective API for production.
+     * Toxicity score check (0–1 scale).
+     * Uses keyword-based pattern matching as a baseline filter.
+     * Production-grade solution: integrate Google Perspective API or OpenAI Moderation API.
+     *
+     * @param {string} text - Text to evaluate
+     * @returns {number} Score 0 (clean) to 0.9 (very toxic)
      */
-    async _checkToxicity(text) {
-        // TODO: integrate with Google Perspective API or OpenAI Moderation
-        return 0.1;
+    _checkToxicity(text) {
+        // TODO: replace with Google Perspective API or OpenAI Moderation for production accuracy
+        const toxicPatterns = [
+            /fuck|shit|ass|bitch|cunt|bastard|damn|hell/i,
+            /kill|murder|suicide|rape|abuse/i,
+        ];
+        const matches = toxicPatterns.filter(p => p.test(text)).length;
+        return Math.min(matches * 0.3, 0.9); // 0 = clean, 0.9 = very toxic
     }
 }
 

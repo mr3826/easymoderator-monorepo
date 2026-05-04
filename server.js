@@ -16,11 +16,9 @@ process.on('uncaughtException', (err) => {
 
     const config = require('src/config/config');
 
-    // P2-5: In production, disable raw console.log/warn; use structured logger (CloudWatch/Datadog ingest stdout)
-    if (config.env === 'production') {
-        console.log = () => {};
-        console.warn = () => {};
-    }
+    // In production stdout is captured by CloudWatch/Datadog — no need to suppress console.
+    // Suppressing console.log/warn hides circuit-breaker trips, LLM outages, and Redis errors
+    // from the log stream, making incidents invisible. Let the transport handle filtering.
 
     const app = require('src/app');
     const { sequelize } = require('src/utils/database/database-setup');

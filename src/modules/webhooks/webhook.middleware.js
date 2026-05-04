@@ -12,26 +12,52 @@ const logger = createLogger();
 
 /**
  * Validate bKash webhook signature
+ * B1/B17: Implements HMAC-SHA256 verification using BKASH_WEBHOOK_SECRET env var.
+ * The raw request body must be captured upstream and stored as req.rawBody (Buffer).
  */
 const validateBkashSignature = async (req, res, next) => {
     try {
-        const signature = req.headers['x-bkash-signature'];
-        const timestamp = req.headers['x-bkash-timestamp'];
-        
-        if (!signature || !timestamp) {
-            throw new AppError('Missing bKash webhook headers', 401);
+        const secret = process.env.BKASH_WEBHOOK_SECRET;
+        if (!secret) {
+            logger.error('bKash webhook: BKASH_WEBHOOK_SECRET is not configured');
+            return res.status(503).json({ error: 'Webhook secret not configured' });
         }
 
-        // Get bKash configuration (we need shop_id, but webhook doesn't include it)
-        // For now, we'll skip signature validation for bKash (they don't provide shop_id in webhook)
-        // In production, you might need to maintain a mapping of paymentId -> shopId
-        
-        logger.info('bKash webhook signature validation skipped (shop_id not available)');
+        const signature = req.headers['x-bkash-signature'];
+        if (!signature) {
+            logger.warn('bKash webhook: missing x-bkash-signature header');
+            return res.status(401).json({ error: 'Invalid webhook signature' });
+        }
+
+        // Use raw body buffer if captured by express.raw middleware, otherwise fall back
+        const bodyBuffer = req.rawBody instanceof Buffer
+            ? req.rawBody
+            : Buffer.from(JSON.stringify(req.body));
+
+        const expectedHex = crypto
+            .createHmac('sha256', secret)
+            .update(bodyBuffer)
+            .digest('hex');
+
+        const expectedBuf = Buffer.from(expectedHex);
+        const receivedBuf = Buffer.from(signature);
+
+        // Constant-time comparison to prevent timing attacks
+        const signaturesMatch =
+            expectedBuf.length === receivedBuf.length &&
+            crypto.timingSafeEqual(expectedBuf, receivedBuf);
+
+        if (!signaturesMatch) {
+            logger.warn('bKash webhook: signature mismatch');
+            return res.status(401).json({ error: 'Invalid webhook signature' });
+        }
+
+        logger.info('bKash webhook signature validated successfully');
         next();
 
     } catch (error) {
         logger.error('bKash webhook validation failed', { error: error.message });
-        res.status(401).json({ error: 'Invalid webhook signature' });
+        return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 };
 
@@ -120,7 +146,5 @@ const validateWebhookSignature = (gateway) => {
 module.exports = {
     validateWebhookSignature,
     validateBkashSignature,
-    validateNagadSignature,
-    validateAamarPaySignature,
-    validateSSLCommerzSignature
+    validateNagadSignature
 };

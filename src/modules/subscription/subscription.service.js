@@ -456,7 +456,7 @@ const requestConversationPack = async (shopId, userId, packAmount, packPrice) =>
     }
 
     // Create an invoice for the pack
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${String(crypto.randomInt(1000, 9999))}`;  // crypto-safe: not guessable
     const now = new Date();
     const dueDate = new Date(now);
     dueDate.setDate(dueDate.getDate() + 7); // 7 days to pay

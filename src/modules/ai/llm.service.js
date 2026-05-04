@@ -92,6 +92,8 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
+    const timeoutMs = parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000;
+
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
     oaiMessages.push(...messages.map(m => ({ role: m.role, content: toOpenAIContent(m.content) })));
@@ -107,7 +109,8 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
             messages: oaiMessages,
             max_tokens: maxTokens || MAX_TOKENS,
             temperature: TEMPERATURE
-        })
+        }),
+        signal: AbortSignal.timeout(timeoutMs)
     });
 
     if (!response.ok) {
@@ -129,6 +132,7 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedCont
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
+    const timeoutMs = parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000;
     const geminiModel = model || GEMINI_MODEL;
     const contents = await Promise.all(messages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -154,7 +158,8 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedCont
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs)
     });
 
     if (!response.ok) {

@@ -51,7 +51,11 @@ class ConversationService {
                 order: [['created_at', 'DESC']],
                 limit,
                 offset,
-                include: [{ model: Customer, as: 'customer' }]
+                include: [{
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['id', 'name', 'phone', 'profile_pic_url']
+                }]
             });
 
             return {

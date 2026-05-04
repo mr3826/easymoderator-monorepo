@@ -51,9 +51,8 @@ async function checkAndRecord(pageId) {
         await cacheRedis.expire(key, 3600);
     } catch (err) {
         if (err instanceof MetaRateLimitError) throw err;
-        // Redis unavailable — skip rate check, log, proceed
-        // Redis unavailable — skip rate check and proceed
-
+        // Redis unavailable — rate limiting is bypassed. Log so ops can see it.
+        console.error(`[meta-send] Redis rate-limit check failed for page ${pageId} — bypassing (${err.message})`);
     }
 }
 
