@@ -54,7 +54,7 @@ class ConversationService {
                 include: [{
                     model: Customer,
                     as: 'customer',
-                    attributes: ['id', 'name', 'phone', 'profile_pic_url']
+                    attributes: ['id', 'name', 'phone']
                 }]
             });
 
