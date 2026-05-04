@@ -147,7 +147,7 @@ const getTodayQueue = async (req, res, next) => {
                 order_status: 'fulfilled',
                 fulfillment_status: { [Op.in]: ['attempted', 'returned'] }
             },
-            attributes: ['id', 'customer_name', 'customer_phone', 'fulfillment_status', 'courier_tracking_id'],
+            attributes: ['id', 'customer_name', 'customer_phone', 'fulfillment_status', 'delivery_tracking_code'],
             limit: 10,
             order: [['updated_at', 'DESC']]
         });
@@ -163,7 +163,7 @@ const getTodayQueue = async (req, res, next) => {
                     customer_name: o.customer_name,
                     customer_phone: o.customer_phone,
                     status: o.fulfillment_status,
-                    tracking_id: o.courier_tracking_id
+                    tracking_id: o.delivery_tracking_code
                 }))
             }
         });

@@ -74,109 +74,61 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
 }
 
 class ConversationController {
-    async getConversations(req, res) {
+    async getConversations(req, res, next) {
         try {
-            // Get shopId from header or body
             const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
-            
+
             if (!shopId) {
                 return res.status(400).json({
                     success: false,
-                    error: {
-                        code: 'VALIDATION_ERROR',
-                        message: 'Shop ID is required'
-                    }
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
                 });
             }
 
-            const options = req.query; // Already validated by Joi
-
+            const options = req.query;
             const result = await conversationService.getConversations(shopId, options);
 
-            res.json({
-                success: true,
-                data: result
-            });
+            res.json({ success: true, data: result });
         } catch (error) {
-            res.status(500).json({
-                success: false,
-                error: {
-                    code: 'CONVERSATION_FETCH_FAILED',
-                    message: error.message
-                }
-            });
+            next(error);
         }
     }
 
-    async getConversationById(req, res) {
+    async getConversationById(req, res, next) {
         try {
-            const { conversationId } = req.params; // Already validated
-            // Get shopId from header or body
+            const { conversationId } = req.params;
             const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
-            
+
             if (!shopId) {
                 return res.status(400).json({
                     success: false,
-                    error: {
-                        code: 'VALIDATION_ERROR',
-                        message: 'Shop ID is required'
-                    }
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
                 });
             }
 
             const conversation = await conversationService.getConversationById(conversationId, shopId);
-
-            res.json({
-                success: true,
-                data: conversation
-            });
+            res.json({ success: true, data: conversation });
         } catch (error) {
-            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
-            const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_FETCH_FAILED';
-
-            res.status(statusCode).json({
-                success: false,
-                error: {
-                    code: errorCode,
-                    message: error.message
-                }
-            });
+            next(error);
         }
     }
 
-    async getMessages(req, res) {
+    async getMessages(req, res, next) {
         try {
-            const { conversationId } = req.params; // Already validated
+            const { conversationId } = req.params;
             const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
-            
+
             if (!shopId) {
                 return res.status(400).json({
                     success: false,
-                    error: {
-                        code: 'VALIDATION_ERROR',
-                        message: 'Shop ID is required'
-                    }
+                    error: { code: 'VALIDATION_ERROR', message: 'Shop ID is required' }
                 });
             }
-            const options = req.query; // Already validated
 
-            const result = await conversationService.getMessages(conversationId, shopId, options);
-
-            res.json({
-                success: true,
-                data: result
-            });
+            const result = await conversationService.getMessages(conversationId, shopId, req.query);
+            res.json({ success: true, data: result });
         } catch (error) {
-            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
-            const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'MESSAGES_FETCH_FAILED';
-
-            res.status(statusCode).json({
-                success: false,
-                error: {
-                    code: errorCode,
-                    message: error.message
-                }
-            });
+            next(error);
         }
     }
 

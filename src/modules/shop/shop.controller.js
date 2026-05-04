@@ -578,12 +578,12 @@ const getShopAgents = async (req, res, next) => {
         const { UserShop, User } = require('../entities');
         const members = await UserShop.findAll({
             where: { shop_id: shopId, is_active: true },
-            include: [{ model: User, attributes: ['id', 'full_name', 'email'] }]
+            include: [{ model: User, as: 'user', attributes: ['id', 'full_name', 'email'] }]
         });
         const agents = members.map((m) => ({
-            id: m.User.id,
-            name: m.User.full_name,
-            email: m.User.email,
+            id: m.user.id,
+            name: m.user.full_name,
+            email: m.user.email,
             role: m.role
         }));
         res.json({ success: true, data: agents });
