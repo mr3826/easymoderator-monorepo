@@ -206,7 +206,7 @@ app.use((req, res, next) => {
         path.startsWith('/api/auth') ||
         path.startsWith('/health') ||
         path === '/csrf' ||
-        path === '/api/csrf' ||
+        path === '/api/csrf'
     ) {
         return next();
     }
