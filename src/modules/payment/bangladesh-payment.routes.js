@@ -1,8 +1,15 @@
 const express = require('express');
 const { body, query } = require('express-validator');
 const BangladeshPaymentController = require('./bangladesh-payment.controller');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
+
+// All routes require authentication except /callback (inbound webhook from payment gateway)
+router.use((req, res, next) => {
+  if (req.path.startsWith('/callback')) return next();
+  authenticate(req, res, next);
+});
 
 // Validation middleware
 const validateInitializePayment = [
@@ -84,16 +91,24 @@ router.get('/methods', BangladeshPaymentController.getSupportedPaymentMethods);
  */
 router.get('/config/validate', BangladeshPaymentController.validatePaymentConfig);
 
+// Development-only routes — blocked in production
+const devOnly = (req, res, next) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ message: 'Not found' });
+  }
+  next();
+};
+
 /**
  * GET /api/payment/bangladesh/test
- * Test payment integration (development)
+ * Test payment integration (development only)
  */
-router.get('/test', BangladeshPaymentController.testPaymentIntegration);
+router.get('/test', devOnly, BangladeshPaymentController.testPaymentIntegration);
 
 /**
  * POST /api/payment/bangladesh/simulate
- * Simulate payment (testing without real gateways)
+ * Simulate payment (development only — blocked in production)
  */
-router.post('/simulate', validateSimulatePayment, BangladeshPaymentController.simulatePayment);
+router.post('/simulate', devOnly, validateSimulatePayment, BangladeshPaymentController.simulatePayment);
 
 module.exports = router;

@@ -20,6 +20,7 @@ const migrations = [
   require('./migrations/20260202_001_add_product_fields'),
   require('./migrations/20260206_001_add_shop_knowledge_fields'),
   require('./migrations/20260206_002_add_shop_knowledge_documents'),
+  require('./migrations/20260208_001_create_v2_tables'),
   require('./migrations/20260209_001_add_customer_email'),
   require('./migrations/20260209_002_add_conversation_fields'),
   require('./migrations/20260209_003_extend_channel_types'),
@@ -49,7 +50,12 @@ const migrations = [
   require('./migrations/20260418_001_add_conversation_resolution_fields'),
   require('./migrations/20260418_002_add_order_courier_fields'),
   require('./migrations/20260418_003_add_user_settings_and_last_shop'),
+  require('./migrations/20260419_001_create_customer_delivery_stats'),
+  require('./migrations/20260419_002_create_reconciliation_tables'),
   require('./migrations/20260423_001_channel_access_token_nullable'),
+  require('./migrations/20260504_001_add_conversation_lookup_index'),
+  require('./migrations/20260504_001_re_encrypt_meta_tokens'),
+  require('./migrations/20260505_001_add_plan_code_to_subscriptions'),
 ];
 
 const createMigrationsTable = async () => {

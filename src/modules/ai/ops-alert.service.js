@@ -38,13 +38,20 @@ class OpsAlertService {
             // Do NOT log customerMessage or aiResponse — may contain PII
         });
 
-        // TODO: wire up n8n webhook or Slack API for real-time ops notification
-        // Example:
-        // await fetch(process.env.N8N_ESCALATION_WEBHOOK_URL, {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify(alert)
-        // });
+        const webhookUrl = process.env.OPS_ESCALATION_WEBHOOK_URL;
+        if (webhookUrl) {
+            await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: alert.type,
+                    conversationId: alert.conversationId,
+                    shopId: alert.shopId,
+                    priority: alert.priority,
+                    violationTypes: alert.violations?.map(v => v.type),
+                }),
+            }).catch(err => logger.error('ops-alert webhook delivery failed', { err: err.message }));
+        }
     }
 }
 

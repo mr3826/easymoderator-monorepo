@@ -1,46 +1,20 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const buildTransport = () => {
-    if (!process.env.SMTP_HOST) {
-        return null;
-    }
-
-    const port = Number.parseInt(process.env.SMTP_PORT || '587', 10);
-    const secure = process.env.SMTP_SECURE === 'true' || port === 465;
-
-    return nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port,
-        secure,
-        auth: process.env.SMTP_USER
-            ? {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS
-            }
-            : undefined
-    });
+const getClient = () => {
+    if (!process.env.RESEND_API_KEY) return null;
+    return new Resend(process.env.RESEND_API_KEY);
 };
 
 const sendEmail = async ({ to, subject, text, html }) => {
-    const transporter = buildTransport();
-    if (!transporter) {
-        console.warn('SMTP not configured. Skipping email send.', { to, subject });
+    const client = getClient();
+    if (!client) {
+        console.warn('[email] RESEND_API_KEY not configured — skipping email send.', { to, subject });
         return { sent: false };
     }
 
-    const from = process.env.EMAIL_FROM || 'no-reply@easymod.local';
-
-    await transporter.sendMail({
-        from,
-        to,
-        subject,
-        text,
-        html
-    });
-
+    const from = process.env.EMAIL_FROM || 'Easy Moderator <no-reply@easymod.co>';
+    await client.emails.send({ from, to, subject, text, html });
     return { sent: true };
 };
 
-module.exports = {
-    sendEmail
-};
+module.exports = { sendEmail };

@@ -14,6 +14,7 @@ const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
 const commentToDmWebhookRoutes = require('./modules/integration/comment-to-dm-webhook.routes');
 const courierWebhookRoutes = require('./modules/webhooks/courier-webhook.routes');
 const { AppError, globalErrorHandler } = require('./utils/AppError');
+const { initSentry, sentryCaptureException } = require('./config/sentry');
 const { requestContextMiddleware } = require('./middleware/request-context.middleware');
 const createSessionMiddleware = require('./middleware/session.middleware');
 const xssSanitize = require('./middleware/xss-sanitize.middleware');
@@ -240,6 +241,9 @@ app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
 
+// Sentry request handler (no-op until SENTRY_DSN is set)
+initSentry(app);
+
 // Health check endpoints (no auth required, must be before other routes)
 app.use('/health', healthRoutes);
 
@@ -249,6 +253,14 @@ app.use('/api', routes);
 // 404 Handler
 app.all('*', (req, res, next) => {
     next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
+});
+
+// Forward 500-level errors to Sentry (no-op until SENTRY_DSN is set)
+app.use((err, req, res, next) => {
+    if (!err.status || err.status >= 500) {
+        sentryCaptureException(err, { url: req.originalUrl, method: req.method });
+    }
+    next(err);
 });
 
 // Global Error Handler

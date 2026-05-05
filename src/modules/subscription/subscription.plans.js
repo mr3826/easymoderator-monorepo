@@ -62,7 +62,9 @@ const PRICING_TIERS = Object.freeze({
         maxIncludedChannels: 1,
         keyFeature: 'AI Inbox + RTO Shield',
         features: Object.freeze({
-            ...BASE_FEATURES
+            ...BASE_FEATURES,
+            facebook_channel: true,
+            max_facebook_pages: 1
         }),
         ai_settings_access: Object.freeze([
             'automation_mode',

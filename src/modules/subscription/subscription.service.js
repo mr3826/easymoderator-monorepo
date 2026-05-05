@@ -110,6 +110,7 @@ const createDefaultSubscription = async (shopId) => {
 
     return await Subscription.create({
         shop_id: shopId,
+        plan_code: starterTier.code,
         plan_name: starterTier.name,
         plan_price: starterTier.priceBdtMonthly,
         billing_cycle: 'monthly',
@@ -205,6 +206,7 @@ const updatePlan = async (shopId, userId, planData) => {
     }
 
     await subscription.update({
+        plan_code: selectedTier ? selectedTier.code : subscription.plan_code,
         plan_name: newPlanName,
         plan_price: selectedTier ? calculatedPlanPrice : planData.plan_price,
         billing_cycle: planData.billing_cycle,
@@ -740,7 +742,7 @@ const checkChannelLimit = async (shopId) => {
     const { Channel } = require('../entities');
     const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
     if (!subscription) return;
-    const tier = getTierByCode(subscription.plan_code);
+    const tier = getTierByCode(subscription.plan_code) || getTierByPlanName(subscription.plan_name);
     if (!tier || isUnlimitedLimit(tier.maxIncludedChannels)) return;
     const activeCount = await Channel.count({ where: { shop_id: shopId, is_active: true } });
     if (activeCount >= tier.maxIncludedChannels) {

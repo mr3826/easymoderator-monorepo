@@ -1,13 +1,15 @@
 /**
  * Health Check Routes
  * K8s-ready health probes for liveness and readiness checks
- * No authentication required for these endpoints
+ * /live and /ready are unauthenticated (consumed by load balancers and orchestrators)
+ * /detailed is authenticated — it exposes queue depths, infra topology, and API keys presence
  */
 
 const express = require('express');
 const router = express.Router();
 const { sequelize } = require('../utils/database/database-setup');
 const { checkRedisAvailability } = require('../config/redis');
+const { authenticate } = require('../middleware/auth.middleware');
 
 /**
  * Liveness probe - Is the service responding?
@@ -55,9 +57,9 @@ router.get('/ready', async (req, res) => {
 });
 
 /**
- * P2-6: Detailed health — DB, Redis, queue depths, Vector DB
+ * P2-6: Detailed health — DB, Redis, queue depths, Vector DB (authenticated)
  */
-router.get('/detailed', async (req, res) => {
+router.get('/detailed', authenticate, async (req, res) => {
     const checks = {
         service: 'up',
         timestamp: new Date().toISOString(),
