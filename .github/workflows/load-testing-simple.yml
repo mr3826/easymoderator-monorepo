@@ -16,6 +16,14 @@ on:
           - baseline
           - peak
           - stress
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production-0405487706
 
 # Required for Workload Identity Federation
 permissions:
