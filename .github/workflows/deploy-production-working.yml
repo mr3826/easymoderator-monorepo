@@ -63,7 +63,7 @@ jobs:
             --service-account=${{ env.SERVICE_ACCOUNT }} \
             --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }}" \
             --min-instances=2 \
-            --max-instances=20 \
+            --max-instances=10 \
             --concurrency=80 \
             --cpu=1 \
             --memory=1Gi \
