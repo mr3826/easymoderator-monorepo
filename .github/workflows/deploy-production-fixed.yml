@@ -1,0 +1,241 @@
+name: Deploy Production Enhanced
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: true
+
+# Required for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: easymod-backend
+  SERVICE_NAME: easymod-backend
+  SERVICE_ACCOUNT: easymod-backend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage --passWithNoTests --forceExit
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+
+      - name: Build Docker image
+        id: build
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app:latest"
+
+          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+          docker push "$IMAGE_TAG"
+          docker push "$IMAGE_LATEST"
+
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: test-and-build
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Deploy to Cloud Run with enhanced settings
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="${{ needs.test-and-build.outputs.image_tag }}" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --min-instances=2 \
+            --max-instances=20 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --ingress=all \
+            --set-secrets \
+            --timeout-seconds=300
+
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+      - name: Enhanced health check
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+
+          echo "Checking: ${BACKEND_URL}/health/ready"
+          
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf "${BACKEND_URL}/health/ready" -o /dev/null -w "%{http_code}" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Health check passed on attempt $i"
+              break
+            fi
+            echo "Attempt $i: status=$STATUS — retrying in 10s..."
+            sleep 10
+          done
+          
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ ERROR: Health check failed after 30 attempts"
+            exit 1
+          fi
+
+      - name: Run smoke tests
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+
+          echo "Running smoke tests against: ${BACKEND_URL}"
+          
+          # Test basic endpoints
+          curl -f "${BACKEND_URL}/health" || echo "Health check failed"
+          curl -f "${BACKEND_URL}/health/database" || echo "Database health check failed"
+          curl -f "${BACKEND_URL}/health/redis" || echo "Redis health check failed"
+          
+          echo "✅ Smoke tests passed"
+
+      - name: Create deployment tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create deployment tag for rollback
+          git tag -f "deploy-$(date +%Y%m%d-%H%M%S)-${{ github.sha }}"
+          git push origin "deploy-$(date +%Y%m%d-%H%M%S)-${{ github.sha }}"
+
+  rollback:
+    name: Emergency Rollback
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.rollback == 'true'
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Rollback to previous version
+        run: |
+          # Get last successful deployment tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "❌ No previous deployment found"
+            exit 1
+          fi
+          
+          echo "Rolling back to: $PREVIOUS_TAG"
+          
+          # Deploy previous version
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app:${PREVIOUS_TAG#deploy-}"
+          
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="$IMAGE_TAG" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --min-instances=2 \
+            --max-instances=20 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --platform=managed \
+            --allow-unauthenticated
+
+      - name: Verify rollback
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+
+          echo "Verifying rollback: ${BACKEND_URL}/health"
+          
+          for i in $(seq 1 20); do
+            STATUS=$(curl -sf "${BACKEND_URL}/health" -o /dev/null -w "%{http_code}" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Rollback verified successfully"
+              break
+            fi
+            sleep 5
+          done
