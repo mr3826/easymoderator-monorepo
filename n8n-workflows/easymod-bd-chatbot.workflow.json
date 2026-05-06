@@ -1,0 +1,253 @@
+{
+  "name": "EasyMod BD F-commerce Chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "easymod-chatbot",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "EasyMod Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "easymod-chatbot"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.message_type }}",
+              "value2": "text"
+            }
+          ]
+        }
+      },
+      "id": "filter-text-messages",
+      "name": "Has Message Content",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EASYMOD_API_URL }}/api/ai-chatbot/process",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Internal-Webhook-Secret",
+              "value": "={{ $env.EASYMOD_INTERNAL_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "shop_id",
+              "value": "={{ $json.body.shop_id }}"
+            },
+            {
+              "name": "customer_channel_id",
+              "value": "={{ $json.body.sender_id }}"
+            },
+            {
+              "name": "platform",
+              "value": "={{ $json.body.platform }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.body.content }}"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $json.body.message_id }}"
+            },
+            {
+              "name": "sender_info",
+              "value": "={{ JSON.stringify($json.body.sender_info || {}) }}"
+            },
+            {
+              "name": "attachments",
+              "value": "={{ JSON.stringify($json.body.attachments || []) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "call-easymod-chatbot",
+      "name": "Process with EasyMod AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data?.order_created }}",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "id": "check-order-created",
+      "name": "Order Created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [940, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EASYMOD_API_URL }}/api/ai-chatbot/process",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "shop_id",
+              "value": "={{ $('EasyMod Webhook Trigger').item.json.body.shop_id }}"
+            },
+            {
+              "name": "customer_channel_id",
+              "value": "={{ $('EasyMod Webhook Trigger').item.json.body.sender_id }}"
+            },
+            {
+              "name": "platform",
+              "value": "={{ $('EasyMod Webhook Trigger').item.json.body.platform }}"
+            },
+            {
+              "name": "message",
+              "value": "[IMAGE]"
+            },
+            {
+              "name": "message_id",
+              "value": "={{ $('EasyMod Webhook Trigger').item.json.body.message_id }}"
+            },
+            {
+              "name": "attachments",
+              "value": "={{ JSON.stringify($('EasyMod Webhook Trigger').item.json.body.attachments || []) }}"
+            }
+          ]
+        }
+      },
+      "id": "process-image-message",
+      "name": "Process Image/Attachment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"received\": true }",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1180, 300]
+    }
+  ],
+  "connections": {
+    "EasyMod Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Has Message Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Message Content": {
+      "main": [
+        [
+          {
+            "node": "Process with EasyMod AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Image/Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process with EasyMod AI": {
+      "main": [
+        [
+          {
+            "node": "Order Created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Created?": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Image/Attachment": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "description": "EasyMod BD F-commerce chatbot workflow. Receives messages from Easy Moderator meta-webhook, routes them to the AI chatbot API, and handles order creation events. Required env vars: EASYMOD_API_URL (e.g. https://api.easymod.app), EASYMOD_INTERNAL_SECRET (matches shop workflow_webhook_secret)."
+  },
+  "pinData": {}
+}

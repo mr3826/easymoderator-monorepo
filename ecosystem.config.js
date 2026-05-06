@@ -42,8 +42,10 @@ module.exports = {
         NAGAD_PUBLIC_KEY: process.env.NAGAD_PUBLIC_KEY || '',
         NAGAD_PRIVATE_KEY: process.env.NAGAD_PRIVATE_KEY || '',
         NAGAD_SANDBOX: process.env.NAGAD_SANDBOX || 'false',
-        // Security
-        JWT_SECRET: process.env.JWT_SECRET,
+        // Security - Use separate access/refresh secrets
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
+        JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+        SESSION_SECRET: process.env.SESSION_SECRET,
         CSRF_SECRET: process.env.CSRF_SECRET,
         // App configuration
         APP_ADMIN_EMAIL: process.env.APP_ADMIN_EMAIL || 'admin@easymod.tech',
