@@ -22,6 +22,7 @@
     "backup:list": "node scripts/backup-database.js list",
     "backup:restore": "node scripts/backup-database.js restore",
     "setup:monitoring": "node scripts/setup-monitoring.js",
+    "test:csrf": "node scripts/test-csrf.js",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",

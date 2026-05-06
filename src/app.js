@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const timeout = require('express-timeout-handler');
-const { doubleCsrf } = require('csrf-csrf');
+const { csrfTokenHandler, csrfProtectionMiddleware, csrfDebugHandler } = require('./middleware/csrf-middleware');
 const config = require('./config/config');
 const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
@@ -163,66 +163,16 @@ app.use(requestContextMiddleware);
 // Session middleware (Redis-backed in production)
 app.use(createSessionMiddleware());
 
-// P2-3: CSRF — csrf-csrf (Double Submit Cookie); cookie-parser must be before this
-const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
-    getSecret: () => config.sessionSecret,
-    // Use express-session's canonical session ID. req.session.id is not guaranteed.
-    getSessionIdentifier: (req) => req.sessionID || req.session?.id || req.ip || 'anonymous',
-    cookieOptions: {
-          httpOnly: true, // Secure: CSRF token in httpOnly cookie + X-CSRF-TOKEN header
-        sameSite: 'lax',
-        path: '/',
-        secure: config.env === 'production'
-    }
-});
-
-const csrfHandler = (req, res) => {
-    if (!req.session.csrfInit) {
-        req.session.csrfInit = true;
-    }
-    // Explicitly save the session to Redis BEFORE generating the CSRF token.
-    // express-session saves asynchronously after res.end(), so without this the client
-    // can fire the next request before the session is persisted, causing a new session ID
-    // to be assigned and the HMAC validation to fail ("invalid csrf token").
-    req.session.save((err) => {
-        if (err) console.error('Session save error on GET /csrf:', err);
-        const csrfToken = generateCsrfToken(req, res);
-        res.status(200).json({ csrfToken });
-    });
-};
-
+// P2-3: CSRF — Enhanced CSRF middleware with better error handling
 // Both paths work: frontend uses /api/csrf via its baseURL, direct callers use /csrf
-app.get('/csrf', csrfHandler);
-app.get('/api/csrf', csrfHandler);
+app.get('/csrf', csrfTokenHandler);
+app.get('/api/csrf', csrfTokenHandler);
 
-app.use((req, res, next) => {
-    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-        return next();
-    }
-    const path = req.path;
-    if (
-        path.startsWith('/webhooks') ||
-        path.startsWith('/api/webhooks') ||
-        path.startsWith('/auth') ||
-        path.startsWith('/api/auth') ||
-        path.startsWith('/health') ||
-        path === '/csrf' ||
-        path === '/api/csrf'
-    ) {
-        return next();
-    }
-    // Skip CSRF validation in test environment — tests don't run a browser,
-    // so cookie-based double-submit can't function correctly.
-    if (config.env === 'test') {
-        return next();
-    }
-    return doubleCsrfProtection(req, res, (err) => {
-        if (err && config.env === 'development') {
-            console.warn(`❌ CSRF Error [${req.method} ${req.path}]:`, err.message);
-        }
-        next(err);
-    });
-});
+// CSRF debug endpoint (development only)
+app.get('/csrf/debug', csrfDebugHandler);
+
+// Apply CSRF protection to all non-safe methods
+app.use(csrfProtectionMiddleware);
 
 // P2-2: Apply global timeout after CSRF so protected routes are covered
 app.use(timeoutHandler);
