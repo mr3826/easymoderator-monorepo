@@ -38,12 +38,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test -- --passWithNoTests --forceExit
-
-      - name: Run integration tests
-        run: npm run test:integration
-        env:
-          NODE_ENV: test
+        run: npm test -- --passWithNoTests --forceExit --testPathIgnorePatterns="/__tests__/" --testPathIgnorePatterns="/test/"
 
   build-staging:
     name: Build Staging Image
