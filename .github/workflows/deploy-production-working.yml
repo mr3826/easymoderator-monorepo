@@ -1,0 +1,104 @@
+name: Deploy Production Working
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend-main
+  cancel-in-progress: true
+
+# Required for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: easymod-backend
+  SERVICE_NAME: easymod-backend
+  SERVICE_ACCOUNT: easymod-backend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+
+jobs:
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Build and push Docker image
+        id: build
+        run: |
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app:${{ github.sha }}"
+          IMAGE_LATEST="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app:latest"
+
+          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+          docker push "$IMAGE_TAG"
+          docker push "$IMAGE_LATEST"
+
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image="${{ steps.build.outputs.image_tag }}" \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.SERVICE_ACCOUNT }} \
+            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }}" \
+            --min-instances=2 \
+            --max-instances=20 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --platform=managed \
+            --allow-unauthenticated
+
+      - name: Health check
+        run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)")
+
+          echo "Checking: ${BACKEND_URL}/health"
+          
+          for i in $(seq 1 20); do
+            STATUS=$(curl -sf "${BACKEND_URL}/health" -o /dev/null -w "%{http_code}" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Health check passed on attempt $i"
+              break
+            fi
+            echo "Attempt $i: status=$STATUS — retrying in 10s..."
+            sleep 10
+          done
+          
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ ERROR: Health check failed after 20 attempts"
+            exit 1
+          fi
+
+      - name: Create deployment tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git tag -f "deploy-$(date +%Y%m%d-%H%M%S)-${{ github.sha }}"
+          git push origin "deploy-$(date +%Y%m%d-%H%M%S)-${{ github.sha }}"
