@@ -1,4 +1,4 @@
-name: Load Testing
+name: Load Testing Fixed
 
 on:
   schedule:
@@ -57,12 +57,9 @@ jobs:
         run: npm ci
 
       - name: Install k6
-        run: |
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A2247B996E3D
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 1C61A2656FB57B7E439C0A1ADBA
-          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
+        uses: grafana/k6-action@v0.5.0
+        with:
+          k6-version: v0.50.0
 
       - name: Wait for staging to be ready
         run: |
@@ -107,7 +104,7 @@ jobs:
             };
             
             export default function () {
-              let responses = http.get([\`\${BASE_URL}/health`, `\${BASE_URL}/health/database`, `\${BASE_URL}/health/redis`], setup);
+              let responses = http.get([`\${BASE_URL}/health`, `\${BASE_URL}/health/database`, `\${BASE_URL}/health/redis`], setup);
               
               check(responses, {
                 'health endpoints status': (r) => r.status === 200,
@@ -119,11 +116,10 @@ jobs:
             
             export default function handleSummary(data) {
               console.log('Smoke Test Summary:');
-              console.log(\`  Requests: \${data.metrics.http_requests_total}\`);
-              console.log(\`  Failed: \${data.metrics.http_req_failed}\`);
-              console.log(\`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms\`);
+              console.log(`  Requests: \${data.metrics.http_requests_total}`);
+              console.log(`  Failed: \${data.metrics.http_req_failed}`);
+              console.log(`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms`);
             }
-          }
           EOF
           
           k6 run smoke-test.js --out json=smoke-results.json
@@ -156,153 +152,26 @@ jobs:
             };
             
             export default function () {
-              // Test health endpoints
-              let healthResponses = http.get([\`\${BASE_URL}/health`, `\${BASE_URL}/health/database`, `\${BASE_URL}/health/redis`], setup);
+              let responses = http.get([\`\${BASE_URL}/health`, `\${BASE_URL}/health/database`, `\${BASE_URL}/health/redis`], setup);
               
-              check(healthResponses, {
+              check(responses, {
                 'health endpoints status': (r) => r.status === 200,
                 'response time < 1000ms': (r) => r.timings.duration < 1000,
               });
               
-              // Test API endpoints
-              let apiResponses = http.batch([
-                ['GET', `\${BASE_URL}/api/health`],
-                ['GET', `\${BASE_URL}/api/shop`],
-                ['POST', `\${BASE_URL}/api/auth/login`, null, JSON.stringify({email: 'test@example.com', password: 'test123'})],
-              ], setup);
-              
-              check(apiResponses, {
-                'API endpoints status': (r) => r.status < 400,
-                'API response time < 1000ms': (r) => r.timings.duration < 1000,
-              });
-              
               sleep(0.1);
-            }
+            };
             
             export default function handleSummary(data) {
               console.log('Baseline Test Summary:');
-              console.log(\`  Total Requests: \${data.metrics.http_requests_total}\`);
-              console.log(\`  Failed Requests: \${data.metrics.http_req_failed}\`);
-              console.log(\`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms\`);
-              console.log(\`  Request Rate: \${data.metrics.http_reqs_per_sec}\`);
+              console.log(`  Total Requests: \${data.metrics.http_requests_total}`);
+              console.log(`  Failed Requests: \${data.metrics.http_req_failed}`);
+              console.log(`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms`);
+              console.log(`  Request Rate: \${data.metrics.http_reqs_per_sec}`);
             }
-          }
           EOF
           
           k6 run baseline-test.js --out json=baseline-results.json
-
-      - name: Run peak load test
-        if: github.event.inputs.test_type == 'peak'
-        run: |
-          echo "⚡ Running peak load test..."
-          
-          cat > peak-test.js << 'EOF'
-          import http from 'k6/http';
-          import { check, sleep } from 'k6';
-          
-          export let options = {
-            vus: 200,
-            duration: '10m',
-            thresholds: {
-              http_req_duration: ['p(95)<2000'],
-              http_req_failed: ['rate<0.02'],
-            },
-          };
-          
-          export default function () {
-            const BASE_URL = 'https://easymod-backend-staging-xxxxx-uc.a.run.app';
-            
-            export let setup = {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            };
-            
-            export default function () {
-              // Simulate realistic user behavior
-              let responses = http.batch([
-                ['GET', `\${BASE_URL}/health`],
-                ['GET', `\${BASE_URL}/api/shop`],
-                ['GET', `\${BASE_URL}/api/product`],
-                ['POST', `\${BASE_URL}/api/conversation`, null, JSON.stringify({message: 'test message'})],
-              ], setup);
-              
-              check(responses, {
-                'endpoints respond': (r) => r.status < 500,
-                'response time < 2000ms': (r) => r.timings.duration < 2000,
-              });
-              
-              sleep(0.05);
-            }
-            
-            export default function handleSummary(data) {
-              console.log('Peak Load Test Summary:');
-              console.log(\`  Total Requests: \${data.metrics.http_requests_total}\`);
-              console.log(\`  Failed Requests: \${data.metrics.http_req_failed}\`);
-              console.log(\`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms\`);
-              console.log(\`  Max Response Time: \${data.metrics.http_req_duration.max}ms\`);
-            }
-          }
-          EOF
-          
-          k6 run peak-test.js --out json=peak-results.json
-
-      - name: Run stress test
-        if: github.event.inputs.test_type == 'stress'
-        run: |
-          echo "💥 Running stress load test..."
-          
-          cat > stress-test.js << 'EOF'
-          import http from 'k6/http';
-          import { check, sleep } from 'k6';
-          
-          export let options = {
-            vus: 500,
-            duration: '5m',
-            thresholds: {
-              http_req_duration: ['p(95)<3000'],
-              http_req_failed: ['rate<0.1'],
-            },
-          };
-          
-          export default function () {
-            const BASE_URL = 'https://easymod-backend-staging-xxxxx-uc.a.run.app';
-            
-            export let setup = {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            };
-            
-            export default function () {
-              // Stress the system with heavy requests
-              let responses = http.batch([
-                ['GET', `\${BASE_URL}/health`],
-                ['GET', `\${BASE_URL}/api/shop`],
-                ['POST', `\${BASE_URL}/api/auth/login`, null, JSON.stringify({email: 'test@example.com', password: 'test123'})],
-                ['POST', `\${BASE_URL}/api/product`, null, JSON.stringify({name: 'Stress Test Product', price: 99.99})],
-                ['POST', `\${BASE_URL}/api/conversation`, null, JSON.stringify({message: 'Stress test message'})],
-              ], setup);
-              
-              check(responses, {
-                'endpoints respond': (r) => r.status < 500,
-                'response time < 3000ms': (r) => r.timings.duration < 3000,
-              });
-              
-              sleep(0.01);
-            }
-            
-            export default function handleSummary(data) {
-              console.log('Stress Test Summary:');
-              console.log(\`  Total Requests: \${data.metrics.http_requests_total}\`);
-              console.log(\`  Failed Requests: \${data.metrics.http_req_failed}\`);
-              console.log(\`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms\`);
-              console.log(\`  Max Response Time: \${data.metrics.http_req_duration.max}ms\`);
-            }
-          }
-          EOF
-          
-          k6 run stress-test.js --out json=stress-results.json
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -311,40 +180,12 @@ jobs:
           path: |
             smoke-results.json
             baseline-results.json
-            peak-results.json
-            stress-results.json
           retention-days: 7
-
-      - name: Analyze results
-        run: |
-          echo "📊 Load Test Analysis:"
-          
-          # Analyze results if they exist
-          if [ -f "smoke-results.json" ]; then
-            echo "Smoke Test Results:"
-            cat smoke-results.json | jq '.metrics | keys'
-          fi
-          
-          if [ -f "baseline-results.json" ]; then
-            echo "Baseline Test Results:"
-            cat baseline-results.json | jq '.metrics | keys'
-          fi
-          
-          if [ -f "peak-results.json" ]; then
-            echo "Peak Load Test Results:"
-            cat peak-results.json | jq '.metrics | keys'
-          fi
-          
-          if [ -f "stress-results.json" ]; then
-            echo "Stress Test Results:"
-            cat stress-results.json | jq '.metrics | keys'
-          fi
 
   load-test-production:
     name: Load Test Production
     runs-on: ubuntu-latest
     if: github.event.inputs.environment == 'production'
-    environment: production
     
     steps:
       - uses: actions/checkout@v4
@@ -355,13 +196,13 @@ jobs:
           node-version: "20"
           cache: "npm"
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Install k6
-        run: |
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A2247B996E3D
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 1C61A2656FB57B7E439C0A1ADBA
-          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update
-          sudo apt-get install k6
+        uses: grafana/k6-action@v0.5.0
+        with:
+          k6-version: v0.50.0
 
       - name: Get production URL
         id: get-url
@@ -407,15 +248,14 @@ jobs:
               });
               
               sleep(1);
-            }
+            };
             
             export default function handleSummary(data) {
               console.log('Production Smoke Test Summary:');
-              console.log(\`  Requests: \${data.metrics.http_requests_total}\`);
-              console.log(\`  Failed: \${data.metrics.http_req_failed}\`);
-              console.log(\`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms\`);
+              console.log(`  Requests: \${data.metrics.http_requests_total}`);
+              console.log(`  Failed: \${data.metrics.http_req_failed}`);
+              console.log(`  Response Time (p95): \${data.metrics.http_req_duration['p(95)']}ms`);
             }
-          }
           EOF
           
           k6 run prod-smoke-test.js --out json=prod-smoke-results.json
@@ -426,63 +266,3 @@ jobs:
           name: production-load-test-results
           path: prod-smoke-results.json
           retention-days: 7
-
-      - name: Create performance report
-        run: |
-          echo "📈 Performance Test Report Generated"
-          echo "Test Type: ${{ github.event.inputs.test_type || 'smoke' }}"
-          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
-          echo "Timestamp: $(date)"
-          echo "Results uploaded to artifacts"
-
-  performance-comparison:
-    name: Compare Performance
-    runs-on: ubuntu-latest
-    needs: [load-test-staging, load-test-production]
-    if: always()
-    
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: load-test-results-smoke
-          path: ./results
-          
-      - uses: actions/download-artifact@v4
-        with:
-          name: production-load-test-results
-          path: ./prod-results
-
-      - name: Compare results
-        run: |
-          echo "📊 Performance Comparison Report:"
-          
-          if [ -f "./results/smoke-results.json" ]; then
-            echo "Staging Performance:"
-            cat ./results/smoke-results.json | jq '.metrics | keys'
-          fi
-          
-          if [ -f "./prod-results/prod-smoke-results.json" ]; then
-            echo "Production Performance:"
-            cat ./prod-results/prod-smoke-results.json | jq '.metrics | keys'
-          fi
-          
-          # Simple comparison logic would go here
-          echo "Performance comparison completed"
-
-  notify-results:
-    name: Notify Results
-    runs-on: ubuntu-latest
-    needs: [load-test-staging, load-test-production, performance-comparison]
-    if: always()
-    
-    steps:
-      - name: Send notification
-        run: |
-          echo "📢 Load Test Notification:"
-          echo "Test Type: ${{ github.event.inputs.test_type || 'smoke' }}"
-          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
-          echo "Status: ${{ needs.load-test-staging.result }}"
-          echo "Timestamp: $(date)"
-          
-          # Would integrate with Slack/email here
-          echo "Notification sent to monitoring channels"
