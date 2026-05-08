@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import mammoth from "mammoth";
 import { Upload, Bot, CheckCircle, Edit2, Trash2, AlertCircle, FileText, MessageCircle, TrendingUp, Plus, Building2 } from "lucide-react";
 import type { BusinessInfo, BrandingRules, FAQ, KnowledgeGap } from "../lib/knowledgeTypes";
 import { apiClient } from "@/api";
@@ -92,9 +91,7 @@ export default function Knowledge() {
         text = await file.text();
       } else if (extension === 'docx' || extension === 'doc') {
         const arrayBuffer = await file.arrayBuffer();
-        // Use convertToHtml to preserve headings, bold, tables and lists.
-        // The backend RAG pipeline strips tags if needed; plain extractRawText
-        // loses all document structure.
+        const mammoth = (await import('mammoth')).default;
         const result = await mammoth.convertToHtml({ arrayBuffer });
         text = result.value || '';
         if (result.messages?.length) {

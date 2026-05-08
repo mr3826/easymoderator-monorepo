@@ -38,6 +38,7 @@ export default defineConfig({
             if (id.includes('@mui')) return 'mui-vendor';
             if (id.includes('recharts')) return 'charts-vendor';
             if (id.includes('@radix-ui')) return 'radix-vendor';
+            if (id.includes('mammoth')) return 'mammoth-vendor';
           }
           return undefined;
         }
