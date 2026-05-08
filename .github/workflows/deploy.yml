@@ -11,7 +11,6 @@ concurrency:
 
 permissions:
   contents: read
-  deployments: write
 
 jobs:
   test-backend:
@@ -81,30 +80,6 @@ jobs:
           name: frontend-dist
           path: frontend-dist/
 
-      - name: Create GitHub deployment
-        id: deployment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ID=$(gh api repos/${{ github.repository }}/deployments \
-            --method POST \
-            --field ref=${{ github.sha }} \
-            --field environment=production \
-            --field description="Deploy ${{ github.sha }}" \
-            --field auto_merge=false \
-            --raw-field required_contexts='[]' \
-            --jq '.id')
-          echo "id=$ID" >> "$GITHUB_OUTPUT"
-
-      - name: Mark deployment in progress
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
-            --method POST \
-            --field state=in_progress \
-            --field description="Deploying frontend and backend..."
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -153,22 +128,3 @@ jobs:
             fi
           done
 
-      - name: Mark deployment success
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
-            --method POST \
-            --field state=success \
-            --field description="Frontend and backend deployed"
-
-      - name: Mark deployment failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
-            --method POST \
-            --field state=failure \
-            --field description="Deployment failed"
