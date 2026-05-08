@@ -6,7 +6,7 @@ const dashboardService = require('../dashboard.service');
 const cacheService = require('../../../utils/cache.service');
 
 // Mock dependencies
-jest.mock('../entities', () => ({
+jest.mock('../../entities', () => ({
     Order: {
         count: jest.fn(),
         findAll: jest.fn()

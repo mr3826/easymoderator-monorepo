@@ -34,7 +34,7 @@ jest.mock('../../entities', () => ({
     Tenant: { findByPk: jest.fn() },
 }));
 
-jest.mock('../../utils/database/database-setup', () => ({
+jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(async (cb) => {
             const t = { commit: jest.fn(), rollback: jest.fn() };
@@ -44,11 +44,11 @@ jest.mock('../../utils/database/database-setup', () => ({
     }
 }));
 
-jest.mock('./shop-defaults', () => ({
+jest.mock('../shop-defaults', () => ({
     DEFAULT_AI_SETTINGS: { primary_provider: 'gemini', fallback_provider: 'openai' }
 }));
 
-jest.mock('./shop-settings.validator', () => ({
+jest.mock('../shop-settings.validator', () => ({
     validateAISettings: jest.fn().mockReturnValue({ valid: true }),
     validateSettings: jest.fn().mockReturnValue({ valid: true }),
     sanitizeSettings: jest.fn((s) => s),

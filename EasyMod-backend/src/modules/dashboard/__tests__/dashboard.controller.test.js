@@ -9,7 +9,7 @@ const dashboardAnalytics = require('../dashboard.analytics');
 // Mock dependencies
 jest.mock('../dashboard.service');
 jest.mock('../dashboard.analytics');
-jest.mock('../entities', () => ({
+jest.mock('../../entities', () => ({
     Order: {
         count: jest.fn(),
         findAll: jest.fn()
@@ -290,7 +290,7 @@ describe('Dashboard Controller', () => {
                     customer_name: 'John Doe',
                     customer_phone: '+1234567890',
                     fulfillment_status: 'attempted',
-                    courier_tracking_id: 'TRACK123'
+                    delivery_tracking_code: 'TRACK123'
                 }
             ]);
 

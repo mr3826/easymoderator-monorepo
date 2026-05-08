@@ -11,7 +11,7 @@ jest.mock('../../entities', () => ({
     PushSubscription: { findAll: jest.fn() }
 }));
 
-jest.mock('../../jobs/queue-manager', () => ({
+jest.mock('../../../jobs/queue-manager', () => ({
     queues: {
         notifications: {
             add: jest.fn().mockResolvedValue({ id: 'job-notif-1' })
@@ -32,7 +32,7 @@ jest.mock('../../../utils/AppError', () => ({
 // ── Require after mocks ───────────────────────────────────────────────────────
 
 const notificationController = require('../notification.controller');
-const queueManager = require('../../jobs/queue-manager');
+const queueManager = require('../../../jobs/queue-manager');
 const { AppError } = require('../../../utils/AppError');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

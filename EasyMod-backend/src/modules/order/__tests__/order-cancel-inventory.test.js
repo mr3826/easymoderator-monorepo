@@ -15,7 +15,8 @@ jest.mock('../../../utils/database/database-setup', () => ({
         }),
         query: jest.fn().mockResolvedValue([[{ next_number: 1 }]]),
         getDialect: jest.fn().mockReturnValue('postgres'),
-        literal: jest.fn((s) => s)
+        literal: jest.fn((s) => s),
+        define: jest.fn().mockReturnValue({ findAll: jest.fn(), findOne: jest.fn(), findByPk: jest.fn(), create: jest.fn() })
     }
 }));
 
@@ -116,7 +117,7 @@ jest.mock('../../../utils/email.service', () => ({
     sendEmail: jest.fn().mockResolvedValue(true)
 }));
 
-jest.mock('../../jobs/queue-manager', () => ({
+jest.mock('../../../jobs/queue-manager', () => ({
     queues: { notifications: { add: jest.fn().mockResolvedValue({ id: 'notif-1' }) } }
 }));
 

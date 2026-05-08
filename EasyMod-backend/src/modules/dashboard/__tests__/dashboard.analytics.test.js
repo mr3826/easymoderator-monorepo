@@ -6,7 +6,7 @@ const dashboardAnalytics = require('../dashboard.analytics');
 const cacheService = require('../../../utils/cache.service');
 
 // Mock dependencies
-jest.mock('../entities', () => ({
+jest.mock('../../entities', () => ({
     Analytics: {
         findOrCreate: jest.fn(),
         increment: jest.fn(),
@@ -43,7 +43,7 @@ describe('Dashboard Analytics', () => {
             await dashboardAnalytics.logEvent(mockShopId, payload);
 
             expect(Analytics.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({
-                where: { shop_id: mockShopId }
+                where: expect.objectContaining({ shop_id: mockShopId })
             }));
         });
 

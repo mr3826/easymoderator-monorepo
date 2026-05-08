@@ -32,7 +32,7 @@ const mockProductData = {
     save: jest.fn().mockResolvedValue(true),
 };
 
-jest.mock('../entities', () => ({
+jest.mock('../../entities', () => ({
     Product: {
         findOne: jest.fn(),
         findAll: jest.fn(),
@@ -73,7 +73,7 @@ jest.mock('sequelize', () => ({
     }
 }));
 
-jest.mock('../subscription/subscription.service', () => ({
+jest.mock('../../subscription/subscription.service', () => ({
     trackUsage: jest.fn().mockResolvedValue(true),
 }));
 
@@ -94,7 +94,7 @@ jest.mock('../../../constants/http-status', () => ({
     HTTP_STATUS: { NOT_FOUND: 404, FORBIDDEN: 403, BAD_REQUEST: 400, INTERNAL_SERVER_ERROR: 500 }
 }));
 
-const { Product, UserShop, Category } = require('../entities');
+const { Product, UserShop, Category } = require('../../entities');
 const productService = require('src/modules/product/product.service');
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

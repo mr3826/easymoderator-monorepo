@@ -39,7 +39,11 @@ jest.mock('../../entities', () => ({
 
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
-        transaction: jest.fn(),
+        transaction: jest.fn(async (cb) => {
+            const t = { commit: jest.fn(), rollback: jest.fn() };
+            if (typeof cb === 'function') return cb(t);
+            return t;
+        }),
         query: jest.fn(),
         getDialect: jest.fn()
     }
@@ -651,28 +655,22 @@ describe('Order Service', () => {
                 order_status: 'confirmed'
             });
 
-            const mockProduct = {
-                id: 'prod-1',
-                name: 'Test Product',
-                increment: jest.fn().mockResolvedValue(true)
-            };
-
-            const mockOrderItems = [
-                createMockOrderItem({
-                    quantity: 2,
-                    getProduct: jest.fn().mockResolvedValue(mockProduct)
-                })
-            ];
+            sequelize.transaction = jest.fn(async (cb) => {
+                const t = { commit: jest.fn(), rollback: jest.fn() };
+                return cb(t);
+            });
 
             Order.findOne = jest.fn().mockResolvedValue(mockOrder);
             UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            OrderItem.findAll = jest.fn().mockResolvedValue([]);
 
             const result = await orderService.cancelOrder('user-1', 'shop-1', 'order-1', 'Customer request');
 
             expect(mockOrder.update).toHaveBeenCalledWith(
                 expect.objectContaining({
                     order_status: 'cancelled'
-                })
+                }),
+                expect.any(Object)
             );
         });
 

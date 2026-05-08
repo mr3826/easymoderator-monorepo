@@ -44,7 +44,7 @@ jest.mock('../../../utils/structured-logger', () => ({
     }))
 }));
 
-jest.mock('../../jobs/queue-manager', () => ({
+jest.mock('../../../jobs/queue-manager', () => ({
     queues: {
         campaignSend: {
             add: jest.fn().mockResolvedValue({ id: 'job-trigger-1' }),
@@ -58,7 +58,7 @@ jest.mock('../../jobs/queue-manager', () => ({
 const campaignService = require('../campaign.service');
 const { Campaign, Customer, Order, Channel } = require('../../entities');
 const { AppError } = require('../../../utils/AppError');
-const queueManager = require('../../jobs/queue-manager');
+const queueManager = require('../../../jobs/queue-manager');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -298,7 +298,8 @@ describe('CampaignService', () => {
         });
 
         it('can run a scheduled campaign', async () => {
-            Campaign.findOne.mockResolvedValue(makeCampaign({ status: 'scheduled' }));
+            mockCampaign = makeCampaign({ status: 'scheduled' });
+            Campaign.findOne.mockResolvedValue(mockCampaign);
             Customer.findAll.mockResolvedValue([makeCustomer()]);
             await campaignService.runCampaign('shop-1', 'camp-1');
             expect(mockCampaign.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'running' }));

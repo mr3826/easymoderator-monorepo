@@ -7,7 +7,7 @@
 
 // ── In-memory Redis ───────────────────────────────────────────────────────────
 const redisStore = {};
-jest.mock('../../../utils/redis', () => ({
+jest.mock('../../../utils/redis-client', () => ({
     get: jest.fn(async (k) => redisStore[k] ?? null),
     set: jest.fn(async (k, v) => { redisStore[k] = v; }),
     del: jest.fn(async (k) => { delete redisStore[k]; }),

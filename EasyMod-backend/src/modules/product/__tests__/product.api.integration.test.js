@@ -7,7 +7,7 @@
 
 // ── In-memory Redis ───────────────────────────────────────────────────────────
 const redisStore = {};
-jest.mock('../../../utils/redis', () => ({
+jest.mock('../../../utils/redis-client', () => ({
     get: jest.fn(async (k) => redisStore[k] ?? null),
     set: jest.fn(async (k, v) => { redisStore[k] = v; }),
     del: jest.fn(async (k) => { delete redisStore[k]; }),
@@ -69,7 +69,7 @@ jest.mock('sequelize', () => ({
     Op: { lt: Symbol('lt'), like: Symbol('like'), or: Symbol('or'), gt: Symbol('gt') }
 }));
 
-jest.mock('../subscription/subscription.service', () => ({
+jest.mock('../../subscription/subscription.service', () => ({
     trackUsage: jest.fn().mockResolvedValue(true),
     checkLimit: jest.fn().mockResolvedValue({ allowed: true }),
 }));
