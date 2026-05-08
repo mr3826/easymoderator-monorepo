@@ -96,6 +96,19 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --quiet
 
+      - name: Deploy BullMQ worker to Cloud Run
+        run: |
+          gcloud run deploy easymod-worker \
+            --image=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --command="node" \
+            --args="src/jobs/worker.js" \
+            --min-instances=1 \
+            --max-instances=2 \
+            --no-allow-unauthenticated \
+            --quiet
+
       - name: Health check — backend
         run: |
           for i in $(seq 1 20); do
