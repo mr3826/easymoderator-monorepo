@@ -151,8 +151,7 @@ const runCampaign = async (shopId, campaignId) => {
         recipientCap = CAMPAIGN_MAX_RECIPIENTS
     } = campaign.segment_filter || {};
 
-    // Find matching customers
-    let matchingCustomers;
+    // Build segment filter into customerWhere before fetching
     if (minOrders && minOrders > 0) {
         // Customers with at least minOrders orders matching optional payment method filter
         const orderWhere = { shop_id: shopId };

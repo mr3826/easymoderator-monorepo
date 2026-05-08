@@ -92,6 +92,7 @@ jobs:
             --field environment=production \
             --field description="Deploy ${{ github.sha }}" \
             --field auto_merge=false \
+            --raw-field required_contexts='[]' \
             --jq '.id')
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
