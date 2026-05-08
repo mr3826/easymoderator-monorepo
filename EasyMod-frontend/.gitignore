@@ -56,7 +56,6 @@ amplify/
 .yarn/
 
 # npm
-package-lock.json
 yarn.lock
 
 # Others
