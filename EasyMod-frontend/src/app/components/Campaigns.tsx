@@ -143,7 +143,7 @@ export default function Campaigns() {
   const onRunCampaign = async (campaignId: string) => {
     try {
       setRunningId(campaignId);
-      const updated = await apiClient.runCampaign(campaignId);
+      const updated = await apiClient.launchCampaign(campaignId);
       setCampaigns((prev) => prev.map((c) => (c.id === campaignId ? updated : c)));
       toast.success('Campaign run started.');
     } catch (error: any) {

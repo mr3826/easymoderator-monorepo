@@ -23,6 +23,7 @@ jobs:
   test-backend:
     name: Backend Tests
     runs-on: ubuntu-latest
+    # continue-on-error until pre-existing mock path failures from monorepo restructure are fixed
     continue-on-error: true
     defaults:
       run:
@@ -43,7 +44,6 @@ jobs:
     name: Build & Deploy
     runs-on: ubuntu-latest
     needs: [test-backend]
-    if: ${{ always() && !cancelled() }}
 
     steps:
       - uses: actions/checkout@v4

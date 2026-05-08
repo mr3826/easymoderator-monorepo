@@ -94,8 +94,10 @@ const checkSubscriptionStatus = async (req, res, next) => {
         }
 
         next();
-    } catch (_) {
-        next(); // fail open — infrastructure errors must not lock out users
+    } catch (err) {
+        // Fail closed: return 503 so suspended shops cannot slip through on infra errors.
+        // Active shops see a brief outage rather than suspended shops getting free access.
+        next(new AppError('Service temporarily unavailable. Please try again shortly.', 503));
     }
 };
 

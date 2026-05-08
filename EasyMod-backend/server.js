@@ -63,11 +63,6 @@ process.on('uncaughtException', (err) => {
             if (config.env === 'production') throw migrateErr;
         }
 
-        // Sync models in development to pick up any model-only changes
-        if (config.env === 'development') {
-            await sequelize.sync({ force: false });
-        }
-
         server = app.listen(config.port, '0.0.0.0', () => {
             console.log(`Server running on port ${config.port}`);
         });

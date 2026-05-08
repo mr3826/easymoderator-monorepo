@@ -16,8 +16,6 @@ const XSS_PATTERNS = [
     [/data\s*:\s*text\/html/gi, ''],
     // vbscript: URI
     [/vbscript\s*:/gi, ''],
-    // Remaining HTML tags (after script stripping)
-    [/<[^>]+>/g, '']
 ];
 
 /**

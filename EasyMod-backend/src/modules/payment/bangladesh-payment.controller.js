@@ -1,5 +1,7 @@
 const { body, validationResult } = require('express-validator');
 const BangladeshPaymentService = require('./bangladesh-payment.service');
+const { createLogger } = require('../../utils/structured-logger');
+const logger = createLogger({ module: 'bangladesh-payment' });
 
 class BangladeshPaymentController {
     /**
@@ -60,7 +62,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Initialize payment error:', error);
+            logger.error('Initialize payment error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -92,7 +94,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Verify payment error:', error);
+            logger.error('Verify payment error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -117,7 +119,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Process callback error:', error);
+            logger.error('Process callback error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -148,7 +150,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Get payment status error:', error);
+            logger.error('Get payment status error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -181,7 +183,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Refund payment error:', error);
+            logger.error('Refund payment error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -203,7 +205,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Get payment methods error:', error);
+            logger.error('Get payment methods error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -225,7 +227,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Validate payment config error:', error);
+            logger.error('Validate payment config error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -283,7 +285,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Test payment integration error:', error);
+            logger.error('Test payment integration error', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -339,7 +341,7 @@ class BangladeshPaymentController {
             });
 
         } catch (error) {
-            console.error('Simulate payment error:', error);
+            logger.error('Simulate payment error', error);
             res.status(500).json({
                 success: false,
                 error: error.message

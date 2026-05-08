@@ -50,8 +50,18 @@ export default function Signup() {
       return;
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim().toLowerCase())) {
+      setError(t('auth.signup.errors.invalidEmail') || 'Please enter a valid email address.');
+      return;
+    }
+
     if (!password) {
       setError(t('auth.signup.errors.createPassword'));
+      return;
+    }
+
+    if (password.length < 8) {
+      setError(t('auth.signup.errors.passwordTooShort') || 'Password must be at least 8 characters.');
       return;
     }
 
@@ -71,17 +81,8 @@ export default function Signup() {
       });
 
       const billingCycle = billingAnnual ? "yearly" : "monthly";
-      const planPrice = getPlanPrice(selectedPlan, billingCycle);
 
-      await apiClient.updateSubscriptionPlan({
-        plan_name: selectedPlan.name,
-        plan_price: planPrice,
-        billing_cycle: billingCycle,
-        conversations_limit: selectedPlan.limits.conversations,
-        orders_limit: selectedPlan.limits.orders,
-        products_limit: selectedPlan.limits.products,
-        features: selectedPlan.features,
-      });
+      await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
 
       sessionStorage.setItem(
         "easymod_selected_plan",

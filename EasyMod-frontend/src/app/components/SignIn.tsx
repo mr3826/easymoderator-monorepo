@@ -38,6 +38,11 @@ export default function SignIn() {
       return;
     }
 
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError(t('auth.signin.errors.emailInvalid') || 'Please enter a valid email address.');
+      return;
+    }
+
     if (!password) {
       setError(t('auth.signin.errors.passwordRequired'));
       return;
