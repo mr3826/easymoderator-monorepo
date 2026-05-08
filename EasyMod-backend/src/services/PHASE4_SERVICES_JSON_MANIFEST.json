@@ -1,0 +1,323 @@
+[
+  {
+    "filename": "database-indexes.migration.js",
+    "path": "src/services/database-indexes.migration.js",
+    "task": "Task 1 - Database Indexes",
+    "codeLength": 407,
+    "description": "Creates 4 composite indexes on products table for optimized shop_id queries",
+    "exports": "DatabaseIndexMigration class",
+    "key_methods": [
+      {
+        "name": "up()",
+        "description": "Creates all composite indexes with CONCURRENT flag for zero-downtime",
+        "returns": "Promise<{success, results[], timestamp}>"
+      },
+      {
+        "name": "down()",
+        "description": "Drops all indexes with transaction rollback support",
+        "returns": "Promise<{success, results[], timestamp}>"
+      },
+      {
+        "name": "verify()",
+        "description": "Verifies all indexes exist and reports statistics",
+        "returns": "Promise<{allValid, indexes[]}>"
+      },
+      {
+        "name": "getStatistics()",
+        "description": "Retrieves pg_stat_user_indexes for performance monitoring",
+        "returns": "Promise<Array>"
+      }
+    ],
+    "features": [
+      "Composite indexes: shop_category_active, shop_sku_status, shop_created_inventory, shop_price_range",
+      "CONCURRENT indexing for zero downtime",
+      "Transaction safety with ROLLBACK",
+      "Idempotent (handles already-existing indexes)",
+      "Index size and scan statistics",
+      "Structured error logging"
+    ],
+    "performance": "No table locks - uses CREATE INDEX CONCURRENTLY",
+    "tested": true,
+    "production_ready": true
+  },
+  {
+    "filename": "llm-failover.service.js",
+    "path": "src/services/llm-failover.service.js",
+    "task": "Task 2 - LLM Failover",
+    "codeLength": 540,
+    "description": "Intelligent LLM provider selection with latency-aware failover (Anthropic → OpenAI → Gemini)",
+    "exports": "LLMFailoverService class",
+    "key_methods": [
+      {
+        "name": "executeWithFailover(message, systemPrompt, options)",
+        "description": "Promise.race() with <500ms failover latency target",
+        "returns": "Promise<{provider, content, usage, elapsed, timestamp}>"
+      },
+      {
+        "name": "getStats()",
+        "description": "Returns current provider health scores and average latency",
+        "returns": "Object with providers[].{health, avgLatency, available}"
+      },
+      {
+        "name": "resetHealthScores(providerName?)",
+        "description": "Reset health scores to 100 for tuning",
+        "returns": "void"
+      }
+    ],
+    "features": [
+      "Promise.race() with individual provider timeouts",
+      "Health scoring: 0-100 scale (+5 success, -15 failure)",
+      "Latency tracking: Last 100 measurements per provider",
+      "Adaptive provider ordering based on health + latency",
+      "Token extraction: inputTokens, outputTokens, totalTokens for all providers",
+      "Supports Anthropic Claude, OpenAI GPT, Google Gemini",
+      "<500ms failover latency target"
+    ],
+    "performance": "Target <500ms total failover latency",
+    "timeout_handling": "Individual provider timeouts + overall race timeout",
+    "tested": true,
+    "production_ready": true
+  },
+  {
+    "filename": "cost-cap.service.js",
+    "path": "src/services/cost-cap.service.js",
+    "task": "Task 3 - Cost Cap",
+    "codeLength": 480,
+    "description": "Validates message cost against shop's maximum auto-order value with database lookup and audit logging",
+    "exports": "CostCapService class",
+    "key_methods": [
+      {
+        "name": "validateCost(shopId, tokenCount, provider, model, options)",
+        "description": "Validates single message cost against shop limit",
+        "returns": "Promise<{allowed, reason, cost, limit, logId, timestamp}>"
+      },
+      {
+        "name": "validateBatchCosts(shopId, messages, options)",
+        "description": "Validates multiple messages with cumulative cost check",
+        "returns": "Promise<{allowed, totalCost, limit, validations[]}>"
+      },
+      {
+        "name": "getValidationHistory(shopId, options)",
+        "description": "Retrieves cost validation audit logs with optional filtering",
+        "returns": "Promise<Array>"
+      },
+      {
+        "name": "clearCache()",
+        "description": "Clears shop cost limit cache",
+        "returns": "void"
+      }
+    ],
+    "features": [
+      "Real-time pricing for Anthropic, OpenAI, Gemini (2024 rates)",
+      "Token cost calculation with input/output estimation",
+      "Shop cost limit database lookup with 5-minute cache",
+      "Audit logging for all validations",
+      "Batch validation for multiple messages",
+      "JSON response: {allowed, reason, cost, limit}",
+      "Default shop limit: $50 (configurable)"
+    ],
+    "pricing": {
+      "anthropic": "Opus $0.015/$0.075, Sonnet $0.003/$0.015, Haiku $0.00025/$0.00125",
+      "openai": "GPT-4T $0.01/$0.03, 3.5-turbo $0.0005/$0.0015",
+      "gemini": "Pro $0.0005/$0.0015"
+    },
+    "cache_ttl": "5 minutes",
+    "tested": true,
+    "production_ready": true
+  },
+  {
+    "filename": "guardrail.service.js",
+    "path": "src/services/guardrail.service.js",
+    "task": "Task 4 - Guardrails",
+    "codeLength": 570,
+    "description": "5 security guardrails for LLM output: RTO fraud, prompt injection, hallucination, coherence, toxicity",
+    "exports": "GuardrailService class",
+    "key_methods": [
+      {
+        "name": "validateOutput(userMessage, llmResponse, context)",
+        "description": "Runs all 5 security checks in parallel with audit trail",
+        "returns": "Promise<{passed, loggingId, violations[], checks{}, elapsed}>"
+      },
+      {
+        "name": "getConfig()",
+        "description": "Returns current thresholds and check names",
+        "returns": "Object with thresholds and checks[]"
+      },
+      {
+        "name": "updateThresholds(newThresholds)",
+        "description": "Update violation thresholds for tuning",
+        "returns": "void"
+      }
+    ],
+    "security_checks": [
+      {
+        "name": "RTO Fraud",
+        "detects": "Authorization bypass attempts, secret leaks, privilege escalation",
+        "patterns": "skip auth, bypass check, API keys, as admin, execute code"
+      },
+      {
+        "name": "Prompt Injection",
+        "detects": "Alternative instruction injection, system prompt override, jailbreak attempts",
+        "patterns": "SYSTEM:, IGNORE INSTRUCTIONS, [JAILBREAK], mirror attacks"
+      },
+      {
+        "name": "Hallucination",
+        "detects": "False claims, over-confidence, circular reasoning, unsupported facts",
+        "patterns": "Confidence word counting, claim verification heuristics"
+      },
+      {
+        "name": "Coherence",
+        "detects": "Incoherent rambling, abnormal sentence structure, topic drift",
+        "patterns": "Sentence length analysis, word diversity, paragraph structure"
+      },
+      {
+        "name": "Toxicity",
+        "detects": "Harmful language, abuse, hateful content, slurs",
+        "patterns": "Curse words, slurs, violent language patterns"
+      }
+    ],
+    "features": [
+      "5 parallel security checks with confidence scoring",
+      "Returns {passed, violations[], loggingId} format",
+      "Full error handling & audit trails",
+      "Configurable thresholds: promptInjection=0.7, hallucination=0.6, toxicity=0.5, coherence=0.4",
+      "Recommendations for policy violations",
+      "UUID-based logging_id for tracing"
+    ],
+    "performance": "All checks parallel, typically <200ms",
+    "tested": true,
+    "production_ready": true
+  },
+  {
+    "filename": "conversation-lock.service.js",
+    "path": "src/services/conversation-lock.service.js",
+    "task": "Task 5 - Conversation Lock",
+    "codeLength": 480,
+    "description": "Redis-based mutual exclusion for conversation processing with <50ms lock acquisition target",
+    "exports": "ConversationLockService class",
+    "key_methods": [
+      {
+        "name": "acquireLock(conversationId, options)",
+        "description": "Acquires Redis lock with <50ms acquisition target, optional auto-refresh",
+        "returns": "Promise<{lockToken, ttl, expiresAt, elapsed, acquiredAt}>"
+      },
+      {
+        "name": "releaseLock(lockToken, conversationId)",
+        "description": "Atomically releases lock with token verification",
+        "returns": "Promise<{success, timestamp}>"
+      },
+      {
+        "name": "refreshLock(lockToken, conversationId, extendBy?)",
+        "description": "Extends TTL with atomic verification",
+        "returns": "Promise<{success, newTTL, newExpiresAt}>"
+      },
+      {
+        "name": "getLockStatus(conversationId)",
+        "description": "Checks lock status and remaining TTL",
+        "returns": "Promise<{locked, ttl, expiresAt}>"
+      },
+      {
+        "name": "forceUnlock(conversationId)",
+        "description": "Admin operation to force unlock (cleanup crashed processes)",
+        "returns": "Promise<{success}>"
+      }
+    ],
+    "features": [
+      "<50ms lock acquisition target (typical <30ms in Redis)",
+      "TTL-based automatic expiration: 30s default, 30-300s configurable",
+      "Auto-refresh at 30% of TTL remaining",
+      "Atomic Lua scripts prevent race conditions",
+      "Local lock tracking with metadata",
+      "Wait-for-release retry logic (optional)",
+      "Force unlock for admin cleanup",
+      "Cleanup method releases all local locks on shutdown"
+    ],
+    "performance": {
+      "acquisition": "<50ms target (<30ms typical)",
+      "refresh": "<10ms target",
+      "release": "<5ms target"
+    },
+    "configuration": {
+      "defaultTTL": "30 seconds",
+      "minTTL": "30 seconds",
+      "maxTTL": "300 seconds (5 minutes)",
+      "refreshThreshold": "30% of TTL"
+    },
+    "tested": true,
+    "production_ready": true
+  },
+  {
+    "filename": "intent-router.service.js",
+    "path": "src/services/intent-router.service.js",
+    "task": "Task 6 - Intent Router",
+    "codeLength": 550,
+    "description": "Three-tier intent routing: Exact cache → Semantic FAQ → LLM fallback with confidence scoring",
+    "exports": "IntentRouterService class",
+    "key_methods": [
+      {
+        "name": "routeIntent(userMessage, shopId, context)",
+        "description": "Routes user intent through 3 tiers, returns matched intent with confidence",
+        "returns": "Promise<{tier, matched, confidence, response, performance{}, timestamp}>"
+      },
+      {
+        "name": "initialize(faqData, llmProvider, embeddingService)",
+        "description": "Builds semantic index from FAQ data for Tier 2",
+        "returns": "Promise<void>"
+      },
+      {
+        "name": "getStats()",
+        "description": "Returns tier distribution, avg latency, cache info",
+        "returns": "Object with tierDistribution{}, averageLatencyMs, cache{}"
+      },
+      {
+        "name": "updateFAQIndex(faqData)",
+        "description": "Hot reload FAQ data and rebuild semantic index",
+        "returns": "Promise<void>"
+      }
+    ],
+    "routing_tiers": [
+      {
+        "tier": 1,
+        "name": "Exact Cache",
+        "target": "<50ms",
+        "method": "In-memory LRU cache with text normalization",
+        "features": "Max 1000 entries, 1 hour TTL, instant responses"
+      },
+      {
+        "tier": 2,
+        "name": "Semantic FAQ",
+        "target": "<100ms",
+        "method": "Vector similarity search with cosine similarity",
+        "features": "Confidence threshold (0.75 default), top 3 results"
+      },
+      {
+        "tier": 3,
+        "name": "LLM Fallback",
+        "target": "<1500ms",
+        "method": "LLM failover service with system context",
+        "features": "Anthropic→OpenAI→Gemini, caches result in Tier 1"
+      }
+    ],
+    "features": [
+      "Three-tier hierarchical routing",
+      "Confidence scoring: 0-1 for Tier 2/3 matches",
+      "Multi-tenant: Shop ID isolation",
+      "Performance tracking: Reports SLA violations",
+      "FAQ updates: Hot reload capability",
+      "Cache statistics: Hit rate by tier",
+      "Cosine similarity algorithm with vector embeddings"
+    ],
+    "performance": {
+      "tier1_target": "<50ms",
+      "tier2_target": "<100ms",
+      "tier3_target": "<1500ms"
+    },
+    "cache_config": {
+      "maxSize": "1000 entries",
+      "ttl": "3600000ms (1 hour)",
+      "eviction": "LRU on max size"
+    },
+    "tested": true,
+    "production_ready": true
+  }
+]

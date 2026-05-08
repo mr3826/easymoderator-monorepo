@@ -1,0 +1,618 @@
+const shopService = require('./shop.service');
+const knowledgeService = require('../knowledge/knowledge.service');
+const { validationResult } = require('express-validator');
+const { AppError } = require('../../utils/AppError');
+const { setAuthCookies } = require('../../utils/auth-cookies');
+const { getAiSettingsAccess, getAllowedLanguages, getAllowedAutomationModes } = require('../subscription/subscription.plans');
+const cacheService = require('../../utils/cache.service');
+const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
+
+// Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
+// Fails open to 'FREE' so plan checks never lock out users due to DB errors.
+async function getShopPlanCode(shopId) {
+    try {
+        const cached = await cacheService.getForShop(shopId, 'subscription:plan_code');
+        if (cached) return cached;
+        const { Subscription } = require('../entities');
+        const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
+        const planCode = sub?.plan_code || 'FREE';
+        await cacheService.setForShop(shopId, 'subscription:plan_code', planCode, 300);
+        return planCode;
+    } catch (_) {
+        return 'FREE';
+    }
+}
+
+/**
+ * Get all shops for user
+ */
+const getUserShops = async (req, res, next) => {
+    try {
+        const shops = await shopService.getShopsByUserId(req.user.userId);
+
+        res.status(200).json({
+            success: true,
+            data: shops
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get current logged-in shop from token
+ */
+const getShop = async (req, res, next) => {
+    try {
+        // Get shopId from token
+        const { shopId } = req.user;
+
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        // Get shop details with user's role
+        const shop = await shopService.getShopById(shopId, req.user.userId);
+
+        res.status(200).json({
+            success: true,
+            data: shop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Get business info for current shop
+ * ai_settings are now included by knowledgeService.getKnowledge — no stitching needed here.
+ */
+const getBusinessInfo = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const data = await knowledgeService.getKnowledge(userId, shopId);
+
+        res.status(200).json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update business info for current shop
+ */
+const updateBusinessInfo = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId, userId } = req.user;
+
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
+
+        const data = await knowledgeService.updateBusinessInfo(userId, shopId, req.body);
+
+        res.status(200).json({
+            success: true,
+            data
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Create new shop
+ */
+const createShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const shop = await shopService.createShop(req.user.userId, req.body);
+
+        res.status(201).json({
+            success: true,
+            data: shop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update shop
+ */
+const updateShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        // Always use the shop from the authenticated token — never trust shopId from the body.
+        const shopId = req.user.shopId;
+        const updateData = { ...req.body };
+        delete updateData.id;      // immutable
+        delete updateData.shopId;  // strip if accidentally sent
+        const shop = await shopService.updateShopById(shopId, req.user.userId, updateData);
+
+        res.status(200).json({
+            success: true,
+            data: shop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Delete shop
+ */
+const deleteShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId } = req.body;
+        const result = await shopService.deleteShopById(shopId, req.user.userId);
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Add user to shop
+ */
+const addUserToShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId, email, role } = req.body;
+        const userShop = await shopService.addUserToShop(shopId, req.user.userId, email, role);
+
+        res.status(200).json({
+            success: true,
+            data: userShop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Remove user from shop
+ */
+const removeUserFromShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId, userId } = req.body;
+        const result = await shopService.removeUserFromShop(shopId, req.user.userId, userId);
+
+        res.status(200).json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Update user role
+ */
+const updateUserRole = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId, userId, role } = req.body;
+        const userShop = await shopService.updateUserRole(shopId, req.user.userId, userId, role);
+
+        res.status(200).json({
+            success: true,
+            data: userShop
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * Switch to a different shop
+ */
+const switchShop = async (req, res, next) => {
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            throw new AppError(errors.array()[0].msg, 400);
+        }
+
+        const { shopId } = req.body;
+        const switchService = require('./shop-switch.service');
+        const result = await switchService.switchShop(req.user.userId, shopId);
+
+        setAuthCookies(res, result.accessToken, null);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                currentShop: result.currentShop
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Allowed model IDs — validated server-side so callers can't store arbitrary strings.
+const ALLOWED_LLM_MODELS = new Set([
+    'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
+    'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'
+]);
+
+/**
+ * GET /shop/llm-config
+ */
+const getLLMConfig = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        res.status(200).json({
+            success: true,
+            data: {
+                model: aiSettings.llm_model || 'gpt-4o-mini',
+                temperature: aiSettings.llm_temperature ?? 0.7
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/llm-config
+ */
+const updateLLMConfig = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        // Plan gate — LLM model/temperature config requires Pro or Business
+        const planCode = await getShopPlanCode(shopId);
+        const planAccess = getAiSettingsAccess(planCode);
+        if (!planAccess.has('llm_model')) {
+            throw new AppError(
+                `Your current plan (${planCode}) does not include LLM model configuration. Upgrade to Pro or Business.`,
+                403
+            );
+        }
+
+        const { model, temperature } = req.body;
+
+        if (!model || !ALLOWED_LLM_MODELS.has(model)) {
+            throw new AppError(`Invalid model. Allowed: ${[...ALLOWED_LLM_MODELS].join(', ')}`, 400);
+        }
+        if (temperature !== undefined && (typeof temperature !== 'number' || temperature < 0 || temperature > 2)) {
+            throw new AppError('temperature must be a number between 0 and 2', 400);
+        }
+
+        const shop = await shopService.getShopById(shopId, req.user.userId);
+        const currentSettings = shop.settings || {};
+        const currentAI = currentSettings.ai || {};
+
+        await shopService.updateShopById(shopId, req.user.userId, {
+            settings: {
+                ...currentSettings,
+                ai: {
+                    ...currentAI,
+                    llm_model: model,
+                    ...(temperature !== undefined && { llm_temperature: temperature })
+                }
+            }
+        });
+
+        res.status(200).json({ success: true, data: { model, temperature } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Allowed values for AI behaviour fields — validated server-side.
+const ALLOWED_AUTOMATION_MODES = new Set(['DRAFT', 'AUTO', 'MANUAL']);
+const ALLOWED_LANGUAGES        = new Set(['mixed', 'en', 'bn']);
+const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms']);
+
+/**
+ * GET /shop/ai-settings
+ */
+const getAISettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const [aiSettings, planCode] = await Promise.all([
+            shopService.getShopAiSettings(shopId),
+            getShopPlanCode(shopId)
+        ]);
+
+        // Include plan capabilities so the frontend can render locked fields
+        const { getTierByCode } = require('../subscription/subscription.plans');
+        const tier = getTierByCode(planCode) || getTierByCode('FREE');
+        const planCapabilities = {
+            plan_code: planCode,
+            ai_settings_access: [...tier.ai_settings_access],
+            allowed_languages: [...tier.features.allowed_languages],
+            allowed_automation_modes: [...tier.features.allowed_automation_modes],
+            language_autodetect: tier.features.language_autodetect
+        };
+
+        res.status(200).json({ success: true, data: aiSettings, plan_capabilities: planCapabilities });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/ai-settings
+ */
+const updateAISettings = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const {
+            automation_mode, confidence_threshold, auto_reply_enabled,
+            max_auto_order_value, ask_email, primary_language,
+            required_fields, handoff_settings, payment_methods
+        } = req.body;
+
+        // ── Plan-based access enforcement ─────────────────────────────────────
+        const planCode = await getShopPlanCode(shopId);
+        const planAccess = getAiSettingsAccess(planCode);
+        const planLanguages = getAllowedLanguages(planCode);
+        const planAutomationModes = getAllowedAutomationModes(planCode);
+
+        // Fields that require explicit plan access (beyond basic on/off)
+        const planGatedFields = {
+            confidence_threshold, max_auto_order_value, handoff_settings,
+            required_fields, payment_methods
+        };
+        for (const [field, value] of Object.entries(planGatedFields)) {
+            if (value !== undefined && !planAccess.has(field)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) does not include access to '${field}'. Upgrade to configure this setting.`,
+                    403
+                );
+            }
+        }
+
+        // Automation mode — format check first, then plan check
+        if (automation_mode !== undefined) {
+            if (!ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
+                throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
+            }
+            if (!planAutomationModes.has(automation_mode)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) only supports automation modes: ${[...planAutomationModes].join(', ')}.`,
+                    403
+                );
+            }
+        }
+
+        // Language — format check first, then plan check
+        if (primary_language !== undefined) {
+            if (!ALLOWED_LANGUAGES.has(primary_language)) {
+                throw new AppError(`primary_language must be one of: ${[...ALLOWED_LANGUAGES].join(', ')}`, 400);
+            }
+            if (!planLanguages.has(primary_language)) {
+                throw new AppError(
+                    `Your current plan (${planCode}) supports these languages: ${[...planLanguages].join(', ')}. Upgrade to use '${primary_language}'.`,
+                    403
+                );
+            }
+        }
+
+        // ── Value-range validations ────────────────────────────────────────────
+        if (confidence_threshold !== undefined && (typeof confidence_threshold !== 'number' || confidence_threshold < 0 || confidence_threshold > 100)) {
+            throw new AppError('confidence_threshold must be a number between 0 and 100', 400);
+        }
+        if (max_auto_order_value !== undefined && (typeof max_auto_order_value !== 'number' || max_auto_order_value < 0)) {
+            throw new AppError('max_auto_order_value must be a non-negative number', 400);
+        }
+        if (handoff_settings?.notification_channel !== undefined && !ALLOWED_NOTIF_CHANNELS.has(handoff_settings.notification_channel)) {
+            throw new AppError(`notification_channel must be one of: ${[...ALLOWED_NOTIF_CHANNELS].join(', ')}`, 400);
+        }
+
+        const updates = {};
+        if (automation_mode      !== undefined) updates.automation_mode      = automation_mode;
+        if (confidence_threshold !== undefined) updates.confidence_threshold = confidence_threshold;
+        if (auto_reply_enabled   !== undefined) updates.auto_reply_enabled   = Boolean(auto_reply_enabled);
+        if (max_auto_order_value !== undefined) updates.max_auto_order_value = max_auto_order_value;
+        if (ask_email            !== undefined) updates.ask_email            = Boolean(ask_email);
+        if (primary_language     !== undefined) updates.primary_language     = primary_language;
+        if (required_fields      !== undefined) updates.required_fields      = required_fields;
+        if (handoff_settings     !== undefined) updates.handoff_settings     = handoff_settings;
+        if (payment_methods      !== undefined) updates.payment_methods      = payment_methods;
+
+        const data = await shopService.updateShopAiSettings(shopId, userId, updates);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /shop/ai-settings/intent-thresholds
+ * Return per-intent confidence thresholds for the current shop.
+ */
+const getIntentThresholds = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const aiSettings = await shopService.getShopAiSettings(shopId);
+        const intentThresholds = aiSettings.intentThresholds || {};
+        res.status(200).json({ success: true, data: intentThresholds });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * PUT /shop/ai-settings/intent-thresholds
+ * Update per-intent confidence thresholds.
+ * Body: { greeting: 70, refund: 90, product_inquiry: 65 }
+ */
+const updateIntentThresholds = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const intentThresholdService = require('../ai/intent-threshold.service');
+        const updated = await intentThresholdService.updateIntentThresholds(shopId, req.body);
+        res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * GET /shop/settings/ai-defaults
+ * Returns the canonical DEFAULT_AI_SETTINGS so the frontend can show them
+ * without making per-shop DB reads.
+ */
+const getAiDefaults = async (req, res, next) => {
+    try {
+        const defaults = shopService.getAiDefaults();
+        res.status(200).json({ success: true, data: defaults });
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /shop/branding-preset
+ * Apply a named branding preset to the shop's AI settings.
+ * Body: { preset: 'FRIENDLY' | 'PROFESSIONAL' | 'FUN' }
+ */
+const applyBrandingPreset = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const { preset } = req.body;
+        if (!preset) throw new AppError('preset is required', 400);
+
+        const branding = await shopService.applyBrandingPreset(shopId, preset.toUpperCase());
+        res.status(200).json({ success: true, data: branding });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// BD Settings (Bangladesh-specific MFS + Google Sheets config)
+// ---------------------------------------------------------------------------
+
+const getBdSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const settings = await getBdSettingsHelper(shopId);
+        res.status(200).json({ success: true, data: settings });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updateBdSettings = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const updated = await updateBdSettingsHelper(shopId, req.body);
+        res.status(200).json({ success: true, data: updated });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getShopAgents = async (req, res, next) => {
+    try {
+        const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Shop ID required' } });
+        }
+        const { UserShop, User } = require('../entities');
+        const members = await UserShop.findAll({
+            where: { shop_id: shopId, is_active: true },
+            include: [{ model: User, as: 'user', attributes: ['id', 'full_name', 'email'] }]
+        });
+        const agents = members.map((m) => ({
+            id: m.user.id,
+            name: m.user.full_name,
+            email: m.user.email,
+            role: m.role
+        }));
+        res.json({ success: true, data: agents });
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = {
+    getUserShops,
+    getShop,
+    createShop,
+    updateShop,
+    deleteShop,
+    addUserToShop,
+    removeUserFromShop,
+    updateUserRole,
+    switchShop,
+    getBusinessInfo,
+    updateBusinessInfo,
+    getLLMConfig,
+    updateLLMConfig,
+    getAISettings,
+    updateAISettings,
+    getIntentThresholds,
+    updateIntentThresholds,
+    getAiDefaults,
+    applyBrandingPreset,
+    getBdSettings,
+    updateBdSettings,
+    getShopAgents
+};

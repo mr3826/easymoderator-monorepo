@@ -1,0 +1,310 @@
+{
+  "dashboard": {
+    "name": "EasyMod Backend Monitoring",
+    "description": "Production monitoring dashboard for EasyMod backend services",
+    "refresh_interval": "30s",
+    "time_range": "1h",
+    "panels": [
+      {
+        "id": "overview",
+        "title": "Service Overview",
+        "type": "stat",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "up{job=\"easymod-backend\"}",
+            "legend_format": "Service Status",
+            "ref_id": "service-status"
+          }
+        ]
+      },
+      {
+        "id": "request-rate",
+        "title": "Request Rate",
+        "type": "graph",
+        "grid": {
+          "x": 0,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{service=\"easymod-backend\"}[5m])",
+            "legend_format": "Requests/sec",
+            "ref_id": "request-rate"
+          }
+        ]
+      },
+      {
+        "id": "response-time",
+        "title": "Response Time",
+        "type": "graph",
+        "grid": {
+          "x": 6,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service=\"easymod-backend\"}[5m]))",
+            "legend_format": "95th percentile",
+            "ref_id": "p95-response-time"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{service=\"easymod-backend\"}[5m]))",
+            "legend_format": "50th percentile",
+            "ref_id": "p50-response-time"
+          }
+        ]
+      },
+      {
+        "id": "error-rate",
+        "title": "Error Rate",
+        "type": "graph",
+        "grid": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{service=\"easymod-backend\",status!=\"2xx\"}[5m])",
+            "legend_format": "4xx Errors/sec",
+            "ref_id": "4xx-errors"
+          },
+          {
+            "expr": "rate(http_requests_total{service=\"easymod-backend\",status!~\"5..\"}[5m])",
+            "legend_format": "5xx Errors/sec",
+            "ref_id": "5xx-errors"
+          }
+        ]
+      },
+      {
+        "id": "memory-usage",
+        "title": "Memory Usage",
+        "type": "graph",
+        "grid": {
+          "x": 0,
+          "y": 16,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{service=\"easymod-backend\"} / 1024 / 1024",
+            "legend_format": "RSS Memory (MB)",
+            "ref_id": "rss-memory"
+          },
+          {
+            "expr": "nodejs_heap_size_used_bytes{service=\"easymod-backend\"} / 1024 / 1024",
+            "legend_format": "Heap Used (MB)",
+            "ref_id": "heap-memory"
+          }
+        ]
+      },
+      {
+        "id": "cpu-usage",
+        "title": "CPU Usage",
+        "type": "graph",
+        "grid": {
+          "x": 6,
+          "y": 16,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total{service=\"easymod-backend\"}[5m]) * 100",
+            "legend_format": "CPU %",
+            "ref_id": "cpu-usage"
+          }
+        ]
+      },
+      {
+        "id": "database-connections",
+        "title": "Database Connections",
+        "type": "singlestat",
+        "grid": {
+          "x": 0,
+          "y": 24,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends{service=\"easymod-backend\"}",
+            "legend_format": "Active Connections",
+            "ref_id": "db-connections"
+          }
+        ]
+      },
+      {
+        "id": "redis-operations",
+        "title": "Redis Operations",
+        "type": "graph",
+        "grid": {
+          "x": 6,
+          "y": 24,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(redis_commands_total{service=\"easymod-backend\"}[5m])",
+            "legend_format": "Commands/sec",
+            "ref_id": "redis-ops"
+          }
+        ]
+      }
+    ]
+  },
+  "alerts": [
+    {
+      "name": "HighErrorRate",
+      "condition": "rate(http_requests_total{service=\"easymod-backend\",status!=\"2xx\"}[5m]) > 0.1",
+      "for": "5m",
+      "labels": {
+        "severity": "warning",
+        "service": "easymod-backend",
+        "alert_type": "error_rate"
+      },
+      "annotations": {
+        "summary": "High error rate detected",
+        "description": "Error rate is {{ $value }} errors/sec (threshold: 0.1)"
+      },
+      "notification_channels": ["email", "slack"]
+    },
+    {
+      "name": "HighResponseTime",
+      "condition": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service=\"easymod-backend\"}[5m])) > 1",
+      "for": "5m",
+      "labels": {
+        "severity": "warning",
+        "service": "easymod-backend",
+        "alert_type": "response_time"
+      },
+      "annotations": {
+        "summary": "High response time detected",
+        "description": "95th percentile response time is {{ $value }}s (threshold: 1s)"
+      },
+      "notification_channels": ["email", "slack"]
+    },
+    {
+      "name": "ServiceDown",
+      "condition": "up{job=\"easymod-backend\"} == 0",
+      "for": "1m",
+      "labels": {
+        "severity": "critical",
+        "service": "easymod-backend",
+        "alert_type": "service_down"
+      },
+      "annotations": {
+        "summary": "Service is down",
+        "description": "EasyMod backend service has been down for more than 1 minute"
+      },
+      "notification_channels": ["email", "slack", "pagerduty"]
+    },
+    {
+      "name": "HighMemoryUsage",
+      "condition": "process_resident_memory_bytes{service=\"easymod-backend\"} / 1024 / 1024 > 800",
+      "for": "10m",
+      "labels": {
+        "severity": "warning",
+        "service": "easymod-backend",
+        "alert_type": "memory_usage"
+      },
+      "annotations": {
+        "summary": "High memory usage detected",
+        "description": "Memory usage is {{ $value }}MB (threshold: 800MB)"
+      },
+      "notification_channels": ["email", "slack"]
+    },
+    {
+      "name": "DatabaseConnectionLost",
+      "condition": "pg_stat_database_numbackends{service=\"easymod-backend\"} == 0",
+      "for": "2m",
+      "labels": {
+        "severity": "critical",
+        "service": "easymod-backend",
+        "alert_type": "database_down"
+      },
+      "annotations": {
+        "summary": "Database connection lost",
+        "description": "No active database connections detected"
+      },
+      "notification_channels": ["email", "slack", "pagerduty"]
+    },
+    {
+      "name": "RedisConnectionLost",
+      "condition": "redis_connected_clients{service=\"easymod-backend\"} == 0",
+      "for": "2m",
+      "labels": {
+        "severity": "critical",
+        "service": "easymod-backend",
+        "alert_type": "redis_down"
+      },
+      "annotations": {
+        "summary": "Redis connection lost",
+        "description": "No active Redis connections detected"
+      },
+      "notification_channels": ["email", "slack", "pagerduty"]
+    }
+  ],
+  "notification_channels": {
+    "email": {
+      "type": "email",
+      "enabled": true,
+      "recipients": ["alerts@easymod.tech"],
+      "template": "easymod-alert"
+    },
+    "slack": {
+      "type": "slack",
+      "enabled": true,
+      "webhook_url": "${SLACK_WEBHOOK_URL}",
+      "channel": "#alerts",
+      "username": "EasyMod Monitor",
+      "icon_emoji": ":warning:"
+    },
+    "pagerduty": {
+      "type": "pagerduty",
+      "enabled": false,
+      "integration_key": "${PAGERDUTY_INTEGRATION_KEY}",
+      "service_key": "${PAGERDUTY_SERVICE_KEY}"
+    }
+  },
+  "metrics_collection": {
+    "enabled": true,
+    "scrape_interval": "15s",
+    "targets": [
+      {
+        "job": "easymod-backend",
+        "scrape_interval": "15s",
+        "metrics_path": "/metrics",
+        "static_configs": [
+          {
+            "targets": ["easymod-backend:3000"]
+          }
+        ]
+      }
+    ]
+  },
+  "retention": {
+    "default": "30d",
+    "metrics": {
+      "http_requests_total": "90d",
+      "http_request_duration_seconds": "90d",
+      "process_cpu_seconds_total": "30d",
+      "process_resident_memory_bytes": "30d",
+      "pg_stat_database_numbackends": "90d",
+      "redis_commands_total": "90d"
+    }
+  }
+}

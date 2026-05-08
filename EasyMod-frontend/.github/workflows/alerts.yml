@@ -1,0 +1,142 @@
+name: Health Alert Notifications
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run health check alerts every 10 minutes
+    - cron: '*/10 * * * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  SERVICE_NAME: easymod-frontend
+
+jobs:
+  health-alerts:
+    name: Health Check Alerts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Perform health check
+        id: health
+        run: |
+          echo "🔍 Performing comprehensive health check..."
+          
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)" 2>/dev/null || echo "")
+          
+          if [ -z "$SERVICE_URL" ]; then
+            echo "❌ Failed to get service URL"
+            echo "service_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "error_message=Service URL not found" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          
+          # Basic health check
+          BASIC_STATUS=$(curl -sf "${SERVICE_URL}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+          
+          # Detailed health check
+          HEALTH_RESPONSE=$(curl -sf "${SERVICE_URL}/health/detailed" 2>/dev/null || echo '{"error":"failed"}')
+          
+          # Readiness check
+          READY_STATUS=$(curl -sf "${SERVICE_URL}/health/ready" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+          
+          # Performance check
+          START_TIME=$(date +%s%N)
+          PERF_STATUS=$(curl -sf "${SERVICE_URL}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+          END_TIME=$(date +%s%N)
+          
+          if [ "$PERF_STATUS" = "200" ]; then
+            RESPONSE_TIME=$(( ($END_TIME - $START_TIME) / 1000000 ))
+          else
+            RESPONSE_TIME=9999
+          fi
+          
+          # Determine overall health status
+          if [ "$BASIC_STATUS" = "200" ] && [ "$READY_STATUS" = "200" ] && [ "$RESPONSE_TIME" -lt 1000 ]; then
+            echo "service_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "✅ All health checks passed"
+          else
+            echo "service_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "❌ Health check failed"
+            echo "   - Basic health: HTTP $BASIC_STATUS"
+            echo "   - Readiness: HTTP $READY_STATUS"
+            echo "   - Response time: ${RESPONSE_TIME}ms"
+          fi
+          
+          echo "service_url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+          echo "basic_status=$BASIC_STATUS" >> "$GITHUB_OUTPUT"
+          echo "ready_status=$READY_STATUS" >> "$GITHUB_OUTPUT"
+          echo "response_time=$RESPONSE_TIME" >> "$GITHUB_OUTPUT"
+          echo "health_response=$HEALTH_RESPONSE" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Create alert notification
+        if: steps.health.outputs.service_status == 'unhealthy'
+        run: |
+          echo "🚨 CREATING HEALTH ALERT NOTIFICATION"
+          echo "===================================="
+          
+          # Create alert message
+          ALERT_MESSAGE="🚨 **EasyModerator Frontend Health Alert**
+
+**Service:** ${{ env.SERVICE_NAME }}
+**Status:** UNHEALTHY
+**Timestamp:** ${{ steps.health.outputs.timestamp }}
+**Service URL:** ${{ steps.health.outputs.service_url }}
+
+**Health Check Results:**
+- Basic Health: HTTP ${{ steps.health.outputs.basic_status }}
+- Readiness Check: HTTP ${{ steps.health.outputs.ready_status }}
+- Response Time: ${{ steps.health.outputs.response_time }}ms
+
+**Health Details:** ${{ steps.health.outputs.health_response }}
+
+**Action Required:**
+1. Check service status: \`gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }}\`
+2. Review recent logs: \`gcloud run services logs read ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --limit=50\`
+3. Verify deployment: Check recent GitHub Actions runs
+
+**Next Steps:**
+- If response time >1000ms: Check resource utilization
+- If health check !=200: Check application errors
+- If readiness check !=200: Verify static assets
+
+---
+*Alert generated automatically by EasyModerator monitoring system*"
+          
+          echo "$ALERT_MESSAGE"
+          
+          # Save alert to file for potential notification integration
+          echo "$ALERT_MESSAGE" > health-alert.md
+
+      - name: Performance metrics alert
+        if: steps.health.outputs.response_time != '' && steps.health.outputs.response_time > '500'
+        run: |
+          echo "⚠️ PERFORMANCE ALERT: High response time detected"
+          echo "Response time: ${{ steps.health.outputs.response_time }}ms (threshold: 500ms)"
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "URL: ${{ steps.health.outputs.service_url }}"
+          echo "Timestamp: ${{ steps.health.outputs.timestamp }}"
+
+      - name: Success notification
+        if: steps.health.outputs.service_status == 'healthy'
+        run: |
+          echo "✅ Health check passed successfully"
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "Response time: ${{ steps.health.outputs.response_time }}ms"
+          echo "Timestamp: ${{ steps.health.outputs.timestamp }}"

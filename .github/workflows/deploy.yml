@@ -1,4 +1,4 @@
-name: Deploy Backend to GCP Cloud Run
+name: Deploy to Server
 
 on:
   push:
@@ -6,27 +6,21 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-backend-${{ github.ref }}
+  group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
-# Required for Workload Identity Federation
 permissions:
   contents: read
-  id-token: write
-
-env:
-  PROJECT_ID: gen-lang-client-0405487706
-  REGION: us-central1
-  REGISTRY: us-central1-docker.pkg.dev
-  REPOSITORY: easymod-backend
-  SERVICE_NAME: easymod-backend
-  SERVICE_ACCOUNT: easymod-backend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+  deployments: write
 
 jobs:
-  test:
-    name: Run Tests
+  test-backend:
+    name: Backend Tests
     runs-on: ubuntu-latest
     continue-on-error: true
+    defaults:
+      run:
+        working-directory: EasyMod-backend
     steps:
       - uses: actions/checkout@v4
 
@@ -34,82 +28,146 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: EasyMod-backend/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm test -- --passWithNoTests --forceExit
 
-      - name: Run tests
-        run: npm test -- --passWithNoTests --forceExit
-
-  build-and-deploy:
-    name: Build, Push & Deploy
+  build-frontend:
+    name: Build Frontend
     runs-on: ubuntu-latest
-    needs: test
+    defaults:
+      run:
+        working-directory: EasyMod-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: EasyMod-frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          VITE_ENV: production
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: EasyMod-frontend/dist/
+          retention-days: 1
+
+  deploy:
+    name: Deploy Frontend & Backend
+    runs-on: ubuntu-latest
+    needs: [test-backend, build-frontend]
+    if: ${{ always() && !cancelled() && needs.build-frontend.result == 'success' }}
+    environment: production
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to GCP via Workload Identity Federation
-        uses: google-github-actions/auth@v2
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+          name: frontend-dist
+          path: frontend-dist/
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
-
-      - name: Build and push Docker image
-        id: image
+      - name: Create GitHub deployment
+        id: deployment
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/app
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IMAGE_TAG="${IMAGE}:${{ github.sha }}"
-          IMAGE_LATEST="${IMAGE}:latest"
+          ID=$(gh api repos/${{ github.repository }}/deployments \
+            --method POST \
+            --field ref=${{ github.sha }} \
+            --field environment=production \
+            --field description="Deploy ${{ github.sha }}" \
+            --field auto_merge=false \
+            --jq '.id')
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
 
-          docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
-          docker push "$IMAGE_TAG"
-          docker push "$IMAGE_LATEST"
-
-          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy to Cloud Run
+      - name: Mark deployment in progress
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image="${{ steps.image.outputs.image_tag }}" \
-            --region=${{ env.REGION }} \
-            --service-account=${{ env.SERVICE_ACCOUNT }} \
-            --network=easymod-vpc \
-            --subnet=easymod-subnet \
-            --vpc-egress=private-ranges-only \
-            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-,ALLOW_SELF_SIGNED_TLS=true" \
-            --min-instances=1 \
-            --max-instances=10 \
-            --concurrency=80 \
-            --cpu=1 \
-            --memory=1Gi \
-            --timeout=300 \
-            --port=3000 \
-            --platform=managed \
-            --allow-unauthenticated
+          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
+            --method POST \
+            --field state=in_progress \
+            --field description="Deploying frontend and backend..."
 
-      - name: Health check
+      - name: Setup SSH
         run: |
-          BACKEND_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
-            --format="value(status.url)")
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.SERVER_HOST }}" >> ~/.ssh/known_hosts
 
-          echo "Checking: ${BACKEND_URL}/health/ready"
+      - name: Deploy backend
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh "$SERVER_USER@$SERVER_HOST" bash -s << EOF
+            set -e
+            git -C "$DEPLOY_PATH" pull origin main
+            cd "$DEPLOY_PATH/EasyMod-backend"
+            npm ci --omit=dev
+            pm2 reload easymod-backend --update-env
+            pm2 reload easymod-queue-worker --update-env || true
+          EOF
+
+      - name: Deploy frontend (rsync dist to nginx webroot)
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          FRONTEND_PATH: ${{ secrets.FRONTEND_PATH }}
+        run: |
+          rsync -az --delete frontend-dist/ "$SERVER_USER@$SERVER_HOST:$FRONTEND_PATH/"
+
+      - name: Health check — backend
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
           for i in $(seq 1 20); do
-            STATUS=$(curl -sf "${BACKEND_URL}/health/ready" -o /dev/null -w "%{http_code}" || echo "000")
+            STATUS=$(curl -sf "http://$SERVER_HOST/health/ready" -o /dev/null -w "%{http_code}" || echo "000")
             if [ "$STATUS" = "200" ]; then
-              echo "Health check passed on attempt $i"
-              exit 0
+              echo "Backend healthy on attempt $i"
+              break
             fi
             echo "Attempt $i: status=$STATUS — retrying in 5s..."
             sleep 5
+            if [ "$i" = "20" ]; then
+              echo "ERROR: Backend health check failed"
+              exit 1
+            fi
           done
-          echo "ERROR: Health check failed after 20 attempts"
-          exit 1
+
+      - name: Mark deployment success
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
+            --method POST \
+            --field state=success \
+            --field description="Frontend and backend deployed"
+
+      - name: Mark deployment failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/deployments/${{ steps.deployment.outputs.id }}/statuses \
+            --method POST \
+            --field state=failure \
+            --field description="Deployment failed"

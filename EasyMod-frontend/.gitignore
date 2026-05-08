@@ -1,0 +1,75 @@
+node_modules
+
+.env
+.env.*
+!.env.example
+
+dist/
+coverage/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store
+
+# Build outputs
+build/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Test coverage
+coverage/
+
+# Secrets — never commit
+secret.json
+secret.*.json
+gcp-key.json
+*.pem
+*.key
+
+# Misc
+*.local
+*.cache
+
+# Dependency directories
+amplify/
+
+# Ignore by default
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Next.js
+.next/
+
+# Yarn
+.yarn/
+
+# npm
+package-lock.json
+yarn.lock
+
+# Others
+*.bak
+*.tmp
+
+# Ignore test snapshots
+__snapshots__/
+
+secret.json
+secret.*.json
+deployment_info.json
+.env.production
+.env.local
+playwright-report/
+test-results/

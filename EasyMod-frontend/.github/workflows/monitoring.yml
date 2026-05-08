@@ -1,0 +1,174 @@
+name: Frontend Monitoring & Alerting
+
+on:
+  schedule:
+    # Run every 5 minutes for health checks
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  SERVICE_NAME: easymod-frontend
+
+jobs:
+  health-check:
+    name: Health Check Monitoring
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get service URL
+        id: service
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)" 2>/dev/null || echo "")
+          echo "url=$SERVICE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Perform health checks
+        run: |
+          SERVICE_URL="${{ steps.service.outputs.url }}"
+          if [ -z "$SERVICE_URL" ]; then
+            echo "❌ Failed to get service URL"
+            exit 1
+          fi
+
+          echo "🔍 Checking service health..."
+          
+          # Basic health check
+          BASIC_STATUS=$(curl -sf "${SERVICE_URL}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+          echo "📊 Basic health: HTTP $BASIC_STATUS"
+          
+          # Detailed health check
+          if [ "$BASIC_STATUS" = "200" ]; then
+            HEALTH_DATA=$(curl -sf "${SERVICE_URL}/health/detailed" 2>/dev/null || echo '{"error":"failed"}')
+            echo "📈 Health data: $HEALTH_DATA"
+            
+            # Check if response is valid JSON and contains healthy status
+            if echo "$HEALTH_DATA" | jq -e '.status == "healthy"' >/dev/null 2>&1; then
+              echo "✅ Service is healthy"
+            else
+              echo "⚠️ Service health check failed"
+              exit 1
+            fi
+          else
+            echo "❌ Service is unhealthy (HTTP $BASIC_STATUS)"
+            exit 1
+          fi
+
+      - name: Check service metrics
+        run: |
+          echo "📊 Collecting service metrics..."
+          
+          # Get service details
+          gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="table(status.url,spec.template.spec.containers[0].image,spec.template.spec.containerConcurrency,spec.template.spec.maxScale,status.latestReadyRevisionName,status.conditions[0].message)" || true
+          
+          # Get recent logs
+          echo "📋 Recent service logs:"
+          gcloud run services logs read ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --limit=5 \
+            --format="table(timestamp,textPayload)" || true
+
+  deployment-analytics:
+    name: Deployment Analytics
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get deployment metrics
+        id: metrics
+        run: |
+          echo "📊 Tracking deployment metrics..."
+          
+          # Get commit info
+          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+          BRANCH="${{ github.ref_name }}"
+          
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          
+          # Count changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | wc -l)
+          echo "changed_files=$CHANGED_FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Record deployment event
+        run: |
+          echo "📝 Recording deployment event..."
+          echo "{
+            \"timestamp\": \"${{ steps.metrics.outputs.timestamp }}\",
+            \"commit_sha\": \"${{ steps.metrics.outputs.commit_sha }}\",
+            \"branch\": \"${{ steps.metrics.outputs.branch }}\",
+            \"changed_files\": \"${{ steps.metrics.outputs.changed_files }}\",
+            \"repository\": \"${{ github.repository }}\",
+            \"actor\": \"${{ github.actor }}\",
+            \"workflow\": \"${{ github.workflow }}\"
+          }" > deployment-event.json
+          
+          cat deployment-event.json
+
+  performance-check:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Check performance metrics
+        run: |
+          echo "⚡ Checking performance metrics..."
+          
+          # Get service URL
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(status.url)" 2>/dev/null || echo "")
+          
+          if [ -n "$SERVICE_URL" ]; then
+            # Measure response time
+            START_TIME=$(date +%s%N)
+            STATUS=$(curl -sf "${SERVICE_URL}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+            END_TIME=$(date +%s%N)
+            
+            if [ "$STATUS" = "200" ]; then
+              RESPONSE_TIME=$(( ($END_TIME - $START_TIME) / 1000000 )) # Convert to milliseconds
+              echo "🚀 Response time: ${RESPONSE_TIME}ms"
+              
+              # Alert if response time is high
+              if [ "$RESPONSE_TIME" -gt 1000 ]; then
+                echo "⚠️ High response time detected: ${RESPONSE_TIME}ms"
+              fi
+            else
+              echo "❌ Service unavailable (HTTP $STATUS)"
+            fi
+          fi

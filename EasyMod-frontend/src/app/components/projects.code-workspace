@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../../../.."
+		}
+	],
+	"settings": {
+		"chat.allowAnonymousAccess": false,
+		"chat.agent.maxRequests": 50
+	}
+}
