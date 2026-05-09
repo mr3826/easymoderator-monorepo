@@ -137,8 +137,11 @@ class HttpClient {
           }
         }
 
-        // Retry transient failures (429 rate limit, 5xx server errors)
-        if (status === 429 || (status && status >= 500 && status < 600)) {
+        // Retry transient failures (429 rate limit, 5xx server errors).
+        // Never retry the refresh endpoint itself — a 429 there means the token is
+        // locked out and retrying only burns more rate-limit budget before the redirect.
+        const isRefreshEndpoint = config.url?.includes('/auth/refresh');
+        if (!isRefreshEndpoint && (status === 429 || (status && status >= 500 && status < 600))) {
           const retryCount = config.__retryCount || 0;
           if (retryCount < 2) {
             config.__retryCount = retryCount + 1;
