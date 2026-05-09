@@ -7,6 +7,7 @@ const sessionController = require('./session.controller');
 const totpController = require('./totp.controller');
 const { signupValidator, signinValidator, refreshTokenValidator, forgotPasswordValidator, resetPasswordValidator } = require('./auth.validator');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { deviceFingerprinting } = require('../../middleware/device-fingerprinting.middleware');
 const validate = require('../../middleware/validate.middleware');
 
 const router = express.Router();
@@ -87,15 +88,11 @@ router.post('/signup', validate(signupValidator), authController.signup);
 // POST /auth/signin - User login
 router.post('/signin', validate(signinValidator), authController.signin);
 
-// POST /auth/refresh - Refresh access token with stricter rate limiting
-router.post('/refresh', 
-    refreshRateLimiter ? refreshRateLimiter : (req, res, next) => next(), 
-    validate(refreshTokenValidator), 
-    authController.refresh
-);
+// POST /auth/refresh - Refresh access token
+router.post('/refresh', validate(refreshTokenValidator), authController.refresh);
 
-// GET /auth/me - Get current auth context
-router.get('/me', authenticate, authController.me);
+// GET /auth/me - Get current user context
+router.get('/me', authenticate, deviceFingerprinting, authController.getAuthContext);
 
 // POST /auth/forgot-password - Request password reset email (rate limited per IP + per email)
 router.post('/forgot-password',
