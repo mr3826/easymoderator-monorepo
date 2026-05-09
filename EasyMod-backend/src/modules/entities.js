@@ -4,6 +4,7 @@ const Shop = require('./shop/shop.entity');
 const UserShop = require('./user-shop/user-shop.entity');
 const Session = require('./auth/session.entity');
 const PasswordResetToken = require('./auth/password-reset-token.entity');
+const UserDevice = require('./auth/user-device.entity');
 const Category = require('./category/category.entity');
 const Product = require('./product/product.entity');
 // Bug #5: relational variant table (replaces flat JSON array in Product.variants)
