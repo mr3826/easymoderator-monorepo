@@ -24,14 +24,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setState(authService.getState());
     });
 
-    // Handle 401s emitted by the HTTP client — attempt refresh, then redirect
+    // Handle 401s emitted by the HTTP client.
+    // The interceptor already attempted token refresh before emitting this event,
+    // so refreshToken() must NOT be called again here — doing so doubles the 429 hit
+    // and causes a reload loop when the user is already on /signin.
     const handleUnauthorized = async () => {
       try {
-        await authService.refreshToken();
-        setState(authService.getState());
-      } catch (err: unknown) {
-        console.error('Token refresh failed, redirecting to login:', err);
         await authService.logout();
+      } catch (_) {
+        // Session already invalid — ignore logout API errors
+      }
+      if (window.location.pathname !== '/signin') {
         window.location.href = '/signin';
       }
     };
