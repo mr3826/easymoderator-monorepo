@@ -38,13 +38,19 @@ export class AuthService {
         isLoading: false,
       });
     } catch (error) {
-      this.setAuthState({
-        user: null,
-        currentShop: null,
-        allShops: [],
-        isAuthenticated: false,
-        isLoading: false,
-      });
+      // Guard: if signin() completed concurrently while this /me was in-flight,
+      // don't overwrite the authenticated session — just clear the loading flag.
+      if (this.authState.isAuthenticated) {
+        this.setAuthState({ isLoading: false });
+      } else {
+        this.setAuthState({
+          user: null,
+          currentShop: null,
+          allShops: [],
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      }
     }
   }
 

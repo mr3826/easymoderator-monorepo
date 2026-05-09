@@ -25,18 +25,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     // Handle 401s emitted by the HTTP client.
-    // The interceptor already attempted token refresh before emitting this event,
-    // so refreshToken() must NOT be called again here — doing so doubles the 429 hit
-    // and causes a reload loop when the user is already on /signin.
-    const handleUnauthorized = async () => {
-      try {
-        await authService.logout();
-      } catch (_) {
-        // Session already invalid — ignore logout API errors
-      }
-      if (window.location.pathname !== '/signin') {
-        window.location.href = '/signin';
-      }
+    // Rules:
+    //  1. If the user just authenticated concurrently (page-load /me race), ignore the
+    //     stale event — the interceptor fires this before signin() finishes.
+    //  2. If already on /signin, do nothing — no reload, no loop.
+    //  3. Otherwise redirect. Do NOT call authService.logout() here: POST /api/auth/logout
+    //     requires authentication, so an unauthenticated call returns 401, which re-fires
+    //     this event and creates an infinite logout loop. The full-page reload from
+    //     window.location.href clears all in-memory state automatically.
+    const handleUnauthorized = () => {
+      if (authService.getState().isAuthenticated) return;
+      if (window.location.pathname === '/signin') return;
+      window.location.href = '/signin';
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
 
