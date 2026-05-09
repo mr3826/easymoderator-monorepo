@@ -76,8 +76,8 @@ const refresh = async (req, res, next) => {
 
         const result = await authService.validateRefreshToken(refreshToken);
 
-        // Update access token cookie
-        setAuthCookies(res, result.accessToken, null);
+        // Update both cookies with new tokens (rotation)
+        setAuthCookies(res, result.accessToken, result.refreshToken);
 
         // Log successful token refresh for security audit
         const auditService = require('../audit/audit.service');

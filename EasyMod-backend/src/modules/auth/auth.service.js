@@ -430,7 +430,8 @@ const resetPassword = async (rawToken, newPassword) => {
 };
 
 /**
- * Validate refresh token and generate new access token
+ * Validate refresh token and generate new access token + rotate refresh token
+ * Security: Each refresh token can only be used once. Old token is blacklisted.
  */
 const validateRefreshToken = async (refreshToken) => {
     const { verifyRefreshToken } = require('../../utils/jwt.util');
@@ -446,8 +447,8 @@ const validateRefreshToken = async (refreshToken) => {
         }
 
         // Compare refresh token with stored hash using SHA-256 (not bcrypt - too expensive)
-        const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-        if (tokenHash !== user.refresh_token) {
+        const oldTokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+        if (oldTokenHash !== user.refresh_token) {
             throw new AppError('Invalid refresh token', 401);
         }
 
@@ -464,7 +465,25 @@ const validateRefreshToken = async (refreshToken) => {
             tokenVersion: user.token_version
         });
 
-        return { accessToken };
+        // ── Refresh Token Rotation ─────────────────────────────────────────
+        // Generate a new refresh token (single-use)
+        const newRefreshToken = generateRefreshToken({ userId: user.id });
+
+        // Blacklist the old refresh token so it cannot be reused
+        // Refresh tokens have long expiry; blacklist for remaining lifetime
+        const redis = getRedisClient();
+        if (redis) {
+            const refreshTokenDecoded = jwt.decode(refreshToken);
+            const now = Math.floor(Date.now() / 1000);
+            const ttl = refreshTokenDecoded?.exp ? Math.max(0, refreshTokenDecoded.exp - now) : 30 * 24 * 60 * 60;
+            await redis.setex(`${TOKEN_BLACKLIST_PREFIX}${oldTokenHash}`, ttl, '1');
+        }
+
+        // Store new refresh token hash in DB (replaces the old one)
+        const newRefreshTokenHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+        await user.update({ refresh_token: newRefreshTokenHash });
+
+        return { accessToken, refreshToken: newRefreshToken, userId: user.id, shopId: user.last_logged_shop_id };
     } catch (error) {
         throw new AppError('Invalid or expired refresh token', 401);
     }
