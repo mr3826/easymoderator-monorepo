@@ -1,66 +1,46 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthProvider';
 import LanguageToggle from './LanguageToggle';
+import { signinSchema, type SigninFormData } from '../../features/auth/validation/schemas';
 
 export default function SignIn() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('rememberMe') === 'true';
-    }
-    return false;
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const { signin } = useAuth();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SigninFormData>({
+    resolver: zodResolver(signinSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      rememberMe: typeof window !== 'undefined' ? sessionStorage.getItem('rememberMe') === 'true' : false,
+    },
+  });
+
+  const [showPassword, setShowPassword] = useState(false);
 
   const stats = t('auth.signin.stats', { returnObjects: true }) as { stat: string; label: string }[];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    sessionStorage.setItem('rememberMe', rememberMe ? 'true' : 'false');
-    e.preventDefault();
-    setError('');
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!normalizedEmail) {
-      setError(t('auth.signin.errors.emailRequired'));
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError(t('auth.signin.errors.emailInvalid') || 'Please enter a valid email address.');
-      return;
-    }
-
-    if (!password) {
-      setError(t('auth.signin.errors.passwordRequired'));
-      return;
-    }
-
-    setIsLoading(true);
+  const onSubmit = async (data: SigninFormData) => {
+    sessionStorage.setItem('rememberMe', data.rememberMe ? 'true' : 'false');
 
     try {
-      await signin({ email: normalizedEmail, password });
+      await signin({ email: data.email.trim().toLowerCase(), password: data.password });
       navigate('/app');
     } catch (error: any) {
-      setError(
-        error.response?.data?.error?.message ||
-          error.response?.data?.message ||
-          t('auth.signin.errors.invalidCredentials')
-      );
-    } finally {
-      setIsLoading(false);
+      console.error('Signin error:', error);
     }
   };
 
@@ -161,10 +141,10 @@ export default function SignIn() {
           {/* Card */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
-              {error && (
+              {errors.root && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
                   <span className="mt-0.5">⚠️</span>
-                  <span>{error}</span>
+                  <span>{errors.root.message}</span>
                 </div>
               )}
 
@@ -173,16 +153,19 @@ export default function SignIn() {
                   {t('auth.signin.emailLabel')}
                 </label>
                 <Input
-                  id="email"
+                  {...register('email')}
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
                   placeholder={t('auth.signin.emailPlaceholder')}
                   autoComplete="email"
                   autoFocus
-                  disabled={isLoading}
-                  className="h-11 rounded-xl border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20"
+                  disabled={isSubmitting}
+                  className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 ${
+                    errors.email ? 'border-red-500' : ''
+                  }`}
                 />
+                {errors.email && (
+                  <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -200,15 +183,18 @@ export default function SignIn() {
                 </div>
                 <div className="relative">
                   <Input
-                    id="password"
+                    {...register('password')}
                     type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
                     placeholder={t('auth.signin.passwordPlaceholder')}
                     autoComplete="current-password"
-                    disabled={isLoading}
-                    className="h-11 rounded-xl border-gray-200 pr-11 focus:border-emerald-500 focus:ring-emerald-500/20"
+                    disabled={isSubmitting}
+                    className={`h-11 rounded-xl border-gray-200 pr-11 focus:border-emerald-500 focus:ring-emerald-500/20 ${
+                      errors.password ? 'border-red-500' : ''
+                    }`}
                   />
+                  {errors.password && (
+                    <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
+                  )}
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
@@ -221,10 +207,8 @@ export default function SignIn() {
 
               <div className="flex items-center gap-2.5">
                 <Checkbox
-                  id="rememberMe"
-                  checked={rememberMe}
-                  onCheckedChange={(checked) => setRememberMe(checked as boolean)}
-                  disabled={isLoading}
+                  {...register('rememberMe')}
+                  disabled={isSubmitting}
                   className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                 />
                 <label htmlFor="rememberMe" className="text-sm text-gray-600 cursor-pointer select-none">
@@ -236,9 +220,9 @@ export default function SignIn() {
                 type="submit"
                 className="w-full h-12 rounded-xl text-white font-semibold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
-                disabled={isLoading}
+                disabled={isSubmitting}
               >
-                {isLoading ? (
+                {isSubmitting ? (
                   <span className="flex items-center gap-2">
                     <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
@@ -9,6 +11,8 @@ import { useAuth } from "../../features/auth/AuthProvider";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice } from "../lib/subscriptionPlans";
 import LanguageToggle from "./LanguageToggle";
+import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
+import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -16,13 +20,23 @@ export default function Signup() {
   const { signup } = useAuth();
   const [billingAnnual, setBillingAnnual] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState("starter");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: {
+      fullName: '',
+      email: '',
+      phone: '',
+      password: '',
+      acceptedTerms: false,
+    },
+  });
 
   const selectedPlan = useMemo(
     () => subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0],
@@ -31,56 +45,16 @@ export default function Signup() {
 
   const formatPrice = (value: number) => `৳${value.toLocaleString()}`;
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError("");
-
-    if (!selectedPlan) {
-      setError(t('auth.signup.errors.selectPlan'));
-      return;
-    }
-
-    if (!fullName.trim()) {
-      setError(t('auth.signup.errors.enterName'));
-      return;
-    }
-
-    if (!email.trim()) {
-      setError(t('auth.signup.errors.enterEmail'));
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim().toLowerCase())) {
-      setError(t('auth.signup.errors.invalidEmail') || 'Please enter a valid email address.');
-      return;
-    }
-
-    if (!password) {
-      setError(t('auth.signup.errors.createPassword'));
-      return;
-    }
-
-    if (password.length < 8) {
-      setError(t('auth.signup.errors.passwordTooShort') || 'Password must be at least 8 characters.');
-      return;
-    }
-
-    if (!acceptedTerms) {
-      setError(t('auth.signup.errors.acceptTerms'));
-      return;
-    }
-
-    setIsLoading(true);
+  const onSubmit = async (data: SignupFormData) => {
+    const billingCycle = billingAnnual ? "yearly" : "monthly";
 
     try {
       await signup({
-        email,
-        password,
-        full_name: fullName,
-        phone: phone.trim() || undefined,
+        email: data.email,
+        password: data.password,
+        full_name: data.fullName,
+        phone: data.phone?.trim() || undefined,
       });
-
-      const billingCycle = billingAnnual ? "yearly" : "monthly";
 
       await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
 
@@ -94,13 +68,7 @@ export default function Signup() {
 
       navigate("/app");
     } catch (signupError: any) {
-      setError(
-        signupError.response?.data?.error?.message ||
-        signupError.response?.data?.message ||
-        t('auth.signup.errors.unableToCreate')
-      );
-    } finally {
-      setIsLoading(false);
+      console.error('Signup error:', signupError);
     }
   };
 
@@ -251,9 +219,9 @@ export default function Signup() {
                 {t('auth.signup.activatePlan')}
               </p>
 
-              {error && (
+              {errors.root && (
                 <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
-                  <span>⚠️</span><span>{error}</span>
+                  <span>⚠️</span><span>{errors.root.message}</span>
                 </div>
               )}
 
@@ -263,14 +231,18 @@ export default function Signup() {
                     {t('auth.signup.fullName')}
                   </label>
                   <Input
+                    {...register('fullName')}
                     id="fullName"
-                    value={fullName}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setFullName(event.target.value)}
                     placeholder={t('auth.signup.fullNamePlaceholder')}
                     autoComplete="name"
-                    disabled={isLoading}
-                    className="h-11 rounded-xl border-gray-200 focus:border-emerald-500"
+                    disabled={isSubmitting}
+                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${
+                      errors.fullName ? 'border-red-500' : ''
+                    }`}
                   />
+                  {errors.fullName && (
+                    <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -278,15 +250,19 @@ export default function Signup() {
                     {t('auth.signup.email')}
                   </label>
                   <Input
+                    {...register('email')}
                     id="email"
                     type="email"
-                    value={email}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEmail(event.target.value)}
                     placeholder={t('auth.signup.emailPlaceholder')}
                     autoComplete="email"
-                    disabled={isLoading}
-                    className="h-11 rounded-xl border-gray-200 focus:border-emerald-500"
+                    disabled={isSubmitting}
+                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${
+                      errors.email ? 'border-red-500' : ''
+                    }`}
                   />
+                  {errors.email && (
+                    <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -295,14 +271,18 @@ export default function Signup() {
                     <span className="ml-1 text-xs text-gray-400 font-normal">{t('auth.signup.optional')}</span>
                   </label>
                   <Input
+                    {...register('phone')}
                     id="phone"
-                    value={phone}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setPhone(event.target.value)}
                     placeholder="+8801XXXXXXXXX"
                     autoComplete="tel"
-                    disabled={isLoading}
-                    className="h-11 rounded-xl border-gray-200 focus:border-emerald-500"
+                    disabled={isSubmitting}
+                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${
+                      errors.phone ? 'border-red-500' : ''
+                    }`}
                   />
+                  {errors.phone && (
+                    <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -310,15 +290,20 @@ export default function Signup() {
                     {t('auth.signup.password')}
                   </label>
                   <Input
+                    {...register('password')}
                     id="password"
                     type="password"
-                    value={password}
-                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setPassword(event.target.value)}
                     placeholder={t('auth.signup.passwordPlaceholder')}
                     autoComplete="new-password"
-                    disabled={isLoading}
-                    className="h-11 rounded-xl border-gray-200 focus:border-emerald-500"
+                    disabled={isSubmitting}
+                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${
+                      errors.password ? 'border-red-500' : ''
+                    }`}
                   />
+                  {errors.password && (
+                    <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
+                  )}
+                  <PasswordStrengthMeter password={watch('password') || ''} />
                 </div>
 
                 {/* BD Payment section */}
@@ -345,10 +330,9 @@ export default function Signup() {
                 {/* Terms */}
                 <div className="flex items-start gap-2.5">
                   <Checkbox
+                    {...register('acceptedTerms')}
                     id="terms"
-                    checked={acceptedTerms}
-                    onCheckedChange={(value: boolean | "indeterminate") => setAcceptedTerms(value === true)}
-                    disabled={isLoading}
+                    disabled={isSubmitting}
                     className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                   />
                   <label htmlFor="terms" className="text-xs text-gray-600 leading-relaxed">
