@@ -85,19 +85,6 @@ export const router = createBrowserRouter([
 		errorElement: createElement(RouteError),
 	},
 	{
-		path: "/products/add",
-		loader: () => {
-			if (!authService.isAuthenticated()) {
-				return redirect("/");
-			}
-			return redirect("/app/products/add");
-		},
-	},
-	{
-		path: "/products",
-		loader: () => redirect("/app/products"),
-	},
-	{
 		path: "/privacy-policy",
 		Component: withSuspense(PrivacyPolicy),
 		errorElement: createElement(RouteError),
@@ -105,11 +92,6 @@ export const router = createBrowserRouter([
 	{
 		path: "/terms",
 		Component: withSuspense(TermsOfService),
-		errorElement: createElement(RouteError),
-	},
-	{
-		path: "/landing",
-		Component: withSuspense(LandingPage),
 		errorElement: createElement(RouteError),
 	},
 	{
@@ -173,20 +155,19 @@ export const router = createBrowserRouter([
 		],
 	},
 	{
+		path: "/bd-lite",
+		Component: withSuspense(BDSellerShell),
+		loader: protectedLoader,
+		errorElement: createElement(RouteError),
+		children: [
+			{ index: true, Component: withSuspense(TodayQueueDashboard) },
+			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
+			{ path: "orders", Component: withSuspense(Orders) },
+			{ path: "settings", Component: withSuspense(BusinessInfoSettings) },
+		],
+	},
+	{
 		path: "*",
 		Component: withSuspense(NotFound),
 	},
-        {
-                path: "/bd-lite",
-                Component: withSuspense(BDSellerShell),
-                loader: protectedLoader,
-                errorElement: createElement(RouteError),
-                children: [
-                        { index: true, Component: withSuspense(TodayQueueDashboard) },
-                        // Temporary fallbacks for BD-Lite internal routes
-                        { path: "inbox", Component: withSuspense(UnifiedInbox) },
-                        { path: "orders", Component: withSuspense(Orders) },
-                        { path: "settings", Component: withSuspense(BusinessInfoSettings) },
-                ],
-        },
 ]);

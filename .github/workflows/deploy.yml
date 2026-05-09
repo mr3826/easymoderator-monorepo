@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which service to deploy'
+        required: false
+        default: 'all'
+        type: choice
+        options: [all, backend, frontend]
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -19,11 +26,48 @@ env:
   BACKEND_IMAGE: us-central1-docker.pkg.dev/gen-lang-client-0405487706/easymod-backend/app
   FRONTEND_IMAGE: us-central1-docker.pkg.dev/gen-lang-client-0405487706/easymod-frontend/app
 
+# ──────────────────────────────────────────────────────────────────────
+# Required GitHub secrets:
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — WIF provider (e.g. projects/123/locations/global/workloadIdentityPools/...)
+#   VITE_API_BASE_URL              — e.g. https://api.easymod.tech
+#   VITE_META_APP_ID               — Meta App ID (public, used for OAuth popup)
+#   VITE_SENTRY_DSN                — Sentry DSN (optional, skip if not using Sentry)
+#
+# All other secrets (DB, Redis, Meta App Secret, etc.) are pulled from GCP
+# Secret Manager at server startup via src/config/secrets-loader.js.
+# ──────────────────────────────────────────────────────────────────────
+
 jobs:
+  # ── 1. Detect which services have changed ─────────────────────────────
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend') || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend') || steps.filter.outputs.frontend == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # paths-filter needs HEAD and HEAD~1
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'EasyMod-backend/**'
+              - '.github/workflows/deploy.yml'
+            frontend:
+              - 'EasyMod-frontend/**'
+              - '.github/workflows/deploy.yml'
+
+  # ── 2. Backend tests (skip when only frontend changed) ────────────────
   test-backend:
     name: Backend Tests
     runs-on: ubuntu-latest
-    # continue-on-error until pre-existing mock path failures from monorepo restructure are fixed
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    # Tests have pre-existing failures from monorepo restructure; unblocks deploy but surfaces in logs
     continue-on-error: true
     defaults:
       run:
@@ -40,10 +84,15 @@ jobs:
       - run: npm ci
       - run: npm test -- --passWithNoTests --forceExit
 
+  # ── 3. Build images and deploy ────────────────────────────────────────
   deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
-    needs: [test-backend]
+    needs: [changes, test-backend]
+    # Run even if test-backend was skipped (frontend-only push) or continued past a test failure
+    if: |
+      always() && !cancelled() &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
 
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +101,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: github-actions-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+          service_account: github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -60,27 +109,17 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
+      # ── Backend ──
       - name: Build & push backend image
+        if: needs.changes.outputs.backend == 'true'
         working-directory: EasyMod-backend
         run: |
           docker build -t ${{ env.BACKEND_IMAGE }}:${{ github.sha }} -t ${{ env.BACKEND_IMAGE }}:latest .
           docker push ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           docker push ${{ env.BACKEND_IMAGE }}:latest
 
-      - name: Build & push frontend image
-        working-directory: EasyMod-frontend
-        run: |
-          docker build \
-            --build-arg VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
-            --build-arg VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }} \
-            --build-arg VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }} \
-            --build-arg VITE_ENV=production \
-            -t ${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
-            -t ${{ env.FRONTEND_IMAGE }}:latest .
-          docker push ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
-          docker push ${{ env.FRONTEND_IMAGE }}:latest
-
       - name: Deploy backend to Cloud Run
+        if: needs.changes.outputs.backend == 'true'
         run: |
           gcloud run deploy easymod-backend \
             --image=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
@@ -88,15 +127,8 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --quiet
 
-      - name: Deploy frontend to Cloud Run
-        run: |
-          gcloud run deploy easymod-frontend \
-            --image=${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --quiet
-
       - name: Deploy BullMQ worker to Cloud Run
+        if: needs.changes.outputs.backend == 'true'
         run: |
           gcloud run deploy easymod-worker \
             --image=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
@@ -111,7 +143,33 @@ jobs:
             --no-allow-unauthenticated \
             --quiet
 
+      # ── Frontend ──
+      - name: Build & push frontend image
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: EasyMod-frontend
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }} \
+            --build-arg VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }} \
+            --build-arg VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }} \
+            --build-arg VITE_ENV=production \
+            -t ${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.FRONTEND_IMAGE }}:latest .
+          docker push ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.FRONTEND_IMAGE }}:latest
+
+      - name: Deploy frontend to Cloud Run
+        if: needs.changes.outputs.frontend == 'true'
+        run: |
+          gcloud run deploy easymod-frontend \
+            --image=${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --quiet
+
+      # ── Health check (backend only — frontend is static nginx) ────────
       - name: Health check — backend
+        if: needs.changes.outputs.backend == 'true'
         run: |
           for i in $(seq 1 20); do
             STATUS=$(curl -sf "https://api.easymod.tech/health/ready" -o /dev/null -w "%{http_code}" || echo "000")
@@ -122,5 +180,5 @@ jobs:
             echo "Attempt $i: status=$STATUS — retrying in 5s..."
             sleep 5
           done
-          echo "ERROR: Backend health check failed"
+          echo "ERROR: Backend health check failed after 100s"
           exit 1

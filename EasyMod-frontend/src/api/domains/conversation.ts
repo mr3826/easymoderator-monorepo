@@ -127,7 +127,7 @@ export async function transcribeVoice(
 // Response Templates
 export async function getResponseTemplates(): Promise<ResponseTemplate[]> {
   const response: AxiosResponse<ApiResponse<ResponseTemplate[]>> = await httpClient.get(
-    '/template'
+    '/api/template'
   );
   return response.data.data;
 }
@@ -136,7 +136,7 @@ export async function createTemplate(
   template: Omit<ResponseTemplate, 'id'>
 ): Promise<ResponseTemplate> {
   const response: AxiosResponse<ApiResponse<ResponseTemplate>> = await httpClient.post(
-    '/template',
+    '/api/template',
     template
   );
   return response.data.data;
@@ -147,14 +147,14 @@ export async function updateTemplate(
   template: Partial<ResponseTemplate>
 ): Promise<ResponseTemplate> {
   const response: AxiosResponse<ApiResponse<ResponseTemplate>> = await httpClient.patch(
-    `/api/templates/${templateId}`,
+    `/api/template/${templateId}`,
     template
   );
   return response.data.data;
 }
 
 export async function deleteTemplate(templateId: string): Promise<void> {
-  await httpClient.delete(`/api/templates/${templateId}`);
+  await httpClient.delete(`/api/template/${templateId}`);
 }
 
 // Audit Logs
@@ -167,7 +167,7 @@ export async function createAuditLog(log: {
   metadata?: unknown;
 }): Promise<AuditLog> {
   const response: AxiosResponse<ApiResponse<AuditLog>> = await httpClient.post(
-    '/audit',
+    '/api/audit',
     log
   );
   return response.data.data;

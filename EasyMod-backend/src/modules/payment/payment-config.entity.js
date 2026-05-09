@@ -2,7 +2,10 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const crypto = require('crypto');
 
-// Generate or use encryption key (must be exactly 32 bytes for AES-256)
+// AES-256-CBC (no authentication tag) — kept for payment credentials because
+// existing encrypted rows in production used this algorithm. Meta tokens use
+// AES-256-GCM (authenticated) in meta-integration.entity.js. Do not mix the
+// two — decrypt with the algorithm that was used to encrypt.
 const getEncryptionKey = () => {
     const keyEnv = process.env.PAYMENT_ENCRYPTION_KEY;
     const env = process.env.NODE_ENV || 'development';

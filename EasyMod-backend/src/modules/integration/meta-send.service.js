@@ -15,7 +15,11 @@
 const { cacheRedis } = require('../../config/redis');
 
 const META_SEND_LIMIT = 170; // Per page access token per hour (conservative: Meta ~200)
+const META_SEND_LIMIT_FALLBACK = 50; // Conservative in-memory limit when Redis is unavailable
 const WINDOW_MS = 3_600_000; // 1 hour in ms
+
+// In-memory fallback: Map<pageId, number[]> of timestamps within the current window
+const inMemoryWindow = new Map();
 
 class MetaRateLimitError extends Error {
     constructor(retryAfterMs) {
@@ -51,14 +55,24 @@ async function checkAndRecord(pageId) {
         await cacheRedis.expire(key, 3600);
     } catch (err) {
         if (err instanceof MetaRateLimitError) throw err;
-        // Redis unavailable — rate limiting is bypassed. Log so ops can see it.
-        console.error(`[meta-send] Redis rate-limit check failed for page ${pageId} — bypassing (${err.message})`);
+        // Redis unavailable — fall back to conservative in-memory rate limit
+        console.error(`[meta-send] Redis rate-limit check failed for page ${pageId} — using in-memory fallback (${err.message})`);
+        const now2 = Date.now();
+        const windowStart2 = now2 - WINDOW_MS;
+        const timestamps = (inMemoryWindow.get(pageId) || []).filter(t => t > windowStart2);
+        if (timestamps.length >= META_SEND_LIMIT_FALLBACK) {
+            const retryAfterMs = Math.max(WINDOW_MS - (now2 - timestamps[0]), 1000);
+            throw new MetaRateLimitError(retryAfterMs);
+        }
+        timestamps.push(now2);
+        inMemoryWindow.set(pageId, timestamps);
     }
 }
 
 async function sendMetaReply(platform, accessToken, recipientId, messageText) {
     // Facebook Messenger or Instagram — Send API
-    const res = await fetch('https://graph.facebook.com/v21.0/me/messages', {
+    const apiVersion = process.env.META_GRAPH_API_VERSION || 'v22.0';
+    const res = await fetch(`https://graph.facebook.com/${apiVersion}/me/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -7,9 +7,9 @@ const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('MetaService');
 
-// Meta API configuration
+// Meta API configuration — version can be overridden via META_GRAPH_API_VERSION env var
 const META_CONFIG = {
-  graphApiVersion: 'v21.0'
+  graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v22.0'
 };
 
 class MetaService {
@@ -44,9 +44,11 @@ class MetaService {
   getWebhookFields(platform) {
     switch (platform) {
       case 'facebook':
-        return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads';
+        // feed is required to receive page post comment events for comment-to-DM
+        return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads,feed';
       case 'instagram':
-        return 'messages,message_echoes';
+        // comments required for Instagram comment-to-DM (instagram_manage_comments scope)
+        return 'messages,message_echoes,comments';
       default:
         return 'messages';
     }

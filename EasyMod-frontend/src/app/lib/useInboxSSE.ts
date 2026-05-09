@@ -39,7 +39,8 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onDeliveryFailed, onC
         function connect() {
             if (destroyed) return;
 
-            const url = `${normalizeApiBaseUrl(config.apiBaseUrl)}/conversation/events?shop_id=${encodeURIComponent(shopId)}`;
+            const apiOrigin = config.apiBaseUrl.startsWith('http') ? normalizeApiBaseUrl(config.apiBaseUrl) : '';
+            const url = `${apiOrigin}/api/conversation/events?shop_id=${encodeURIComponent(shopId)}`;
             es = new EventSource(url, { withCredentials: true });
 
             es.addEventListener('new_message', (e: MessageEvent) => {
