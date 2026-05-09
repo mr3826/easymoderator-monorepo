@@ -506,9 +506,10 @@ async function handlePageWebhook(payload) {
         logger.info(`Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
+          const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
           sseManager.emit(integration.shop_id, 'new_message', {
             conversation_id: storeResult.conversation_id,
-            message: storeResult.message
+            message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
           });
         }
         dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
@@ -568,9 +569,10 @@ async function handleInstagramWebhook(payload) {
       try {
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
+          const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
           sseManager.emit(integration.shop_id, 'new_message', {
             conversation_id: storeResult.conversation_id,
-            message: storeResult.message
+            message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
           });
         }
         dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
@@ -632,6 +634,7 @@ async function storeIncomingMessage(event) {
       // whenever a new message is stored), not conversation creation time.
       // This matches Meta's policy: "reply within 24h of the customer's last message."
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      // LOCK.UPDATE serializes concurrent webhooks for the same customer — prevents duplicate conversations
       let conversation = await Conversation.findOne({
         where: {
           shop_id,
@@ -640,6 +643,7 @@ async function storeIncomingMessage(event) {
           updated_at: { [Op.gte]: oneDayAgo }
         },
         order: [['updated_at', 'DESC']],
+        lock: t.LOCK.UPDATE,
         transaction: t
       });
 
@@ -654,12 +658,24 @@ async function storeIncomingMessage(event) {
         }, { transaction: t });
       }
 
-      // 3. Store the message and touch conversation.updated_at so the 24h window is rolling
+      // 3. Store the message with attachment metadata so the frontend can render images/files
+      const attachments = event.attachments || [];
+      let msgMeta = {};
+      if (attachments.length > 0) {
+        const first = attachments[0];
+        if (first.type === 'image') {
+          msgMeta = { message_type: 'image', image_url: first.payload?.url || null };
+        } else {
+          msgMeta = { message_type: 'file', file_url: first.payload?.url || null, file_name: first.payload?.name || null };
+        }
+      }
+      const msgContent = message || (attachments.length > 0 ? '[Attachment]' : '');
       const msgRecord = await Message.create({
         conversation_id: conversation.id,
-        content: message,
+        content: msgContent,
         sender: 'customer',
-        external_id: externalId
+        external_id: externalId,
+        metadata: msgMeta
       }, { transaction: t });
 
       // Touch updated_at so the 24h window resets with every new customer message
