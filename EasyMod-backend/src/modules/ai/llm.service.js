@@ -1,42 +1,41 @@
 /**
  * AI1 — LLM Failover Chain
  *
- * Priority: Gemini (multimodal, primary) → OpenAI (fallback)
+ * Priority order:
+ *   1. gemini-lite  — gemini-3.1-flash-lite  (primary, fast + cheap)
+ *   2. gemini-pro   — gemini-3.1-pro-preview (fallback, high-stakes or lite failure)
+ *   3. openai       — gpt-4.1-mini           (final fallback)
  *
- * Gemini 2.0 Flash is the primary provider: it handles image+text (product photos),
- * has good Bengali language support, and is cost-effective. OpenAI is the fallback.
- *
- * Each provider is tried in order; if a provider throws or returns an error
- * status the next one is attempted. If all fail an error is thrown.
+ * For high-stakes tasks, pass preferredProvider: 'gemini-pro' to skip lite.
+ * For forced OpenAI, pass preferredProvider: 'openai'.
  *
  * Environment variables:
- *   GEMINI_API_KEY      — enables Google Gemini (primary)
- *   OPENAI_API_KEY      — enables OpenAI GPT-4o / GPT-4o-mini (fallback)
- *   LLM_DEFAULT_MODEL_GEMINI     (default: gemini-2.0-flash)
- *   LLM_DEFAULT_MODEL_OPENAI     (default: gpt-4o-mini)
+ *   GEMINI_API_KEY               — Google Gemini (required for providers 1 & 2)
+ *   OPENAI_API_KEY               — OpenAI (required for provider 3)
+ *   LLM_GEMINI_LITE_MODEL        (default: gemini-3.1-flash-lite)
+ *   LLM_GEMINI_PRO_MODEL         (default: gemini-3.1-pro-preview)
+ *   LLM_OPENAI_MODEL             (default: gpt-4.1-mini)
  *   LLM_MAX_TOKENS               (default: 1024)
  *   LLM_TEMPERATURE              (default: 0.3)
+ *   LLM_GEMINI_TIMEOUT_MS        (default: 30000)
+ *   LLM_OPENAI_TIMEOUT_MS        (default: 30000)
  */
 
 const { circuitBreaker } = require('./circuit-breaker.service');
 
-const OPENAI_MODEL = process.env.LLM_DEFAULT_MODEL_OPENAI || 'gpt-4o-mini';
-const GEMINI_MODEL = process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-2.0-flash';
+const GEMINI_LITE_MODEL = process.env.LLM_GEMINI_LITE_MODEL || 'gemini-3.1-flash-lite';
+const GEMINI_PRO_MODEL  = process.env.LLM_GEMINI_PRO_MODEL  || 'gemini-3.1-pro-preview';
+const OPENAI_MODEL      = process.env.LLM_OPENAI_MODEL      || 'gpt-4.1-mini';
+const MAX_TOKENS        = parseInt(process.env.LLM_MAX_TOKENS  || '1024', 10);
+const TEMPERATURE       = parseFloat(process.env.LLM_TEMPERATURE || '0.3');
 
 // ---------------------------------------------------------------------------
 // Vision helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Check if any message in the array has vision content blocks.
- */
 const hasVisionContent = (messages) =>
     messages.some(m => Array.isArray(m.content));
 
-/**
- * Fetch an image URL and return base64-encoded data + mime type.
- * Used for providers that don't accept raw HTTP image URLs (e.g. Gemini REST).
- */
 const fetchImageAsBase64 = async (url) => {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
@@ -45,10 +44,6 @@ const fetchImageAsBase64 = async (url) => {
     return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType.split(';')[0] };
 };
 
-/**
- * Normalize a message's content blocks for OpenAI's chat API format.
- * OpenAI format: [{ type: 'image_url', image_url: { url } }, { type: 'text', text }]
- */
 const toOpenAIContent = (content) => {
     if (typeof content === 'string') return content;
     return content.map(block => {
@@ -59,11 +54,6 @@ const toOpenAIContent = (content) => {
     });
 };
 
-/**
- * Normalize a message's content blocks for Gemini's generateContent format.
- * Gemini requires base64 inline data for non-GCS URLs — we fetch and encode.
- * Returns a promise of parts array.
- */
 const toGeminiParts = async (content) => {
     if (typeof content === 'string') return [{ text: content }];
     const parts = [];
@@ -78,22 +68,15 @@ const toGeminiParts = async (content) => {
     return parts;
 };
 
-const MAX_TOKENS = parseInt(process.env.LLM_MAX_TOKENS || '1024', 10);
-const TEMPERATURE = parseFloat(process.env.LLM_TEMPERATURE || '0.3');
-
 // ---------------------------------------------------------------------------
 // Provider implementations
 // ---------------------------------------------------------------------------
 
-/**
- * Call OpenAI (GPT-4o-mini by default).
- */
-const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
+const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
     const timeoutMs = parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000;
-
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
     oaiMessages.push(...messages.map(m => ({ role: m.role, content: toOpenAIContent(m.content) })));
@@ -105,7 +88,7 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
             Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-            model: model || OPENAI_MODEL,
+            model: OPENAI_MODEL,
             messages: oaiMessages,
             max_tokens: maxTokens || MAX_TOKENS,
             temperature: TEMPERATURE
@@ -123,17 +106,14 @@ const callOpenAI = async ({ systemPrompt, messages, model, maxTokens }) => {
 };
 
 /**
- * Call Google Gemini.
- * When `cachedContentName` is provided, the system prompt has already been
- * cached via the Gemini Context Cache API — omit `systemInstruction` and pass
- * `cachedContent` instead to get the 75%-cheaper cache-hit pricing.
+ * Shared Gemini caller. `geminiModel` selects lite vs pro.
+ * When `cachedContentName` is set, the system prompt is already server-cached.
  */
-const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedContentName }) => {
+const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName }, geminiModel) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
     const timeoutMs = parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000;
-    const geminiModel = model || GEMINI_MODEL;
     const contents = await Promise.all(messages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: await toGeminiParts(m.content)
@@ -148,7 +128,6 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedCont
     };
 
     if (cachedContentName) {
-        // Use Gemini Context Cache — systemInstruction is already stored server-side
         body.cachedContent = cachedContentName;
     } else if (systemPrompt) {
         body.systemInstruction = { parts: [{ text: systemPrompt }] };
@@ -164,7 +143,7 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedCont
 
     if (!response.ok) {
         const err = await response.text();
-        throw new Error(`Gemini error ${response.status}: ${err}`);
+        throw new Error(`Gemini (${geminiModel}) error ${response.status}: ${err}`);
     }
 
     const data = await response.json();
@@ -172,34 +151,37 @@ const callGemini = async ({ systemPrompt, messages, model, maxTokens, cachedCont
 };
 
 // ---------------------------------------------------------------------------
-// Failover orchestrator
+// Provider chain
 // ---------------------------------------------------------------------------
 
 const PROVIDERS = [
-    { name: 'gemini', fn: callGemini },
-    { name: 'openai', fn: callOpenAI }
+    { name: 'gemini-lite', fn: (params) => callGemini(params, GEMINI_LITE_MODEL) },
+    { name: 'gemini-pro',  fn: (params) => callGemini(params, GEMINI_PRO_MODEL)  },
+    { name: 'openai',      fn: (params) => callOpenAI(params)                     },
 ];
 
 /**
- * Call LLM with automatic failover through the provider chain.
+ * Call LLM with automatic failover: lite → pro → openai.
  *
  * @param {object} params
- * @param {string} params.systemPrompt  - Cached system/knowledge block
- * @param {Array<{role,content}>} params.messages - Conversation turns
- * @param {string} [params.preferredProvider] - Force a specific provider first
- * @param {string} [params.model]
+ * @param {string} params.systemPrompt
+ * @param {Array<{role,content}>} params.messages
+ * @param {string} [params.preferredProvider] - 'gemini-lite' | 'gemini-pro' | 'openai'
+ *   Pass 'gemini-pro' for high-stakes tasks to skip lite entirely.
+ * @param {string[]} [params.skipProviders] - Exclude specific providers from this call.
  * @param {number} [params.maxTokens]
+ * @param {string} [params.cachedContentName] - Gemini Context Cache handle.
  * @returns {Promise<{ text: string, provider: string }>}
  */
 const chat = async (params) => {
-    const envPreferredProvider = process.env.LLM_PROVIDER;
-    const { preferredProvider = envPreferredProvider, skipProviders = [] } = params;
+    const { preferredProvider, skipProviders = [] } = params;
 
     let providers = PROVIDERS.filter(p => !skipProviders.includes(p.name));
+
     if (preferredProvider) {
-        const pref = providers.find((p) => p.name === preferredProvider);
+        const pref = providers.find(p => p.name === preferredProvider);
         if (pref) {
-            providers = [pref, ...providers.filter((p) => p.name !== preferredProvider)];
+            providers = [pref, ...providers.filter(p => p.name !== preferredProvider)];
         }
     }
 
@@ -217,7 +199,7 @@ const chat = async (params) => {
 };
 
 /**
- * LLM-assisted Banglish → Bangla transliteration (used by banglish.service).
+ * LLM-assisted Banglish → Bangla transliteration.
  */
 const transliterateWithLlm = async (banglish, ruleBasedResult) => {
     const { text } = await chat({
@@ -233,4 +215,4 @@ const transliterateWithLlm = async (banglish, ruleBasedResult) => {
     return text.trim();
 };
 
-module.exports = { chat, callOpenAI, callGemini, transliterateWithLlm };
+module.exports = { chat, callOpenAI, callGemini, transliterateWithLlm, GEMINI_LITE_MODEL, GEMINI_PRO_MODEL, OPENAI_MODEL };
