@@ -104,6 +104,8 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --command="node" \
             --args="src/jobs/worker.js" \
+            --service-account=easymod-backend-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }} \
             --min-instances=1 \
             --max-instances=2 \
             --no-allow-unauthenticated \
