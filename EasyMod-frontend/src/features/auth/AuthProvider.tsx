@@ -33,9 +33,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     //     requires authentication, so an unauthenticated call returns 401, which re-fires
     //     this event and creates an infinite logout loop. The full-page reload from
     //     window.location.href clears all in-memory state automatically.
+    const PUBLIC_PATHS = ['/', '/signin', '/signup', '/pricing', '/privacy-policy', '/terms', '/forgot-password', '/reset-password'];
     const handleUnauthorized = () => {
       if (authService.getState().isAuthenticated) return;
-      if (window.location.pathname === '/signin') return;
+      const path = window.location.pathname;
+      if (PUBLIC_PATHS.some(p => path === p || path.startsWith(p + '/'))) return;
       window.location.href = '/signin';
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);

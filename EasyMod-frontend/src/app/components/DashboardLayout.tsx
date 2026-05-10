@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Package, ShoppingCart, BarChart3,
   Brain, Target, FolderTree, Store, Check, Plus, LogOut,
   X, AlertCircle, CreditCard, Bell, ChevronLeft, ChevronRight, Menu,
-  ChevronDown, User, Megaphone, Shield,
+  ChevronDown, User, Shield,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -34,7 +34,6 @@ export default function DashboardLayout() {
     { name: 'অর্ডারসমূহ', path: `${appBasePath}/orders`, icon: ShoppingBag },
     { name: 'বার্তা', path: `${appBasePath}/inbox`, icon: MessageCircle },
     { name: 'পণ্যসমূহ', path: `${appBasePath}/products`, icon: Grid3X3 },
-    { name: 'ক্যাম্পেইন', path: `${appBasePath}/campaigns`, icon: Megaphone },
     { name: 'সেটিংস', path: `${appBasePath}/manage-shop`, icon: Store },
   ];
 

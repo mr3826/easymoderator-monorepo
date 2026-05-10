@@ -50,24 +50,6 @@ class QueueManager {
             }, { connection });
         }
 
-        // Campaign send — rate limited to stay under Meta's 200/hr/page limit
-        this.queues.campaignSend = new Queue('campaign-send', {
-            connection,
-            defaultJobOptions: {
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 2000 },
-                removeOnComplete: { count: 200 },
-                removeOnFail: { count: 500 },
-            },
-        });
-        this.workers.campaignSend = new Worker('campaign-send', async (job) => {
-            const { processCampaignSend } = require('./campaign-sender.job');
-            return processCampaignSend(job);
-        }, {
-            connection,
-            limiter: { max: 180, duration: 3600000 },
-        });
-
         // Push notification — fire-and-forget, expired subs auto-cleaned
         this.queues.notifications = new Queue('notifications', {
             connection,

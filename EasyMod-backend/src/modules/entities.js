@@ -32,7 +32,6 @@ const KnowledgeGap = require('./analytics/knowledge-gap.entity');
 const SupportTicket = require('./support/support-ticket.entity');
 const ResponseTemplate = require('./template/response-template.entity');
 const CustomerPreference = require('./customer/customer-preference.entity');
-const Campaign = require('./campaign/campaign.entity');
 const TrxIDLog = require('./payment/trx-id-log.entity');
 const PaymentTransaction = require('./entities/payment-transaction.entity');
 const OwnerNotification = require('./entities/owner-notification.entity');
@@ -333,10 +332,6 @@ CustomerPreference.belongsTo(Customer, { foreignKey: 'customer_id', as: 'custome
 Customer.hasOne(CustomerPreference, { foreignKey: 'customer_id', as: 'preference' });
 Shop.hasMany(CustomerPreference, { foreignKey: 'shop_id', as: 'customer_preferences' });
 
-// Define campaign relationships
-Campaign.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
-Shop.hasMany(Campaign, { foreignKey: 'shop_id', as: 'campaigns' });
-
 // TrxIDLog — MFS payment screenshot audit trail
 TrxIDLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 TrxIDLog.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
@@ -403,7 +398,6 @@ module.exports = {
     SupportTicket,
     ResponseTemplate,
     CustomerPreference,
-    Campaign,
     TrxIDLog,
     PaymentTransaction,
     OwnerNotification,

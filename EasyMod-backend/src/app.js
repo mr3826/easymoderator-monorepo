@@ -22,9 +22,12 @@ const xssSanitize = require('./middleware/xss-sanitize.middleware');
 const cacheService = require('./utils/cache.service');
 const { PRICING_TIERS } = require('./modules/subscription/subscription.plans');
 
-// Quick JWT shopId peek — no signature verification, only for rate-limit key derivation.
-// Security decisions still rely on the full auth middleware inside routes.
+// Extract shopId for rate-limit key derivation.
+// Prefers req.user.shopId (set by verified auth middleware) to prevent shopId spoofing.
+// Falls back to an unverified JWT peek only for unauthenticated requests where
+// rate-limit precision matters more than security (the key is just a bucket, not a trust decision).
 function getShopIdFromRequest(req) {
+    if (req.user?.shopId) return req.user.shopId;
     try {
         let token = null;
         const authHeader = req.headers.authorization;

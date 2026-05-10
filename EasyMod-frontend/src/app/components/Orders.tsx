@@ -608,9 +608,9 @@ export default function Orders() {
                 >
                   বিস্তারিত দেখুন
                 </button>
-                {order.courier_tracking_id ? (
+                {order.delivery_tracking_code ? (
                   <a
-                    href={`https://steadfast.com.bd/track?trackingCode=${order.courier_tracking_id}`}
+                    href={`https://steadfast.com.bd/track?trackingCode=${order.delivery_tracking_code}`}
                     target="_blank"
                     rel="noreferrer"
                     className="min-h-12 rounded-xl bg-[#1DB954] px-3 text-sm font-semibold text-white flex items-center justify-center"
@@ -1219,10 +1219,10 @@ export default function Orders() {
               </button>
               <button
                 onClick={() => setShowCourierModal(true)}
-                disabled={!!selectedOrder.courier_tracking_id}
+                disabled={!!selectedOrder.delivery_tracking_code}
                 className="flex-1 min-w-[120px] px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
-                {selectedOrder.courier_tracking_id ? `ID: ${selectedOrder.courier_tracking_id}` : 'কুরিয়ার বুক'}
+                {selectedOrder.delivery_tracking_code ? `ID: ${selectedOrder.delivery_tracking_code}` : 'কুরিয়ার বুক'}
               </button>
               {selectedOrder.status === 'draft' && (
                 <button
@@ -1255,7 +1255,7 @@ export default function Orders() {
           order={selectedOrder}
           onClose={() => setShowCourierModal(false)}
           onBooked={(trackingId, provider) => {
-            const updated = { ...selectedOrder, courier_tracking_id: trackingId, courier_provider: provider };
+            const updated = { ...selectedOrder, delivery_tracking_code: trackingId, delivery_provider: provider };
             setSelectedOrder(updated);
             setOrders(prev => prev.map(o => o.id === selectedOrder.id ? updated : o));
           }}

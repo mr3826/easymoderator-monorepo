@@ -11,6 +11,5 @@ export * from './channel';
 export * from './conversation';
 export * from './dashboard';
 export * from './knowledge';
-export * from './campaign';
 export * from './audit';
 export * from './subscription';

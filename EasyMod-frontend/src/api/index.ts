@@ -53,7 +53,6 @@ import * as customerDomain from './domains/customer';
 import * as channelDomain from './domains/channel';
 import * as dashboardDomain from './domains/dashboard';
 import * as knowledgeDomain from './domains/knowledge';
-import * as campaignDomain from './domains/campaign';
 import * as subscriptionDomain from './domains/subscription';
 import * as conversationDomain from './domains/conversation';
 
@@ -142,16 +141,6 @@ export const apiClient = {
   listKnowledgeGaps: knowledgeDomain.listKnowledgeGaps,
   listKnowledgeDocuments: knowledgeDomain.listDocuments,
   createKnowledgeDocument: knowledgeDomain.createDocument,
-
-  // Campaign methods
-  getCampaigns: campaignDomain.getCampaigns,
-  getCampaign: campaignDomain.getCampaign,
-  createCampaign: campaignDomain.createCampaign,
-  updateCampaign: campaignDomain.updateCampaign,
-  deleteCampaign: campaignDomain.deleteCampaign,
-  scheduleCampaign: campaignDomain.scheduleCampaign,
-  launchCampaign: campaignDomain.launchCampaign,
-  getCampaignStats: campaignDomain.getCampaignStats,
 
   // Subscription methods
   getSubscription: subscriptionDomain.getSubscription,

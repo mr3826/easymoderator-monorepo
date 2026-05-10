@@ -343,7 +343,7 @@ const disconnectChannel = async (channelId, userId, shopId) => {
         await MetaIntegration.update(
             { status: 'DISCONNECTED' },
             { where: { shop_id: shopId, platform } }
-        ).catch(err => console.warn('[disconnectChannel] MetaIntegration update failed:', err.message));
+        );
     }
 
     return mapChannel(channel);

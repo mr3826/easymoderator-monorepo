@@ -31,9 +31,9 @@ export interface Order {
   updatedAt: string;
   rto_risk?: 'high' | 'medium' | 'low';
   payment_status?: string;
-  courier_tracking_id?: string;
-  courier_provider?: string;
-  courier_booked_at?: string;
+  delivery_tracking_code?: string;
+  delivery_provider?: string;
+  delivery_booked_at?: string;
   note?: string;
 }
 

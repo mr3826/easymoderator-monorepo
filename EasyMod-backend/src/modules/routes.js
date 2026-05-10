@@ -62,7 +62,6 @@ router.use('/language', banglishRoutes);
 router.use('/voice', voiceProcessingRoutes);
 router.use('/sentiment', sentimentRoutes);
 router.use('/templates', require('./template/response-template.routes'));
-router.use('/campaigns', require('./campaign/campaign.routes'));
 router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
 
 module.exports = router;

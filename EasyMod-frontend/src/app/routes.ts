@@ -12,7 +12,6 @@ const OAuthCallbackPage = lazy(() => import("./components/OAuthCallbackPage"));
 const Products = lazy(() => import("./components/Products"));
 const Orders = lazy(() => import("./components/Orders"));
 const Reports = lazy(() => import("./components/Reports"));
-const Campaigns = lazy(() => import("./components/Campaigns"));
 const AuditLogs = lazy(() => import("./components/AuditLogs"));
 const Knowledge = lazy(() => import("./components/Knowledge"));
 const AddProduct = lazy(() => import("./components/AddProduct"));
@@ -143,7 +142,6 @@ export const router = createBrowserRouter([
 			{ path: "customers", Component: withSuspense(Customers) },
 			{ path: "knowledge", Component: withSuspense(Knowledge) },
 			{ path: "reports", Component: withSuspense(Reports) },
-			{ path: "campaigns", Component: withSuspense(Campaigns) },
 			{ path: "audit-logs", Component: withSuspense(AuditLogs) },
 			{ path: "subscription", Component: withSuspense(Subscription) },
 			{
