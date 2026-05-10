@@ -17,7 +17,11 @@ module.exports = {
         'tests/webhooks/meta-page-integration.test.js',
     ],
     moduleNameMapper: {
-        '^src/(.*)$': '<rootDir>/src/$1'
+        '^src/(.*)$': '<rootDir>/src/$1',
+        // Redirect all message-queue imports to a stub so BullMQ never opens
+        // a real Redis connection during unit tests (path varies: ../../jobs/...,
+        // ../src/jobs/..., src/jobs/... — the regex catches all forms).
+        '.*/jobs/message-queue$': '<rootDir>/tests/__mocks__/message-queue.js',
     },
     coverageDirectory: 'coverage',
     collectCoverageFrom: [
