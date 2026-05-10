@@ -95,7 +95,7 @@ jobs:
             --network=easymod-vpc \
             --subnet=easymod-subnet \
             --vpc-egress=private-ranges-only \
-            --set-env-vars="NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-" \
+            --set-env-vars="^:^NODE_ENV=production:GCP_PROJECT_ID=${{ env.PROJECT_ID }}:GCP_SECRET_PREFIX=easymod-:CORS_ORIGINS=https://easymod.tech,https://www.easymod.tech" \
             --min-instances=2 \
             --max-instances=20 \
             --concurrency=80 \

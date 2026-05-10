@@ -330,7 +330,7 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
     const alreadyProcessed = await checkAndMarkGdprProcessed('deletion', facebookUserId);
     if (alreadyProcessed) {
       logger.info(`Data deletion callback: already processed for Facebook user ${facebookUserId} today — skipping`, { confirmationCode });
-      const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://app.easymod.tech';
+      const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://www.easymod.tech';
       return res.status(200).json({ url: `${baseUrl}/privacy-policy`, confirmation_code: confirmationCode });
     }
 
@@ -361,7 +361,7 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
     }
 
     // Meta requires this exact response shape
-    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://app.easymod.tech';
+    const baseUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'https://www.easymod.tech';
     return res.status(200).json({
       url: `${baseUrl}/privacy-policy`,
       confirmation_code: confirmationCode
