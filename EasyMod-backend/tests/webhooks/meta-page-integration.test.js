@@ -460,9 +460,9 @@ jest.mock('src/middleware/shop-access.middleware', () => ({
     next();
   },
 }));
-jest.mock('src/middleware/validate-request.middleware', () => ({
-  validateRequest: () => (_req, _res, next) => next(),
-}));
+jest.mock('src/middleware/validate.middleware', () =>
+  () => (_req, _res, next) => next()
+);
 
 // ── Mock: ConversationStateService ────────────────────────────────────────────
 const mockConversationHistory = [];

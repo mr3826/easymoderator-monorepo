@@ -11,6 +11,8 @@ module.exports = {
         'tests/features/voice-processing.test.js',
         // customer-intelligence controller/service not yet implemented
         'tests/features/customer-intelligence.test.js',
+        // Full app integration test — requires live DB + Redis + running server
+        'src/modules/ai/__tests__/chatbot-rag.test.js',
     ],
     moduleNameMapper: {
         '^src/(.*)$': '<rootDir>/src/$1'
