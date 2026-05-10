@@ -530,6 +530,12 @@ jest.mock('src/utils/structured-logger', () => ({
   })),
 }));
 
+// Prevent BullMQ from opening a real Redis connection during tests
+jest.mock('src/jobs/message-queue', () => ({
+  messageQueue: { add: jest.fn().mockResolvedValue({ id: 'test-job' }), on: jest.fn() },
+  connection: { host: 'localhost', port: 6379 },
+}));
+
 // ── Load app AFTER all mocks ──────────────────────────────────────────────────
 let app;
 beforeAll(() => {
