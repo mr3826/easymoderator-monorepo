@@ -29,44 +29,15 @@ const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     }
 });
 
-// Enhanced CSRF token handler with proper session management
-const csrfTokenHandler = async (req, res, next) => {
+// CSRF token endpoint — session ID is already stable (saveUninitialized: true),
+// so no explicit session.save() is needed before generating the token.
+const csrfTokenHandler = (req, res, next) => {
     try {
-        // Ensure session is initialized
         if (!req.session) {
             return next(new AppError('Session not initialized', 500));
         }
-
-        // Mark CSRF as initialized to prevent re-initialization
-        if (!req.session.csrfInit) {
-            req.session.csrfInit = true;
-        }
-
-        // Use Promise-based session save for better error handling
-        await new Promise((resolve, reject) => {
-            req.session.save((err) => {
-                if (err) {
-                    console.error('Session save error on CSRF token generation:', err);
-                    reject(err);
-                } else {
-                    resolve();
-                }
-            });
-        });
-
-        // Generate CSRF token
         const csrfToken = generateCsrfToken(req, res);
-        
-        // Set additional headers for debugging
-        res.set('X-CSRF-Token-Generated', 'true');
-        res.set('X-Session-ID', req.sessionID);
-        
-        res.status(200).json({ 
-            csrfToken,
-            sessionId: req.sessionID,
-            timestamp: new Date().toISOString()
-        });
-
+        res.status(200).json({ csrfToken });
     } catch (error) {
         console.error('CSRF token generation error:', error);
         next(new AppError('Failed to generate CSRF token', 500));
