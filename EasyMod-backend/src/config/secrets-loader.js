@@ -60,8 +60,9 @@ async function loadSecrets() {
 
     const projectId = process.env.GCP_PROJECT_ID;
     if (!projectId) {
-        process.stderr.write('FATAL: GCP_PROJECT_ID env var is required in production\n');
-        process.exit(1);
+        // No GCP project — secrets loaded from .env.prod (DO deployment)
+        loaded = true;
+        return;
     }
 
     const prefix = process.env.GCP_SECRET_PREFIX || 'easymod-';
