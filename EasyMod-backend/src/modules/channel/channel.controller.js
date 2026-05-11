@@ -694,5 +694,27 @@ module.exports = {
     createChannel,
     updateChannel,
     deleteChannel,
-    getChannelConfig
+    getChannelConfig,
+
+    // WhatsApp Business API
+    connectWhatsApp: async (req, res, next) => {
+        try {
+            const { shopId, userId } = req.user;
+            const { waba_id, phone_number_id, access_token, display_name } = req.body;
+            const result = await channelService.connectWhatsApp(userId, shopId, { waba_id, phone_number_id, access_token, display_name });
+            res.status(200).json({ success: true, data: result });
+        } catch (error) {
+            next(error);
+        }
+    },
+
+    disconnectWhatsApp: async (req, res, next) => {
+        try {
+            const { shopId, userId } = req.user;
+            const result = await channelService.disconnectWhatsApp(userId, shopId);
+            res.status(200).json({ success: true, data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
 };

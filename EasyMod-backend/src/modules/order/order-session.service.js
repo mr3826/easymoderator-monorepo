@@ -531,9 +531,6 @@ Type "YES" to confirm.`;
             if (paymentMethod === 'bKash') {
                 const bkashService = require('../payment/bkash-merchant.service');
                 paymentResult = await bkashService.createPayment(session.shop_id, orderData);
-            } else if (paymentMethod === 'Nagad') {
-                const nagadService = require('../payment/nagad-merchant.service');
-                paymentResult = await nagadService.createPayment(session.shop_id, orderData);
             }
 
             if (paymentResult?.success) {
@@ -634,9 +631,6 @@ Type "YES" to confirm.`;
             if (payment_method === 'bKash') {
                 const bkashService = require('../payment/bkash-merchant.service');
                 paymentResult = await bkashService.queryPaymentStatus(session.shop_id, payment_id);
-            } else if (payment_method === 'Nagad') {
-                const nagadService = require('../payment/nagad-merchant.service');
-                paymentResult = await nagadService.queryPaymentStatus(session.shop_id, payment_id);
             }
 
             if (paymentResult?.success && paymentResult.status === 'Completed') {

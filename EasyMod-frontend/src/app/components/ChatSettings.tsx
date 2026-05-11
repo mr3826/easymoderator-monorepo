@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Instagram, CheckCircle, Clock, X, AlertCircle, ChevronDown, Loader2, Shield, Cpu, Lock, Plus } from "lucide-react";
+import { MessageSquare, Instagram, CheckCircle, Clock, X, AlertCircle, ChevronDown, Loader2, Shield, Cpu, Lock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/api";
 import type { Channel as BackendChannel } from "@/api/types/channel";
@@ -40,10 +40,7 @@ export default function ChatSettings() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<Channel | null>(null);
   const [showToast, setShowToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const { features: planFeatures, plan } = useSubscriptionFeatures();
-  const commentToDmAllowed = plan?.features?.comment_auto_reply ?? false;
-
-  const DEFAULT_TRIGGER_KEYWORDS = ['price', 'দাম', 'কত', 'আছে'];
+  const { features: planFeatures } = useSubscriptionFeatures();
 
   const CHANNEL_SETTINGS_DEFAULTS = {
     aiAutoReply: true,
@@ -53,13 +50,8 @@ export default function ChatSettings() {
     autoDetectProducts: true,
     draftOrdersOnly: false,
     requireManualConfirmation: true,
-    commentToDmEnabled: false,
-    commentToDmAutoReply: "আমরা আপনাকে DM করেছি! Inbox check করুন 📩",
-    commentToDmFilter: 'all' as 'all' | 'questions' | 'keywords',
   };
   const [channelSettings, setChannelSettings] = useState({ ...CHANNEL_SETTINGS_DEFAULTS });
-  const [triggerKeywords, setTriggerKeywords] = useState<string[]>(DEFAULT_TRIGGER_KEYWORDS);
-  const [keywordInput, setKeywordInput] = useState('');
 
   const statusConfig = {
     connected: { icon: CheckCircle, label: 'Connected', color: 'bg-green-100 text-green-800' },
@@ -454,124 +446,6 @@ export default function ChatSettings() {
                   </label>
                 </div>
               </div>
-
-              {/* Comment-to-DM (Facebook only) */}
-              {managedChannel?.type === 'facebook' && (
-                <div className="border border-blue-100 rounded-xl p-4 bg-blue-50">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h4 className="font-semibold text-blue-900 text-sm">Comment-to-DM</h4>
-                      <p className="text-xs text-blue-700 mt-0.5">
-                        Post comment গুলো automatically DM এ convert করুন
-                      </p>
-                      {!commentToDmAllowed && (
-                        <p className="text-xs text-orange-600 mt-1 flex items-center gap-1">
-                          <Lock className="w-3 h-3" /> Growth প্ল্যানে আপগ্রেড করুন
-                        </p>
-                      )}
-                    </div>
-                    <label className={`relative inline-flex items-center ${commentToDmAllowed ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
-                      <input
-                        type="checkbox"
-                        checked={channelSettings.commentToDmEnabled}
-                        onChange={() => commentToDmAllowed && handleSettingsChange('commentToDmEnabled' as any)}
-                        disabled={!commentToDmAllowed}
-                        className="sr-only peer"
-                      />
-                      <div className="w-9 h-5 bg-gray-300 peer-checked:bg-blue-600 rounded-full peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
-                    </label>
-                  </div>
-                  {commentToDmAllowed && channelSettings.commentToDmEnabled && (
-                    <div className="space-y-3 mt-3 pt-3 border-t border-blue-200">
-                      <div>
-                        <label className="block text-xs font-medium text-blue-900 mb-1">
-                          Comment এ auto-reply
-                        </label>
-                        <input
-                          type="text"
-                          value={channelSettings.commentToDmAutoReply}
-                          onChange={(e) => setChannelSettings(prev => ({ ...prev, commentToDmAutoReply: e.target.value }))}
-                          className="w-full text-xs border border-blue-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                          placeholder="আমরা আপনাকে DM করেছি! Inbox check করুন 📩"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-blue-900 mb-1">
-                          কোন comment convert করবেন?
-                        </label>
-                        <select
-                          value={channelSettings.commentToDmFilter}
-                          onChange={(e) => setChannelSettings(prev => ({ ...prev, commentToDmFilter: e.target.value as any }))}
-                          className="w-full text-xs border border-blue-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        >
-                          <option value="all">সব comment</option>
-                          <option value="questions">শুধু প্রশ্ন (? আছে এমন)</option>
-                          <option value="keywords">Keyword match</option>
-                        </select>
-                      </div>
-
-                      {/* Custom keyword manager — shown when filter is 'keywords' */}
-                      {channelSettings.commentToDmFilter === 'keywords' && (
-                        <div>
-                          <label className="block text-xs font-medium text-blue-900 mb-2">
-                            Trigger Keywords
-                          </label>
-                          <div className="flex flex-wrap gap-1.5 mb-2">
-                            {triggerKeywords.map((kw) => (
-                              <span
-                                key={kw}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full"
-                              >
-                                {kw}
-                                <button
-                                  type="button"
-                                  onClick={() => setTriggerKeywords(prev => prev.filter(k => k !== kw))}
-                                  className="hover:text-red-600 transition-colors"
-                                  aria-label={`Remove ${kw}`}
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                          <div className="flex gap-1">
-                            <input
-                              type="text"
-                              value={keywordInput}
-                              onChange={(e) => setKeywordInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const kw = keywordInput.trim().toLowerCase();
-                                  if (kw && !triggerKeywords.includes(kw)) {
-                                    setTriggerKeywords(prev => [...prev, kw]);
-                                  }
-                                  setKeywordInput('');
-                                }
-                              }}
-                              className="flex-1 text-xs border border-blue-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                              placeholder="নতুন keyword লিখুন..."
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const kw = keywordInput.trim().toLowerCase();
-                                if (kw && !triggerKeywords.includes(kw)) {
-                                  setTriggerKeywords(prev => [...prev, kw]);
-                                }
-                                setKeywordInput('');
-                              }}
-                              className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1"
-                            >
-                              <Plus className="w-3 h-3" /> Add
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Permissions & Safety */}
               <div className="bg-gray-50 rounded-lg p-3">

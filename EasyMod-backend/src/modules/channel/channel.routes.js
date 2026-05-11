@@ -67,4 +67,12 @@ router.post('/:id/subscribe-webhooks', channelController.subscribeChannelToWebho
 // Test: fire a synthetic message through the full pipeline (no Meta required)
 router.post('/:id/test-pipeline', channelController.testChannelPipeline);
 
+// WhatsApp Business API — direct token connect (no OAuth flow needed)
+// POST /channel/whatsapp/connect
+router.post('/whatsapp/connect', validate(channelValidator.connectWhatsApp), channelController.connectWhatsApp);
+
+// WhatsApp disconnect
+// POST /channel/whatsapp/disconnect
+router.post('/whatsapp/disconnect', channelController.disconnectWhatsApp);
+
 module.exports = router;

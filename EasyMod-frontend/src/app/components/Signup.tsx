@@ -321,25 +321,14 @@ export default function Signup() {
                   />
                 </div>
 
-                {/* BD Payment section */}
-                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4">
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{t('auth.signup.paymentMethod')}</p>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {[
-                      { label: 'bKash', color: 'bg-pink-100 text-pink-700 border-pink-200' },
-                      { label: 'Nagad', color: 'bg-orange-100 text-orange-700 border-orange-200' },
-                      { label: 'SSL Commerz', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-                      { label: 'Rocket', color: 'bg-purple-100 text-purple-700 border-purple-200' },
-                    ].map(({ label, color }) => (
-                      <span key={label} className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${color}`}>
-                        {label}
-                      </span>
-                    ))}
+                {/* BD Payment section — BKash only */}
+                <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-4">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">সাবস্ক্রিপশন পেমেন্ট পদ্ধতি</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-pink-100 text-pink-700 border-pink-200">
+                      bKash
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-400">
-                    {t('auth.signup.paymentComingSoon')}{' '}
-                    <span className="text-gray-500">{t('auth.signup.paymentDevMode')}</span>
-                  </p>
                 </div>
 
                 {/* Terms */}

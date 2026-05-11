@@ -317,6 +317,31 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         }
     }
 
+    // -----------------------------------------------------------------------
+    // RAG knowledge base injection
+    // Inject top-K non-analytics knowledge chunks (FAQ, delivery, policies, etc.)
+    // for all queries that don't have direct DB answers.
+    // Analytics (order status) already returned early via Stage 1.
+    // -----------------------------------------------------------------------
+    if (shopId && !imageUrls.length) {
+        try {
+            const { queryData } = require('../rag/rag.service');
+            const ragResult = await queryData({ query: message, limit: 4, shopId });
+            if (ragResult.success && ragResult.results.length > 0) {
+                const ragSnippets = ragResult.results
+                    .filter(r => r.score > 0.5 && r.content)
+                    .map(r => r.content.trim())
+                    .join('\n---\n');
+
+                if (ragSnippets) {
+                    groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
+                        `KNOWLEDGE BASE CONTEXT (use this to answer customer questions about the shop, delivery, products, and policies):\n${ragSnippets}\n\n` +
+                        `IMPORTANT: Only use the knowledge above. If the answer is not in the context, say you don't know or ask the customer to contact support.`;
+                }
+            }
+        } catch (_) { /* RAG unavailable — continue without it */ }
+    }
+
     const effectiveProvider = preferredProvider;
 
     // Attempt to use Gemini context cache for the base system prompt.

@@ -4,15 +4,13 @@ const { UserShop } = require('../entities');
 const crypto = require('crypto');
 
 const GATEWAY_ALIAS_TO_CANONICAL = {
-    bkash: 'self-mfs',
-    nagad: 'self-mfs',
-    rocket: 'self-mfs'
+    bkash: 'self-mfs'
 };
 
 const normalizeGateway = (gateway) => GATEWAY_ALIAS_TO_CANONICAL[gateway] || gateway;
 
 const normalizeCredentialsForGateway = (gateway, credentials = {}) => {
-    if (gateway === 'bkash' || gateway === 'nagad' || gateway === 'rocket') {
+    if (gateway === 'bkash') {
         return {
             mfs_type: gateway,
             mfs_number: credentials.mfs_number || credentials.phone || credentials.merchant_id || credentials.merchantId || '',
@@ -74,9 +72,7 @@ module.exports = {
     getPaymentConfigs,
     savePaymentConfig,
     testPaymentConnection,
-    deletePaymentConfig,
-    verifyRocketCallback,
-    verifyRocketWebhook
+    deletePaymentConfig
 };
 
 /**
@@ -202,8 +198,8 @@ async function testPaymentConnection(shopId, userId, gateway, credentials) {
         if (!credentials || !credentials.mfs_number) {
             throw new AppError('Self MFS requires mfs_number (01XXXXXXXXX)', 400);
         }
-        const BD_PHONE_RE = /^(?:\+?88)?01[3-9]\d{8}$/;
-        if (!BD_PHONE_RE.test(credentials.mfs_number)) {
+        const { validatePhone } = require('../../utils/validators/phone.validator');
+        if (!validatePhone(credentials.mfs_number)) {
             throw new AppError('mfs_number must be a valid Bangladesh mobile number', 400);
         }
         return {
@@ -238,158 +234,3 @@ async function deletePaymentConfig(shopId, userId, gateway) {
     };
 }
 
-/**
- * Verify Rocket payment callback
- * Called when customer completes checkout on Rocket
- */
-async function verifyRocketCallback(callbackData) {
-    const { transaction_id, order_id, status, amount } = callbackData;
-
-    if (!transaction_id || !order_id) {
-        throw new AppError('Invalid Rocket callback data', 400);
-    }
-
-    // Find order by order number
-    const order = await Order.findOne({ where: { order_number: order_id } });
-
-    if (!order) {
-        throw new AppError('Order not found', 404);
-    }
-
-    // Verify amount matches
-    if (parseFloat(amount) !== parseFloat(order.total)) {
-        console.error('Rocket amount mismatch:', { received: amount, expected: order.total });
-        await order.update({ payment_status: 'failed' });
-        throw new AppError('Payment amount mismatch', 400);
-    }
-
-    // Get Rocket configuration for verification
-    const config = await PaymentConfig.findOne({
-        where: { shop_id: order.shop_id, gateway: 'rocket', is_enabled: true }
-    });
-
-    if (!config || !config.credentials) {
-        throw new AppError('Rocket configuration not found', 400);
-    }
-
-    try {
-        const rocketMerchantService = require('./rocket-merchant.service');
-        
-        // Verify payment with Rocket API
-        const verification = await rocketMerchantService.verifyPayment(order.shop_id, transaction_id);
-
-        if (verification.success && verification.status === 'completed') {
-            // Update order payment status
-            await order.update({ 
-                payment_status: 'paid', 
-                paid_at: new Date(),
-                payment_method: 'rocket'
-            });
-            
-            return { 
-                success: true, 
-                order, 
-                transaction_id,
-                message: 'Payment verified successfully'
-            };
-        }
-
-        await order.update({ payment_status: 'failed' });
-        return { 
-            success: false, 
-            order, 
-            message: `Payment verification failed: ${verification.message}`
-        };
-
-    } catch (error) {
-        console.error('Rocket payment verification error:', error.message);
-        await order.update({ payment_status: 'failed' });
-        throw new AppError(`Failed to verify Rocket payment: ${error.message}`, 500);
-    }
-}
-
-/**
- * Verify Rocket webhook notification
- * Called for asynchronous payment status updates from Rocket
- */
-async function verifyRocketWebhook(webhookData) {
-    const { transaction_id, order_id, status, amount, signature } = webhookData;
-
-    if (!transaction_id || !order_id || !signature) {
-        throw new AppError('Invalid Rocket webhook data', 400);
-    }
-
-    // Find order
-    const order = await Order.findOne({ where: { order_number: order_id } });
-
-    if (!order) {
-        throw new AppError('Order not found for webhook', 404);
-    }
-
-    // Get Rocket configuration for signature verification
-    const config = await PaymentConfig.findOne({
-        where: { shop_id: order.shop_id, gateway: 'rocket', is_enabled: true }
-    });
-
-    if (!config || !config.credentials) {
-        throw new AppError('Rocket configuration not found', 400);
-    }
-
-    try {
-        // Verify webhook signature
-        const rocketMerchantService = require('./rocket-merchant.service');
-        const signatureData = {
-            transaction_id,
-            order_id,
-            status,
-            amount
-        };
-
-        // Reconstruct signature to verify
-        const expectedSignature = crypto
-            .createHmac('sha256', config.credentials.api_key)
-            .update(Object.keys(signatureData)
-                .sort()
-                .map(key => `${key}=${signatureData[key]}`)
-                .join('&'))
-            .digest('hex');
-
-        if (signature !== expectedSignature) {
-            console.error('Rocket webhook signature mismatch');
-            throw new AppError('Invalid webhook signature', 403);
-        }
-
-        // Process based on status
-        if (status === 'completed' || status === 'success') {
-            if (parseFloat(amount) === parseFloat(order.total)) {
-                await order.update({ 
-                    payment_status: 'paid', 
-                    paid_at: new Date(),
-                    payment_method: 'rocket'
-                });
-                return { 
-                    success: true, 
-                    order,
-                    message: 'Webhook processed: Payment confirmed'
-                };
-            }
-        } else if (status === 'failed' || status === 'cancelled') {
-            await order.update({ payment_status: 'failed' });
-            return { 
-                success: false, 
-                order,
-                message: `Webhook processed: Payment ${status}`
-            };
-        }
-
-        return { 
-            success: false, 
-            order,
-            message: `Unknown payment status: ${status}`
-        };
-
-    } catch (error) {
-        console.error('Rocket webhook processing error:', error.message);
-        throw new AppError(`Failed to process Rocket webhook: ${error.message}`, 500);
-    }
-}

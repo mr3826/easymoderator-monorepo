@@ -40,9 +40,6 @@ router.post('/remove-user', removeUserValidator, shopController.removeUserFromSh
 // POST /shop/update-role - Update user role
 router.post('/update-role', updateRoleValidator, shopController.updateUserRole);
 
-// POST /shop/switch - Switch to a different shop
-router.post('/switch', shopGetValidator, shopController.switchShop);
-
 // GET /shop/business-info - Get business info for current shop
 router.get('/business-info', shopController.getBusinessInfo);
 
@@ -81,5 +78,11 @@ router.put('/bd-settings', shopController.updateBdSettings);
 
 // GET /shop/agents - List team members for the current shop (used by inbox assignment)
 router.get('/agents', shopController.getShopAgents);
+
+// GET /shop/platform-priority - Get payment/delivery platform priority order
+router.get('/platform-priority', shopController.getPlatformPriority);
+
+// PUT /shop/platform-priority - Update payment/delivery platform priority order
+router.put('/platform-priority', shopController.updatePlatformPriority);
 
 module.exports = router;

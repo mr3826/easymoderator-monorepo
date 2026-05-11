@@ -8,15 +8,14 @@ const axios = require('axios');
 const crypto = require('crypto');
 const { PaymentConfig, Order } = require('../entities');
 const { AppError } = require('../../utils/AppError');
-const { createLogger } = require('../../utils/structured-logger');
+const BaseMerchantService = require('./base-merchant.service');
 
-class BkashMerchantService {
+class BkashMerchantService extends BaseMerchantService {
     constructor() {
-        this.baseUrl = process.env.BKASH_ENVIRONMENT === 'production' 
+        const baseUrl = process.env.BKASH_ENVIRONMENT === 'production' 
             ? 'https://checkout.bka.sh' 
             : 'https://checkout.sandbox.bka.sh';
-        this.cache = new Map(); // Simple in-memory cache for tokens
-        this.logger = createLogger();
+        super('bKash', baseUrl);
     }
 
     /**
@@ -25,23 +24,17 @@ class BkashMerchantService {
      */
     async getOAuthToken(shopId) {
         const cacheKey = `bkash_token_${shopId}`;
-        const cached = this.cache.get(cacheKey);
+        return this.getCachedToken(cacheKey, async () => {
+            const config = await PaymentConfig.findOne({
+                where: { shop_id: shopId, gateway: 'bkash', is_enabled: true }
+            });
 
-        if (cached && cached.expiresAt > Date.now()) {
-            return cached.token;
-        }
+            if (!config?.credentials) {
+                throw new AppError('bKash merchant configuration not found', 404);
+            }
 
-        const config = await PaymentConfig.findOne({
-            where: { shop_id: shopId, gateway: 'bkash', is_enabled: true }
-        });
+            const { username, password } = config.credentials;
 
-        if (!config?.credentials) {
-            throw new AppError('bKash merchant configuration not found', 404);
-        }
-
-        const { app_key, app_secret, username, password } = config.credentials;
-
-        try {
             const credentials = Buffer.from(`${username}:${password}`).toString('base64');
             
             const response = await axios.post(`${this.baseUrl}/v1.2.0/oauth/token`, 
@@ -53,24 +46,8 @@ class BkashMerchantService {
                 }
             });
 
-            const token = response.data.id_token;
-            
-            // Cache token for 50 minutes
-            this.cache.set(cacheKey, {
-                token,
-                expiresAt: Date.now() + (50 * 60 * 1000)
-            });
-
-            this.logger.info('bKash OAuth token refreshed', { shopId });
-            return token;
-
-        } catch (error) {
-            this.logger.error('bKash OAuth token failed', { 
-                shopId, 
-                error: error.message 
-            });
-            throw new AppError('Failed to authenticate with bKash', 500);
-        }
+            return response.data.id_token;
+        });
     }
 
     /**

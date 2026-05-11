@@ -57,18 +57,6 @@ function getPaymentMethodTemplate(gateway) {
       icon: 'bkash',
       processingTime: '1-2 minutes'
     },
-    nagad: {
-      displayName: 'Nagad',
-      description: 'Bangladesh mobile money service',
-      icon: 'nagad',
-      processingTime: '1-2 minutes'
-    },
-    rocket: {
-      displayName: 'Rocket',
-      description: 'Robi mobile money service',
-      icon: 'rocket',
-      processingTime: '1-2 minutes'
-    },
     cod: {
       displayName: 'Cash on Delivery',
       description: 'Collect payment when customer receives order',
@@ -89,36 +77,18 @@ function getPaymentMethodTemplate(gateway) {
  * Get gateway display name
  */
 function getGatewayDisplayName(gateway) {
-  const names = {
-    bkash: 'bKash',
-    nagad: 'Nagad',
-    rocket: 'Rocket',
-    cod: 'Cash on Delivery'
-  };
+  const names = { bkash: 'bKash', cod: 'Cash on Delivery' };
   return names[gateway.toLowerCase()] || gateway;
 }
 
-/**
- * Get gateway icon name
- */
 function getGatewayIcon(gateway) {
-  const icons = {
-    bkash: 'bkash',
-    nagad: 'nagad',
-    rocket: 'rocket',
-    cod: 'cash'
-  };
+  const icons = { bkash: 'bkash', cod: 'cash' };
   return icons[gateway.toLowerCase()] || 'payment';
 }
 
-/**
- * Get gateway description
- */
 function getGatewayDescription(gateway) {
   const descriptions = {
     bkash: 'Mobile money payment gateway - Fast and secure',
-    nagad: 'Bangladesh mobile money service - Safe payment',
-    rocket: 'Robi mobile money service - Quick checkout',
     cod: 'Collect payment when customer receives order - No fees'
   };
   return descriptions[gateway.toLowerCase()] || 'Payment method';

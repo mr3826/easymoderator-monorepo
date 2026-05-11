@@ -5,24 +5,24 @@ const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
 const { validateAISettings, validateSettings, sanitizeSettings } = require('./shop-settings.validator');
 
 /**
- * Get all shops for a user
+ * Get the single shop for a user.
+ * Each account owns at most one shop.
  */
-const getShopsByUserId = async (userId) => {
-    const userShops = await UserShop.findAll({
-        where: {
-            user_id: userId,
-            is_active: true
-        },
-        include: [{
-            model: Shop,
-            as: 'shop'
-        }]
+const getMyShop = async (userId) => {
+    const userShop = await UserShop.findOne({
+        where: { user_id: userId, is_active: true },
+        include: [{ model: Shop, as: 'shop' }],
+        order: [['created_at', 'ASC']]
     });
+    if (!userShop) return null;
+    return { ...userShop.shop.toJSON(), role: userShop.role };
+};
 
-    return userShops.map(us => ({
-        ...us.shop.toJSON(),
-        role: us.role
-    }));
+// Legacy alias kept so existing callers continue to work.
+// Returns a single-element array for backward compatibility.
+const getShopsByUserId = async (userId) => {
+    const shop = await getMyShop(userId);
+    return shop ? [shop] : [];
 };
 
 /**
@@ -55,6 +55,14 @@ const getShopById = async (shopId, userId) => {
  * Create new shop for user
  */
 const createShop = async (userId, shopData) => {
+    // One shop per user — owners cannot create a second shop
+    const existingUserShop = await UserShop.findOne({
+        where: { user_id: userId, role: 'owner', is_active: true }
+    });
+    if (existingUserShop) {
+        throw new AppError('Each account can only have one shop. Please manage your existing shop.', 409);
+    }
+
     const transaction = await sequelize.transaction();
 
     try {

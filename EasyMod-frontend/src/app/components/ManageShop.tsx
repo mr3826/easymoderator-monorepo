@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
-import { MessageSquare, Truck, CreditCard, Building2 } from "lucide-react";
+import { MessageSquare, Truck, CreditCard, Building2, ArrowUpDown } from "lucide-react";
+import PlatformPrioritySettings from './PlatformPrioritySettings';
 
-type SettingsTab = 'chat' | 'delivery' | 'payment' | 'business';
+type SettingsTab = 'chat' | 'delivery' | 'payment' | 'business' | 'priority';
 
 export default function ManageShop() {
   const { t } = useTranslation();
@@ -28,6 +29,7 @@ export default function ManageShop() {
     { id: 'chat' as SettingsTab, name: t('manageShop.tabs.chatSettings'), icon: MessageSquare },
     { id: 'delivery' as SettingsTab, name: t('manageShop.tabs.deliverySettings'), icon: Truck },
     { id: 'payment' as SettingsTab, name: t('manageShop.tabs.paymentSettings'), icon: CreditCard },
+    { id: 'priority' as SettingsTab, name: 'Platform Priority', icon: ArrowUpDown },
   ];
 
   return (
@@ -51,6 +53,8 @@ export default function ManageShop() {
                       navigate('/app/manage-shop/delivery-settings');
                     } else if (tab.id === 'payment') {
                       navigate('/app/manage-shop/payment-settings');
+                    } else if (tab.id === 'priority') {
+                      // Priority is rendered inline — no route change needed
                     } else {
                       navigate('/app/manage-shop');
                     }
@@ -72,7 +76,7 @@ export default function ManageShop() {
 
       {/* Content Area */}
       <div>
-        <Outlet />
+        {activeTab === 'priority' ? <PlatformPrioritySettings /> : <Outlet />}
       </div>
     </div>
   );

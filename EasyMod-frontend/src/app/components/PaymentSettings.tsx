@@ -15,7 +15,7 @@ interface PaymentGateway {
   requiresContact?: boolean;
 }
 
-const isMfsGateway = (gatewayId: string) => ['bkash', 'nagad', 'rocket'].includes(gatewayId);
+const isMfsGateway = (gatewayId: string) => gatewayId === 'bkash';
 
 const toCanonicalGateway = (gatewayId: string) => (isMfsGateway(gatewayId) ? 'self-mfs' : gatewayId);
 
@@ -36,38 +36,6 @@ export default function PaymentSettings() {
       description: t('manageShop.paymentSettings.bkashDesc'),
       enabled: false,
       config: { phone: '', accountType: 'self' },
-    },
-    {
-      id: 'nagad',
-      name: t('manageShop.paymentSettings.nagadName'),
-      logo: <Wallet className="w-6 h-6 text-orange-600" />,
-      description: t('manageShop.paymentSettings.nagadDesc'),
-      enabled: false,
-      config: { phone: '', accountType: 'self' },
-    },
-    {
-      id: 'rocket',
-      name: t('manageShop.paymentSettings.rocketName'),
-      logo: <Wallet className="w-6 h-6 text-purple-600" />,
-      description: t('manageShop.paymentSettings.rocketDesc'),
-      enabled: false,
-      config: { phone: '', accountType: 'self' },
-    },
-    {
-      id: 'aamarpay',
-      name: t('manageShop.paymentSettings.aamarName'),
-      logo: <Lock className="w-6 h-6 text-gray-400" />,
-      description: t('manageShop.paymentSettings.aamarDesc'),
-      enabled: false,
-      requiresContact: true,
-    },
-    {
-      id: 'sslcommerz',
-      name: t('manageShop.paymentSettings.sslCommerzName'),
-      logo: <Lock className="w-6 h-6 text-gray-400" />,
-      description: t('manageShop.paymentSettings.sslCommerzDesc'),
-      enabled: false,
-      requiresContact: true,
     },
   ]);
 

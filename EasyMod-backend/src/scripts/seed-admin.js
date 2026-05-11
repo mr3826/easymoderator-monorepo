@@ -31,10 +31,6 @@ const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE || '+8801000000000';
 async function ensureAdminUser() {
     await sequelize.authenticate();
 
-    // Sync database schema first
-    await sequelize.sync({ alter: true });
-    console.log('Database schema synced');
-
     const existingUser = await User.findOne({ where: { email: ADMIN_EMAIL } });
     if (existingUser) {
         console.log(`Admin user already exists: ${existingUser.id}`);

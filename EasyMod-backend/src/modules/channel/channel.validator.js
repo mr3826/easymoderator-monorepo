@@ -157,6 +157,16 @@ class ChannelValidator {
             channelType: Joi.string().valid('facebook', 'instagram').optional()
         })
     };
+
+    // WhatsApp Business API — direct permanent token connection
+    connectWhatsApp = {
+        body: Joi.object({
+            waba_id: Joi.string().trim().required().messages({ 'any.required': 'waba_id (WhatsApp Business Account ID) is required' }),
+            phone_number_id: Joi.string().trim().required().messages({ 'any.required': 'phone_number_id is required' }),
+            access_token: Joi.string().trim().required().messages({ 'any.required': 'access_token is required' }),
+            display_name: Joi.string().trim().max(100).optional()
+        })
+    };
 }
 
 module.exports = new ChannelValidator();

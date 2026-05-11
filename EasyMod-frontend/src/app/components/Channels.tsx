@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 
 interface ChannelOption {
-  id: 'facebook' | 'instagram';
+  id: 'facebook' | 'instagram' | 'whatsapp';
   name: string;
   taglineKey: string;
   brandColor: string;
@@ -33,12 +33,18 @@ const availableChannels: ChannelOption[] = [
     bgColor: 'bg-pink-50',
     borderColor: 'border-pink-200',
   },
+  {
+    id: 'whatsapp',
+    name: 'WhatsApp Business',
+    taglineKey: 'channels.connectModal.channels.whatsapp.tagline',
+    brandColor: '#25D366',
+    bgColor: 'bg-green-50',
+    borderColor: 'border-green-200',
+  },
 ];
 
 function ChannelIcon({ id, color, size = 24 }: { id: string; color: string; size?: number }) {
-  if (id === 'instagram') {
-    return <Instagram style={{ color, width: size, height: size }} />;
-  }
+  if (id === 'instagram') return <Instagram style={{ color, width: size, height: size }} />;
   return <MessageSquare style={{ color, width: size, height: size }} />;
 }
 
@@ -61,10 +67,17 @@ export default function Channels() {
   const [isConnectingPage, setIsConnectingPage] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
 
+  // WhatsApp direct-token wizard state
+  const [wabaId, setWabaId] = useState('');
+  const [waPhoneId, setWaPhoneId] = useState('');
+  const [waToken, setWaToken] = useState('');
+  const [waDisplayName, setWaDisplayName] = useState('');
+  const [isConnectingWa, setIsConnectingWa] = useState(false);
+
   const { plan } = useSubscriptionFeatures();
-  const maxChannels = plan?.maxChannels ?? -1;
+  // Channel count limits removed — all channels available on all plans.
   const activeChannelCount = channels.filter(c => c.status === 'connected').length;
-  const channelLimitReached = maxChannels !== -1 && activeChannelCount >= maxChannels;
+  const channelLimitReached = false; // No longer enforced
 
   const fetchChannels = async () => {
     try {
@@ -176,6 +189,31 @@ export default function Channels() {
       sessionStorage.removeItem(OAUTH_NONCE_KEY);
       oauthInProgressRef.current = false;
       toast.error(t('channels.errors.oauthInitFailed'));
+    }
+  };
+
+  const handleWhatsAppConnect = async () => {
+    if (!wabaId || !waPhoneId || !waToken) {
+      toast.error('Please fill in all WhatsApp Business API fields');
+      return;
+    }
+    setIsConnectingWa(true);
+    try {
+      await apiClient.post('/channel/whatsapp/connect', {
+        waba_id: wabaId.trim(),
+        phone_number_id: waPhoneId.trim(),
+        access_token: waToken.trim(),
+        display_name: waDisplayName.trim() || 'WhatsApp'
+      });
+      toast.success('WhatsApp Business channel connected!');
+      setShowConnectModal(false);
+      setConnectionStep('select');
+      setWabaId(''); setWaPhoneId(''); setWaToken(''); setWaDisplayName('');
+      fetchChannels();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to connect WhatsApp');
+    } finally {
+      setIsConnectingWa(false);
     }
   };
 
@@ -518,8 +556,86 @@ export default function Channels() {
               </div>
             )}
 
-            {/* Step: Connect (OAuth) */}
-            {connectionStep === 'connect' && selectedChannel && (
+            {/* Step: Connect — WhatsApp wizard (no OAuth) */}
+            {connectionStep === 'connect' && selectedChannel?.id === 'whatsapp' && (
+              <div>
+                <div className="text-center mb-5">
+                  <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3">
+                    <MessageSquare className="w-9 h-9 text-green-600" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900">WhatsApp Business API</h3>
+                  <p className="text-sm text-gray-500 mt-1">Connect your WhatsApp Business account using your permanent API credentials.</p>
+                </div>
+
+                {/* Meta policy notice */}
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-4 text-xs text-amber-800">
+                  <p className="font-semibold mb-1">Meta Policy Notice</p>
+                  <ul className="space-y-1 list-disc list-inside">
+                    <li>Only pre-approved message templates can be sent outside the 24-hour customer messaging window.</li>
+                    <li>If a customer sends STOP, they will be opted out and will not receive messages.</li>
+                    <li>Violation of Meta's commerce or messaging policy may result in your number being banned.</li>
+                  </ul>
+                </div>
+
+                <div className="space-y-3 mb-5">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">WhatsApp Business Account ID (WABA ID)</label>
+                    <input
+                      type="text"
+                      value={wabaId}
+                      onChange={e => setWabaId(e.target.value)}
+                      placeholder="e.g. 1234567890123456"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">Phone Number ID</label>
+                    <input
+                      type="text"
+                      value={waPhoneId}
+                      onChange={e => setWaPhoneId(e.target.value)}
+                      placeholder="e.g. 9876543210"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">Permanent Access Token</label>
+                    <input
+                      type="password"
+                      value={waToken}
+                      onChange={e => setWaToken(e.target.value)}
+                      placeholder="System user permanent token"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 mb-1 block">Display Name (optional)</label>
+                    <input
+                      type="text"
+                      value={waDisplayName}
+                      onChange={e => setWaDisplayName(e.target.value)}
+                      placeholder="e.g. My Shop WA"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleWhatsAppConnect}
+                  disabled={isConnectingWa || !wabaId || !waPhoneId || !waToken}
+                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors mb-3"
+                >
+                  {isConnectingWa ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
+                  Connect WhatsApp
+                </button>
+                <button onClick={handleCloseModal} className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Step: Connect (OAuth) — Facebook / Instagram */}
+            {connectionStep === 'connect' && selectedChannel && selectedChannel.id !== 'whatsapp' && (
               <div>
                 <div className="text-center mb-6">
                   <div className={`w-20 h-20 rounded-full ${selectedChannel.bgColor} flex items-center justify-center mx-auto mb-3`}>

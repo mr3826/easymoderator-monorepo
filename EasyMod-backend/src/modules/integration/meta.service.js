@@ -44,11 +44,9 @@ class MetaService {
   getWebhookFields(platform) {
     switch (platform) {
       case 'facebook':
-        // feed is required to receive page post comment events for comment-to-DM
-        return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads,feed';
+        return 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads';
       case 'instagram':
-        // comments required for Instagram comment-to-DM (instagram_manage_comments scope)
-        return 'messages,message_echoes,comments';
+        return 'messages,message_echoes';
       default:
         return 'messages';
     }

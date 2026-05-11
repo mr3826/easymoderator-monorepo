@@ -1,0 +1,156 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-do-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write  # needed to push to ghcr.io
+
+env:
+  GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymod-backend
+  GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymod-frontend
+
+jobs:
+  # ── 1. Tests ────────────────────────────────────────────────────────────────
+  test:
+    name: Run Backend Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test -- --passWithNoTests --forceExit
+
+  # ── 2. Build & Push Images ───────────────────────────────────────────────────
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: test
+    outputs:
+      backend_tag: ${{ steps.meta.outputs.backend_tag }}
+      frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tags
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHA::8}" >> $GITHUB_OUTPUT
+          echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHA::8}" >> $GITHUB_OUTPUT
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./EasyMod-backend
+          file: ./EasyMod-backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.backend_tag }}
+            ${{ env.GHCR_BACKEND }}:latest
+          cache-from: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache,mode=max
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./EasyMod-frontend
+          file: ./EasyMod-frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.frontend_tag }}
+            ${{ env.GHCR_FRONTEND }}:latest
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_ENV=production
+          cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
+
+  # ── 3. Deploy to Digital Ocean Droplet ──────────────────────────────────────
+  deploy:
+    name: Deploy to DO Droplet
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 300s
+          script: |
+            set -e
+
+            # Authenticate to ghcr.io on the droplet
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Pull latest images
+            docker pull ${{ needs.build.outputs.backend_tag }}
+            docker pull ${{ needs.build.outputs.frontend_tag }}
+
+            # Tag as latest locally for compose
+            docker tag ${{ needs.build.outputs.backend_tag }} ${{ env.GHCR_BACKEND }}:latest
+            docker tag ${{ needs.build.outputs.frontend_tag }} ${{ env.GHCR_FRONTEND }}:latest
+
+            # Navigate to deploy directory
+            cd /opt/easymod
+
+            # Export image vars for compose
+            export GHCR_IMAGE_BACKEND="${{ env.GHCR_BACKEND }}:latest"
+            export GHCR_IMAGE_FRONTEND="${{ env.GHCR_FRONTEND }}:latest"
+
+            # Pull compose changes and redeploy
+            docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
+
+            # Run DB migrations
+            docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
+
+            # Health check
+            for i in $(seq 1 20); do
+              STATUS=$(curl -sf http://localhost:3000/health/ready -o /dev/null -w "%{http_code}" || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Health check passed on attempt $i"
+                break
+              fi
+              echo "Attempt $i: status=$STATUS — retrying in 5s..."
+              sleep 5
+              if [ "$i" = "20" ]; then
+                echo "ERROR: Health check failed"
+                exit 1
+              fi
+            done
+
+            # Clean up old images
+            docker image prune -f

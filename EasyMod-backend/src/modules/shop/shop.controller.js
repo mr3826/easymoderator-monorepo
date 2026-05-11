@@ -1,4 +1,5 @@
 const shopService = require('./shop.service');
+const { Shop } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
@@ -592,6 +593,44 @@ const getShopAgents = async (req, res, next) => {
     }
 };
 
+const getPlatformPriority = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const shop = await Shop.findByPk(shopId, {
+            attributes: ['payment_platform_priority', 'delivery_platform_priority']
+        });
+        if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+        res.json({
+            success: true,
+            data: {
+                payment: shop.payment_platform_priority || [],
+                delivery: shop.delivery_platform_priority || []
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updatePlatformPriority = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const { payment, delivery } = req.body;
+        if (!Array.isArray(payment) || !Array.isArray(delivery)) {
+            return res.status(400).json({ success: false, message: 'payment and delivery must be arrays' });
+        }
+        const shop = await Shop.findByPk(shopId);
+        if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+        await shop.update({
+            payment_platform_priority: payment,
+            delivery_platform_priority: delivery
+        });
+        res.json({ success: true, data: { payment, delivery } });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getUserShops,
     getShop,
@@ -601,7 +640,6 @@ module.exports = {
     addUserToShop,
     removeUserFromShop,
     updateUserRole,
-    switchShop,
     getBusinessInfo,
     updateBusinessInfo,
     getLLMConfig,
@@ -614,5 +652,7 @@ module.exports = {
     applyBrandingPreset,
     getBdSettings,
     updateBdSettings,
-    getShopAgents
+    getShopAgents,
+    getPlatformPriority,
+    updatePlatformPriority
 };

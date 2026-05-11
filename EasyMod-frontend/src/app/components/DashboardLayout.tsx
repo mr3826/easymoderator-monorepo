@@ -1,4 +1,5 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
+import ConversationAlertBanner from './ConversationAlertBanner';
 import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
   LayoutDashboard, MessageSquare, Package, ShoppingCart, BarChart3,
@@ -254,35 +255,6 @@ export default function DashboardLayout() {
                       সাবস্ক্রিপশন
                     </button>
                   </div>
-                  {/* Shop switcher (only when multiple shops) */}
-                  {shops.length > 1 && (
-                    <div className="border-t border-gray-100 py-1">
-                      <p className="px-4 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">শপ পরিবর্তন</p>
-                      {shops.map((shop) => (
-                        <button
-                          key={shop.id}
-                          onClick={() => handleSwitchShop(shop.id)}
-                          className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
-                            shop.isActive ? 'text-blue-600 bg-blue-50' : 'text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span>{shop.logo}</span>
-                          <span className="flex-1 truncate text-left">{shop.name}</span>
-                          {shop.isActive && <Check className="w-3 h-3 shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {/* Add shop */}
-                  <div className="border-t border-gray-100 py-1">
-                    <button
-                      onClick={handleCreateShop}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <Plus className="w-4 h-4 text-gray-400" />
-                      নতুন শপ যোগ করুন
-                    </button>
-                  </div>
                   {/* Logout */}
                   <div className="border-t border-gray-100 py-1">
                     <button
@@ -301,6 +273,7 @@ export default function DashboardLayout() {
 
         {/* ─── Page content ──────────────────────────────────────────── */}
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+          <ConversationAlertBanner />
           <Outlet />
         </main>
       </div>

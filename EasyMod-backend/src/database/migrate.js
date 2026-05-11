@@ -56,6 +56,10 @@ const migrations = [
   require('./migrations/20260504_001_add_conversation_lookup_index'),
   require('./migrations/20260504_001_re_encrypt_meta_tokens'),
   require('./migrations/20260505_001_add_plan_code_to_subscriptions'),
+  // 2026-05-10 major overhaul: conversation limits, top-up, platform priority
+  require('./migrations/20260510_001_overhaul_subscription_plans'),
+  require('./migrations/20260510_002_add_topup_and_conversation_log'),
+  require('./migrations/20260510_003_shop_platform_priority'),
 ];
 
 const createMigrationsTable = async () => {

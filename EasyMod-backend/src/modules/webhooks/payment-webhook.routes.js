@@ -20,16 +20,6 @@ router.post(
 );
 
 /**
- * Nagad Payment Webhook
- * POST /api/webhooks/nagad/payment-status
- */
-router.post(
-    '/nagad/payment-status',
-    validateWebhookSignature('nagad'),
-    paymentWebhookController.handleNagadWebhook
-);
-
-/**
  * Owner Payment Confirmation Webhook
  * POST /api/webhooks/owner/payment-confirmation/:notificationId/:action
  */

@@ -1,9 +1,10 @@
 const express = require('express');
 const subscriptionController = require('./subscription.controller');
+const topupController = require('./topup.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
-const { 
-    updatePlanValidator, 
-    requestConversationPackValidator 
+const {
+    updatePlanValidator,
+    requestConversationPackValidator
 } = require('./subscription.validator');
 
 const router = express.Router();
@@ -32,5 +33,15 @@ router.get('/invoices/:invoiceId', subscriptionController.getInvoiceById);
 
 // GET /subscription/invoices/:invoiceId/pdf - Printable HTML invoice
 router.get('/invoices/:invoiceId/pdf', subscriptionController.getInvoicePdf);
+
+// ── Conversation Top-Up ──────────────────────────────────────────────────────
+// GET  /subscription/topup/packs    — list packs
+router.get('/topup/packs', topupController.getPacks);
+// POST /subscription/topup/initiate — start BKash payment
+router.post('/topup/initiate', topupController.initiateTopup);
+// POST /subscription/topup/complete — verify & credit conversations
+router.post('/topup/complete', topupController.completeTopup);
+// GET  /subscription/topup/history  — paginated purchase history
+router.get('/topup/history', topupController.getHistory);
 
 module.exports = router;

@@ -1,3 +1,7 @@
+# Production docker-compose for Digital Ocean Droplet (2vCPU 4GB)
+# Images pulled from GitHub Container Registry (ghcr.io)
+# Set GHCR_IMAGE_BACKEND, GHCR_IMAGE_FRONTEND env vars on the droplet
+
 version: "3.9"
 
 services:
@@ -5,51 +9,78 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:-easymod}
+      POSTGRES_USER: ${POSTGRES_USER:-easymod_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - easymod-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-easymod_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     networks:
       - easymod-network
 
   backend:
-    image: ${ECR_IMAGE}
+    image: ${GHCR_IMAGE_BACKEND}
     restart: unless-stopped
     env_file:
       - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3000
     ports:
       - "3000:3000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - easymod-network
+    volumes:
+      - invoice_data:/app/uploads/invoices
+
+  worker:
+    image: ${GHCR_IMAGE_BACKEND}
+    restart: unless-stopped
+    command: ["node", "src/jobs/worker.js"]
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - easymod-network
 
-  worker:
-    image: ${ECR_IMAGE}
+  frontend:
+    image: ${GHCR_IMAGE_FRONTEND}
     restart: unless-stopped
-    command: ["npm", "run", "start:worker"]
-    env_file:
-      - .env.prod
-    depends_on:
-      - postgres
-      - redis
+    ports:
+      - "80:8080"
     networks:
       - easymod-network
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
   redis_data:
+  invoice_data:
 
 networks:
   easymod-network:

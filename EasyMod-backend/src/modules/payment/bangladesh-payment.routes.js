@@ -2,6 +2,7 @@ const express = require('express');
 const { body, query } = require('express-validator');
 const BangladeshPaymentController = require('./bangladesh-payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { bdMobileStrictRegex } = require('../../utils/validators/phone.validator');
 
 const router = express.Router();
 
@@ -13,18 +14,18 @@ router.use((req, res, next) => {
 
 // Validation middleware
 const validateInitializePayment = [
-    body('payment_method').isIn(['bkash', 'nagad', 'COD']).withMessage('Invalid payment method'),
+    body('payment_method').isIn(['bkash', 'COD']).withMessage('Invalid payment method'),
     body('order_id').notEmpty().withMessage('order_id is required'),
     body('amount').isNumeric().withMessage('amount must be a number'),
     body('amount').custom(value => value > 0).withMessage('amount must be greater than 0'),
     body('customer_name').notEmpty().withMessage('customer_name is required'),
-    body('customer_phone').matches(/^01[3-9]\d{8}$/).withMessage('Invalid Bangladesh phone number'),
+    body('customer_phone').matches(bdMobileStrictRegex).withMessage('Invalid Bangladesh phone number'),
     body('callback_url').isURL().withMessage('callback_url must be a valid URL'),
     body('shop_id').notEmpty().withMessage('shop_id is required')
 ];
 
 const validateVerifyPayment = [
-    body('payment_method').isIn(['bkash', 'nagad']).withMessage('Invalid payment method'),
+    body('payment_method').isIn(['bkash']).withMessage('Invalid payment method'),
     body('payment_id').notEmpty().withMessage('payment_id is required')
 ];
 
@@ -37,12 +38,12 @@ const validateRefundPayment = [
 ];
 
 const validateSimulatePayment = [
-    body('payment_method').isIn(['bkash', 'nagad', 'COD']).withMessage('Invalid payment method'),
+    body('payment_method').isIn(['bkash', 'COD']).withMessage('Invalid payment method'),
     body('order_id').notEmpty().withMessage('order_id is required'),
     body('amount').isNumeric().withMessage('amount must be a number'),
     body('amount').custom(value => value > 0).withMessage('amount must be greater than 0'),
     body('customer_name').notEmpty().withMessage('customer_name is required'),
-    body('customer_phone').matches(/^01[3-9]\d{8}$/).withMessage('Invalid Bangladesh phone number'),
+    body('customer_phone').matches(bdMobileStrictRegex).withMessage('Invalid Bangladesh phone number'),
     body('shop_id').notEmpty().withMessage('shop_id is required'),
     body('simulate_status').optional().isIn(['success', 'failed', 'pending']).withMessage('Invalid simulate_status')
 ];

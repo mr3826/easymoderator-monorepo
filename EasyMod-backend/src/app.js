@@ -11,7 +11,6 @@ const config = require('./config/config');
 const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
-const commentToDmWebhookRoutes = require('./modules/integration/comment-to-dm-webhook.routes');
 const courierWebhookRoutes = require('./modules/webhooks/courier-webhook.routes');
 const { AppError, globalErrorHandler } = require('./utils/AppError');
 const { initSentry, sentryCaptureException } = require('./config/sentry');
@@ -147,7 +146,6 @@ if (config.env !== 'test') {
 
 // Webhook routes (must be before JSON parsing middleware)
 app.use('/webhooks/meta', metaWebhookRoutes);
-app.use('/webhooks/meta/comment-to-dm', commentToDmWebhookRoutes);
 app.use('/webhooks/delivery', courierWebhookRoutes);
 
 // Body parsing — verify callback captures raw bytes so payment HMAC middleware

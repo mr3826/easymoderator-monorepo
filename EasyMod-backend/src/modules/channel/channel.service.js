@@ -193,8 +193,8 @@ const verifyMetaToken = async (accessToken, channelType) => {
 const createChannel = async (userId, shopId, channelData) => {
     await verifyShopAccess(userId, shopId);
 
-    const { checkChannelLimit } = require('../subscription/subscription.service');
-    await checkChannelLimit(shopId);
+    // Channel count limits removed — all channels available on all plans.
+    // Usage is tracked by conversation count only.
 
     const { channel_type, page_id, access_token, verify_token, webhook_secret, settings } = normalizeChannelPayload(channelData);
 
@@ -471,6 +471,90 @@ const getExpiringChannels = async (userId, shopId, withinDays = 7) => {
     });
 };
 
+/**
+ * Connect WhatsApp Business API channel.
+ * Uses permanent access token (no OAuth flow).
+ * One WhatsApp channel per shop — reconnects automatically if already present.
+ *
+ * Meta policy compliance:
+ *   - Token is stored encrypted (handled by Channel entity AES-256-CBC hook)
+ *   - 24-hour messaging window enforced by the AI chatbot layer (not here)
+ *   - Opt-out (STOP keyword) handled in the webhook handler
+ */
+const connectWhatsApp = async (userId, shopId, { waba_id, phone_number_id, access_token, display_name }) => {
+    await verifyShopAccess(userId, shopId);
+
+    if (!waba_id || !phone_number_id || !access_token) {
+        throw new AppError('waba_id, phone_number_id, and access_token are required', 400);
+    }
+
+    // Verify the token with Meta Graph API
+    await verifyMetaToken(access_token, 'whatsapp');
+
+    // Register webhook subscription with Meta for this phone number
+    try {
+        if (process.env.NODE_ENV !== 'test') {
+            const webhookUrl = process.env.WHATSAPP_WEBHOOK_URL || process.env.META_WEBHOOK_URL;
+            const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+            if (webhookUrl && verifyToken) {
+                await fetch(
+                    `https://graph.facebook.com/v20.0/${phone_number_id}/subscribed_apps`,
+                    {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' }
+                    }
+                );
+            }
+        }
+    } catch (err) {
+        console.warn('WhatsApp webhook subscription failed (non-fatal):', err.message);
+    }
+
+    const existingChannel = await Channel.findOne({ where: { shop_id: shopId, channel_type: 'whatsapp' } });
+
+    const settings = {
+        display_name: display_name || 'WhatsApp',
+        waba_id,
+        phone_number_id
+    };
+
+    if (existingChannel) {
+        existingChannel.page_id = phone_number_id;
+        existingChannel.access_token = access_token;
+        existingChannel.settings = { ...existingChannel.settings, ...settings };
+        existingChannel.is_active = true;
+        await existingChannel.save();
+        return mapChannel(existingChannel);
+    }
+
+    const channel = await Channel.create({
+        shop_id: shopId,
+        channel_type: 'whatsapp',
+        page_id: phone_number_id,
+        access_token,
+        settings,
+        is_active: true
+    });
+
+    return mapChannel(channel);
+};
+
+/**
+ * Disconnect WhatsApp channel for a shop.
+ */
+const disconnectWhatsApp = async (userId, shopId) => {
+    await verifyShopAccess(userId, shopId);
+
+    const channel = await Channel.findOne({ where: { shop_id: shopId, channel_type: 'whatsapp' } });
+    if (!channel) throw new AppError('No WhatsApp channel connected', 404);
+
+    channel.is_active = false;
+    channel.access_token = null;
+    await channel.save();
+
+    return mapChannel(channel);
+};
+
 module.exports = {
     getChannels,
     getChannelById,
@@ -482,5 +566,7 @@ module.exports = {
     updateChannel,
     deleteChannel,
     connectChannel,
-    disconnectChannel
+    disconnectChannel,
+    connectWhatsApp,
+    disconnectWhatsApp
 };

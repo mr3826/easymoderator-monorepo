@@ -1,14 +1,13 @@
 /**
  * Payment Webhook Controller
- * Handles webhook callbacks from payment gateways (bKash, Nagad)
- * Updates payment status and triggers order confirmation
+ * Handles webhook callbacks from bKash.
+ * Updates payment status and triggers order confirmation.
  */
 
 const { PaymentTransaction, Order, OrderSession } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const bkashService = require('../payment/bkash-merchant.service');
-const nagadService = require('../payment/nagad-merchant.service');
 const paymentService = require('../payment/payment.service');
 
 class PaymentWebhookController {
@@ -61,55 +60,6 @@ class PaymentWebhookController {
 
         } catch (error) {
             this.logger.error('bKash webhook error', { error: error.message });
-            res.status(500).json({ error: 'Webhook processing failed' });
-        }
-    }
-
-    /**
-     * Handle Nagad payment status webhook
-     */
-    async handleNagadWebhook(req, res) {
-        try {
-            const { paymentReferenceId, paymentStatus, transactionId, orderId, amount } = req.body;
-
-            this.logger.info('Nagad webhook received', {
-                paymentReferenceId,
-                paymentStatus,
-                transactionId,
-                orderId,
-                amount
-            });
-
-            // Find payment transaction
-            const paymentTransaction = await PaymentTransaction.findOne({
-                where: { transaction_id: paymentReferenceId }
-            });
-
-            if (!paymentTransaction) {
-                this.logger.warn('Payment transaction not found', { paymentReferenceId });
-                return res.status(404).json({ error: 'Payment transaction not found' });
-            }
-
-            // Update payment transaction
-            await paymentTransaction.update({
-                status: paymentStatus === 'Success' ? 'paid' : 'failed',
-                gateway_response: req.body,
-                verified_at: paymentStatus === 'Success' ? new Date() : null
-            });
-
-            // If payment successful, update order and trigger fulfillment
-            if (paymentStatus === 'Success') {
-                await this.processSuccessfulPayment(paymentTransaction, {
-                    gateway: 'nagad',
-                    transactionId,
-                    amount
-                });
-            }
-
-            res.status(200).json({ success: true });
-
-        } catch (error) {
-            this.logger.error('Nagad webhook error', { error: error.message });
             res.status(500).json({ error: 'Webhook processing failed' });
         }
     }
