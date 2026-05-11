@@ -110,6 +110,21 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
+      - name: Ensure Artifact Registry repositories
+        run: |
+          for REPO in easymod-backend easymod-frontend; do
+            if ! gcloud artifacts repositories describe "$REPO" \
+              --location=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+              gcloud artifacts repositories create "$REPO" \
+                --repository-format=docker \
+                --location=${{ env.REGION }} \
+                --project=${{ env.PROJECT_ID }} \
+                --description="EasyMod ${REPO} Docker images" \
+                --quiet
+            fi
+          done
+
       # ── Backend ──
       - name: Build & push backend image
         if: needs.changes.outputs.backend == 'true'
