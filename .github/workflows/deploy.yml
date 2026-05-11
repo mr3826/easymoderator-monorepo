@@ -25,6 +25,8 @@ env:
   REGION: us-central1
   BACKEND_IMAGE: us-central1-docker.pkg.dev/gen-lang-client-0405487706/easymod-backend/app
   FRONTEND_IMAGE: us-central1-docker.pkg.dev/gen-lang-client-0405487706/easymod-frontend/app
+  BACKEND_SERVICE_ACCOUNT: easymod-backend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
+  FRONTEND_SERVICE_ACCOUNT: easymod-frontend-sa@gen-lang-client-0405487706.iam.gserviceaccount.com
 
 # ──────────────────────────────────────────────────────────────────────
 # Required GitHub secrets:
@@ -67,8 +69,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.backend == 'true'
-    # Tests have pre-existing failures from monorepo restructure; unblocks deploy but surfaces in logs
-    continue-on-error: true
     defaults:
       run:
         working-directory: EasyMod-backend
@@ -89,9 +89,10 @@ jobs:
     name: Build & Deploy
     runs-on: ubuntu-latest
     needs: [changes, test-backend]
-    # Run even if test-backend was skipped (frontend-only push) or continued past a test failure
+    # Run when backend tests pass, or when they were skipped for a frontend-only deploy.
     if: |
       always() && !cancelled() &&
+      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped') &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
 
     steps:
@@ -118,6 +119,27 @@ jobs:
           docker push ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           docker push ${{ env.BACKEND_IMAGE }}:latest
 
+      - name: Run backend migrations
+        if: needs.changes.outputs.backend == 'true'
+        run: |
+          gcloud run jobs deploy easymod-migrate \
+            --image=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --command=npm \
+            --args=run,migrate \
+            --service-account=${{ env.BACKEND_SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod- \
+            --quiet
+          gcloud run jobs execute easymod-migrate \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --wait \
+            --quiet
+
       - name: Deploy backend to Cloud Run
         if: needs.changes.outputs.backend == 'true'
         run: |
@@ -125,6 +147,19 @@ jobs:
             --image=${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
+            --service-account=${{ env.BACKEND_SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --update-env-vars=NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod-,RUN_MIGRATIONS_ON_STARTUP=false \
+            --min-instances=2 \
+            --max-instances=20 \
+            --concurrency=80 \
+            --cpu=1 \
+            --memory=1Gi \
+            --timeout=300 \
+            --port=3000 \
+            --allow-unauthenticated \
             --quiet
 
       - name: Deploy BullMQ worker to Cloud Run
@@ -136,8 +171,11 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --command="node" \
             --args="src/jobs/worker.js" \
-            --service-account=easymod-backend-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
-            --set-env-vars=NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }} \
+            --service-account=${{ env.BACKEND_SERVICE_ACCOUNT }} \
+            --network=easymod-vpc \
+            --subnet=easymod-subnet \
+            --vpc-egress=private-ranges-only \
+            --update-env-vars=NODE_ENV=production,GCP_PROJECT_ID=${{ env.PROJECT_ID }},GCP_SECRET_PREFIX=easymod- \
             --min-instances=1 \
             --max-instances=2 \
             --no-allow-unauthenticated \
@@ -165,6 +203,15 @@ jobs:
             --image=${{ env.FRONTEND_IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
+            --service-account=${{ env.FRONTEND_SERVICE_ACCOUNT }} \
+            --min-instances=1 \
+            --max-instances=5 \
+            --concurrency=1000 \
+            --cpu=1 \
+            --memory=512Mi \
+            --timeout=60 \
+            --port=8080 \
+            --allow-unauthenticated \
             --quiet
 
       # ── Health check (backend only — frontend is static nginx) ────────

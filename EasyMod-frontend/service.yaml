@@ -27,14 +27,14 @@ spec:
               memory: "512Mi"
           startupProbe:
             httpGet:
-              path: /healthz
+              path: /health/ready
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 6
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /health
               port: 8080
             periodSeconds: 30
             failureThreshold: 3

@@ -140,7 +140,7 @@ if (config.env !== 'test') {
             message: { success: false, error: { code: '429', message: 'Too many authentication attempts. Please try again later.' } },
             store: buildStore('rl:auth:')
         });
-        app.use('/auth', authLimiter);
+        app.use('/api/auth', authLimiter);
     }
 }
 

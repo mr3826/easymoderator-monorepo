@@ -15,7 +15,7 @@ const COOKIE_OPTIONS_REFRESH = () => ({
     httpOnly: true,
     secure: isProduction(),
     sameSite: 'lax',
-    path: '/auth',
+    path: '/api/auth',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     ...(config.cookieDomain && { domain: config.cookieDomain })
 });
@@ -30,6 +30,8 @@ const setAuthCookies = (res, accessToken, refreshToken) => {
 const clearAuthCookies = (res) => {
     const opts = (path) => ({ path, ...(config.cookieDomain && { domain: config.cookieDomain }) });
     res.clearCookie('access_token', opts('/'));
+    res.clearCookie('refresh_token', opts('/api/auth'));
+    // Clear legacy cookies set before the API prefix was included in the path.
     res.clearCookie('refresh_token', opts('/auth'));
 };
 

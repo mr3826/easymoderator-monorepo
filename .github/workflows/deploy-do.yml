@@ -97,6 +97,8 @@ jobs:
             ${{ env.GHCR_FRONTEND }}:latest
           build-args: |
             VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
             VITE_ENV=production
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
@@ -109,6 +111,16 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Upload compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          source: "EasyMod-backend/docker-compose.prod.yml"
+          target: "/opt/easymod"
+          strip_components: 1
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -138,11 +150,14 @@ jobs:
             export GHCR_IMAGE_BACKEND="${{ env.GHCR_BACKEND }}:latest"
             export GHCR_IMAGE_FRONTEND="${{ env.GHCR_FRONTEND }}:latest"
 
-            # Pull compose changes and redeploy
-            docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
+            # Make sure dependencies are healthy before running the release migration
+            docker compose -f docker-compose.prod.yml up -d postgres redis
 
-            # Run DB migrations
-            docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
+            # Run DB migrations once as a release step, then start the app containers
+            docker compose -f docker-compose.prod.yml run --rm backend npm run migrate
+
+            # Redeploy application containers
+            docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
             # Health check
             for i in $(seq 1 20); do

@@ -21,7 +21,7 @@ export function useLogin() {
 
   return useMutation<User, NormalizedApiError, LoginInput>({
     mutationFn: async (input) => {
-      const { data } = await httpClient.post<LoginResponse>('/api/auth/login', input);
+      const { data } = await httpClient.post<LoginResponse>('/api/auth/signin', input);
 
       // Auth token is set as an httpOnly cookie by the backend — no localStorage needed.
       if (!data?.success || !data.data?.user?.id) {
@@ -48,7 +48,7 @@ export function useRegister() {
 
   return useMutation<User, NormalizedApiError, RegisterInput>({
     mutationFn: async (input) => {
-      const { data } = await httpClient.post<RegisterResponse>('/api/auth/register', input);
+      const { data } = await httpClient.post<RegisterResponse>('/api/auth/signup', input);
       return data.data!.user;
     },
     onSuccess: (user) => {

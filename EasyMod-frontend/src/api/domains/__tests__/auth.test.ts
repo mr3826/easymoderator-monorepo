@@ -41,7 +41,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.signin({ email: 'test@example.com', password: 'password123' });
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/signin', { email: 'test@example.com', password: 'password123' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/signin', { email: 'test@example.com', password: 'password123' });
       expect(httpClient.clearCsrfToken).toHaveBeenCalled();
       expect(httpClient.initCsrfToken).toHaveBeenCalled();
       expect(result.user).toEqual(mockResponse.data.data.user);
@@ -70,7 +70,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.signup({ email: 'new@example.com', password: 'password123', full_name: 'New User' });
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/signup', { email: 'new@example.com', password: 'password123', full_name: 'New User' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/signup', { email: 'new@example.com', password: 'password123', full_name: 'New User' });
       expect(result.user).toEqual(mockResponse.data.data.user);
       expect(result.currentShop).toEqual(mockResponse.data.data.currentShop);
     });
@@ -100,7 +100,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.forgotPassword('test@example.com');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/forgot-password', { email: 'test@example.com' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/forgot-password', { email: 'test@example.com' });
       expect(result.message).toBe('Reset email sent');
     });
 
@@ -121,7 +121,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.resetPassword('reset-token', 'newpassword123');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/reset-password', { token: 'reset-token', password: 'newpassword123' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/reset-password', { token: 'reset-token', password: 'newpassword123' });
       expect(result.message).toBe('Password reset successful');
     });
   });
@@ -132,7 +132,7 @@ describe('Auth Domain API', () => {
 
       await auth.logout();
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/logout');
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/logout');
     });
 
     it('should not throw even when server fails', async () => {
@@ -157,7 +157,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.getAuthContext();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/auth/me');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/auth/me');
       expect(result.user).toEqual(mockResponse.data.data.user);
       expect(result.allShops).toHaveLength(1);
     });
@@ -170,7 +170,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.refreshToken();
 
-      expect(httpClient.post).toHaveBeenCalledWith('/auth/refresh', {});
+      expect(httpClient.post).toHaveBeenCalledWith('/api/auth/refresh', {});
       expect(result.refreshed).toBe(true);
     });
   });
@@ -189,7 +189,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.getShops();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/shop/list');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/shop/list');
       expect(result).toHaveLength(2);
     });
   });
@@ -205,7 +205,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.createShop({ shop_name: 'New Shop' });
 
-      expect(httpClient.post).toHaveBeenCalledWith('/shop/create', { shop_name: 'New Shop' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/create', { shop_name: 'New Shop' });
       expect(result.shop_name).toBe('New Shop');
     });
   });
@@ -221,7 +221,7 @@ describe('Auth Domain API', () => {
 
       const result = await auth.switchShop('shop2');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/shop/switch', { shopId: 'shop2' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/switch', { shopId: 'shop2' });
       expect(result.currentShop.id).toBe('shop2');
     });
   });

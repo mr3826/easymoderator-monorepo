@@ -25,6 +25,7 @@ process.on('uncaughtException', (err) => {
     const { getRedisClient, closeRedis } = require('src/utils/redis-client');
 
     let server = null;
+    let queueManager = null;
 
     try {
         // Database Connection
@@ -53,38 +54,40 @@ process.on('uncaughtException', (err) => {
             }
         }
 
-        // Run pending migrations on every startup (idempotent — skips already-run)
-        try {
-            const { runMigrationsWithSequelize } = require('src/database/migrate');
-            await runMigrationsWithSequelize(sequelize);
-        } catch (migrateErr) {
-            console.error('⚠️  Migration error during startup:', migrateErr.message);
-            // Only block startup in production; dev/staging can continue with warnings
-            if (config.env === 'production') throw migrateErr;
+        // Production deployments run migrations as a dedicated release step.
+        // Keep startup migrations enabled by default for local/dev compatibility.
+        if (process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') {
+            try {
+                const { runMigrationsWithSequelize } = require('src/database/migrate');
+                await runMigrationsWithSequelize(sequelize);
+            } catch (migrateErr) {
+                console.error('⚠️  Migration error during startup:', migrateErr.message);
+                // Only block startup in production; dev/staging can continue with warnings
+                if (config.env === 'production') throw migrateErr;
+            }
         }
 
         server = app.listen(config.port, '0.0.0.0', () => {
             console.log(`Server running on port ${config.port}`);
         });
 
-        // Start BullMQ message-processing worker in the same process.
-        // Cloud Run keeps min 1 instance alive, so the worker always has a host.
-        // It is started after the HTTP server so a failed worker doesn't block the health check.
-        let messageWorker = null;
-        try {
-            const { startWorker } = require('src/jobs/message-worker');
-            messageWorker = startWorker();
-        } catch (workerErr) {
-            console.warn('⚠️  BullMQ message worker failed to start (Redis unavailable?):', workerErr.message);
-        }
+        // Background jobs run in the dedicated worker service in production.
+        // Set START_EMBEDDED_WORKERS=true only for single-process deployments.
+        if (process.env.START_EMBEDDED_WORKERS === 'true') {
+            try {
+                const { startWorker } = require('src/jobs/message-worker');
+                startWorker();
+            } catch (workerErr) {
+                console.warn('⚠️  BullMQ message worker failed to start (Redis unavailable?):', workerErr.message);
+            }
 
-        let queueManager = null;
-        try {
-            queueManager = require('src/jobs/queue-manager');
-            await queueManager.scheduleJobs();
-            console.log('✅ Bull queue-manager started');
-        } catch (qmErr) {
-            console.warn('⚠️  Queue manager failed to start:', qmErr.message);
+            try {
+                queueManager = require('src/jobs/queue-manager');
+                await queueManager.scheduleJobs();
+                console.log('✅ Bull queue-manager started');
+            } catch (qmErr) {
+                console.warn('⚠️  Queue manager failed to start:', qmErr.message);
+            }
         }
 
     } catch (error) {

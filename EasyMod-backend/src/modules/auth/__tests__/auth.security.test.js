@@ -169,6 +169,7 @@ describe('Auth Security Fixes', () => {
             expect(loginRes.status).toBe(200);
             const cookies = loginRes.headers['set-cookie'];
             const accessToken = cookies.find(c => c.startsWith('access_token='))?.split(';')[0]?.replace('access_token=', '');
+            expect(cookies.some(c => c.startsWith('refresh_token=') && c.includes('Path=/api/auth'))).toBe(true);
 
             // 2. Simulate password reset (increment token_version)
             mockUser.token_version = 2; // Incremented after password reset
