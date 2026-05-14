@@ -121,7 +121,7 @@ export async function createFaq(faq: Omit<FAQ, 'id' | 'createdAt' | 'updatedAt'>
  */
 export async function updateFaq(faqId: string, updates: Partial<FAQ>): Promise<FAQ> {
   const response: AxiosResponse<ApiResponse<FAQ>> = await httpClient.patch(
-    `/knowledge/faqs/${faqId}`,
+    `/api/knowledge/faqs/${faqId}`,
     updates
   );
   return mapFaqFromBackend(response.data.data);
@@ -140,7 +140,7 @@ export async function updateFaq(faqId: string, updates: Partial<FAQ>): Promise<F
  */
 export async function deleteFaq(faqId: string): Promise<{ message: string }> {
   const response: AxiosResponse<ApiResponse<{ message: string }>> = await httpClient.delete(
-    `/knowledge/faqs/${faqId}`
+    `/api/knowledge/faqs/${faqId}`
   );
   return response.data.data ?? { message: 'FAQ deleted' };
 }

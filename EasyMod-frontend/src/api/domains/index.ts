@@ -13,3 +13,5 @@ export * as dashboard from './dashboard';
 export * as knowledge from './knowledge';
 export * as audit from './audit';
 export * as subscription from './subscription';
+export * as shop from './shop';
+export * as payment from './payment';

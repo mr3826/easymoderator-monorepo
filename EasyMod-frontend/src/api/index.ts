@@ -55,6 +55,8 @@ import * as dashboardDomain from './domains/dashboard';
 import * as knowledgeDomain from './domains/knowledge';
 import * as subscriptionDomain from './domains/subscription';
 import * as conversationDomain from './domains/conversation';
+import * as shopDomain from './domains/shop';
+import * as paymentDomain from './domains/payment';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
@@ -110,6 +112,7 @@ export const apiClient = {
   updateCustomer: customerDomain.updateCustomer,
   blacklistCustomer: customerDomain.blacklistCustomer,
   removeFromBlacklist: customerDomain.removeFromBlacklist,
+  deleteCustomer: customerDomain.deleteCustomer,
 
   // Channel methods
   getChannels: channelDomain.getChannels,
@@ -167,6 +170,23 @@ export const apiClient = {
   updateTemplate: conversationDomain.updateTemplate,
   deleteTemplate: conversationDomain.deleteTemplate,
   createAuditLog: conversationDomain.createAuditLog,
+
+  // Shop methods
+  getShopBusinessInfo: shopDomain.getShopBusinessInfo,
+  updateShopBusinessInfo: shopDomain.updateShopBusinessInfo,
+  getShopAISettings: shopDomain.getShopAISettings,
+  updateShopAISettings: shopDomain.updateShopAISettings,
+  getShop: shopDomain.getShop,
+  updateShop: shopDomain.updateShop,
+
+  // Payment config methods
+  getPaymentConfig: paymentDomain.getPaymentConfig,
+  updatePaymentConfig: paymentDomain.updatePaymentConfig,
+  testPaymentConnection: paymentDomain.testPaymentConnection,
+  deletePaymentConfig: paymentDomain.deletePaymentConfig,
+
+  // Subscription invoice alias
+  getSubscriptionInvoices: subscriptionDomain.getInvoices,
 
   // Utility methods
   initCsrfToken: () => httpClient.initCsrfToken(),

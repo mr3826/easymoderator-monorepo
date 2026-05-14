@@ -129,15 +129,15 @@ export default function Subscription() {
     try {
       setLoading(true);
       setHasSubscriptionData(true);
-      const response = await apiClient.getSubscription();
+      const data = await apiClient.getSubscription() as any;
 
-      if (!response?.success || !response.data) {
+      if (!data?.subscription) {
         setHasSubscriptionData(false);
         return;
       }
 
-      if (response.success && response.data) {
-        const { subscription, usage: usageData, extra_usage } = response.data;
+      {
+        const { subscription, usage: usageData, extra_usage } = data;
         
         // Update current plan
         setCurrentPlan({
@@ -199,10 +199,10 @@ export default function Subscription() {
 
   const loadInvoices = async () => {
     try {
-      const response = await apiClient.getSubscriptionInvoices();
+      const invoices = await apiClient.getSubscriptionInvoices() as any[];
 
-      if (response?.success && response.data) {
-        const mappedInvoices = response.data.map((inv: any) => ({
+      if (Array.isArray(invoices) && invoices.length > 0) {
+        const mappedInvoices = invoices.map((inv: any) => ({
           id: inv.invoice_number,
           rawId: inv.id,
           billingPeriod: inv.billing_period,

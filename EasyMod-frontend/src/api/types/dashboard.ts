@@ -48,3 +48,25 @@ export interface ShopAgent {
   email: string;
   role?: string;
 }
+
+export interface ShopAISettings {
+  automation_mode: string;
+  confidence_threshold: number;
+  auto_reply_enabled: boolean;
+  max_auto_order_value: number;
+  ask_email: boolean;
+  primary_language: string;
+  required_fields: {
+    customer_name: boolean;
+    mobile_number: boolean;
+    delivery_address: boolean;
+    payment_method: boolean;
+    email_address: boolean;
+    special_instructions: boolean;
+  };
+  handoff_settings: {
+    trigger_keywords: string[];
+    notification_channel: string;
+    cooldown_minutes: number;
+  };
+}

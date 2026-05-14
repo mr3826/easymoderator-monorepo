@@ -28,7 +28,7 @@ export async function getCustomers(filters?: CustomerFilters): Promise<Paginated
   }
 
   const response: AxiosResponse<ApiResponse<PaginatedResponse<Customer>>> = await httpClient.get(
-    `/customer?${params}`
+    `/api/customer?${params}`
   );
   return response.data.data;
 }
@@ -123,6 +123,10 @@ export async function blacklistCustomer(customerId: string, reason?: string): Pr
  */
 export async function removeFromBlacklist(customerId: string): Promise<void> {
   await httpClient.delete(`/api/customer/${customerId}/blacklist`);
+}
+
+export async function deleteCustomer(customerId: string): Promise<void> {
+  await httpClient.delete(`/api/customer/${customerId}`);
 }
 
 
