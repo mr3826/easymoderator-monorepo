@@ -25,7 +25,9 @@ vi.mock('sonner', () => ({
 describe('Channels', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(window, 'open').mockReturnValue({ close: vi.fn() } as any)
+    // Return `window` so oauthPopupRef.current === window.
+    // window.dispatchEvent sets e.source = window, so the source check passes.
+    vi.spyOn(window, 'open').mockReturnValue(window as any)
   })
 
   it('renders channels page', async () => {

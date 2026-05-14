@@ -197,6 +197,10 @@ jobs:
 
             cd /opt/easymod
 
+            # Set image vars for docker-compose
+            export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
+            export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
+
             # Restart services with latest images
             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
