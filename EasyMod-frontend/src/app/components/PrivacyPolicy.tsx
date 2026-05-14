@@ -229,10 +229,6 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 font-mono text-xs text-blue-700">instagram_manage_messages</td>
                     <td className="px-4 py-3 text-gray-600">Read and send Instagram Direct Messages on behalf of the connected account</td>
                   </tr>
-                  <tr>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-700">instagram_manage_comments</td>
-                    <td className="px-4 py-3 text-gray-600">Read and respond to comments on Instagram posts (customer support use only)</td>
-                  </tr>
                 </tbody>
               </table>
             </div>

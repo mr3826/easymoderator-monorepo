@@ -686,7 +686,6 @@ export default function Channels() {
                     {selectedChannel.id === 'instagram' && <>
                       <li><strong>instagram_basic</strong> — access your Instagram Business account</li>
                       <li><strong>instagram_manage_messages</strong> — read and reply to Instagram DMs</li>
-                      <li><strong>instagram_manage_comments</strong> — read and respond to comments on posts</li>
                       <li><strong>pages_show_list</strong> — identify the Facebook Page linked to your Instagram</li>
                       <li><strong>pages_read_engagement</strong> — receive message delivery and read receipts</li>
                       <li><strong>pages_manage_metadata</strong> — subscribe to webhooks for real-time DM delivery</li>

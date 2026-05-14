@@ -309,7 +309,7 @@ class MetaService {
    */
   buildOAuthUrl(state, channelType) {
     const scopes = channelType === 'instagram'
-      ? 'pages_show_list,instagram_basic,instagram_manage_messages,instagram_manage_comments,pages_read_engagement,pages_manage_metadata'
+      ? 'pages_show_list,instagram_basic,instagram_manage_messages,pages_read_engagement,pages_manage_metadata'
       : 'pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
 
     const params = new URLSearchParams({
