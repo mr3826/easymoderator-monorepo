@@ -93,7 +93,8 @@ module.exports = {
     metaWebhookAppSecret: process.env.META_WEBHOOK_APP_SECRET,
     metaAppId: process.env.META_APP_ID,
     metaAppSecret: process.env.META_APP_SECRET,
-    metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI,
+    metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI
+        || (process.env.FRONTEND_URL && `${process.env.FRONTEND_URL}/app/channels/oauth-callback`),
     // Cookie config for httpOnly token storage
     cookieDomain: process.env.COOKIE_DOMAIN || undefined,
     // Account lockout
