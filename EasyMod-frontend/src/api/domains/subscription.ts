@@ -60,9 +60,9 @@ export async function subscribeToPlan(
   planId: string,
   billingCycle: 'monthly' | 'yearly' = 'monthly'
 ): Promise<Subscription> {
-  const response: AxiosResponse<ApiResponse<Subscription>> = await httpClient.post(
-    '/api/subscription/subscribe',
-    { planId, billingCycle }
+  const response: AxiosResponse<ApiResponse<Subscription>> = await httpClient.put(
+    '/api/subscription/plan',
+    { plan_code: planId, billing_cycle: billingCycle }
   );
   return response.data.data;
 }
