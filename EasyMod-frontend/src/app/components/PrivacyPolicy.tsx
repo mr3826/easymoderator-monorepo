@@ -203,17 +203,35 @@ export default function PrivacyPolicy() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  <tr><td colSpan={2} className="px-4 py-2 bg-blue-50 text-xs font-semibold text-blue-700">Facebook Messenger</td></tr>
                   <tr>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_messaging</td>
-                    <td className="px-4 py-3 text-gray-600">Send and receive Facebook Messenger messages on behalf of connected Pages</td>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_show_list</td>
+                    <td className="px-4 py-3 text-gray-600">List the Facebook Pages the user manages so they can select which Page to connect</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_messaging</td>
+                    <td className="px-4 py-3 text-gray-600">Send and receive Facebook Messenger messages on behalf of the connected Page</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_read_engagement</td>
-                    <td className="px-4 py-3 text-gray-600">Receive delivery and read receipt events for Facebook messages</td>
+                    <td className="px-4 py-3 text-gray-600">Receive delivery and read receipts for Facebook messages</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_metadata</td>
+                    <td className="px-4 py-3 text-gray-600">Subscribe to webhooks so incoming messages are delivered in real time</td>
+                  </tr>
+                  <tr><td colSpan={2} className="px-4 py-2 bg-pink-50 text-xs font-semibold text-pink-700">Instagram Messaging</td></tr>
+                  <tr>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">instagram_basic</td>
+                    <td className="px-4 py-3 text-gray-600">Access the Instagram Business account connected to the user's Facebook Page</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-mono text-xs text-blue-700">instagram_manage_messages</td>
-                    <td className="px-4 py-3 text-gray-600">Send and receive Instagram Direct Messages on behalf of connected accounts</td>
+                    <td className="px-4 py-3 text-gray-600">Read and send Instagram Direct Messages on behalf of the connected account</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">instagram_manage_comments</td>
+                    <td className="px-4 py-3 text-gray-600">Read and respond to comments on Instagram posts (customer support use only)</td>
                   </tr>
                 </tbody>
               </table>

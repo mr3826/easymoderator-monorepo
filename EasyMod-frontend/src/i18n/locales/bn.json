@@ -1,6 +1,7 @@
 {
   "common": {
     "privacyPolicy": "Privacy Policy",
+    "terms": "সেবার শর্তাবলী",
     "signIn": "লগইন",
     "signUp": "সাইনআপ",
     "cancel": "বাতিল",
@@ -881,8 +882,11 @@
       "connectionFailed": "সংযোগ ব্যর্থ। আবার চেষ্টা করুন।",
       "loadFailed": "চ্যানেল লোড করতে ব্যর্থ",
       "oauthInitFailed": "সংযোগ শুরু করা যায়নি। আবার চেষ্টা করুন।",
-      "refreshFailed": "চ্যানেল রিফ্রেশ করতে ব্যর্থ"
+      "refreshFailed": "চ্যানেল রিফ্রেশ করতে ব্যর্থ",
+      "oauthStateMismatch": "OAuth যাচাইকরণ ব্যর্থ হয়েছে — আবার চেষ্টা করুন",
+      "disconnectFailed": "চ্যানেল সংযোগ বিচ্ছিন্ন করতে ব্যর্থ"
     },
+    "disconnected": "চ্যানেল সংযোগ বিচ্ছিন্ন হয়েছে",
     "successToast": "{{channel}} সফলভাবে সংযুক্ত হয়েছে!"
   },
   "knowledge": {
