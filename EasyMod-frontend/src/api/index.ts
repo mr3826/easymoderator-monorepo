@@ -104,6 +104,7 @@ export const apiClient = {
   disconnectDeliveryProvider: orderDomain.disconnectDeliveryProvider,
   toggleDeliveryProvider: orderDomain.toggleDeliveryProvider,
   updateDeliverySettings: orderDomain.updateDeliverySettings,
+  testDeliveryConnection: orderDomain.testDeliveryConnection,
 
   // Customer methods
   getCustomers: customerDomain.getCustomers,

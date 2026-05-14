@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Instagram, CheckCircle, Clock, X, AlertCircle, ChevronDown, Loader2, Shield, Cpu, Lock } from "lucide-react";
+import { MessageSquare, Instagram, CheckCircle, Clock, X, AlertCircle, ChevronDown, Loader2, Shield, Cpu, Lock, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiClient } from "@/api";
 import type { Channel as BackendChannel } from "@/api/types/channel";
@@ -156,7 +156,6 @@ export default function ChatSettings() {
   const handleManageChannel = (channel: Channel) => {
     const saved = channel.savedSettings || {} as any;
     setChannelSettings({ ...CHANNEL_SETTINGS_DEFAULTS, ...saved });
-    setTriggerKeywords((saved as any).trigger_keywords ?? DEFAULT_TRIGGER_KEYWORDS);
     setManagedChannel({
       ...channel,
       connectedAccount: channel.connectedAccount || '',
@@ -477,11 +476,10 @@ export default function ChatSettings() {
                   if (!managedChannel) return;
                   try {
                     await apiClient.updateChannel(managedChannel.id, {
-                      settings: {
-                        ...channelSettings,
-                        trigger_keywords: triggerKeywords,
+                      config: {
+                        settings: channelSettings,
                       }
-                    });
+                    } as any);
                     setShowManageModal(false);
                     setShowToast({ type: 'success', message: 'Settings saved successfully!' });
                     loadChannels();

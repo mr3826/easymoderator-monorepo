@@ -40,7 +40,7 @@ export async function getChannels(): Promise<Channel[]> {
  */
 export async function getChannel(channelId: string): Promise<Channel> {
   const response: AxiosResponse<ApiResponse<Channel>> = await httpClient.get(
-    `/channel/${channelId}`
+    `/api/channel/${channelId}`
   );
   return response.data.data;
 }
@@ -82,7 +82,7 @@ export async function updateChannel(
   updates: Partial<Channel>
 ): Promise<Channel> {
   const response: AxiosResponse<ApiResponse<Channel>> = await httpClient.patch(
-    `/channel/${channelId}`,
+    `/api/channel/${channelId}`,
     updates
   );
   return response.data.data;
@@ -101,7 +101,7 @@ export async function updateChannel(
  */
 export async function deleteChannel(channelId: string): Promise<{ message: string }> {
   const response: AxiosResponse<ApiResponse<{ message: string }>> = await httpClient.delete(
-    `/channel/${channelId}`
+    `/api/channel/${channelId}`
   );
   return response.data.data ?? { message: 'Channel deleted' };
 }
@@ -190,7 +190,7 @@ export async function connectOAuthPage(
  */
 export async function disconnectChannel(channelId: string): Promise<Channel> {
   const response: AxiosResponse<ApiResponse<Channel>> = await httpClient.post(
-    `/channel/${channelId}/disconnect`
+    `/api/channel/${channelId}/disconnect`
   );
   return response.data.data;
 }
@@ -208,7 +208,7 @@ export async function disconnectChannel(channelId: string): Promise<Channel> {
  */
 export async function testChannelPipeline(channelId: string): Promise<PipelineTestResult> {
   const response: AxiosResponse<ApiResponse<PipelineTestResult>> = await httpClient.post(
-    `/channel/${channelId}/test-pipeline`
+    `/api/channel/${channelId}/test-pipeline`
   );
   return response.data.data;
 }
@@ -228,7 +228,7 @@ export async function subscribeChannelWebhooks(
   channelId: string
 ): Promise<WebhookSubscriptionResult> {
   const response: AxiosResponse<ApiResponse<WebhookSubscriptionResult>> = await httpClient.post(
-    `/channel/${channelId}/subscribe-webhooks`
+    `/api/channel/${channelId}/subscribe-webhooks`
   );
   return response.data.data;
 }

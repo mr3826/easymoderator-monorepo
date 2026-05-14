@@ -238,4 +238,8 @@ export async function updateDeliverySettings(settings: {
   await httpClient.put('/api/shop/delivery/settings', settings);
 }
 
+export async function testDeliveryConnection(provider: DeliveryProvider): Promise<void> {
+  await httpClient.post('/api/shop/delivery/test', { provider });
+}
+
 

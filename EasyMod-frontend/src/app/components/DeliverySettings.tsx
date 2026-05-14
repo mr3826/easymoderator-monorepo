@@ -200,8 +200,8 @@ export default function DeliverySettings() {
         return;
       }
 
-      const saved = await apiClient.updateDeliverySettings(deliverySettings);
-      setDeliverySettings(applyDefaults(saved));
+      await apiClient.updateDeliverySettings(deliverySettings);
+      setDeliverySettings(applyDefaults(deliverySettings));
       setSuccessMessage(t('manageShop.deliverySettings.success.settingsSaved'));
     } catch (err: any) {
       setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.saveFailed'));
@@ -325,7 +325,7 @@ export default function DeliverySettings() {
       setError(null);
       setSuccessMessage(null);
 
-      await apiClient.disconnectDeliveryProvider({ provider });
+      await apiClient.disconnectDeliveryProvider(provider);
 
       setSuccessMessage(t('manageShop.deliverySettings.success.disconnected', { provider: config?.display_name }));
       await loadDeliverySettings();
@@ -343,10 +343,7 @@ export default function DeliverySettings() {
       setError(null);
       setSuccessMessage(null);
 
-      await apiClient.toggleDeliveryProvider({
-        provider,
-        is_active: !currentStatus
-      });
+      await apiClient.toggleDeliveryProvider(provider, !currentStatus);
 
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
       setSuccessMessage(!currentStatus
