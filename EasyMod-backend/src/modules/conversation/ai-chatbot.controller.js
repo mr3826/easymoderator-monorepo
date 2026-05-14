@@ -237,9 +237,9 @@ class AIChatbotController {
             );
 
             // Map model_preset to preferredProvider
-            // 'standard' = Gemini (cost-effective), 'advanced' = Gemini 1.5 Pro
+            // 'standard' = Gemini lite (cost-effective), 'advanced' = Gemini pro
             const modelPreset = aiSettings.model_preset || 'standard';
-            const preferredProvider = modelPreset === 'advanced' ? 'gemini-pro' : 'gemini';
+            const preferredProvider = modelPreset === 'advanced' ? 'gemini-pro' : 'gemini-lite';
 
             const routerResult = await intentRouter.route({
                 shopId: shop_id,

@@ -105,8 +105,8 @@ const createDefaultSubscription = async (shopId) => {
     const now = new Date();
     const nextMonth = new Date(now);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
-    // New shops default to STARTER (free trial handled separately)
-    const starterTier = PRICING_TIERS[PlanCode.STARTER];
+    // New shops default to PACKAGE_1
+    const starterTier = PRICING_TIERS[PlanCode.PACKAGE_1];
 
     return await Subscription.create({
         shop_id: shopId,

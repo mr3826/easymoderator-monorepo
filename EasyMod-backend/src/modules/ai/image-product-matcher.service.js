@@ -59,7 +59,7 @@ const matchViaVision = async (imageUrl, shopId) => {
                     ]
                 }
             ],
-            preferredProvider: 'gemini',  // Gemini is primary + multimodal
+            preferredProvider: 'gemini-lite',  // Gemini is primary + multimodal
             maxTokens: 200
         });
 

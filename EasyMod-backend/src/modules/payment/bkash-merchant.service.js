@@ -98,7 +98,7 @@ class BkashMerchantService extends BaseMerchantService {
             await this.createPaymentTransaction({
                 orderId: orderData.id,
                 shopId,
-                paymentId,
+                paymentId: paymentID,
                 amount: orderData.total,
                 status: 'initiated',
                 gateway: 'bkash'
@@ -107,13 +107,13 @@ class BkashMerchantService extends BaseMerchantService {
             this.logger.info('bKash payment created', {
                 shopId,
                 orderId: orderData.id,
-                paymentId,
+                paymentId: paymentID,
                 amount: orderData.total
             });
 
             return {
                 success: true,
-                paymentId,
+                paymentId: paymentID,
                 paymentUrl: bkashURL,
                 expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
             };

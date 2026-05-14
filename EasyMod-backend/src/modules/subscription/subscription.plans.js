@@ -245,6 +245,7 @@ module.exports = {
     getTierByPlanName,
     isPerOrderBilling,
     calculatePartnerCharge,
+    getPerOrderCharge: calculatePartnerCharge,
     getAiSettingsAccess,
     getAllowedLanguages,
     getAllowedAutomationModes,

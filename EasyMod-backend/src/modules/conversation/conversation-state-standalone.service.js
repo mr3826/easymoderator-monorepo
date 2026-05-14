@@ -53,9 +53,9 @@ class ConversationStateService {
                     shop_id,
                     customer_id: customer.id,
                     channel: channelType,
-                    created_at: { [Op.gte]: oneDayAgo }
+                    updated_at: { [Op.gte]: oneDayAgo }
                 },
-                order: [['created_at', 'DESC']]
+                order: [['updated_at', 'DESC']]
             });
 
             const messageTime = new Date();

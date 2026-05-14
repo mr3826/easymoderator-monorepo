@@ -147,8 +147,8 @@ function TopupPanel({ onComplete }: { onComplete: () => void }) {
 
   useEffect(() => {
     apiClient.get('/subscription/topup/packs')
-      .then(res => setPacks(res.data.data))
-      .catch(() => {});
+      .then(res => setPacks(res.data.data || []))
+      .catch(() => setPacks([]));
   }, []);
 
   const handlePurchase = async () => {
@@ -372,7 +372,7 @@ export default function SubscriptionPage() {
     setLoading(true);
     try {
       const res = await apiClient.get('/subscription');
-      setSub(res.data.subscription || res.data.data?.subscription || res.data);
+      setSub(res.data.data?.subscription ?? res.data.subscription);
     } catch {
       toast.error('Failed to load subscription');
     } finally {

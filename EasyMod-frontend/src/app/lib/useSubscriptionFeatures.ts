@@ -32,8 +32,8 @@ const defaultFeatures: SubscriptionFeatures = {
 async function fetchAndCache(): Promise<void> {
   try {
     const response = await apiClient.getSubscription();
-    if (response?.success && response.data?.subscription) {
-      const sub = response.data.subscription;
+    if (response.data?.success && response.data?.data?.subscription) {
+      const sub = response.data.data.subscription;
       const matched = findPlanByName(sub.plan_name) ?? null;
       cachedResult = {
         features: matched?.features
