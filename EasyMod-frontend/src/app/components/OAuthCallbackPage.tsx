@@ -1,11 +1,17 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { apiClient } from '@/api';
 
 /**
  * Popup landing page for Meta OAuth callback.
  * Facebook redirects here with ?code=&state= after user authorizes.
- * Sends result to the parent window via postMessage, then closes itself.
+ *
+ * Happy path  (popup): post OAUTH_SUCCESS to opener → opener handles
+ *   the handshake → this window closes.
+ *
+ * Fallback (opener cleared by browser security or direct tab navigation):
+ *   complete the OAuth exchange here, then navigate to /app/channels.
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -15,27 +21,43 @@ export default function OAuthCallbackPage() {
     const state = searchParams.get('state');
     const error = searchParams.get('error');
 
-    if (!window.opener) {
-      // Opened directly, not via popup — redirect to channels settings
-      window.location.href = '/settings/channels';
+    // ── Error case ────────────────────────────────────────────────────────────
+    if (error) {
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: 'OAUTH_ERROR', error }, window.location.origin);
+          window.close();
+          return;
+        } catch { /* opener from different origin — fall through */ }
+      }
+      sessionStorage.removeItem('easymod_oauth_channel_type');
+      sessionStorage.removeItem('easymod_oauth_nonce');
+      window.location.href = '/app/channels';
       return;
     }
 
-    try {
-      if (error) {
-        window.opener.postMessage({ type: 'OAUTH_ERROR', error }, window.location.origin);
-        window.close();
-        return;
-      }
+    if (!code || !state) return;
 
-      if (code && state) {
+    // ── Happy path: popup with live opener ───────────────────────────────────
+    if (window.opener) {
+      try {
         window.opener.postMessage({ type: 'OAUTH_SUCCESS', code, state }, window.location.origin);
         window.close();
-      }
-    } catch {
-      // opener from a different origin — redirect to app
-      window.location.href = '/settings/channels';
+        return;
+      } catch { /* opener from different origin — fall through to self-complete */ }
     }
+
+    // ── Fallback: opener was cleared (cross-origin redirect security) ────────
+    // Complete the OAuth exchange in this tab directly.
+    const channelType = (sessionStorage.getItem('easymod_oauth_channel_type') || 'facebook') as 'facebook' | 'instagram';
+    sessionStorage.removeItem('easymod_oauth_channel_type');
+    sessionStorage.removeItem('easymod_oauth_nonce');
+
+    apiClient.handleOAuthCallback(code, state, channelType)
+      .catch(() => { /* ignore — channels page will show current state */ })
+      .finally(() => {
+        window.location.href = '/app/channels';
+      });
   }, []);
 
   return (

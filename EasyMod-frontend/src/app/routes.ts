@@ -110,6 +110,12 @@ export const router = createBrowserRouter([
 		errorElement: createElement(RouteError),
 	},
 	{
+		// Standalone — must NOT be inside DashboardLayout so the popup loads only the
+		// spinner + postMessage handler, not the full authenticated app shell.
+		path: "/app/channels/oauth-callback",
+		Component: withSuspense(OAuthCallbackPage),
+	},
+	{
 		path: "/app",
 		Component: withSuspense(DashboardLayout),
 		loader: protectedLoader,
@@ -118,7 +124,6 @@ export const router = createBrowserRouter([
 			{ index: true, Component: withSuspense(Dashboard) },
 			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
 			{ path: "channels", Component: withSuspense(Channels) },
-			{ path: "channels/oauth-callback", Component: withSuspense(OAuthCallbackPage) },
 			{
 				path: "manage-shop",
 				Component: withSuspense(ManageShop),

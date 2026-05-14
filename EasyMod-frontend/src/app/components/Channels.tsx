@@ -145,6 +145,7 @@ export default function Channels() {
       } catch {
         // Non-critical: if URL parsing fails we proceed without nonce validation
       }
+      sessionStorage.setItem('easymod_oauth_channel_type', selectedChannel.id);
 
       oauthPopupRef.current = window.open(redirectUrl, 'meta_oauth', 'width=600,height=700,left=200,top=100');
       setConnectionStep('connecting');
