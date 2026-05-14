@@ -171,6 +171,12 @@ export const apiClient = {
   // Utility methods
   initCsrfToken: () => httpClient.initCsrfToken(),
   setAccessToken: (token: string | null) => httpClient.setAccessToken(token),
+
+  // Raw HTTP passthrough — normalises paths that omit the /api prefix
+  get: (url: string, config?: any) => httpClient.get(url.startsWith('/api/') ? url : `/api${url}`, config),
+  post: (url: string, data?: any, config?: any) => httpClient.post(url.startsWith('/api/') ? url : `/api${url}`, data, config),
+  put: (url: string, data?: any, config?: any) => httpClient.put(url.startsWith('/api/') ? url : `/api${url}`, data, config),
+  delete: (url: string, config?: any) => httpClient.delete(url.startsWith('/api/') ? url : `/api${url}`, config),
 };
 
 // Utility functions
