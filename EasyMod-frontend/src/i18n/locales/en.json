@@ -1,6 +1,7 @@
 {
   "common": {
     "privacyPolicy": "Privacy Policy",
+    "terms": "Terms of Service",
     "signIn": "Sign In",
     "signUp": "Sign Up",
     "cancel": "Cancel",
@@ -886,8 +887,11 @@
       "connectionFailed": "Connection failed. Please try again.",
       "loadFailed": "Failed to load channels",
       "oauthInitFailed": "Could not start connection. Please try again.",
-      "refreshFailed": "Failed to refresh channels"
+      "refreshFailed": "Failed to refresh channels",
+      "oauthStateMismatch": "OAuth validation failed — please try again",
+      "disconnectFailed": "Failed to disconnect channel"
     },
+    "disconnected": "Channel disconnected",
     "successToast": "{{channel}} connected successfully!"
   },
   "knowledge": {

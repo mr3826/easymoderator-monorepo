@@ -38,23 +38,28 @@ export default function LandingPage() {
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.4; }
         }
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
         .orb { animation: orb-pulse 5s ease-in-out infinite; }
         .orb-delay { animation-delay: 2.5s; }
         .badge-dot { animation: badge-blink 2s ease-in-out infinite; }
+        .animate-fade-in { animation: fade-in 0.6s ease-out forwards; }
 
         .hero-grid {
           background-image: radial-gradient(circle, rgba(37,99,235,0.18) 1px, transparent 1px);
           background-size: 30px 30px;
         }
 
-        .feature-card { transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s; }
-        .feature-card:hover { transform: translateY(-3px); border-color: #2563EB; box-shadow: 0 4px 20px rgba(37,99,235,0.10); }
+        .feature-card { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s, box-shadow 0.2s; }
+        .feature-card:hover { transform: translateY(-8px); border-color: #2563EB; box-shadow: 0 12px 32px rgba(37,99,235,0.15); }
 
-        .plan-card { transition: transform 0.2s, box-shadow 0.2s; }
-        .plan-card:hover { transform: translateY(-4px); }
+        .plan-card { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s; }
+        .plan-card:hover { transform: translateY(-6px); box-shadow: 0 12px 40px rgba(37,99,235,0.12); }
 
-        .testimonial-card { transition: box-shadow 0.2s; }
-        .testimonial-card:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.10); }
+        .testimonial-card { transition: box-shadow 0.3s, transform 0.3s; }
+        .testimonial-card:hover { box-shadow: 0 12px 40px rgba(37,99,235,0.12); transform: translateY(-2px); }
       `}</style>
 
       {/* ── Navbar ─────────────────────────────────────────────── */}
@@ -106,27 +111,27 @@ export default function LandingPage() {
             {t('landing.hero.badge')}
           </div>
 
-          <h1 className="mb-6 text-5xl font-bold leading-tight text-white md:text-6xl lg:text-7xl">
+          <h1 className="mb-6 text-5xl font-bold leading-tight text-white md:text-6xl lg:text-7xl animate-fade-in" style={{ animationDelay: '0.1s', animationFillMode: 'both' }}>
             {t('landing.hero.headline1')}{" "}
             <span style={gradientText}>{t('landing.hero.headline2')}</span>
             <br />
             {t('landing.hero.headline3')}
           </h1>
 
-          <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl">
+          <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-slate-300 md:text-xl animate-fade-in" style={{ animationDelay: '0.2s', animationFillMode: 'both' }}>
             {t('landing.hero.subheadline')}
           </p>
 
-          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <div className="flex flex-col items-center justify-center gap-4 sm:flex-row animate-fade-in" style={{ animationDelay: '0.3s', animationFillMode: 'both' }}>
             <Link
               to="/signup"
-              className="rounded-xl bg-blue-600 px-9 py-4 text-base font-semibold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 hover:shadow-blue-500/40 transition-all"
+              className="rounded-xl bg-blue-600 px-9 py-4 text-base font-semibold text-white shadow-lg shadow-blue-600/30 hover:bg-blue-500 hover:shadow-blue-500/40 hover:scale-105 transition-all duration-200"
             >
               {t('landing.hero.ctaStart')}
             </Link>
             <Link
               to="/signin"
-              className="rounded-xl border border-white/20 bg-white/5 px-9 py-4 text-base font-semibold text-white hover:bg-white/10 transition-all"
+              className="rounded-xl border border-white/20 bg-white/5 px-9 py-4 text-base font-semibold text-white hover:bg-white/10 hover:border-white/40 transition-all duration-200"
             >
               {t('landing.hero.ctaDemo')}
             </Link>
@@ -303,6 +308,9 @@ export default function LandingPage() {
               <LanguageToggle variant="light" />
               <Link to="/privacy-policy" className="text-slate-400 hover:text-white transition-colors">
                 {t('common.privacyPolicy')}
+              </Link>
+              <Link to="/terms" className="text-slate-400 hover:text-white transition-colors">
+                {t('common.terms')}
               </Link>
               <Link to="/signin" className="text-slate-400 hover:text-white transition-colors">
                 {t('common.signIn')}
