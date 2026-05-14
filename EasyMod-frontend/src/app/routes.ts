@@ -165,6 +165,10 @@ export const router = createBrowserRouter([
 		],
 	},
 	{
+		path: "/settings/channels",
+		loader: () => redirect("/app/channels"),
+	},
+	{
 		path: "*",
 		Component: withSuspense(NotFound),
 	},
