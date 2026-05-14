@@ -38,7 +38,7 @@ describe('Order Domain API', () => {
 
       const result = await order.getOrders();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/order', { params: undefined });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/order', { params: undefined });
       expect(result).toEqual(mockResponse.data.data);
     });
 
@@ -48,7 +48,7 @@ describe('Order Domain API', () => {
 
       await order.getOrders({ status: 'pending', page: 1, limit: 10 });
 
-      expect(httpClient.get).toHaveBeenCalledWith('/order', { params: { status: 'pending', page: 1, limit: 10 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/order', { params: { status: 'pending', page: 1, limit: 10 } });
     });
   });
 
@@ -63,7 +63,7 @@ describe('Order Domain API', () => {
 
       const result = await order.getOrder('1');
 
-      expect(httpClient.get).toHaveBeenCalledWith('/order/1');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/order/1');
       expect(result.id).toBe('1');
     });
   });
@@ -78,7 +78,7 @@ describe('Order Domain API', () => {
 
       const result = await order.createOrder(orderData as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/order', orderData);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order', orderData);
       expect(result.id).toBe('3');
     });
   });
@@ -93,7 +93,8 @@ describe('Order Domain API', () => {
 
       const result = await order.updateOrder('1', updateData);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/order/1', updateData);
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/order/1', updateData);
+      expect(result.id).toBe('1');
     });
   });
 
@@ -106,7 +107,7 @@ describe('Order Domain API', () => {
 
       const result = await order.confirmOrder('1');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/order/1/confirm');
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order/1/confirm');
       expect(result.status).toBe('confirmed');
     });
   });
@@ -120,7 +121,7 @@ describe('Order Domain API', () => {
 
       await order.cancelOrder('1', 'Out of stock');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/order/1/cancel', { reason: 'Out of stock' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order/1/cancel', { reason: 'Out of stock' });
     });
 
     it('should cancel order without reason', async () => {
@@ -131,7 +132,7 @@ describe('Order Domain API', () => {
 
       await order.cancelOrder('1');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/order/1/cancel', { reason: undefined });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order/1/cancel', { reason: undefined });
     });
   });
 
@@ -145,7 +146,7 @@ describe('Order Domain API', () => {
 
       const result = await order.bookCourier('1', payload as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/order/1/courier', payload);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/order/1/courier', payload);
       expect(result.tracking_id).toBe('TRK123');
     });
   });
@@ -168,7 +169,7 @@ describe('Order Domain API', () => {
 
       const result = await order.getDeliverySettings();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/delivery');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/shop/delivery/settings');
       expect(result.providers).toHaveLength(2);
     });
   });
@@ -180,7 +181,7 @@ describe('Order Domain API', () => {
       const payload = { provider: 'pathao' as any, credentials: { client_id: '123', client_secret: 'secret' } };
       await order.connectDeliveryProvider(payload);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/delivery/connect', payload);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/connect', payload);
     });
   });
 
@@ -190,17 +191,25 @@ describe('Order Domain API', () => {
 
       await order.disconnectDeliveryProvider('pathao' as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/delivery/disconnect', { provider: 'pathao' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/disconnect', { provider: 'pathao' });
     });
   });
 
   describe('toggleDeliveryProvider', () => {
-    it('should toggle provider on', async () => {
-      (httpClient.patch as any).mockResolvedValue({ data: {} });
+    it('should toggle provider on via POST', async () => {
+      (httpClient.post as any).mockResolvedValue({ data: {} });
 
       await order.toggleDeliveryProvider('pathao' as any, true);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/delivery/toggle', { provider: 'pathao', isActive: true });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'pathao', isActive: true });
+    });
+
+    it('should toggle provider off', async () => {
+      (httpClient.post as any).mockResolvedValue({ data: {} });
+
+      await order.toggleDeliveryProvider('steadfast' as any, false);
+
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'steadfast', isActive: false });
     });
   });
 
@@ -211,7 +220,25 @@ describe('Order Domain API', () => {
       const settings = { default_delivery_charge: 50, cod_enabled: true };
       await order.updateDeliverySettings(settings);
 
-      expect(httpClient.put).toHaveBeenCalledWith('/delivery/settings', settings);
+      expect(httpClient.put).toHaveBeenCalledWith('/api/shop/delivery/settings', settings);
+    });
+
+    it('should update partial settings', async () => {
+      (httpClient.put as any).mockResolvedValue({ data: {} });
+
+      await order.updateDeliverySettings({ cod_charge: 20 });
+
+      expect(httpClient.put).toHaveBeenCalledWith('/api/shop/delivery/settings', { cod_charge: 20 });
+    });
+  });
+
+  describe('testDeliveryConnection', () => {
+    it('should test delivery provider connection', async () => {
+      (httpClient.post as any).mockResolvedValue({ data: {} });
+
+      await order.testDeliveryConnection('pathao' as any);
+
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/test', { provider: 'pathao' });
     });
   });
 });

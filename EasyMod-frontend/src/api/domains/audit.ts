@@ -3,11 +3,11 @@
  */
 
 import { httpClient } from '@/shared/lib/http/client';
-import type { ApiResponse, PaginatedResponse } from '../types/common';
+import type { ApiResponse } from '../types/common';
 import type { AuditLog, AuditLogFilters } from '../types/audit';
 import type { AxiosResponse } from 'axios';
 
-export async function getAuditLogs(filters?: AuditLogFilters): Promise<PaginatedResponse<AuditLog>> {
+export async function getAuditLogs(filters?: AuditLogFilters): Promise<AuditLog[]> {
   const params = new URLSearchParams();
   if (filters) {
     Object.entries(filters).forEach(([key, value]) => {
@@ -17,23 +17,25 @@ export async function getAuditLogs(filters?: AuditLogFilters): Promise<Paginated
     });
   }
 
-  const response: AxiosResponse<ApiResponse<PaginatedResponse<AuditLog>>> = await httpClient.get(
-    `/audit?${params}`
+  const qs = params.toString();
+  const response: AxiosResponse<ApiResponse<AuditLog[]>> = await httpClient.get(
+    qs ? `/api/audit/logs?${qs}` : '/api/audit/logs'
   );
   return response.data.data;
 }
 
-export async function getAuditLog(logId: string): Promise<AuditLog> {
-  const response: AxiosResponse<ApiResponse<AuditLog>> = await httpClient.get(
-    `/audit/${logId}`
-  );
-  return response.data.data;
-}
+export async function getResourceAuditLogs(
+  type: string,
+  id: string,
+  options?: { limit?: number; offset?: number }
+): Promise<AuditLog[]> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) params.append('limit', String(options.limit));
+  if (options?.offset !== undefined) params.append('offset', String(options.offset));
+  const qs = params.toString();
 
-export async function exportAuditLogs(
-  filters?: AuditLogFilters
-): Promise<{ downloadUrl: string; expiresAt: string }> {
-  const response: AxiosResponse<ApiResponse<{ downloadUrl: string; expiresAt: string }>> =
-    await httpClient.post('/audit/export', filters ?? {});
+  const response: AxiosResponse<ApiResponse<AuditLog[]>> = await httpClient.get(
+    qs ? `/api/audit/resource/${type}/${id}?${qs}` : `/api/audit/resource/${type}/${id}`
+  );
   return response.data.data;
 }

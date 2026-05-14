@@ -57,6 +57,7 @@ import * as subscriptionDomain from './domains/subscription';
 import * as conversationDomain from './domains/conversation';
 import * as shopDomain from './domains/shop';
 import * as paymentDomain from './domains/payment';
+import * as auditDomain from './domains/audit';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
@@ -188,6 +189,10 @@ export const apiClient = {
 
   // Subscription invoice alias
   getSubscriptionInvoices: subscriptionDomain.getInvoices,
+
+  // Audit methods
+  getAuditLogs: auditDomain.getAuditLogs,
+  getResourceAuditLogs: auditDomain.getResourceAuditLogs,
 
   // Utility methods
   initCsrfToken: () => httpClient.initCsrfToken(),

@@ -160,7 +160,7 @@ export async function bookCourier(
  * ```
  */
 export async function getDeliverySettings(): Promise<DeliverySettings> {
-  const response: AxiosResponse<ApiResponse<DeliverySettings>> = await httpClient.get('/api/shop/delivery');
+  const response: AxiosResponse<ApiResponse<DeliverySettings>> = await httpClient.get('/api/shop/delivery/settings');
   return response.data.data;
 }
 
@@ -211,7 +211,7 @@ export async function disconnectDeliveryProvider(provider: DeliveryProvider): Pr
  * ```
  */
 export async function toggleDeliveryProvider(provider: DeliveryProvider, isActive: boolean): Promise<void> {
-  await httpClient.patch('/api/shop/delivery/toggle', { provider, isActive });
+  await httpClient.post('/api/shop/delivery/toggle', { provider, isActive });
 }
 
 /**
