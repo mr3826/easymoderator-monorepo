@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, Lock, FlaskConical } from "lucide-react";
+import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, Lock, FlaskConical, Unplug } from "lucide-react";
 import { apiClient } from "@/api";
 import type { Channel, FacebookPage } from "@/api/types/channel";
 import { toast } from "sonner";
@@ -73,6 +73,7 @@ export default function Channels() {
   const [waToken, setWaToken] = useState('');
   const [waDisplayName, setWaDisplayName] = useState('');
   const [isConnectingWa, setIsConnectingWa] = useState(false);
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   const { plan } = useSubscriptionFeatures();
   // Channel count limits removed — all channels available on all plans.
@@ -152,6 +153,7 @@ export default function Channels() {
 
       const handler = (e: MessageEvent) => {
         if (e.origin !== window.location.origin) return;
+        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
 
         if (e.data?.type === 'OAUTH_SUCCESS') {
           // Validate state matches the nonce we stored before opening the popup
@@ -213,6 +215,7 @@ export default function Channels() {
       fetchChannels();
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to connect WhatsApp');
+      setWaToken(''); // Clear token on error to prevent re-submission with stale credentials
     } finally {
       setIsConnectingWa(false);
     }
@@ -303,6 +306,20 @@ export default function Channels() {
       toast.error(t('channels.errors.refreshFailed'));
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleDisconnect = async (channelId: string, channelName: string) => {
+    if (!window.confirm(`Disconnect "${channelName}"? The channel will stop receiving messages immediately.`)) return;
+    setDisconnectingId(channelId);
+    try {
+      await apiClient.disconnectChannel(channelId);
+      toast.success(t('channels.disconnected', 'Channel disconnected'));
+      await fetchChannels();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || t('channels.errors.disconnectFailed', 'Failed to disconnect channel'));
+    } finally {
+      setDisconnectingId(null);
     }
   };
 
@@ -488,6 +505,16 @@ export default function Channels() {
                       <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
                   )}
+                  <button
+                    onClick={() => handleDisconnect(channel.id, channel.name)}
+                    disabled={disconnectingId === channel.id}
+                    title="Disconnect channel"
+                    className="px-3 py-2 border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-60 transition-colors"
+                  >
+                    {disconnectingId === channel.id
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Unplug className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             );
@@ -644,6 +671,26 @@ export default function Channels() {
                   </div>
                   <h3 className="text-xl font-semibold text-gray-900">{t(`channels.connectModal.channels.${selectedChannel.id}.name`)}</h3>
                   <p className="text-sm text-gray-500 mt-1">{t(`channels.connectModal.channels.${selectedChannel.id}.tagline`)}</p>
+                </div>
+
+                {/* Permissions disclosure — required by Meta app review */}
+                <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 mb-5 text-xs text-gray-700">
+                  <p className="font-semibold text-gray-800 mb-2">Permissions EasyMod will request:</p>
+                  <ul className="space-y-1 list-disc list-inside">
+                    {selectedChannel.id === 'facebook' && <>
+                      <li><strong>pages_show_list</strong> — see which Pages you manage</li>
+                      <li><strong>pages_messaging</strong> — send and receive Messenger messages on your behalf</li>
+                      <li><strong>pages_read_engagement</strong> — read Page content and conversations</li>
+                      <li><strong>pages_manage_metadata</strong> — subscribe to webhooks so messages arrive in real time</li>
+                    </>}
+                    {selectedChannel.id === 'instagram' && <>
+                      <li><strong>instagram_basic</strong> — access your Instagram Business account</li>
+                      <li><strong>instagram_manage_messages</strong> — read and reply to Instagram DMs</li>
+                      <li><strong>pages_show_list</strong> — identify the Facebook Page linked to your Instagram</li>
+                      <li><strong>pages_manage_metadata</strong> — subscribe to webhooks for real-time DM delivery</li>
+                    </>}
+                  </ul>
+                  <p className="mt-2 text-gray-500">EasyMod only uses these permissions to receive and respond to customer messages. We never post on your behalf or access unrelated data.</p>
                 </div>
 
                 {/* OAuth Button */}
