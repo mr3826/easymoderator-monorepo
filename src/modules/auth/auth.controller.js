@@ -79,20 +79,24 @@ const refresh = async (req, res, next) => {
         // Update access token cookie
         setAuthCookies(res, result.accessToken, null);
 
-        // Log successful token refresh for security audit
-        const auditService = require('../audit/audit.service');
-        await auditService.logOperation({
-            userId: result.userId,
-            shopId: result.shopId,
-            action: 'TOKEN_REFRESH',
-            resourceType: 'USER',
-            resourceId: result.userId,
-            metadata: {
-                ip_address: req.ip,
-                user_agent: req.get('User-Agent'),
-                timestamp: new Date().toISOString()
-            }
-        });
+        // Log successful token refresh — non-fatal, never block the response
+        try {
+            const auditService = require('../audit/audit.service');
+            await auditService.logOperation({
+                userId: result.userId,
+                shopId: result.shopId,
+                action: 'TOKEN_REFRESH',
+                resourceType: 'USER',
+                resourceId: result.userId,
+                metadata: {
+                    ip_address: req.ip,
+                    user_agent: req.get('User-Agent'),
+                    timestamp: new Date().toISOString()
+                }
+            });
+        } catch (auditError) {
+            console.error('Failed to log token refresh audit:', auditError);
+        }
 
         res.status(200).json({
             success: true,

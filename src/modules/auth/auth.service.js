@@ -467,7 +467,7 @@ const validateRefreshToken = async (refreshToken) => {
             tokenVersion: user.token_version
         });
 
-        return { accessToken };
+        return { accessToken, userId: user.id, shopId: user.last_logged_shop_id };
     } catch (error) {
         throw new AppError('Invalid or expired refresh token', 401);
     }
