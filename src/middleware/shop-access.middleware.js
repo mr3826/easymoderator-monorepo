@@ -1,0 +1,42 @@
+const { AppError } = require('../utils/AppError');
+const { UserShop } = require('../modules/entities');
+
+/**
+ * Shop access middleware
+ * Verifies user has access to the shop via UserShop table
+ * Attaches shop data and user role to request
+ */
+const verifyShopAccess = async (req, res, next) => {
+    try {
+        // JWT ONLY — no body, no header (IDOR protection)
+        const shopId = req.user?.shopId;
+
+        if (!shopId) {
+            throw new AppError('Shop ID is required', 400);
+        }
+
+        // Check if user has access to this shop
+        const userShop = await UserShop.findOne({
+            where: {
+                user_id: req.user.userId,
+                shop_id: shopId,
+                is_active: true
+            },
+            include: ['shop']
+        });
+
+        if (!userShop) {
+            throw new AppError('You do not have access to this shop', 403);
+        }
+
+        // Attach shop and role to request
+        req.shop = userShop.shop;
+        req.userRole = userShop.role;
+
+        next();
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = { verifyShopAccess };

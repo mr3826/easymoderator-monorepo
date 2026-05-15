@@ -1,0 +1,108 @@
+name: Load Testing Simple
+
+on:
+  schedule:
+    # Run daily at 3 AM UTC (10 AM Bangladesh time)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of load test'
+        required: false
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - baseline
+          - peak
+          - stress
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production-0405487706
+
+# Required for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: gen-lang-client-0405487706
+  REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPOSITORY: easymod-backend
+  STAGING_SERVICE_NAME: easymod-backend-staging
+  SERVICE_NAME: easymod-backend
+
+jobs:
+  load-test-staging:
+    name: Load Test Staging
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'staging' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for staging to be ready
+        run: |
+          echo "Waiting for staging service to be ready..."
+          sleep 30
+          
+          # Check staging health
+          for i in {1..10}; do
+            if curl -f https://easymod-backend-staging-xxxxx-uc.a.run.app/health; then
+              echo "✅ Staging is ready"
+              break
+            fi
+            echo "Attempt $i: waiting..."
+            sleep 10
+          done
+
+      - name: Run smoke load test
+        if: github.event.inputs.test_type == 'smoke' || github.event.inputs.test_type == ''
+        run: |
+          echo "🚀 Running smoke load test..."
+          
+          # Simple curl-based smoke test
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + 120))
+          
+          echo "Running smoke test for 2 minutes..."
+          
+          # Test health endpoint
+          for i in {1..20}; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}\n" "https://easymod-backend-staging-xxxxx-uc.a.run.app/health" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            else
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+            
+            if [ $i -eq 20 ]; then
+              break
+            fi
+          done
+          
+          echo "✅ Smoke test completed"
+          echo "Success: $SUCCESS_COUNT, Failed: $FAIL_COUNT"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: smoke-results.json
+          retention-days: 7

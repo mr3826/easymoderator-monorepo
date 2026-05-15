@@ -1,0 +1,1839 @@
+openapi: 3.1.0
+info:
+  title: EasyMod API
+  version: 1.0.0
+  description: EasyMod Backend API
+servers:
+  - url: /api
+    description: Production
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Auth
+  - name: Shop
+  - name: Category
+  - name: Product
+  - name: Customer
+  - name: Order
+  - name: Payment
+  - name: Channel
+  - name: Dashboard
+  - name: Conversation
+  - name: RAG
+  - name: Audit
+  - name: Integration:Meta
+  - name: Delivery
+  - name: Subscription
+  - name: Webhooks
+paths:
+  /category/:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Category]
+      summary: List categories
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Category]
+      summary: Create category
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryCreate' }
+      responses:
+        '201': { description: Created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /category/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Category]
+      summary: Get category by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Category }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Category]
+      summary: Update category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryUpdate' }
+      responses:
+        '200': { description: Updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Category]
+      summary: Delete category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RateLimitInfo'
+      responses:
+        '200':
+          description: Service is alive
+        '503':
+          description: Service unavailable
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe with DB check
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RateLimitInfo'
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+  /health/health:
+    get:
+      tags: [Health]
+      summary: Full health details
+      security: []
+      responses:
+        '200':
+          description: Health info
+        '503':
+          description: Degraded
+
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: User registration
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              email: user@example.com
+              password: StrongPassw0rd!
+              name: Jane Doe
+            schema:
+              type: object
+      responses:
+        '201': { description: User created }
+        '400': { $ref: '#/components/responses/Error' }
+  /auth/signin:
+    post:
+      tags: [Auth]
+      summary: User login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              email: user@example.com
+              password: StrongPassw0rd!
+            schema:
+              type: object
+      responses:
+        '200':
+          description: JWT tokens
+          content:
+            application/json:
+              example:
+                accessToken: eyJhbGciOi...
+                refreshToken: eyJhbGciOi...
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              refreshToken: eyJhbGciOi...
+            schema:
+              type: object
+      responses:
+        '200': { description: New access token }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /shop/list:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Shop]
+      summary: List shops for current user
+      responses:
+        '200':
+          description: List of shops
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Shop' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /shop/me:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Shop]
+      summary: Get current shop context
+      responses:
+        '200': { description: Shop }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /shop/create:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Create shop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Demo Shop
+              address: 123 Main St
+              phone: "+1-555-0100"
+            schema:
+              type: object
+      responses:
+        '201': { description: Shop created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /shop/update:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Update shop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+              name: Demo Shop v2
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /shop/delete:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Delete shop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /shop/add-user:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Add user to shop
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+              user_email: invitee@example.com
+              role: manager
+            schema:
+              type: object
+      responses:
+        '200': { description: Added }
+  /shop/remove-user:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Remove user from shop
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+              user_id: user_456
+            schema:
+              type: object
+      responses:
+        '200': { description: Removed }
+  /shop/update-role:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Update user role
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+              user_id: user_456
+              role: admin
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+  /shop/switch:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Shop]
+      summary: Switch active shop
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              shop_id: shop_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Switched }
+
+  /category:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Category]
+      summary: List categories
+      responses:
+        '200': { description: Categories }
+    post:
+      tags: [Category]
+      summary: Create category
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Shoes
+              parent_id: null
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /category/list:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Category]
+      summary: Legacy list categories
+      responses:
+        '200': { description: Categories }
+  /category/get:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Category]
+      summary: Legacy get category (validation pending)
+      responses:
+        '200': { description: Category }
+  /category/create:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Category]
+      summary: Legacy create category
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              name: Shoes
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+  /category/update:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Category]
+      summary: Legacy update category (validation pending)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: cat_123
+              name: Boots
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+  /category/delete:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Category]
+      summary: Legacy delete category (validation pending)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: cat_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Deleted }
+
+  /product:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Product]
+      summary: List products
+      responses:
+        '200': { description: Products }
+    post:
+      tags: [Product]
+      summary: Create product
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: products +1 after commit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Running Shoe
+              sku: SKU-123
+              price: 59.99
+              stock: 50
+              category_id: cat_123
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /product/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Product]
+      summary: Get product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Product }
+    patch:
+      tags: [Product]
+      summary: Update product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              price: 64.99
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Product]
+      summary: Delete product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Deleted }
+
+  /product/list:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Product]
+      summary: Legacy list products
+      responses:
+        '200': { description: Products }
+  /product/get:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Product]
+      summary: Legacy get product
+      responses:
+        '200': { description: Product }
+  /product/create:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Product]
+      summary: Legacy create product
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: products +1 after commit
+      requestBody:
+        content:
+          application/json:
+            example:
+              name: Running Shoe
+              price: 59.99
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+  /product/update:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Product]
+      summary: Legacy update product
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: prod_123
+              price: 64.99
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+  /product/delete:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Product]
+      summary: Legacy delete product
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: prod_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Deleted }
+
+  /customer:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Customer]
+      summary: List customers
+      responses:
+        '200': { description: Customers }
+    post:
+      tags: [Customer]
+      summary: Create customer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: Alice
+              email: alice@example.com
+              phone: "+1-555-0101"
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /customer/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Customer]
+      summary: Get customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Customer }
+    patch:
+      tags: [Customer]
+      summary: Update customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              phone: "+1-555-0102"
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Customer]
+      summary: Delete customer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Deleted }
+
+  /customer/list:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Customer]
+      summary: Legacy list customers
+      responses:
+        '200': { description: Customers }
+  /customer/get:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Customer]
+      summary: Legacy get customer
+      responses:
+        '200': { description: Customer }
+  /customer/create:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Customer]
+      summary: Legacy create customer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              name: Alice
+              email: alice@example.com
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+  /customer/update:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Customer]
+      summary: Legacy update customer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: cust_123
+              phone: "+1-555-0102"
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+
+  /order:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Order]
+      summary: List orders
+      responses:
+        '200': { description: Orders }
+    post:
+      tags: [Order]
+      summary: Create order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: orders +1 after commit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              customer_id: cust_123
+              items:
+                - product_id: prod_123
+                  quantity: 2
+                  price: 49.99
+              status: draft
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /order/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Order]
+      summary: Get order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Order }
+    patch:
+      tags: [Order]
+      summary: Update order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              status: confirmed
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Order]
+      summary: Delete order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Deleted }
+
+  /order/list:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Order]
+      summary: Legacy list orders
+      responses:
+        '200': { description: Orders }
+  /order/get:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Order]
+      summary: Legacy get order
+      responses:
+        '200': { description: Order }
+  /order/create:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Order]
+      summary: Legacy create order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: orders +1 after commit
+      requestBody:
+        content:
+          application/json:
+            example:
+              customer_id: cust_123
+              items:
+                - product_id: prod_123
+                  quantity: 1
+                  price: 49.99
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+  /order/update:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Order]
+      summary: Legacy update order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: ord_123
+              status: shipped
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+  /order/delete:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Order]
+      summary: Legacy delete order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              id: ord_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Deleted }
+  /order/draft:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Order]
+      summary: Create draft order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: orders +1 after commit
+      requestBody:
+        content:
+          application/json:
+            example:
+              customer_id: cust_123
+              items:
+                - product_id: prod_123
+                  quantity: 1
+                  price: 49.99
+            schema:
+              type: object
+      responses:
+        '201': { description: Draft created }
+  /order/confirm:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Order]
+      summary: Confirm order
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              order_id: ord_123
+            schema:
+              type: object
+      responses:
+        '200': { description: Confirmed }
+
+  /payment/config:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Payment]
+      summary: Get payment configuration
+      responses:
+        '200': { description: Payment configs }
+    post:
+      tags: [Payment]
+      summary: Save payment configuration
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              gateway: aamarpay
+              credentials:
+                store_id: abc
+                signature_key: secret
+              active: true
+            schema:
+              type: object
+      responses:
+        '200': { description: Saved }
+  /payment/initiate:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Payment]
+      summary: Initiate payment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              order_id: ord_123
+              amount: 99.99
+              gateway: aamarpay
+            schema:
+              type: object
+      responses:
+        '200': { description: Initiated }
+  /payment/cod/confirm:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Payment]
+      summary: Confirm COD payment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              order_id: ord_123
+              confirmed_by: user_456
+            schema:
+              type: object
+      responses:
+        '200': { description: Confirmed }
+
+  /payment/aamarpay/success:
+    post:
+      tags: [Payment]
+      summary: AamarPay success callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/aamarpay/fail:
+    post:
+      tags: [Payment]
+      summary: AamarPay fail callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/aamarpay/cancel:
+    post:
+      tags: [Payment]
+      summary: AamarPay cancel callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/sslcommerz/success:
+    post:
+      tags: [Payment]
+      summary: SSLCommerz success callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/sslcommerz/fail:
+    post:
+      tags: [Payment]
+      summary: SSLCommerz fail callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/sslcommerz/cancel:
+    post:
+      tags: [Payment]
+      summary: SSLCommerz cancel callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+  /payment/sslcommerz/ipn:
+    post:
+      tags: [Payment]
+      summary: SSLCommerz IPN callback
+      security: []
+      responses:
+        '200': { description: Acknowledged }
+
+  /channel:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Channel]
+      summary: List channels
+      responses:
+        '200': { description: Channels }
+    post:
+      tags: [Channel]
+      summary: Create channel
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              platform: whatsapp
+              metadata:
+                phone: "+1-555-0200"
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /channel/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Channel]
+      summary: Get channel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Channel }
+    patch:
+      tags: [Channel]
+      summary: Update channel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              metadata:
+                status: connected
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Channel]
+      summary: Delete channel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Deleted }
+
+  /dashboard:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Dashboard]
+      summary: Dashboard metrics
+      responses:
+        '200': { description: Metrics }
+  /dashboard/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Dashboard]
+      summary: Dashboard metrics by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Metrics }
+  /dashboard/metrics:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Dashboard]
+      summary: Legacy metrics endpoint
+      responses:
+        '200': { description: Metrics }
+
+  /conversation:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Conversation]
+      summary: List conversations
+      responses:
+        '200': { description: Conversations }
+    post:
+      tags: [Conversation]
+      summary: Create conversation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      x-usage-impact: conversations +1 after commit
+      requestBody:
+        content:
+          application/json:
+            example:
+              subject: Order #123 inquiry
+              channel: whatsapp
+              customer_id: cust_123
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /conversation/{conversationId}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Conversation]
+      summary: Get conversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Conversation }
+
+  /conversation/{conversationId}/status:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    put:
+      tags: [Conversation]
+      summary: Update conversation status
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              status: resolved
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+
+  /conversation/{conversationId}/messages:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Conversation]
+      summary: List messages in conversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Messages }
+    post:
+      tags: [Conversation]
+      summary: Send message in conversation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              sender: agent
+              content: Hello! How can I help you?
+            schema:
+              type: object
+      responses:
+        '201': { description: Created }
+
+  /rag/ingest:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [RAG]
+      summary: Ingest data into RAG system
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              documents:
+                - id: doc1
+                  text: "Return policy..."
+            schema:
+              type: object
+      responses:
+        '200': { description: Ingested }
+  /rag/query:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [RAG]
+      summary: Query RAG system
+      requestBody:
+        content:
+          application/json:
+            example:
+              query: "What is the return window?"
+              top_k: 3
+            schema:
+              type: object
+      responses:
+        '200': { description: Answers }
+
+  /audit/logs:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Audit]
+      summary: Get audit logs
+      responses:
+        '200': { description: Audit logs }
+  /audit/resource/{type}/{id}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Audit]
+      summary: Get audit logs for resource
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Audit logs }
+  /audit/cleanup:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Audit]
+      summary: Cleanup expired idempotency keys
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Cleanup started }
+
+  /integrations/meta/status:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Integration:Meta]
+      summary: Get Meta integration status
+      responses:
+        '200': { description: Status }
+  /integrations/meta/disconnect:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Integration:Meta]
+      summary: Disconnect Meta integration
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200': { description: Disconnected }
+
+  /shop/delivery/settings:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Delivery]
+      summary: Get delivery settings
+      responses:
+        '200': { description: Settings }
+  /shop/delivery/connect:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Delivery]
+      summary: Connect delivery provider
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              provider: pathao
+              api_key: key
+            schema:
+              type: object
+      responses:
+        '200': { description: Connected }
+  /shop/delivery/disconnect:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Delivery]
+      summary: Disconnect delivery provider
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              provider: pathao
+            schema:
+              type: object
+      responses:
+        '200': { description: Disconnected }
+  /shop/delivery/toggle:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Delivery]
+      summary: Toggle delivery provider
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              provider: pathao
+              active: true
+            schema:
+              type: object
+      responses:
+        '200': { description: Toggled }
+  /shop/delivery/test:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Delivery]
+      summary: Test delivery provider connection
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              provider: pathao
+            schema:
+              type: object
+      responses:
+        '200': { description: Test result }
+  /shop/delivery/{provider}/stores:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Delivery]
+      summary: Get provider stores
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Stores }
+  /shop/delivery/{provider}/metadata:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    put:
+      tags: [Delivery]
+      summary: Update provider metadata
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              metadata:
+                store_id: 123
+            schema:
+              type: object
+      responses:
+        '200': { description: Updated }
+
+  /subscription:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Subscription]
+      summary: Get subscription details
+      responses:
+        '200':
+          description: Subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+
+  /subscription/plan:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    put:
+      tags: [Subscription]
+      summary: Update subscription plan
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              plan_name: Pro
+              billing_cycle: monthly
+            schema:
+              type: object
+      responses:
+        '200': { description: Plan updated }
+
+  /subscription/conversation-pack:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    post:
+      tags: [Subscription]
+      summary: Request conversation pack
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            example:
+              pack_size: 1000
+            schema:
+              type: object
+      responses:
+        '200': { description: Requested }
+
+  /subscription/invoices:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Subscription]
+      summary: List invoices
+      responses:
+        '200':
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Invoice' }
+  /subscription/invoices/{invoiceId}:
+    parameters:
+      - $ref: '#/components/parameters/XShopId'
+      - $ref: '#/components/parameters/RateLimitInfo'
+    get:
+      tags: [Subscription]
+      summary: Get invoice by id
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '404': { $ref: '#/components/responses/Error' }
+
+  /webhooks/meta:
+    get:
+      tags: [Webhooks]
+      summary: Meta webhook verification
+      security: []
+      responses:
+        '200': { description: Challenge accepted }
+        '403': { description: Verification failed }
+    post:
+      tags: [Webhooks]
+      summary: Meta webhook receiver
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              object: page
+              entry: []
+            schema:
+              type: object
+      responses:
+        '200': { description: Received }
+        '403': { description: Invalid signature }
+        '500': { description: Processing error }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    XShopId:
+      name: x-shop-id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Shop identifier for multi-tenant context
+    RateLimitInfo:
+      name: x-rate-limit-info
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Rate limit information header
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Idempotency key for safe retries
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: AUTH_ERROR
+                  message:
+                    type: string
+                    example: Invalid or missing token
+          examples:
+            unauthorized:
+              value:
+                success: false
+                error:
+                  code: AUTH_ERROR
+                  message: Invalid or missing token
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  message:
+                    type: string
+    Error:
+      description: General error response
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: VALIDATION_ERROR
+                  message:
+                    type: string
+                    example: Invalid request payload
+  schemas:
+    Shop:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parent_id:
+          type: string
+        shop_id:
+          type: string
+    CategoryCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: string
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        parent_id:
+          type: string
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+        stock:
+          type: integer
+        category_id:
+          type: string
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        total:
+          type: number
+        customer_id:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+    OrderItem:
+      type: object
+      properties:
+        product_id:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+    PaymentConfig:
+      type: object
+      properties:
+        gateway:
+          type: string
+          enum: [aamarpay, sslcommerz, cod]
+        active:
+          type: boolean
+        credentials:
+          type: object
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        plan_name:
+          type: string
+        status:
+          type: string
+        conversations_used:
+          type: integer
+        orders_used:
+          type: integer
+        products_used:
+          type: integer
+        next_billing_date:
+          type: string
+          format: date-time
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+        invoice_number:
+          type: string
+        billing_period:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+        due_date:
+          type: string
+          format: date-time
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        status:
+          type: string
+        channel:
+          type: string
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        sender:
+          type: string
+        content:
+          type: string
+        sent_at:
+          type: string
+          format: date-time

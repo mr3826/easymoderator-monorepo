@@ -1,0 +1,38 @@
+[Unit]
+Description=EasyMod Backend Server
+Documentation=https://github.com/mr3826/EasyMod-backend
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=forking
+User=ubuntu
+WorkingDirectory=/app/easymod-backend
+Environment=NODE_ENV=production
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=PM2_HOME=/home/ubuntu/.pm2
+
+# Load environment variables from file
+EnvironmentFile=/app/easymod-backend/.env
+
+# Start PM2 with ecosystem config
+ExecStart=/usr/local/bin/pm2 start /app/easymod-backend/ecosystem.config.js
+ExecReload=/usr/local/bin/pm2 reload /app/easymod-backend/ecosystem.config.js
+ExecStop=/usr/local/bin/pm2 stop /app/easymod-backend/ecosystem.config.js
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=65536
+
+# Standard output/error logging
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=easymod-backend
+
+[Install]
+WantedBy=multi-user.target

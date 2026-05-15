@@ -1,0 +1,14 @@
+#!/bin/sh
+# Block accidental commits of .env files containing secrets
+
+if git diff --cached --name-only | grep -E '^\.env(\.|$)' | grep -qv '\.example$'; then
+  echo ""
+  echo "ERROR: You are attempting to commit a .env file."
+  echo "These files may contain secrets and must never be committed."
+  echo ""
+  echo "To unstage the file(s), run:"
+  echo "  git reset HEAD .env.production"
+  echo "  git reset HEAD .env.local"
+  echo ""
+  exit 1
+fi
