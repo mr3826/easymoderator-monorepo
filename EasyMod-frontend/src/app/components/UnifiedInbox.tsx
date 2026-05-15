@@ -124,6 +124,9 @@ export default function UnifiedInbox() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
+  // Synchronous send guard — prevents double-send from rapid Enter presses or
+  // Enter+click before React re-renders isSending state.
+  const isSendingRef = useRef(false);
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState<File | null>(null);
@@ -597,7 +600,9 @@ export default function UnifiedInbox() {
   const handleSendMessage = async (overrideContent?: string) => {
     const trimmed = (overrideContent ?? editingMessage).trim();
     const hasAttachment = !!selectedAttachment;
-    if (!selectedConversation || (!trimmed && !hasAttachment) || isSending) return;
+    // isSendingRef is synchronous — prevents double-send before React re-renders isSending
+    if (!selectedConversation || (!trimmed && !hasAttachment) || isSendingRef.current) return;
+    isSendingRef.current = true;
     if (is24hExpired && !selectedMessageTag) {
       toast.error(t('inbox.errors.selectTag'));
       return;
@@ -653,6 +658,7 @@ export default function UnifiedInbox() {
       setSendError(errMsg);
       toast.error(errMsg);
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   };

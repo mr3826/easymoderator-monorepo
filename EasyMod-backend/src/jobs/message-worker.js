@@ -113,8 +113,16 @@ async function processMessageJob(job) {
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
 
     // ── Guard 3: AI pause (30-min mute when agent sends manually) ──────────
+    // If HITL is off the agent has stepped back — clear any stale pause key so
+    // AI replies immediately rather than waiting out the remainder of the timer.
     const paused = await cacheRedis.get(`ai:pause:${conversationId}`);
-    if (paused) return { skipped: true, reason: 'ai_paused' };
+    if (paused) {
+        if (!conversation.hitl) {
+            await cacheRedis.del(`ai:pause:${conversationId}`).catch(() => {});
+        } else {
+            return { skipped: true, reason: 'ai_paused' };
+        }
+    }
 
     // ── Guard 4: Automation mode ────────────────────────────────────────────
     const [shopAISettings, channelAISettings] = await Promise.all([
