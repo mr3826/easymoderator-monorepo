@@ -104,7 +104,7 @@ jobs:
             # docker-compose.prod.yml doesn't complain about a missing image ref.
             export GHCR_IMAGE_BACKEND="$GHCR_IMAGE:latest"
             export GHCR_IMAGE_FRONTEND="${GHCR_IMAGE_FRONTEND:-$(docker inspect easymod-frontend --format='{{index .Config.Image}}' 2>/dev/null || echo ghcr.io/mr3826/easymod-frontend:latest)}"
-            docker compose -f docker-compose.prod.yml up -d backend queue-worker --no-build --remove-orphans
+            docker compose -f docker-compose.prod.yml up -d backend worker scheduler --no-build --remove-orphans
 
             echo "Running database migrations..."
             docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
