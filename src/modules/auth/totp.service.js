@@ -207,7 +207,8 @@ const enableTotp = async (userId, token) => {
             totp_secret: settings.totp_pending,
             totp_pending: null,
             totp_enabled: true
-        }
+        },
+        refresh_token: null
     });
 
     return { enabled: true };

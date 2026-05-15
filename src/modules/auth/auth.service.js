@@ -26,10 +26,8 @@ const blacklistToken = async (token, decoded) => {
     if (!redis) return; // graceful no-op if Redis unavailable in dev
 
     const now = Math.floor(Date.now() / 1000);
-    const ttl = decoded.exp ? Math.max(0, decoded.exp - now) : 0;
-    if (ttl > 0) {
-        await redis.setex(`${TOKEN_BLACKLIST_PREFIX}${token}`, ttl, '1');
-    }
+    const ttl = decoded.exp ? Math.max(300, decoded.exp - now) : 300;
+    await redis.setex(`${TOKEN_BLACKLIST_PREFIX}${token}`, ttl, '1');
 };
 
 /**
@@ -197,7 +195,7 @@ const createUserWithShop = async (userData) => {
             shopId: shop.id,
             tokenVersion: user.token_version
         });
-        const refreshToken = generateRefreshToken({ userId: user.id });
+        const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
 
         // Hash and save refresh token using SHA-256 (not bcrypt - too expensive for high-entropy tokens)
         const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -307,7 +305,7 @@ const authenticateUser = async (email, password) => {
         shopId: loggedShopId,
         tokenVersion: user.token_version
     });
-    const refreshToken = generateRefreshToken({ userId: user.id });
+    const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
 
     // Hash and save refresh token using SHA-256 (not bcrypt)
     const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -442,6 +440,11 @@ const validateRefreshToken = async (refreshToken) => {
         // Find user
         const user = await User.findByPk(decoded.userId);
         if (!user || !user.refresh_token) {
+            throw new AppError('Invalid refresh token', 401);
+        }
+
+        // Reject if token was issued before a password reset (tokenVersion mismatch)
+        if (decoded.tokenVersion !== user.token_version) {
             throw new AppError('Invalid refresh token', 401);
         }
 
