@@ -88,8 +88,8 @@ services:
   scheduler:
     image: ${GHCR_IMAGE_BACKEND}
     restart: unless-stopped
-    # Runs token_refresh_check daily at 08:00 UTC, then sleeps until next day.
-    # Uses shell loop instead of external cron to avoid installing extra tooling in the image.
+    # Runs token_refresh_check daily at 08:00 UTC, then sleeps until next run.
+    # Uses BusyBox-compatible date arithmetic (Alpine Linux has no GNU date).
     command:
       - /bin/sh
       - -c
@@ -97,9 +97,13 @@ services:
         while true; do
           echo "[scheduler] $(date -u '+%Y-%m-%dT%H:%M:%SZ') Running token_refresh_check"
           node src/jobs/job-runner.js token_refresh_check || true
-          # Sleep until 08:00 UTC next day
+          # Calculate seconds until next 08:00 UTC (BusyBox-compatible)
           NOW=$(date -u +%s)
-          NEXT=$(date -u -d 'tomorrow 08:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$(date -u -v+1d '+%Y-%m-%d') 08:00:00" +%s)
+          TODAY=$(date -u +%Y-%m-%d)
+          NEXT=$(date -u -D "%Y-%m-%d %H:%M:%S" -d "${TODAY} 08:00:00" +%s)
+          if [ "$NOW" -ge "$NEXT" ]; then
+            NEXT=$((NEXT + 86400))
+          fi
           SLEEP=$((NEXT - NOW))
           echo "[scheduler] Sleeping ${SLEEP}s until next run at 08:00 UTC"
           sleep ${SLEEP}
@@ -115,6 +119,9 @@ services:
         condition: service_started
     networks:
       - easymod-network
+    # Disable the inherited HTTP healthcheck — scheduler has no HTTP server
+    healthcheck:
+      disable: true
     deploy:
       resources:
         limits:
