@@ -273,6 +273,12 @@ class ConversationController {
                 });
             }
 
+            // When re-enabling AI (HITL off), clear the 30-min manual-reply pause so the AI
+            // can respond immediately instead of waiting out the remainder of the timer.
+            if (hitl === false) {
+                cacheRedis.del(`ai:pause:${conversationId}`).catch(() => {});
+            }
+
             // Send escalation auto-reply synchronously so the agent response only returns
             // after the customer notification attempt is complete (success or logged failure).
             if (hitl === true) {

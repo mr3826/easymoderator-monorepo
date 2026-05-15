@@ -141,7 +141,7 @@ export default function UnifiedInbox() {
   const FALLBACK_TEMPLATES: ResponseTemplate[] = [
     { id: 'fallback-1', name: 'Order Confirmed', content: 'আপনার অর্ডার confirm হয়েছে ✅ Delivery: 2-3 দিন' },
     { id: 'fallback-2', name: 'Need Address', content: 'Stock আছে। Address & mobile নম্বর দিন please 🙏' },
-    { id: 'fallback-3', name: 'Advance Payment', content: 'Advance ৳[Amount] bKash/Nagad করুন: 01XXXXXXXXX' },
+    { id: 'fallback-3', name: 'Advance Payment', content: 'Advance ৳[Amount] bKash করুন: 01XXXXXXXXX' },
     { id: 'fallback-4', name: 'Courier Update', content: 'আপনার পার্সেল courier এ দেওয়া হয়েছে ✈️' },
     { id: 'fallback-5', name: 'Thank You', content: 'ধন্যবাদ আপনার order এর জন্য! 😊' },
     { id: 'fallback-6', name: 'Out of Stock', content: 'এই product টা এখন stock এ নেই। 2-3 দিনের মধ্যে available হবে।' },
@@ -634,7 +634,8 @@ export default function UnifiedInbox() {
         ...(selectedMessageTag ? { message_tag: selectedMessageTag as any } : {}),
       };
       const message = await apiClient.createMessage(selectedConversation.id, payload);
-      setMessages((prev) => [...prev, message]);
+      // Dedup: SSE may have already appended this message if it arrived before the HTTP response
+      setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
       setEditingMessage('');
       setSelectedMessageTag('');
       handleAttachmentClear();
@@ -895,7 +896,7 @@ export default function UnifiedInbox() {
                     ) : (
                       <a
                         href="/subscription"
-                        title="Upgrade to Growth or Scale plan to unlock AI features"
+                        title="Upgrade to PACKAGE_2 or PARTNER plan to unlock AI features"
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
                       >
                         <Lock className="w-4 h-4" />
