@@ -141,8 +141,9 @@ class ChannelOAuthService {
 
       // Verify Meta actually registered the subscription
       const axios = require('axios');
+      const apiVersion = process.env.META_GRAPH_API_VERSION || 'v22.0';
       const verifyRes = await axios.get(
-        `https://graph.facebook.com/v21.0/${pageId}/subscribed_apps`,
+        `https://graph.facebook.com/${apiVersion}/${pageId}/subscribed_apps`,
         { params: { access_token: pageAccessToken, fields: 'id,name' } }
       );
       webhookSubscribed = (verifyRes.data?.data?.length ?? 0) > 0;
