@@ -68,8 +68,8 @@ const signin = async (req, res, next) => {
  */
 const refresh = async (req, res, next) => {
     try {
-        // Accept refresh token from body OR cookie
-        const refreshToken = req.body.refresh_token || req.cookies?.refresh_token;
+        // Accept refresh token from httpOnly cookie only (body rejected — prevents CSRF abuse)
+        const refreshToken = req.cookies?.refresh_token;
         if (!refreshToken) {
             throw new AppError('Refresh token is required', 400);
         }

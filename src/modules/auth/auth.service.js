@@ -63,8 +63,12 @@ const checkAccountLockout = async (email) => {
     }
 };
 
+const LOGIN_LOCKOUT_COUNT_PREFIX = 'login_lockout_count:';
+const MAX_LOCKOUT_MINUTES = 240; // 4-hour ceiling
+
 /**
- * Record a failed login attempt. Locks the account after maxLoginAttempts.
+ * Record a failed login attempt. Locks the account after maxLoginAttempts
+ * with exponential backoff: 15m → 30m → 60m → 120m → 240m (cap).
  */
 const recordFailedLogin = async (email) => {
     const redis = getRedisClient();
@@ -79,13 +83,18 @@ const recordFailedLogin = async (email) => {
     }
 
     if (attempts >= config.maxLoginAttempts) {
-        // Lock the account
-        await redis.setex(
-            `${LOGIN_LOCKOUT_PREFIX}${email}`,
-            config.loginLockoutMinutes * 60,
-            '1'
-        );
-        // Clear the attempt counter
+        // Read how many times this account has been locked before
+        const countKey = `${LOGIN_LOCKOUT_COUNT_PREFIX}${email}`;
+        const lockCount = parseInt(await redis.get(countKey) || '0', 10);
+
+        // Exponential backoff: base * 2^lockCount, capped at MAX_LOCKOUT_MINUTES
+        const lockSeconds = Math.min(
+            config.loginLockoutMinutes * Math.pow(2, lockCount),
+            MAX_LOCKOUT_MINUTES
+        ) * 60;
+
+        await redis.setex(`${LOGIN_LOCKOUT_PREFIX}${email}`, lockSeconds, '1');
+        await redis.setex(countKey, lockSeconds * 2, String(lockCount + 1));
         await redis.del(key);
     }
 };
@@ -352,7 +361,8 @@ const authenticateUser = async (email, password) => {
 const requestPasswordReset = async (email) => {
     const user = await User.findOne({ where: { email } });
     if (!user) {
-        // Always return the same response to prevent email enumeration
+        // Simulate email-send latency to prevent timing-based email enumeration
+        await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
         return { sent: false };
     }
 
