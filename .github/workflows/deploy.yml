@@ -83,6 +83,18 @@ jobs:
     needs: build
     environment: production
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync docker-compose.prod.yml to droplet
+        run: scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DO_HOST }}:/opt/easymod/docker-compose.prod.yml
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -101,9 +113,8 @@ jobs:
 
             cd /opt/easymod
             export GHCR_IMAGE_BACKEND="$GHCR_IMAGE:latest"
-            # Preserve the currently running frontend image so this deploy doesn't change it
-            export GHCR_IMAGE_FRONTEND="${GHCR_IMAGE_FRONTEND:-$(docker inspect easymod-frontend-1 --format='{{index .Config.Image}}' 2>/dev/null || docker inspect easymod-frontend --format='{{index .Config.Image}}' 2>/dev/null || echo ghcr.io/mr3826/easymod-frontend:latest)}"
-            docker compose -f docker-compose.prod.yml up -d backend worker scheduler frontend --no-build --remove-orphans
+            export GHCR_IMAGE_FRONTEND="$(docker inspect easymod-frontend-1 --format='{{index .Config.Image}}' 2>/dev/null || echo easymod-frontend:latest)"
+            docker compose -f docker-compose.prod.yml up -d backend worker scheduler frontend --no-build --no-recreate --remove-orphans
 
             echo "Running database migrations..."
             docker compose -f docker-compose.prod.yml exec -T backend npm run migrate

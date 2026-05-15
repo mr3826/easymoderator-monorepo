@@ -95,18 +95,20 @@ services:
       - -c
       - |
         while true; do
-          echo "[scheduler] $(date -u '+%Y-%m-%dT%H:%M:%SZ') Running token_refresh_check"
+          echo "[scheduler] $$(date -u '+%Y-%m-%dT%H:%M:%SZ') Running token_refresh_check"
           node src/jobs/job-runner.js token_refresh_check || true
-          # Calculate seconds until next 08:00 UTC (BusyBox-compatible)
-          NOW=$(date -u +%s)
-          TODAY=$(date -u +%Y-%m-%d)
-          NEXT=$(date -u -D "%Y-%m-%d %H:%M:%S" -d "${TODAY} 08:00:00" +%s)
-          if [ "$NOW" -ge "$NEXT" ]; then
-            NEXT=$((NEXT + 86400))
+          # BusyBox-compatible sleep until next 08:00 UTC using pure arithmetic.
+          # $$ escapes prevent Docker Compose from interpolating shell variables.
+          H=$$(date -u +%H); M=$$(date -u +%M); S=$$(date -u +%S)
+          SECS_NOW=$$((H * 3600 + M * 60 + S))
+          TARGET=28800
+          if [ "$$SECS_NOW" -lt "$$TARGET" ]; then
+            SLEEP=$$((TARGET - SECS_NOW))
+          else
+            SLEEP=$$((86400 - SECS_NOW + TARGET))
           fi
-          SLEEP=$((NEXT - NOW))
-          echo "[scheduler] Sleeping ${SLEEP}s until next run at 08:00 UTC"
-          sleep ${SLEEP}
+          echo "[scheduler] Sleeping $${SLEEP}s until next run at 08:00 UTC"
+          sleep "$$SLEEP"
         done
     env_file:
       - .env.prod
