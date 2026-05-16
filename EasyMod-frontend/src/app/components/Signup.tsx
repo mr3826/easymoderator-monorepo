@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { motion, AnimatePresence } from "motion/react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
@@ -11,15 +12,34 @@ import { useAuth } from "../../features/auth/AuthProvider";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice } from "../lib/subscriptionPlans";
 import LanguageToggle from "./LanguageToggle";
+import BrandLogo from "./BrandLogo";
 import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
 import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
+
+const heroVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1 } },
+};
+const heroChild = {
+  hidden: { opacity: 0, y: 18 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+};
+
+const featureStripVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.5 } },
+};
+const featureChild = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
+};
 
 export default function Signup() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { signup } = useAuth();
   const [billingAnnual, setBillingAnnual] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState("starter");
+  const [selectedPlanId, setSelectedPlanId] = useState("PACKAGE_1");
 
   const {
     register,
@@ -71,6 +91,7 @@ export default function Signup() {
     } catch (err: any) {
       setError('root', {
         message:
+          err.message ||
           err.response?.data?.error?.message ||
           err.response?.data?.message ||
           t('auth.signup.errors.unableToCreate'),
@@ -87,14 +108,14 @@ export default function Signup() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#F9FAF8' }}>
       {/* Top bar */}
-      <header className="bg-white border-b border-gray-100 px-6 py-4">
+      <motion.header
+        className="bg-white border-b border-gray-100 px-6 py-4"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+      >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm" style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}>
-              <span className="text-white font-black text-sm">E</span>
-            </div>
-            <span className="text-gray-900 text-lg font-bold tracking-tight">Easy Moderator</span>
-          </div>
+          <BrandLogo size="sm" variant="dark" />
           <div className="flex items-center gap-4">
             <LanguageToggle variant="dark" />
             <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -105,18 +126,28 @@ export default function Signup() {
             </div>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       <div className="max-w-7xl mx-auto px-4 py-10">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-sm text-emerald-700 font-medium mb-4">
+        <motion.div
+          className="text-center mb-10"
+          variants={heroVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          <motion.div
+            variants={heroChild}
+            className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5 text-sm text-emerald-700 font-medium mb-4"
+          >
             {t('auth.signup.badge')}
-          </div>
-          <h1 className="text-4xl font-extrabold text-gray-900">{t('auth.signup.heading')}</h1>
-          <p className="mt-2 text-gray-500 text-base max-w-md mx-auto">
+          </motion.div>
+          <motion.h1 variants={heroChild} className="text-4xl font-extrabold text-gray-900">
+            {t('auth.signup.heading')}
+          </motion.h1>
+          <motion.p variants={heroChild} className="mt-2 text-gray-500 text-base max-w-md mx-auto">
             {t('auth.signup.subheading')}
-          </p>
-        </div>
+          </motion.p>
+        </motion.div>
 
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           {/* Left — plan selection */}
@@ -140,29 +171,43 @@ export default function Signup() {
                   <span className={`font-medium ${billingAnnual ? 'text-gray-900' : 'text-gray-400'}`}>
                     {t('auth.signup.annual')}
                   </span>
-                  {billingAnnual && (
-                    <span className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-full">
-                      {t('auth.signup.twoMonthsFree')}
-                    </span>
-                  )}
+                  <AnimatePresence>
+                    {billingAnnual && (
+                      <motion.span
+                        key="savings-badge"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 0.2 }}
+                        className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-full"
+                      >
+                        {t('auth.signup.twoMonthsFree')}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {subscriptionPlans.map((plan) => {
+                {subscriptionPlans.map((plan, i) => {
                   const isSelected = plan.id === selectedPlanId;
                   const price = getPlanPrice(plan, billingAnnual ? "yearly" : "monthly");
                   return (
-                    <button
+                    <motion.button
                       key={plan.id}
                       type="button"
                       onClick={() => setSelectedPlanId(plan.id)}
-                      className={`flex flex-col rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
+                      className={`flex flex-col rounded-2xl border-2 p-5 text-left transition-colors duration-200 ${
                         isSelected
                           ? 'border-emerald-500 bg-emerald-50 shadow-md ring-1 ring-emerald-500/20'
                           : 'border-gray-150 bg-white hover:border-emerald-300 hover:shadow-sm'
                       }`}
                       style={{ borderColor: isSelected ? '#00A651' : undefined }}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 + i * 0.08, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                      whileHover={!isSelected ? { y: -4, boxShadow: "0 8px 24px rgba(0,166,81,0.12)" } : {}}
+                      whileTap={{ scale: 0.98 }}
                     >
                       <div className="flex items-start justify-between gap-1 mb-3">
                         <p className="text-base font-bold text-gray-900">{plan.name}</p>
@@ -195,28 +240,42 @@ export default function Signup() {
                           {t('auth.signup.selectedPlan')}
                         </div>
                       )}
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
             </div>
 
             {/* BD features strip */}
-            <div className="mt-4 grid grid-cols-3 gap-3">
+            <motion.div
+              className="mt-4 grid grid-cols-3 gap-3"
+              variants={featureStripVariants}
+              initial="hidden"
+              animate="visible"
+            >
               {signupFeatures.map(({ icon, title, desc }) => (
-                <div key={title} className="bg-white rounded-xl border border-gray-100 p-3 flex items-start gap-2.5">
+                <motion.div
+                  key={title}
+                  variants={featureChild}
+                  className="bg-white rounded-xl border border-gray-100 p-3 flex items-start gap-2.5"
+                >
                   <span className="text-xl">{icon}</span>
                   <div>
                     <p className="text-xs font-semibold text-gray-800">{title}</p>
                     <p className="text-xs text-gray-400">{desc}</p>
                   </div>
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           </div>
 
           {/* Right — account form */}
-          <div className="w-full lg:w-[400px] shrink-0">
+          <motion.div
+            className="w-full lg:w-[400px] shrink-0"
+            initial={{ opacity: 0, x: 32 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.55, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-1">{t('auth.signup.createAccountHeading')}</h2>
               <p className="text-sm text-gray-500 mb-5">
@@ -224,11 +283,20 @@ export default function Signup() {
                 {t('auth.signup.activatePlan')}
               </p>
 
-              {errors.root && (
-                <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
-                  <span>⚠️</span><span>{errors.root.message}</span>
-                </div>
-              )}
+              <AnimatePresence>
+                {errors.root && (
+                  <motion.div
+                    key="signup-error"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2 overflow-hidden"
+                  >
+                    <span>⚠️</span><span>{errors.root.message}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-1.5">
@@ -344,31 +412,33 @@ export default function Signup() {
                   </div>
                 </div>
 
-                <Button
-                  type="submit"
-                  className="w-full h-12 rounded-xl text-white font-bold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                      </svg>
-                      {t('auth.signup.creating')}
-                    </span>
-                  ) : (
-                    t('auth.signup.createButton')
-                  )}
-                </Button>
+                <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.1 }}>
+                  <Button
+                    type="submit"
+                    className="w-full h-12 rounded-xl text-white font-bold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                        </svg>
+                        {t('auth.signup.creating')}
+                      </span>
+                    ) : (
+                      t('auth.signup.createButton')
+                    )}
+                  </Button>
+                </motion.div>
               </form>
 
               <div className="mt-4 text-center text-xs text-gray-400">
                 {t('auth.signup.secure')}
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     </div>

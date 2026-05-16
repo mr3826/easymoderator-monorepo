@@ -103,8 +103,17 @@ class HttpClient {
         const config = error.config as ExtendedAxiosRequestConfig;
         const status = error.response?.status;
 
-        // Handle 401 with automatic token refresh (queue requests during refresh)
-        if (status === 401 && !config.__retry) {
+        // Handle 401 with automatic token refresh (queue requests during refresh).
+        // Never attempt refresh for the refresh endpoint itself — it returns 401 when
+        // there is no valid refresh token, and retrying would deadlock isRefreshing forever.
+        // Never attempt refresh for signin/signup/2fa-verify — a 401 there means wrong
+        // credentials, not an expired token; attempting refresh adds 5-10s of latency
+        // before the error is shown and emits a spurious auth:unauthorized event.
+        const isRefreshEndpoint = config.url?.includes('/auth/refresh');
+        const isAuthEndpoint = config.url?.includes('/auth/signin') ||
+          config.url?.includes('/auth/signup') ||
+          config.url?.includes('/auth/2fa/verify');
+        if (status === 401 && !config.__retry && !isRefreshEndpoint && !isAuthEndpoint) {
           config.__retry = true;
 
           try {
@@ -118,8 +127,8 @@ class HttpClient {
           }
         }
 
-        // Already retried but still 401 - clear tokens
-        if (status === 401 && config.__retry) {
+        // Already retried / refresh endpoint 401 - clear tokens and redirect
+        if (status === 401 && (config.__retry || isRefreshEndpoint)) {
           this.clearTokens();
           this.clearRefreshQueue();
           this.emitUnauthorized();
@@ -140,8 +149,9 @@ class HttpClient {
         // Retry transient failures (429 rate limit, 5xx server errors).
         // Never retry the refresh endpoint itself — a 429 there means the token is
         // locked out and retrying only burns more rate-limit budget before the redirect.
-        const isRefreshEndpoint = config.url?.includes('/auth/refresh');
-        if (!isRefreshEndpoint && (status === 429 || (status && status >= 500 && status < 600))) {
+        // Never retry auth endpoints (signin/signup) on 429 — the lockout message
+        // should be shown immediately; retrying adds 5-15s of invisible latency.
+        if (!isRefreshEndpoint && !isAuthEndpoint && (status === 429 || (status && status >= 500 && status < 600))) {
           const retryCount = config.__retryCount || 0;
           if (retryCount < 2) {
             config.__retryCount = retryCount + 1;

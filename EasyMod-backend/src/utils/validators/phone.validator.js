@@ -23,8 +23,10 @@ const VALIDATORS = {
     examples: ['01712345678']
   },
   BD_LANDLINE: {
-    regex: /^0\d{9,10}$/,
-    description: 'Bangladesh landline',
+    // Bangladesh landlines: 02XXXXXXXX (Dhaka) or 0[3-9]XXXXXXXX (regions)
+    // 9 or 10 chars after the 0, but must NOT start with 01[3-9] (that's mobile)
+    regex: /^0(?!1[3-9])\d{8,9}$/,
+    description: 'Bangladesh landline (02XXXXXXXX or regional, not mobile)',
     examples: ['0241234567']
   }
 };
@@ -75,15 +77,17 @@ function normalizePhone(phone) {
     return null;
   }
 
-  // Remove + prefix
+  // Strip leading + (handles +8801...)
   let normalized = phone.replace(/^\+/, '');
 
-  // Convert 88 prefix to 0
-  if (normalized.startsWith('88')) {
-    normalized = '0' + normalized.substring(2);
+  // Strip Bangladesh country code prefix (88 followed by 01...)
+  // '8801712345678' → '01712345678'
+  if (/^880?/.test(normalized) && normalized.length >= 12) {
+    // Remove the '88' country code prefix exactly, leaving '01XXXXXXXXX'
+    normalized = normalized.substring(2);
   }
 
-  // Ensure starts with 0
+  // Ensure leading 0 for the 01XXXXXXXXX format
   if (!normalized.startsWith('0')) {
     normalized = '0' + normalized;
   }
@@ -130,8 +134,9 @@ function toInternationalFormat(phone) {
   if (!normalized) {
     return null;
   }
-  // Remove leading 0 and add +88
-  return '+88' + normalized.substring(1);
+  // normalized is 01XXXXXXXXX (11 chars).  International format: +880 + 1XXXXXXXXX
+  // i.e. strip the leading '0' and prepend '+880'
+  return '+880' + normalized.substring(1);
 }
 
 /**

@@ -96,7 +96,7 @@ const TodayQueueDashboard: React.FC = () => {
               {loading ? '—' : queue?.pending_payment_count ?? 0}
             </div>
             <div className="text-[11px] font-bold text-orange-700 uppercase leading-snug mt-0.5">পেমেন্ট আসেনি</div>
-            <div className="text-[10px] text-orange-400 mt-0.5">bKash / Nagad কনফার্ম করুন</div>
+            <div className="text-[10px] text-orange-400 mt-0.5">bKash কনফার্ম করুন</div>
           </div>
         </div>
 

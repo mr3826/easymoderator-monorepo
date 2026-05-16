@@ -706,8 +706,8 @@ describe('Payment Methods - E2E Tests', () => {
       });
     });
 
-    it('should validate all supported payment gateways', async () => {
-      // Arrange
+    it('should validate supported payment gateways (bKash, COD)', async () => {
+      // Arrange — only live gateways: bKash and COD
       paymentMethodsService.getAvailablePaymentMethods.mockResolvedValue([
         {
           id: 'pay_bkash_123',
@@ -718,43 +718,11 @@ describe('Payment Methods - E2E Tests', () => {
           isAvailable: true
         },
         {
-          id: 'pay_nagad_456',
-          gateway: 'nagad',
-          displayName: 'Nagad',
-          icon: 'nagad',
-          description: 'Mobile money',
-          isAvailable: true
-        },
-        {
-          id: 'pay_rocket_789',
-          gateway: 'rocket',
-          displayName: 'Rocket',
-          icon: 'rocket',
-          description: 'Quick checkout',
-          isAvailable: true
-        },
-        {
           id: 'pay_cod_012',
           gateway: 'cod',
           displayName: 'Cash on Delivery',
           icon: 'cash',
           description: 'No fees',
-          isAvailable: true
-        },
-        {
-          id: 'pay_aamarpay_345',
-          gateway: 'aamarpay',
-          displayName: 'Aamarpay',
-          icon: 'aamarpay',
-          description: 'Multiple options',
-          isAvailable: true
-        },
-        {
-          id: 'pay_sslcommerz_678',
-          gateway: 'sslcommerz',
-          displayName: 'SSLCommerz',
-          icon: 'sslcommerz',
-          description: 'Card and mobile',
           isAvailable: true
         }
       ]);
@@ -763,14 +731,10 @@ describe('Payment Methods - E2E Tests', () => {
       const response = await request(app)
         .get('/available');
 
-      // Assert - All supported gateways from BUSINESS_LOGIC.md present
+      // Assert - Supported gateways: bKash and COD
       const gateways = response.body.data.map(m => m.gateway);
       expect(gateways).toContain('bkash');
-      expect(gateways).toContain('nagad');
-      expect(gateways).toContain('rocket');
       expect(gateways).toContain('cod');
-      expect(gateways).toContain('aamarpay');
-      expect(gateways).toContain('sslcommerz');
     });
   });
 
@@ -1001,7 +965,7 @@ describe('Payment Methods - E2E Tests', () => {
  * ✓ Response validation (status codes, JSON structure)
  * ✓ Auth middleware integration (shopId from token)
  * ✓ Schema compliance (BUSINESS_LOGIC.md Section 15)
- * ✓ All supported payment gateways (bKash, Nagad, Rocket, COD, Aamarpay, SSLCommerz)
+ * ✓ Supported payment gateways (bKash, COD)
  * ✓ Edge cases (empty arrays, large datasets, missing fields)
  * ✓ Data integrity (consistency, no modification)
  */

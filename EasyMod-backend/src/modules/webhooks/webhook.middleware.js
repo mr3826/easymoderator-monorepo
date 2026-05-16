@@ -62,77 +62,12 @@ const validateBkashSignature = async (req, res, next) => {
 };
 
 /**
- * Validate Nagad webhook signature
- */
-const validateNagadSignature = async (req, res, next) => {
-    try {
-        const signature = req.headers['x-nagad-signature'];
-        
-        if (!signature) {
-            throw new AppError('Missing Nagad webhook signature', 401);
-        }
-
-        // For Nagad, we'll need to extract shop_id from the webhook payload
-        const { paymentReferenceId } = req.body;
-        
-        if (!paymentReferenceId) {
-            throw new AppError('Missing payment reference ID', 400);
-        }
-
-        // Find payment transaction to get shop_id
-        const { PaymentTransaction } = require('../entities');
-        const paymentTransaction = await PaymentTransaction.findOne({
-            where: { transaction_id: paymentReferenceId }
-        });
-
-        if (!paymentTransaction) {
-            throw new AppError('Payment transaction not found', 404);
-        }
-
-        // Get Nagad configuration
-        const paymentConfig = await PaymentConfig.findOne({
-            where: { 
-                shop_id: paymentTransaction.shop_id, 
-                gateway: 'nagad',
-                is_enabled: true 
-            }
-        });
-
-        if (!paymentConfig?.credentials?.app_secret) {
-            throw new AppError('Nagad configuration not found', 404);
-        }
-
-        // Validate signature (implementation depends on Nagad's signature method)
-        const expectedSignature = crypto
-            .createHmac('sha256', paymentConfig.credentials.app_secret)
-            .update(JSON.stringify(req.body))
-            .digest('hex');
-
-        if (signature !== expectedSignature) {
-            throw new AppError('Invalid Nagad webhook signature', 401);
-        }
-
-        logger.info('Nagad webhook signature validated', {
-            paymentReferenceId,
-            shopId: paymentTransaction.shop_id
-        });
-
-        next();
-
-    } catch (error) {
-        logger.error('Nagad webhook validation failed', { error: error.message });
-        res.status(401).json({ error: 'Invalid webhook signature' });
-    }
-};
-
-/**
  * Generic webhook signature validator
  * Routes specific validators based on gateway
  */
 const validateWebhookSignature = (gateway) => {
     const validators = {
-        'bkash': validateBkashSignature,
-        'nagad': validateNagadSignature
+        'bkash': validateBkashSignature
     };
 
     const validator = validators[gateway];
@@ -145,6 +80,5 @@ const validateWebhookSignature = (gateway) => {
 
 module.exports = {
     validateWebhookSignature,
-    validateBkashSignature,
-    validateNagadSignature
+    validateBkashSignature
 };

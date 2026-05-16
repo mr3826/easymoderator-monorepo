@@ -127,6 +127,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.businessInfo.shopName')}</label>
             <input
               type="text"
+              aria-label={t('manageShop.businessInfo.shopName')}
               value={businessInfo.shopName}
               onChange={(e) => setBusinessInfo({ ...businessInfo, shopName: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -136,6 +137,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.businessInfo.phone')}</label>
             <input
               type="text"
+              aria-label={t('manageShop.businessInfo.phone')}
               value={businessInfo.phone}
               onChange={(e) => setBusinessInfo({ ...businessInfo, phone: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -147,6 +149,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
           <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.businessInfo.address')}</label>
           <input
             type="text"
+            aria-label={t('manageShop.businessInfo.address')}
             value={businessInfo.address}
             onChange={(e) => setBusinessInfo({ ...businessInfo, address: e.target.value })}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -157,6 +160,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
           <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.businessInfo.openingHours')}</label>
           <input
             type="text"
+            aria-label={t('manageShop.businessInfo.openingHours')}
             value={businessInfo.openingHours}
             onChange={(e) => setBusinessInfo({ ...businessInfo, openingHours: e.target.value })}
             placeholder="e.g. Sat–Thu 9am–9pm"
@@ -175,7 +179,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             label="Payment Methods"
             values={businessInfo.paymentMethods}
             onChange={(v) => setBusinessInfo({ ...businessInfo, paymentMethods: v })}
-            placeholder="e.g. bKash, Nagad, COD"
+            placeholder="e.g. bKash, COD"
           />
         </div>
       </div>

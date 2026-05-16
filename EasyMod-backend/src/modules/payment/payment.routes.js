@@ -43,9 +43,5 @@ router.delete('/config/:gateway', authenticate, paymentController.deletePaymentC
 // COD payment confirmation (requires authentication)
 router.post('/cod/confirm', authenticate, validate(confirmCodPaymentValidator), paymentController.confirmCodPayment);
 
-// Rocket callbacks (no auth required - external callbacks)
-// Rocket MFS payment gateway for Bangladesh
-router.post('/rocket/callback', paymentCallbackAuth, paymentController.handleRocketCallback);
-router.post('/rocket/webhook', paymentCallbackAuth, paymentController.handleRocketWebhook);
 
 module.exports = router;

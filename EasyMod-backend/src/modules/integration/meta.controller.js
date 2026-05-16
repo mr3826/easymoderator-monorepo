@@ -72,8 +72,8 @@ class MetaController {
       // Subscribe to webhooks using provided token
       await metaService.subscribeToWebhooks(access_token, asset_id, platform);
 
-      // Create integration
-      const integration = await metaService.createIntegration(
+      // Upsert integration — allows same shop to reconnect the same page without a 409
+      const integration = await metaService.upsertIntegration(
         shopId,
         platform,
         asset_id,

@@ -14,11 +14,6 @@ const BDSellerShell: React.FC = () => {
           </div>
           <span>EasyMod BD</span>
         </div>
-        {/* Shop Selector Dropdown */}
-        <select className="text-sm bg-gray-100 border-none rounded-md px-2 py-1.5 outline-none focus:ring-2 focus:ring-blue-500 font-medium max-w-[150px] truncate">
-          <option>Fashion Store Uttara</option>
-          <option>Gadget BD</option>
-        </select>
       </header>
 
       {/* Main Content Area */}

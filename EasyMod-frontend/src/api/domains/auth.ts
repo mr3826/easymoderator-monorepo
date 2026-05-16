@@ -31,9 +31,10 @@ export async function signin(credentials: SigninRequest): Promise<AuthResponse> 
     credentials
   );
   const { data } = response.data;
-  // Clear CSRF token for new session
+  // Refresh CSRF token for the new session — fire and forget so the caller
+  // (navigate('/app')) is not blocked waiting for the extra round-trip.
   httpClient.clearCsrfToken();
-  await httpClient.initCsrfToken();
+  httpClient.initCsrfToken();
   return data;
 }
 
@@ -49,7 +50,7 @@ export async function signup(userData: SignupRequest): Promise<AuthResponse> {
     allShops: data.allShops ?? (data.shop ? [data.shop] : []),
   };
   httpClient.clearCsrfToken();
-  await httpClient.initCsrfToken();
+  httpClient.initCsrfToken();
   return normalizedData;
 }
 

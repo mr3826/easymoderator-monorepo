@@ -54,7 +54,7 @@ async function fetchAndCache(): Promise<void> {
     }
   } catch (err) {
     console.error('[useSubscriptionFeatures] Failed to fetch subscription features:', err);
-    // Safe fallback: keep Starter/default limits — do NOT grant Pro features on error
+    // Safe fallback: keep PACKAGE_1/default limits — do NOT grant PACKAGE_2 features on error
     cachedResult = { features: defaultFeatures, planName: "Free", plan: null, loading: false, error: 'Failed to load subscription features' };
   }
   cacheListeners.forEach((cb) => cb());

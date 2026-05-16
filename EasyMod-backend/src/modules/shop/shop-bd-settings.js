@@ -20,8 +20,7 @@
 
 const { Shop } = require('./shop.entity');
 const { AppError } = require('../../utils/AppError');
-
-const BD_PHONE_REGEX = /^(?:\+?88)?01[3-9]\d{8}$/;
+const { bdMobileRegex: BD_PHONE_REGEX } = require('../../utils/validators/phone.validator');
 const VALID_MFS_TYPES = ['bkash', 'nagad', 'rocket'];
 const VALID_MFS_MODES = ['self', 'business'];
 

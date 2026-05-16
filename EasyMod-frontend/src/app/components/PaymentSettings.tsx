@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
-import { CreditCard, Wallet, DollarSign, Upload, ChevronDown, ChevronUp, TestTube, X, Lock, Mail } from "lucide-react";
+import { CreditCard, Wallet, DollarSign, ChevronDown, ChevronUp, TestTube, X, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { authService } from "@/app/lib/auth";
@@ -416,7 +416,7 @@ export default function PaymentSettings() {
                 {/* Configuration Forms */}
                 {expandedGateway === gateway.id && gateway.config && !gateway.requiresContact && (
                   <div className="border-t border-gray-200 p-4 bg-gray-50">
-                    {/* bKash / Nagad / Rocket individual config */}
+                    {/* bKash individual config */}
                     {isMfsGateway(gateway.id) && (
                       <div className="space-y-4">
                         {/* Mode selector */}
@@ -521,126 +521,6 @@ export default function PaymentSettings() {
                       </div>
                     )}
 
-                    {/* Self MFS Config */}
-                    {gateway.id === 'self-mfs' && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {t('manageShop.paymentSettings.mfsType')}
-                            </label>
-                            <select
-                              value={gateway.config.type}
-                              onChange={(e) => updateGatewayConfig(gateway.id, 'type', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="bkash">bKash</option>
-                              <option value="nagad">Nagad</option>
-                              <option value="rocket">Rocket</option>
-                              <option value="upay">Upay</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {t('manageShop.paymentSettings.accountType')}
-                            </label>
-                            <select
-                              value={gateway.config.accountType}
-                              onChange={(e) => updateGatewayConfig(gateway.id, 'accountType', e.target.value)}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                              <option value="personal">{t('manageShop.paymentSettings.personal')}</option>
-                              <option value="agent">{t('manageShop.paymentSettings.agent')}</option>
-                              <option value="merchant">{t('manageShop.paymentSettings.merchant')}</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {t('manageShop.paymentSettings.phoneNumber')}
-                          </label>
-                          <input
-                            type="tel"
-                            value={gateway.config.phone}
-                            onChange={(e) => updateGatewayConfig(gateway.id, 'phone', e.target.value)}
-                            placeholder="01XXXXXXXXX"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {t('manageShop.paymentSettings.qrCode')}
-                          </label>
-                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                            {gateway.config.qrPreview ? (
-                              <div className="mb-2">
-                                <img src={gateway.config.qrPreview} alt="QR Code" className="w-32 h-32 mx-auto rounded-lg object-contain" />
-                              </div>
-                            ) : (
-                              <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                            )}
-                            <p className="text-sm text-gray-600 mb-2">
-                              {gateway.config.qrPreview ? t('manageShop.paymentSettings.qrUploaded') : t('manageShop.paymentSettings.qrUploadHint')}
-                            </p>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              id="qr-upload"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onload = (ev) => {
-                                    updateGatewayConfig(gateway.id, 'qrPreview', ev.target?.result as string);
-                                  };
-                                  reader.readAsDataURL(file);
-                                  toast.success('QR code image selected');
-                                }
-                              }}
-                            />
-                            <label
-                              htmlFor="qr-upload"
-                              className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer text-sm"
-                            >
-                              {gateway.config.qrPreview ? t('manageShop.paymentSettings.changeFile') : t('manageShop.paymentSettings.chooseFile')}
-                            </label>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {t('manageShop.paymentSettings.paymentInstructions')}
-                          </label>
-                          <textarea
-                            value={gateway.config.instructions}
-                            onChange={(e) => updateGatewayConfig(gateway.id, 'instructions', e.target.value)}
-                            placeholder={t('manageShop.paymentSettings.paymentInstructionsPlaceholder')}
-                            rows={4}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <p className="text-xs text-gray-500 mt-1">
-                            {t('manageShop.paymentSettings.paymentInstructionsHint')}
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            if (!gateway.config.phone) {
-                              toast.error('Please enter your MFS phone number');
-                              return;
-                            }
-                            saveGatewayConfig('self-mfs');
-                          }}
-                          disabled={savingGateway === 'self-mfs'}
-                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {savingGateway === 'self-mfs' ? t('manageShop.paymentSettings.saving') : t('manageShop.paymentSettings.saveMFS')}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

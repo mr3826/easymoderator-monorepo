@@ -19,8 +19,8 @@ const getEncryptionKey = () => {
     if (!secret) {
         throw new Error('APP_SECRET, JWT_SECRET, or JWT_ACCESS_SECRET environment variable is required for TOTP encryption');
     }
-    // Derive a 32-byte key from the secret
-    return crypto.createHash('sha256').update(secret).digest();
+    // scrypt: memory-hard KDF — resistant to brute-force if secret is ever leaked
+    return crypto.scryptSync(secret, 'easymod-totp-key-v1', 32);
 };
 
 const encryptSecret = (plaintext) => {
@@ -207,7 +207,8 @@ const enableTotp = async (userId, token) => {
             totp_secret: settings.totp_pending,
             totp_pending: null,
             totp_enabled: true
-        }
+        },
+        refresh_token: null
     });
 
     return { enabled: true };

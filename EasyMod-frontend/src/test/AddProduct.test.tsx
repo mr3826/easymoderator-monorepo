@@ -14,7 +14,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
   }
 })
 
-vi.mock('../app/lib/api', () => ({
+vi.mock('@/api', () => ({
   apiClient: {
     getCategories: vi.fn().mockResolvedValue([]),
     createProduct: vi.fn().mockResolvedValue({ id: 'prod-123', name: 'Demo Product' }),
@@ -61,7 +61,7 @@ describe('AddProduct', () => {
   })
 
   it('creates product and navigates to products page', async () => {
-    const { apiClient } = await import('../app/lib/api')
+    const { apiClient } = await import('@/api')
 
     render(<AddProduct isModal={true} onClose={mockOnClose} />)
 

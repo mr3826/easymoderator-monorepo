@@ -43,8 +43,8 @@ describe('Subscription Domain API', () => {
       const mockResponse = {
         data: {
           data: [
-            { id: 'starter', name: 'Starter', price: 9.99 },
-            { id: 'pro', name: 'Pro', price: 29.99 },
+            { id: 'PACKAGE_1', name: 'Package 1', price: 750 },
+            { id: 'PACKAGE_2', name: 'Package 2', price: 1950 },
           ],
         },
       };
@@ -74,9 +74,9 @@ describe('Subscription Domain API', () => {
       const mockResponse = { data: { data: {} } };
       (httpClient.post as any).mockResolvedValue(mockResponse);
 
-      await subscription.subscribeToPlan('starter');
+      await subscription.subscribeToPlan('PACKAGE_1');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/subscribe', { planId: 'starter', billingCycle: 'monthly' });
+      expect(httpClient.post).toHaveBeenCalledWith('/subscription/subscribe', { planId: 'PACKAGE_1', billingCycle: 'monthly' });
     });
   });
 
