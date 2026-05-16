@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/app/components/ui/input';
@@ -31,6 +31,7 @@ export default function SignIn() {
     register,
     handleSubmit,
     setError,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<SigninFormData>({
     resolver: zodResolver(signinSchema),
@@ -53,6 +54,7 @@ export default function SignIn() {
     } catch (err: any) {
       setError('root', {
         message:
+          err.message ||
           err.response?.data?.error?.message ||
           err.response?.data?.message ||
           t('auth.signin.errors.invalidCredentials'),
@@ -243,11 +245,18 @@ export default function SignIn() {
               </div>
 
               <div className="flex items-center gap-2.5">
-                <Checkbox
-                  {...register('rememberMe')}
-                  id="rememberMe"
-                  disabled={isSubmitting}
-                  className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                <Controller
+                  name="rememberMe"
+                  control={control}
+                  render={({ field }) => (
+                    <Checkbox
+                      id="rememberMe"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={isSubmitting}
+                      className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                    />
+                  )}
                 />
                 <label htmlFor="rememberMe" className="text-sm text-gray-600 cursor-pointer select-none">
                   {t('auth.signin.rememberMe')}

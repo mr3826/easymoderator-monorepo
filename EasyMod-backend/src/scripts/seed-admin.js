@@ -36,6 +36,37 @@ async function ensureAdminUser() {
         console.log(`Admin user already exists: ${existingUser.id}`);
         console.log(`Email: ${ADMIN_EMAIL}`);
         console.log('Password: (unchanged)');
+
+        // Verify the existing user has at least one active shop.
+        // An admin with no shops cannot log in (authenticateUser throws 403).
+        // This can happen when the user was created in an earlier deployment
+        // before the shop-creation step was added.
+        const existingShop = await UserShop.findOne({
+            where: { user_id: existingUser.id, is_active: true }
+        });
+
+        if (!existingShop) {
+            console.log('No active shop found for admin — creating one...');
+            const tenant = await Tenant.create({ name: 'Admin Tenant' });
+            const shopCode = await generateUniqueShopCode();
+            const shop = await Shop.create({
+                unique_code: shopCode,
+                tenant_id: tenant.id,
+                name: 'Admin Test Shop',
+                shop_name: 'Admin Test Shop'
+            });
+            await UserShop.create({
+                user_id: existingUser.id,
+                shop_id: shop.id,
+                role: 'admin',
+                is_active: true
+            });
+            await existingUser.update({ last_logged_shop_id: shop.id });
+            console.log(`Shop created: ${shop.unique_code} (${shop.id})`);
+        } else {
+            console.log('Active shop found — no action needed.');
+        }
+
         return;
     }
 

@@ -28,29 +28,59 @@ export class AuthService {
   }
 
   private async initializeAuth() {
-    try {
-      const authContext = await apiClient.getAuthContext();
-      this.setAuthState({
-        user: authContext.user,
-        currentShop: authContext.currentShop,
-        allShops: authContext.allShops,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch (error) {
-      // Guard: if signin() completed concurrently while this /me was in-flight,
-      // don't overwrite the authenticated session — just clear the loading flag.
-      if (this.authState.isAuthenticated) {
-        this.setAuthState({ isLoading: false });
-      } else {
+    // Cap the entire initialization to 8 seconds. Without this bound,
+    // a slow backend (cold-start, Redis reconnect) can hold the
+    // initializeAuth() promise pending indefinitely, which causes every
+    // ensureInitialized() caller (route loaders, AuthProvider) to block
+    // forever — producing the infinite-spinner symptom after sign-in.
+    const timeoutPromise = new Promise<void>((resolve) =>
+      setTimeout(resolve, 8000)
+    );
+
+    const authPromise = (async () => {
+      try {
+        const authContext = await apiClient.getAuthContext();
         this.setAuthState({
-          user: null,
-          currentShop: null,
-          allShops: [],
-          isAuthenticated: false,
+          user: authContext.user,
+          currentShop: authContext.currentShop,
+          allShops: authContext.allShops,
+          isAuthenticated: true,
           isLoading: false,
         });
+      } catch (error) {
+        // Guard: if signin() completed concurrently while this /me was in-flight,
+        // don't overwrite the authenticated session — just clear the loading flag.
+        if (this.authState.isAuthenticated) {
+          this.setAuthState({ isLoading: false });
+        } else {
+          this.setAuthState({
+            user: null,
+            currentShop: null,
+            allShops: [],
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
       }
+    })();
+
+    // Race: whichever resolves first wins. If timeout fires first, the auth
+    // state defaults to unauthenticated (isLoading still true at this point —
+    // set it false so callers aren't stuck on a loading screen).
+    await Promise.race([authPromise, timeoutPromise]);
+
+    if (this.authState.isLoading) {
+      // Timeout won — the /me + refresh chain is still in-flight.
+      // Treat as unauthenticated; the in-flight chain will still complete
+      // and update state correctly when it finishes, but route loaders
+      // are no longer blocked.
+      this.setAuthState({
+        user: null,
+        currentShop: null,
+        allShops: [],
+        isAuthenticated: false,
+        isLoading: false,
+      });
     }
   }
 
