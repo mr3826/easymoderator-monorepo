@@ -39,15 +39,6 @@ class BangladeshPaymentController {
                     callback_url,
                     shop_id
                 });
-            } else if (payment_method.toLowerCase() === 'nagad') {
-                result = await paymentService.initializeNagadPayment({
-                    order_id,
-                    amount,
-                    customer_name,
-                    customer_phone,
-                    callback_url,
-                    shop_id
-                });
             } else {
                 return res.status(400).json({
                     success: false,

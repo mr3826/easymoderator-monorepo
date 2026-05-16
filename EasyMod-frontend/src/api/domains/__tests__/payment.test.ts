@@ -27,7 +27,7 @@ describe('Payment Domain API', () => {
     it('should return list of payment configs', async () => {
       const mockData = [
         { gateway: 'bkash', is_enabled: true },
-        { gateway: 'nagad', is_enabled: false },
+        { gateway: 'cod', is_enabled: true },
       ];
       (httpClient.get as any).mockResolvedValue({ data: { success: true, data: mockData } });
 
@@ -58,7 +58,7 @@ describe('Payment Domain API', () => {
     });
 
     it('should enable a gateway', async () => {
-      const payload = { gateway: 'nagad', is_enabled: true };
+      const payload = { gateway: 'bkash', is_enabled: true };
       (httpClient.post as any).mockResolvedValue({ data: { success: true, data: {} } });
 
       await payment.updatePaymentConfig(payload);
@@ -90,7 +90,7 @@ describe('Payment Domain API', () => {
     });
 
     it('should return failure when credentials are wrong', async () => {
-      const payload = { gateway: 'nagad' };
+      const payload = { gateway: 'bkash' };
       (httpClient.post as any).mockResolvedValue({
         data: { success: false, data: { connected: false }, message: 'Invalid credentials' },
       });

@@ -81,7 +81,7 @@ export default function PrivacyPolicy() {
               <li>Business name, timezone, and operating hours</li>
               <li>Hashed passwords (we never store plain-text passwords)</li>
               <li>Meta platform access tokens (encrypted at rest using AES-256-GCM)</li>
-              <li>Payment gateway credentials (bKash, Nagad — encrypted at rest)</li>
+              <li>Payment gateway credentials (bKash — encrypted at rest)</li>
               <li>Delivery provider credentials (Pathao, Steadfast — encrypted at rest)</li>
               <li>IP address and browser/device information (for security audit logs)</li>
               <li>Session tokens stored as httpOnly, secure cookies</li>
@@ -338,12 +338,6 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 font-medium text-gray-900">bKash</td>
                     <td className="px-4 py-3 text-gray-600">Payment Gateway</td>
                     <td className="px-4 py-3 text-gray-600">Customer phone number, order amount</td>
-                    <td className="px-4 py-3 text-gray-600">Mobile payment processing</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">Nagad</td>
-                    <td className="px-4 py-3 text-gray-600">Payment Gateway</td>
-                    <td className="px-4 py-3 text-gray-600">Customer account number, order amount</td>
                     <td className="px-4 py-3 text-gray-600">Mobile payment processing</td>
                   </tr>
                   <tr>

@@ -207,4 +207,20 @@ export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return response.data.data;
 }
 
+/**
+ * Purchase a conversation top-up pack (creates an invoice)
+ * @param amount - Number of conversations in the pack
+ * @param price - Price of the pack in BDT
+ * @returns Promise resolving to the created invoice
+ */
+export async function purchaseConversationPack(payload: {
+  amount: number;
+  price: number;
+}): Promise<any> {
+  const response: AxiosResponse<any> = await httpClient.post(
+    '/api/subscription/conversation-pack',
+    payload
+  );
+  return response.data;
+}
 

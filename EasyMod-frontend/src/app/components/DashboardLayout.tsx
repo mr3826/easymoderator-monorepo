@@ -2,28 +2,18 @@ import { Link, Outlet, useLocation } from "react-router-dom";
 import ConversationAlertBanner from './ConversationAlertBanner';
 import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
-  LayoutDashboard, MessageSquare, Package, ShoppingCart, BarChart3,
-  Brain, Target, FolderTree, Store, Check, Plus, LogOut,
-  X, AlertCircle, CreditCard, Bell, ChevronLeft, ChevronRight, Menu,
-  ChevronDown, User, Shield,
+  Store, LogOut,
+  CreditCard, Bell, ChevronLeft, ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import OnboardingWizard from "./OnboardingWizard";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
-import { toast } from "sonner";
 import LanguageToggle from "./LanguageToggle";
 
 const appBasePath = '/app';
-
-interface Shop {
-  id: string;
-  name: string;
-  logo: string;
-  isActive: boolean;
-  isDisabled: boolean;
-}
 
 export default function DashboardLayout() {
   const location = useLocation();
@@ -38,15 +28,11 @@ export default function DashboardLayout() {
     { name: 'সেটিংস', path: `${appBasePath}/manage-shop`, icon: Store },
   ];
 
-  const { user, currentShop, allShops, logout, switchShop } = useAuth();
+  const { user, currentShop, logout } = useAuth();
 
   const [collapsed, setCollapsed] = useState(false);
   const [showShopPanel, setShowShopPanel] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showCreateShopPopup, setShowCreateShopPopup] = useState(false);
-  const [createShopName, setCreateShopName] = useState('');
-  const [createShopError, setCreateShopError] = useState<string | null>(null);
-  const [createShopLoading, setCreateShopLoading] = useState(false);
 
   useEffect(() => {
     if (!currentShop?.id) return;
@@ -65,16 +51,7 @@ export default function DashboardLayout() {
     setShowOnboarding(false);
   };
 
-
-  const shops: Shop[] = allShops.map((shop) => ({
-    id: shop.id,
-    name: shop.shop_name || shop.unique_code || shop.id,
-    logo: '🏪',
-    isActive: currentShop?.id === shop.id,
-    isDisabled: false,
-  }));
-
-  const activeShop = shops.find(shop => shop.isActive);
+  const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
   // Derive page title from current route
   const activeNav = navigation.find(item =>
@@ -82,45 +59,6 @@ export default function DashboardLayout() {
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
   );
   const pageTitle = activeNav?.name ?? 'Easy Moderator';
-
-  const handleCreateShop = () => {
-    setCreateShopName('');
-    setCreateShopError(null);
-    setShowCreateShopPopup(true);
-    setShowShopPanel(false);
-  };
-
-  const handleSubmitCreateShop = async () => {
-    if (createShopLoading) return;
-    const trimmedName = createShopName.trim();
-    if (trimmedName && trimmedName.length < 2) {
-      setCreateShopError('Shop name must be at least 2 characters.');
-      return;
-    }
-    try {
-      setCreateShopLoading(true);
-      setCreateShopError(null);
-      const { authService } = await import("@/app/lib/auth");
-      await authService.createShop({ shop_name: trimmedName || undefined });
-      setShowCreateShopPopup(false);
-    } catch (error) {
-      setCreateShopError(error instanceof Error ? error.message : 'Failed to create shop.');
-    } finally {
-      setCreateShopLoading(false);
-    }
-  };
-
-  const handleSwitchShop = async (shopId: string) => {
-    const shop = shops.find(s => s.id === shopId);
-    if (shop && !shop.isDisabled) {
-      try {
-        await switchShop(shopId);
-      } catch {
-        toast.error('Failed to switch shop');
-      }
-      setShowShopPanel(false);
-    }
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -225,7 +163,7 @@ export default function DashboardLayout() {
               onClick={() => setShowShopPanel(p => !p)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
             >
-              <span className="font-medium truncate max-w-[140px]">{activeShop?.name || user?.full_name || user?.email || 'Shop'}</span>
+              <span className="font-medium truncate max-w-[140px]">{activeShopName || user?.full_name || user?.email || 'Shop'}</span>
               <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
             </button>
 
@@ -306,52 +244,6 @@ export default function DashboardLayout() {
       {/* ─── Onboarding Wizard ────────────────────────────────────── */}
       {showOnboarding && (
         <OnboardingWizard onComplete={handleOnboardingComplete} />
-      )}
-
-      {/* ─── Create Shop Modal ─────────────────────────────────────── */}
-      {showCreateShopPopup && (
-        <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                <Plus className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-xl font-bold text-gray-900 mb-1">{t('dashboard.createNewShop')}</h2>
-                <p className="text-sm text-gray-600">{t('dashboard.addShopDesc')}</p>
-              </div>
-              <button onClick={() => setShowCreateShopPopup(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-2 mb-6">
-              <label className="text-sm font-medium text-gray-700">{t('dashboard.shopName')}</label>
-              <input
-                type="text"
-                value={createShopName}
-                onChange={(e) => setCreateShopName(e.target.value)}
-                placeholder={t('dashboard.shopNamePlaceholder')}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              {createShopError && <p className="text-sm text-red-600">{createShopError}</p>}
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowCreateShopPopup(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-              >
-                {t('dashboard.cancel')}
-              </button>
-              <button
-                onClick={handleSubmitCreateShop}
-                disabled={createShopLoading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
-              >
-                {createShopLoading ? t('dashboard.creating') : t('dashboard.createShop')}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
 

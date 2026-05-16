@@ -28,7 +28,7 @@ export default function Subscription() {
   const [success, setSuccess] = useState<string | null>(null);
   const [hasSubscriptionData, setHasSubscriptionData] = useState(true);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState(subscriptionPlans[1]?.id || "growth");
+  const [selectedPlanId, setSelectedPlanId] = useState(subscriptionPlans[1]?.id || "PACKAGE_1");
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
@@ -293,17 +293,7 @@ export default function Subscription() {
       setError(null);
       setSuccess(null);
 
-      const planPrice = getPlanPrice(selectedPlan, billingCycle);
-
-      const response = await apiClient.updateSubscriptionPlan({
-        plan_name: selectedPlan.name,
-        plan_price: planPrice,
-        billing_cycle: billingCycle,
-        conversations_limit: selectedPlan.limits.conversations,
-        orders_limit: selectedPlan.limits.orders,
-        products_limit: selectedPlan.limits.products,
-        features: selectedPlan.features,
-      });
+      const response = await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
 
       if (response?.success) {
         setSuccess(response.message || 'Subscription plan updated successfully');
@@ -768,7 +758,7 @@ export default function Subscription() {
             ))}
           </div>
           {/* Contextual upgrade gates for locked features */}
-          <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="Growth">
+          <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="PACKAGE_2">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
               <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
                 <TrendingUp className="w-4 h-4 text-blue-600" />
@@ -779,7 +769,7 @@ export default function Subscription() {
               </div>
             </div>
           </FeatureGate>
-          <FeatureGate feature="advanced_ai" featureLabel="Advanced AI" requiredPlan="Growth">
+          <FeatureGate feature="advanced_ai" featureLabel="Advanced AI" requiredPlan="PACKAGE_2">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mt-2">
               <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
                 <MessageSquare className="w-4 h-4 text-purple-600" />

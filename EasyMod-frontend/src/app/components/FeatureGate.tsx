@@ -78,7 +78,7 @@ interface FeatureGateProps {
   feature: keyof SubscriptionFeatures;
   /** Human-readable label shown in the upgrade modal */
   featureLabel: string;
-  /** Minimum plan name required (e.g. "Growth") */
+  /** Minimum plan name required (e.g. "PACKAGE_2") */
   requiredPlan: string;
   children: ReactNode;
 }
@@ -88,7 +88,7 @@ interface FeatureGateProps {
  * include the feature. Clicking the overlay opens an upgrade modal.
  *
  * Usage:
- *   <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="Growth">
+ *   <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="PACKAGE_2">
  *     <ImageUploader />
  *   </FeatureGate>
  */

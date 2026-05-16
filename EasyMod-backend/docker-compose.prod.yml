@@ -1,4 +1,4 @@
-# Production docker-compose for Digital Ocean Droplet (2vCPU 4GB)
+# Production docker-compose for Digital Ocean Droplet (2vCPU 2GB)
 # Images pulled from GitHub Container Registry (ghcr.io)
 # Set GHCR_IMAGE_BACKEND, GHCR_IMAGE_FRONTEND env vars on the droplet
 
@@ -22,15 +22,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "100mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     networks:
       - easymod-network
+    deploy:
+      resources:
+        limits:
+          memory: 128m
 
   backend:
     image: ${GHCR_IMAGE_BACKEND}
@@ -52,6 +60,10 @@ services:
       - easymod-network
     volumes:
       - invoice_data:/app/uploads/invoices
+    deploy:
+      resources:
+        limits:
+          memory: 400m
 
   worker:
     image: ${GHCR_IMAGE_BACKEND}
@@ -68,25 +80,35 @@ services:
         condition: service_started
     networks:
       - easymod-network
+    deploy:
+      resources:
+        limits:
+          memory: 200m
 
   scheduler:
     image: ${GHCR_IMAGE_BACKEND}
     restart: unless-stopped
-    # Runs token_refresh_check daily at 08:00 UTC, then sleeps until next day.
-    # Uses shell loop instead of external cron to avoid installing extra tooling in the image.
+    # Runs token_refresh_check daily at 08:00 UTC, then sleeps until next run.
+    # Uses BusyBox-compatible date arithmetic (Alpine Linux has no GNU date).
     command:
       - /bin/sh
       - -c
       - |
         while true; do
-          echo "[scheduler] $(date -u '+%Y-%m-%dT%H:%M:%SZ') Running token_refresh_check"
+          echo "[scheduler] $$(date -u '+%Y-%m-%dT%H:%M:%SZ') Running token_refresh_check"
           node src/jobs/job-runner.js token_refresh_check || true
-          # Sleep until 08:00 UTC next day
-          NOW=$(date -u +%s)
-          NEXT=$(date -u -d 'tomorrow 08:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M:%S' "$(date -u -v+1d '+%Y-%m-%d') 08:00:00" +%s)
-          SLEEP=$((NEXT - NOW))
-          echo "[scheduler] Sleeping ${SLEEP}s until next run at 08:00 UTC"
-          sleep ${SLEEP}
+          # BusyBox-compatible sleep until next 08:00 UTC using pure arithmetic.
+          # $$ escapes prevent Docker Compose from interpolating shell variables.
+          H=$$(date -u +%H); M=$$(date -u +%M); S=$$(date -u +%S)
+          SECS_NOW=$$((H * 3600 + M * 60 + S))
+          TARGET=28800
+          if [ "$$SECS_NOW" -lt "$$TARGET" ]; then
+            SLEEP=$$((TARGET - SECS_NOW))
+          else
+            SLEEP=$$((86400 - SECS_NOW + TARGET))
+          fi
+          echo "[scheduler] Sleeping $${SLEEP}s until next run at 08:00 UTC"
+          sleep "$$SLEEP"
         done
     env_file:
       - .env.prod
@@ -99,6 +121,13 @@ services:
         condition: service_started
     networks:
       - easymod-network
+    # Disable the inherited HTTP healthcheck — scheduler has no HTTP server
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 64m
 
   frontend:
     image: ${GHCR_IMAGE_FRONTEND}
@@ -109,6 +138,10 @@ services:
       - easymod-network
     depends_on:
       - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
 
 volumes:
   postgres_data:

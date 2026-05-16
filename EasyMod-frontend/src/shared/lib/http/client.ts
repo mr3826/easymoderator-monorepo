@@ -103,8 +103,11 @@ class HttpClient {
         const config = error.config as ExtendedAxiosRequestConfig;
         const status = error.response?.status;
 
-        // Handle 401 with automatic token refresh (queue requests during refresh)
-        if (status === 401 && !config.__retry) {
+        // Handle 401 with automatic token refresh (queue requests during refresh).
+        // Never attempt refresh for the refresh endpoint itself — it returns 401 when
+        // there is no valid refresh token, and retrying would deadlock isRefreshing forever.
+        const isRefreshEndpoint = config.url?.includes('/auth/refresh');
+        if (status === 401 && !config.__retry && !isRefreshEndpoint) {
           config.__retry = true;
 
           try {
@@ -118,8 +121,8 @@ class HttpClient {
           }
         }
 
-        // Already retried but still 401 - clear tokens
-        if (status === 401 && config.__retry) {
+        // Already retried / refresh endpoint 401 - clear tokens and redirect
+        if (status === 401 && (config.__retry || isRefreshEndpoint)) {
           this.clearTokens();
           this.clearRefreshQueue();
           this.emitUnauthorized();
@@ -140,7 +143,6 @@ class HttpClient {
         // Retry transient failures (429 rate limit, 5xx server errors).
         // Never retry the refresh endpoint itself — a 429 there means the token is
         // locked out and retrying only burns more rate-limit budget before the redirect.
-        const isRefreshEndpoint = config.url?.includes('/auth/refresh');
         if (!isRefreshEndpoint && (status === 429 || (status && status >= 500 && status < 600))) {
           const retryCount = config.__retryCount || 0;
           if (retryCount < 2) {

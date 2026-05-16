@@ -8,7 +8,6 @@ export interface SubscriptionPlanDefinition {
   yearlyPrice: number;
   /** For per-order billing plans (Partner). monthlyPrice is 0 when this is set. */
   perOrderChargeBdt?: number;
-  maxChannels: number; // -1 = unlimited
   limits: {
     conversations: number; // -1 = unlimited
     orders: number;
@@ -35,7 +34,6 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     description: "আপনার প্রথম AI সেলস টিম — ঘুমের মধ্যেও অর্ডার আসবে।",
     monthlyPrice: 750,
     yearlyPrice: 7500,
-    maxChannels: UNLIMITED,
     limits: {
       conversations: 500,
       orders: UNLIMITED,
@@ -63,7 +61,6 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     description: "সব চ্যানেলে ৫০০+ অর্ডার পরিচালনা করুন প্রতি সপ্তাহে।",
     monthlyPrice: 1950,
     yearlyPrice: 19500,
-    maxChannels: UNLIMITED,
     limits: {
       conversations: 1500,
       orders: UNLIMITED,
@@ -92,7 +89,6 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     monthlyPrice: 0,
     yearlyPrice: 0,
     perOrderChargeBdt: 22,
-    maxChannels: UNLIMITED,
     limits: {
       conversations: UNLIMITED,
       orders: UNLIMITED,

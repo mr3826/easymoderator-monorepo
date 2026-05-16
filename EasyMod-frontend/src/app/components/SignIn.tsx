@@ -3,13 +3,24 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthProvider';
 import LanguageToggle from './LanguageToggle';
+import BrandLogo from './BrandLogo';
 import { signinSchema, type SigninFormData } from '../../features/auth/validation/schemas';
+
+const leftContainer = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.15, delayChildren: 0.2 } },
+};
+const leftItem = {
+  hidden: { opacity: 0, x: -20 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+};
 
 export default function SignIn() {
   const navigate = useNavigate();
@@ -56,21 +67,43 @@ export default function SignIn() {
         className="hidden lg:flex lg:w-5/12 flex-col justify-between p-12 relative overflow-hidden"
         style={{ background: 'linear-gradient(160deg, #005f30 0%, #00A651 60%, #00c45e 100%)' }}
       >
-        <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-10" style={{ background: '#fff' }} />
-        <div className="absolute bottom-10 right-[-60px] w-96 h-96 rounded-full opacity-10" style={{ background: '#fff' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] rounded-full opacity-5" style={{ background: '#fff' }} />
+        <motion.div
+          className="absolute -top-20 -left-20 w-72 h-72 rounded-full"
+          style={{ background: '#fff' }}
+          animate={{ scale: [1, 1.05, 1], opacity: [0.10, 0.15, 0.10] }}
+          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute bottom-10 right-[-60px] w-96 h-96 rounded-full"
+          style={{ background: '#fff' }}
+          animate={{ scale: [1, 1.08, 1], opacity: [0.10, 0.16, 0.10] }}
+          transition={{ duration: 9, delay: 3, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] h-[480px] rounded-full"
+          style={{ background: '#fff' }}
+          animate={{ scale: [1, 1.03, 1], opacity: [0.05, 0.08, 0.05] }}
+          transition={{ duration: 11, delay: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+        />
 
-        <div className="relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
-              <span className="text-white font-black text-lg">E</span>
-            </div>
-            <span className="text-white text-2xl font-bold tracking-tight">Easy Moderator</span>
-          </div>
-        </div>
+        <motion.div
+          className="relative z-10"
+          variants={leftContainer}
+          initial="hidden"
+          animate="visible"
+        >
+          <motion.div variants={leftItem}>
+            <BrandLogo size="md" variant="light" animated />
+          </motion.div>
+        </motion.div>
 
-        <div className="relative z-10 space-y-8">
-          <div>
+        <motion.div
+          className="relative z-10 space-y-8"
+          variants={leftContainer}
+          initial="hidden"
+          animate="visible"
+        >
+          <motion.div variants={leftItem}>
             <p className="text-white/70 text-sm font-medium uppercase tracking-widest mb-3">
               {t('auth.signin.tagline')}
             </p>
@@ -80,18 +113,18 @@ export default function SignIn() {
             <p className="mt-4 text-white/70 text-base leading-relaxed">
               {t('auth.signin.subheading')}
             </p>
-          </div>
+          </motion.div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <motion.div variants={leftItem} className="grid grid-cols-2 gap-4">
             {stats.map(({ stat, label }) => (
               <div key={label} className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
                 <p className="text-white text-xl font-bold">{stat}</p>
                 <p className="text-white/70 text-xs mt-0.5">{label}</p>
               </div>
             ))}
-          </div>
+          </motion.div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
+          <motion.div variants={leftItem} className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 border border-white/20">
             <p className="text-white/90 text-sm leading-relaxed italic">
               "{t('auth.signin.testimonialQuote')}"
             </p>
@@ -104,24 +137,24 @@ export default function SignIn() {
                 <p className="text-white/60 text-xs">{t('auth.signin.testimonialShop')}</p>
               </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
 
-        <div className="relative z-10">
+        <motion.div
+          className="relative z-10"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.9, duration: 0.5 }}
+        >
           <p className="text-white/40 text-xs">© 2025 Easy Moderator · Made in Bangladesh 🇧🇩</p>
-        </div>
+        </motion.div>
       </div>
 
       {/* Right panel — form */}
       <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-md">
           <div className="lg:hidden flex items-center justify-between mb-8">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#00A651' }}>
-                <span className="text-white font-black text-sm">E</span>
-              </div>
-              <span className="text-gray-900 text-xl font-bold">Easy Moderator</span>
-            </div>
+            <BrandLogo size="sm" variant="dark" />
             <LanguageToggle variant="dark" />
           </div>
 
@@ -129,19 +162,38 @@ export default function SignIn() {
             <LanguageToggle variant="dark" />
           </div>
 
-          <div className="mb-8">
+          <motion.div
+            className="mb-8"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          >
             <h1 className="text-3xl font-extrabold text-gray-900">{t('auth.signin.welcomeBack')}</h1>
             <p className="mt-2 text-gray-500 text-sm">{t('auth.signin.loginPrompt')}</p>
-          </div>
+          </motion.div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-8">
+          <motion.div
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 md:p-8"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          >
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-              {errors.root && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
-                  <span className="mt-0.5">⚠️</span>
-                  <span>{errors.root.message}</span>
-                </div>
-              )}
+              <AnimatePresence>
+                {errors.root && (
+                  <motion.div
+                    key="signin-error"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2 overflow-hidden"
+                  >
+                    <span className="mt-0.5">⚠️</span>
+                    <span>{errors.root.message}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div className="space-y-1.5">
                 <label htmlFor="email" className="block text-sm font-semibold text-gray-700">
@@ -202,26 +254,28 @@ export default function SignIn() {
                 </label>
               </div>
 
-              <Button
-                type="submit"
-                className="w-full h-12 rounded-xl text-white font-semibold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    {t('auth.signin.signingIn')}
-                  </span>
-                ) : (
-                  t('auth.signin.signInButton')
-                )}
-              </Button>
+              <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.1 }}>
+                <Button
+                  type="submit"
+                  className="w-full h-12 rounded-xl text-white font-semibold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                      {t('auth.signin.signingIn')}
+                    </span>
+                  ) : (
+                    t('auth.signin.signInButton')
+                  )}
+                </Button>
+              </motion.div>
             </form>
-          </div>
+          </motion.div>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">

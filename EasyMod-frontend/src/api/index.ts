@@ -189,6 +189,7 @@ export const apiClient = {
 
   // Subscription invoice alias
   getSubscriptionInvoices: subscriptionDomain.getInvoices,
+  purchaseConversationPack: subscriptionDomain.purchaseConversationPack,
 
   // Audit methods
   getAuditLogs: auditDomain.getAuditLogs,

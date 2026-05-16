@@ -5,6 +5,38 @@ import Channels from '@/app/components/Channels'
 import { apiClient } from '@/api'
 import { toast } from 'sonner'
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: any) => {
+      if (options?.returnObjects) return []
+      const map: Record<string, string> = {
+        'channels.title': 'Channels',
+        'channels.subtitle': 'Manage your connected channels',
+        'channels.connectChannel': 'Connect Channel',
+        'channels.noChannels': 'No channels yet',
+        'channels.noChannelsHint': 'Connect a channel to get started',
+        'channels.errorTitle': 'Error',
+        'channels.connectModal.title': 'Connect a Channel',
+        'channels.connectModal.subtitle': 'Choose a platform to connect',
+        'channels.connectModal.cancelWaiting': 'Cancel',
+        'channels.connectModal.waitingMessage': 'Waiting for authorization...',
+        'channels.connectModal.waitingTitle.facebook': 'Waiting for Facebook',
+        'channels.connectModal.waitingTitle.instagram': 'Waiting for Instagram',
+        'channels.connectModal.oauthButton.facebook': 'Connect with Facebook',
+        'channels.connectModal.oauthButton.instagram': 'Connect with Instagram',
+        'channels.connectModal.channels.facebook.name': 'Facebook Messenger',
+        'channels.connectModal.channels.facebook.tagline': 'Connect your Facebook Page',
+        'channels.connectModal.channels.instagram.name': 'Instagram',
+        'channels.connectModal.channels.instagram.tagline': 'Connect your Instagram account',
+        'channels.connectModal.pageSelect.title': 'Select a Page',
+        'channels.connectModal.successTitle': 'Connected!',
+        'channels.errors.disconnectFailed': 'Failed to disconnect channel',
+      }
+      return map[key] ?? key
+    },
+  }),
+}))
+
 // Mock the API client
 vi.mock('@/api', () => ({
   apiClient: {
@@ -70,6 +102,7 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
 
     window.dispatchEvent(new MessageEvent('message', {
       origin: 'https://evil.example.com',
+      source: window as any,
       data: { type: 'OAUTH_SUCCESS', code: 'abc', state: 's'.repeat(64) }
     }))
 
@@ -98,6 +131,7 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
 
     window.dispatchEvent(new MessageEvent('message', {
       origin: window.location.origin,
+      source: window as any,
       data: { type: 'OAUTH_ERROR', error: 'OAuth denied by user' }
     }))
 
@@ -135,6 +169,7 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
 
     window.dispatchEvent(new MessageEvent('message', {
       origin: window.location.origin,
+      source: window as any,
       data: { type: 'OAUTH_SUCCESS', code: 'abc', state: 's'.repeat(64) }
     }))
 

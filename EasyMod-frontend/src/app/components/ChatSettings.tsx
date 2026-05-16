@@ -514,7 +514,7 @@ export default function ChatSettings() {
           <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <Lock className="w-5 h-5 text-gray-400 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Available on Growth &amp; Scale plans</p>
+              <p className="text-sm font-medium text-gray-700">Available on PACKAGE_2 and PARTNER plans</p>
               <p className="text-xs text-gray-500 mt-0.5">
                 <a href="/subscription" className="text-purple-600 hover:underline">Upgrade your plan</a> to unlock AI model selection and advanced AI features.
               </p>
@@ -537,9 +537,9 @@ export default function ChatSettings() {
               <div className="text-xs text-gray-600 space-y-2">
                 <p className="font-medium text-gray-700">Model Selection Strategy:</p>
                 <ul className="space-y-1 ml-3 list-disc list-inside">
-                  <li><span className="font-medium">Starter:</span> Fast & cost-effective (GPT-4o-mini)</li>
-                  <li><span className="font-medium">Growth:</span> Balanced speed & intelligence (mix of models)</li>
-                  <li><span className="font-medium">Scale:</span> Advanced reasoning & efficiency (Claude with caching)</li>
+                  <li><span className="font-medium">PACKAGE_1:</span> Fast & cost-effective (GPT-4o-mini)</li>
+                  <li><span className="font-medium">PACKAGE_2:</span> Balanced speed & intelligence (mix of models)</li>
+                  <li><span className="font-medium">PARTNER:</span> Advanced reasoning & efficiency (Claude with caching)</li>
                 </ul>
                 <p className="mt-3 text-blue-700 font-medium">✓ This optimization reduces costs while improving response quality</p>
               </div>

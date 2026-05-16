@@ -262,8 +262,7 @@ class TestSmartPaymentDetectionService {
         // Keyword matching
         const keywordMap = {
             'cod': ['cod', 'cash', 'ক্যাশ', 'delivery', 'ডেলিভারি'],
-            'bkash': ['bkash', 'বিকাশ', 'bikash'],
-            'nagad': ['nagad', 'নগদ', 'nogod']
+            'bkash': ['bkash', 'বিকাশ', 'bikash']
         };
 
         for (const [method, keywords] of Object.entries(keywordMap)) {
@@ -318,26 +317,6 @@ async function runTests() {
         codOptions.paymentPrompt === null;
     
     console.log(codTestPassed ? '✅ PASSED: COD only shop correctly skips payment step' : '❌ FAILED: COD only shop behavior incorrect');
-
-    // Scenario 2: Self-MFS + COD
-    console.log('\n📋 TEST 2: Tech Store Bangladesh - Self-MFS + COD');
-    console.log('-'.repeat(50));
-
-    mockPaymentConfigs.set('tech-store', [
-        { gateway: 'cod', is_enabled: true, config: {}, credentials: {} },
-        { gateway: 'self-mfs', is_enabled: true, config: { mfs_type: 'nagad', mfs_number: '01812345678' }, credentials: {} }
-    ]);
-    mockBdSettings.set('tech-store', { mfs_enabled: true, mfs_type: 'nagad', mfs_number: '01812345678' });
-
-    const selfMfsOptions = await service.getAvailablePaymentOptions('tech-store', 'mixed');
-
-    console.log('Available Methods:', selfMfsOptions.availableMethods);
-    console.log('Should Skip Payment:', selfMfsOptions.shouldSkipPayment);
-
-    const selfMfsTestPassed = selfMfsOptions.availableMethods.includes('cod') &&
-        selfMfsOptions.paymentOptions.hasCod === true;
-
-    console.log(selfMfsTestPassed ? '✅ PASSED: Self-MFS + COD shop detected' : '❌ FAILED: Self-MFS + COD shop behavior incorrect');
 
     // Scenario 3: Multiple Payment Methods
     console.log('\n📋 TEST 3: Premium Fashion BD - Multiple Payment Methods');
@@ -407,8 +386,7 @@ async function runTests() {
     const validationTests = [
         { shopId: 'fashion-hub', method: 'cod', expected: true, description: 'COD valid for COD shop' },
         { shopId: 'premium-fashion', method: 'bkash', expected: true, description: 'bKash valid for multi shop' },
-        { shopId: 'fashion-hub', method: 'bkash', expected: false, description: 'bKash invalid for COD-only shop' },
-        { shopId: 'tech-store', method: 'bkash', expected: false, description: 'bKash invalid for self-MFS shop' }
+        { shopId: 'fashion-hub', method: 'bkash', expected: false, description: 'bKash invalid for COD-only shop' }
     ];
 
     let validationPassed = 0;
@@ -443,9 +421,9 @@ async function runTests() {
     console.log('🎯 TEST SUMMARY');
     console.log('=' .repeat(80));
     
-    const allTestsPassed = codTestPassed && sslTestPassed && multiTestPassed && 
-        extractionPassed === testInputs.length && 
-        validationPassed === validationTests.length && 
+    const allTestsPassed = codTestPassed && multiTestPassed &&
+        extractionPassed === testInputs.length &&
+        validationPassed === validationTests.length &&
         edgeTestPassed;
     
     console.log(`📊 Overall Result: ${allTestsPassed ? '✅ ALL TESTS PASSED!' : '❌ SOME TESTS FAILED'}`);

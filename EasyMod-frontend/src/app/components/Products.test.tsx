@@ -327,9 +327,13 @@ describe('Products', () => {
     if (deleteButton) {
       await act(async () => { fireEvent.click(deleteButton); });
 
-      // Click confirm button in dialog
+      // Click confirm button in dialog.
+      // The confirm button renders t('common.delete') = 'common.delete' (i18n key).
+      // Use exact text to avoid colliding with aria-labelled row delete buttons.
       await waitFor(() => {
-        const confirmBtn = screen.queryByRole('button', { name: /confirm|yes|delete/i });
+        const allDeleteBtns = screen.queryAllByRole('button', { name: /delete/i });
+        // Confirm button has no aria-label (only text content); row buttons have aria-label
+        const confirmBtn = allDeleteBtns.find(btn => !btn.getAttribute('aria-label'));
         if (confirmBtn) {
           act(() => { fireEvent.click(confirmBtn); });
         }

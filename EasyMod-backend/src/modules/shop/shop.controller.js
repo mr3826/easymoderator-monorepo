@@ -3,7 +3,6 @@ const { Shop } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
-const { setAuthCookies } = require('../../utils/auth-cookies');
 const { getAiSettingsAccess, getAllowedLanguages, getAllowedAutomationModes } = require('../subscription/subscription.plans');
 const cacheService = require('../../utils/cache.service');
 const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
@@ -249,33 +248,6 @@ const updateUserRole = async (req, res, next) => {
     }
 };
 
-/**
- * Switch to a different shop
- */
-const switchShop = async (req, res, next) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
-        const { shopId } = req.body;
-        const switchService = require('./shop-switch.service');
-        const result = await switchService.switchShop(req.user.userId, shopId);
-
-        setAuthCookies(res, result.accessToken, null);
-
-        res.status(200).json({
-            success: true,
-            data: {
-                currentShop: result.currentShop
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
 // Allowed model IDs — validated server-side so callers can't store arbitrary strings.
 const ALLOWED_LLM_MODELS = new Set([
     'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo',
@@ -377,7 +349,7 @@ const getAISettings = async (req, res, next) => {
             ai_settings_access: [...tier.ai_settings_access],
             allowed_languages: [...tier.features.allowed_languages],
             allowed_automation_modes: [...tier.features.allowed_automation_modes],
-            language_autodetect: tier.features.language_autodetect
+            language_autodetect: false
         };
 
         res.status(200).json({ success: true, data: aiSettings, plan_capabilities: planCapabilities });

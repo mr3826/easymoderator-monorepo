@@ -126,19 +126,6 @@ class SmartPaymentDetectionService {
             };
         }
 
-        if (paymentConfigs.some(config => config.gateway === 'nagad-merchant')) {
-            hasMerchantMfs = true;
-            hasOnlinePayment = true;
-            methodDetails.nagad = {
-                type: 'merchant_mfs',
-                gateway: 'nagad',
-                name: 'Nagad',
-                nameBn: 'নগদ',
-                description: 'Pay online via Nagad',
-                descriptionBn: 'নগদ দিয়ে অনলাইনে পেমেন্ট করুন'
-            };
-        }
-
         // Build available methods array in order of preference
         if (hasCod) availableMethods.push('cod');
         if (hasOnlinePayment) {

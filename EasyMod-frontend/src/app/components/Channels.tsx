@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, Lock, FlaskConical, Unplug } from "lucide-react";
+import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, FlaskConical, Unplug } from "lucide-react";
 import { apiClient } from "@/api";
 import type { Channel, FacebookPage } from "@/api/types/channel";
 import { toast } from "sonner";
@@ -76,9 +76,6 @@ export default function Channels() {
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   const { plan } = useSubscriptionFeatures();
-  // Channel count limits removed — all channels available on all plans.
-  const activeChannelCount = channels.filter(c => c.status === 'connected').length;
-  const channelLimitReached = false; // No longer enforced
 
   const fetchChannels = async () => {
     try {
@@ -356,12 +353,10 @@ export default function Channels() {
           <p className="text-gray-600 mt-1 text-sm md:text-base">{t('channels.subtitle')}</p>
         </div>
         <button
-          onClick={() => !channelLimitReached && setShowConnectModal(true)}
-          disabled={channelLimitReached}
-          title={channelLimitReached ? `Channel limit reached (${activeChannelCount}/${maxChannels}). Upgrade your plan to add more.` : undefined}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${channelLimitReached ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          onClick={() => setShowConnectModal(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors bg-blue-600 text-white hover:bg-blue-700"
         >
-          {channelLimitReached ? <Lock className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+          <Plus className="w-5 h-5" />
           {t('channels.connectChannel')}
         </button>
       </div>
@@ -419,9 +414,8 @@ export default function Channels() {
           <h3 className="text-xl font-semibold text-gray-900 mb-2">{t('channels.noChannels')}</h3>
           <p className="text-gray-600 mb-6">{t('channels.noChannelsHint')}</p>
           <button
-            onClick={() => !channelLimitReached && setShowConnectModal(true)}
-            disabled={channelLimitReached}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto disabled:bg-gray-300 disabled:cursor-not-allowed"
+            onClick={() => setShowConnectModal(true)}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 mx-auto"
           >
             <Plus className="w-5 h-5" />
             {t('channels.connectFirst')}
