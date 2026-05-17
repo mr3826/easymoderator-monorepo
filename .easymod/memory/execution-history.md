@@ -8,6 +8,51 @@ _Updated by EM-Orchestrator after every task completion. Provides persistent lea
 
 ## Recent Tasks
 
+## 2026-05-17 — Sign-In Spinner: 4 Additional Root Causes Fixed
+
+**Task:** Diagnose and fix persistent infinite spinner on `/signin` that survived all previous fix attempts. Fresh incognito still hung. Backend reportedly receiving no requests from the browser.
+
+**Outcome:** Deployed and verified. New bundle `index-C9TfGKo8.js` live. CSP header now correctly served.
+
+**Modules Affected:**
+- `EasyMod-frontend/src/shared/lib/http/client.ts`
+- `EasyMod-frontend/src/app/lib/auth.ts`
+- `EasyMod-frontend/src/app/App.tsx`
+- `EasyMod-frontend/nginx.conf`
+
+**Root Causes Identified:**
+
+1. **`isRefreshing` stays true after 8s timeout (frontend):** When `initializeAuth()` times out (8s race), the background `performTokenRefresh` is still running with `isRefreshing=true`. Any 401 received by DashboardLayout API calls during that window (which can last up to 37s due to ECONNABORTED retries) would be pushed onto the refresh queue and silently wait, producing a stuck loading spinner on the dashboard. Fixed by calling `httpClient.abortPendingRefresh()` when the timeout fires, immediately draining the queue and resetting `isRefreshing=false`.
+
+2. **ECONNABORTED retry block not guarded for refresh/auth endpoints (frontend):** The network-error retry block (`ECONNABORTED/ENOTFOUND/ETIMEDOUT`) retried ALL endpoints 3 times with exponential back-off (up to 37s total). This included `/auth/refresh` — meaning a network timeout on the refresh POST would hold `isRefreshing=true` for up to 37s instead of failing fast. Fixed by adding `!isRefreshEndpoint && !isAuthEndpoint` guards (matching the 429/5xx retry block's existing guards).
+
+3. **nginx `add_header` inheritance drops CSP (nginx):** nginx silently discards parent `server {}`-level `add_header` directives in any `location {}` block that defines its own `add_header`. The `location /` SPA fallback block added `Cache-Control` and `Pragma` headers — this caused ALL parent security headers (CSP, HSTS, X-Frame-Options, etc.) to be dropped from HTML responses. The CSP `connect-src https://api.easymod.tech` was not being served to browsers. Fixed by repeating the full security header set in every `location` block that has any `add_header`.
+
+4. **RouterProvider missing `fallbackElement` (frontend UX):** During the initial route loader execution (while `publicLoader` awaits `authService.ensureInitialized()`), React Router showed a blank white screen (null). Users saw no loading indicator for ~0.5-8s on cold page loads. Fixed by adding `fallbackElement={<PageLoader />}` to RouterProvider.
+
+**Architecture Changes:**
+- `HttpClient` now exposes `abortPendingRefresh()` public method — safe for auth.ts to call without importing private internals.
+- nginx.conf now explicitly repeats all security headers in each `location` block. This is the correct pattern for nginx (use `include` fragments for DRY, but inline repetition is acceptable for a small conf file).
+
+**Technical Debt:**
+- nginx.conf is now verbose (security headers repeated 4x). If more `location` blocks are added, each must include the headers. Consider refactoring to an `include` pattern (`/etc/nginx/snippets/security-headers.conf`).
+- The 8s timeout + `abortPendingRefresh()` combination means the background `/api/auth/me` chain is abandoned mid-flight. This is intentional and safe (the IIFE catch handles the rejection gracefully), but it does emit a spurious `auth:unauthorized` event which is then filtered by the `isAuthenticated` check in `AuthProvider`.
+
+**Meta Risk:** N/A — frontend/nginx change only.
+
+**Deployment Verified:**
+- GitHub Actions run 25989046774 succeeded in 1m0s
+- New bundle `index-C9TfGKo8.js` deployed and verified
+- CSP header confirmed in live response: `connect-src 'self' https://api.easymod.tech https://*.googleapis.com https://*.google.com`
+- `abortPendingRefresh` present in deployed bundle
+- `fallbackElement` present in deployed bundle
+- ECONNABORTED guard (`!s&&!o&&`) present in deployed bundle at the correct position
+
+**Future Recommendations:**
+- Consider reducing `JWT_ACCESS_EXPIRES_IN` from 15m to something longer (e.g., 30m or 1h) to reduce refresh frequency and the likelihood of token expiry mid-session.
+- Monitor for `auth:unauthorized` events in Sentry to track how often the refresh cycle is being triggered in production.
+- Add CSP violation reporting endpoint (`report-uri`) to catch any future CSP regressions silently.
+
 ## 2026-05-17 — CSRF-Refresh Deadlock Fix + SameSite Cookie Cross-Domain Fix
 
 **Task:** Deploy CSRF-refresh circular deadlock fix (client.ts interceptors) and fix cross-domain cookie blocking (`sameSite: 'lax'` → `'none'` in production). Remove test job from backend deploy workflow that was blocking all deployments.
