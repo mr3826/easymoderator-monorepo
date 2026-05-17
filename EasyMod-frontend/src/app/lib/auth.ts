@@ -1,4 +1,5 @@
 import { apiClient } from '@/api';
+import { httpClient } from '@/shared/lib/http/client';
 import type { User, Shop, AuthResponse, SigninRequest, SignupRequest, CreateShopRequest } from '@/api/types';
 import { queryClient } from './queryClient';
 
@@ -74,6 +75,16 @@ export class AuthService {
       // Treat as unauthenticated; the in-flight chain will still complete
       // and update state correctly when it finishes, but route loaders
       // are no longer blocked.
+      //
+      // Critically: abort any in-progress token refresh immediately so that
+      // isRefreshing is reset to false right now. Without this, isRefreshing
+      // stays true until the background performTokenRefresh() finishes (up to
+      // 37 s with ECONNABORTED retries). Any 401 received during that window
+      // (e.g. from dashboard API calls after a successful sign-in) would be
+      // pushed onto the refresh queue and silently wait — producing a
+      // "stuck loading" spinner on the dashboard.
+      httpClient.abortPendingRefresh();
+
       this.setAuthState({
         user: null,
         currentShop: null,

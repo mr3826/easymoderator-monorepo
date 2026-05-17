@@ -172,11 +172,19 @@ class HttpClient {
           }
         }
 
-        // Retry network errors with exponential backoff
+        // Retry network errors with exponential backoff.
+        // Never retry the refresh or auth endpoints on network failure:
+        // - /auth/refresh: a network timeout here already caused isRefreshing to stay
+        //   true for up to 37 s (3× retries × 10 s timeout + back-off) before the
+        //   queue was finally cleared. Fail immediately so the refresh cycle exits fast.
+        // - /auth/signin|signup: surface the network error to the user right away
+        //   rather than silently retrying with invisible multi-second delays.
         if (
-          error.code === 'ECONNABORTED' ||
-          error.code === 'ENOTFOUND' ||
-          error.code === 'ETIMEDOUT'
+          !isRefreshEndpoint &&
+          !isAuthEndpoint &&
+          (error.code === 'ECONNABORTED' ||
+            error.code === 'ENOTFOUND' ||
+            error.code === 'ETIMEDOUT')
         ) {
           const retryCount = config.__retryCount || 0;
           if (retryCount < 3) {
@@ -209,6 +217,21 @@ class HttpClient {
     });
     this.refreshQueue = [];
     this.isRefreshing = false;
+  }
+
+  /**
+   * Abort any in-flight token refresh and reject all queued requests immediately.
+   *
+   * Call this when the app-level initialization times out (8 s guard in auth.ts).
+   * Without this, a slow or hanging POST /api/auth/refresh holds isRefreshing=true
+   * indefinitely — any subsequent 401 during that window would be pushed onto the
+   * queue and wait up to 37 s (3× ECONNABORTED retries with back-off) before the
+   * refresh cycle eventually gives up and rejects the queue.
+   */
+  public abortPendingRefresh(): void {
+    if (this.isRefreshing) {
+      this.clearRefreshQueue();
+    }
   }
 
   private async handleRefreshQueue(originalRequest: ExtendedAxiosRequestConfig): Promise<AxiosResponse> {
