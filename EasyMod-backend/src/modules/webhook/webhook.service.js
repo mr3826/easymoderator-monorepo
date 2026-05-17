@@ -32,6 +32,7 @@
  */
 
 const { sendWithRateLimit } = require('../integration/meta-send.service');
+const Customer = require('../customer/customer.entity');
 const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('WebhookService');
@@ -51,6 +52,16 @@ async function sendMessage(channel, recipientId, messageText) {
             hasRecipient: Boolean(recipientId),
             hasMessage: Boolean(messageText)
         });
+        return;
+    }
+
+    // Check customer opt-out before sending any message (Meta policy: must honour opt-out)
+    const customer = await Customer.findOne({
+        where: { shop_id: channel.shop_id, channel_user_id: String(recipientId) },
+        attributes: ['marketing_opt_out']
+    });
+    if (customer?.marketing_opt_out) {
+        logger.info('Skipping send — customer has opted out', { shopId: channel.shop_id, recipientId });
         return;
     }
 

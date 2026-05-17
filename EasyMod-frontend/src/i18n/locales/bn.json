@@ -251,6 +251,44 @@
     }
   },
   "dashboard": {
+    "pulse": {
+      "title": "আজকের অবস্থা",
+      "subtitle": "শপের দ্রুত আপডেট, এক নজরে",
+      "refresh": "রিফ্রেশ",
+      "loading": "আজকের অবস্থা লোড হচ্ছে...",
+      "errorTitle": "ড্যাশবোর্ড লোড করা যায়নি",
+      "errorMsg": "ড্যাশবোর্ড লোড করা যায়নি। ইন্টারনেট সংযোগ যাচাই করুন।",
+      "retry": "আবার চেষ্টা করুন",
+      "partialFail": "কিছু ডেটা আপডেট করা যায়নি।",
+      "cards": {
+        "todaySales": "আজকের বিক্রি",
+        "confirmedOrders": "নিশ্চিত হয়েছে",
+        "confirmedOrdersUnit": "{{count}} টি অর্ডার",
+        "missedReplies": "উত্তর দেওয়া হয়নি",
+        "missedRepliesUnit": "{{count}} টি মিস",
+        "viewMissed": "দেখুন"
+      },
+      "status": {
+        "confirmed": "নিশ্চিত ✅",
+        "cancelled": "বাতিল ❌",
+        "processing": "পেন্ডিং 🕐",
+        "paymentPending": "পেমেন্ট বাকি 💳"
+      },
+      "botActivity": {
+        "title": "বট অ্যাক্টিভিটি",
+        "botReplied": "বট আজ {{count}} জনকে উত্তর দিয়েছে ✅",
+        "needsAttention": "আপনাকে দেখতে হবে এমন: {{count}} টি ⚠️"
+      },
+      "atRisk": "⚠️ {{count}} জন কাস্টমার ঝুঁকিপূর্ণ - এক্ষুনি দেখুন",
+      "latestOrders": {
+        "title": "সর্বশেষ ৫টি অর্ডার",
+        "viewAll": "সব দেখুন",
+        "empty": "আজকে এখনো কোনো অর্ডার আসেনি।",
+        "noProduct": "পণ্য উল্লেখ নেই"
+      },
+      "liveUpdate": "Live update প্রতি 60 সেকেন্ডে",
+      "lastUpdated": "· শেষ আপডেট {{time}}"
+    },
     "nav": {
       "dashboard": "Dashboard",
       "inbox": "Inbox",

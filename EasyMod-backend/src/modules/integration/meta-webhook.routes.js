@@ -214,9 +214,8 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
         return res.sendStatus(403);
       }
     } else {
-      // Secret not configured — warn but continue so messages aren't silently dropped
-      // during initial setup. Set META_WEBHOOK_APP_SECRET to your Meta App Secret to enable verification.
-      logger.warn(`META_WEBHOOK_APP_SECRET not set — skipping signature check for asset ${firstAssetId}`);
+      logger.error('META_WEBHOOK_APP_SECRET not configured — rejecting webhook to prevent unauthenticated payload injection');
+      return res.sendStatus(403);
     }
 
     logger.info(`Received ${payload.object} event for asset ${firstAssetId}`);

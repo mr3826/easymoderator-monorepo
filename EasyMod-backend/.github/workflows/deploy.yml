@@ -73,6 +73,9 @@ jobs:
         run: scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DO_HOST }}:/opt/easymod/docker-compose.prod.yml
 
       - name: Patch seed-admin vars in .env.prod on droplet
+        # Requires secrets.SEED_ADMIN_PASSWORD to be set in GitHub repo Settings → Secrets
+        env:
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
         run: |
           ssh -i ~/.ssh/deploy_key root@${{ secrets.DO_HOST }} '
           set -e
@@ -86,7 +89,7 @@ jobs:
             fi
           }
           patch_var SEED_ADMIN_EMAIL "admin@test.prod"
-          patch_var SEED_ADMIN_PASSWORD "Admin@12345!"
+          patch_var SEED_ADMIN_PASSWORD "'"$SEED_ADMIN_PASSWORD"'"
           patch_var SEED_ADMIN_NAME "EasyMod Admin"
           patch_var SEED_ADMIN_PHONE "01700000000"
           echo "Seed admin vars patched in .env.prod"

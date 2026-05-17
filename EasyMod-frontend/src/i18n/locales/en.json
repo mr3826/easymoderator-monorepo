@@ -252,6 +252,44 @@
     }
   },
   "dashboard": {
+    "pulse": {
+      "title": "Today's Status",
+      "subtitle": "Quick shop update, at a glance",
+      "refresh": "Refresh",
+      "loading": "Loading today's status...",
+      "errorTitle": "Dashboard Could Not Load",
+      "errorMsg": "Dashboard could not load. Check your internet connection.",
+      "retry": "Try Again",
+      "partialFail": "Some data could not be updated.",
+      "cards": {
+        "todaySales": "Today's Sales",
+        "confirmedOrders": "Confirmed",
+        "confirmedOrdersUnit": "{{count}} Orders",
+        "missedReplies": "Unanswered",
+        "missedRepliesUnit": "{{count}} Missed",
+        "viewMissed": "View"
+      },
+      "status": {
+        "confirmed": "Confirmed ✅",
+        "cancelled": "Cancelled ❌",
+        "processing": "Pending 🕐",
+        "paymentPending": "Payment Due 💳"
+      },
+      "botActivity": {
+        "title": "Bot Activity",
+        "botReplied": "Bot replied to {{count}} today ✅",
+        "needsAttention": "You need to check: {{count}} ⚠️"
+      },
+      "atRisk": "⚠️ {{count}} customers at risk — check now",
+      "latestOrders": {
+        "title": "Last 5 Orders",
+        "viewAll": "View All",
+        "empty": "No orders have come in today yet.",
+        "noProduct": "No product specified"
+      },
+      "liveUpdate": "Live update every 60 seconds",
+      "lastUpdated": "· Last updated {{time}}"
+    },
     "nav": {
       "dashboard": "Dashboard",
       "inbox": "Inbox",

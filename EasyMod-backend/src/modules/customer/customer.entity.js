@@ -47,6 +47,11 @@ const Customer = sequelize.define('Customer', {
     metadata: {
         type: DataTypes.JSON,
         defaultValue: {}
+    },
+    marketing_opt_out: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        allowNull: false
     }
 }, {
     tableName: 'customers',

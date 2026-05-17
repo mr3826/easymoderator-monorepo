@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, Bot, CheckCircle2, Clock4, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
@@ -16,11 +17,11 @@ type PulseData = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [pulseData, setPulseData] = useState<PulseData | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // AbortController for request cancellation on unmount
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const formatCurrency = (value: number) =>
@@ -34,13 +35,13 @@ export default function Dashboard() {
     switch (status) {
       case "confirmed":
       case "completed":
-        return { label: "নিশ্চিত ✅", className: "text-green-700 bg-green-50" };
+        return { label: t("dashboard.pulse.status.confirmed"), className: "text-green-700 bg-green-50" };
       case "cancelled":
-        return { label: "বাতিল ❌", className: "text-red-600 bg-red-50" };
+        return { label: t("dashboard.pulse.status.cancelled"), className: "text-red-600 bg-red-50" };
       case "processing":
-        return { label: "পেন্ডিং 🕐", className: "text-orange-600 bg-orange-50" };
+        return { label: t("dashboard.pulse.status.processing"), className: "text-orange-600 bg-orange-50" };
       default:
-        return { label: "পেমেন্ট বাকি 💳", className: "text-orange-600 bg-orange-50" };
+        return { label: t("dashboard.pulse.status.paymentPending"), className: "text-orange-600 bg-orange-50" };
     }
   };
 
@@ -71,16 +72,14 @@ export default function Dashboard() {
         console.error('Failed to load dashboard queue:', queueResult.reason);
       }
 
-      // If all three fail together, show an error instead of a zero-filled dashboard
       if (metricsResult.status === 'rejected' && queueResult.status === 'rejected' && ordersResult.status === 'rejected') {
-        setError("ড্যাশবোর্ড লোড করা যায়নি। ইন্টারনেট সংযোগ যাচাই করুন।");
+        setError(t("dashboard.pulse.errorMsg"));
         return;
       }
 
-      // Partial failures get a non-blocking warning on refresh (not on initial load)
       const failCount = [metricsResult, queueResult, ordersResult].filter(r => r.status === 'rejected').length;
       if (!isInitialLoad && failCount > 0) {
-        toast.warning("কিছু ডেটা আপডেট করা যায়নি।");
+        toast.warning(t("dashboard.pulse.partialFail"));
       }
 
       const metrics = metricsResult.status === 'fulfilled' ? metricsResult.value : null;
@@ -110,7 +109,7 @@ export default function Dashboard() {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refreshPulse(true);
@@ -128,32 +127,32 @@ export default function Dashboard() {
     }
     return [
       {
-        label: "আজকের বিক্রি",
+        label: t("dashboard.pulse.cards.todaySales"),
         value: formatCurrency(pulseData.todaySales),
         icon: Wallet,
         className: "bg-card border border-border",
       },
       {
-        label: "নিশ্চিত হয়েছে",
-        value: `${pulseData.confirmedOrders} টি অর্ডার`,
+        label: t("dashboard.pulse.cards.confirmedOrders"),
+        value: t("dashboard.pulse.cards.confirmedOrdersUnit", { count: pulseData.confirmedOrders }),
         icon: CheckCircle2,
         className: "bg-card border border-border",
       },
       {
-        label: "উত্তর দেওয়া হয়নি",
-        value: `${pulseData.missedReplies} টি মিস`,
+        label: t("dashboard.pulse.cards.missedReplies"),
+        value: t("dashboard.pulse.cards.missedRepliesUnit", { count: pulseData.missedReplies }),
         icon: Clock4,
         className: "bg-red-50 border border-red-200",
       },
     ];
-  }, [pulseData]);
+  }, [pulseData, t]);
 
   if (isLoading) {
     return (
       <div className="min-h-full bg-background p-4 md:p-6">
         <div className="mb-4 flex items-center gap-2 text-gray-600">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm font-semibold">আজকের অবস্থা লোড হচ্ছে...</span>
+          <span className="text-sm font-semibold">{t("dashboard.pulse.loading")}</span>
         </div>
       </div>
     );
@@ -166,7 +165,7 @@ export default function Dashboard() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 text-red-600" />
             <div className="space-y-1">
-              <h3 className="text-base font-bold text-red-900">ড্যাশবোর্ড লোড করা যায়নি</h3>
+              <h3 className="text-base font-bold text-red-900">{t("dashboard.pulse.errorTitle")}</h3>
               <p className="text-sm text-red-700">{error}</p>
             </div>
           </div>
@@ -174,7 +173,7 @@ export default function Dashboard() {
             onClick={() => refreshPulse(true)}
             className="mt-4 min-h-12 rounded-xl bg-red-600 px-4 text-sm font-semibold text-white"
           >
-            আবার চেষ্টা করুন
+            {t("dashboard.pulse.retry")}
           </button>
         </div>
       </div>
@@ -189,14 +188,14 @@ export default function Dashboard() {
     <div className="min-h-full bg-background p-4 md:p-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <h1 className="text-xl font-extrabold text-foreground md:text-2xl">আজকের অবস্থা</h1>
-          <p className="text-sm text-muted-foreground">শপের দ্রুত আপডেট, এক নজরে</p>
+          <h1 className="text-xl font-extrabold text-foreground md:text-2xl">{t("dashboard.pulse.title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("dashboard.pulse.subtitle")}</p>
         </div>
         <button
           onClick={() => refreshPulse(false)}
           className="min-h-12 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground"
         >
-          রিফ্রেশ
+          {t("dashboard.pulse.refresh")}
         </button>
       </div>
 
@@ -218,7 +217,7 @@ export default function Dashboard() {
             >
               <div className="mb-2 flex items-center justify-between">
                 <Icon className="h-5 w-5 text-gray-700" />
-                {isMissCard && <span className="text-xs font-bold text-red-700">দেখুন</span>}
+                {isMissCard && <span className="text-xs font-bold text-red-700">{t("dashboard.pulse.cards.viewMissed")}</span>}
               </div>
               <p className="text-2xl font-black text-foreground md:text-3xl">{card.value}</p>
               <p className="mt-1 text-sm font-semibold text-muted-foreground">{card.label}</p>
@@ -230,18 +229,18 @@ export default function Dashboard() {
       <section className="mb-4 rounded-2xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
           <Bot className="h-5 w-5 text-green-600" />
-          <h2 className="text-base font-bold text-card-foreground">বট অ্যাক্টিভিটি</h2>
+          <h2 className="text-base font-bold text-card-foreground">{t("dashboard.pulse.botActivity.title")}</h2>
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           <div className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">
-            বট আজ {pulseData.botReplies} জনকে উত্তর দিয়েছে ✅
+            {t("dashboard.pulse.botActivity.botReplied", { count: pulseData.botReplies })}
           </div>
           <button
             onClick={() => navigate("/app/inbox?tab=needs_review")}
             className="min-h-12 rounded-xl bg-amber-50 p-3 text-left text-sm font-semibold text-amber-800"
             type="button"
           >
-            আপনাকে দেখতে হবে এমন: {pulseData.needsAttention} টি ⚠️
+            {t("dashboard.pulse.botActivity.needsAttention", { count: pulseData.needsAttention })}
           </button>
         </div>
       </section>
@@ -253,25 +252,25 @@ export default function Dashboard() {
             type="button"
             className="w-full text-left text-sm font-bold text-red-800"
           >
-            ⚠️ {pulseData.atRiskCount} জন কাস্টমার ঝুঁকিপূর্ণ - এক্ষুনি দেখুন
+            {t("dashboard.pulse.atRisk", { count: pulseData.atRiskCount })}
           </button>
         </section>
       )}
 
       <section className="rounded-2xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-card-foreground">সর্বশেষ ৫টি অর্ডার</h2>
+          <h2 className="text-base font-bold text-card-foreground">{t("dashboard.pulse.latestOrders.title")}</h2>
           <button
             onClick={() => navigate("/app/orders")}
             className="min-h-12 rounded-xl px-3 text-sm font-semibold text-green-600"
             type="button"
           >
-            সব দেখুন
+            {t("dashboard.pulse.latestOrders.viewAll")}
           </button>
         </div>
 
         {pulseData.lastFiveOrders.length === 0 ? (
-          <p className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-600">আজকে এখনো কোনো অর্ডার আসেনি।</p>
+          <p className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-600">{t("dashboard.pulse.latestOrders.empty")}</p>
         ) : (
           <div className="space-y-2">
             {pulseData.lastFiveOrders.map((order) => {
@@ -289,7 +288,7 @@ export default function Dashboard() {
                     <div>
                       <p className="text-sm font-bold text-card-foreground">{order.customerName}</p>
                       <p className="text-sm text-muted-foreground">
-                        {firstItem?.productName || "পণ্য উল্লেখ নেই"} · {formatCurrency(Number(order.total) || 0)}
+                        {firstItem?.productName || t("dashboard.pulse.latestOrders.noProduct")} · {formatCurrency(Number(order.total) || 0)}
                       </p>
                     </div>
                     <span className={`inline-flex rounded-full px-2 py-1 text-xs font-bold ${status.className}`}>
@@ -303,7 +302,8 @@ export default function Dashboard() {
         )}
 
         <p className="mt-3 text-xs font-medium text-muted-foreground">
-          Live update প্রতি 60 সেকেন্ডে {lastUpdatedAt ? `· শেষ আপডেট ${lastUpdatedAt.toLocaleTimeString("bn-BD")}` : ""}
+          {t("dashboard.pulse.liveUpdate")}
+          {lastUpdatedAt ? ` ${t("dashboard.pulse.lastUpdated", { time: lastUpdatedAt.toLocaleTimeString("bn-BD") })}` : ""}
         </p>
       </section>
     </div>

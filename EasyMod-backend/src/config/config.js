@@ -37,7 +37,7 @@ const isWeakSecret = (value) => {
     return value.length < 16;
 };
 
-if (env === 'production') {
+if (['production', 'staging'].includes(env)) {
     [
         'DATABASE_URL',
         'JWT_ACCESS_SECRET',

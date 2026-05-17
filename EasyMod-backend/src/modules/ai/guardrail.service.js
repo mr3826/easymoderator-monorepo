@@ -317,8 +317,23 @@ class GuardrailService {
     _checkToxicity(text) {
         // TODO: replace with Google Perspective API or OpenAI Moderation for production accuracy
         const toxicPatterns = [
+            // English profanity
             /fuck|shit|ass|bitch|cunt|bastard|damn|hell/i,
             /kill|murder|suicide|rape|abuse/i,
+            // Romanised Bangla/Banglish profanity (common in BD f-commerce abuse)
+            /\b(maadar|madar)\s*(chod|chud)\b/i,
+            /\b(bhosdike|bhosdika|bhosdi)\b/i,
+            /\b(haramzada|haraamzada|haramzaada)\b/i,
+            /\b(harami|haraamee)\b/i,
+            /\b(gaand|gaandu)\b/i,
+            /\b(randi|raandi)\b/i,
+            /\b(shuorer|shuor)\b/i,
+            /\b(bokachoda|boka\s*choda)\b/i,
+            // Unicode Bangla profanity
+            /মাদারচোদ|মাদারচোদ|মাদার\s*চোদ/,
+            /হারামি|হারামজাদা/,
+            /শালার\s*বাচ্চা|শালা/,
+            /কুত্তার\s*বাচ্চা|কুত্তা/,
         ];
         const matches = toxicPatterns.filter(p => p.test(text)).length;
         return Math.min(matches * 0.3, 0.9); // 0 = clean, 0.9 = very toxic

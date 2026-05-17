@@ -225,21 +225,29 @@ export class AuthService {
   }
 
   hasPermission(permission: string): boolean {
-    // TODO: Implement proper permission checking based on role
     if (!this.authState.currentShop) return false;
 
-    const role = this.authState.currentShop.role;
-    // Simple role-based permissions
-    switch (permission) {
-      case 'manage_products':
-        return ['owner', 'admin'].includes(role);
-      case 'manage_orders':
-        return ['owner', 'admin', 'staff'].includes(role);
-      case 'view_reports':
-        return ['owner', 'admin'].includes(role);
-      default:
-        return false;
-    }
+    // Shop role → permission matrix (mirrors SHOP_PERMISSION_MATRIX in rbac/types.ts)
+    const SHOP_ROLE_PERMISSIONS: Record<string, string[]> = {
+      owner: [
+        'manage_products', 'manage_orders', 'view_reports', 'manage_channels',
+        'manage_subscription', 'manage_staff', 'view_analytics', 'manage_settings',
+        'manage_knowledge', 'manage_templates', 'manage_customers',
+      ],
+      admin: [
+        'manage_products', 'manage_orders', 'view_reports', 'manage_channels',
+        'view_analytics', 'manage_settings', 'manage_knowledge', 'manage_templates',
+        'manage_customers',
+      ],
+      manager: [
+        'manage_products', 'manage_orders', 'view_reports', 'manage_channels',
+        'view_analytics', 'manage_knowledge', 'manage_templates', 'manage_customers',
+      ],
+      staff: ['manage_orders', 'view_reports', 'view_analytics'],
+    };
+
+    const role = (this.authState.currentShop.role ?? '').toLowerCase();
+    return SHOP_ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
   }
 }
 
