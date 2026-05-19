@@ -37,6 +37,9 @@ const LandingPage = lazy(() => import("./components/LandingPage"));
 const Pricing = lazy(() => import("./components/Pricing"));
 const UsersPage = lazy(() => import("./features/users/components/UsersPage"));
 
+// Phase 4 — Comment-to-DM page
+const CommentToDmPage = lazy(() => import("./components/CommentToDm"));
+
 // BD-Lite specific imports
 const BDSellerShell = lazy(() => import("./components/bd-lite/BDSellerShell"));
 const TodayQueueDashboard = lazy(() => import("./components/bd-lite/TodayQueueDashboard"));
@@ -124,6 +127,7 @@ export const router = createBrowserRouter([
 			{ index: true, Component: withSuspense(Dashboard) },
 			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
 			{ path: "channels", Component: withSuspense(Channels) },
+				{ path: "channels/comment-to-dm", Component: withSuspense(CommentToDmPage) },
 			{
 				path: "manage-shop",
 				Component: withSuspense(ManageShop),

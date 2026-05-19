@@ -7,7 +7,6 @@ export * from './auth';
 export * from './product';
 export * from './order';
 export * from './customer';
-export * from './channel';
 export * from './conversation';
 export * from './dashboard';
 export * from './knowledge';

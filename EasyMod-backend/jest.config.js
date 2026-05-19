@@ -15,16 +15,13 @@ module.exports = {
         'tests/features/customer-intelligence.test.js',
         // Full app integration tests — require live DB + Redis + running server
         'src/modules/ai/__tests__/chatbot-rag.test.js',
-        'tests/webhooks/meta-page-integration.test.js',
         // Auth tests have ordering/isolation bugs needing investigation
         'src/modules/auth/__tests__/auth.test.js',
         'src/modules/auth/__tests__/auth.security.test.js',
         'src/modules/auth/__tests__/totp.service.test.js',
-        // Meta integration test suite — guard-ordering assertion failures
-        'tests/meta-integration.test.js',
-        'tests/webhooks/meta-webhook.test.js',
-        'src/modules/integration/__tests__/meta.service.test.js',
-        'src/modules/integration/__tests__/meta-webhook.routes.test.js',
+        // Dead tests deleted in Phase 5 Step 2 (these files no longer exist):
+        // tests/meta-integration.test.js, tests/webhooks/meta-webhook.test.js,
+        // src/modules/integration/__tests__/meta.service.test.js
         // Campaign module tests — module deleted in active branch
         'src/jobs/__tests__/campaign-sender.job.test.js',
         'src/modules/campaign/__tests__/campaign.api.integration.test.js',

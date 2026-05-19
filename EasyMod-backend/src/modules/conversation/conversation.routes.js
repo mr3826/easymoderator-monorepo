@@ -21,7 +21,10 @@ router.get(
     conversationController.getHistory
 );
 
-// SSE stream — must be before /:conversationId to avoid param capture
+// SSE stream — must be before /:conversationId to avoid param capture.
+// Supports Last-Event-ID header for replay on reconnect (handled by
+// sseManager.attachToRequest inside the controller). Each emitted event
+// includes an "id:" line so the browser can track the last received id.
 router.get(
     '/events',
     conversationController.getEventStream

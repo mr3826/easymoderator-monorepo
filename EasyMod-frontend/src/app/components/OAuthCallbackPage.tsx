@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { apiClient } from '@/api';
+import { handleMetaOAuthCallback } from '@/api/domains/meta-channels';
 
 /**
  * Popup landing page for Meta OAuth callback.
@@ -38,10 +38,19 @@ export default function OAuthCallbackPage() {
 
     if (!code || !state) return;
 
+    // Reconnect flow (Phase 2): the opener stashes the channelId it wants to
+    // refresh under `easymod_oauth_channel_id` before opening the popup. We
+    // forward it back in the OAUTH_SUCCESS payload so the opener knows which
+    // channel record to update. Absent for fresh connections.
+    const reconnectChannelId = sessionStorage.getItem('easymod_oauth_channel_id') || undefined;
+
     // ── Happy path: popup with live opener ───────────────────────────────────
     if (window.opener) {
       try {
-        window.opener.postMessage({ type: 'OAUTH_SUCCESS', code, state }, window.location.origin);
+        window.opener.postMessage(
+          { type: 'OAUTH_SUCCESS', code, state, channelId: reconnectChannelId },
+          window.location.origin,
+        );
         window.close();
         return;
       } catch { /* opener from different origin — fall through to self-complete */ }
@@ -49,11 +58,11 @@ export default function OAuthCallbackPage() {
 
     // ── Fallback: opener was cleared (cross-origin redirect security) ────────
     // Complete the OAuth exchange in this tab directly.
-    const channelType = (sessionStorage.getItem('easymod_oauth_channel_type') || 'facebook') as 'facebook' | 'instagram';
     sessionStorage.removeItem('easymod_oauth_channel_type');
     sessionStorage.removeItem('easymod_oauth_nonce');
+    sessionStorage.removeItem('easymod_oauth_channel_id');
 
-    apiClient.handleOAuthCallback(code, state, channelType)
+    handleMetaOAuthCallback(code, state)
       .catch(() => { /* ignore — channels page will show current state */ })
       .finally(() => {
         window.location.href = '/app/channels';

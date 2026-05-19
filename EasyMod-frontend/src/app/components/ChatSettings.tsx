@@ -1,31 +1,24 @@
 import { useEffect, useState } from "react";
 import { MessageSquare, Instagram, CheckCircle, Clock, X, AlertCircle, ChevronDown, Loader2, Shield, Cpu, Lock, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
-import { apiClient } from "@/api";
-import type { Channel as BackendChannel } from "@/api/types/channel";
+import {
+  listMetaChannels,
+  disconnectMetaChannel,
+  type MetaChannel,
+} from "@/api/domains/meta-channels";
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 
 interface Channel {
   id: string;
   name: string;
-  type: 'facebook' | 'instagram';
+  platform: 'facebook' | 'instagram';
   logo: React.ReactNode;
   description: string;
   status: 'connected' | 'not_connected' | 'connecting';
   connectedAccount?: string;
-  lastSync?: string;
+  lastRefreshedAt?: string;
   hasToken?: boolean;
   tokenExpiresAt?: string | null;
-  businessManagerId?: string;
-  savedSettings?: {
-    aiAutoReply?: boolean;
-    requireApproval?: boolean;
-    businessHours?: boolean;
-    allowOrderCreation?: boolean;
-    autoDetectProducts?: boolean;
-    draftOrdersOnly?: boolean;
-    requireManualConfirmation?: boolean;
-  };
 }
 
 export default function ChatSettings() {
@@ -42,17 +35,6 @@ export default function ChatSettings() {
 
   const { features: planFeatures } = useSubscriptionFeatures();
 
-  const CHANNEL_SETTINGS_DEFAULTS = {
-    aiAutoReply: true,
-    requireApproval: false,
-    businessHours: false,
-    allowOrderCreation: true,
-    autoDetectProducts: true,
-    draftOrdersOnly: false,
-    requireManualConfirmation: true,
-  };
-  const [channelSettings, setChannelSettings] = useState({ ...CHANNEL_SETTINGS_DEFAULTS });
-
   const statusConfig = {
     connected: { icon: CheckCircle, label: 'Connected', color: 'bg-green-100 text-green-800' },
     not_connected: { icon: Clock, label: 'Not Connected', color: 'bg-gray-100 text-gray-800' },
@@ -63,35 +45,30 @@ export default function ChatSettings() {
     try {
       setIsLoading(true);
       setLoadError(null);
-      const backendChannels = await apiClient.getChannels();
-      const mapped = backendChannels.map((channel: BackendChannel): Channel => {
+      const metaChannels = await listMetaChannels();
+      const mapped = metaChannels.map((channel: MetaChannel): Channel => {
         const descriptionMap: Record<string, string> = {
           facebook: 'Facebook Page এর জন্য — কাস্টমারের DM ও Order নিন',
           instagram: 'Instagram Shop এর জন্য — DM থেকে Order নিন',
         };
 
-        const status = channel.connected || channel.status === 'active'
-          ? 'connected'
-          : 'not_connected';
+        const status = channel.status === 'CONNECTED' ? 'connected' : 'not_connected';
 
-        const type = (channel.type || (channel as any).channel_type || 'facebook') as Channel['type'];
-        const logo = type === 'instagram'
+        const logo = channel.platform === 'instagram'
           ? <Instagram className="w-8 h-8 text-pink-600" />
           : <MessageSquare className="w-8 h-8 text-blue-600" />;
 
         return {
           id: channel.id,
-          name: channel.name || type,
-          type,
+          name: channel.displayName,
+          platform: channel.platform,
           logo,
-          description: descriptionMap[type] || 'Customer messaging channel',
+          description: descriptionMap[channel.platform] || 'Customer messaging channel',
           status,
-          connectedAccount: channel.name || undefined,
-          lastSync: channel.lastSync || channel.last_sync || undefined,
-          hasToken: channel.config?.hasToken ?? false,
-          tokenExpiresAt: (channel as any).token_expires_at ?? null,
-          businessManagerId: channel.config?.businessManagerId,
-          savedSettings: channel.config?.settings || undefined,
+          connectedAccount: channel.displayName,
+          lastRefreshedAt: channel.tokenLastRefreshedAt || undefined,
+          hasToken: channel.status === 'CONNECTED',
+          tokenExpiresAt: channel.tokenExpiresAt,
         };
       });
 
@@ -99,7 +76,7 @@ export default function ChatSettings() {
         {
           id: 'facebook',
           name: 'Messenger',
-          type: 'facebook',
+          platform: 'facebook',
           logo: <MessageSquare className="w-8 h-8 text-blue-600" />,
           description: 'Facebook Page এর জন্য — কাস্টমারের DM ও Order নিন',
           status: 'not_connected'
@@ -107,16 +84,16 @@ export default function ChatSettings() {
         {
           id: 'instagram',
           name: 'Instagram',
-          type: 'instagram',
+          platform: 'instagram',
           logo: <Instagram className="w-8 h-8 text-pink-600" />,
           description: 'Instagram Shop এর জন্য — DM থেকে Order নিন',
           status: 'not_connected'
         }
       ];
 
-      const merged = mapped.filter(channel => ['facebook', 'instagram'].includes(channel.type));
+      const merged = mapped.filter(channel => ['facebook', 'instagram'].includes(channel.platform));
       defaults.forEach((channel) => {
-        if (!merged.find(existing => existing.type === channel.type)) {
+        if (!merged.find(existing => existing.platform === channel.platform)) {
           merged.push(channel);
         }
       });
@@ -137,12 +114,12 @@ export default function ChatSettings() {
   }, []);
 
   const handleDisconnect = async (channel: Channel) => {
-    if (channel.id === channel.type) {
+    if (channel.id === channel.platform) {
       setShowToast({ type: 'error', message: 'This channel is not connected yet.' });
       return;
     }
     try {
-      await apiClient.disconnectChannel(channel.id);
+      await disconnectMetaChannel(channel.id);
       await loadChannels();
       setShowToast({ type: 'success', message: `${channel.name} disconnected successfully.` });
     } catch (error: any) {
@@ -154,19 +131,12 @@ export default function ChatSettings() {
   };
 
   const handleManageChannel = (channel: Channel) => {
-    const saved = channel.savedSettings || {} as any;
-    setChannelSettings({ ...CHANNEL_SETTINGS_DEFAULTS, ...saved });
     setManagedChannel({
       ...channel,
       connectedAccount: channel.connectedAccount || '',
-      lastSync: channel.lastSync || '',
-      businessManagerId: channel.businessManagerId || '',
+      lastRefreshedAt: channel.lastRefreshedAt || '',
     });
     setShowManageModal(true);
-  };
-
-  const handleSettingsChange = (key: keyof typeof channelSettings) => {
-    setChannelSettings(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const formatDate = (dateString?: string) => {
@@ -242,8 +212,8 @@ export default function ChatSettings() {
               {channel.status === 'connected' && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-sm">
                   <div className="font-medium text-green-900">{channel.connectedAccount}</div>
-                  {channel.lastSync && (
-                    <div className="text-green-700 text-xs">Last sync: {formatDate(channel.lastSync)}</div>
+                  {channel.lastRefreshedAt && (
+                    <div className="text-green-700 text-xs">Last refresh: {formatDate(channel.lastRefreshedAt)}</div>
                   )}
                 </div>
               )}
@@ -356,8 +326,8 @@ export default function ChatSettings() {
                     <p className="font-medium text-gray-900">{managedChannel.connectedAccount}</p>
                   </div>
                   <div>
-                    <span className="text-gray-600">Last Sync:</span>
-                    <p className="font-medium text-gray-900">{formatDate(managedChannel.lastSync)}</p>
+                    <span className="text-gray-600">Last Refresh:</span>
+                    <p className="font-medium text-gray-900">{formatDate(managedChannel.lastRefreshedAt)}</p>
                   </div>
                   <div>
                     <span className="text-gray-600">সংযোগ:</span>
@@ -375,74 +345,6 @@ export default function ChatSettings() {
                       )}
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Message Handling */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3">Message Handling</h4>
-                <div className="space-y-3">
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.aiAutoReply}
-                      onChange={() => handleSettingsChange('aiAutoReply')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">AI Auto-Reply</span>
-                  </label>
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.requireApproval}
-                      onChange={() => handleSettingsChange('requireApproval')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">Require Manual Approval</span>
-                  </label>
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.businessHours}
-                      onChange={() => handleSettingsChange('businessHours')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">Business Hours Only</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Order Control */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3">Order Control</h4>
-                <div className="space-y-3">
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.allowOrderCreation}
-                      onChange={() => handleSettingsChange('allowOrderCreation')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">Allow Order Creation</span>
-                  </label>
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.autoDetectProducts}
-                      onChange={() => handleSettingsChange('autoDetectProducts')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">Auto-Detect Products</span>
-                  </label>
-                  <label className="flex items-center space-x-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={channelSettings.draftOrdersOnly}
-                      onChange={() => handleSettingsChange('draftOrdersOnly')}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm text-gray-700">Draft Orders Only</span>
-                  </label>
                 </div>
               </div>
 
@@ -470,29 +372,6 @@ export default function ChatSettings() {
                 className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
               >
                 Close
-              </button>
-              <button
-                onClick={async () => {
-                  if (!managedChannel) return;
-                  try {
-                    await apiClient.updateChannel(managedChannel.id, {
-                      config: {
-                        settings: channelSettings,
-                      }
-                    } as any);
-                    setShowManageModal(false);
-                    setShowToast({ type: 'success', message: 'Settings saved successfully!' });
-                    loadChannels();
-                  } catch (error: any) {
-                    setShowToast({
-                      type: 'error',
-                      message: error.response?.data?.error?.message || 'Failed to save settings'
-                    });
-                  }
-                }}
-                className="px-4 py-2 text-white bg-blue-600 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-              >
-                Save Changes
               </button>
             </div>
           </div>
@@ -537,11 +416,11 @@ export default function ChatSettings() {
               <div className="text-xs text-gray-600 space-y-2">
                 <p className="font-medium text-gray-700">Model Selection Strategy:</p>
                 <ul className="space-y-1 ml-3 list-disc list-inside">
-                  <li><span className="font-medium">PACKAGE_1:</span> Fast & cost-effective (GPT-4o-mini)</li>
-                  <li><span className="font-medium">PACKAGE_2:</span> Balanced speed & intelligence (mix of models)</li>
-                  <li><span className="font-medium">PARTNER:</span> Advanced reasoning & efficiency (Claude with caching)</li>
+                  <li><span className="font-medium">PACKAGE_1:</span> Fast &amp; cost-effective (GPT-4o-mini)</li>
+                  <li><span className="font-medium">PACKAGE_2:</span> Balanced speed &amp; intelligence (mix of models)</li>
+                  <li><span className="font-medium">PARTNER:</span> Advanced reasoning &amp; efficiency (Claude with caching)</li>
                 </ul>
-                <p className="mt-3 text-blue-700 font-medium">✓ This optimization reduces costs while improving response quality</p>
+                <p className="mt-3 text-blue-700 font-medium">This optimization reduces costs while improving response quality</p>
               </div>
             </div>
           </div>

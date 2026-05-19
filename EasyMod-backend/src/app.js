@@ -145,7 +145,9 @@ if (config.env !== 'test') {
 }
 
 // Webhook routes (must be before JSON parsing middleware)
-app.use('/webhooks/meta', metaWebhookRoutes);
+// Phase 5: only canonical /api/webhooks/meta remains.
+// Update your Meta App Dashboard webhook URL to use /api/webhooks/meta.
+app.use('/api/webhooks/meta', metaWebhookRoutes);
 app.use('/webhooks/delivery', courierWebhookRoutes);
 
 // Body parsing — verify callback captures raw bytes so payment HMAC middleware

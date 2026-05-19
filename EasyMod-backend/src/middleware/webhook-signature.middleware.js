@@ -33,13 +33,15 @@ const verifyHmacSignature = (rawBody, receivedSignature, secret) => {
 const getWebhookSecret = async (req, webhookType = 'default', integrationId = null) => {
   if (integrationId) {
     try {
-      const Integration = require('../modules/integration/meta-integration.entity');
-      const integration = await Integration.findByPk(integrationId);
-      if (integration && integration.status === 'CONNECTED') {
-        const secretField = webhookType === 'meta' ? 'app_secret' : 'webhook_secret';
-        if (integration[secretField]) {
-          logger.debug('Using secret by integration_id');
-          return integration[secretField];
+      const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
+      const channel = await MetaChannel.findOne({ where: { webhook_verify_token: integrationId, status: 'CONNECTED' } });
+      if (channel) {
+        // MetaChannel stores the per-channel verify token; the shared app secret
+        // lives in the META_WEBHOOK_APP_SECRET env var — return it for HMAC.
+        const envSecret = process.env.META_WEBHOOK_APP_SECRET;
+        if (envSecret) {
+          logger.debug('Using app secret via MetaChannel lookup');
+          return envSecret;
         }
       }
     } catch (err) {

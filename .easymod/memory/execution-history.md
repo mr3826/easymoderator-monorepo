@@ -8,6 +8,118 @@ _Updated by EM-Orchestrator after every task completion. Provides persistent lea
 
 ## Recent Tasks
 
+## 2026-05-19 — Meta Integration Redesign Phase 5 Step 3: Frontend Cutover
+
+**Task:** Implement Step 3 (commit 3) of Phase 5 — frontend fully cuts over from legacy `api/domains/channel.ts` + `api/types/channel.ts` to the canonical `api/domains/meta-channels.ts` client. Branch: `feature/meta-redesign-phase5-cutover` (frontend repo).
+
+**Outcome:** Build clean (0 TS errors). 18 tests passing in our modified files. Pre-existing failures (7 files / 51 tests) are all in unrelated domains (product, customer, knowledge, subscription, CSRF) — none caused by this step. Commit `33229ba`.
+
+**Files Deleted:**
+- `src/api/types/channel.ts` — legacy Channel type (now MetaChannel from meta-channels.ts)
+- `src/api/domains/channel.ts` — legacy channel REST client (10 functions)
+- `src/api/domains/__tests__/channel.test.ts` — legacy tests
+
+**Files Modified:**
+- `src/api/types/index.ts` — removed `export * from './channel'`
+- `src/api/domains/index.ts` — removed `export * as channel from './channel'`
+- `src/api/index.ts` — removed 10 legacy `channelDomain.*` methods from `apiClient`; added 8 meta-channels methods (`listMetaChannels`, `initiateMetaOAuth`, `handleMetaOAuthCallback`, `connectMetaAsset`, `disconnectMetaChannel`, `reconnectMetaChannel`, `pingMetaChannel`, `getMetaChannelConsentSummary`)
+- `src/app/components/Channels.tsx` — full rewrite: state is `MetaChannel[]` instead of `Channel[]`; removed `metaByPageId` bridge; consent panel keys off `channel.id` directly; all API calls use meta-channels functions; `connectMetaAsset` uses object arg `{ assetId, displayName, tempToken }`
+- `src/app/components/OAuthCallbackPage.tsx` — replaced `apiClient.handleOAuthCallback()` with `handleMetaOAuthCallback()`; removed `channelType` sessionStorage param (not needed by new API)
+- `src/app/components/ChatSettings.tsx` — replaced `apiClient.getChannels()` with `listMetaChannels()`; replaced `apiClient.disconnectChannel()` with `disconnectMetaChannel()`; replaced `channel.channel_type || channel.type` with `channel.platform`; DELETED dead `updateChannel()` call at old line 478 and its "Save Changes" button
+- `src/app/components/ChatSettings.test.tsx` — fixtures rewritten to `MetaChannel` shape; mocks `@/api/domains/meta-channels` instead of `@/api`
+- `src/app/components/Customers.tsx` — replaced `import type { ChannelType }` with local `type ChannelType = string`
+- `src/app/components/Reports.tsx` — replaced `apiClient.getChannels()` with `listMetaChannels()` from meta-channels; updated `Channel` → `MetaChannel` usage
+- `src/test/Channels.test.tsx` — updated to mock `@/api/domains/meta-channels` directly; updated assertions for new function names (`initiateMetaOAuth`, `handleMetaOAuthCallback`, `connectMetaAsset`)
+- `src/test/Reports.test.tsx` — added mock for `@/api/domains/meta-channels`; kept `@/api` mock for `getDashboardMetrics`/`getKnowledgeGaps`
+
+**Key technical decisions:**
+- `meta-channels.ts` exports `handleMetaOAuthCallback` (not `completeMetaOAuthCallback` as the plan named it) — used actual export name
+- `connectMetaAsset` takes `{ assetId, displayName, tempToken }` object — updated all call-sites
+- `pingMetaChannel` (not `testMetaWebhook`) — the actual Phase 2 export name
+- `Reports.tsx` channels section now always shows 0 messages per channel (MetaChannel has no messageCount field); this is a known limitation — message counts will be added in Phase 6 observability work
+
+**Acceptance checks passed:**
+- `grep -rE "from.*api/(types|domains)/channel"` → 0 matches
+- `grep -rn "apiClient\.(getChannels|initiateOAuth|...)"` → 0 matches
+- `npm run build` → clean bundle, 0 TS errors
+- All 18 tests in modified files pass
+
+## 2026-05-19 — Meta Integration Redesign Phase 4 (Track A): SSE Redis Pub/Sub Bridge
+
+**Task:** Implement Track A of Phase 4 — SSE Redis pub/sub bridge so events emitted on backend instance A reach SSE clients connected to instance B. Also adds Last-Event-ID replay. Branch: `feature/meta-redesign-phase4-comment-to-dm`.
+
+**Outcome:** 24/24 new tests pass. 664 existing tests pass. 2 pre-existing failures in Track B's `comment-to-dm.service.test.js` (invalid state machine transitions — not caused by Track A).
+
+**Files Created:**
+
+- `EasyMod-backend/src/utils/sse-bus.js` — SSEBus class (Redis pub/sub bridge). Channel naming: `sse:shop:{shopId}`. Replay buffer: `LIST sse:shop:{shopId}:replay` (LPUSH, LTRIM 0 49, EXPIRE 600). Sequence: `INCR sse:shop:{shopId}:seq`. Exports class + `getBus()` singleton factory. Fallback to in-process EventEmitter when `_isMemoryFallback=true`. No double-emit: publish() only calls Redis publish; delivery to local handlers is exclusively via the subscription callback.
+- `EasyMod-backend/src/utils/__tests__/sse-bus.test.js` — 24 tests (TDD-first): sequence monotonicity, replay buffer cap/TTL/ordering, pub/sub delivery, cross-shop isolation, malformed JSON tolerance, fallback mode, no-double-emit invariant.
+- `EasyMod-frontend/src/api/sse-client.ts` — Typed SSEClient class. EventSource wrapper with: typed `on(event, handler)` / `off()`, automatic Last-Event-ID tracking (sessionStorage for page-reload fallback), exponential backoff reconnect (1s→30s with jitter), `emitToAll` support, `createSSEClient()` factory. Documents that the browser sends Last-Event-ID automatically per W3C spec — no manual header injection needed.
+
+**Files Modified:**
+
+- `EasyMod-backend/src/config/redis.js` — Added `sseRedisPub` and `sseRedisSub` clients (DB 3). Both exported. `closeAllRedis()` now quits both. `checkRedisAvailability()` now reports `ssePub` and `sseSub`. Memory-fallback path creates no-op pub/sub stubs with `subscribe`/`unsubscribe` methods so sse-bus can detect and enter fallback mode.
+- `EasyMod-backend/src/utils/sse-manager.js` — Full rewrite retaining identical public interface (`register`, `unregister`, `emit`). Internally: `emit()` publishes to SSEBus (not direct `res.write`). `register()` calls `_ensureSubscribed()` which subscribes process to Redis channel on first local connection. `unregister()` calls `_maybeUnsubscribe()` which releases Redis channel when last local connection closes. Added: `attachToRequest(req, res, shopId)` (reads Last-Event-ID, replays, then registers), `emitToAll(event, data)` (retained for circuit-breaker back-compat), `getLocalConnectionCount()`, `getPubSubStatus()`.
+- `EasyMod-backend/src/modules/conversation/conversation.controller.js` — `getEventStream` made async; switched from `sseManager.register()` to `sseManager.attachToRequest()` for Last-Event-ID replay support; added `Access-Control-Expose-Headers: Last-Event-ID`.
+- `EasyMod-backend/src/modules/conversation/conversation.routes.js` — Added comment documenting Last-Event-ID support and replay behaviour.
+- `EasyMod-backend/src/routes/health.routes.js` — Added `GET /health/sse` returning `{ connections, pubsub: 'ready'|'fallback'|'down' }`.
+
+**Architecture Notes:**
+
+- Dedicated DB 3 for SSE pub/sub to avoid `subscribe` mode locking the pipeline on DB 0–2 (ioredis subscriber clients cannot issue regular commands).
+- `sseRedisSub` client is exclusively in subscribe mode; `sseRedisPub` handles INCR, LPUSH, LTRIM, EXPIRE, LRANGE, PUBLISH.
+- Replay buffer is LPUSH (newest at index 0), LTRIM to 50, EXPIRE 600. `getReplay()` does LRANGE 0 -1, filters id > lastEventId in JS, sorts ascending (oldest first) before sending.
+- No double-emit guaranteed by architecture: publish() calls Redis PUBLISH only. The SSE-sub 'message' event handler routes to local res objects.
+- `emitToAll` retained (not in original v1) because `circuit-breaker.service.js` calls it. The service guards with `typeof emitToAll === 'function'` — the new manager exports it properly.
+- SSEClient stores lastEventId in sessionStorage (not localStorage) as it's session-scoped, plus appends `last_event_id` as query param as a reload-fallback since browsers do not persist Last-Event-ID across full navigations.
+
+**Meta Policy Verdict:** SAFE — pure infrastructure, no Meta API calls, no messaging, no user data sent outbound.
+
+**Not Done (out of scope for Track A):**
+
+- Track B files (commentToDm module, MetaMessengerProvider, MetaInstagramProvider, queue-manager, meta-webhook.routes)
+
+## 2026-05-18 — Meta Integration Redesign Phase 1 (Chunk A): Foundations
+
+**Task:** Implement Phase 1 Chunk A of the Meta Integration Redesign per plan `redesign-and-restructure-the-enchanted-feigenbaum.md`. Branch: `feature/meta-redesign-phase1-foundations`.
+
+**Outcome:** All 30 tests pass (18 cipher + 12 entity). No regressions introduced (pre-existing `webhook.service.test.js` failures confirmed unrelated — SequelizeConnectionRefusedError from missing test DB).
+
+**Files Created:**
+
+- `EasyMod-backend/src/utils/meta-token-cipher.js` — Versioned AES-256-GCM cipher. Format: `v2:iv:authTag:ct`. Backwards-compatible legacy 3-segment read. Exports: `{ encrypt, decrypt, VERSION }`.
+- `EasyMod-backend/src/modules/channel-providers/meta-channel.entity.js` — MetaChannel Sequelize model. Platform ENUM: facebook|instagram (no whatsapp). Getter/setter on `page_access_token_ct` for transparent encrypt/decrypt via cipher util.
+- `EasyMod-backend/src/modules/channel-providers/meta-channel-settings.entity.js` — 1:1 settings per channel (automation_mode, confidence thresholds, comment-to-DM config).
+- `EasyMod-backend/src/modules/channel-providers/meta-channel-consent-event.entity.js` — Append-only consent audit (updatedAt: false). 5 event types, 5 source types.
+- `EasyMod-backend/src/modules/channel-providers/normalized-message.types.js` — JSDoc @typedef blocks for NormalizedMessage protocol (no TypeScript — pure JS comments).
+- `EasyMod-backend/src/database/migrations/20260520_001_create_meta_channels.js` — Creates 3 tables + customers.messaging_consent. Backfills from meta_integrations + channel_configs. Idempotent (IF NOT EXISTS, ON CONFLICT DO NOTHING).
+- `EasyMod-backend/src/database/migrations/20260520_002_remove_whatsapp_enums.js` — Strips 'whatsapp' from 3 ENUM columns using rename+recreate+reassign pattern. Defensive row-delete before enum removal. Down() re-adds the value.
+- `EasyMod-backend/src/modules/channel-providers/__tests__/meta-token-cipher.test.js` — 18 tests (TDD-first).
+- `EasyMod-backend/src/modules/channel-providers/__tests__/meta-channel.entity.test.js` — 12 tests (TDD-first).
+
+**Files Modified:**
+
+- `EasyMod-backend/src/modules/entities.js` — Registered 3 new entities + 8 Sequelize associations (Shop<->MetaChannel, MetaChannel<->Settings, MetaChannel<->ConsentEvent, Customer<->ConsentEvent).
+- `EasyMod-backend/src/config/config.js` — Added `metaReadFromNew` (default: false) and `metaWriteLegacy` (default: true) feature flags.
+
+**Architecture Notes:**
+
+- Token cipher uses AAD `Buffer.from('meta-token')` to match the existing migration — legacy tokens from meta_integrations.access_token decrypt cleanly without re-encryption.
+- `paranoid: false` on MetaChannel — status field (REVOKED/DISCONNECTED) tracks lifecycle rather than soft-delete rows.
+- Migration backfill uses `ON CONFLICT DO NOTHING` to be safe for repeated runs.
+- WhatsApp ENUM removal uses PostgreSQL rename+recreate pattern since ALTER TYPE DROP VALUE does not exist in PG.
+
+**Meta Policy Verdict:** SAFE — infrastructure schema only, no send paths, no automation logic.
+
+**Disk Space Warning:** D: drive is 100% full (102GB). Had ~2-3MB available during implementation after clearing coverage dirs. Future sessions should run `npm run test` without --coverage flag to avoid filling disk. Also: jest.config.js now excludes coverage from migrations/ already.
+
+**Not Done (out of scope for this chunk):**
+
+- MetaChannelService (next chunk)
+- ChannelProvider.js, MetaMessengerProvider, MetaInstagramProvider (next chunk)
+- OAuth service dual-write modification (next chunk)
+- Frontend messaging.ts (exists but empty — frontend work in Phase 2)
+
 ## 2026-05-17 — Sign-In Spinner: 4 Additional Root Causes Fixed
 
 **Task:** Diagnose and fix persistent infinite spinner on `/signin` that survived all previous fix attempts. Fresh incognito still hung. Backend reportedly receiving no requests from the browser.

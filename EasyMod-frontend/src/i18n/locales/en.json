@@ -889,11 +889,6 @@
           "name": "Instagram DM",
           "description": "For your Instagram Shop — take orders from DMs",
           "tagline": "For your Instagram Shop"
-        },
-        "whatsapp": {
-          "name": "WhatsApp Business",
-          "description": "For WhatsApp Business — chat with customers directly",
-          "tagline": "For your WhatsApp Business"
         }
       },
       "selectButton": "Select",

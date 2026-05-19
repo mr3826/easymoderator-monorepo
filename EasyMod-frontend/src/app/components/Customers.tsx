@@ -20,7 +20,9 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Customer, CustomerFilters } from "@/api/types/customer";
-import type { ChannelType } from "@/api/types/channel";
+
+// Channel type string — facebook | instagram (MetaChannel platforms + legacy manual)
+type ChannelType = string;
 
 const channelConfig: Record<string, { icon: any; color: string; bgColor: string; labelKey: string }> = {
   facebook:  { icon: MessageSquare, color: "text-blue-600",   bgColor: "bg-blue-50",   labelKey: "customers.channels.facebook" },

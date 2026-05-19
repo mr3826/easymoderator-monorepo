@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, ShoppingCart, Brain, MessageSquare, Package, Download, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/api';
-import type { Channel } from '@/api/types/channel';
+import { listMetaChannels, type MetaChannel } from '@/api/domains/meta-channels';
 import type { DashboardMetrics } from '@/api/types/dashboard';
 
 interface ChannelPerformance {
@@ -79,7 +79,7 @@ export default function Reports() {
       setError(null);
 
       const [channels, metrics, gaps] = await Promise.all([
-        apiClient.getChannels(),
+        listMetaChannels(),
         apiClient.getDashboardMetrics(p),
         apiClient.getKnowledgeGaps(50),
       ]);
@@ -87,9 +87,9 @@ export default function Reports() {
       setDashboardMetrics(metrics);
       setKnowledgeGaps(gaps);
       setChannelPerformance(
-        channels.map((ch: Channel) => ({
-          channel:  ch.name || ch.type || 'Unknown',
-          messages: (ch as any).messageCount ?? (ch as any).message_count ?? 0,
+        channels.map((ch: MetaChannel) => ({
+          channel:  ch.displayName || ch.platform || 'Unknown',
+          messages: 0,
         }))
       );
     } catch (err) {

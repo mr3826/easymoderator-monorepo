@@ -50,7 +50,16 @@ import * as authDomain from './domains/auth';
 import * as productDomain from './domains/product';
 import * as orderDomain from './domains/order';
 import * as customerDomain from './domains/customer';
-import * as channelDomain from './domains/channel';
+import {
+  listMetaChannels,
+  initiateMetaOAuth,
+  handleMetaOAuthCallback,
+  connectMetaAsset,
+  disconnectMetaChannel,
+  reconnectMetaChannel,
+  pingMetaChannel,
+  getMetaChannelConsentSummary,
+} from './domains/meta-channels';
 import * as dashboardDomain from './domains/dashboard';
 import * as knowledgeDomain from './domains/knowledge';
 import * as subscriptionDomain from './domains/subscription';
@@ -116,18 +125,15 @@ export const apiClient = {
   removeFromBlacklist: customerDomain.removeFromBlacklist,
   deleteCustomer: customerDomain.deleteCustomer,
 
-  // Channel methods
-  getChannels: channelDomain.getChannels,
-  getChannel: channelDomain.getChannel,
-  createChannel: channelDomain.createChannel,
-  updateChannel: channelDomain.updateChannel,
-  deleteChannel: channelDomain.deleteChannel,
-  initiateOAuth: channelDomain.initiateOAuth,
-  handleOAuthCallback: channelDomain.handleOAuthCallback,
-  connectOAuthPage: channelDomain.connectOAuthPage,
-  disconnectChannel: channelDomain.disconnectChannel,
-  testChannelPipeline: channelDomain.testChannelPipeline,
-  subscribeChannelWebhooks: channelDomain.subscribeChannelWebhooks,
+  // Meta channel methods (Phase 5 — canonical)
+  listMetaChannels,
+  initiateMetaOAuth,
+  handleMetaOAuthCallback,
+  connectMetaAsset,
+  disconnectMetaChannel,
+  reconnectMetaChannel,
+  pingMetaChannel,
+  getMetaChannelConsentSummary,
 
   // Dashboard methods
   getDashboardMetrics: dashboardDomain.getDashboardMetrics,

@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import Channels from '@/app/components/Channels'
-import { apiClient } from '@/api'
 import { toast } from 'sonner'
+import type { MetaChannel, MetaOAuthCallbackResult } from '@/api/domains/meta-channels'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -37,26 +37,50 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
-// Mock the API client
-vi.mock('@/api', () => ({
-  apiClient: {
-    getChannels: vi.fn().mockResolvedValue([]),
-    initiateOAuth: vi.fn(),
-    handleOAuthCallback: vi.fn(),
-    connectOAuthPage: vi.fn()
-  }
+// ── Hoist mocks ────────────────────────────────────────────────────────────────
+const {
+  mockListMetaChannels,
+  mockInitiateMetaOAuth,
+  mockHandleMetaOAuthCallback,
+  mockConnectMetaAsset,
+} = vi.hoisted(() => ({
+  mockListMetaChannels:         vi.fn<[], Promise<MetaChannel[]>>().mockResolvedValue([]),
+  mockInitiateMetaOAuth:        vi.fn(),
+  mockHandleMetaOAuthCallback:  vi.fn(),
+  mockConnectMetaAsset:         vi.fn(),
+}))
+
+// Mock the meta-channels client
+vi.mock('@/api/domains/meta-channels', () => ({
+  listMetaChannels:            mockListMetaChannels,
+  initiateMetaOAuth:           mockInitiateMetaOAuth,
+  handleMetaOAuthCallback:     mockHandleMetaOAuthCallback,
+  connectMetaAsset:            mockConnectMetaAsset,
+  pingMetaChannel:             vi.fn(),
+  disconnectMetaChannel:       vi.fn(),
+  reconnectMetaChannel:        vi.fn(),
+  getMetaChannelConsentSummary: vi.fn(),
+}))
+
+vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
+  useSubscriptionFeatures: () => ({
+    plan: null,
+    features: {},
+  }),
 }))
 
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
-    success: vi.fn()
+    success: vi.fn(),
+    warning: vi.fn(),
   }
 }))
 
 describe('Channels', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockListMetaChannels.mockResolvedValue([])
     // Return `window` so oauthPopupRef.current === window.
     // window.dispatchEvent sets e.source = window, so the source check passes.
     vi.spyOn(window, 'open').mockReturnValue(window as any)
@@ -75,14 +99,15 @@ describe('Channels', () => {
     })
   })
 
-it('ignores OAuth postMessage events from wrong origin', async () => {
-    ;(apiClient.initiateOAuth as any).mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth'
+  it('ignores OAuth postMessage events from wrong origin', async () => {
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: 'https://facebook.com/dialog/oauth',
+      state: 's'.repeat(64),
     })
-    ;(apiClient.handleOAuthCallback as any).mockResolvedValue({
+    mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [],
-      tempToken: 't'.repeat(64)
-    })
+      tempToken: 't'.repeat(64),
+    } as MetaOAuthCallbackResult)
 
     await act(async () => {
       render(
@@ -97,7 +122,7 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
     fireEvent.click(await screen.findByRole('button', { name: /connect with facebook/i }))
 
     await waitFor(() => {
-      expect(apiClient.initiateOAuth).toHaveBeenCalledOnce()
+      expect(mockInitiateMetaOAuth).toHaveBeenCalledOnce()
     })
 
     window.dispatchEvent(new MessageEvent('message', {
@@ -107,12 +132,13 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
     }))
 
     await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(apiClient.handleOAuthCallback).not.toHaveBeenCalled()
+    expect(mockHandleMetaOAuthCallback).not.toHaveBeenCalled()
   })
 
   it('handles OAuth error postMessage from same origin', async () => {
-    ;(apiClient.initiateOAuth as any).mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth'
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: 'https://facebook.com/dialog/oauth',
+      state: 's'.repeat(64),
     })
 
     await act(async () => {
@@ -138,20 +164,21 @@ it('ignores OAuth postMessage events from wrong origin', async () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled()
     })
-    expect(apiClient.handleOAuthCallback).not.toHaveBeenCalled()
+    expect(mockHandleMetaOAuthCallback).not.toHaveBeenCalled()
   })
 
   it('keeps page connect button disabled until at least one page is selected', async () => {
-    ;(apiClient.initiateOAuth as any).mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth'
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: 'https://facebook.com/dialog/oauth',
+      state: 's'.repeat(64),
     })
-    ;(apiClient.handleOAuthCallback as any).mockResolvedValue({
+    mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [
-        { id: 'page-1', name: 'Page One' },
-        { id: 'page-2', name: 'Page Two' }
+        { id: 'page-1', name: 'Page One', category: null, pictureUrl: null, instagramAccount: null },
+        { id: 'page-2', name: 'Page Two', category: null, pictureUrl: null, instagramAccount: null }
       ],
-      tempToken: 't'.repeat(64)
-    })
+      tempToken: 't'.repeat(64),
+    } as MetaOAuthCallbackResult)
 
     await act(async () => {
       render(

@@ -1,14 +1,25 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, FlaskConical, Unplug } from "lucide-react";
-import { apiClient } from "@/api";
-import type { Channel, FacebookPage } from "@/api/types/channel";
+import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, FlaskConical, Unplug, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  listMetaChannels,
+  initiateMetaOAuth,
+  handleMetaOAuthCallback,
+  connectMetaAsset,
+  pingMetaChannel,
+  disconnectMetaChannel,
+  getMetaChannelConsentSummary,
+  type MetaChannel,
+  type MetaOAuthAsset,
+  type MetaChannelConsentSummary,
+  type MetaConsentEventType,
+} from "@/api/domains/meta-channels";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 
 interface ChannelOption {
-  id: 'facebook' | 'instagram' | 'whatsapp';
+  id: 'facebook' | 'instagram';
   name: string;
   taglineKey: string;
   brandColor: string;
@@ -33,14 +44,6 @@ const availableChannels: ChannelOption[] = [
     bgColor: 'bg-pink-50',
     borderColor: 'border-pink-200',
   },
-  {
-    id: 'whatsapp',
-    name: 'WhatsApp Business',
-    taglineKey: 'channels.connectModal.channels.whatsapp.tagline',
-    brandColor: '#25D366',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
-  },
 ];
 
 function ChannelIcon({ id, color, size = 24 }: { id: string; color: string; size?: number }) {
@@ -51,7 +54,7 @@ function ChannelIcon({ id, color, size = 24 }: { id: string; color: string; size
 export default function Channels() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<MetaChannel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -61,19 +64,15 @@ export default function Channels() {
   const oauthPopupRef = useRef<Window | null>(null);
   const oauthListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
   const oauthInProgressRef = useRef(false); // F4: prevent concurrent OAuth flows overwriting nonce
-  const [availablePages, setAvailablePages] = useState<FacebookPage[]>([]);
+  const [availablePages, setAvailablePages] = useState<MetaOAuthAsset[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<Set<string>>(new Set());
   const [tempToken, setTempToken] = useState('');
   const [isConnectingPage, setIsConnectingPage] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
-
-  // WhatsApp direct-token wizard state
-  const [wabaId, setWabaId] = useState('');
-  const [waPhoneId, setWaPhoneId] = useState('');
-  const [waToken, setWaToken] = useState('');
-  const [waDisplayName, setWaDisplayName] = useState('');
-  const [isConnectingWa, setIsConnectingWa] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [consentByChannelId, setConsentByChannelId] = useState<Record<string, MetaChannelConsentSummary>>({});
+  const [expandedConsentChannelId, setExpandedConsentChannelId] = useState<string | null>(null);
+  const [loadingConsentId, setLoadingConsentId] = useState<string | null>(null);
 
   const { plan } = useSubscriptionFeatures();
 
@@ -81,7 +80,7 @@ export default function Channels() {
     try {
       setIsLoading(true);
       setError(null);
-      const fetchedChannels = await apiClient.getChannels();
+      const fetchedChannels = await listMetaChannels();
       setChannels(fetchedChannels);
     } catch (error: any) {
       setError(error.response?.data?.error?.message || t('channels.errors.loadFailed'));
@@ -130,7 +129,7 @@ export default function Channels() {
     }
     oauthInProgressRef.current = true;
     try {
-      const { redirectUrl } = await apiClient.initiateOAuth(selectedChannel.id);
+      const { redirectUrl } = await initiateMetaOAuth(selectedChannel.id);
 
       // Extract the backend-generated state from the redirect URL and store it as a nonce.
       // When Meta echoes it back through OAuthCallbackPage, we validate it matches before
@@ -164,7 +163,7 @@ export default function Channels() {
             return;
           }
 
-          apiClient.handleOAuthCallback(e.data.code, e.data.state, selectedChannel.id)
+          handleMetaOAuthCallback(e.data.code, e.data.state)
             .then(result => {
               setAvailablePages(result.pages);
               setTempToken(result.tempToken);
@@ -189,32 +188,6 @@ export default function Channels() {
       sessionStorage.removeItem(OAUTH_NONCE_KEY);
       oauthInProgressRef.current = false;
       toast.error(t('channels.errors.oauthInitFailed'));
-    }
-  };
-
-  const handleWhatsAppConnect = async () => {
-    if (!wabaId || !waPhoneId || !waToken) {
-      toast.error('Please fill in all WhatsApp Business API fields');
-      return;
-    }
-    setIsConnectingWa(true);
-    try {
-      await apiClient.post('/channel/whatsapp/connect', {
-        waba_id: wabaId.trim(),
-        phone_number_id: waPhoneId.trim(),
-        access_token: waToken.trim(),
-        display_name: waDisplayName.trim() || 'WhatsApp'
-      });
-      toast.success('WhatsApp Business channel connected!');
-      setShowConnectModal(false);
-      setConnectionStep('select');
-      setWabaId(''); setWaPhoneId(''); setWaToken(''); setWaDisplayName('');
-      fetchChannels();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to connect WhatsApp');
-      setWaToken(''); // Clear token on error to prevent re-submission with stale credentials
-    } finally {
-      setIsConnectingWa(false);
     }
   };
 
@@ -243,9 +216,13 @@ export default function Channels() {
     try {
       let webhookWarning: string | null = null;
       for (const page of availablePages.filter(p => selectedPageIds.has(p.id))) {
-        const result = await apiClient.connectOAuthPage(page.id, page.name, tempToken, selectedChannel.id);
-        if ((result as any).webhookWarning) {
-          webhookWarning = (result as any).webhookWarning;
+        const result = await connectMetaAsset({
+          assetId: page.id,
+          displayName: page.name,
+          tempToken,
+        });
+        if (result.webhookWarning) {
+          webhookWarning = result.webhookWarning;
         }
       }
       await fetchChannels();
@@ -274,16 +251,14 @@ export default function Channels() {
   const handleTestPipeline = async (channelId: string) => {
     setTestingId(channelId);
     try {
-      const result = await apiClient.testChannelPipeline(channelId);
-      if (result.pipeline_ok) {
+      const result = await pingMetaChannel(channelId);
+      if (result.ping.ok) {
         toast.success(
-          result.meta_integration.found
-            ? `✓ Backend works. If messages still don't arrive → check Facebook App Dashboard: webhook URL must be https://api.easymod.tech/webhooks/meta/`
-            : `Backend pipeline OK but MetaIntegration missing. Disconnect and reconnect the channel.`,
+          `Webhook test OK (${result.ping.latencyMs ?? '?'}ms). If messages still don't arrive → check Facebook App Dashboard: webhook URL must be https://api.easymod.tech/api/webhooks/meta/`,
           { duration: 15000 }
         );
       } else {
-        toast.error(`Pipeline error: ${result.error} — ${result.hint}`, { duration: 15000 });
+        toast.error(`Webhook test failed: ${result.ping.error}`, { duration: 15000 });
       }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
@@ -296,7 +271,7 @@ export default function Channels() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const fetchedChannels = await apiClient.getChannels();
+      const fetchedChannels = await listMetaChannels();
       setChannels(fetchedChannels);
       toast.success(t('channels.refreshed'));
     } catch {
@@ -306,11 +281,48 @@ export default function Channels() {
     }
   };
 
+  const handleToggleConsent = async (channelId: string) => {
+    if (expandedConsentChannelId === channelId) {
+      setExpandedConsentChannelId(null);
+      return;
+    }
+    setExpandedConsentChannelId(channelId);
+    if (consentByChannelId[channelId]) return; // already loaded
+    setLoadingConsentId(channelId);
+    try {
+      const summary = await getMetaChannelConsentSummary(channelId);
+      setConsentByChannelId((prev) => ({ ...prev, [channelId]: summary }));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message || t('channels.consent.loadFailed', 'Could not load consent activity'));
+      setExpandedConsentChannelId(null);
+    } finally {
+      setLoadingConsentId(null);
+    }
+  };
+
+  const consentEventLabel = (event: MetaConsentEventType): string => {
+    const labels: Record<MetaConsentEventType, string> = {
+      OPT_IN_IMPLICIT: t('channels.consent.events.optInImplicit', 'Opted in (implicit)'),
+      OPT_IN_EXPLICIT: t('channels.consent.events.optInExplicit', 'Opted in'),
+      OPT_OUT: t('channels.consent.events.optOut', 'Opted out'),
+      DEAUTHORIZED: t('channels.consent.events.deauthorized', 'Deauthorized'),
+      DATA_DELETED: t('channels.consent.events.dataDeleted', 'Data deleted'),
+    };
+    return labels[event] || event;
+  };
+
+  const consentEventBadgeClass = (event: MetaConsentEventType): string => {
+    if (event === 'OPT_OUT' || event === 'DEAUTHORIZED' || event === 'DATA_DELETED') {
+      return 'bg-red-50 text-red-700';
+    }
+    return 'bg-green-50 text-green-700';
+  };
+
   const handleDisconnect = async (channelId: string, channelName: string) => {
     if (!window.confirm(`Disconnect "${channelName}"? The channel will stop receiving messages immediately.`)) return;
     setDisconnectingId(channelId);
     try {
-      await apiClient.disconnectChannel(channelId);
+      await disconnectMetaChannel(channelId);
       toast.success(t('channels.disconnected', 'Channel disconnected'));
       await fetchChannels();
     } catch (err: any) {
@@ -334,6 +346,12 @@ export default function Channels() {
       instagram: t('channels.connectModal.waitingTitle.instagram'),
     };
     return titles[id] || t('channels.connectModal.waitingTitle.facebook');
+  };
+
+  const getChannelStatus = (channel: MetaChannel): 'active' | 'inactive' | 'error' => {
+    if (channel.status === 'CONNECTED') return 'active';
+    if (channel.status === 'ERROR' || channel.status === 'TOKEN_EXPIRED' || channel.status === 'REVOKED') return 'error';
+    return 'inactive';
   };
 
   const steps: Array<'select' | 'connect' | 'page-select' | 'complete'> = ['select', 'connect', 'page-select', 'complete'];
@@ -424,33 +442,37 @@ export default function Channels() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {channels.map((channel) => {
-            const channelOption = availableChannels.find(c => c.id === channel.type);
+            const channelOption = availableChannels.find(c => c.id === channel.platform);
+            const displayStatus = getChannelStatus(channel);
+            const consentSummary = consentByChannelId[channel.id];
+            const isConsentExpanded = expandedConsentChannelId === channel.id;
+            const isConsentLoading = loadingConsentId === channel.id;
             return (
               <div key={channel.id} className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center ${channelOption?.bgColor || 'bg-gray-100'}`}>
-                      <ChannelIcon id={channel.type || ''} color={channelOption?.brandColor || '#6b7280'} size={22} />
+                      <ChannelIcon id={channel.platform} color={channelOption?.brandColor || '#6b7280'} size={22} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">{channel.name}</h3>
-                      <p className="text-sm text-gray-500">{channelOption?.name || channel.type}</p>
+                      <h3 className="font-semibold text-gray-900">{channel.displayName}</h3>
+                      <p className="text-sm text-gray-500">{channelOption?.name || channel.platform}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {channel.status === 'active' && (
+                    {displayStatus === 'active' && (
                       <span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         {t('channels.statusActive')}
                       </span>
                     )}
-                    {channel.status === 'inactive' && (
+                    {displayStatus === 'inactive' && (
                       <span className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
                         <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
                         {t('channels.statusInactive')}
                       </span>
                     )}
-                    {channel.status === 'error' && (
+                    {displayStatus === 'error' && (
                       <span className="flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm">
                         <AlertCircle className="w-3 h-3" />
                         {t('channels.statusError')}
@@ -458,19 +480,6 @@ export default function Channels() {
                     )}
                   </div>
                 </div>
-
-                {channel.connected && (
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">{t('channels.messagesToday')}</span>
-                      <span className="font-semibold text-gray-900">{channel.messageCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">{t('channels.lastSync')}</span>
-                      <span className="font-semibold text-gray-900">{channel.lastSync}</span>
-                    </div>
-                  </div>
-                )}
 
                 <div className="flex gap-2">
                   <button
@@ -483,14 +492,14 @@ export default function Channels() {
                   <button
                     onClick={() => handleTestPipeline(channel.id)}
                     disabled={testingId === channel.id}
-                    title="Test pipeline — sends a real message through the backend to verify conversations are created"
+                    title="Test webhook — sends a synthetic event through the backend to verify the channel is reachable"
                     className="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-60"
                   >
                     {testingId === channel.id
                       ? <Loader2 className="w-4 h-4 animate-spin" />
                       : <FlaskConical className="w-4 h-4" />}
                   </button>
-                  {channel.connected && (
+                  {channel.status === 'CONNECTED' && (
                     <button
                       onClick={handleRefresh}
                       disabled={isRefreshing}
@@ -500,7 +509,7 @@ export default function Channels() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleDisconnect(channel.id, channel.name)}
+                    onClick={() => handleDisconnect(channel.id, channel.displayName)}
                     disabled={disconnectingId === channel.id}
                     title="Disconnect channel"
                     className="px-3 py-2 border border-red-200 text-red-500 rounded-lg hover:bg-red-50 disabled:opacity-60 transition-colors"
@@ -509,6 +518,77 @@ export default function Channels() {
                       ? <Loader2 className="w-4 h-4 animate-spin" />
                       : <Unplug className="w-4 h-4" />}
                   </button>
+                </div>
+
+                {/* Consent activity panel — keys off MetaChannel.id directly */}
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <button
+                    onClick={() => handleToggleConsent(channel.id)}
+                    className="w-full flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-gray-500" />
+                      <span className="font-medium">
+                        {t('channels.consent.heading', 'Consent activity')}
+                      </span>
+                    </span>
+                    {isConsentLoading
+                      ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      : isConsentExpanded
+                        ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                        : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                  </button>
+
+                  {isConsentExpanded && consentSummary && (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-4 gap-2 text-center">
+                        <div className="rounded-lg bg-green-50 px-2 py-2">
+                          <p className="text-lg font-semibold text-green-700">{consentSummary.counts.optIns}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-green-700/80">
+                            {t('channels.consent.optIns', 'Opt-ins')}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-red-50 px-2 py-2">
+                          <p className="text-lg font-semibold text-red-700">{consentSummary.counts.optOuts}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-red-700/80">
+                            {t('channels.consent.optOuts', 'Opt-outs')}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-gray-100 px-2 py-2">
+                          <p className="text-lg font-semibold text-gray-700">{consentSummary.counts.deauthorized}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                            {t('channels.consent.deauthorized', 'Deauth')}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-gray-100 px-2 py-2">
+                          <p className="text-lg font-semibold text-gray-700">{consentSummary.counts.dataDeleted}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-gray-600">
+                            {t('channels.consent.dataDeleted', 'Erased')}
+                          </p>
+                        </div>
+                      </div>
+
+                      {consentSummary.recentEvents.length === 0 ? (
+                        <p className="text-xs text-gray-500 italic">
+                          {t('channels.consent.empty', 'No consent events recorded yet.')}
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {consentSummary.recentEvents.map((ev) => (
+                            <li key={ev.id} className="flex items-center justify-between gap-2 text-xs">
+                              <span className={`px-2 py-0.5 rounded-full font-medium ${consentEventBadgeClass(ev.event)}`}>
+                                {consentEventLabel(ev.event)}
+                              </span>
+                              <span className="text-gray-500 truncate flex-1">{ev.source}</span>
+                              <span className="text-gray-400 flex-shrink-0">
+                                {new Date(ev.createdAt).toLocaleString()}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -578,86 +658,8 @@ export default function Channels() {
               </div>
             )}
 
-            {/* Step: Connect — WhatsApp wizard (no OAuth) */}
-            {connectionStep === 'connect' && selectedChannel?.id === 'whatsapp' && (
-              <div>
-                <div className="text-center mb-5">
-                  <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3">
-                    <MessageSquare className="w-9 h-9 text-green-600" />
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900">WhatsApp Business API</h3>
-                  <p className="text-sm text-gray-500 mt-1">Connect your WhatsApp Business account using your permanent API credentials.</p>
-                </div>
-
-                {/* Meta policy notice */}
-                <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-4 text-xs text-amber-800">
-                  <p className="font-semibold mb-1">Meta Policy Notice</p>
-                  <ul className="space-y-1 list-disc list-inside">
-                    <li>Only pre-approved message templates can be sent outside the 24-hour customer messaging window.</li>
-                    <li>If a customer sends STOP, they will be opted out and will not receive messages.</li>
-                    <li>Violation of Meta's commerce or messaging policy may result in your number being banned.</li>
-                  </ul>
-                </div>
-
-                <div className="space-y-3 mb-5">
-                  <div>
-                    <label className="text-xs font-medium text-gray-700 mb-1 block">WhatsApp Business Account ID (WABA ID)</label>
-                    <input
-                      type="text"
-                      value={wabaId}
-                      onChange={e => setWabaId(e.target.value)}
-                      placeholder="e.g. 1234567890123456"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-700 mb-1 block">Phone Number ID</label>
-                    <input
-                      type="text"
-                      value={waPhoneId}
-                      onChange={e => setWaPhoneId(e.target.value)}
-                      placeholder="e.g. 9876543210"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-700 mb-1 block">Permanent Access Token</label>
-                    <input
-                      type="password"
-                      value={waToken}
-                      onChange={e => setWaToken(e.target.value)}
-                      placeholder="System user permanent token"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-700 mb-1 block">Display Name (optional)</label>
-                    <input
-                      type="text"
-                      value={waDisplayName}
-                      onChange={e => setWaDisplayName(e.target.value)}
-                      placeholder="e.g. My Shop WA"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleWhatsAppConnect}
-                  disabled={isConnectingWa || !wabaId || !waPhoneId || !waToken}
-                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2 transition-colors mb-3"
-                >
-                  {isConnectingWa ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
-                  Connect WhatsApp
-                </button>
-                <button onClick={handleCloseModal} className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">
-                  Cancel
-                </button>
-              </div>
-            )}
-
             {/* Step: Connect (OAuth) — Facebook / Instagram */}
-            {connectionStep === 'connect' && selectedChannel && selectedChannel.id !== 'whatsapp' && (
+            {connectionStep === 'connect' && selectedChannel && (
               <div>
                 <div className="text-center mb-6">
                   <div className={`w-20 h-20 rounded-full ${selectedChannel.bgColor} flex items-center justify-center mx-auto mb-3`}>
@@ -717,7 +719,7 @@ export default function Channels() {
 
                 {/* Privacy note */}
                 <p className="text-xs text-gray-400 text-center">
-                  🔒 {t('channels.connectModal.oauthPrivacyNote')}
+                  {t('channels.connectModal.oauthPrivacyNote')}
                 </p>
 
                 <button

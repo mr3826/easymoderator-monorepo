@@ -884,11 +884,6 @@
           "name": "Instagram DM",
           "description": "Instagram Shop এর জন্য — DM থেকে Order নিন",
           "tagline": "Instagram Shop এর জন্য"
-        },
-        "whatsapp": {
-          "name": "WhatsApp Business",
-          "description": "WhatsApp Business — সরাসরি কাস্টমারের সাথে কথা বলুন",
-          "tagline": "আপনার WhatsApp Business এর জন্য"
         }
       },
       "selectButton": "বেছে নিন",

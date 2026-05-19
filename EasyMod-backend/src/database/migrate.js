@@ -60,6 +60,19 @@ const migrations = [
   require('./migrations/20260510_001_overhaul_subscription_plans'),
   require('./migrations/20260510_002_add_topup_and_conversation_log'),
   require('./migrations/20260510_003_shop_platform_priority'),
+  // 2026-05-17 — beta-prep customer marketing opt-out
+  require('./migrations/20260517_001_add_customer_marketing_opt_out'),
+  // Meta integration redesign — Phase 1
+  require('./migrations/20260520_001_create_meta_channels'),
+  require('./migrations/20260520_002_remove_whatsapp_enums'),
+  // Phase 2
+  require('./migrations/20260524_001_reencrypt_meta_channel_tokens'),
+  // Phase 3
+  require('./migrations/20260527_001_create_policy_decisions'),
+  // Phase 4
+  require('./migrations/20260603_001_create_comment_to_dm_events'),
+  // Phase 5 — cutover (DESTRUCTIVE, IRREVERSIBLE)
+  require('./migrations/20260610_001_drop_legacy_channel_tables'),
 ];
 
 const createMigrationsTable = async () => {

@@ -166,32 +166,6 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(screen.getByPlaceholderText(/type a message/i)).toBeInTheDocument()
   })
 
-  it('does not apply 24h expiry lock to WhatsApp conversation', async () => {
-    const oldWhatsappConversation = {
-      ...baseConversation,
-      id: 'conv-2',
-      channel: 'whatsapp' as const,
-      updated_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
-    }
-
-    ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [oldWhatsappConversation],
-      pagination: { page: 1, totalPages: 1 }
-    })
-
-    render(<UnifiedInbox />)
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /Shared Inbox/i })).toBeInTheDocument()
-    })
-
-    const input = screen.getByPlaceholderText(/Type a message/i)
-    fireEvent.change(input, { target: { value: 'hello from whatsapp' } })
-
-    const sendButton = screen.getByRole('button', { name: /^Send$/i })
-    expect(sendButton).toBeEnabled()
-  })
-
   it('sends message with message_tag after selecting tag in expired Meta window', async () => {
     const expiredConversation = {
       ...baseConversation,

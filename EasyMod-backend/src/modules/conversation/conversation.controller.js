@@ -4,8 +4,9 @@ const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
 const { Conversation: ConvModel, Customer: CustomerModel } = require('../entities');
-const MetaIntegration = require('../integration/meta-integration.entity');
-const metaService = require('../integration/meta.service');
+const metaChannelService = require('../channel-providers/meta-channel.service');
+const { getProvider } = require('../channel-providers/provider.registry');
+const policyEngine = require('../policy/policy.engine');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 
@@ -14,14 +15,13 @@ const META_CHANNEL_PLATFORM = {
     messenger: 'facebook',
     facebook:  'facebook',
     instagram: 'instagram',
-    whatsapp:  'whatsapp',
 };
 
 /**
  * Deliver an outbound message to the customer's Meta channel.
- * Looks up the conversation → customer channel_user_id → integration → sends via Graph API.
- * Best-effort: never throws. Emits SSE `delivery_failed` event so agents see a warning toast
- * when their reply doesn't reach the customer on Messenger/Instagram/WhatsApp.
+ * Phase 5: resolves MetaChannel (single source of truth), evaluates policy,
+ * and delegates to the provider registry for transport.
+ * Best-effort: never throws. Emits SSE `delivery_failed` on failure.
  */
 async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
     let isMetaChannel = false;
@@ -44,21 +44,32 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
             return;
         }
 
-        const integration = await MetaIntegration.findOne({
-            where: { shop_id: shopId, platform, status: 'CONNECTED' }
+        const metaChannel = await metaChannelService.findByShopAndPlatform(shopId, platform);
+        if (!metaChannel) {
+            failureReason = `No active ${platform} channel — connect your page in Settings → Channels`;
+            return;
+        }
+
+        if (metaChannel.status !== 'CONNECTED') {
+            failureReason = `Channel is ${metaChannel.status} — reconnect in Settings → Channels`;
+            return;
+        }
+
+        const normalizedMessage = { text: content, attachments: [], platform, direction: 'outbound', senderRole: 'agent' };
+        const policyCtx = { shopId, channelId: metaChannel.id, recipientId, channel: metaChannel };
+        const decision = await policyEngine.evaluateOutbound(normalizedMessage, policyCtx);
+        if (!decision.allow) {
+            failureReason = `Message blocked by policy: ${decision.reason}`;
+            return;
+        }
+
+        const provider = getProvider(platform);
+        await provider.sendMessage({
+            channel: metaChannel,
+            recipientId,
+            normalizedMessage: decision.transform || normalizedMessage,
+            decision,
         });
-        if (!integration) {
-            failureReason = `No active ${platform} integration — connect your page in Settings → Channels`;
-            return;
-        }
-
-        if (integration.token_expires_at && new Date(integration.token_expires_at) < new Date()) {
-            failureReason = 'Access token expired — reconnect the channel in Settings → Channels';
-            return;
-        }
-
-        const accessToken = metaService.decryptToken(integration.access_token);
-        await metaService.sendTextMessage(platform, accessToken, recipientId, content);
         console.log(`[inbox] Message delivered via ${platform} to ${recipientId} (conv: ${conversationId})`);
     } catch (err) {
         failureReason = err.message;
@@ -399,7 +410,7 @@ class ConversationController {
         }
     }
 
-    getEventStream(req, res) {
+    async getEventStream(req, res) {
         const shopId = req.headers['x-shop-id'] || req.query.shop_id || req.user?.shopId;
         if (!shopId) {
             return res.status(400).json({
@@ -413,9 +424,15 @@ class ConversationController {
         res.setHeader('Connection', 'keep-alive');
         // Disable nginx/proxy buffering so events arrive immediately
         res.setHeader('X-Accel-Buffering', 'no');
+        // Allow the browser to send Last-Event-ID on reconnect.
+        // Browsers automatically include this header when an EventSource reconnects
+        // after a dropped connection; no client-side code change is required.
+        res.setHeader('Access-Control-Expose-Headers', 'Last-Event-ID');
         res.flushHeaders();
 
-        sseManager.register(shopId, res);
+        // attachToRequest reads Last-Event-ID, replays any missed events from
+        // the Redis replay buffer, then registers this connection on the bus.
+        await sseManager.attachToRequest(req, res, shopId);
 
         // Heartbeat keeps the connection alive through idle proxies (25s < 30s proxy timeout)
         const heartbeat = setInterval(() => {

@@ -2,35 +2,47 @@ import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import ChatSettings from './ChatSettings';
+import type { MetaChannel } from '@/api/domains/meta-channels';
+
+// ── MetaChannel fixture ────────────────────────────────────────────────────
+const mockMetaChannel: MetaChannel = {
+  id: 'mc-1',
+  shopId: 'shop-abc',
+  platform: 'facebook',
+  metaAssetId: 'page-123',
+  displayName: 'My Facebook Page',
+  pictureUrl: null,
+  linkedFbPageId: null,
+  status: 'CONNECTED',
+  lastError: null,
+  tokenExpiresAt: null,
+  tokenLastRefreshedAt: new Date().toISOString(),
+  webhookSubscribedFields: ['messages', 'messaging_postbacks'],
+  webhookLastVerifiedAt: new Date().toISOString(),
+  connectedAt: new Date().toISOString(),
+  disconnectedAt: null,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+const mockChannels: MetaChannel[] = [mockMetaChannel];
 
 // ── Hoist mock functions before vi.mock factory runs ──────────────────────
 const {
-  mockGetChannels,
-  mockGetLLMConfig,
-  mockUpdateLLMConfig,
-  mockConnectChannel,
-  mockDisconnectChannel,
+  mockListMetaChannels,
+  mockDisconnectMetaChannel,
 } = vi.hoisted(() => {
-  const ch = [{
-    id: 'ch-1', channel_type: 'messenger', is_active: true, page_id: 'pg-123',
-    access_token: null, verify_token: 'vt', webhook_secret: null,
-    settings: {}, config: {}, token_expires_at: null, last_sync: new Date().toISOString(),
-  }];
   return {
-    mockGetChannels:       vi.fn().mockResolvedValue(ch),
-    mockGetLLMConfig:      vi.fn().mockResolvedValue({ model: 'gpt-4o-mini', temperature: 0.7 }),
-    mockUpdateLLMConfig:   vi.fn().mockResolvedValue({ model: 'gpt-4o-mini', temperature: 0.7 }),
-    mockConnectChannel:    vi.fn().mockResolvedValue({ success: true }),
-    mockDisconnectChannel: vi.fn().mockResolvedValue({ success: true }),
+    mockListMetaChannels:     vi.fn().mockResolvedValue([]),
+    mockDisconnectMetaChannel: vi.fn().mockResolvedValue({ id: 'mc-1' }),
   };
 });
 
-// Re-export test data for assertions
-const mockChannels = [{
-  id: 'ch-1', channel_type: 'messenger', is_active: true, page_id: 'pg-123',
-  access_token: null, verify_token: 'vt', webhook_secret: null,
-  settings: {}, config: {}, token_expires_at: null, last_sync: new Date().toISOString(),
-}];
+// ── Mock meta-channels client ─────────────────────────────────────────────
+vi.mock('@/api/domains/meta-channels', () => ({
+  listMetaChannels:       mockListMetaChannels,
+  disconnectMetaChannel:  mockDisconnectMetaChannel,
+}));
 
 // ── Mock subscription hook — include advanced_ai so LLM section renders ───
 vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
@@ -41,18 +53,6 @@ vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
     loading: false,
     features: { ai_chatbot: true, multi_channel: true, advanced_ai: true, image_understanding: true, priority_support: false, custom_branding: false },
   }),
-}));
-
-// ── Mock API client ───────────────────────────────────────────────────────
-vi.mock('@/api', () => ({
-  apiClient: {
-    getChannels:       mockGetChannels,
-    getLLMConfig:      mockGetLLMConfig,
-    updateLLMConfig:   mockUpdateLLMConfig,
-    connectChannel:    mockConnectChannel,
-    disconnectChannel: mockDisconnectChannel,
-    getShopAISettings: vi.fn().mockResolvedValue({}),
-  },
 }));
 
 // ── Mock react-router-dom (Link used in ChatSettings) ─────────────────────
@@ -78,7 +78,7 @@ const renderComponent = async () => {
   let utils: ReturnType<typeof render> | undefined;
   await act(async () => {
     utils = render(<ChatSettings />);
-    await flushPromises(); // flush async state updates (setChannels, setIsLoading=false)
+    await flushPromises();
   });
   return utils!;
 };
@@ -87,11 +87,8 @@ const renderComponent = async () => {
 
 describe('ChatSettings', () => {
   beforeEach(() => {
-    mockGetChannels.mockReset().mockResolvedValue(mockChannels);
-    mockGetLLMConfig.mockReset().mockResolvedValue({ model: 'gpt-4o-mini', temperature: 0.7 });
-    mockUpdateLLMConfig.mockReset().mockResolvedValue({ model: 'gpt-4o-mini' });
-    mockConnectChannel.mockReset().mockResolvedValue({ success: true });
-    mockDisconnectChannel.mockReset().mockResolvedValue({ success: true });
+    mockListMetaChannels.mockReset().mockResolvedValue(mockChannels);
+    mockDisconnectMetaChannel.mockReset().mockResolvedValue({ id: 'mc-1' });
   });
 
   // ── Basic render ────────────────────────────────────────────────────────
@@ -104,37 +101,7 @@ describe('ChatSettings', () => {
   it('makes API call to load channels on mount', async () => {
     await renderComponent();
     await waitFor(() => {
-      expect(mockGetChannels).toHaveBeenCalled();
-    }, { timeout: 2000 });
-  });
-
-  // ── LLM model selector ──────────────────────────────────────────────────
-
-  it('renders 9 LLM model options in the selector', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      // The LLM model options should be rendered as options or list items
-      const expectedModels = [
-        'GPT-4o', 'GPT-4o Mini', 'GPT-3.5 Turbo',
-        'Claude Opus', 'Claude Sonnet', 'Claude Haiku',
-        'Gemini Pro', 'Gemini Flash', 'DeepSeek Chat',
-      ];
-      let found = 0;
-      for (const label of expectedModels) {
-        if (screen.queryByText(label) || screen.queryByText(new RegExp(label, 'i'))) found++;
-      }
-      // With advanced_ai enabled, LLM section should show; at least some models should be visible
-      expect(found).toBeGreaterThan(0);
-    }, { timeout: 2000 });
-  });
-
-  it('shows gpt-4o-mini as initial model from API', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      const mini = screen.queryByText(/GPT-4o Mini/i) || screen.queryByText(/gpt-4o-mini/i);
-      expect(mini).toBeTruthy();
+      expect(mockListMetaChannels).toHaveBeenCalled();
     }, { timeout: 2000 });
   });
 
@@ -142,18 +109,14 @@ describe('ChatSettings', () => {
 
   it('shows expiry warning when channel has future tokenExpiresAt', async () => {
     const futureExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
-    // type='facebook' so it passes the channel filter; status maps to 'connected'
-    mockGetChannels.mockResolvedValueOnce([{
-      ...mockChannels[0],
-      type: 'facebook',
-      status: 'active',
-      connected: true,
-      token_expires_at: futureExpiry,
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'CONNECTED',
+      tokenExpiresAt: futureExpiry,
     }]);
 
     await renderComponent();
 
-    // The expiry badge is rendered inside a connected channel card
     await waitFor(() => {
       const warning = screen.queryByText(/day/i) ||
                       screen.queryByText(/expir/i) ||
@@ -165,12 +128,10 @@ describe('ChatSettings', () => {
 
   it('shows expired warning when token has already expired', async () => {
     const pastExpiry = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    mockGetChannels.mockResolvedValueOnce([{
-      ...mockChannels[0],
-      type: 'facebook',
-      status: 'active',
-      connected: true,
-      token_expires_at: pastExpiry,
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'CONNECTED',
+      tokenExpiresAt: pastExpiry,
     }]);
 
     await renderComponent();
@@ -183,48 +144,53 @@ describe('ChatSettings', () => {
   });
 
   it('does not show expiry badge when tokenExpiresAt is null', async () => {
-    mockGetChannels.mockResolvedValueOnce([{ ...mockChannels[0], status: 'active', connected: true, token_expires_at: null }]);
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'CONNECTED',
+      tokenExpiresAt: null,
+    }]);
 
     await renderComponent();
 
-    // "Token expires" specific text should not be present
     const noExpiry = screen.queryByText(/token.*expir/i);
     expect(noExpiry).toBeNull();
   });
 
   // ── Channel cards ───────────────────────────────────────────────────────
 
-  it('renders Messenger channel entry (header always present)', async () => {
+  it('renders connected channel display name in card', async () => {
     await renderComponent();
     await waitFor(() => {
-      expect(screen.getAllByText(/Messenger/i).length).toBeGreaterThan(0);
+      // The connected MetaChannel's displayName is shown in the card header
+      const nodes = screen.getAllByText(/My Facebook Page/i);
+      expect(nodes.length).toBeGreaterThan(0);
     }, { timeout: 2000 });
   });
 
-  it('shows Instagram in the page', async () => {
+  it('shows Instagram placeholder when no Instagram channel is connected', async () => {
+    // Only facebook channel mocked; Instagram default placeholder appears
     await renderComponent();
     await waitFor(() => {
       expect(screen.getAllByText(/Instagram/i).length).toBeGreaterThan(0);
     }, { timeout: 2000 });
   });
 
-  // ── Privacy notice ──────────────────────────────────────────────────────
+  // ── Channel content presence ────────────────────────────────────────────
 
-  it('privacy notice text is present in the component HTML (may be hidden until connect)', async () => {
+  it('channel cards with status labels are always rendered', async () => {
     const { container } = render(<ChatSettings />);
 
-    // Channel cards with status labels or descriptions are always rendered
     await waitFor(() => {
       const html = container.innerHTML;
-      const hasChannelContent = html.includes('WhatsApp') || html.includes('Messenger') || html.includes('Instagram') || html.includes('চ্যানেল');
+      const hasChannelContent = html.includes('Messenger') || html.includes('Instagram') || html.includes('চ্যানেল');
       expect(hasChannelContent).toBe(true);
     }, { timeout: 2000 });
   });
 
   // ── Disconnect ──────────────────────────────────────────────────────────
 
-  it('calls disconnectChannel when disconnect button is clicked', async () => {
-    mockGetChannels.mockResolvedValueOnce([{ ...mockChannels[0], is_active: true }]);
+  it('calls disconnectMetaChannel when disconnect button is clicked', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([{ ...mockMetaChannel, status: 'CONNECTED' }]);
 
     await renderComponent();
 
@@ -235,10 +201,44 @@ describe('ChatSettings', () => {
       }
     }, { timeout: 2000 });
 
-    if (mockDisconnectChannel.mock.calls.length > 0) {
-      expect(mockDisconnectChannel).toHaveBeenCalled();
+    if (mockDisconnectMetaChannel.mock.calls.length > 0) {
+      expect(mockDisconnectMetaChannel).toHaveBeenCalled();
     } else {
       expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
     }
+  });
+
+  // ── MetaChannel shape — platform field ─────────────────────────────────
+
+  it('uses channel.platform to determine channel type', async () => {
+    const igChannel: MetaChannel = {
+      ...mockMetaChannel,
+      id: 'mc-ig',
+      platform: 'instagram',
+      metaAssetId: 'ig-456',
+      displayName: 'My Instagram',
+    };
+    mockListMetaChannels.mockResolvedValueOnce([igChannel]);
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Instagram/i).length).toBeGreaterThan(0);
+    }, { timeout: 2000 });
+  });
+
+  it('shows DISCONNECTED channel as not_connected status', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'DISCONNECTED',
+    }]);
+
+    await renderComponent();
+
+    await waitFor(() => {
+      // Both the disconnected facebook card and the default instagram card show "Not Connected"
+      const labels = screen.getAllByText(/Not Connected/i);
+      expect(labels.length).toBeGreaterThan(0);
+    }, { timeout: 2000 });
   });
 });

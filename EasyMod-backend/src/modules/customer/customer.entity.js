@@ -48,9 +48,12 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.JSON,
         defaultValue: {}
     },
-    marketing_opt_out: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
+    // Per-channel consent (Phase 5: single source of truth).
+    // Shape: { facebook: { opted_in, opted_out_at, last_inbound_at },
+    //          instagram: { opted_in, opted_out_at, last_inbound_at } }
+    messaging_consent: {
+        type: DataTypes.JSONB,
+        defaultValue: {},
         allowNull: false
     }
 }, {

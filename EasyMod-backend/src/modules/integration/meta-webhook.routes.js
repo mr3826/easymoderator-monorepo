@@ -3,12 +3,14 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const config = require('../../config/config');
-const MetaIntegration = require('./meta-integration.entity');
 const { Customer } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
 const sseManager = require('../../utils/sse-manager');
 const { createLogger } = require('../../utils/structured-logger');
+const consentService = require('../consent/consent.service');
+const metaChannelService = require('../channel-providers/meta-channel.service');
+const { extractCommentEvents } = require('../commentToDm/comment-to-dm.webhook-handler');
 
 const logger = createLogger('MetaWebhook');
 
@@ -127,6 +129,49 @@ async function dispatchMessageJob(storeResult, event) {
     }
 }
 
+/**
+ * Lazy-load CommentToDmService to avoid circular dependencies at module load.
+ * Returns a fresh instance; service is stateless so instantiation is cheap.
+ */
+function getCommentToDmService() {
+    const CommentToDmService = require('../commentToDm/comment-to-dm.service');
+    return new CommentToDmService();
+}
+
+/**
+ * Route comment events from a Meta webhook entry to the Comment-to-DM service.
+ * Fire-and-forget — errors are caught and logged; never propagate back to Meta.
+ *
+ * @param {object[]} commentEvents  - Normalized events from extractCommentEvents()
+ * @param {object}   channel        - Resolved channel row (shop_id, id, platform)
+ * @param {string}   platform       - 'facebook' | 'instagram'
+ */
+function dispatchCommentEvents(commentEvents, channel, platform) {
+    if (!commentEvents || commentEvents.length === 0) return;
+    const service = getCommentToDmService();
+    for (const evt of commentEvents) {
+        service.handleCommentEvent({ channel, platform, commentPayload: evt })
+            .catch(err => logger.error('CommentToDm handleCommentEvent failed', {
+                error: err.message, commentId: evt.commentId,
+            }));
+    }
+}
+
+/**
+ * Notify the Comment-to-DM service that a customer opened a DM.
+ * Fire-and-forget; if no matching DM_INVITE_SENT row exists the service no-ops.
+ */
+function notifyDmOpened(channel, senderExternalId, messageText) {
+    try {
+        const service = getCommentToDmService();
+        service.handleDmOpened({
+            channel,
+            customerExternalId: senderExternalId,
+            message: messageText || '',
+        }).catch(err => logger.debug('CommentToDm handleDmOpened error (non-fatal)', { error: err.message }));
+    } catch (_) { /* best-effort */ }
+}
+
 const router = express.Router();
 
 // H8: Redis-backed rate limiter shared across all workers; falls back to MemoryStore
@@ -169,13 +214,14 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    // Per-tenant: find the integration whose verify token matches.
+    // Per-tenant: find the channel whose verify token matches.
     // No global fallback — every shop must use its own token to prevent cross-shop forgery.
-    const integration = await MetaIntegration.findOne({
+    const MetaChannel = require('../channel-providers/meta-channel.entity');
+    const channel = await MetaChannel.findOne({
       where: { webhook_verify_token: verifyToken, status: 'CONNECTED' }
     });
 
-    if (integration) {
+    if (channel) {
       return res.status(200).send(challenge);
     }
     return res.sendStatus(403);
@@ -445,38 +491,150 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
   }
 });
 
+/**
+ * Resolve the connected channel for an incoming Meta asset ID.
+ * Phase 5: reads exclusively from meta_channels (single source of truth).
+ *
+ * Shape: { id, shop_id, platform, asset_id, display_name, status, source }
+ */
+async function resolveConnectedChannel(assetId, platform) {
+  const channel = await metaChannelService.findByMetaAssetId(assetId);
+  if (!channel) return null;
+  return {
+    id: channel.id,
+    shop_id: channel.shop_id,
+    platform: channel.platform,
+    asset_id: channel.meta_asset_id,
+    display_name: channel.display_name,
+    status: channel.status,
+    source: 'meta_channels',
+  };
+}
+
+/**
+ * After storing an inbound message, update per-channel consent and detect STOP
+ * keywords. Returns whether the AI dispatch should proceed.
+ *
+ *   - Always: recordInbound() bumps last_inbound_at + implicit OPT_IN_IMPLICIT
+ *     on first inbound.
+ *   - STOP keyword in text: recordOptOut() sets opted_out_at + writes audit;
+ *     dispatchMessageJob is suppressed so we don't reply to a STOP.
+ *
+ * Errors are swallowed — consent bookkeeping must never break inbound delivery.
+ */
+async function processInboundConsent({ storeResult, normalizedEvent, channel }) {
+  try {
+    const platform = normalizedEvent.platform === 'messenger' ? 'facebook' : normalizedEvent.platform;
+    const messageText = normalizedEvent.message || '';
+
+    if (consentService.isStopKeyword(messageText)) {
+      await consentService.recordOptOut({
+        shopId: storeResult.shop_id,
+        channelId: channel?.id || null,
+        customerId: storeResult.customer_id,
+        platform,
+        source: 'keyword_stop',
+        metadata: { message_id: storeResult.message_id, keyword: messageText.trim() },
+      });
+      logger.info('Inbound STOP keyword — suppressing AI dispatch', {
+        shopId: storeResult.shop_id, customerId: storeResult.customer_id, platform,
+      });
+      return { shouldDispatch: false };
+    }
+
+    await consentService.recordInbound({
+      shopId: storeResult.shop_id,
+      channelId: channel?.id || null,
+      customerId: storeResult.customer_id,
+      platform,
+      metadata: { message_id: storeResult.message_id },
+    });
+    return { shouldDispatch: true };
+  } catch (err) {
+    logger.error('processInboundConsent failed (continuing)', { error: err.message });
+    return { shouldDispatch: true };
+  }
+}
+
+/**
+ * Handle a Meta `messaging_optins` event (separate from a regular inbound message).
+ * Issued when a customer explicitly opts in via a checkbox plugin, send-to-Messenger
+ * button, or similar.
+ */
+async function handleMessagingOptin({ channel, senderId, optin }) {
+  try {
+    // Find or create the customer row so the consent event has a target.
+    const channelType = channel.platform === 'facebook' ? 'messenger' : channel.platform;
+    const [customer] = await Customer.findOrCreate({
+      where: { shop_id: channel.shop_id, channel_type: channelType, channel_user_id: String(senderId) },
+      defaults: {
+        shop_id: channel.shop_id,
+        name: `${channel.platform} user`,
+        channel_type: channelType,
+        channel_user_id: String(senderId),
+        metadata: { source: 'messaging_optins' },
+      },
+    });
+
+    await consentService.recordOptIn({
+      shopId: channel.shop_id,
+      channelId: channel.id || null,
+      customerId: customer.id,
+      platform: channel.platform,
+      source: 'webhook_messaging_optins',
+      metadata: { ref: optin?.ref || null, user_ref: optin?.user_ref || null },
+    });
+    logger.info('messaging_optins recorded', { shopId: channel.shop_id, customerId: customer.id });
+  } catch (err) {
+    logger.error('handleMessagingOptin failed', { error: err.message });
+  }
+}
+
 // Handle Facebook Messenger webhooks
 async function handlePageWebhook(payload) {
   for (const entry of payload.entry) {
     const pageId = entry.id;
     logger.info(`Processing Facebook page ${pageId}`, { eventCount: entry.messaging?.length || 0 });
 
-    let integration = await MetaIntegration.findOne({
-      where: { meta_asset_id: pageId, platform: 'facebook', status: 'CONNECTED' }
-    });
+    const channel = await resolveConnectedChannel(pageId, 'facebook');
 
-    if (!integration) {
-      logger.error(`No CONNECTED facebook integration for page_id=${pageId} — incoming messages are being dropped`);
+    if (!channel) {
+      logger.error(`No CONNECTED facebook channel for page_id=${pageId} — incoming messages are being dropped`);
 
-      // Find the shop that previously owned this page (any status) and alert them via SSE
-      // so the agent dashboard shows a warning instead of silently losing messages.
-      const previousIntegration = await MetaIntegration.findOne({
-        where: { meta_asset_id: pageId, platform: 'facebook' },
-        attributes: ['shop_id', 'display_name', 'status']
-      });
-      if (previousIntegration) {
-        sseManager.emit(previousIntegration.shop_id, 'channel_error', {
-          type: 'page_disconnected',
-          page_id: pageId,
-          display_name: previousIntegration.display_name || pageId,
-          status: previousIntegration.status,
-          message: `Facebook page messages are not being delivered — the channel is ${previousIntegration.status}. Reconnect it in Settings → Channels.`
+      // Look up the disconnected/expired channel in meta_channels so we can emit SSE
+      // to the agent dashboard and surface a reconnect prompt.
+      try {
+        const MetaChannel = require('../channel-providers/meta-channel.entity');
+        const previousChannel = await MetaChannel.findOne({
+          where: { meta_asset_id: pageId },
+          attributes: ['shop_id', 'display_name', 'status']
         });
-      }
+        if (previousChannel) {
+          sseManager.emit(previousChannel.shop_id, 'channel_error', {
+            type: 'page_disconnected',
+            page_id: pageId,
+            display_name: previousChannel.display_name || pageId,
+            status: previousChannel.status,
+            message: `Facebook page messages are not being delivered — the channel is ${previousChannel.status}. Reconnect it in Settings → Channels.`
+          });
+        }
+      } catch (_) { /* best-effort SSE */ }
       continue;
     }
 
+    // Phase 4: route feed comment events to Comment-to-DM service (fire-and-forget)
+    const fbCommentEvents = extractCommentEvents({ object: 'page', entry: [entry] }, 'facebook');
+    if (fbCommentEvents.length > 0) {
+      dispatchCommentEvents(fbCommentEvents, channel, 'facebook');
+    }
+
     for (const messaging of (entry.messaging || [])) {
+      // ── messaging_optins: explicit consent grant ─────────────────────────
+      if (messaging.optin) {
+        await handleMessagingOptin({ channel, senderId: messaging.sender?.id, optin: messaging.optin });
+        continue;
+      }
+
       // Skip echo events (page's own outbound messages reflected back by Meta)
       if (messaging.message?.is_echo) {
         logger.debug(`Skipped echo event from ${messaging.sender.id}`);
@@ -493,7 +651,7 @@ async function handlePageWebhook(payload) {
 
       const normalizedEvent = {
         platform: 'facebook',
-        shop_id: integration.shop_id,
+        shop_id: channel.shop_id,
         sender: messaging.sender.id,
         message: messageText || '',
         attachments,
@@ -502,16 +660,21 @@ async function handlePageWebhook(payload) {
       };
 
       try {
-        logger.info(`Processing message from ${messaging.sender.id} to shop ${integration.shop_id}`);
+        logger.info(`Processing message from ${messaging.sender.id} to shop ${channel.shop_id}`);
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
           const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
-          sseManager.emit(integration.shop_id, 'new_message', {
+          sseManager.emit(channel.shop_id, 'new_message', {
             conversation_id: storeResult.conversation_id,
             message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
           });
         }
-        dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
+        const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
+        if (shouldDispatch) {
+          dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
+        }
+        // Phase 4: notify Comment-to-DM service that customer opened DM (fire-and-forget)
+        notifyDmOpened(channel, messaging.sender.id, messageText);
       } catch (err) {
         // Log but never re-throw — returning 500 to Meta triggers a retry storm.
         // Each failed message is independently logged so one failure doesn't drop the rest.
@@ -526,30 +689,41 @@ async function handleInstagramWebhook(payload) {
   for (const entry of payload.entry) {
     const igAccountId = entry.id;
 
-    const integration = await MetaIntegration.findOne({
-      where: { meta_asset_id: igAccountId, platform: 'instagram', status: 'CONNECTED' }
-    });
+    const channel = await resolveConnectedChannel(igAccountId, 'instagram');
 
-    if (!integration) {
-      logger.error(`No CONNECTED instagram integration for account ${igAccountId} — incoming messages are being dropped`);
+    if (!channel) {
+      logger.error(`No CONNECTED instagram channel for account ${igAccountId} — incoming messages are being dropped`);
 
-      const previousIntegration = await MetaIntegration.findOne({
-        where: { meta_asset_id: igAccountId, platform: 'instagram' },
-        attributes: ['shop_id', 'display_name', 'status']
-      });
-      if (previousIntegration) {
-        sseManager.emit(previousIntegration.shop_id, 'channel_error', {
-          type: 'page_disconnected',
-          page_id: igAccountId,
-          display_name: previousIntegration.display_name || igAccountId,
-          status: previousIntegration.status,
-          message: `Instagram DM messages are not being delivered — the channel is ${previousIntegration.status}. Reconnect it in Settings → Channels.`
+      try {
+        const MetaChannel = require('../channel-providers/meta-channel.entity');
+        const previousChannel = await MetaChannel.findOne({
+          where: { meta_asset_id: igAccountId },
+          attributes: ['shop_id', 'display_name', 'status']
         });
-      }
+        if (previousChannel) {
+          sseManager.emit(previousChannel.shop_id, 'channel_error', {
+            type: 'page_disconnected',
+            page_id: igAccountId,
+            display_name: previousChannel.display_name || igAccountId,
+            status: previousChannel.status,
+            message: `Instagram DM messages are not being delivered — the channel is ${previousChannel.status}. Reconnect it in Settings → Channels.`
+          });
+        }
+      } catch (_) { /* best-effort SSE */ }
       continue;
     }
 
+    // Phase 4: route IG comment events to Comment-to-DM service (fire-and-forget)
+    const igCommentEvents = extractCommentEvents({ object: 'instagram', entry: [entry] }, 'instagram');
+    if (igCommentEvents.length > 0) {
+      dispatchCommentEvents(igCommentEvents, channel, 'instagram');
+    }
+
     for (const message of (entry.messaging || [])) {
+      if (message.optin) {
+        await handleMessagingOptin({ channel, senderId: message.sender?.id, optin: message.optin });
+        continue;
+      }
       if (message.message?.is_echo) continue;
       const messageText = message.message?.text || null;
       const attachments = message.message?.attachments || [];
@@ -557,7 +731,7 @@ async function handleInstagramWebhook(payload) {
 
       const normalizedEvent = {
         platform: 'instagram',
-        shop_id: integration.shop_id,
+        shop_id: channel.shop_id,
         sender: message.sender.id,
         message: messageText || '',
         attachments,
@@ -569,12 +743,17 @@ async function handleInstagramWebhook(payload) {
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
           const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
-          sseManager.emit(integration.shop_id, 'new_message', {
+          sseManager.emit(channel.shop_id, 'new_message', {
             conversation_id: storeResult.conversation_id,
             message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
           });
         }
-        dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
+        const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
+        if (shouldDispatch) {
+          dispatchMessageJob(storeResult, normalizedEvent); // non-blocking
+        }
+        // Phase 4: notify Comment-to-DM service that customer opened DM (fire-and-forget)
+        notifyDmOpened(channel, message.sender.id, messageText);
       } catch (err) {
         logger.error(`Failed to store Instagram message from ${message.sender.id} (account ${igAccountId})`, { error: err.message, stack: err.stack });
       }
