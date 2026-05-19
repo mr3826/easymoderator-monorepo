@@ -107,16 +107,4 @@ module.exports = {
     paymentCallbackHmacSecret: process.env.PAYMENT_CALLBACK_HMAC_SECRET || '',
     channelEncryptionKey: process.env.CHANNEL_ENCRYPTION_KEY,
 
-    // ── Meta Integration Redesign — Dual-Write Feature Flags ────────────────
-    // Phase 1: reads still use legacy meta_integrations table.
-    // Phase 3: flip META_READ_FROM_NEW=true to cut reads over to meta_channels.
-    // Phase 5: remove both flags once legacy tables are dropped.
-    //
-    // META_READ_FROM_NEW: when true, MetaChannelService.find* reads from meta_channels
-    //   Default: false (safe during Phase 1 — dual-write only, reads from legacy)
-    metaReadFromNew: process.env.META_READ_FROM_NEW === 'true',
-
-    // META_WRITE_LEGACY: when true, writes also propagate to meta_integrations/channel_configs
-    //   Default: true (ensures legacy paths continue working during transition)
-    metaWriteLegacy: process.env.META_WRITE_LEGACY !== 'false'
 };
