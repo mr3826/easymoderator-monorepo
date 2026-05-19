@@ -2,10 +2,7 @@
  * meta-channel.controller.js
  *
  * Canonical channel CRUD/lifecycle controller for /api/channels/meta/*.
- * Reads exclusively from meta_channels via MetaChannelService — does not touch
- * the legacy channel_configs or meta_integrations tables. Until Phase 3 flips
- * META_READ_FROM_NEW=true, this surface is rendered by the frontend behind a
- * feature flag.
+ * Reads exclusively from meta_channels via MetaChannelService (single source of truth).
  *
  * Endpoints:
  *   GET    /api/channels/meta
