@@ -11,6 +11,11 @@ on:
         default: 'all'
         type: choice
         options: [all, backend, frontend]
+      wipe_db_first:
+        description: 'DESTRUCTIVE — wipe easymod DB before deploy. Type WIPE to confirm (anything else = no-op).'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -175,9 +180,21 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 300s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN
+          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB
           script: |
             set -e
+
+            # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
+            if [ "$WIPE_DB" = "WIPE" ]; then
+              echo "==> WIPE_DB=WIPE detected — dropping easymod database"
+              cd /opt/easymod
+              docker compose -f docker-compose.prod.yml stop backend worker scheduler || true
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'easymod' AND pid <> pg_backend_pid();"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "DROP DATABASE IF EXISTS easymod;"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "CREATE DATABASE easymod OWNER easymod_user;"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d easymod -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+              echo "==> DB wiped + recreated; backend stays stopped until new image is pulled below"
+            fi
 
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
@@ -204,8 +221,8 @@ jobs:
             # Restart services with latest images
             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
-            # Run migrations only when backend was updated
-            if [ -n "$BACKEND_TAG" ]; then
+            # Run migrations when backend was updated OR DB was just wiped
+            if [ -n "$BACKEND_TAG" ] || [ "$WIPE_DB" = "WIPE" ]; then
               echo "Running database migrations..."
               docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
             fi
@@ -234,3 +251,4 @@ jobs:
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
