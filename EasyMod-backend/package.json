@@ -16,6 +16,7 @@
     "migrate:down": "node src/database/migrate.js down",
     "migrate:down:all": "node src/database/migrate.js down:all",
     "migrate:status": "node src/database/migrate.js status",
+    "migrate:seed-executed": "node src/database/migrate.js seed-as-executed",
 "setup:secrets": "node scripts/setup-secrets.js",
     "backup:create": "node scripts/backup-database.js create",
     "backup:list": "node scripts/backup-database.js list",

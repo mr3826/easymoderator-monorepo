@@ -221,6 +221,27 @@ const rollbackAllMigrations = async () => {
 };
 
 /**
+ * Sync-bootstrap helper: marks every registered migration as already-executed
+ * WITHOUT running its up() body. Used after `npm run db:sync` on a freshly-wiped
+ * database, where Sequelize sync has created tables from the entity definitions
+ * and the migration history must be primed so future deploys don't try to
+ * re-apply the same DDL.
+ */
+const seedAllAsExecuted = async () => {
+  console.log('Marking all known migrations as executed (sync-bootstrap mode)...');
+  await createMigrationsTable();
+  let added = 0;
+  for (const migration of migrations) {
+    if (!(await isMigrationExecuted(migration.name))) {
+      await recordMigration(migration.name);
+      console.log(`  marked: ${migration.name}`);
+      added += 1;
+    }
+  }
+  console.log(`✅ Done. ${added} new entries, ${migrations.length - added} already present.`);
+};
+
+/**
  * Exported for use by server.js startup — runs pending migrations using a
  * caller-supplied sequelize instance (avoids double secrets-load).
  */
@@ -252,6 +273,9 @@ const command = process.argv[2];
       case 'down:all':
         await rollbackAllMigrations();
         break;
+      case 'seed-as-executed':
+        await seedAllAsExecuted();
+        break;
       case 'status':
         await createMigrationsTable();
         const [executed] = await sequelize.query(`SELECT * FROM migrations ORDER BY executed_at`);
@@ -273,6 +297,8 @@ Commands:
   node migrate.js down        - Rollback last migration
   node migrate.js down:all    - Rollback all migrations
   node migrate.js status      - Show migration status
+  node migrate.js seed-as-executed - Mark all migrations as executed
+                                    (after npm run db:sync on a fresh DB)
 
 Rules:
   - All migrations must be backward compatible

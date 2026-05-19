@@ -184,28 +184,19 @@ jobs:
           script: |
             set -e
 
-            # Set image vars FIRST so docker compose can validate docker-compose.prod.yml
-            # for any commands run inside the WIPE block (compose substitutes ${GHCR_IMAGE_*}
-            # at parse time, even for stop/exec). These are re-affirmed below after pull.
+            # Image vars must be exported up-front so docker compose can validate
+            # docker-compose.prod.yml for every subsequent command (compose substitutes
+            # ${GHCR_IMAGE_*} at parse time, even for stop/exec).
             export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
             export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
 
-            # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
-            if [ "$WIPE_DB" = "WIPE" ]; then
-              echo "==> WIPE_DB=WIPE detected — dropping easymod database"
-              cd /opt/easymod
-              docker compose -f docker-compose.prod.yml stop backend worker scheduler || true
-              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'easymod' AND pid <> pg_backend_pid();"
-              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "DROP DATABASE IF EXISTS easymod;"
-              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "CREATE DATABASE easymod OWNER easymod_user;"
-              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d easymod -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
-              echo "==> DB wiped + recreated; backend stays stopped until new image is pulled below"
-            fi
+            cd /opt/easymod
 
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
 
-            # Pull only images that were rebuilt
+            # Pull rebuilt images BEFORE the wipe block so sync/seed inside it
+            # can run via `docker compose run --rm backend ...` against the new image.
             if [ -n "$BACKEND_TAG" ]; then
               echo "Pulling backend: $BACKEND_TAG"
               docker pull "$BACKEND_TAG"
@@ -218,14 +209,36 @@ jobs:
               docker tag "$FRONTEND_TAG" "$GHCR_FRONTEND:latest"
             fi
 
-            cd /opt/easymod
+            # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
+            # This codebase relies on Sequelize sync() for base entity tables AND
+            # the migration runner for post-hoc DDL. After a wipe we must:
+            #   1. Drop + recreate the easymod DB
+            #   2. Sync entity tables (so shops/users/etc. exist)
+            #   3. Mark all known migrations as already-executed so the runner
+            #      (which fires on backend boot AND in the deploy step below)
+            #      does not try to re-create the synced tables.
+            if [ "$WIPE_DB" = "WIPE" ]; then
+              echo "==> WIPE_DB=WIPE detected — dropping easymod database"
+              docker compose -f docker-compose.prod.yml stop backend worker scheduler || true
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'easymod' AND pid <> pg_backend_pid();"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "DROP DATABASE IF EXISTS easymod;"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "CREATE DATABASE easymod OWNER easymod_user;"
+              docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d easymod -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+              echo "==> Bootstrapping entity tables via npm run db:sync"
+              docker compose -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run db:sync
+
+              echo "==> Seeding migrations table so the runner skips already-applied DDL"
+              docker compose -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate:seed-executed
+
+              echo "==> DB wiped, synced, and migration history primed"
+            fi
 
             # Restart services with latest images
-            # (GHCR_IMAGE_BACKEND/FRONTEND already exported at top of script)
             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
-            # Run migrations when backend was updated OR DB was just wiped
-            if [ -n "$BACKEND_TAG" ] || [ "$WIPE_DB" = "WIPE" ]; then
+            # Run migrations only when backend was updated (skip on wipe — already seeded)
+            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
               echo "Running database migrations..."
               docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
             fi
