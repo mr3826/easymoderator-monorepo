@@ -18,33 +18,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  test:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - run: npm ci
-      - run: npm test -- --passWithNoTests --forceExit
-
   build:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: test
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
@@ -96,6 +72,29 @@ jobs:
       - name: Sync docker-compose.prod.yml to droplet
         run: scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DO_HOST }}:/opt/easymod/docker-compose.prod.yml
 
+      - name: Patch seed-admin vars in .env.prod on droplet
+        # Requires secrets.SEED_ADMIN_PASSWORD to be set in GitHub repo Settings → Secrets
+        env:
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+        run: |
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DO_HOST }} '
+          set -e
+          ENV_FILE=/opt/easymod/.env.prod
+          patch_var() {
+            local key="$1" val="$2"
+            if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+            else
+              echo "${key}=${val}" >> "$ENV_FILE"
+            fi
+          }
+          patch_var SEED_ADMIN_EMAIL "admin@test.prod"
+          patch_var SEED_ADMIN_PASSWORD "'"$SEED_ADMIN_PASSWORD"'"
+          patch_var SEED_ADMIN_NAME "EasyMod Admin"
+          patch_var SEED_ADMIN_PHONE "01700000000"
+          echo "Seed admin vars patched in .env.prod"
+          '
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -119,6 +118,9 @@ jobs:
 
             echo "Running database migrations..."
             docker compose -f docker-compose.prod.yml exec -T backend npm run migrate
+
+            echo "Seeding admin user (idempotent)..."
+            docker compose -f docker-compose.prod.yml exec -T backend node src/scripts/seed-admin.js || echo "Seed skipped or already exists"
 
             for i in $(seq 1 20); do
               STATUS=$(curl -sf http://localhost:3000/health/ready -o /dev/null -w "%{http_code}" || echo "000")

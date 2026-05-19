@@ -240,7 +240,6 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
             }
 
             // Use webhook service to send message
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
             await webhookService.sendMessage(channel, owner.phone, message);
 
@@ -274,7 +273,6 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
             }
 
             // Use webhook service to send message
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
             await webhookService.sendMessage(channel, owner.phone, message);
 
@@ -414,7 +412,6 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
                 : `❌ আপনার পেমেন্ট নিশ্চিত করা হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন বা দোকানের সাথে যোগাযোগ করুন।\n\n❌ Your payment could not be confirmed. Please try again or contact the shop.`;
 
             // Send via the same channel customer used
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
             const channel = await Channel.findOne({
                 where: {

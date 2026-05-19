@@ -80,8 +80,6 @@ const trySendViaChannel = async (order, shopId, message, logger) => {
             return { sent: false, reason: 'no_external_id' };
         }
 
-        // Attempt to send via the webhook/channel service
-        // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
         const webhookService = require('../webhook/webhook.service');
         await webhookService.sendMessage(channel, customer.external_id, message);
 

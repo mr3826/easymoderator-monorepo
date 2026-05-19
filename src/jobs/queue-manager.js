@@ -9,6 +9,9 @@ const {
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
+    MetaTokenRefreshJob,
+    CommentToDmWorker,
+    CommentToDmExpiryJob,
 } = require('./index');
 
 class QueueManager {
@@ -37,6 +40,10 @@ class QueueManager {
             ['monthly-usage-reset', 'monthlyReset', MonthlyUsageReset],
             ['invoice-generator', 'invoiceGenerator', InvoiceGenerator],
             ['failed-payment-reconciler', 'paymentReconciler', FailedPaymentReconciler],
+            // Phase 2 — refresh Meta channel tokens before they expire.
+            ['meta-token-refresh', 'metaTokenRefresh', MetaTokenRefreshJob],
+            // Phase 4 — Comment-to-DM expiry cron (daily sweep)
+            ['comment-to-dm-expiry', 'commentToDmExpiry', CommentToDmExpiryJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -49,6 +56,24 @@ class QueueManager {
                 });
             }, { connection });
         }
+
+        // Phase 4 — Comment-to-DM processing queue (separate from billing, separate from message-processing)
+        this.queues.commentToDm = new Queue('comment-to-dm', {
+            connection,
+            defaultJobOptions: {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: { count: 500 },
+                removeOnFail: { count: 200 },
+            },
+        });
+        this.workers.commentToDm = new Worker('comment-to-dm', async (job) => {
+            const worker = new CommentToDmWorker();
+            return worker.execute(job);
+        }, {
+            connection,
+            concurrency: 10,
+        });
 
         // Push notification — fire-and-forget, expired subs auto-cleaned
         this.queues.notifications = new Queue('notifications', {
@@ -129,6 +154,20 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Phase 2 — refresh Meta tokens every 6 hours so they never expire silently.
+        await this.queues.metaTokenRefresh.upsertJobScheduler(
+            'meta-token-refresh',
+            { pattern: '0 */6 * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
+        // Phase 4 — expire stale Comment-to-DM rows daily at 03:00 UTC.
+        await this.queues.commentToDmExpiry.upsertJobScheduler(
+            'comment-to-dm-expiry',
+            { pattern: '0 3 * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -138,6 +177,8 @@ class QueueManager {
             'monthly_usage_reset': 'monthlyReset',
             'invoice_generator': 'invoiceGenerator',
             'failed_payment_reconciler': 'paymentReconciler',
+            'meta_token_refresh': 'metaTokenRefresh',
+            'comment_to_dm_expiry': 'commentToDmExpiry',
         };
 
         const queueKey = queueMap[jobName];

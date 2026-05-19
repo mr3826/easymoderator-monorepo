@@ -154,7 +154,6 @@ class PaymentWebhookController {
      */
     async sendPaymentConfirmationToCustomer(order, paymentInfo) {
         try {
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
             const { Channel } = require('../entities');
 

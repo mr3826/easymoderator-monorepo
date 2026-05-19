@@ -4,6 +4,7 @@ const { Order } = require('./order.entity');
 const { Customer } = require('../entities');
 const { getShopAiSettings } = require('../shop/shop.service');
 const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
+const DeliveryCost = require('../delivery/delivery-cost.entity');
 
 // Full Bangladesh mobile number regex (covers 01[3-9]XXXXXXXX with optional +88/88 prefix)
 const BD_PHONE_REGEX = /(?:\+?88)?0(1[3-9]\d{8})/;
@@ -406,12 +407,20 @@ class OrderSessionService {
     }
 
     static async checkDeliveryZone(shopId, address) {
-        // TODO: Implement RAG-based delivery zone matching
-        // For now, return default values
-        return {
-            zone: 'Dhaka Inside',
-            charge: 60
-        };
+        const zones = await DeliveryCost.findAll({ where: { shop_id: shopId } });
+
+        if (zones.length > 0) {
+            const normalizedAddress = (address || '').toLowerCase();
+            // Match zone_type name keywords against the address string
+            const matched = zones.find(z =>
+                z.zone_type && normalizedAddress.includes(z.zone_type.toLowerCase())
+            );
+            const zone = matched || zones[0]; // default to first configured zone
+            return { zone: zone.zone_type, charge: parseFloat(zone.cost) };
+        }
+
+        // No zones configured — absolute fallback
+        return { zone: 'Dhaka Inside', charge: 60 };
     }
 
     static generateOrderSummary(session, stepData) {
@@ -486,7 +495,6 @@ Type "YES" to confirm.`;
                 });
 
                 // Send payment URL to customer
-                // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
                 const webhookService = require('../webhook/webhook.service');
                 const { Channel } = require('../entities');
                 const channel = await Channel.findOne({
@@ -546,7 +554,6 @@ Type "YES" to confirm.`;
                 });
 
                 // Send payment URL to customer
-                // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
                 const webhookService = require('../webhook/webhook.service');
                 const channel = await Channel.findOne({
                     where: {

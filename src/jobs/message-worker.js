@@ -25,9 +25,11 @@ const { connection } = require('./message-queue');
 const { cacheRedis } = require('../config/redis');
 const { Conversation, Message } = require('../modules/conversation/conversation.entity');
 const ConversationStateService = require('../modules/conversation/conversation-state-standalone.service');
-const metaSendService = require('../modules/integration/meta-send.service');
-const { MetaRateLimitError } = require('../modules/integration/meta-send.service');
+const { getProvider } = require('../modules/channel-providers/provider.registry');
 const sseManager = require('../utils/sse-manager');
+const policyEngine = require('../modules/policy/policy.engine');
+const metaChannelService = require('../modules/channel-providers/meta-channel.service');
+const Customer = require('../modules/customer/customer.entity');
 
 // Lazy imports to avoid circular dependency issues at module load
 const getShopAISettings = async (shopId) => {
@@ -36,8 +38,17 @@ const getShopAISettings = async (shopId) => {
 };
 
 const getChannelAISettings = async (shopId, platform) => {
-    const channelService = require('../modules/channel/channel.service');
-    return channelService.getChannelAISettings(shopId, platform).catch(() => ({}));
+    // Phase 5: channel.service removed. Channel AI settings come from
+    // MetaChannelSettings (meta_channel_settings table) via metaChannelService.
+    try {
+        const pf = platform === 'messenger' ? 'facebook' : platform;
+        const ch = await metaChannelService.findByShopAndPlatform(shopId, pf);
+        if (!ch) return {};
+        const settings = await metaChannelService.getSettings(ch.id);
+        return settings?.toJSON?.() || settings || {};
+    } catch {
+        return {};
+    }
 };
 
 /**
@@ -156,10 +167,17 @@ async function processMessageJob(job) {
                 const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
                 if (autoReplyMsg) {
                     sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                    // Deliver escalation message to customer via Meta
-                    metaSendService.sendWithRateLimit({ shopId, platform, recipientId, message: autoReplyMsg.content }).catch(
-                        err => console.warn(`[worker] Escalation delivery failed: ${err.message}`)
-                    );
+                    // Deliver escalation message to customer via provider registry
+                    const pf = platform === 'messenger' ? 'facebook' : platform;
+                    const escCh = await metaChannelService.findByShopAndPlatform(shopId, pf).catch(() => null);
+                    if (escCh) {
+                        const escProvider = getProvider(pf);
+                        escProvider.sendMessage({
+                            channel: escCh, recipientId: String(recipientId),
+                            normalizedMessage: { text: autoReplyMsg.content, attachments: [], platform: pf, direction: 'outbound', senderRole: 'ai' },
+                            decision: { allow: true, reason: 'OK', augment: {} },
+                        }).catch(err => console.warn(`[worker] Escalation delivery failed: ${err.message}`));
+                    }
                 }
                 return { skipped: true, reason: 'auto_escalated', sentiment: sentimentResult.sentiment };
             }
@@ -201,24 +219,84 @@ async function processMessageJob(job) {
         message: aiStoreResult.message
     });
 
-    // ── Guard 5: DRAFT mode — store but don't send ─────────────────────────
-    if (aiSettings.automation_mode === 'DRAFT') {
-        return { success: true, conversationId, confidence, sent: false, reason: 'draft_mode' };
+    // ── Policy Engine: mandatory outbound gate ─────────────────────────────
+    // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
+    // old guard list. Every send (including non-AI) flows through this gate.
+    const policyChannelType = platform === 'messenger' ? 'facebook' : platform;
+    const [customer, channel] = await Promise.all([
+        Customer.findOne({
+            where: { shop_id: shopId, channel_user_id: String(recipientId) },
+        }).catch(() => null),
+        metaChannelService.findByShopAndPlatform(shopId, policyChannelType).catch(() => null),
+    ]);
+    let channelSettings = aiSettings;
+    if (channel) {
+        try {
+            const s = await metaChannelService.getSettings(channel.id);
+            channelSettings = { ...aiSettings, ...(s?.toJSON?.() || s || {}) };
+        } catch { /* fall back to aiSettings */ }
     }
 
-    // ── Send to Meta (leaky bucket) ─────────────────────────────────────────
+    const normalizedOutbound = {
+        text: response,
+        platform: policyChannelType,
+        senderRole: 'ai',
+        direction: 'outbound',
+    };
+
+    const decision = await policyEngine.evaluateOutbound(normalizedOutbound, {
+        shopId,
+        platform: policyChannelType,
+        customer,
+        channel,
+        settings: channelSettings,
+        conversationId,
+    });
+
+    if (!decision.allow) {
+        // RATE_LIMIT: defer the job until the bucket clears.
+        if (decision.reason === 'RATE_LIMIT' && decision.retryAfterMs) {
+            await job.moveToDelayed(Date.now() + decision.retryAfterMs, job.token);
+            return { delayed: true, reason: 'policy_rate_limit', retryAfterMs: decision.retryAfterMs };
+        }
+        // DRAFT / SUGGEST_ONLY / MANUAL / OPTED_OUT / NO_CONSENT / OUTSIDE_24H:
+        // AI response is already stored; just don't deliver.
+        return {
+            success: true, conversationId, confidence,
+            sent: false, reason: decision.reason, decisionId: decision.decisionId,
+        };
+    }
+
+    // ── Send to Meta via provider registry ─────────────────────────────────
+    const finalText = decision.transform?.text || response;
+    const policyChannelTypeForSend = platform === 'messenger' ? 'facebook' : platform;
     try {
-        await metaSendService.sendWithRateLimit({ shopId, platform, recipientId, message: response });
+        if (!channel) {
+            throw new Error(`No MetaChannel found for shop ${shopId} platform ${policyChannelTypeForSend}`);
+        }
+        const provider = getProvider(policyChannelTypeForSend);
+        await provider.sendMessage({
+            channel,
+            recipientId: String(recipientId),
+            normalizedMessage: {
+                text: finalText,
+                attachments: [],
+                platform: policyChannelTypeForSend,
+                direction: 'outbound',
+                senderRole: 'ai',
+            },
+            decision,
+        });
     } catch (err) {
-        if (err instanceof MetaRateLimitError) {
-            // Move job to delayed queue — it will re-run after the rate window expires
+        // Check for rate limit signal from the provider
+        if (err.retryAfterMs) {
             await job.moveToDelayed(Date.now() + err.retryAfterMs, job.token);
             return { delayed: true, reason: 'meta_rate_limit', retryAfterMs: err.retryAfterMs };
         }
         throw err; // Other send errors bubble up for normal retry/DLQ handling
     }
 
-    return { success: true, conversationId, confidence, sent: true };
+    return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
 }
 
 // ── Worker lifecycle ──────────────────────────────────────────────────────────

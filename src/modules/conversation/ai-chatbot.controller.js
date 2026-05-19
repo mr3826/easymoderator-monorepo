@@ -4,7 +4,7 @@ const OrderSessionService = require('../order/order-session-standalone.service')
 const intentRouter = require('../ai/intent-router.service');
 const knowledgeService = require('../knowledge/knowledge.service');
 const shopService = require('../shop/shop.service');
-const channelService = require('../channel/channel.service');
+const metaChannelService = require('../channel-providers/meta-channel.service');
 const cacheService = require('../../utils/cache.service');
 const { isTooLong } = require('../ai/prompt-sanitizer.service');
 const { SupportTicket } = require('../entities');
@@ -99,7 +99,15 @@ class AIChatbotController {
             // (e.g. draftOrdersOnly on WhatsApp but not on Facebook).
             const [shopAISettings, channelAISettings] = await Promise.all([
                 getShopAISettings(shop_id),
-                channelService.getChannelAISettings(shop_id, platform)
+                (async () => {
+                    try {
+                        const pf = platform === 'messenger' ? 'facebook' : platform;
+                        const ch = await metaChannelService.findByShopAndPlatform(shop_id, pf);
+                        if (!ch) return {};
+                        const s = await metaChannelService.getSettings(ch.id);
+                        return s?.toJSON?.() || s || {};
+                    } catch { return {}; }
+                })()
             ]);
             const aiSettings = { ...shopAISettings, ...channelAISettings };
 

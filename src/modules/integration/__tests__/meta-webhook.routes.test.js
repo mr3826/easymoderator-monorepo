@@ -1,8 +1,11 @@
 /**
- * Meta Webhook Routes — Unit Tests
+ * Meta Webhook Routes — Unit Tests (Phase 5 canonical-only rewrite)
  *
  * Covers: storeIncomingMessage (conversation pipeline), webhook GET verification,
  * and incoming webhook POST routing.
+ *
+ * Phase 5: MetaIntegration is gone. All channel resolution goes through
+ * MetaChannelService (meta_channels table). metaReadFromNew flag is removed.
  */
 
 // ── Environment ────────────────────────────────────────────────────────────────
@@ -17,14 +20,13 @@ jest.mock('src/config/redis', () => ({
     closeAllRedis: jest.fn(), checkRedisAvailability: jest.fn(() => ({}))
 }));
 
-// Mock rate-limit-redis so it never tries to connect
 jest.mock('rate-limit-redis', () => ({ RedisStore: jest.fn() }));
 
 jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }))
 }));
 
-// Mock config
+// Mock config — metaReadFromNew / metaWriteLegacy removed in Phase 5
 jest.mock('src/config/config', () => ({
     metaWebhookAppSecret: null,  // disabled by default; override per test
     jwtAccessSecret: 'test-jwt-access-secret-32chars!!',
@@ -35,14 +37,18 @@ jest.mock('src/config/config', () => ({
 
 // ── Entity mocks ───────────────────────────────────────────────────────────────
 
-const mockMetaIntegration = {
+// Phase 5: MetaChannel replaces MetaIntegration for all channel resolution.
+const mockMetaChannelEntity = {
     findOne: jest.fn(),
     findAll: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-    upsert: jest.fn(),
 };
-jest.mock('src/modules/integration/meta-integration.entity', () => mockMetaIntegration);
+jest.mock('src/modules/channel-providers/meta-channel.entity', () => mockMetaChannelEntity);
+
+// MetaChannelService.findByMetaAssetId is the canonical resolution path.
+const mockMetaChannelService = {
+    findByMetaAssetId: jest.fn(),
+};
+jest.mock('src/modules/channel-providers/meta-channel.service', () => mockMetaChannelService);
 
 const mockCustomer = { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn(), destroy: jest.fn() };
 const mockConversation = { findOne: jest.fn(), create: jest.fn() };
@@ -59,7 +65,7 @@ jest.mock('src/modules/conversation/conversation.entity', () => ({
     Message: mockMessage,
 }));
 
-const mockTransaction = {};
+const mockTransaction = { LOCK: { UPDATE: 'UPDATE' } };
 jest.mock('src/utils/database/database-setup', () => ({
     sequelize: {
         define: jest.fn(() => ({
@@ -73,12 +79,28 @@ jest.mock('src/utils/database/database-setup', () => ({
     }
 }));
 
-// MetaService mock (for decryptToken in the reply endpoint)
-const mockMetaService = {
-    decryptToken: jest.fn(t => `DECRYPTED:${t}`),
-    encryptToken: jest.fn(t => `ENCRYPTED:${t}`),
-};
-jest.mock('src/modules/integration/meta.service', () => mockMetaService);
+// Consent service — fire-and-forget, always resolves
+jest.mock('src/modules/consent/consent.service', () => ({
+    isStopKeyword: jest.fn(() => false),
+    recordInbound: jest.fn().mockResolvedValue(undefined),
+    recordOptOut: jest.fn().mockResolvedValue(undefined),
+    recordOptIn: jest.fn().mockResolvedValue(undefined),
+}));
+
+// CommentToDm webhook handler — no-op for these tests
+jest.mock('src/modules/commentToDm/comment-to-dm.webhook-handler', () => ({
+    extractCommentEvents: jest.fn(() => []),
+}));
+
+// SSE manager — no-op
+jest.mock('src/utils/sse-manager', () => ({
+    emit: jest.fn(),
+}));
+
+// BullMQ message queue — no-op
+jest.mock('src/jobs/message-queue', () => ({
+    messageQueue: { add: jest.fn().mockResolvedValue(undefined) },
+}));
 
 // Global fetch mock
 global.fetch = jest.fn();
@@ -105,17 +127,15 @@ const SHOP_ID = 'shop-uuid-1';
 const PAGE_ID = 'page-111';
 const CONV_ID = 'conv-uuid-1';
 const CUSTOMER_ID = 'cust-uuid-1';
-const ENCRYPTED_TOKEN = 'iv:authtag:ciphertext';
 
-const buildIntegration = (overrides = {}) => ({
-    id: 'integ-1',
+const buildMetaChannel = (overrides = {}) => ({
+    id: 'mc-1',
     shop_id: SHOP_ID,
     platform: 'facebook',
     meta_asset_id: PAGE_ID,
     status: 'CONNECTED',
-    access_token: ENCRYPTED_TOKEN,
-    token_expires_at: null,
-    ...overrides
+    display_name: 'Test Page',
+    ...overrides,
 });
 
 const buildConversation = (overrides = {}) => ({
@@ -123,7 +143,8 @@ const buildConversation = (overrides = {}) => ({
     shop_id: SHOP_ID,
     customer_id: CUSTOMER_ID,
     channel: 'messenger',
-    ...overrides
+    update: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
 });
 
 const buildMessage = (overrides = {}) => ({
@@ -133,7 +154,7 @@ const buildMessage = (overrides = {}) => ({
     content: 'Hello',
     external_id: 'mid.12345',
     created_at: new Date(),
-    ...overrides
+    ...overrides,
 });
 
 // ── storeIncomingMessage ───────────────────────────────────────────────────────
@@ -251,13 +272,14 @@ describe('storeIncomingMessage', () => {
 describe('GET /webhooks/meta (webhook verification)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockMetaIntegration.findOne.mockResolvedValue(null);
+        // Default: no channel found
+        mockMetaChannelEntity.findOne.mockResolvedValue(null);
     });
 
     it('returns 403 when hub.mode is not subscribe', async () => {
         await request(app)
             .get('/webhooks/meta')
-            .query({ 'hub.mode': 'unsubscribe', 'hub.verify_token': 'global-verify-token', 'hub.challenge': 'ch1' })
+            .query({ 'hub.mode': 'unsubscribe', 'hub.verify_token': 'any-token', 'hub.challenge': 'ch1' })
             .expect(403);
     });
 
@@ -268,24 +290,18 @@ describe('GET /webhooks/meta (webhook verification)', () => {
             .expect(403);
     });
 
-    it('returns 403 when verify_token does not match global env var or any integration', async () => {
+    it('returns 403 when verify_token does not match any MetaChannel', async () => {
+        mockMetaChannelEntity.findOne.mockResolvedValue(null);
         await request(app)
             .get('/webhooks/meta')
             .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'wrong-token', 'hub.challenge': 'ch1' })
             .expect(403);
     });
 
-    it('returns 200 with challenge when verify_token matches global META_WEBHOOK_VERIFY_TOKEN', async () => {
-        const res = await request(app)
-            .get('/webhooks/meta')
-            .query({ 'hub.mode': 'subscribe', 'hub.verify_token': 'global-verify-token', 'hub.challenge': 'challenge-abc' })
-            .expect(200);
-
-        expect(res.text).toBe('challenge-abc');
-    });
-
-    it('returns 200 with challenge when verify_token matches a per-tenant integration', async () => {
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration({ webhook_verify_token: 'tenant-token-xyz' }));
+    it('returns 200 with challenge when verify_token matches a MetaChannel', async () => {
+        mockMetaChannelEntity.findOne.mockResolvedValue(
+            buildMetaChannel({ webhook_verify_token: 'tenant-token-xyz' })
+        );
 
         const res = await request(app)
             .get('/webhooks/meta')
@@ -297,6 +313,8 @@ describe('GET /webhooks/meta (webhook verification)', () => {
 });
 
 // ── POST /webhooks/meta (incoming webhook) ─────────────────────────────────────
+
+const POST_APP_SECRET = 'post-test-app-secret';
 
 describe('POST /webhooks/meta (incoming webhook)', () => {
     const buildPagePayload = (overrides = {}) => ({
@@ -313,12 +331,29 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         ...overrides
     });
 
+    // Helper that sends with a valid signature for the POST_APP_SECRET
+    const sendWebhookWithSig = (payload) => {
+        const body = Buffer.from(JSON.stringify(payload));
+        const sig = 'sha256=' + require('crypto').createHmac('sha256', POST_APP_SECRET).update(body).digest('hex');
+        return request(app)
+            .post('/webhooks/meta')
+            .set('Content-Type', 'application/octet-stream')
+            .set('x-hub-signature-256', sig)
+            .send(body);
+    };
+
     beforeEach(() => {
         jest.clearAllMocks();
         global.fetch.mockResolvedValue({ ok: true });
 
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration());
-        mockMetaIntegration.findAll.mockResolvedValue([]);
+        // Set app secret so the router processes the payload instead of rejecting.
+        // The signature check is exercised by sendWebhookWithSig.
+        config.metaWebhookAppSecret = POST_APP_SECRET;
+
+        // Default: channel found via MetaChannelService
+        mockMetaChannelService.findByMetaAssetId.mockResolvedValue(buildMetaChannel());
+        mockMetaChannelEntity.findOne.mockResolvedValue(null); // SSE fallback — not needed
+
         mockCustomer.findOrCreate.mockResolvedValue([{ id: CUSTOMER_ID }, true]);
         mockConversation.findOne.mockResolvedValue(null);
         mockConversation.create.mockResolvedValue(buildConversation());
@@ -326,27 +361,25 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         mockMessage.create.mockResolvedValue(buildMessage());
     });
 
-    const sendWebhook = (payload) =>
-        request(app)
-            .post('/webhooks/meta')
-            .set('Content-Type', 'application/json')
-            .send(payload);
-
-    it('always returns 200 — never 5xx (Meta must not retry)', async () => {
-        await sendWebhook(buildPagePayload()).expect(200);
+    afterEach(() => {
+        config.metaWebhookAppSecret = null;
     });
 
-    it('returns 200 even when page integration is missing (message dropped gracefully)', async () => {
-        mockMetaIntegration.findOne.mockResolvedValue(null);
-        await sendWebhook(buildPagePayload()).expect(200);
+    it('always returns 200 — never 5xx (Meta must not retry)', async () => {
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
+    });
+
+    it('returns 200 even when MetaChannel is missing (message dropped gracefully)', async () => {
+        mockMetaChannelService.findByMetaAssetId.mockResolvedValue(null);
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
 
     it('returns 200 for unrecognised object type', async () => {
-        await sendWebhook({ object: 'user', entry: [] }).expect(200);
+        await sendWebhookWithSig({ object: 'user', entry: [] }).expect(200);
     });
 
     it('routes page events and stores the incoming message', async () => {
-        await sendWebhook(buildPagePayload()).expect(200);
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
         expect(mockMessage.create).toHaveBeenCalled();
     });
 
@@ -354,7 +387,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         const echoPayload = buildPagePayload();
         echoPayload.entry[0].messaging[0].message.is_echo = true;
 
-        await sendWebhook(echoPayload).expect(200);
+        await sendWebhookWithSig(echoPayload).expect(200);
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
@@ -367,16 +400,18 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
                     sender: { id: 'fb-user-789' },
                     recipient: { id: PAGE_ID },
                     timestamp: Date.now(),
-                    delivery: { watermark: 12345 }  // delivery event, no message
+                    delivery: { watermark: 12345 }
                 }]
             }]
         };
-        await sendWebhook(noMsgPayload).expect(200);
+        await sendWebhookWithSig(noMsgPayload).expect(200);
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
     it('routes instagram events and stores the message', async () => {
-        mockMetaIntegration.findOne.mockResolvedValue(buildIntegration({ platform: 'instagram' }));
+        mockMetaChannelService.findByMetaAssetId.mockResolvedValue(
+            buildMetaChannel({ platform: 'instagram', meta_asset_id: 'ig-acct-111' })
+        );
 
         const igPayload = {
             object: 'instagram',
@@ -390,45 +425,26 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
                 }]
             }]
         };
-        await sendWebhook(igPayload).expect(200);
+        await sendWebhookWithSig(igPayload).expect(200);
         expect(mockMessage.create).toHaveBeenCalled();
     });
 
     it('returns 200 even when message storage fails (per-message error isolation)', async () => {
         mockMessage.create.mockRejectedValue(new Error('DB write failed'));
 
-        await sendWebhook(buildPagePayload()).expect(200);
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
 
     it('rejects webhook with invalid signature when META_WEBHOOK_APP_SECRET is set', async () => {
-        config.metaWebhookAppSecret = 'my-app-secret';
-        try {
-            await request(app)
-                .post('/webhooks/meta')
-                .set('Content-Type', 'application/octet-stream')
-                .set('x-hub-signature-256', 'sha256=invalidsignature')
-                .send(Buffer.from(JSON.stringify(buildPagePayload())))
-                .expect(403);
-        } finally {
-            config.metaWebhookAppSecret = null;
-        }
+        await request(app)
+            .post('/webhooks/meta')
+            .set('Content-Type', 'application/octet-stream')
+            .set('x-hub-signature-256', 'sha256=invalidsignature')
+            .send(Buffer.from(JSON.stringify(buildPagePayload())))
+            .expect(403);
     });
 
     it('accepts webhook with valid HMAC-SHA256 signature', async () => {
-        const secret = 'my-app-secret';
-        config.metaWebhookAppSecret = secret;
-        try {
-            const body = Buffer.from(JSON.stringify(buildPagePayload()));
-            const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex');
-
-            await request(app)
-                .post('/webhooks/meta')
-                .set('Content-Type', 'application/octet-stream')
-                .set('x-hub-signature-256', sig)
-                .send(body)
-                .expect(200);
-        } finally {
-            config.metaWebhookAppSecret = null;
-        }
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
 });

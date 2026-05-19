@@ -103,6 +103,9 @@ const generateSubscriptionInvoice = async ({
     shopName,
     planName,
     amountBdt,
+    subtotalBdt,
+    taxBdt,
+    vatRate,
     bkashTrxId,
     periodStart,
     periodEnd
@@ -134,7 +137,13 @@ const generateSubscriptionInvoice = async ({
         doc.moveDown();
 
         doc.font('Helvetica-Bold').text('Payment');
-        doc.font('Helvetica').text(`Amount: BDT ${parseFloat(amountBdt).toFixed(2)}`);
+        doc.font('Helvetica');
+        if (subtotalBdt != null && taxBdt != null) {
+            doc.text(`Subtotal: BDT ${parseFloat(subtotalBdt).toFixed(2)}`);
+            const vatPct = vatRate != null ? Math.round(vatRate * 100) : 15;
+            doc.text(`VAT (${vatPct}%): BDT ${parseFloat(taxBdt).toFixed(2)}`);
+        }
+        doc.text(`Total: BDT ${parseFloat(amountBdt).toFixed(2)}`);
         doc.text(`Payment Method: bKash`);
         if (bkashTrxId) doc.text(`Transaction ID: ${bkashTrxId}`);
         doc.text(`Status: Paid`);

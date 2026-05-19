@@ -189,10 +189,11 @@ class InvoiceGenerator extends BaseJob {
         // Calculate subtotal
         invoiceData.subtotal = invoiceData.baseAmount + invoiceData.extraCharges;
         
-        // Calculate tax (if applicable)
-        // TODO: Add tax calculation based on shop location
-        invoiceData.tax = 0;
-        
+        // Bangladesh VAT on digital services: 15% (NBR regulation)
+        const BD_VAT_RATE = 0.15;
+        invoiceData.tax = Math.round(invoiceData.subtotal * BD_VAT_RATE);
+        invoiceData.vatRate = BD_VAT_RATE;
+
         // Calculate total
         invoiceData.totalAmount = invoiceData.subtotal + invoiceData.tax;
 
@@ -227,7 +228,8 @@ class InvoiceGenerator extends BaseJob {
                 ordersUsed: invoiceData.ordersUsed,
                 productsUsed: invoiceData.productsUsed,
                 subtotal: invoiceData.subtotal,
-                tax: invoiceData.tax
+                tax: invoiceData.tax,
+                vatRate: invoiceData.vatRate
             }
         });
 

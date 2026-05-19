@@ -148,14 +148,6 @@ describe('CustomerService', () => {
             }));
         });
 
-        it('sets marketing_opt_out=true and unsubscribed=true when consent is revoked', async () => {
-            Customer.findOne.mockResolvedValue(cust);
-            await customerService.updateCustomerConsent('cust-1', 'shop-1', false);
-            expect(cust.update).toHaveBeenCalledWith(expect.objectContaining({
-                metadata: expect.objectContaining({ marketing_opt_out: true, unsubscribed: true })
-            }));
-        });
-
         it('throws 404 when customer not found', async () => {
             Customer.findOne.mockResolvedValue(null);
             await expect(

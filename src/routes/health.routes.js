@@ -121,6 +121,25 @@ router.get('/detailed', authenticate, async (req, res) => {
 });
 
 /**
+ * SSE pub/sub health — reports local SSE connection count and Redis pub/sub status.
+ * Unauthenticated so load balancers and container orchestrators can probe it.
+ */
+router.get('/sse', (req, res) => {
+    let connections = 0;
+    let pubsub = 'down';
+
+    try {
+        const sseManager = require('../utils/sse-manager');
+        connections = sseManager.getLocalConnectionCount();
+        pubsub = sseManager.getPubSubStatus();
+    } catch (_) {
+        pubsub = 'down';
+    }
+
+    res.status(200).json({ connections, pubsub });
+});
+
+/**
  * Full health check endpoint with detailed metrics
  */
 router.get('/health', async (req, res) => {

@@ -16,6 +16,7 @@ const llmService = require('../ai/llm.service');
 const { TrxIDLog } = require('../entities');
 const { Op, Sequelize } = require('sequelize');
 const axios = require('axios');
+const { normalizePhone } = require('../../utils/validators/phone.validator');
 
 // ---------------------------------------------------------------------------
 // Sprint 4: Advanced fraud scoring
@@ -158,16 +159,7 @@ const ocrScreenshot = async (imageUrl) => {
     }
 };
 
-/**
- * Normalize a BD phone number to 11-digit local format (01XXXXXXXXX).
- * Returns null if not recognizable as a BD number.
- */
-const normalizePhone = (raw) => {
-    if (!raw) return null;
-    const BD_PHONE_RE = /(?:\+?88)?0(1[3-9]\d{8})/;
-    const m = String(raw).replace(/\s|-/g, '').match(BD_PHONE_RE);
-    return m ? `0${m[1]}` : null;
-};
+// normalizePhone imported from shared validator (replaces local copy)
 
 /**
  * Check for duplicate TrxID within a shop.

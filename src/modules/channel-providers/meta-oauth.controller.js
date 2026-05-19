@@ -9,7 +9,7 @@
 
 'use strict';
 
-const oauthService = require('../channel/channel.oauth.service');
+const oauthService = require('./meta-oauth.service');
 const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('MetaOAuthController');

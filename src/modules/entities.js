@@ -12,11 +12,9 @@ const Customer = require('./customer/customer.entity');
 const Order = require('./order/order.entity');
 const OrderReturn = require('./order/order-return.entity');
 const OrderItem = require('./order/order-item.entity');
-const Channel = require('./channel/channel.entity');
 const { Conversation, Message } = require('./conversation/conversation.entity');
 const AuditLog = require('./audit/audit-log.entity');
 const IdempotencyKey = require('./audit/idempotency-key.entity');
-const MetaIntegration = require('./integration/meta-integration.entity');
 const DeliveryIntegration = require('./delivery/delivery-integration.entity');
 const DeliveryCost = require('./delivery/delivery-cost.entity');
 const KnownArea = require('./delivery/known-area.entity');
@@ -41,6 +39,17 @@ const PushSubscription = require('./notification/push-subscription.entity');
 const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.entity');
 const CourierCodCollection = require('./reconciliation/courier-collection.entity');
 const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
+
+// Phase 1 — Meta Integration Redesign: new unified channel entities
+const MetaChannel = require('./channel-providers/meta-channel.entity');
+const MetaChannelSettings = require('./channel-providers/meta-channel-settings.entity');
+const MetaChannelConsentEvent = require('./channel-providers/meta-channel-consent-event.entity');
+
+// Phase 3 — Policy Engine audit log
+const PolicyDecision = require('./policy/policy-decision.entity');
+
+// Phase 4 — Comment-to-DM state machine
+const CommentToDmEvent = require('./commentToDm/comment-to-dm.entity');
 
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
@@ -153,18 +162,6 @@ Shop.hasMany(Customer, {
 });
 
 Customer.belongsTo(Shop, {
-    foreignKey: 'shop_id',
-    as: 'shop'
-});
-
-// Define Shop-Channel relationship
-Shop.hasMany(Channel, {
-    foreignKey: 'shop_id',
-    as: 'channels',
-    onDelete: 'CASCADE'
-});
-
-Channel.belongsTo(Shop, {
     foreignKey: 'shop_id',
     as: 'shop'
 });
@@ -364,6 +361,96 @@ Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking
 PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
 
+// ── Phase 4: CommentToDmEvent associations ─────────────────────────────────
+// Shop <-> CommentToDmEvent (one shop, many events)
+Shop.hasMany(CommentToDmEvent, {
+    foreignKey: 'shop_id',
+    as: 'commentToDmEvents',
+    onDelete: 'CASCADE'
+});
+CommentToDmEvent.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop'
+});
+
+// MetaChannel <-> CommentToDmEvent (one channel, many events)
+MetaChannel.hasMany(CommentToDmEvent, {
+    foreignKey: 'channel_id',
+    as: 'commentToDmEvents',
+    onDelete: 'CASCADE'
+});
+CommentToDmEvent.belongsTo(MetaChannel, {
+    foreignKey: 'channel_id',
+    as: 'channel'
+});
+
+// Customer <-> CommentToDmEvent (nullable — linked after DM opens)
+Customer.hasMany(CommentToDmEvent, {
+    foreignKey: 'customer_id',
+    as: 'commentToDmEvents',
+    onDelete: 'SET NULL'
+});
+CommentToDmEvent.belongsTo(Customer, {
+    foreignKey: 'customer_id',
+    as: 'customer'
+});
+
+// Conversation <-> CommentToDmEvent (nullable — linked after DM opens)
+Conversation.hasMany(CommentToDmEvent, {
+    foreignKey: 'conversation_id',
+    as: 'commentToDmEvents',
+    onDelete: 'SET NULL'
+});
+CommentToDmEvent.belongsTo(Conversation, {
+    foreignKey: 'conversation_id',
+    as: 'conversation'
+});
+
+// ── Phase 1: MetaChannel associations ──────────────────────────────────────
+// Shop <-> MetaChannel (one shop, many channels — one per platform)
+Shop.hasMany(MetaChannel, {
+    foreignKey: 'shop_id',
+    as: 'metaChannels',
+    onDelete: 'CASCADE'
+});
+MetaChannel.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop'
+});
+
+// MetaChannel <-> MetaChannelSettings (1:1)
+MetaChannel.hasOne(MetaChannelSettings, {
+    foreignKey: 'channel_id',
+    as: 'settings',
+    onDelete: 'CASCADE'
+});
+MetaChannelSettings.belongsTo(MetaChannel, {
+    foreignKey: 'channel_id',
+    as: 'channel'
+});
+
+// MetaChannel <-> MetaChannelConsentEvent (1:many, append-only)
+MetaChannel.hasMany(MetaChannelConsentEvent, {
+    foreignKey: 'channel_id',
+    as: 'consentEvents',
+    onDelete: 'CASCADE'
+});
+MetaChannelConsentEvent.belongsTo(MetaChannel, {
+    foreignKey: 'channel_id',
+    as: 'channel'
+});
+
+// Customer <-> MetaChannelConsentEvent (1:many)
+Customer.hasMany(MetaChannelConsentEvent, {
+    foreignKey: 'customer_id',
+    as: 'consentEvents',
+    onDelete: 'SET NULL'
+});
+MetaChannelConsentEvent.belongsTo(Customer, {
+    foreignKey: 'customer_id',
+    as: 'customer'
+});
+
 // Export entities
 module.exports = {
     User,
@@ -377,12 +464,10 @@ module.exports = {
     Order,
     OrderReturn,
     OrderItem,
-    Channel,
     Conversation,
     Message,
     AuditLog,
     IdempotencyKey,
-    MetaIntegration,
     DeliveryIntegration,
     DeliveryCost,
     KnownArea,
@@ -407,5 +492,12 @@ module.exports = {
     PasswordResetToken,
     CustomerDeliveryStats,
     CourierCodCollection,
-    ReconciliationDispute
+    ReconciliationDispute,
+    // Phase 1 — Meta Integration Redesign
+    MetaChannel,
+    MetaChannelSettings,
+    MetaChannelConsentEvent,
+    PolicyDecision,
+    // Phase 4 — Comment-to-DM
+    CommentToDmEvent,
 };

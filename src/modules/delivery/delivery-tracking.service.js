@@ -327,7 +327,6 @@ class DeliveryTrackingService {
             }
 
             const { Channel } = require('../entities');
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
 
             // Find active channel for the shop
@@ -377,7 +376,6 @@ class DeliveryTrackingService {
         try {
             // Send delivery completion notification
             const { Channel } = require('../entities');
-            // TODO: '../webhook/webhook.service' does not exist — sendMessage will silently fail until this module is created
             const webhookService = require('../webhook/webhook.service');
 
             const channel = await Channel.findOne({

@@ -22,6 +22,7 @@ if (config.env === 'staging' || config.env === 'development') {
 }
 
 let sessionRedis, cacheRedis, rateLimitRedis, legacyRedis;
+let sseRedisPub, sseRedisSub;
 
 if (hasRedisConfig && !forceMemoryStore) {
     const Redis = require('ioredis');
@@ -56,6 +57,13 @@ if (hasRedisConfig && !forceMemoryStore) {
     rateLimitRedis= createClient(parseInt(config.redisRateLimitDb)|| 2, 'RateLimit');
     legacyRedis   = createClient(0, 'Legacy');
 
+    // SSE pub/sub bridge clients — dedicated DB 3 so subscribe mode never
+    // blocks the command pipeline shared by cache/rate-limit clients.
+    // sseRedisSub enters subscribe mode exclusively; sseRedisPub stays in
+    // command mode to issue INCR / LPUSH / LTRIM / EXPIRE / LRANGE.
+    sseRedisPub = createClient(3, 'SSE-Pub');
+    sseRedisSub = createClient(3, 'SSE-Sub');
+
     console.log('🔴 Redis clients initialised (real ioredis)');
 } else {
     // Development / no-Redis fallback
@@ -85,11 +93,22 @@ if (hasRedisConfig && !forceMemoryStore) {
     cacheRedis     = createMockClient(new MemoryCache());
     rateLimitRedis = createMockClient(new MemoryCache());
     legacyRedis    = createMockClient(new MemoryCache());
+
+    // SSE fallback: no-op pub/sub so sse-bus degrades gracefully in dev.
+    // The bus detects _isMemoryFallback and uses in-process EventEmitter instead.
+    const sseFallbackCache = new MemoryCache();
+    sseRedisPub = createMockClient(sseFallbackCache);
+    // sseRedisSub needs subscribe/psubscribe stubs in addition to the base mock
+    sseRedisSub = Object.assign(createMockClient(sseFallbackCache), {
+        subscribe:   async () => Promise.resolve(),
+        unsubscribe: async () => Promise.resolve(),
+        on:          (event, cb) => { if (event === 'connect') setTimeout(cb, 10); }
+    });
 }
 
 async function closeAllRedis() {
     await Promise.all(
-        [sessionRedis, cacheRedis, rateLimitRedis, legacyRedis]
+        [sessionRedis, cacheRedis, rateLimitRedis, legacyRedis, sseRedisPub, sseRedisSub]
             .map(c => c.quit?.().catch(() => {}))
     );
     console.log('Redis connections closed');
@@ -101,7 +120,9 @@ function checkRedisAvailability() {
         session:   ready(sessionRedis),
         cache:     ready(cacheRedis),
         rateLimit: ready(rateLimitRedis),
-        legacy:    ready(legacyRedis)
+        legacy:    ready(legacyRedis),
+        ssePub:    ready(sseRedisPub),
+        sseSub:    ready(sseRedisSub)
     };
 }
 
@@ -110,6 +131,8 @@ module.exports = {
     cacheRedis,
     rateLimitRedis,
     legacyRedis,
+    sseRedisPub,
+    sseRedisSub,
     closeAllRedis,
     checkRedisAvailability
 };

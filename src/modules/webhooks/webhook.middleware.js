@@ -72,7 +72,10 @@ const validateWebhookSignature = (gateway) => {
 
     const validator = validators[gateway];
     if (!validator) {
-        return (req, res, next) => next(); // No validation for unknown gateways
+        return (req, res, next) => {
+            logger.error(`Webhook rejected: no validator registered for gateway "${gateway}"`);
+            return res.status(401).json({ error: 'Unknown payment gateway' });
+        };
     }
 
     return validator;

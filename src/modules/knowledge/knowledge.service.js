@@ -1,4 +1,4 @@
-const { Shop, UserShop, FaqResponse, BanglishDictionary, MetaIntegration } = require('../entities');
+const { Shop, UserShop, FaqResponse, BanglishDictionary } = require('../entities');
 const shopService = require('../shop/shop.service');
 const KnowledgeGap = require('../analytics/knowledge-gap.entity');
 const { AppError } = require('../../utils/AppError');

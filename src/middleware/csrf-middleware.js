@@ -1,4 +1,5 @@
 const { doubleCsrf } = require('csrf-csrf');
+const crypto = require('crypto');
 const config = require('../config/config');
 const { AppError } = require('../utils/AppError');
 
@@ -6,20 +7,31 @@ const { AppError } = require('../utils/AppError');
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.sessionSecret,
     getSessionIdentifier: (req) => {
-        // More reliable session ID retrieval
+        // Prefer express-session ID (stable across requests in the same session)
         if (req.sessionID) return req.sessionID;
         if (req.session?.id) return req.session.id;
-        if (req.session?.sessionID) return req.session.sessionID;
-        
-        // Fallback to IP for anonymous requests (less secure but functional)
-        const clientIP = req.headers['x-forwarded-for'] || 
-                        req.headers['x-real-ip'] || 
-                        req.connection?.remoteAddress || 
-                        req.socket?.remoteAddress || 
-                        req.ip || 
-                        'anonymous';
-        
-        return clientIP;
+
+        // No session available: generate a random ID and persist it in the session.
+        // This replaces the previous IP-based fallback which was vulnerable to:
+        //   (a) X-Forwarded-For spoofing, and
+        //   (b) CSRF token sharing on shared networks (NAT / proxies).
+        if (req.session) {
+            if (!req.session._csrfSessionId) {
+                req.session._csrfSessionId = crypto.randomUUID();
+                // Non-blocking save — if it fails the token will still work for this
+                // request but the session won't be persisted (acceptable for anonymous).
+                req.session.save((err) => {
+                    if (err) console.error('[csrf] session save error:', err.message);
+                });
+            }
+            return req.session._csrfSessionId;
+        }
+
+        // Hard fallback: every call gets a fresh UUID, meaning no CSRF protection for
+        // truly session-less requests.  Auth-required endpoints are protected by JWT,
+        // so this path only applies to unauthenticated state-changing endpoints, which
+        // should not exist (they are either public or auth-gated).
+        return crypto.randomUUID();
     },
     cookieOptions: {
         httpOnly: true,

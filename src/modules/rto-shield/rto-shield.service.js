@@ -2,24 +2,14 @@ const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
 const RtoBlacklist = require('./rto-blacklist.entity');
 const CustomerDeliveryStats = require('./customer-delivery-stats.entity');
+const { normalizePhone, validatePhone } = require('../../utils/validators/phone.validator');
 
 // Auto-flag threshold: ≥3 attempts AND ≥40% RTO rate
 const AUTO_FLAG_MIN_ATTEMPTS = 3;
 const AUTO_FLAG_RTO_RATE = 0.4;
 
-/**
- * Normalize a BD phone number to 01XXXXXXXXX format.
- * Handles: +8801..., 8801..., 01..., spaces, dashes
- */
-function normalizePhone(raw) {
-  if (!raw) return null;
-  let phone = String(raw).replace(/[\s\-().]/g, '');
-  if (phone.startsWith('+880')) phone = '0' + phone.slice(4);
-  else if (phone.startsWith('880') && phone.length === 13) phone = '0' + phone.slice(3);
-  return phone;
-}
-
-const BD_PHONE_RE = /^01[3-9]\d{8}$/;
+// Thin wrapper — shared validator covers +88/88/01 prefix variants
+const isValidBdPhone = (phone) => validatePhone(phone, 'BD_MOBILE_STRICT');
 
 class RtoShieldService {
   /**
@@ -29,7 +19,7 @@ class RtoShieldService {
    */
   static async checkPhone(phone, shopId) {
     const normalized = normalizePhone(phone);
-    if (!normalized || !BD_PHONE_RE.test(normalized)) {
+    if (!normalized || !isValidBdPhone(normalized)) {
       return { flagged: false, reason: null, risk_score: 0, entry: null };
     }
 
@@ -61,7 +51,7 @@ class RtoShieldService {
    */
   static async addToBlacklist({ phone, reason, risk_score = 80, is_global = false, shop_id, added_by, notes }) {
     const normalized = normalizePhone(phone);
-    if (!normalized || !BD_PHONE_RE.test(normalized)) {
+    if (!normalized || !isValidBdPhone(normalized)) {
       throw new Error(`Invalid Bangladeshi phone number: ${phone}`);
     }
 
@@ -143,7 +133,7 @@ class RtoShieldService {
    */
   static async trackDeliveryOutcome(phone, shopId, isRto) {
     const normalized = normalizePhone(phone);
-    if (!normalized || !BD_PHONE_RE.test(normalized)) return;
+    if (!normalized || !isValidBdPhone(normalized)) return;
 
     const [stats] = await CustomerDeliveryStats.findOrCreate({
       where: { phone: normalized, shop_id: shopId },
