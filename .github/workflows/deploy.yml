@@ -184,6 +184,12 @@ jobs:
           script: |
             set -e
 
+            # Set image vars FIRST so docker compose can validate docker-compose.prod.yml
+            # for any commands run inside the WIPE block (compose substitutes ${GHCR_IMAGE_*}
+            # at parse time, even for stop/exec). These are re-affirmed below after pull.
+            export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
+            export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
+
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
             if [ "$WIPE_DB" = "WIPE" ]; then
               echo "==> WIPE_DB=WIPE detected — dropping easymod database"
@@ -214,11 +220,8 @@ jobs:
 
             cd /opt/easymod
 
-            # Set image vars for docker-compose
-            export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
-            export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
-
             # Restart services with latest images
+            # (GHCR_IMAGE_BACKEND/FRONTEND already exported at top of script)
             docker compose -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
             # Run migrations when backend was updated OR DB was just wiped
