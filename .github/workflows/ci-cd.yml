@@ -146,13 +146,100 @@ jobs:
     needs: [changes, build]
     environment: production
     steps:
+      - name: Render .env.prod from secrets
+        run: |
+          mkdir -p _tmp
+          cat > _tmp/.env.prod <<'ENVEOF'
+          NODE_ENV=production
+          PORT=3000
+          LOG_LEVEL=info
+
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          DB_USER=${{ secrets.POSTGRES_USER }}
+          DB_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME=${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+
+          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN=${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN=${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+
+          PAYMENT_ENCRYPTION_KEY=${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          DELIVERY_ENCRYPTION_KEY=${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY=${{ secrets.CHANNEL_ENCRYPTION_KEY }}
+          PAYMENT_CALLBACK_HMAC_SECRET=${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          INTERNAL_WEBHOOK_SECRET=${{ secrets.INTERNAL_WEBHOOK_SECRET }}
+
+          CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          BASE_URL=${{ secrets.BASE_URL }}
+          COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
+          META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }}
+
+          META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+          META_APP_SECRET=${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_APP_SECRET=${{ secrets.META_WEBHOOK_APP_SECRET }}
+          META_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL=${{ secrets.GEMINI_EMBEDDING_MODEL }}
+          EMBEDDING_PROVIDER=${{ secrets.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL=${{ secrets.EMBEDDING_MODEL }}
+          PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX=${{ secrets.PINECONE_INDEX }}
+          PINECONE_NAMESPACE=${{ secrets.PINECONE_NAMESPACE }}
+          QDRANT_URL=${{ secrets.QDRANT_URL }}
+
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+
+          SEED_ADMIN_EMAIL=admin@easymod.tech
+          SEED_ADMIN_PASSWORD=${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_ADMIN_NAME=EasyMod Admin
+          SEED_ADMIN_PHONE=01700000000
+
+          ALLOW_SELF_SIGNED_TLS=${{ secrets.ALLOW_SELF_SIGNED_TLS }}
+          BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT }}
+          WF1_WEBHOOK_URL=${{ secrets.WF1_WEBHOOK_URL }}
+
+          START_EMBEDDED_WORKERS=false
+          RUN_MIGRATIONS_ON_STARTUP=false
+          MAX_LOGIN_ATTEMPTS=5
+          LOGIN_LOCKOUT_MINUTES=15
+          ENVEOF
+
+      - name: Copy .env.prod to droplet
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
+          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/.env.prod
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod'
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
-          timeout: 300s
+          timeout: 600s
           envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB
           script: |
             set -e
