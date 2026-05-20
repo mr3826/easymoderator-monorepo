@@ -26,6 +26,10 @@ export interface AuthResponse {
   currentShop: Shop;
   allShops: Shop[];
   shop?: Shop;
+  /** Present when the backend requires a second factor before issuing full tokens. */
+  requires2fa?: boolean;
+  /** Short-lived token exchanged at POST /auth/2fa/verify when requires2fa is true. */
+  tempToken?: string;
 }
 
 export interface SigninRequest {

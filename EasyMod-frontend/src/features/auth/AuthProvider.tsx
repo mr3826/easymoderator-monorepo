@@ -10,6 +10,7 @@ interface AuthContextProps extends AuthState {
   signup: (userData: SignupRequest) => Promise<void>;
   switchShop: (shopId: string) => Promise<void>;
   logout: () => Promise<void>;
+  verifyTwoFactor: (code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -79,8 +80,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await authService.logout();
   };
 
+  const verifyTwoFactor = async (code: string) => {
+    await authService.verifyTwoFactor(code);
+  };
+
   return (
-    <AuthContext.Provider value={{ ...state, signin, signup, switchShop, logout }}>
+    <AuthContext.Provider value={{ ...state, signin, signup, switchShop, logout, verifyTwoFactor }}>
       {children}
     </AuthContext.Provider>
   );

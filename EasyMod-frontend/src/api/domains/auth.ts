@@ -31,6 +31,18 @@ export async function signin(credentials: SigninRequest): Promise<AuthResponse> 
     credentials
   );
   const { data } = response.data;
+
+  // When 2FA is enabled the backend does NOT issue full tokens yet.
+  // It returns { requires2fa: true, tempToken } instead of the usual user/shop payload.
+  // Signal this to the caller so it can route to the verification step without
+  // setting isAuthenticated:true prematurely.
+  if (data.requires2fa === true) {
+    throw Object.assign(new Error('Two-factor authentication required'), {
+      code: 'REQUIRES_2FA',
+      tempToken: data.tempToken,
+    });
+  }
+
   // Refresh CSRF token for the new session — fire and forget so the caller
   // (navigate('/app')) is not blocked waiting for the extra round-trip.
   httpClient.clearCsrfToken();
@@ -153,6 +165,15 @@ export async function refreshToken(): Promise<{ refreshed: boolean }> {
     {}
   );
   return response.data.data;
+}
+
+/**
+ * Verify the 6-digit TOTP code during the 2FA login step.
+ * On success the backend sets httpOnly auth cookies exactly as a normal signin does.
+ * The caller should then call getAuthContext() to hydrate the session.
+ */
+export async function verifyTwoFactor(tempToken: string, token: string): Promise<void> {
+  await httpClient.post('/api/auth/2fa/verify', { tempToken, token });
 }
 
 /**
