@@ -199,8 +199,10 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
-    // Call backend to blacklist the token and clear httpOnly cookies
-    await apiClient.logout();
+    // Best-effort: blacklist the token and clear httpOnly cookies on the server.
+    // Local state resets unconditionally so a network error never leaves the user
+    // stuck in a half-authenticated state.
+    try { await apiClient.logout(); } catch { /* best-effort */ }
 
     this.setAuthState({
       user: null,

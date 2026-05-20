@@ -52,7 +52,7 @@ export function ProtectedRoute({
 
   // Not authenticated - redirect to login
   if (!user) {
-    return <Navigate to="/auth/signin" replace />;
+    return <Navigate to="/signin" replace />;
   }
 
   // Check required role
@@ -142,7 +142,7 @@ export function ModeratorRoute({
   }
 
   if (!user) {
-    return <Navigate to="/auth/signin" replace />;
+    return <Navigate to="/signin" replace />;
   }
 
   if (!isAdmin() && !canModerate()) {

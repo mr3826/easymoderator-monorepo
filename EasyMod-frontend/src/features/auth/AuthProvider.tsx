@@ -16,13 +16,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<AuthState>(authService.getState());
 
   useEffect(() => {
-    // Subscribe to authService state changes
+    // Subscribe to authService state changes.
+    // The subscribe() call also delivers the terminal state from ensureInitialized()
+    // through the same listener path — the extra .then(setState) below was redundant
+    // and caused a guaranteed double render on every mount.
     const unsubscribe = authService.subscribe(setState);
-
-    // Initial sync
-    authService.ensureInitialized().then(() => {
-      setState(authService.getState());
-    });
 
     // Handle 401s emitted by the HTTP client.
     // Rules:

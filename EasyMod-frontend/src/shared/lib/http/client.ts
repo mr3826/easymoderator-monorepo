@@ -240,7 +240,12 @@ class HttpClient {
 
       if (!this.isRefreshing) {
         this.isRefreshing = true;
-        this.performTokenRefresh();
+        // Attach a catch so a rejected promise from performTokenRefresh() does not
+        // surface as an unhandled rejection in environments that crash on them.
+        // Queue clearing and isRefreshing reset are handled inside performTokenRefresh's
+        // own try/catch/finally — this catch is a safety net for unexpected throws
+        // before that cleanup runs.
+        this.performTokenRefresh().catch(() => this.clearRefreshQueue());
       }
     });
   }
