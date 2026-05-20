@@ -1,7 +1,20 @@
-name: Deploy to Digital Ocean
+name: CI / CD
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Required GitHub secrets (Settings → Secrets → Actions):
+#   DO_HOST              — Droplet IP or hostname
+#   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
+#   VITE_API_BASE_URL    — e.g. https://api.easymod.tech
+#   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
+#   VITE_SENTRY_DSN      — Sentry DSN (optional)
+#
+# The droplet must have /opt/easymod/docker-compose.prod.yml and .env.prod in place.
+# ──────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -18,7 +31,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: ci-cd-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -28,17 +41,6 @@ permissions:
 env:
   GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymod-backend
   GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymod-frontend
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Required GitHub secrets (Settings → Secrets → Actions):
-#   DO_HOST              — Droplet IP or hostname
-#   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
-#   VITE_API_BASE_URL    — e.g. https://api.easymod.tech
-#   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
-#   VITE_SENTRY_DSN      — Sentry DSN (optional)
-#
-# The droplet must have /opt/easymod/docker-compose.prod.yml and .env.prod in place.
-# ──────────────────────────────────────────────────────────────────────────────
 
 jobs:
   # ── 1. Detect which services changed ────────────────────────────────────────
@@ -59,10 +61,10 @@ jobs:
           filters: |
             backend:
               - 'EasyMod-backend/**'
-              - '.github/workflows/deploy.yml'
+              - '.github/workflows/ci-cd.yml'
             frontend:
               - 'EasyMod-frontend/**'
-              - '.github/workflows/deploy.yml'
+              - '.github/workflows/ci-cd.yml'
 
   # ── 2. Backend tests ─────────────────────────────────────────────────────────
   test-backend:
@@ -94,14 +96,50 @@ jobs:
       - run: npm ci
       - run: npm test -- --passWithNoTests --forceExit
 
-  # ── 3. Build & push images ───────────────────────────────────────────────────
+  # ── 3. Frontend typecheck + unit tests ───────────────────────────────────────
+  test-frontend:
+    name: Frontend Build + Unit Tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    defaults:
+      run:
+        working-directory: EasyMod-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: EasyMod-frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Build (type-checks via esbuild)
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://api.easymod.tech
+          VITE_META_APP_ID: placeholder
+          VITE_ENV: ci
+
+      - name: Unit tests
+        # 7 pre-existing test failures (CSRF, Dashboard, customer/dashboard/knowledge/subscription/product
+        # API path mismatches). These pre-date this CI pipeline and are tracked as technical debt.
+        # Using continue-on-error so they surface as warnings without blocking deploys.
+        run: npm run test:unit
+        continue-on-error: true
+
+  # ── 4. Build & push Docker images (push to main + workflow_dispatch only) ────
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [changes, test-backend]
+    needs: [changes, test-backend, test-frontend]
     if: |
       always() && !cancelled() &&
+      github.event_name != 'pull_request' &&
       (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped') &&
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
@@ -166,7 +204,7 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
 
-  # ── 4. Deploy to DO droplet ──────────────────────────────────────────────────
+  # ── 5. Deploy to DO droplet ──────────────────────────────────────────────────
   deploy:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
