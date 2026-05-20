@@ -51,9 +51,8 @@ class AIChatbotController {
                 .filter(a => a.type === 'image' && (a.payload?.url || a.url))
                 .map(a => a.payload?.url || a.url);
 
-            // WhatsApp sends image as { type: 'image', image: { id, mime_type, sha256 } }
-            // WhatsApp image URLs require Graph API download — not directly accessible.
-            // For now, treat WhatsApp image-only messages as image signals without URL.
+            // Messenger/IG: images arrive as { type: 'image', payload: { url } }.
+            // Image-only messages without a URL are treated as image signals (hasImageAttachment flag).
             const hasImageAttachment = imageUrls.length > 0 ||
                 attachments.some(a => a.type === 'image' || a.type === 'sticker');
 
@@ -96,7 +95,7 @@ class AIChatbotController {
 
             // Step 3: Load shop AI settings merged with channel-level overrides.
             // Shop settings are the base; channel settings win for per-channel toggles
-            // (e.g. draftOrdersOnly on WhatsApp but not on Facebook).
+            // (e.g. draftOrdersOnly on Instagram but not on Facebook).
             const [shopAISettings, channelAISettings] = await Promise.all([
                 getShopAISettings(shop_id),
                 (async () => {
@@ -272,13 +271,12 @@ class AIChatbotController {
         // --- Keyword-based fallback (original logic) ---
         const lowerMessage = message.toLowerCase().trim();
 
-        // WhatsApp image-only messages arrive as '[image]' because the Graph API
-        // download step isn't implemented. Give a helpful nudge instead of
-        // falling through to a confusing default response.
+        // Image-only messages arrive as '[image]' when the URL is unavailable.
+        // Give a helpful nudge instead of falling through to a confusing default response.
         if (lowerMessage === '[image]') {
             const imgResponse = language === 'bn'
                 ? '📸 ছবিটি পেয়েছি! কিন্তু এই মুহূর্তে ছবি প্রসেস করতে পারছি না। আপনি কি পণ্যের নাম বা বর্ণনা লিখে জানাবেন? যেমন: "লাল শার্টের দাম কত?"'
-                : '📸 Got your image! Unfortunately I can\'t process images from WhatsApp directly. Could you describe what you\'re looking for? e.g. "price of red shirt" or "do you have blue dress?"';
+                : '📸 Got your image! Unfortunately I can\'t process it directly. Could you describe what you\'re looking for? e.g. "price of red shirt" or "do you have blue dress?"';
             return { response: imgResponse, confidence: 0.85 };
         }
 

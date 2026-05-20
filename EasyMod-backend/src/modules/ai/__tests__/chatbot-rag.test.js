@@ -257,7 +257,7 @@ jest.mock('src/modules/entities', () => ({
 jest.mock('src/modules/analytics/knowledge-gap.entity', () => ({
     findAll: jest.fn(() => Promise.resolve([])),
     findOne: jest.fn(() => Promise.resolve(null)),
-    create: jest.fn(() => Promise.resolve({ id: 1, question: 'test', platform: 'whatsapp' })),
+    create: jest.fn(() => Promise.resolve({ id: 1, question: 'test', platform: 'messenger' })),
     belongsTo: jest.fn(),
     hasMany: jest.fn(),
 }));
@@ -269,7 +269,7 @@ jest.mock('src/modules/conversation/conversation-state-standalone.service', () =
         conversation_id: CONV_ID,
         shop_id: SHOP_ID,
         customer_channel_id: CUSTOMER_ID,
-        platform: 'whatsapp',
+        platform: 'messenger',
         conversation_history: mockConversationHistory,
         active_order_session: null,
     })),
@@ -357,7 +357,7 @@ const chatbotPost = (body) =>
 const baseBody = (message) => ({
     shop_id: SHOP_ID,
     customer_channel_id: CUSTOMER_ID,
-    platform: 'whatsapp',
+    platform: 'messenger',
     message,
 });
 
@@ -536,7 +536,7 @@ describe('Stage 1 — Response cache', () => {
 describe('Input validation', () => {
 
     test('missing shop_id returns 400', async () => {
-        const res = await chatbotPost({ customer_channel_id: CUSTOMER_ID, platform: 'whatsapp', message: 'hi' });
+        const res = await chatbotPost({ customer_channel_id: CUSTOMER_ID, platform: 'messenger', message: 'hi' });
         expect(res.status).toBe(400);
     });
 
@@ -551,7 +551,7 @@ describe('Input validation', () => {
     });
 
     test('empty message with no attachments returns 400', async () => {
-        const res = await chatbotPost({ shop_id: SHOP_ID, customer_channel_id: CUSTOMER_ID, platform: 'whatsapp' });
+        const res = await chatbotPost({ shop_id: SHOP_ID, customer_channel_id: CUSTOMER_ID, platform: 'messenger' });
         expect(res.status).toBe(400);
     });
 });
@@ -584,7 +584,7 @@ describe('Order intent detection', () => {
             conversation_id: CONV_ID,
             shop_id: SHOP_ID,
             customer_channel_id: CUSTOMER_ID,
-            platform: 'whatsapp',
+            platform: 'messenger',
             conversation_history: [],
             active_order_session: { id: 'session-1', status: 'ACTIVE', current_step: 'PRODUCT_SELECTION' },
         });

@@ -174,11 +174,11 @@ function createConversationBlueprints(shopName) {
             ]
         },
         {
-            channel: 'whatsapp',
+            channel: 'instagram',
             customer: {
                 name: 'Nusrat Jahan',
-                channel_type: 'whatsapp',
-                channel_user_id: 'seed-wa-testing-02',
+                channel_type: 'instagram',
+                channel_user_id: 'seed-ig-testing-02',
                 phone: '+8801810002002',
                 language_preference: 'english'
             },

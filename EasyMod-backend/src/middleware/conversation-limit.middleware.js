@@ -20,7 +20,7 @@
 
 const { Subscription } = require('../modules/entities');
 const { isUnlimitedLimit, THRESHOLD_BUFFER } = require('../modules/subscription/subscription.plans');
-const notificationService = require('../modules/notifications/notification.service');
+const notificationService = require('../modules/notification/conversation-limit-notifier.service');
 const { createLogger } = require('../utils/structured-logger');
 
 const NOTIF_CACHE = new Map(); // shopId → { period, notified75, notified90 } (in-memory guard)
