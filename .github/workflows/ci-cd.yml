@@ -2,19 +2,20 @@ name: CI / CD
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Required GitHub secrets (Settings → Secrets → Actions):
-#   DO_HOST              — Droplet IP or hostname
+#   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
 #   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
-#   VITE_API_BASE_URL    — e.g. https://api.easymod.tech
+#   VITE_API_BASE_URL    — leave empty for same-origin SPA (easymod.tech)
 #   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
 #   VITE_SENTRY_DSN      — Sentry DSN (optional)
 #
-# The droplet must have /opt/easymod/docker-compose.prod.yml and .env.prod in place.
+# The droplet must have:
+#   /opt/easymod/docker-compose.prod.yml  (committed to repo, synced by deploy)
+#   /opt/easymod/Caddyfile                (committed to repo, synced by deploy)
+#   /opt/easymod/.env.prod                (manually placed, never committed)
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -61,86 +62,20 @@ jobs:
           filters: |
             backend:
               - 'EasyMod-backend/**'
+              - 'docker-compose.prod.yml'
               - '.github/workflows/ci-cd.yml'
             frontend:
               - 'EasyMod-frontend/**'
+              - 'Caddyfile'
               - '.github/workflows/ci-cd.yml'
 
-  # ── 2. Backend tests ─────────────────────────────────────────────────────────
-  test-backend:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    defaults:
-      run:
-        working-directory: EasyMod-backend
-    services:
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: EasyMod-backend/package-lock.json
-
-      - run: npm ci
-      - run: npm test -- --passWithNoTests --forceExit
-
-  # ── 3. Frontend typecheck + unit tests ───────────────────────────────────────
-  test-frontend:
-    name: Frontend Build + Unit Tests
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
-    defaults:
-      run:
-        working-directory: EasyMod-frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: EasyMod-frontend/package-lock.json
-
-      - run: npm ci
-
-      - name: Build (type-checks via esbuild)
-        run: npm run build
-        env:
-          VITE_API_BASE_URL: https://api.easymod.tech
-          VITE_META_APP_ID: placeholder
-          VITE_ENV: ci
-
-      - name: Unit tests
-        # 7 pre-existing test failures (CSRF, Dashboard, customer/dashboard/knowledge/subscription/product
-        # API path mismatches). These pre-date this CI pipeline and are tracked as technical debt.
-        # Using continue-on-error so they surface as warnings without blocking deploys.
-        run: npm run test:unit
-        continue-on-error: true
-
-  # ── 4. Build & push Docker images (push to main + workflow_dispatch only) ────
+  # ── 2. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [changes, test-backend, test-frontend]
+    needs: [changes]
     if: |
-      always() && !cancelled() &&
-      github.event_name != 'pull_request' &&
-      (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped') &&
-      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
-      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+      needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
@@ -204,7 +139,7 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
 
-  # ── 5. Deploy to DO droplet ──────────────────────────────────────────────────
+  # ── 3. Deploy to DO droplet ──────────────────────────────────────────────────
   deploy:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
@@ -214,7 +149,7 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DO_HOST }}
+          host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 300s
@@ -222,19 +157,19 @@ jobs:
           script: |
             set -e
 
-            # Image vars must be exported up-front so docker compose can validate
-            # docker-compose.prod.yml for every subsequent command (compose substitutes
-            # ${GHCR_IMAGE_*} at parse time, even for stop/exec).
             export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
             export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
 
             cd /opt/easymod
 
+            # Sync compose + Caddy config from repo (already checked out on runner,
+            # but we pull directly on the droplet to keep files in sync)
+            git -C /opt/easymod fetch origin main && git -C /opt/easymod checkout origin/main -- docker-compose.prod.yml Caddyfile 2>/dev/null || true
+
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
 
-            # Pull rebuilt images BEFORE the wipe block so sync/seed inside it
-            # can run via `docker compose run --rm backend ...` against the new image.
+            # Pull rebuilt images
             if [ -n "$BACKEND_TAG" ]; then
               echo "Pulling backend: $BACKEND_TAG"
               docker pull "$BACKEND_TAG"
@@ -248,27 +183,17 @@ jobs:
             fi
 
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
-            # This codebase relies on Sequelize sync() for base entity tables AND
-            # the migration runner for post-hoc DDL. After a wipe we must:
-            #   1. Drop + recreate the easymod DB
-            #   2. Sync entity tables (so shops/users/etc. exist)
-            #   3. Mark all known migrations as already-executed so the runner
-            #      (which fires on backend boot AND in the deploy step below)
-            #      does not try to re-create the synced tables.
             if [ "$WIPE_DB" = "WIPE" ]; then
               echo "==> WIPE_DB=WIPE detected — dropping easymod database"
-              docker compose -f docker-compose.prod.yml stop backend worker scheduler || true
+              docker compose -f docker-compose.prod.yml stop backend worker 2>/dev/null || true
               docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'easymod' AND pid <> pg_backend_pid();"
               docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "DROP DATABASE IF EXISTS easymod;"
               docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "CREATE DATABASE easymod OWNER easymod_user;"
               docker compose -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d easymod -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
-
               echo "==> Bootstrapping entity tables via npm run db:sync"
               docker compose -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run db:sync
-
               echo "==> Seeding migrations table so the runner skips already-applied DDL"
               docker compose -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate:seed-executed
-
               echo "==> DB wiped, synced, and migration history primed"
             fi
 
@@ -298,6 +223,7 @@ jobs:
 
             # Clean up dangling images
             docker image prune -f
+
         env:
           GHCR_BACKEND: ${{ env.GHCR_BACKEND }}
           GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}

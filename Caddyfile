@@ -1,0 +1,53 @@
+# EasyModerator Caddyfile
+# Canonical origin: https://easymod.tech (apex)
+# www → apex 301 redirect
+# /api/* and /webhooks/* → backend
+# Everything else → SPA (frontend served inline via file_server)
+#
+# Caddy auto-obtains and renews TLS certs via Let's Encrypt.
+# Requires ports 80 and 443 open on the droplet.
+
+# www → apex permanent redirect
+www.easymod.tech {
+    redir https://easymod.tech{uri} 301
+}
+
+easymod.tech {
+    # ── Backend proxy: API + Webhooks ────────────────────────────────────────
+    handle /api/* {
+        reverse_proxy backend:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            # Generous timeouts for SSE + long-running AI calls
+            transport http {
+                read_timeout 120s
+                write_timeout 120s
+            }
+        }
+    }
+
+    handle /webhooks/* {
+        reverse_proxy backend:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # ── SPA: serve built static files ────────────────────────────────────────
+    # The frontend image is NOT used here for Caddy deployments.
+    # Build the frontend and mount /app/dist as a Caddy volume, OR
+    # proxy to the internal nginx frontend container at port 8080.
+    #
+    # We proxy to the nginx frontend container (consistent with docker-compose).
+    handle {
+        reverse_proxy frontend:8080
+    }
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    log {
+        output stdout
+        format json
+    }
+}
