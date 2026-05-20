@@ -7,7 +7,7 @@
  * - PARTNER   : 0 BDT upfront; tiered per-delivered-order billing
  *
  * Conversation limits apply across ALL connected channels.
- * All channels (Facebook, WhatsApp, Instagram, etc.) are available on every plan.
+ * Supported channels: Facebook Messenger and Instagram Direct (WhatsApp removed 2026-05-20).
  */
 
 const UNLIMITED = -1;
@@ -45,9 +45,8 @@ const TOPUP_PACKS = Object.freeze({
 const THRESHOLD_BUFFER = 50;
 
 const BASE_FEATURES = Object.freeze({
-    // All channels open on all plans
+    // Supported channels: Facebook Messenger + Instagram Direct
     facebook_channel: true,
-    whatsapp_channel: true,
     instagram_channel: true,
     webchat_channel: true,
     telegram_channel: true,
@@ -66,7 +65,6 @@ const BASE_FEATURES = Object.freeze({
     analytics_export: true,
     fcommerce_kpis: true,
     customer_journey_timeline: true,
-    whatsapp_catalog_sync: true,
     priority_support: true,
     api_access: false,
     advanced_ai: true,

@@ -1,6 +1,7 @@
 ---
 name: em-meta-policy-skill
 description: "EasyModerator Meta Platform Policy skill. MUST be consulted before implementing any FB/IG automation, comment-to-DM flow, Messenger broadcast, webhook subscription, rate-limit strategy, or user consent flow. Returns SAFE / CAUTION / BLOCK verdict."
+last_updated: "2026-05-20"
 ---
 
 # Meta Policy Skill — EasyModerator Compliance Auditor
@@ -163,7 +164,12 @@ Required before submitting any new permission to Meta for review:
 | `pages_manage_posts` | Reply to comments | Active |
 | `instagram_basic` | Read IG profile and media for comment monitoring | Active |
 | `instagram_manage_messages` | Send/receive Instagram DMs | Active |
-| `whatsapp_business_messaging` | WhatsApp Business API messaging | Active |
+
+### Removed Permissions
+
+| Permission        | Removed          | Reason                                                                                                                                           |
+|-------------------|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `whatsapp_business_messaging` | 2026-05-20 | BD market validation showed Messenger+IG covers 95% of f-commerce conversations; WhatsApp Business API onboarding friction too high for SME pilot |
 
 ---
 

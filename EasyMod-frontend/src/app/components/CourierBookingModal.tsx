@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Order, CourierBookingPayload } from "@/api/types/order";
 import { useTranslation } from "react-i18next";
+import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 
 interface Props {
   order: Order;
@@ -94,13 +95,11 @@ export default function CourierBookingModal({ order, onClose, onBooked }: Props)
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">{t('courier.recipientPhone')}</label>
-            <input
-              type="tel"
+            <BDPhoneInput
+              label={t('courier.recipientPhone')}
               value={recipientPhone}
-              onChange={(e) => setRecipientPhone(e.target.value)}
-              placeholder="01XXXXXXXXX"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              onChange={setRecipientPhone}
+              id="courier-recipient-phone"
             />
           </div>
           <div>

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 const EFFECTIVE_DATE = "March 18, 2026";
-const LAST_UPDATED = "April 24, 2026";
+const LAST_UPDATED = "May 20, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
 const APP_NAME = "Easy Moderator";
 const COMPANY_NAME = "Hexabyte Limited";
@@ -29,7 +29,7 @@ export default function PrivacyPolicy() {
             This Privacy Policy describes how <strong>{APP_NAME}</strong> ("we", "us", or "our"), a product
             of <strong>{COMPANY_NAME}</strong> (registered in Bangladesh), collects, uses, stores, and shares
             information when you use our e-commerce moderation platform, including our web application and
-            integrations with Meta (WhatsApp Business API, Facebook Messenger, Instagram Direct Messages) and
+            integrations with Meta platforms (Facebook Messenger and Instagram Direct Messages) and
             other third-party services.
           </p>
           <p className="mt-3 text-gray-600 leading-relaxed">
@@ -94,8 +94,8 @@ export default function PrivacyPolicy() {
             </p>
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>Name, phone number, and email address</li>
-              <li>Messages sent and received through WhatsApp Business API, Facebook Messenger, Instagram DMs, or web chat</li>
-              <li>Platform-specific user identifiers (e.g., WhatsApp phone number, Facebook Page-scoped user ID, Instagram-scoped user ID)</li>
+              <li>Messages sent and received through Facebook Messenger, Instagram Direct Messages, or web chat</li>
+              <li>Platform-specific user identifiers (e.g., Facebook Page-scoped user ID, Instagram-scoped user ID)</li>
               <li>Message delivery and read receipts</li>
               <li>Order details: items, quantities, prices, delivery address, and payment method</li>
               <li>Language preference and last active timestamp</li>
@@ -130,8 +130,8 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">4. Meta Platform Data</h2>
             <p className="mb-3 leading-relaxed">
-              {APP_NAME} integrates with Meta platforms (WhatsApp Business API, Facebook Messenger, and
-              Instagram Direct Messages) to allow businesses to manage customer conversations. This section
+              {APP_NAME} integrates with Meta platforms (Facebook Messenger and Instagram Direct Messages)
+              to allow businesses to manage customer conversations. This section
               describes how we handle data received from Meta in compliance with{" "}
               <strong>Meta's Platform Terms, Developer Policies, Business Tools Terms, and Data Processing
               Terms</strong>.
@@ -151,7 +151,7 @@ export default function PrivacyPolicy() {
             <p className="mb-2 text-sm leading-relaxed">Through Meta webhooks, we receive and store:</p>
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>Inbound and outbound message content (text, media references)</li>
-              <li>Platform user identifiers (page-scoped IDs, WhatsApp phone numbers, Instagram-scoped IDs)</li>
+              <li>Platform user identifiers (Facebook page-scoped IDs, Instagram-scoped IDs)</li>
               <li>Message delivery status and read receipts</li>
               <li>Messaging opt-in events</li>
               <li>Post-back payloads from interactive message buttons</li>
@@ -177,12 +177,12 @@ export default function PrivacyPolicy() {
               <li>We do <strong>not</strong> use Meta platform data — including message content — to train or improve AI or machine learning models</li>
             </ul>
 
-            <h3 className="text-base font-semibold text-gray-800 mt-5 mb-2">WhatsApp Business API</h3>
+            <h3 className="text-base font-semibold text-gray-800 mt-5 mb-2">Meta Platforms (Messenger and Instagram)</h3>
             <p className="mb-2 text-sm leading-relaxed">
-              When processing data via the WhatsApp Business API, we additionally comply with WhatsApp's
-              Business Policy and Commerce Policy. WhatsApp message content is used solely to deliver and
-              display messages within your {APP_NAME} inbox. We comply with the 24-hour customer care window
-              and template message restrictions enforced by WhatsApp.
+              {APP_NAME} connects exclusively to Facebook Messenger and Instagram Direct Messages via the
+              Meta Graph API. Message content is used solely to deliver and display conversations within your
+              {APP_NAME} inbox. We comply with Meta's 24-hour messaging window, rate limits, and messaging
+              policy requirements for both platforms.
             </p>
 
             <h3 className="text-base font-semibold text-gray-800 mt-5 mb-2">Instagram Messaging API</h3>
@@ -311,7 +311,7 @@ export default function PrivacyPolicy() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">Meta (Facebook, Instagram, WhatsApp)</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">Meta (Facebook, Instagram)</td>
                     <td className="px-4 py-3 text-gray-600">Communication Platform</td>
                     <td className="px-4 py-3 text-gray-600">Message content, user IDs</td>
                     <td className="px-4 py-3 text-gray-600">Webhook message delivery</td>
@@ -520,9 +520,9 @@ export default function PrivacyPolicy() {
                 requests. If you cannot reach the business, email us and we will facilitate the deletion.
               </li>
               <li>
-                <strong>Meta / Facebook data deletion:</strong> If you connected a Facebook Page, Instagram
-                account, or WhatsApp Business Account to {APP_NAME} and later disconnect or remove the app
-                from your Facebook settings, Meta automatically triggers our Data Deletion Request Callback
+                <strong>Meta / Facebook data deletion:</strong> If you connected a Facebook Page or Instagram
+                account to {APP_NAME} and later disconnect or remove the app from your Facebook settings,
+                Meta automatically triggers our Data Deletion Request Callback
                 and we delete all associated message data within 30 days. You can verify or re-request
                 deletion by emailing{" "}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="text-blue-600 hover:underline">{CONTACT_EMAIL}</a>{" "}

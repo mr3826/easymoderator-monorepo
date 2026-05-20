@@ -46,7 +46,7 @@ const trySendViaChannel = async (order, shopId, message, logger) => {
             where: {
                 shop_id: shopId,
                 is_active: true,
-                type: { [Op.in]: ['messenger', 'facebook', 'whatsapp'] }
+                type: { [Op.in]: ['messenger', 'facebook', 'instagram'] }
             },
             order: [['created_at', 'DESC']]
         });

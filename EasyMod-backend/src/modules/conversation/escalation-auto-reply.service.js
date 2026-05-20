@@ -25,7 +25,7 @@ const DEFAULT_ESCALATION_TEMPLATE =
  *
  * @param {string} conversationId  - UUID of the conversation being escalated
  * @param {string} shopId          - UUID of the shop (for settings lookup)
- * @param {string} [channelType]   - Channel identifier (messenger, whatsapp, etc.) — reserved for future platform-specific routing
+ * @param {string} [channelType]   - Channel identifier (messenger, instagram, etc.) — reserved for future platform-specific routing
  * @returns {Promise<object|null>} - The created message record, or null if skipped/failed
  */
 const sendEscalationAutoReply = async (conversationId, shopId, channelType) => {

@@ -21,7 +21,7 @@ const Customer = sequelize.define('Customer', {
         allowNull: true
     },
     channel_type: {
-        type: DataTypes.ENUM('messenger', 'whatsapp', 'instagram', 'webchat', 'manual', 'facebook', 'telegram'),
+        type: DataTypes.ENUM('messenger', 'instagram', 'webchat', 'manual', 'facebook', 'telegram'),
         allowNull: false
     },
     channel_user_id: {

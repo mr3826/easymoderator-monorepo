@@ -3,15 +3,50 @@
  *
  * Shows on first login when shop.settings.onboarding_completed is falsy.
  * Steps: Connect Facebook → Add Products → Add FAQs → Set AI Mode → Preview
+ *
+ * State is persisted to localStorage (key: easymod:onboarding:state) so that
+ * an OAuth redirect round-trip to Meta and back preserves progress.
+ * Cleared on wizard completion.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "motion/react";
 import {
   X, Facebook, Package, Brain, Bot, Eye,
   CheckCircle2, ChevronRight, ChevronLeft, Sparkles,
 } from "lucide-react";
 import { apiClient } from "@/api";
 import { useAuth } from "../../features/auth/AuthProvider";
+import { fadeUp, staggerChildren } from "@/lib/motion";
+
+const STORAGE_KEY = "easymod:onboarding:state";
+
+interface PersistedState {
+  step: number;
+}
+
+function loadPersistedStep(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return 0;
+    const parsed: PersistedState = JSON.parse(raw);
+    return typeof parsed.step === "number" ? Math.min(parsed.step, 4) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveStep(step: number) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ step }));
+  } catch { /* quota exceeded — silently skip */ }
+}
+
+function clearPersistedStep() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* silently skip */ }
+}
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -92,10 +127,15 @@ const STEPS = [
 ];
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<number>(() => loadPersistedStep());
   const [completing, setCompleting] = useState(false);
   const navigate = useNavigate();
   const { currentShop } = useAuth();
+
+  // Persist step to localStorage on every change
+  useEffect(() => {
+    saveStep(step);
+  }, [step]);
 
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -113,6 +153,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     } catch (_) {
       // Non-blocking — wizard completes even if API call fails
     } finally {
+      clearPersistedStep();
       setCompleting(false);
       onComplete();
     }
@@ -146,7 +187,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide font-bn">
                 Quick Setup
               </span>
             </div>
@@ -154,82 +195,114 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               onClick={markComplete}
               className="text-gray-400 hover:text-gray-600 transition-colors"
               title="Setup skip করুন"
+              aria-label="উইজার্ড বন্ধ করুন"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Progress bar */}
-          <div className="w-full bg-gray-100 rounded-full h-1.5">
-            <div
-              className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="text-xs text-gray-400 mt-1">{step + 1} of {STEPS.length} steps</p>
-        </div>
-
-        {/* Step content */}
-        <div className="px-6 py-6">
-          <div className={`w-14 h-14 rounded-2xl ${current.iconBg} flex items-center justify-center mb-4`}>
-            <Icon className={`w-7 h-7 ${current.iconColor}`} />
-          </div>
-
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-            {current.subtitle}
-          </p>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">{current.title}</h2>
-          <p className="text-sm text-gray-600 leading-relaxed mb-4">{current.description}</p>
-
-          {/* Tip box */}
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6">
-            <p className="text-xs text-amber-700 leading-relaxed">
-              <span className="font-semibold">💡 টিপস: </span>
-              {current.tip}
-            </p>
-          </div>
-
-          {/* Step checklist */}
-          <div className="flex gap-1.5 mb-6">
-            {STEPS.map((s, i) => (
-              <div
-                key={s.id}
-                className={`flex-1 h-1.5 rounded-full transition-all ${
-                  i < step
-                    ? "bg-green-500"
-                    : i === step
-                    ? "bg-blue-600"
-                    : "bg-gray-200"
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Completed steps */}
-          {step > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-5">
-              {STEPS.slice(0, step).map((s) => (
-                <span
+          {/* 4-dot progress indicator */}
+          <motion.div
+            className="flex items-center gap-2 mb-2"
+            variants={staggerChildren}
+            initial="hidden"
+            animate="visible"
+          >
+            {STEPS.map((s, i) => {
+              const isCompleted = i < step;
+              const isActive = i === step;
+              return (
+                <motion.div
                   key={s.id}
-                  className="flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-100 rounded-full px-2 py-0.5"
+                  variants={fadeUp}
+                  className="relative"
                 >
-                  <CheckCircle2 className="w-3 h-3" />
-                  {s.id === "facebook" ? "Facebook" :
-                   s.id === "products" ? "Products" :
-                   s.id === "faqs" ? "FAQs" :
-                   s.id === "ai_mode" ? "AI Mode" : "Preview"}
-                </span>
-              ))}
+                  <div
+                    className={[
+                      "w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 text-xs font-semibold",
+                      isCompleted
+                        ? "bg-primary/60 text-white"
+                        : isActive
+                        ? "bg-primary text-white shadow-md ring-2 ring-primary/30"
+                        : "bg-muted text-muted-foreground",
+                    ].join(" ")}
+                    aria-current={isActive ? "step" : undefined}
+                  >
+                    {isCompleted ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <span>{i + 1}</span>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+            <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden ml-1">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
             </div>
-          )}
+          </motion.div>
+          <p className="text-xs text-gray-400 mt-1 font-bn">{step + 1} of {STEPS.length} steps</p>
         </div>
+
+        {/* Step content — animated on step change */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="px-6 py-6"
+          >
+            <div className={`w-14 h-14 rounded-2xl ${current.iconBg} flex items-center justify-center mb-4`}>
+              <Icon className={`w-7 h-7 ${current.iconColor}`} />
+            </div>
+
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 font-bn">
+              {current.subtitle}
+            </p>
+            <h2 className="text-xl font-bold text-gray-900 mb-2 font-bn">{current.title}</h2>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4 font-bn">{current.description}</p>
+
+            {/* Tip box */}
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6">
+              <p className="text-xs text-amber-700 leading-relaxed font-bn">
+                <span className="font-semibold">টিপস: </span>
+                {current.tip}
+              </p>
+            </div>
+
+            {/* Completed steps */}
+            {step > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {STEPS.slice(0, step).map((s) => (
+                  <span
+                    key={s.id}
+                    className="flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-100 rounded-full px-2 py-0.5 font-bn"
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    {s.id === "facebook" ? "Facebook" :
+                     s.id === "products" ? "Products" :
+                     s.id === "faqs" ? "FAQs" :
+                     s.id === "ai_mode" ? "AI Mode" : "Preview"}
+                  </span>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
 
         {/* Actions */}
         <div className="px-6 pb-6 flex flex-col gap-2">
-          <button
+          <motion.button
             onClick={handleAction}
             disabled={completing}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors disabled:opacity-60"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.97 }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-60 font-bn"
           >
             {isLast ? (
               <>
@@ -242,18 +315,17 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
-          </button>
+          </motion.button>
 
           {current.skipLabel && (
             <button
               onClick={handleSkip}
-              className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors font-bn ${
                 current.isRecommended
                   ? "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
                   : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
               }`}
             >
-              {current.isRecommended && <span className="mr-1">✅</span>}
               {current.skipLabel}
             </button>
           )}
@@ -261,7 +333,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
           {step > 0 && (
             <button
               onClick={() => setStep((s) => s - 1)}
-              className="flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-gray-600 py-1"
+              className="flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-gray-600 py-1 font-bn"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
               পেছনে যান

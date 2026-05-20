@@ -11,7 +11,6 @@ const InvoiceGenerator = require('./invoice-generator');
 const FailedPaymentReconciler = require('./failed-payment-reconciler');
 // Phase 5: token-refresh-check.job.js deleted (replaced by meta-token-refresh.job.js Phase 2)
 const MetaTokenRefreshJob = require('./meta-token-refresh.job');
-const GoogleSheetsSyncJob = require('./google-sheets-sync.job');
 const CourierReconciliationJob = require('./courier-reconciliation.job');
 // Phase 4 — Comment-to-DM worker and expiry cron
 const CommentToDmWorker = require('./comment-to-dm.worker');
@@ -23,7 +22,6 @@ module.exports = {
     InvoiceGenerator,
     FailedPaymentReconciler,
     MetaTokenRefreshJob,
-    GoogleSheetsSyncJob,
     CourierReconciliationJob,
     // Phase 4
     CommentToDmWorker,

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 const EFFECTIVE_DATE = "April 24, 2026";
+const LAST_UPDATED = "May 20, 2026";
 const COMPANY_NAME = "Hexabyte Limited";
 const APP_NAME = "Easy Moderator";
 const SUPPORT_EMAIL = "support@easymod.tech";
@@ -24,7 +25,7 @@ export default function TermsOfService() {
         {/* Title block */}
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-gray-900">Terms of Service</h1>
-          <p className="mt-2 text-sm text-gray-500">Effective date: {EFFECTIVE_DATE}</p>
+          <p className="mt-2 text-sm text-gray-500">Effective date: {EFFECTIVE_DATE} &nbsp;·&nbsp; Last updated: {LAST_UPDATED}</p>
           <p className="mt-4 text-gray-600 leading-relaxed">
             These Terms of Service ("Terms") govern your access to and use of <strong>{APP_NAME}</strong>, a
             product of <strong>{COMPANY_NAME}</strong> ("we", "us", or "our"). By creating an account or

@@ -82,3 +82,6 @@ database.sqlite
 *.sqlite
 GITHUB_SECRETS.txt
 secrets-generated-*.txt
+
+# Local skills library (separate repo)
+claude-skills/

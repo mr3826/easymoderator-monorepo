@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Customer, CustomerFilters } from "@/api/types/customer";
+import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 
 // Channel type string — facebook | instagram (MetaChannel platforms + legacy manual)
 type ChannelType = string;
@@ -666,15 +667,12 @@ export default function Customers() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('customers.addModal.phone')} <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
+                <BDPhoneInput
+                  label={t('customers.addModal.phone')}
                   value={newCustomer.number}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, number: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder={t('customers.addModal.phonePlaceholder')}
+                  onChange={(raw) => setNewCustomer({ ...newCustomer, number: raw })}
+                  required
+                  id="customer-phone"
                 />
               </div>
 
