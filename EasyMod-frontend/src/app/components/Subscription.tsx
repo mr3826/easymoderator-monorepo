@@ -8,6 +8,9 @@ import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
 import { FeatureGate } from "@/app/components/FeatureGate";
+import { UsageMeter } from "./billing/UsageMeter";
+import { BKashCheckout } from "./billing/BKashCheckout";
+import { PlanComparison } from "./billing/PlanComparison";
 
 interface Invoice {
   id: string;       // invoice_number (displayed)

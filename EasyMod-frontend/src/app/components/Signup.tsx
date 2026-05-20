@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "./ui/button";
@@ -15,6 +15,7 @@ import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
 import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
 import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
+import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 
 const heroVariants = {
   hidden: {},
@@ -41,13 +42,7 @@ export default function Signup() {
   const [billingAnnual, setBillingAnnual] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState("PACKAGE_1");
 
-  const {
-    register,
-    handleSubmit,
-    setError,
-    watch,
-    formState: { errors, isSubmitting },
-  } = useForm<SignupFormData>({
+  const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       fullName: '',
@@ -57,6 +52,8 @@ export default function Signup() {
       acceptedTerms: false,
     },
   });
+
+  const { register, handleSubmit, setError, watch, control, formState: { errors, isSubmitting } } = form;
 
   const passwordValue = watch('password');
 
@@ -331,19 +328,23 @@ export default function Signup() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-semibold text-gray-700" htmlFor="phone">
-                    {t('auth.signup.phone')}
-                    <span className="ml-1 text-xs text-gray-400 font-normal">{t('auth.signup.optional')}</span>
-                  </label>
-                  <Input
-                    {...register('phone')}
-                    id="phone"
-                    placeholder="+8801XXXXXXXXX"
-                    autoComplete="tel"
-                    disabled={isSubmitting}
-                    className={`h-11 rounded-xl border-gray-200 focus:border-emerald-500 ${errors.phone ? 'border-red-500' : ''}`}
+                  <Controller
+                    name="phone"
+                    control={control}
+                    defaultValue=""
+                    render={({ field }) => (
+                      <BDPhoneInput
+                        id="phone"
+                        label={`${t('auth.signup.phone')} (${t('auth.signup.optional')})`}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        disabled={isSubmitting}
+                        error={errors.phone?.message}
+                        placeholder="01XXX-XXX-XXX"
+                        className="[&_div]:h-11 [&_div]:rounded-xl"
+                      />
+                    )}
                   />
-                  {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
                 </div>
 
                 <div className="space-y-1.5">

@@ -75,7 +75,8 @@ The following must be live and verifiable before submitting any new permission t
 | `pages_manage_posts` | Reply to comments (not just DMs) | Active |
 | `instagram_basic` | Read IG profile + media for comment monitoring | Active |
 | `instagram_manage_messages` | Send/receive Instagram DMs | Active |
-| `whatsapp_business_messaging` | WhatsApp Business API messaging | Active |
+
+`whatsapp_business_messaging` removed 2026-05-20: BD market validation showed Messenger+IG covers 95% of f-commerce; WhatsApp Business API onboarding friction too high for SME pilot.
 
 **Do not request additional permissions** without explicit Meta policy review and approval from founder.
 

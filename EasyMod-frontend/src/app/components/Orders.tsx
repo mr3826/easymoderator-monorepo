@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from "motion/react";
 import { CheckCircle, Clock, Loader2, Package as PackageIcon, XCircle, Eye, Plus, Search, Download, ChevronDown, X, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
@@ -8,6 +9,9 @@ import type { Order, DeliveryAddress } from "@/api/types/order";
 import type { Product } from "@/api/types/product";
 import bdGeography from '../../data/bd-geography.json';
 import CourierBookingModal from './CourierBookingModal';
+import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
+import { OrderRow } from './orders/OrderRow';
+import { fadeUp, staggerChildren } from "@/lib/motion";
 
 const statusColors = {
   draft: 'bg-gray-100 text-gray-700',
@@ -540,29 +544,37 @@ export default function Orders() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-card rounded-lg border border-border p-4 mb-6">
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { value: 'all', label: t('orders.statusAll') },
-            { value: 'draft', label: t('orders.statusDraft') },
-            { value: 'confirmed', label: t('orders.statusConfirmed') },
-            { value: 'processing', label: t('orders.statusProcessing') },
-            { value: 'completed', label: t('orders.statusCompleted') },
-            { value: 'cancelled', label: t('orders.statusCancelled') },
-          ].map(({ value, label }) => (
-            <button
-              key={value}
-              onClick={() => setFilterStatus(value)}
-              className={`px-4 py-2 rounded-lg text-sm transition-colors ${
-                filterStatus === value
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+      {/* Filters — sticky bar with animated chips */}
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm py-2 mb-4">
+        <div className="bg-card rounded-lg border border-border p-3">
+          <motion.div
+            className="flex gap-2 flex-wrap"
+            variants={staggerChildren}
+            initial="hidden"
+            animate="visible"
+          >
+            {[
+              { value: 'all', label: t('orders.statusAll') },
+              { value: 'draft', label: t('orders.statusDraft') },
+              { value: 'confirmed', label: t('orders.statusConfirmed') },
+              { value: 'processing', label: t('orders.statusProcessing') },
+              { value: 'completed', label: t('orders.statusCompleted') },
+              { value: 'cancelled', label: t('orders.statusCancelled') },
+            ].map(({ value, label }) => (
+              <motion.button
+                key={value}
+                variants={fadeUp}
+                onClick={() => setFilterStatus(value)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors font-bn ${
+                  filterStatus === value
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {label}
+              </motion.button>
+            ))}
+          </motion.div>
         </div>
       </div>
 
@@ -574,60 +586,25 @@ export default function Orders() {
             <p className="mt-2 text-sm font-medium text-muted-foreground">কোনো অর্ডার পাওয়া যায়নি।</p>
           </div>
         ) : (
-          filteredOrders.map((order) => (
-            <article key={order.id} className="rounded-2xl border border-border bg-card p-4">
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-bold text-card-foreground">{order.customerName}</p>
-                  <p className="text-xs text-muted-foreground">#{order.id}</p>
-                </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColors[order.status]}`}>
-                  {order.status}
-                </span>
-              </div>
-
-              <p className="text-sm text-foreground">
-                {order.items[0]?.productName || 'পণ্য উল্লেখ নেই'} × {order.items[0]?.quantity || 1} ·{' '}
-                <span className="font-bold">{formatCurrency(order.total)}</span>
-              </p>
-
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="rounded-md bg-muted px-2 py-1">📍 {order.channel}</span>
-                <span className="rounded-md bg-muted px-2 py-1">🕐 {formatDate(order.createdAt)}</span>
-                {order.rto_risk === 'high' && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700">
-                    <AlertTriangle className="h-3 w-3" /> {t('customers.highRTO')}
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setSelectedOrder(order)}
-                  className="min-h-12 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700"
-                >
-                  বিস্তারিত দেখুন
-                </button>
-                {order.delivery_tracking_code ? (
-                  <a
-                    href={`https://steadfast.com.bd/track?trackingCode=${order.delivery_tracking_code}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="min-h-12 rounded-xl bg-[#1DB954] px-3 text-sm font-semibold text-white flex items-center justify-center"
-                  >
-                    ট্র্যাক করুন
-                  </a>
-                ) : (
-                  <button
-                    onClick={() => { setSelectedOrder(order); }}
-                    className="min-h-12 rounded-xl bg-blue-600 px-3 text-sm font-semibold text-white"
-                  >
-                    স্ট্যাটাস আপডেট
-                  </button>
-                )}
-              </div>
-            </article>
-          ))
+          <AnimatePresence>
+            {filteredOrders.map((order) => (
+              <motion.div
+                key={order.id}
+                variants={fadeUp}
+                initial="hidden"
+                animate="visible"
+                exit={{ opacity: 0, y: -8 }}
+              >
+                <OrderRow
+                  order={order}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                  onViewDetail={(o) => setSelectedOrder(o)}
+                  onDispatch={(o) => { setSelectedOrder(o); setShowCourierModal(true); }}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         )}
       </div>
 
@@ -667,15 +644,12 @@ export default function Orders() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('orders.createModal.phone')} <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
+                    <BDPhoneInput
+                      label={t('orders.createModal.phone')}
                       value={manualOrder.customerPhone}
-                      onChange={(e) => setManualOrder({ ...manualOrder, customerPhone: e.target.value })}
-                      placeholder={t('orders.createModal.phonePlaceholder')}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={(raw) => setManualOrder({ ...manualOrder, customerPhone: raw })}
+                      required
+                      id="order-customer-phone"
                     />
                   </div>
                   <div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Plus, Check, AlertCircle, RefreshCw, Settings, Loader2, MessageSquare, Instagram, FlaskConical, Unplug, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import {
   listMetaChannels,
@@ -17,6 +18,8 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
+import { getMetaErrorMessage } from "@/lib/meta/error-messages";
+import * as Collapsible from "@radix-ui/react-collapsible";
 
 interface ChannelOption {
   id: 'facebook' | 'instagram';
@@ -83,7 +86,9 @@ export default function Channels() {
       const fetchedChannels = await listMetaChannels();
       setChannels(fetchedChannels);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || t('channels.errors.loadFailed'));
+      const code = error.response?.data?.error?.code;
+      const rawMsg = error.response?.data?.error?.message || '';
+      setError(getMetaErrorMessage(code, rawMsg, 'en'));
     } finally {
       setIsLoading(false);
     }
@@ -456,15 +461,37 @@ export default function Channels() {
             const isConsentExpanded = expandedConsentChannelId === channel.id;
             const isConsentLoading = loadingConsentId === channel.id;
             return (
-              <div key={channel.id} className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow">
+              <motion.div
+                key={channel.id}
+                whileHover={{ scale: 1.005 }}
+                transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-lg transition-shadow"
+              >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center ${channelOption?.bgColor || 'bg-gray-100'}`}>
                       <ChannelIcon id={channel.platform} color={channelOption?.brandColor || '#6b7280'} size={22} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">{channel.displayName}</h3>
-                      <p className="text-sm text-gray-500">{channelOption?.name || channel.platform}</p>
+                      <h3 className="font-semibold text-gray-900 text-base">{channel.displayName}</h3>
+                      <p className="text-sm text-muted-foreground">{channelOption?.name || channel.platform}</p>
+                      {channel.createdAt && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Connected {new Date(channel.createdAt).toLocaleDateString()}
+                        </p>
+                      )}
+                      {channel.updatedAt && (
+                        <p className="text-xs text-muted-foreground">
+                          Last active {(() => {
+                            const diff = Date.now() - new Date(channel.updatedAt).getTime();
+                            const m = Math.floor(diff / 60000);
+                            const h = Math.floor(diff / 3600000);
+                            if (m < 60) return `${m}m ago`;
+                            if (h < 24) return `${h}h ago`;
+                            return `${Math.floor(h/24)}d ago`;
+                          })()}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -528,77 +555,100 @@ export default function Channels() {
                   </button>
                 </div>
 
-                {/* Consent activity panel — keys off MetaChannel.id directly */}
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <button
-                    onClick={() => handleToggleConsent(channel.id)}
-                    className="w-full flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-gray-500" />
-                      <span className="font-medium">
-                        {t('channels.consent.heading', 'Consent activity')}
+                {/* Consent activity panel — animated height via Radix Collapsible */}
+                <Collapsible.Root
+                  open={isConsentExpanded}
+                  onOpenChange={(open) => {
+                    if (open) handleToggleConsent(channel.id);
+                    else setExpandedConsentChannelId(null);
+                  }}
+                  className="mt-4 pt-4 border-t border-gray-100"
+                >
+                  <Collapsible.Trigger asChild>
+                    <button className="w-full flex items-center justify-between text-sm text-gray-700 hover:text-gray-900 transition-colors">
+                      <span className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-gray-500" />
+                        <span className="font-medium">
+                          {t('channels.consent.heading', 'Consent activity')}
+                          {consentSummary && (
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              ({consentSummary.counts.optIns} opt-ins)
+                            </span>
+                          )}
+                        </span>
                       </span>
-                    </span>
-                    {isConsentLoading
-                      ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                      : isConsentExpanded
-                        ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                        : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                  </button>
+                      {isConsentLoading
+                        ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                        : isConsentExpanded
+                          ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                          : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </button>
+                  </Collapsible.Trigger>
 
-                  {isConsentExpanded && consentSummary && (
-                    <div className="mt-3 space-y-3">
-                      <div className="grid grid-cols-4 gap-2 text-center">
-                        <div className="rounded-lg bg-green-50 px-2 py-2">
-                          <p className="text-lg font-semibold text-green-700">{consentSummary.counts.optIns}</p>
-                          <p className="text-[10px] uppercase tracking-wide text-green-700/80">
-                            {t('channels.consent.optIns', 'Opt-ins')}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-red-50 px-2 py-2">
-                          <p className="text-lg font-semibold text-red-700">{consentSummary.counts.optOuts}</p>
-                          <p className="text-[10px] uppercase tracking-wide text-red-700/80">
-                            {t('channels.consent.optOuts', 'Opt-outs')}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-gray-100 px-2 py-2">
-                          <p className="text-lg font-semibold text-gray-700">{consentSummary.counts.deauthorized}</p>
-                          <p className="text-[10px] uppercase tracking-wide text-gray-600">
-                            {t('channels.consent.deauthorized', 'Deauth')}
-                          </p>
-                        </div>
-                        <div className="rounded-lg bg-gray-100 px-2 py-2">
-                          <p className="text-lg font-semibold text-gray-700">{consentSummary.counts.dataDeleted}</p>
-                          <p className="text-[10px] uppercase tracking-wide text-gray-600">
-                            {t('channels.consent.dataDeleted', 'Erased')}
-                          </p>
-                        </div>
-                      </div>
+                  <Collapsible.Content>
+                    <AnimatePresence>
+                      {isConsentExpanded && consentSummary && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.25, ease: "easeOut" }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-3 space-y-3">
+                            <div className="grid grid-cols-4 gap-2 text-center">
+                              <div className="rounded-lg bg-green-50 px-2 py-2">
+                                <p className="text-lg font-semibold text-green-700">{consentSummary.counts.optIns}</p>
+                                <p className="text-[10px] uppercase tracking-wide text-green-700/80">
+                                  {t('channels.consent.optIns', 'Opt-ins')}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-red-50 px-2 py-2">
+                                <p className="text-lg font-semibold text-red-700">{consentSummary.counts.optOuts}</p>
+                                <p className="text-[10px] uppercase tracking-wide text-red-700/80">
+                                  {t('channels.consent.optOuts', 'Opt-outs')}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-muted px-2 py-2">
+                                <p className="text-lg font-semibold text-muted-foreground">{consentSummary.counts.deauthorized}</p>
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                  {t('channels.consent.deauthorized', 'Deauth')}
+                                </p>
+                              </div>
+                              <div className="rounded-lg bg-muted px-2 py-2">
+                                <p className="text-lg font-semibold text-muted-foreground">{consentSummary.counts.dataDeleted}</p>
+                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                  {t('channels.consent.dataDeleted', 'Erased')}
+                                </p>
+                              </div>
+                            </div>
 
-                      {consentSummary.recentEvents.length === 0 ? (
-                        <p className="text-xs text-gray-500 italic">
-                          {t('channels.consent.empty', 'No consent events recorded yet.')}
-                        </p>
-                      ) : (
-                        <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                          {consentSummary.recentEvents.map((ev) => (
-                            <li key={ev.id} className="flex items-center justify-between gap-2 text-xs">
-                              <span className={`px-2 py-0.5 rounded-full font-medium ${consentEventBadgeClass(ev.event)}`}>
-                                {consentEventLabel(ev.event)}
-                              </span>
-                              <span className="text-gray-500 truncate flex-1">{ev.source}</span>
-                              <span className="text-gray-400 flex-shrink-0">
-                                {new Date(ev.createdAt).toLocaleString()}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+                            {consentSummary.recentEvents.length === 0 ? (
+                              <p className="text-xs text-muted-foreground italic">
+                                {t('channels.consent.empty', 'No consent events recorded yet.')}
+                              </p>
+                            ) : (
+                              <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                {consentSummary.recentEvents.map((ev) => (
+                                  <li key={ev.id} className="flex items-center justify-between gap-2 text-xs">
+                                    <span className={`px-2 py-0.5 rounded-full font-medium ${consentEventBadgeClass(ev.event)}`}>
+                                      {consentEventLabel(ev.event)}
+                                    </span>
+                                    <span className="text-muted-foreground truncate flex-1">{ev.source}</span>
+                                    <span className="text-muted-foreground flex-shrink-0">
+                                      {new Date(ev.createdAt).toLocaleString()}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
-                    </div>
-                  )}
-                </div>
-              </div>
+                    </AnimatePresence>
+                  </Collapsible.Content>
+                </Collapsible.Root>
+              </motion.div>
             );
           })}
         </div>
