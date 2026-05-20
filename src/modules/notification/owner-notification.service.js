@@ -1,7 +1,8 @@
 /**
  * Owner Notification Service
  * Handles multi-channel notifications to shop owners for payment confirmations
- * Supports WhatsApp, Facebook, Email, and Dashboard notifications
+ * Supports Facebook Messenger, Email, and Dashboard notifications.
+ * WhatsApp removed from product scope 2026-05-20.
  */
 
 const { OwnerNotification, Shop, User, UserShop, Channel } = require('../entities');
@@ -53,7 +54,6 @@ class OwnerNotificationService {
 
             // Send via all available channels
             const results = await Promise.allSettled([
-                this.sendViaWhatsApp(shopId, shopOwner, notificationContent),
                 this.sendViaFacebook(shopId, shopOwner, notificationContent),
                 this.sendViaEmail(shopOwner, notificationContent),
                 this.createDashboardNotification(shopId, notificationContent)
@@ -62,7 +62,7 @@ class OwnerNotificationService {
             // Log results
             const successfulChannels = results
                 .map((result, index) => {
-                    const channels = ['whatsapp', 'facebook', 'email', 'dashboard'];
+                    const channels = ['facebook', 'email', 'dashboard'];
                     return result.status === 'fulfilled' ? channels[index] : null;
                 })
                 .filter(Boolean);
@@ -219,39 +219,6 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
 🔘 Make Decision:
 ✅ Approve: ${approveUrl}
 ❌ Reject: ${rejectUrl}`;
-    }
-
-    /**
-     * Send notification via WhatsApp
-     */
-    async sendViaWhatsApp(shopId, owner, message) {
-        try {
-            // Find WhatsApp channel for shop
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: shopId,
-                    type: 'whatsapp',
-                    is_active: true
-                }
-            });
-
-            if (!channel) {
-                return { success: false, reason: 'no_whatsapp_channel' };
-            }
-
-            // Use webhook service to send message
-            const webhookService = require('../webhook/webhook.service');
-            await webhookService.sendMessage(channel, owner.phone, message);
-
-            return { success: true, channel: 'whatsapp' };
-
-        } catch (error) {
-            this.logger.warn('WhatsApp notification failed', {
-                shopId,
-                error: error.message
-            });
-            return { success: false, reason: 'send_error', error: error.message };
-        }
     }
 
     /**

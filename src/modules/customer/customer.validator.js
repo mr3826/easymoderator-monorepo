@@ -1,9 +1,9 @@
 const Joi = require('joi');
 
 // Channels supported across the entity and external API
-const VALID_CHANNELS = ['messenger', 'instagram', 'facebook', 'whatsapp', 'telegram', 'webchat', 'manual'];
+const VALID_CHANNELS = ['messenger', 'instagram', 'facebook', 'telegram', 'webchat', 'manual'];
 // Channels exposed on the REST/manual-create interface (messenger/instagram are channel-only, not manual)
-const REST_CHANNELS = ['facebook', 'whatsapp', 'telegram', 'webchat', 'manual'];
+const REST_CHANNELS = ['facebook', 'telegram', 'webchat', 'manual'];
 
 // Max bytes for the metadata JSON blob (16 KB)
 const METADATA_MAX_BYTES = 16 * 1024;

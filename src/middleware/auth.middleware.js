@@ -34,12 +34,24 @@ const authenticate = async (req, res, next) => {
             throw new AppError('Token has been revoked. Please login again.', 401);
         }
 
-        // 4. Verify token_version to invalidate tokens after password reset
+        // 4. Verify token_version to invalidate tokens after password reset.
+        // Cache the DB value for 60 s per user to avoid a SELECT on every request.
+        // The cache is invalidated immediately when token_version is incremented
+        // (see auth.service.js resetPassword).
         if (decoded.tokenVersion) {
-            const user = await User.findByPk(decoded.userId, {
-                attributes: ['token_version']
-            });
-            if (!user || user.token_version !== decoded.tokenVersion) {
+            const tvCacheKey = `user:${decoded.userId}:token_version`;
+            let dbTokenVersion = await cacheService.get(tvCacheKey);
+            if (dbTokenVersion === null) {
+                const user = await User.findByPk(decoded.userId, {
+                    attributes: ['token_version']
+                });
+                if (!user) {
+                    throw new AppError('Token has been invalidated. Please login again.', 401);
+                }
+                dbTokenVersion = user.token_version;
+                await cacheService.set(tvCacheKey, dbTokenVersion, 60);
+            }
+            if (dbTokenVersion !== decoded.tokenVersion) {
                 throw new AppError('Token has been invalidated. Please login again.', 401);
             }
         }

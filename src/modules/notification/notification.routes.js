@@ -12,7 +12,7 @@ router.use(pushSubscriptionRoutes);
 const validateMarkHandoff = [
     body('shop_id').notEmpty().withMessage('shop_id is required'),
     body('customer_id').notEmpty().withMessage('customer_id is required'),
-    body('platform').isIn(['messenger', 'instagram', 'whatsapp']).withMessage('Invalid platform'),
+    body('platform').isIn(['messenger', 'instagram']).withMessage('Invalid platform'),
     body('trigger_reason').notEmpty().withMessage('trigger_reason is required'),
     body('confidence_score').isInt({ min: 0, max: 100 }).withMessage('confidence_score must be 0-100'),
     body('last_message').optional().isString()
