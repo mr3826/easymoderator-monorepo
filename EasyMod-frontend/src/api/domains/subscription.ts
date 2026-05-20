@@ -116,7 +116,7 @@ export async function reactivateSubscription(): Promise<Subscription> {
  */
 export async function getPaymentMethods(): Promise<PaymentMethod[]> {
   const response: AxiosResponse<ApiResponse<PaymentMethod[]>> = await httpClient.get(
-    '/api/subscription/payment-methods'
+    '/api/payment-methods/available'
   );
   return response.data.data;
 }
@@ -136,7 +136,7 @@ export async function addPaymentMethod(
   paymentMethodId: string
 ): Promise<PaymentMethod> {
   const response: AxiosResponse<ApiResponse<PaymentMethod>> = await httpClient.post(
-    '/api/subscription/payment-methods',
+    '/api/payment-methods/save-config',
     { paymentMethodId }
   );
   return response.data.data;
@@ -154,7 +154,7 @@ export async function addPaymentMethod(
  * ```
  */
 export async function removePaymentMethod(paymentMethodId: string): Promise<void> {
-  await httpClient.delete(`/api/subscription/payment-methods/${paymentMethodId}`);
+  await httpClient.post('/api/payment-methods/save-config', { removeId: paymentMethodId });
 }
 
 /**
@@ -169,7 +169,7 @@ export async function removePaymentMethod(paymentMethodId: string): Promise<void
  * ```
  */
 export async function setDefaultPaymentMethod(paymentMethodId: string): Promise<void> {
-  await httpClient.patch('/api/subscription/payment-methods/default', { paymentMethodId });
+  await httpClient.post('/api/payment-methods/save-config', { defaultId: paymentMethodId });
 }
 
 /**
