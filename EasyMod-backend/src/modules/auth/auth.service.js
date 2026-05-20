@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../../utils/email.service');
 const { passwordResetEmail } = require('../../utils/email-templates/password-reset');
+const cacheService = require('../../utils/cache.service');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -433,6 +434,11 @@ const resetPassword = async (rawToken, newPassword) => {
         await t.rollback();
         throw err;
     }
+
+    // Invalidate the token_version cache entry so the next request hits the DB
+    // and picks up the new version immediately, rather than serving a stale hit
+    // that would allow the old token to pass for up to 60 more seconds.
+    await cacheService.delete(`user:${user.id}:token_version`);
 
     return { success: true };
 };
