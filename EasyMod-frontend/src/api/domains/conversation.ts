@@ -118,7 +118,7 @@ export async function transcribeVoice(
   request: VoiceTranscriptionRequest
 ): Promise<VoiceTranscriptionResponse> {
   const response: AxiosResponse<ApiResponse<VoiceTranscriptionResponse>> = await httpClient.post(
-    '/api/conversation/transcribe',
+    '/api/voice/transcribe',
     request
   );
   return response.data.data;
