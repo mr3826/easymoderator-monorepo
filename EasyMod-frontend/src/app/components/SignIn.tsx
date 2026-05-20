@@ -52,6 +52,12 @@ export default function SignIn() {
       await signin({ email: data.email.trim().toLowerCase(), password: data.password });
       navigate('/app');
     } catch (err: any) {
+      // 2FA required — authService already stored the tempToken in pendingTwoFactor.
+      // Navigate without setting an error so the sign-in form doesn't show a failure.
+      if (err?.code === 'REQUIRES_2FA') {
+        navigate('/2fa-verify');
+        return;
+      }
       setError('root', {
         message:
           err.message ||

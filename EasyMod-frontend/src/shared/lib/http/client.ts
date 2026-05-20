@@ -38,6 +38,7 @@ export interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
 class HttpClient {
   private client: AxiosInstance;
   private csrfToken: string | null = null;
+  private csrfInitPromise: Promise<void> | null = null;
   private accessToken: string | null = null;
   private isRefreshing = false;
   private refreshQueue: Array<{
@@ -240,7 +241,12 @@ class HttpClient {
 
       if (!this.isRefreshing) {
         this.isRefreshing = true;
-        this.performTokenRefresh();
+        // Attach a catch so a rejected promise from performTokenRefresh() does not
+        // surface as an unhandled rejection in environments that crash on them.
+        // Queue clearing and isRefreshing reset are handled inside performTokenRefresh's
+        // own try/catch/finally — this catch is a safety net for unexpected throws
+        // before that cleanup runs.
+        this.performTokenRefresh().catch(() => this.clearRefreshQueue());
       }
     });
   }
@@ -293,13 +299,23 @@ class HttpClient {
 
   async initCsrfToken(): Promise<void> {
     if (this.csrfToken) return;
+    // If a fetch is already in-flight, join it rather than launching a second
+    // request. Without this guard, multiple concurrent mutations on a cold page
+    // load each fire their own GET /api/csrf, wasting round-trips and risking
+    // a race where one fetch overwrites another's result.
+    if (this.csrfInitPromise) return this.csrfInitPromise;
+    this.csrfInitPromise = this._fetchCsrf().finally(() => {
+      this.csrfInitPromise = null;
+    });
+    return this.csrfInitPromise;
+  }
 
+  private async _fetchCsrf(): Promise<void> {
     try {
       const response = await this.client.get('/api/csrf');
       this.csrfToken = response.data?.csrfToken || null;
     } catch (error) {
-      console.error('❌ CSRF Token initialization failed:', error);
-      // Clear token so it can be retried on next call
+      console.error('CSRF Token initialization failed:', error);
       this.csrfToken = null;
     }
   }

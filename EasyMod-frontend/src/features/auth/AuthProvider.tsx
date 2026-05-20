@@ -2,12 +2,15 @@ import { eventBus, EventTypes as EVENTS } from '../../app/lib/events';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import type { User, Shop, SigninRequest, SignupRequest } from "@/api/types";
 import { authService, AuthState } from "../../app/lib/auth";
+import { httpClient } from "../../shared/lib/http/client";
+import { toast } from "sonner";
 
 interface AuthContextProps extends AuthState {
   signin: (credentials: SigninRequest) => Promise<void>;
   signup: (userData: SignupRequest) => Promise<void>;
   switchShop: (shopId: string) => Promise<void>;
   logout: () => Promise<void>;
+  verifyTwoFactor: (code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -16,13 +19,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [state, setState] = useState<AuthState>(authService.getState());
 
   useEffect(() => {
-    // Subscribe to authService state changes
+    // Subscribe to authService state changes.
+    // The subscribe() call also delivers the terminal state from ensureInitialized()
+    // through the same listener path — the extra .then(setState) below was redundant
+    // and caused a guaranteed double render on every mount.
     const unsubscribe = authService.subscribe(setState);
-
-    // Initial sync
-    authService.ensureInitialized().then(() => {
-      setState(authService.getState());
-    });
 
     // Handle 401s emitted by the HTTP client.
     // Rules:
@@ -42,9 +43,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
     window.addEventListener('auth:unauthorized', handleUnauthorized);
 
+    // Re-initialize the CSRF token whenever the backend signals that the current
+    // token is invalid (e.g., after a server restart or session rotation). Without
+    // this handler the user would receive a 403 on the next mutation with no
+    // recovery path — they'd have to reload the page manually.
+    const handleCsrfInvalid = () => {
+      httpClient.initCsrfToken().then(() => {
+        toast.info('Session refreshed, please retry.');
+      }).catch(() => {
+        // CSRF re-init failed — silently ignore; the next mutation will retry
+      });
+    };
+    window.addEventListener('csrf:invalid', handleCsrfInvalid);
+
     return () => {
       unsubscribe();
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
+      window.removeEventListener('csrf:invalid', handleCsrfInvalid);
     };
   }, []);
 
@@ -65,8 +80,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await authService.logout();
   };
 
+  const verifyTwoFactor = async (code: string) => {
+    await authService.verifyTwoFactor(code);
+  };
+
   return (
-    <AuthContext.Provider value={{ ...state, signin, signup, switchShop, logout }}>
+    <AuthContext.Provider value={{ ...state, signin, signup, switchShop, logout, verifyTwoFactor }}>
       {children}
     </AuthContext.Provider>
   );

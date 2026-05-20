@@ -63,7 +63,15 @@ export default function OAuthCallbackPage() {
     sessionStorage.removeItem('easymod_oauth_channel_id');
 
     handleMetaOAuthCallback(code, state)
-      .catch(() => { /* ignore — channels page will show current state */ })
+      .catch((err: unknown) => {
+        // Surface the failure on the channels page instead of silently redirecting.
+        // The channels page reads and clears this key on mount.
+        const message =
+          (err as any)?.response?.data?.error?.message ||
+          (err as any)?.message ||
+          'Failed to connect your account. Please try again.';
+        sessionStorage.setItem('oauth_error', message);
+      })
       .finally(() => {
         window.location.href = '/app/channels';
       });

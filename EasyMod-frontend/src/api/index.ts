@@ -83,6 +83,7 @@ export const apiClient = {
   logout: authDomain.logout,
   getAuthContext: authDomain.getAuthContext,
   refreshToken: authDomain.refreshToken,
+  verifyTwoFactor: authDomain.verifyTwoFactor,
   getShops: authDomain.getShops,
   createShop: authDomain.createShop,
   switchShop: authDomain.switchShop,

@@ -10,6 +10,8 @@ export interface AuthState {
   allShops: Shop[];
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Set when signin requires a 2FA step. Cleared on successful verify or re-attempt. */
+  pendingTwoFactor: { tempToken: string } | null;
 }
 
 export class AuthService {
@@ -19,6 +21,7 @@ export class AuthService {
     allShops: [],
     isAuthenticated: false,
     isLoading: true,
+    pendingTwoFactor: null,
   };
 
   private listeners: ((state: AuthState) => void)[] = [];
@@ -131,9 +134,20 @@ export class AuthService {
         allShops: authData.allShops,
         isAuthenticated: true,
         isLoading: false,
+        pendingTwoFactor: null,
       });
-    } catch (error) {
-      this.setAuthState({ isLoading: false });
+    } catch (error: any) {
+      if (error?.code === 'REQUIRES_2FA') {
+        // Do NOT set isAuthenticated:true — the user has not fully authenticated.
+        // Store the tempToken so TwoFactorVerify can use it without prop-drilling.
+        this.setAuthState({
+          isLoading: false,
+          pendingTwoFactor: { tempToken: error.tempToken },
+        });
+        // Re-throw so the SignIn component can navigate to /2fa-verify.
+        throw error;
+      }
+      this.setAuthState({ isLoading: false, pendingTwoFactor: null });
       throw error;
     }
   }
@@ -194,13 +208,42 @@ export class AuthService {
     return newShop;
   }
 
+  async verifyTwoFactor(code: string): Promise<void> {
+    const pending = this.authState.pendingTwoFactor;
+    if (!pending) throw new Error('No pending 2FA session');
+
+    try {
+      this.setAuthState({ isLoading: true });
+      await apiClient.verifyTwoFactor(pending.tempToken, code);
+
+      // Backend set the auth cookies — now fetch the full auth context.
+      const authContext = await apiClient.getAuthContext();
+      httpClient.clearCsrfToken();
+      httpClient.initCsrfToken();
+
+      this.setAuthState({
+        user: authContext.user,
+        currentShop: authContext.currentShop,
+        allShops: authContext.allShops,
+        isAuthenticated: true,
+        isLoading: false,
+        pendingTwoFactor: null,
+      });
+    } catch (error) {
+      this.setAuthState({ isLoading: false });
+      throw error;
+    }
+  }
+
   async refreshToken(): Promise<void> {
     await apiClient.refreshToken();
   }
 
   async logout(): Promise<void> {
-    // Call backend to blacklist the token and clear httpOnly cookies
-    await apiClient.logout();
+    // Best-effort: blacklist the token and clear httpOnly cookies on the server.
+    // Local state resets unconditionally so a network error never leaves the user
+    // stuck in a half-authenticated state.
+    try { await apiClient.logout(); } catch { /* best-effort */ }
 
     this.setAuthState({
       user: null,

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useMemo, useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
@@ -7,6 +7,7 @@ import { apiClient } from '@/api';
 
 export default function ResetPassword() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = useMemo(() => searchParams.get('token') || '', [searchParams]);
 
@@ -15,6 +16,14 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // After a successful reset all existing sessions are invalidated by the backend.
+  // Redirect to /signin after a short delay so the user sees the confirmation message.
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => navigate('/signin', { replace: true }), 4000);
+    return () => clearTimeout(timer);
+  }, [success, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +48,8 @@ export default function ResetPassword() {
     setIsLoading(true);
 
     try {
-      const result = await apiClient.resetPassword(token, password);
-      setSuccess(result.message || t('auth.resetPassword.successMessage'));
+      await apiClient.resetPassword(token, password);
+      setSuccess(t('auth.resetPassword.successMessage'));
       setPassword('');
       setConfirmPassword('');
     } catch (error: any) {
@@ -75,8 +84,12 @@ export default function ResetPassword() {
               </div>
             )}
             {success && (
-              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-                {success}
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm space-y-1">
+                <p className="font-medium">{success}</p>
+                <p className="text-green-600">
+                  Password changed. All existing sessions have been signed out for security.
+                  Redirecting to sign in…
+                </p>
               </div>
             )}
 

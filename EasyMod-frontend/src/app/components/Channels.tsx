@@ -90,6 +90,14 @@ export default function Channels() {
   };
 
   useEffect(() => {
+    // If the OAuth callback page (fallback tab-based flow) stored an error,
+    // surface it as a toast and clear the key so it doesn't re-appear on refresh.
+    const oauthError = sessionStorage.getItem('oauth_error');
+    if (oauthError) {
+      sessionStorage.removeItem('oauth_error');
+      toast.error(oauthError);
+    }
+
     fetchChannels();
     return () => {
       if (oauthListenerRef.current) {

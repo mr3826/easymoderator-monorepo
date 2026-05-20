@@ -29,6 +29,7 @@ const SignIn = lazy(() => import("./components/SignIn"));
 const Signup = lazy(() => import("./components/Signup"));
 const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
 const ResetPassword = lazy(() => import("./components/ResetPassword"));
+const TwoFactorVerify = lazy(() => import("./components/TwoFactorVerify"));
 const RouteError = lazy(() => import("./components/RouteError"));
 const Subscription = lazy(() => import("./components/Subscription"));
 const PrivacyPolicy = lazy(() => import("./components/PrivacyPolicy"));
@@ -72,6 +73,13 @@ export const router = createBrowserRouter([
 		path: "/signin",
 		Component: withSuspense(SignIn),
 		loader: publicLoader,
+		errorElement: createElement(RouteError),
+	},
+	{
+		// No publicLoader guard — the user arrives here mid-login (not yet authenticated).
+		// The component itself guards against direct navigation by checking pendingTwoFactor.
+		path: "/2fa-verify",
+		Component: withSuspense(TwoFactorVerify),
 		errorElement: createElement(RouteError),
 	},
 	{
