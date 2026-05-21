@@ -25,6 +25,10 @@ const migrations = [
   require('./migrations/20260522_005_fix_schema_drift_customers_conversations'),
   require('./migrations/20260522_006_fix_schema_drift_catalog_content'),
   require('./migrations/20260522_007_fix_schema_drift_meta_recon'),
+  require('./migrations/20260522_008_convert_enums'),
+  require('./migrations/20260522_009_rto_blacklist_partial_unique'),
+  require('./migrations/20260522_010_knowledge_gaps_pk'),
+  require('./migrations/20260522_011_drop_legacy_columns'),
 ];
 
 const createMigrationsTable = async () => {
