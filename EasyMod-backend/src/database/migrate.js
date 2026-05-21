@@ -20,6 +20,11 @@ const migrations = [
   require('./migrations/20260520_000_initial_schema'),
   require('./migrations/20260522_001_fix_users_schema'),
   require('./migrations/20260522_002_fix_products_schema'),
+  require('./migrations/20260522_003_fix_schema_drift_auth_billing'),
+  require('./migrations/20260522_004_fix_schema_drift_orders_delivery'),
+  require('./migrations/20260522_005_fix_schema_drift_customers_conversations'),
+  require('./migrations/20260522_006_fix_schema_drift_catalog_content'),
+  require('./migrations/20260522_007_fix_schema_drift_meta_recon'),
 ];
 
 const createMigrationsTable = async () => {
