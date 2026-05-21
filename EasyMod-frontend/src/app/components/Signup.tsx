@@ -376,11 +376,18 @@ export default function Signup() {
 
                 {/* Terms */}
                 <div className="flex items-start gap-2.5">
-                  <Checkbox
-                    {...register('acceptedTerms')}
-                    id="terms"
-                    disabled={isSubmitting}
-                    className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                  <Controller
+                    control={control}
+                    name="acceptedTerms"
+                    render={({ field }) => (
+                      <Checkbox
+                        id="terms"
+                        checked={field.value}
+                        onCheckedChange={(v) => field.onChange(v === true)}
+                        disabled={isSubmitting}
+                        className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                      />
+                    )}
                   />
                   <label htmlFor="terms" className="text-xs text-gray-600 leading-relaxed">
                     {t('auth.signup.agreePrefix')}{' '}
