@@ -32,9 +32,11 @@ if (config.env === 'production' && isSqlite) {
     throw new Error('SQLite is not allowed in production. Set DATABASE_URL to a Postgres connection string.');
 }
 
-const sslOptions = config.allowSelfSignedTls
-    ? { require: true, rejectUnauthorized: false }
-    : (config.env === 'production' ? { require: true, rejectUnauthorized: true } : undefined);
+const sslOptions = process.env.DB_SSL === 'false'
+    ? undefined
+    : config.allowSelfSignedTls
+        ? { require: true, rejectUnauthorized: false }
+        : (config.env === 'production' ? { require: true, rejectUnauthorized: true } : undefined);
 
 let sequelize;
 if (isSqlite) {

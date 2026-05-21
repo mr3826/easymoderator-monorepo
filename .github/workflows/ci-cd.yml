@@ -165,6 +165,7 @@ jobs:
           REDIS_URL=redis://redis:6379
           REDIS_HOST=redis
           REDIS_PORT=6379
+          DB_SSL=false
 
           JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
           JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
