@@ -19,6 +19,7 @@ let sequelize;
 const migrations = [
   require('./migrations/20260520_000_initial_schema'),
   require('./migrations/20260522_001_fix_users_schema'),
+  require('./migrations/20260522_002_fix_products_schema'),
 ];
 
 const createMigrationsTable = async () => {
