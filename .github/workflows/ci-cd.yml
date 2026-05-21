@@ -296,7 +296,7 @@ jobs:
 
             # Health check
             for i in $(seq 1 20); do
-              STATUS=$(curl -sf http://localhost:3000/health/ready -o /dev/null -w "%{http_code}" || echo "000")
+              STATUS=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
               if [ "$STATUS" = "200" ]; then
                 echo "Health check passed on attempt $i"
                 break
