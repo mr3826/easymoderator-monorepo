@@ -1,4 +1,80 @@
 # Execution History
+**Last Updated:** 2026-05-22 (8 Deferred Breaking Schema-Drift Items — migrations 008-011)
+
+## 2026-05-22 — Full Entity-vs-Squash Schema Drift Audit (migrations 003-007)
+
+**Task:** Audit every Sequelize entity against the squashed initial schema migration. Find all missing columns, paranoid-landmine tables, and column name mismatches before more 502s surface.
+
+**Outcome:** Complete. 25+ tables had drift. 5 corrective migrations written, syntax-checked, committed (98af070), pushed, and deployed via workflow run 26254564369 (all 3 jobs: detect/build/deploy passed). Endpoints verified returning 401 (auth rejection) not 502.
+
+**Migrations Written (all idempotent, ADD COLUMN IF NOT EXISTS, CREATE INDEX IF NOT EXISTS):**
+- `20260522_003_fix_schema_drift_auth_billing`: user_sessions table creation (Session entity uses tableName 'user_sessions' but squash only created 'sessions'); password_reset_tokens (token_hash, used_at); subscriptions (billing_model, per_order_charge_bdt, partner_orders_this_week, partner_pending_invoice_amount, extra_conversations, extra_charge, usage_reset_at); payment_configs (gateway, is_enabled — squash had provider/is_active); trx_id_logs (mfs_type, sender_phone, receiver_phone, ocr_raw, verified_at); idempotency_keys (idempotency_key, endpoint, method, request_hash, response_data — squash had 'key' not 'idempotency_key')
+- `20260522_004_fix_schema_drift_orders_delivery`: orders (channel, items, order_status, fulfillment_status, subtotal, tax, delivery_fee, delivery_location, delivery_provider, delivery_consignment_id, delivery_tracking_code, delivery_status, delivery_dispatched_at, total, payment_method_id, paid_at, note); order_items (price, total — squash had unit_price, total_price); order_sessions (customer_channel_id, channel, current_step, step_data, product_info, status, automation_mode, confidence_threshold, last_activity_at, created_order_id, final_summary); customer_delivery_stats (phone, delivery_attempts, rto_count, last_rto_at, last_delivered_at); delivery_integrations (is_connected, metadata, last_validated_at); rto_blacklist (risk_score, is_global, added_by, notes, updated_at)
+- `20260522_005_fix_schema_drift_customers_conversations`: customer_preferences (preferred_payment, preferred_size, delivery_zone, total_orders, total_spent, last_ordered_at, notes — squash only had preferences JSONB); conversations (title, role, message, intent, confidence, llm_used, cache_hit, keyword_match, hitl, assignee_id); messages (ai_suggestion, ai_confidence); push_subscriptions (type, subscription_json, device_token — squash had 'subscription' JSONB)
+- `20260522_006_fix_schema_drift_catalog_content`: categories (cover_image, image); product_variants (option_name, option_value, quantity, compare_at_price — squash had name/stock); known_areas (enum_known_areas_zone_type ENUM type creation); response_templates (variables, category — squash had language, tags); knowledge_gaps (platform, language, source); audit_logs (resource_type, old_values, new_values, idempotency_key)
+- `20260522_007_fix_schema_drift_meta_recon`: comment_to_dm_events (parent_comment_id, commenter_external_id, commenter_name, matched_keyword, last_transition_at, last_error); courier_cod_collections (payment_reference, claimed_amount, consignment_count, consignment_ids, payment_date, raw_payload); reconciliation_disputes (collection_id, provider, payment_reference, claimed_amount, expected_amount, discrepancy_amount, dispute_status, notes); policy_decisions (conversation_id, direction, allow, rule_results, transform_applied, augment, policy_version, message_hash)
+
+**Tables with NO drift (entity matches squash):** tenants, shops, user_shops (role column ENUM vs VARCHAR mismatch is type-only), customers, delivery_costs, delivery_tracking, order_returns (status ENUM vs VARCHAR — type-only), analytics, banglish_dictionary, faq_responses, keywords, meta_channels, meta_channel_settings, meta_channel_consent_events, owner_notifications, payment_transactions, billing/invoice (order_invoices table), subscription/invoice (invoices table), usage_events
+
+**PRODUCT-REVIEW ITEMS (not altered — type or constraint mismatches that require merchant data review):**
+- user_shops.role: entity is ENUM('owner','admin','staff') but squash has VARCHAR(50)
+- orders.status (squash) vs order_status (entity): both exist now; downstream code must consistently use order_status
+- order_returns.status: ENUM in entity, VARCHAR in squash
+- known_areas.zone_type: ENUM in entity, VARCHAR in squash (ENUM type was created but column not altered)
+- subscriptions.status: ENUM in entity, VARCHAR in squash
+- rto_blacklist.shop_id: entity nullable (is_global=true rows), squash has UNIQUE(shop_id, phone) which rejects NULL shop_id
+- idempotency_keys: squash uses 'key' column; entity uses 'idempotency_key'; both now coexist — code must use entity column name
+- knowledge_gaps.id: squash has UUID, entity uses INTEGER SERIAL — cannot safely change PK type
+
+**Deploy:** Run ID 26254564369. All 3 jobs passed (detect 4s, build 43s, deploy 39s).
+
+**Verification:** /api/product, /api/order, /api/customer, /api/conversation, /api/channels/meta, /api/comment-to-dm, /api/subscription all return 401 (auth rejection) not 502. Server stable.
+
+**Technical Debt Introduced:**
+- 8 product-review items above (type mismatches, not structurally dangerous but semantically inconsistent) — ALL RESOLVED in 2026-05-22 session below
+- order_items now has both price/total (entity) AND unit_price/total_price (squash) — application code must use entity column names
+- customer_delivery_stats now has both entity columns AND squash columns — some squash columns (customer_id UNIQUE, total_orders, etc.) are orphaned
+
+**Meta Risk:** None — pure DB schema migration, no API surface changes.
+
+**Future Recommendations:**
+- Clean up orphaned squash columns after verifying no code references them (separate migration, product review cycle)
+- Add a schema drift CI check (pg_dump | diff against entities) to catch future divergence early
+
+---
+
+## 2026-05-22 (session 2) — 8 Deferred Breaking Schema-Drift Items (migrations 008-011)
+
+**Task:** Tackle all 8 items deliberately deferred from session 1 due to breaking-change risk (ENUM conversions, partial unique index, PK type change, legacy column drops).
+
+**Outcome:** All 8 items shipped. Workflow run 26255341957 passed (detect 6s, build 53s, deploy 41s). Health check passed on attempt 1. No regression.
+
+**Migrations Written:**
+- `20260522_008_convert_enums`: Converted 4 VARCHAR columns to ENUM.
+  - user_shops.role → ENUM('owner','admin','staff') — entity corrected from task description which had wrong values ('manager'). No out-of-set rows found.
+  - order_returns.status → ENUM('pending_approval','approved','rejected') — entity corrected from task description (5-value set reduced to 3). No out-of-set rows found.
+  - subscriptions.status → ENUM('active','inactive','cancelled','suspended') — entity corrected from task description. No out-of-set rows found.
+  - known_areas.zone_type → enum_known_areas_zone_type (type already existed from 006). No out-of-set rows.
+  - Key fix: DROP DEFAULT before ALTER TYPE, restore after (PostgreSQL requirement for columns with defaults).
+  - First deploy attempt failed with PG error 42804 — fixed by adding DROP DEFAULT step.
+- `20260522_009_rto_blacklist_partial_unique`: Dropped UNIQUE(shop_id,phone). Added idx_rto_shop_phone (WHERE shop_id IS NOT NULL) + idx_rto_global_phone (WHERE is_global=true). No duplicate global rows found. Dropped existing constraint rto_blacklist_shop_id_phone_key.
+- `20260522_010_knowledge_gaps_pk`: Safety gate confirmed 0 rows. Dropped UUID PK table, recreated with SERIAL INTEGER PK matching entity. Added shop_id + created_at indexes.
+- `20260522_011_drop_legacy_columns`: Dropped idempotency_keys.key, idempotency_keys.response, idx_idem_shop_key, orders.status, idx_orders_status. Pre-drop grep confirmed no app code referenced legacy column names. Pre-drop backfill sanity checks ran clean (0 orphan rows).
+
+**Safety Checks Performed:**
+- Grepped all src/modules/ for legacy 'key' column DB references: none found (app uses idempotency_key exclusively via audit.service.js entity model)
+- Grepped order.service.js, return.service.js, order.controller.js for 'status' on orders table: none found (all use order_status)
+- entity ENUM values verified by reading actual entity files (not relying on task description which had incorrect values for items 1 and 2)
+
+**Deploy:** Run ID 26255341957. All 3 jobs passed. Health: 200 OK on /health/ready.
+
+**Schema Debt Remaining (from both sessions):**
+- order_items: unit_price/total_price squash columns still exist alongside price/total entity columns
+- customer_delivery_stats: some squash columns orphaned
+- These are safe to leave — app uses entity column names; squash columns are read-never-written
+
+---
+
 **Last Updated:** 2026-05-21 (Contract Gap Audit + Deployment Artifacts)
 
 ## 2026-05-21 — FE↔BE Contract Gap Audit + Dead Code + Deployment Artifacts
