@@ -18,6 +18,7 @@ let sequelize;
 // Historical migrations archived at src/database/migrations/archive/.
 const migrations = [
   require('./migrations/20260520_000_initial_schema'),
+  require('./migrations/20260522_001_fix_users_schema'),
 ];
 
 const createMigrationsTable = async () => {
