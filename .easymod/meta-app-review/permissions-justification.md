@@ -11,7 +11,7 @@ Each permission below is justified with: use case, user-facing screen, specific 
 
 **Use case:** Send and receive Facebook Messenger messages on behalf of the business's connected Facebook Page — the core comment-to-DM and inbox reply flows.
 
-**User-facing screen:** Channels page (connect FB Page via OAuth) and Unified Inbox (compose + send replies).
+**User-facing screen:** Channels page (connect FB Page via OAuth) and Shared Inbox (compose + send replies).
 
 **Graph API calls that require it:**
 
@@ -72,7 +72,7 @@ Each permission below is justified with: use case, user-facing screen, specific 
 
 **Use case:** Read inbound Instagram Direct Messages and send replies on behalf of the business's Instagram account — same inbox and AI-reply flow as Messenger.
 
-**User-facing screen:** Unified Inbox — IG DMs appear alongside Messenger threads. Compose panel sends IG replies.
+**User-facing screen:** Shared Inbox — IG DMs appear alongside Messenger threads. Compose panel sends IG replies.
 
 **Graph API calls that require it:**
 

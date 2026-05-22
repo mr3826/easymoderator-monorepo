@@ -65,7 +65,7 @@ All authenticated routes are children of `/app` (protected by `protectedLoader` 
 /terms
 
 /app                       Dashboard (DashboardLayout shell)
-/app/inbox                 Unified Inbox
+/app/inbox                 Shared Inbox
 /app/channels              Channel connections
 /app/manage-shop           Shop settings (tabbed)
   /app/manage-shop                      Business info
@@ -132,7 +132,7 @@ import { apiClient } from '@/api';
 
 ## Features
 
-### Unified Inbox (`/app/inbox`)
+### Shared Inbox (`/app/inbox`)
 
 Core feature. Displays all active conversations across all connected channels. Each conversation card shows customer name, channel icon, last message, and AI confidence.
 

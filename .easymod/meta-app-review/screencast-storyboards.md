@@ -34,7 +34,7 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 ### Step 4 — Easy Moderator detects the keyword and sends a DM
 
-- Screen: Back to Easy Moderator — Unified Inbox (`/app/inbox`)
+- Screen: Back to Easy Moderator — Shared Inbox (`/app/inbox`)
 - What to show: Within a few seconds, a new conversation thread appears in the inbox from the test customer. The AI-generated Messenger DM is visible as a sent message (e.g. "Hi! Thanks for your interest. Here are the details for the blue dress...").
 
 ### Step 5 — Customer replies in Messenger
@@ -45,7 +45,7 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 ### Step 6 — Conversation is logged in inbox
 
-- Screen: Easy Moderator Unified Inbox
+- Screen: Easy Moderator Shared Inbox
 - What to show: The full conversation thread — the outbound DM (sent by Easy Moderator) and the customer's inbound reply. The conversation metadata panel shows the customer name, platform (Messenger), and timestamp.
 
 ---
@@ -64,7 +64,7 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 ### Step 2 — Opt-out is logged in the inbox
 
-- Screen: Easy Moderator Unified Inbox
+- Screen: Easy Moderator Shared Inbox
 - What to show: The "STOP" message appears in the conversation thread. The conversation is flagged — a badge or label shows "Opted out" or the thread is marked with a status change (e.g. "Messaging paused").
 
 ### Step 3 — Opt-out is recorded in the customer profile
@@ -74,7 +74,7 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 ### Step 4 — Merchant attempts to send a follow-up message
 
-- Screen: Easy Moderator Unified Inbox, same conversation thread
+- Screen: Easy Moderator Shared Inbox, same conversation thread
 - Action: Merchant types a message in the composer and clicks Send.
 - What happens: The send is blocked. The composer shows an inline error: "Cannot send — this customer has opted out of messages." (the policy engine deny with a user-readable reason, not a stack trace).
 - What to show: The error state in the composer. The message is NOT sent to Messenger.
