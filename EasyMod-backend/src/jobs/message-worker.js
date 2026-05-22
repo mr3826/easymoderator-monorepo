@@ -29,6 +29,7 @@ const { getProvider } = require('../modules/channel-providers/provider.registry'
 const sseManager = require('../utils/sse-manager');
 const policyEngine = require('../modules/policy/policy.engine');
 const metaChannelService = require('../modules/channel-providers/meta-channel.service');
+const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
 const Customer = require('../modules/customer/customer.entity');
 
 // Lazy imports to avoid circular dependency issues at module load
@@ -37,14 +38,29 @@ const getShopAISettings = async (shopId) => {
     return shopService.getShopAiSettings(shopId).catch(() => ({}));
 };
 
-const getChannelAISettings = async (shopId, platform) => {
-    // Phase 5: channel.service removed. Channel AI settings come from
-    // MetaChannelSettings (meta_channel_settings table) via metaChannelService.
+/**
+ * Resolve the MetaChannel row for this job. Prefers `metaChannelId` from the
+ * job payload (set by the webhook dispatcher, unambiguous when a shop owns
+ * multiple Pages/IG accounts of the same platform). Falls back to the
+ * shop+platform lookup for legacy jobs that pre-date the FK threading.
+ */
+const resolveChannelForJob = async (shopId, platform, metaChannelId) => {
     try {
+        if (metaChannelId) {
+            const ch = await MetaChannel.findByPk(metaChannelId);
+            if (ch && ch.shop_id === shopId) return ch;
+        }
         const pf = platform === 'messenger' ? 'facebook' : platform;
-        const ch = await metaChannelService.findByShopAndPlatform(shopId, pf);
-        if (!ch) return {};
-        const settings = await metaChannelService.getSettings(ch.id);
+        return await metaChannelService.findByShopAndPlatform(shopId, pf);
+    } catch {
+        return null;
+    }
+};
+
+const getChannelAISettings = async (channel) => {
+    if (!channel) return {};
+    try {
+        const settings = await metaChannelService.getSettings(channel.id);
         return settings?.toJSON?.() || settings || {};
     } catch {
         return {};
@@ -104,7 +120,14 @@ async function processMessageJob(job) {
         platform,
         recipientId,
         senderInfo = {},
+        metaChannelId = null,
     } = job.data;
+
+    // Resolve the channel once and pass it to every step that needs it. With
+    // multi-page shops (one shop owns N FB Pages and/or IG accounts), routing
+    // every send back through the same channel the message arrived on is the
+    // only correct behavior — see Phase 1-2 of the multi-channel rework.
+    const jobChannel = await resolveChannelForJob(shopId, platform, metaChannelId);
 
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
     if (externalId) {
@@ -138,7 +161,7 @@ async function processMessageJob(job) {
     // ── Guard 4: Automation mode ────────────────────────────────────────────
     const [shopAISettings, channelAISettings] = await Promise.all([
         getShopAISettings(shopId),
-        getChannelAISettings(shopId, platform),
+        getChannelAISettings(jobChannel),
     ]);
     const aiSettings = { ...shopAISettings, ...channelAISettings };
     if (aiSettings.automation_mode === 'MANUAL') {
@@ -167,13 +190,14 @@ async function processMessageJob(job) {
                 const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
                 if (autoReplyMsg) {
                     sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                    // Deliver escalation message to customer via provider registry
+                    // Deliver escalation message to customer via provider registry.
+                    // Use the same channel the inbound message arrived on so multi-Page
+                    // shops reply from the correct Page.
                     const pf = platform === 'messenger' ? 'facebook' : platform;
-                    const escCh = await metaChannelService.findByShopAndPlatform(shopId, pf).catch(() => null);
-                    if (escCh) {
+                    if (jobChannel) {
                         const escProvider = getProvider(pf);
                         escProvider.sendMessage({
-                            channel: escCh, recipientId: String(recipientId),
+                            channel: jobChannel, recipientId: String(recipientId),
                             normalizedMessage: { text: autoReplyMsg.content, attachments: [], platform: pf, direction: 'outbound', senderRole: 'ai' },
                             decision: { allow: true, reason: 'OK', augment: {} },
                         }).catch(err => console.warn(`[worker] Escalation delivery failed: ${err.message}`));
@@ -223,12 +247,10 @@ async function processMessageJob(job) {
     // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
     // old guard list. Every send (including non-AI) flows through this gate.
     const policyChannelType = platform === 'messenger' ? 'facebook' : platform;
-    const [customer, channel] = await Promise.all([
-        Customer.findOne({
-            where: { shop_id: shopId, channel_user_id: String(recipientId) },
-        }).catch(() => null),
-        metaChannelService.findByShopAndPlatform(shopId, policyChannelType).catch(() => null),
-    ]);
+    const customer = await Customer.findOne({
+        where: { shop_id: shopId, channel_user_id: String(recipientId) },
+    }).catch(() => null);
+    const channel = jobChannel;
     let channelSettings = aiSettings;
     if (channel) {
         try {

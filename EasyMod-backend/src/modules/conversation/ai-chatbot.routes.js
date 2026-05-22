@@ -27,6 +27,9 @@ const validateProcessMessage = [
     .optional()
     .trim()
     .isLength({ max: 255 }),
+  body('meta_channel_id')
+    .optional({ checkFalsy: true })
+    .isUUID().withMessage('meta_channel_id must be a UUID'),
   body('sender_info')
     .optional()
     .isObject().withMessage('sender_info must be an object'),

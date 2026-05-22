@@ -53,7 +53,7 @@ async function dispatchMessageJob(storeResult, event) {
         return;
     }
 
-    const { shop_id, sender, platform, message, attachments = [], raw_event } = event;
+    const { shop_id, sender, platform, message, attachments = [], raw_event, meta_channel_id = null } = event;
     const { conversation_id, message_id, customer_id } = storeResult;
     const externalId = raw_event?.message?.mid || raw_event?.id || null;
     const jobId = externalId ? `${shop_id}:${externalId}` : undefined;
@@ -71,6 +71,7 @@ async function dispatchMessageJob(storeResult, event) {
                 recipientId: sender,
                 senderInfo: { customer_id },
                 attachments,
+                metaChannelId: meta_channel_id,
             },
             {
                 jobId,

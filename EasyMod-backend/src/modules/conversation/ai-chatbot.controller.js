@@ -42,6 +42,7 @@ class AIChatbotController {
                 platform,
                 message: rawMessage = '',
                 message_id,
+                meta_channel_id = null,
                 sender_info = {},
                 attachments = []
             } = req.body;
@@ -99,9 +100,20 @@ class AIChatbotController {
             const [shopAISettings, channelAISettings] = await Promise.all([
                 getShopAISettings(shop_id),
                 (async () => {
+                    // Prefer explicit meta_channel_id (unambiguous when a shop owns
+                    // multiple Pages); fall back to shop+platform lookup for legacy
+                    // callers that don't know which channel the message belongs to.
                     try {
-                        const pf = platform === 'messenger' ? 'facebook' : platform;
-                        const ch = await metaChannelService.findByShopAndPlatform(shop_id, pf);
+                        let ch = null;
+                        if (meta_channel_id) {
+                            const MetaChannel = require('../channel-providers/meta-channel.entity');
+                            const row = await MetaChannel.findByPk(meta_channel_id);
+                            if (row && row.shop_id === shop_id) ch = row;
+                        }
+                        if (!ch) {
+                            const pf = platform === 'messenger' ? 'facebook' : platform;
+                            ch = await metaChannelService.findByShopAndPlatform(shop_id, pf);
+                        }
                         if (!ch) return {};
                         const s = await metaChannelService.getSettings(ch.id);
                         return s?.toJSON?.() || s || {};

@@ -5,6 +5,7 @@ const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
 const { Conversation: ConvModel, Customer: CustomerModel } = require('../entities');
 const metaChannelService = require('../channel-providers/meta-channel.service');
+const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 
@@ -44,7 +45,17 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
             return;
         }
 
-        const metaChannel = await metaChannelService.findByShopAndPlatform(shopId, platform);
+        // Prefer the channel the conversation was pinned to (Phase 2 FK), so
+        // multi-Page shops reply from the same Page the customer wrote to. Fall
+        // back to shop+platform for pre-Phase-2 conversations without the FK.
+        let metaChannel = null;
+        if (conversation.meta_channel_id) {
+            metaChannel = await MetaChannel.findByPk(conversation.meta_channel_id);
+            if (metaChannel && metaChannel.shop_id !== shopId) metaChannel = null;
+        }
+        if (!metaChannel) {
+            metaChannel = await metaChannelService.findByShopAndPlatform(shopId, platform);
+        }
         if (!metaChannel) {
             failureReason = `No active ${platform} channel — connect your page in Settings → Channels`;
             return;
