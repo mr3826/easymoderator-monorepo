@@ -89,13 +89,18 @@ describe('meta-oauth.controller', () => {
     });
 
     describe('connectAsset', () => {
-        test('forwards (assetId, displayName, tempToken, userId, shopId) → connectPage', async () => {
+        test('forwards (assetId, displayName, tempToken, userId, shopId, platform) → connectPage', async () => {
             oauthService.connectPage.mockResolvedValue({
                 id: 'ch-1', webhookWarning: null, webhookSubscribed: true,
             });
             const req = {
                 user: { userId: 'u1', shopId: 's1' },
-                body: { assetId: 'PAGE_42', displayName: 'My Page', tempToken: 't'.repeat(64) },
+                body: {
+                    assetId: 'PAGE_42',
+                    displayName: 'My Page',
+                    tempToken: 't'.repeat(64),
+                    platform: 'facebook',
+                },
             };
             const res = mkRes();
             const next = jest.fn();
@@ -107,7 +112,8 @@ describe('meta-oauth.controller', () => {
                 'My Page',
                 't'.repeat(64),
                 'u1',
-                's1'
+                's1',
+                'facebook'
             );
             expect(res.json).toHaveBeenCalledWith({
                 success: true,

@@ -50,21 +50,22 @@ exports.callback = async (req, res, next) => {
 
 /**
  * POST /api/channels/meta/oauth/connect-asset
- * body: { assetId, displayName, tempToken }
+ * body: { assetId, displayName, tempToken, platform }
  * returns: connected channel record + webhook subscription state
  */
 exports.connectAsset = async (req, res, next) => {
     try {
-        const { assetId, displayName, tempToken } = req.body;
+        const { assetId, displayName, tempToken, platform } = req.body;
         const { userId, shopId } = req.user;
         const channel = await oauthService.connectPage(
             assetId,
             displayName,
             tempToken,
             userId,
-            shopId
+            shopId,
+            platform
         );
-        logger.info('Asset connected', { shopId, assetId, hasWarning: !!channel.webhookWarning });
+        logger.info('Asset connected', { shopId, assetId, platform, hasWarning: !!channel.webhookWarning });
         res.json({ success: true, data: channel });
     } catch (err) {
         next(err);

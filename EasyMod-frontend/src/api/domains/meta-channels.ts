@@ -143,6 +143,7 @@ export async function connectMetaAsset(input: {
   assetId: string;
   displayName: string;
   tempToken: string;
+  platform: 'facebook' | 'instagram';
 }): Promise<MetaConnectAssetResult> {
   const res: AxiosResponse<ApiResponse<MetaConnectAssetResult>> = await httpClient.post(
     `${BASE}/oauth/connect-asset`,

@@ -86,9 +86,11 @@ async function handleCallback(code, state, userId, shopId) {
     // List pages/IG accounts this user manages
     const pages = await provider.listManagedAssets({ userToken });
 
-    // Store the user token for the subsequent connectPage call
+    // Store the user token for the subsequent connectPage call. The key is
+    // scoped by platform so concurrent FB and IG OAuth flows for the same shop
+    // do not clobber each other's callback payloads.
     const tempToken = userToken;
-    storeTemp(`callback:${shopId}`, { userToken, platform, pages });
+    storeTemp(`callback:${shopId}:${platform}`, { userToken, platform, pages });
 
     logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
     return { pages, tempToken };
@@ -103,13 +105,18 @@ async function handleCallback(code, state, userId, shopId) {
  * @param {string} tempToken    — long-lived user access token from handleCallback
  * @param {string} userId
  * @param {string} shopId
+ * @param {'facebook'|'instagram'} platform — required since Phase 1; concurrent
+ *   FB + IG flows for the same shop now use distinct temp-store keys, so the
+ *   caller must say which one to consume.
  * @returns {MetaChannel}
  */
-async function connectPage(assetId, displayName, tempToken, userId, shopId) {
-    // Determine platform: try Facebook first, then IG
-    // We could accept platform from the caller; for now detect from stored state
-    const storedCallback = consumeTemp(`callback:${shopId}`);
-    const platform = storedCallback?.platform || 'facebook';
+async function connectPage(assetId, displayName, tempToken, userId, shopId, platform) {
+    if (!platform) {
+        throw Object.assign(new Error('platform is required to connect a Meta asset'), { status: 400 });
+    }
+    // Consume the platform-scoped callback entry. Other platforms' entries (if
+    // a concurrent flow is in progress) remain untouched.
+    consumeTemp(`callback:${shopId}:${platform}`);
 
     const provider = getProvider(platform === 'instagram' ? 'instagram' : 'facebook');
 

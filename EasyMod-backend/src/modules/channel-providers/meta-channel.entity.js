@@ -160,9 +160,12 @@ const MetaChannel = sequelize.define('MetaChannel', {
     updatedAt: 'updated_at',
     paranoid: false, // soft delete not needed; REVOKED/DISCONNECTED status tracks lifecycle
     indexes: [
-        { unique: true, fields: ['shop_id', 'platform'], name: 'unique_meta_channel_shop_platform' },
-        { unique: true, fields: ['meta_asset_id'], name: 'unique_meta_channel_asset_id' },
+        // Phase 1: allow multiple channels per (shop_id, platform). Uniqueness is now
+        // on (shop_id, meta_asset_id) so each Page/IG account gets its own row.
+        // Cross-shop ownership of the same asset is enforced in the service layer.
+        { unique: true, fields: ['shop_id', 'meta_asset_id'], name: 'unique_meta_channels_shop_asset' },
         { unique: true, fields: ['webhook_verify_token'], name: 'unique_meta_channel_verify_token' },
+        { fields: ['shop_id', 'platform'], name: 'idx_meta_channel_shop_platform' },
         { fields: ['status'], name: 'idx_meta_channel_status' },
         { fields: ['token_expires_at'], name: 'idx_meta_channel_token_expires_at' },
     ],

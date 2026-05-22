@@ -49,6 +49,10 @@ exports.connectAsset = {
             'string.length': 'Invalid temp token',
             'any.required': 'tempToken is required',
         }),
+        platform: PLATFORM.messages({
+            'any.only': 'platform must be facebook or instagram',
+            'any.required': 'platform is required',
+        }),
     }),
 };
 

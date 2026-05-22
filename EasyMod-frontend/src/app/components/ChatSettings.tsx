@@ -245,6 +245,7 @@ export default function ChatSettings() {
           assetId: page.id,
           displayName: page.name,
           tempToken,
+          platform: activeOAuth.platform,
         });
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }

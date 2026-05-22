@@ -74,9 +74,11 @@ class MetaChannelService {
                 throw new Error(`meta_asset_id ${metaAssetId} is already connected to another shop`);
             }
 
-            // Upsert on (shop_id, platform) — reconnect or swap page for same platform
+            // Phase 1: upsert on (shop_id, meta_asset_id). A second page of the
+            // same platform now creates a new row instead of overwriting the first.
+            // Reconnecting the same page still updates in place.
             let channel = await MetaChannel.findOne({
-                where: { shop_id: shopId, platform },
+                where: { shop_id: shopId, meta_asset_id: metaAssetId },
                 transaction
             });
 
@@ -156,13 +158,52 @@ class MetaChannelService {
      * Find the channel for a given shop + platform combination.
      * Returns null if not found.
      *
+     * @deprecated Phase 1 allows multiple channels per (shop, platform). This
+     * method returns an arbitrary row (the first match) when more than one
+     * exists. Migrate callers to {@link findByShopAndAsset} (by meta_asset_id)
+     * or {@link listByShopAndPlatform} (full list) in Phase 2.
+     *
      * @param {string} shopId
      * @param {'facebook'|'instagram'} platform
      * @returns {Promise<MetaChannel|null>}
      */
     async findByShopAndPlatform(shopId, platform) {
         if (!shopId || !platform) return null;
-        return MetaChannel.findOne({ where: { shop_id: shopId, platform } });
+        return MetaChannel.findOne({
+            where: { shop_id: shopId, platform },
+            order: [['created_at', 'ASC']]
+        });
+    }
+
+    /**
+     * Find a specific channel by (shop_id, meta_asset_id). This is the
+     * unambiguous lookup after Phase 1 — a shop can own multiple channels
+     * per platform, but each (shop, asset) pair is unique.
+     *
+     * @param {string} shopId
+     * @param {string} metaAssetId
+     * @returns {Promise<MetaChannel|null>}
+     */
+    async findByShopAndAsset(shopId, metaAssetId) {
+        if (!shopId || !metaAssetId) return null;
+        return MetaChannel.findOne({ where: { shop_id: shopId, meta_asset_id: metaAssetId } });
+    }
+
+    /**
+     * List all channels for a shop on a given platform. Returns an empty
+     * array when none exist. Use this when iterating over every connected
+     * Page/IG account of a platform.
+     *
+     * @param {string} shopId
+     * @param {'facebook'|'instagram'} platform
+     * @returns {Promise<MetaChannel[]>}
+     */
+    async listByShopAndPlatform(shopId, platform) {
+        if (!shopId || !platform) return [];
+        return MetaChannel.findAll({
+            where: { shop_id: shopId, platform },
+            order: [['created_at', 'ASC']]
+        });
     }
 
     /**
