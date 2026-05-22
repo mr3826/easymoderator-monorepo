@@ -137,79 +137,9 @@ describe('CustomerService', () => {
         });
     });
 
-    // ── updateCustomerConsent ─────────────────────────────────────────────────
-
-    describe('updateCustomerConsent', () => {
-        it('sets marketing_opt_in=true when consent is given', async () => {
-            Customer.findOne.mockResolvedValue(cust);
-            await customerService.updateCustomerConsent('cust-1', 'shop-1', true);
-            expect(cust.update).toHaveBeenCalledWith(expect.objectContaining({
-                metadata: expect.objectContaining({ marketing_opt_in: true })
-            }));
-        });
-
-        it('throws 404 when customer not found', async () => {
-            Customer.findOne.mockResolvedValue(null);
-            await expect(
-                customerService.updateCustomerConsent('nonexistent', 'shop-1', true)
-            ).rejects.toMatchObject({ statusCode: 404 });
-        });
-    });
-
-    // ── hasCampaignConsent (consent logic) ────────────────────────────────────
-
-    describe('campaign consent evaluation', () => {
-        const consentCases = [
-            [{ marketing_opt_out: true }, false, 'marketing_opt_out=true → no consent'],
-            [{ unsubscribed: true }, false, 'unsubscribed=true → no consent'],
-            [{ marketing_opt_in: true }, true, 'marketing_opt_in=true → consent'],
-            [{ campaign_consent: true }, true, 'campaign_consent=true → consent'],
-            [{ consent: true }, true, 'consent=true → consent'],
-            [{}, false, 'empty metadata → no consent'],
-            [{ marketing_opt_in: true, marketing_opt_out: true }, false, 'opt_out overrides opt_in']
-        ];
-
-        // Consent logic is exercised indirectly through getCustomersBySegment
-        test.each(consentCases)('metadata %j → hasConsent=%s (%s)', async (metadata, expectConsent) => {
-            const customer = makeCustomer({ metadata });
-            Customer.findAll.mockResolvedValue([customer]);
-            const result = await customerService.getCustomersBySegment('shop-1', { requireConsent: true });
-            if (expectConsent) {
-                expect(result.length).toBe(1);
-            } else {
-                expect(result.length).toBe(0);
-            }
-        });
-    });
-
-    // ── getCustomersBySegment ─────────────────────────────────────────────────
-
-    describe('getCustomersBySegment', () => {
-        it('returns all customers when requireConsent is false', async () => {
-            const customers = [
-                makeCustomer({ metadata: {} }),
-                makeCustomer({ id: 'cust-2', metadata: { marketing_opt_out: true } })
-            ];
-            Customer.findAll.mockResolvedValue(customers);
-            const result = await customerService.getCustomersBySegment('shop-1', { requireConsent: false });
-            expect(result).toHaveLength(2);
-        });
-
-        it('filters by minOrders using Order data', async () => {
-            Order.findAll.mockResolvedValue([{ customer_id: 'cust-1', order_count: 3 }]);
-            Customer.findAll.mockResolvedValue([makeCustomer({ metadata: { marketing_opt_in: true } })]);
-            await customerService.getCustomersBySegment('shop-1', { minOrders: 2, requireConsent: true });
-            expect(Order.findAll).toHaveBeenCalled();
-            expect(Customer.findAll).toHaveBeenCalled();
-        });
-
-        it('filters by paymentMethod', async () => {
-            Order.findAll.mockResolvedValue([{ customer_id: 'cust-1' }]);
-            Customer.findAll.mockResolvedValue([makeCustomer({ metadata: { marketing_opt_in: true } })]);
-            await customerService.getCustomersBySegment('shop-1', { paymentMethod: 'COD', requireConsent: false });
-            expect(Order.findAll).toHaveBeenCalledWith(expect.objectContaining({
-                where: expect.objectContaining({ payment_method: 'COD' })
-            }));
-        });
-    });
+    // Note: campaign/marketing consent has moved to meta_channel_consent_events
+    // (see consent.service.js). The old `updateCustomerConsent` / `getCustomersBySegment`
+    // methods and `customer.metadata.marketing_opt_*` flags were removed in the
+    // Meta integration redesign (Phase 5). Tests for those behaviours now live with
+    // consent.service.
 });
