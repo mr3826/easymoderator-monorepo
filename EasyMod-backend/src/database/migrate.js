@@ -1,35 +1,53 @@
 require('module-alias/register');
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
+
 // sequelize is initialized after secrets are loaded (see async IIFE below)
 let sequelize;
 
 /**
  * Migration System for Schema Changes
- * 
+ *
  * All migrations must:
  * - Be backward compatible
  * - Include rollback scripts
  * - Include indexes for performance
  * - Be idempotent (safe to run multiple times)
+ *
+ * Discovery: migrations are auto-discovered from ./migrations/*.js (top-level
+ * only — the archive/ subfolder is ignored) and ordered by filename. The
+ * timestamp+sequence prefix (e.g. 20260522_012_...) guarantees deterministic
+ * lexicographic order. Squashed migration (2026-05-20): 50 historical
+ * migrations replaced by a single initial schema; archived at
+ * src/database/migrations/archive/.
  */
+const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
-// Squashed migration (2026-05-20): 50 historical migrations replaced by a single initial schema.
-// Historical migrations archived at src/database/migrations/archive/.
-const migrations = [
-  require('./migrations/20260520_000_initial_schema'),
-  require('./migrations/20260522_001_fix_users_schema'),
-  require('./migrations/20260522_002_fix_products_schema'),
-  require('./migrations/20260522_003_fix_schema_drift_auth_billing'),
-  require('./migrations/20260522_004_fix_schema_drift_orders_delivery'),
-  require('./migrations/20260522_005_fix_schema_drift_customers_conversations'),
-  require('./migrations/20260522_006_fix_schema_drift_catalog_content'),
-  require('./migrations/20260522_007_fix_schema_drift_meta_recon'),
-  require('./migrations/20260522_008_convert_enums'),
-  require('./migrations/20260522_009_rto_blacklist_partial_unique'),
-  require('./migrations/20260522_010_knowledge_gaps_pk'),
-  require('./migrations/20260522_011_drop_legacy_columns'),
-];
+const loadMigrations = () => {
+  const files = fs.readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
+    .filter(d => d.isFile() && d.name.endsWith('.js'))
+    .map(d => d.name)
+    .sort();
+
+  const loaded = files.map(name => {
+    const mod = require(path.join(MIGRATIONS_DIR, name));
+    if (!mod || typeof mod.up !== 'function' || typeof mod.down !== 'function' || !mod.name) {
+      throw new Error(`Migration file ${name} must export { name, up, down }`);
+    }
+    return mod;
+  });
+
+  const seen = new Set();
+  for (const m of loaded) {
+    if (seen.has(m.name)) throw new Error(`Duplicate migration name: ${m.name}`);
+    seen.add(m.name);
+  }
+  return loaded;
+};
+
+const migrations = loadMigrations();
 
 const createMigrationsTable = async () => {
   const dialect = sequelize.getDialect();
