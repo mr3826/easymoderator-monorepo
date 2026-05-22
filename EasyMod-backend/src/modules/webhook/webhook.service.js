@@ -15,8 +15,14 @@
  *   webhookService.sendMessage(channel, recipientId, messageText)
  *
  * Where `channel` carries:
- *   channel.shop_id  — tenant scoping
- *   channel.type     — 'facebook' | 'instagram' | 'messenger'
+ *   channel.shop_id          — tenant scoping
+ *   channel.type             — 'facebook' | 'instagram' | 'messenger'
+ *   channel.meta_channel_id  — (Phase 2, optional) specific MetaChannel UUID;
+ *                              when present the shim uses it directly instead
+ *                              of resolving by (shop_id, platform). Callers
+ *                              that know which page a conversation belongs to
+ *                              SHOULD pass this so outbound sends use the
+ *                              correct page's access token.
  *
  * The shim resolves the MetaChannel for (shopId, platform), builds a
  * minimal NormalizedMessage, runs policy pre-flight, and delegates to
@@ -67,15 +73,27 @@ async function sendMessage(channel, recipientId, messageText) {
     const platform = normalizePlatform(channel.type);
     const recipientIdStr = String(recipientId);
 
-    // Resolve the MetaChannel for this shop + platform
-    const metaChannel = await MetaChannel.findOne({
-        where: { shop_id: channel.shop_id, platform }
-    });
+    // Phase 2: prefer the explicit meta_channel_id when the caller knows which
+    // page the conversation belongs to. Fallback path looks up by
+    // (shop_id, platform) for callers that haven't been plumbed yet — note this
+    // returns an arbitrary channel when the shop has multiple pages of the same
+    // platform, so callers SHOULD pass meta_channel_id once Phase 3 ships.
+    let metaChannel = null;
+    if (channel.meta_channel_id) {
+        metaChannel = await MetaChannel.findByPk(channel.meta_channel_id);
+    }
+    if (!metaChannel) {
+        metaChannel = await MetaChannel.findOne({
+            where: { shop_id: channel.shop_id, platform },
+            order: [['created_at', 'ASC']]
+        });
+    }
 
     if (!metaChannel) {
         logger.warn('No MetaChannel found for shop+platform — message dropped', {
             shopId: channel.shop_id,
-            platform
+            platform,
+            metaChannelId: channel.meta_channel_id || null
         });
         return;
     }

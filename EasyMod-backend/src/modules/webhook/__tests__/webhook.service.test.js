@@ -27,6 +27,7 @@ const mockMetaChannel = {
 
 jest.mock('../../channel-providers/meta-channel.entity', () => ({
     findOne: jest.fn().mockResolvedValue(mockMetaChannel),
+    findByPk: jest.fn().mockResolvedValue(mockMetaChannel),
 }));
 
 // ── Mock provider registry ───────────────────────────────────────────────────
@@ -144,8 +145,30 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
     });
 
     test('drops send silently when no MetaChannel found for shop+platform', async () => {
+        // No meta_channel_id on the channel → goes straight to findOne fallback.
         MetaChannel.findOne.mockResolvedValueOnce(null);
         await sendMessage(buildChannel(), 'psid', 'msg');
         expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    // Phase 2 — explicit meta_channel_id routing
+    test('uses findByPk when channel.meta_channel_id is provided', async () => {
+        mockSendMessage.mockResolvedValueOnce({});
+        await sendMessage(buildChannel({ meta_channel_id: 'mc-explicit' }), 'psid', 'msg');
+
+        expect(MetaChannel.findByPk).toHaveBeenCalledWith('mc-explicit');
+        expect(MetaChannel.findOne).not.toHaveBeenCalled();
+        expect(mockSendMessage).toHaveBeenCalled();
+    });
+
+    test('falls back to findOne when findByPk returns null for stale meta_channel_id', async () => {
+        MetaChannel.findByPk.mockResolvedValueOnce(null);
+        mockSendMessage.mockResolvedValueOnce({});
+
+        await sendMessage(buildChannel({ meta_channel_id: 'mc-deleted' }), 'psid', 'msg');
+
+        expect(MetaChannel.findByPk).toHaveBeenCalledWith('mc-deleted');
+        expect(MetaChannel.findOne).toHaveBeenCalledTimes(1);
+        expect(mockSendMessage).toHaveBeenCalled();
     });
 });

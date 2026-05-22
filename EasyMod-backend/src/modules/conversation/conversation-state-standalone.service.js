@@ -19,7 +19,8 @@ class ConversationStateService {
             platform,
             message,
             sender_type = 'customer',
-            metadata = {}
+            metadata = {},
+            meta_channel_id = null
         } = data;
 
         try {
@@ -46,17 +47,28 @@ class ConversationStateService {
                 });
             }
 
-            // Find or create conversation (24-hour window)
+            // Find or create conversation (24-hour window).
+            // Phase 2: scope by meta_channel_id when caller provided one so two
+            // pages of the same shop+platform don't share a conversation row.
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const convoWhere = {
+                shop_id,
+                customer_id: customer.id,
+                channel: channelType,
+                updated_at: { [Op.gte]: oneDayAgo }
+            };
+            if (meta_channel_id) {
+                convoWhere.meta_channel_id = { [Op.or]: [meta_channel_id, null] };
+            }
             let conversation = await Conversation.findOne({
-                where: {
-                    shop_id,
-                    customer_id: customer.id,
-                    channel: channelType,
-                    updated_at: { [Op.gte]: oneDayAgo }
-                },
+                where: convoWhere,
                 order: [['updated_at', 'DESC']]
             });
+
+            // Lazy backfill: if we matched an older row without meta_channel_id, set it.
+            if (conversation && meta_channel_id && !conversation.meta_channel_id) {
+                await conversation.update({ meta_channel_id });
+            }
 
             const messageTime = new Date();
 
@@ -66,6 +78,7 @@ class ConversationStateService {
                     shop_id,
                     customer_id: customer.id,
                     channel: channelType,
+                    meta_channel_id,
                     status: 'active',
                     role: 'user',
                     message: message,

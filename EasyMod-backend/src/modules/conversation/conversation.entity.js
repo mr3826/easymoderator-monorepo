@@ -24,6 +24,16 @@ const Conversation = sequelize.define('Conversation', {
         type: DataTypes.STRING(20),
         allowNull: false
     },
+    // Phase 2: explicit FK to the specific Meta page/IG account this conversation
+    // belongs to. Nullable for backward-compat with rows created before Phase 2
+    // (those get backfilled by migration 013 when unambiguous, else lazily filled
+    // by app code on next inbound message).
+    meta_channel_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: 'meta_channels', key: 'id' },
+        onDelete: 'SET NULL'
+    },
     title: {
         type: DataTypes.STRING(255),
         allowNull: true
@@ -95,6 +105,10 @@ const Conversation = sequelize.define('Conversation', {
         {
             // 24h window lookup on every inbound webhook: most recent conv for a customer
             fields: ['shop_id', 'customer_id', 'channel', 'created_at']
+        },
+        {
+            // Phase 2: per-channel inbox filtering and routing
+            fields: ['meta_channel_id']
         }
     ]
 });

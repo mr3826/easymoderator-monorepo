@@ -162,7 +162,7 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
  */
 async function storeIncomingMessage(event) {
     try {
-        const { platform, shop_id, sender, message } = event;
+        const { platform, shop_id, sender, message, meta_channel_id = null } = event;
         const { Op } = require('sequelize');
         const channelType = platform === 'facebook' ? 'messenger' : platform;
 
@@ -196,24 +196,37 @@ async function storeIncomingMessage(event) {
                 transaction: t
             });
 
+            // Phase 2: scope the 24h rolling-window lookup by meta_channel_id when
+            // we know which page the message arrived on. Older rows without
+            // meta_channel_id still match (they predate this column).
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const convoWhere = {
+                shop_id,
+                customer_id: customer.id,
+                channel: channelType,
+                updated_at: { [Op.gte]: oneDayAgo }
+            };
+            if (meta_channel_id) {
+                convoWhere.meta_channel_id = { [Op.or]: [meta_channel_id, null] };
+            }
             let conversation = await Conversation.findOne({
-                where: {
-                    shop_id,
-                    customer_id: customer.id,
-                    channel: channelType,
-                    updated_at: { [Op.gte]: oneDayAgo }
-                },
+                where: convoWhere,
                 order: [['updated_at', 'DESC']],
                 lock: t.LOCK.UPDATE,
                 transaction: t
             });
+
+            // Lazy backfill: if we matched an old row that pre-dates the FK, set it now.
+            if (conversation && meta_channel_id && !conversation.meta_channel_id) {
+                await conversation.update({ meta_channel_id }, { transaction: t });
+            }
 
             if (!conversation) {
                 conversation = await Conversation.create({
                     shop_id,
                     customer_id: customer.id,
                     channel: channelType,
+                    meta_channel_id,
                     role: 'user',
                     message: message,
                     metadata: { source: 'webhook', platform }
@@ -315,6 +328,7 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             const normalizedEvent = {
                 platform: 'facebook',
                 shop_id: channel.shop_id,
+                meta_channel_id: channel.id,
                 sender: messaging.sender.id,
                 message: messageText || '',
                 attachments,
@@ -390,6 +404,7 @@ async function handleInstagramWebhook(payload, resolveConnectedChannel) {
             const normalizedEvent = {
                 platform: 'instagram',
                 shop_id: channel.shop_id,
+                meta_channel_id: channel.id,
                 sender: message.sender.id,
                 message: messageText || '',
                 attachments,
