@@ -48,6 +48,8 @@ export interface MetaChannel {
   disconnectedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Cosmetic merchant-facing tag (e.g. "Sales", "Live selling"). Display only. */
+  purposeLabel: string | null;
 }
 
 export interface MetaOAuthAsset {
@@ -169,6 +171,17 @@ export async function reconnectMetaChannel(channelId: string): Promise<MetaRecon
 export async function pingMetaChannel(channelId: string): Promise<MetaChannelPingResult> {
   const res: AxiosResponse<ApiResponse<MetaChannelPingResult>> = await httpClient.post(
     `${BASE}/${channelId}/test-webhook`,
+  );
+  return res.data.data;
+}
+
+export async function updateMetaChannelPurposeLabel(
+  channelId: string,
+  purposeLabel: string | null,
+): Promise<MetaChannel> {
+  const res: AxiosResponse<ApiResponse<MetaChannel>> = await httpClient.patch(
+    `${BASE}/${channelId}/purpose-label`,
+    { purposeLabel },
   );
   return res.data.data;
 }

@@ -64,3 +64,19 @@ exports.channelIdParam = {
         }),
     }),
 };
+
+// Phase 4: cosmetic purpose label (e.g. "Sales", "Live selling"). Empty string
+// clears the label; null also clears it. Max 64 chars matches DB column.
+exports.updatePurposeLabel = {
+    params: Joi.object({
+        channelId: Joi.string().uuid().required().messages({
+            'string.uuid': 'channelId must be a valid UUID',
+            'any.required': 'channelId is required',
+        }),
+    }),
+    body: Joi.object({
+        purposeLabel: Joi.string().trim().allow('', null).max(64).messages({
+            'string.max': 'purposeLabel must be at most 64 characters',
+        }),
+    }),
+};

@@ -240,7 +240,13 @@ class MetaChannelService {
         if (!shopId) return [];
         return MetaChannel.findAll({
             where: { shop_id: shopId },
-            order: [['created_at', 'ASC']]
+            order: [['created_at', 'ASC']],
+            include: [{
+                model: MetaChannelSettings,
+                as: 'settings',
+                attributes: ['purpose_label'],
+                required: false
+            }]
         });
     }
 
@@ -349,7 +355,8 @@ class MetaChannelService {
             'allow_order_creation',
             'comment_to_dm_enabled',
             'comment_to_dm_post_filter',
-            'comment_to_dm_keywords'
+            'comment_to_dm_keywords',
+            'purpose_label'
         ];
 
         const sanitizedPatch = {};

@@ -15,6 +15,7 @@
 
 const { Op } = require('sequelize');
 const MetaChannel = require('./meta-channel.entity');
+const MetaChannelSettings = require('./meta-channel-settings.entity');
 const MetaChannelConsentEvent = require('./meta-channel-consent-event.entity');
 const metaChannelService = require('./meta-channel.service');
 const oauthService = require('./meta-oauth.service');
@@ -26,6 +27,7 @@ const logger = createLogger('MetaChannelController');
 
 function serializeChannel(channel) {
     if (!channel) return null;
+    const settings = channel.settings ?? channel.get?.('settings') ?? null;
     return {
         id: channel.id,
         shopId: channel.shop_id,
@@ -44,6 +46,7 @@ function serializeChannel(channel) {
         disconnectedAt: channel.disconnected_at,
         createdAt: channel.created_at,
         updatedAt: channel.updated_at,
+        purposeLabel: settings?.purpose_label ?? null,
     };
 }
 
@@ -195,6 +198,42 @@ exports.consentSummary = async (req, res, next) => {
                 })),
             },
         });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * PATCH /api/channels/meta/:channelId/purpose-label
+ * Cosmetic per-channel label that lets a merchant disambiguate multiple
+ * Pages/IG accounts (e.g. "Sales", "Live selling", "Regional"). Display only —
+ * does not affect AI routing or product scope.
+ *
+ * Body: { purposeLabel: string|null }  (empty string or null clears the label)
+ */
+exports.updatePurposeLabel = async (req, res, next) => {
+    try {
+        const { channelId } = req.params;
+        const { shopId } = req.user;
+        await assertChannelBelongsToShop(channelId, shopId);
+
+        const raw = req.body.purposeLabel;
+        const normalized = (raw === '' || raw === undefined) ? null : raw;
+
+        await metaChannelService.updateSettings(channelId, { purpose_label: normalized });
+
+        // Re-fetch the channel with settings JOIN so the response carries the
+        // updated label in the same shape as GET /api/channels/meta.
+        const refreshed = await MetaChannel.findByPk(channelId, {
+            include: [{
+                model: MetaChannelSettings,
+                as: 'settings',
+                attributes: ['purpose_label'],
+                required: false,
+            }],
+        });
+
+        res.json({ success: true, data: serializeChannel(refreshed) });
     } catch (err) {
         next(err);
     }

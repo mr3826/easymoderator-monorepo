@@ -51,6 +51,11 @@ router.post(
     validate(v.channelIdParam),
     channelController.testWebhook
 );
+router.patch(
+    '/:channelId/purpose-label',
+    validate(v.updatePurposeLabel),
+    channelController.updatePurposeLabel
+);
 router.get(
     '/:channelId/consent-summary',
     validate(v.channelIdParam),

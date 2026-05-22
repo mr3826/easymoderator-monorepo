@@ -28,6 +28,7 @@ import {
   pingMetaChannel,
   disconnectMetaChannel,
   getMetaChannelConsentSummary,
+  updateMetaChannelPurposeLabel,
   type MetaChannel,
   type MetaPlatform,
   type MetaOAuthAsset,
@@ -97,6 +98,29 @@ export default function ChatSettings() {
   const [expandedConsentChannelId, setExpandedConsentChannelId] = useState<string | null>(null);
   const [loadingConsentId, setLoadingConsentId] = useState<string | null>(null);
   const [expandedPermissions, setExpandedPermissions] = useState<MetaPlatform | null>(null);
+  const [savingLabelId, setSavingLabelId] = useState<string | null>(null);
+
+  const handleSavePurposeLabel = async (
+    channelId: string,
+    rawLabel: string,
+    currentLabel: string | null,
+  ) => {
+    const next = rawLabel.trim().slice(0, 64);
+    const normalized = next.length === 0 ? null : next;
+    if ((currentLabel ?? null) === normalized) return;
+
+    try {
+      setSavingLabelId(channelId);
+      const updated = await updateMetaChannelPurposeLabel(channelId, normalized);
+      setChannels((prev) => prev.map((c) => (c.id === channelId ? updated : c)));
+      toast.success(normalized ? `Label updated to "${normalized}"` : "Label cleared");
+    } catch (error: any) {
+      const msg = error.response?.data?.error?.message || "Failed to update label";
+      toast.error(msg);
+    } finally {
+      setSavingLabelId(null);
+    }
+  };
 
   const fetchChannels = async () => {
     try {
@@ -458,9 +482,16 @@ export default function ChatSettings() {
                     <div>
                       {channel ? (
                         <>
-                          <h4 className="font-semibold text-gray-900 truncate max-w-[180px]">
-                            {channel.displayName}
-                          </h4>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-semibold text-gray-900 truncate max-w-[180px]">
+                              {channel.displayName}
+                            </h4>
+                            {channel.purposeLabel && (
+                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-medium uppercase tracking-wide">
+                                {channel.purposeLabel}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-400">{platform.name}</p>
                         </>
                       ) : isAddTile ? (
@@ -710,6 +741,30 @@ export default function ChatSettings() {
 
                 {isConnected && channel && (
                   <>
+                    <div className="mb-3">
+                      <label
+                        htmlFor={`purpose-label-${channel.id}`}
+                        className="block text-[11px] font-medium text-gray-600 mb-1"
+                      >
+                        Label (optional)
+                      </label>
+                      <input
+                        id={`purpose-label-${channel.id}`}
+                        type="text"
+                        maxLength={64}
+                        defaultValue={channel.purposeLabel ?? ""}
+                        placeholder="e.g. Sales, Live selling, Regional"
+                        disabled={savingLabelId === channel.id}
+                        onBlur={(e) =>
+                          handleSavePurposeLabel(channel.id, e.target.value, channel.purposeLabel)
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        }}
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-60"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       <button
                         onClick={() => handleTestPipeline(channel.id)}

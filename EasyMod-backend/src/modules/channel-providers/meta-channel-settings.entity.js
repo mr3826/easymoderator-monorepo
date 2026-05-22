@@ -57,6 +57,17 @@ const MetaChannelSettings = sequelize.define('MetaChannelSettings', {
         defaultValue: true,
     },
 
+    // ----- Cosmetic label (Phase 4) -----
+    // Merchant-facing tag to disambiguate multiple Pages/IG accounts of the
+    // same shop. Does NOT change AI routing or product scope — see
+    // [[product-positioning]]. Null = no label set.
+    purpose_label: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        defaultValue: null,
+        comment: 'Cosmetic per-channel tag (e.g. "Sales", "Live selling", "Regional"). Display only.',
+    },
+
     // ----- Comment-to-DM -----
     comment_to_dm_enabled: {
         type: DataTypes.BOOLEAN,
