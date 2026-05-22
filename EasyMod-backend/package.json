@@ -11,6 +11,7 @@
     "test:watch": "jest --watch",
     "db:sync": "node src/utils/database/sync.js",
     "seed": "node src/database/seed.js",
+    "seed:meta-bootstrap": "node src/database/seed-meta-bootstrap.js",
     "seed:admin": "node src/scripts/seed-admin.js",
     "seed:conversations": "node src/scripts/seed-conversations.js",
     "migrate": "node src/database/migrate.js up",
