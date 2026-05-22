@@ -7,7 +7,6 @@ import PageLoader from "./components/PageLoader";
 const DashboardLayout = lazy(() => import("./components/DashboardLayout"));
 const Dashboard = lazy(() => import("./components/Dashboard"));
 const UnifiedInbox = lazy(() => import("./components/UnifiedInbox"));
-const Channels = lazy(() => import("./components/Channels"));
 const OAuthCallbackPage = lazy(() => import("./components/OAuthCallbackPage"));
 const Products = lazy(() => import("./components/Products"));
 const Orders = lazy(() => import("./components/Orders"));
@@ -137,8 +136,8 @@ export const router = createBrowserRouter([
 		children: [
 			{ index: true, Component: withSuspense(Dashboard) },
 			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
-			{ path: "channels", Component: withSuspense(Channels) },
-				{ path: "channels/comment-to-dm", Component: withSuspense(CommentToDmPage) },
+			{ path: "channels", loader: () => redirect("/app/manage-shop/chat-settings") },
+			{ path: "channels/comment-to-dm", Component: withSuspense(CommentToDmPage) },
 			{
 				path: "manage-shop",
 				Component: withSuspense(ManageShop),
@@ -187,7 +186,7 @@ export const router = createBrowserRouter([
 	},
 	{
 		path: "/settings/channels",
-		loader: () => redirect("/app/channels"),
+		loader: () => redirect("/app/manage-shop/chat-settings"),
 	},
 	{
 		path: "*",

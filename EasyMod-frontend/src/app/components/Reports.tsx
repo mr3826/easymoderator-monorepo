@@ -331,7 +331,7 @@ export default function Reports() {
           <div className="py-12 text-center">
             <p className="text-gray-500 text-sm mb-4">{t('reports.noChannelData')}</p>
             <button
-              onClick={() => navigate('/app/channels')}
+              onClick={() => navigate('/app/manage-shop/chat-settings')}
               className="inline-flex items-center gap-2 text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
             >
               Connect your first channel →

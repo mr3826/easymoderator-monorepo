@@ -11,7 +11,7 @@ import { handleMetaOAuthCallback } from '@/api/domains/meta-channels';
  *   the handshake → this window closes.
  *
  * Fallback (opener cleared by browser security or direct tab navigation):
- *   complete the OAuth exchange here, then navigate to /app/channels.
+ *   complete the OAuth exchange here, then navigate to /app/manage-shop/chat-settings.
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -32,7 +32,7 @@ export default function OAuthCallbackPage() {
       }
       sessionStorage.removeItem('easymod_oauth_channel_type');
       sessionStorage.removeItem('easymod_oauth_nonce');
-      window.location.href = '/app/channels';
+      window.location.href = '/app/manage-shop/chat-settings';
       return;
     }
 
@@ -73,7 +73,7 @@ export default function OAuthCallbackPage() {
         sessionStorage.setItem('oauth_error', message);
       })
       .finally(() => {
-        window.location.href = '/app/channels';
+        window.location.href = '/app/manage-shop/chat-settings';
       });
   }, []);
 
