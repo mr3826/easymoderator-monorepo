@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
-import { CreditCard, Wallet, DollarSign, ChevronDown, ChevronUp, TestTube, X, Lock, Mail } from "lucide-react";
+import { CreditCard, Wallet, DollarSign, ChevronDown, ChevronUp, TestTube, X, Lock, Mail, Star, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { authService } from "@/app/lib/auth";
@@ -52,11 +52,36 @@ export default function PaymentSettings() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [savedGateways, setSavedGateways] = useState<Set<string>>(new Set());
+  const [priority, setPriority] = useState<{ payment: string[]; delivery: string[] }>({ payment: [], delivery: [] });
+  const [settingDefaultGateway, setSettingDefaultGateway] = useState<string | null>(null);
 
   // Load payment configurations on mount
   useEffect(() => {
     loadPaymentConfigs();
+    apiClient.get('/shop/platform-priority')
+      .then((res: any) => setPriority(res.data?.data || { payment: [], delivery: [] }))
+      .catch(() => {});
   }, []);
+
+  const defaultGateway = priority.payment[0];
+
+  const handleSetDefault = async (gatewayId: string) => {
+    try {
+      setSettingDefaultGateway(gatewayId);
+      setError(null);
+      setSuccess(null);
+      const nextPayment = [gatewayId, ...priority.payment.filter((p) => p !== gatewayId)];
+      const nextPriority = { payment: nextPayment, delivery: priority.delivery };
+      await apiClient.put('/shop/platform-priority', nextPriority);
+      setPriority(nextPriority);
+      const gw = gateways.find((g) => g.id === gatewayId);
+      setSuccess(`✓ ${gw?.name || gatewayId} set as default payment method`);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to update default');
+    } finally {
+      setSettingDefaultGateway(null);
+    }
+  };
 
   const loadPaymentConfigs = async () => {
     try {
@@ -367,10 +392,31 @@ export default function PaymentSettings() {
                     {gateway.logo}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-gray-900">{gateway.name}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-semibold text-gray-900">{gateway.name}</div>
+                      {defaultGateway === gateway.id && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                          <Star className="w-3 h-3 fill-current" />
+                          Default
+                        </span>
+                      )}
+                    </div>
                     <div className="text-sm text-gray-600">{gateway.description}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {gateway.enabled && defaultGateway !== gateway.id && !gateway.requiresContact && (
+                      <button
+                        onClick={() => handleSetDefault(gateway.id)}
+                        disabled={settingDefaultGateway === gateway.id}
+                        title="Set as default payment method"
+                        className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-emerald-200"
+                      >
+                        {settingDefaultGateway === gateway.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Star className="w-3.5 h-3.5" />}
+                        <span className="hidden md:inline">Set Default</span>
+                      </button>
+                    )}
                     {gateway.requiresContact ? (
                       <a
                         href="mailto:support@easymod.ai?subject=Integrate AamarPay or SSLCommerz"

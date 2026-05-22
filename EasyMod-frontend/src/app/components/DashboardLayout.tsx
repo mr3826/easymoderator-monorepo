@@ -4,7 +4,7 @@ import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
   Store, LogOut,
   CreditCard, Bell, ChevronLeft, ChevronRight,
-  ChevronDown,
+  ChevronDown, Building2, MessageSquare, Truck, Settings,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -25,7 +25,18 @@ export default function DashboardLayout() {
     { name: 'অর্ডারসমূহ', path: `${appBasePath}/orders`, icon: ShoppingBag },
     { name: 'বার্তা', path: `${appBasePath}/inbox`, icon: MessageCircle },
     { name: 'পণ্যসমূহ', path: `${appBasePath}/products`, icon: Grid3X3 },
-    { name: 'সেটিংস', path: `${appBasePath}/manage-shop`, icon: Store },
+  ];
+
+  const settingsNavigation = [
+    { name: 'ব্যবসার তথ্য', path: `${appBasePath}/manage-shop/business-info`, icon: Building2 },
+    { name: 'চ্যাট', path: `${appBasePath}/manage-shop/chat-settings`, icon: MessageSquare },
+    { name: 'ডেলিভারি', path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
+    { name: 'পেমেন্ট', path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
+  ];
+
+  const mobileNavigation = [
+    ...navigation,
+    { name: 'সেটিংস', path: `${appBasePath}/manage-shop`, icon: Settings },
   ];
 
   const { user, currentShop, logout } = useAuth();
@@ -53,12 +64,14 @@ export default function DashboardLayout() {
 
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
-  // Derive page title from current route
-  const activeNav = navigation.find(item =>
+  // Derive page title from current route (check settings group first — more specific paths)
+  const allNavItems = [...settingsNavigation, ...navigation];
+  const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
   );
-  const pageTitle = activeNav?.name ?? 'Easy Moderator';
+  const pageTitle = activeNav?.name
+    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? 'সেটিংস' : 'Easy Moderator');
 
   const handleLogout = async () => {
     await logout();
@@ -89,34 +102,72 @@ export default function DashboardLayout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== appBasePath && location.pathname.startsWith(item.path));
+        <nav className="flex-1 py-3 px-2 overflow-y-auto">
+          <div className="space-y-0.5">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                location.pathname === item.path ||
+                (item.path !== appBasePath && location.pathname.startsWith(item.path));
 
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                aria-label={collapsed ? item.name : undefined}
-                title={collapsed ? item.name : undefined}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
-                  isActive
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <Icon className="w-5 h-5 shrink-0" />
-                {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
-                {/* Active indicator */}
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
-                )}
-              </Link>
-            );
-          })}
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  aria-label={collapsed ? item.name : undefined}
+                  title={collapsed ? item.name : undefined}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-600'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+
+          {/* Settings section */}
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            {!collapsed && (
+              <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                সেটিংস
+              </div>
+            )}
+            <div className="space-y-0.5">
+              {settingsNavigation.map((item) => {
+                const Icon = item.icon;
+                const isActive =
+                  location.pathname === item.path ||
+                  location.pathname.startsWith(item.path);
+
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    aria-label={collapsed ? item.name : undefined}
+                    title={collapsed ? item.name : undefined}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         </nav>
 
         {/* Footer: language + privacy */}
@@ -218,7 +269,7 @@ export default function DashboardLayout() {
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-2 pb-[max(env(safe-area-inset-bottom),8px)] pt-2">
         <ul className="grid grid-cols-5 gap-1">
-          {navigation.map((item) => {
+          {mobileNavigation.map((item) => {
             const Icon = item.icon;
             const isActive =
               location.pathname === item.path ||

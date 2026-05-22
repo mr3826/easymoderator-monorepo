@@ -21,6 +21,7 @@ const Categories = lazy(() => import("./components/Categories"));
 const CategoryDetails = lazy(() => import("./components/CategoryDetails"));
 const SubcategoryDetails = lazy(() => import("./components/SubcategoryDetails"));
 const ManageShop = lazy(() => import("./components/ManageShop"));
+const SettingsHub = lazy(() => import("./components/SettingsHub"));
 const ChatSettings = lazy(() => import("./components/ChatSettings"));
 const DeliverySettings = lazy(() => import("./components/DeliverySettings"));
 const PaymentSettings = lazy(() => import("./components/PaymentSettings"));
@@ -142,7 +143,8 @@ export const router = createBrowserRouter([
 				path: "manage-shop",
 				Component: withSuspense(ManageShop),
 				children: [
-					{ index: true, Component: withSuspense(BusinessInfoSettings) },
+					{ index: true, Component: withSuspense(SettingsHub) },
+					{ path: "business-info", Component: withSuspense(BusinessInfoSettings) },
 					{ path: "chat-settings", Component: withSuspense(ChatSettings) },
 					{ path: "delivery-settings", Component: withSuspense(DeliverySettings) },
 					{ path: "payment-settings", Component: withSuspense(PaymentSettings) },

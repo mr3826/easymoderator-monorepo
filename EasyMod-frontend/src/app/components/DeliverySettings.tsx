@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Truck, Check, X, AlertCircle, Loader2, Power, TestTube } from 'lucide-react';
+import { Truck, Check, X, AlertCircle, Loader2, Power, TestTube, Star } from 'lucide-react';
 import { apiClient } from '@/api';
 import type { 
   DeliveryProvider, 
@@ -167,11 +167,36 @@ export default function DeliverySettings() {
   const [isSandbox, setIsSandbox] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [priority, setPriority] = useState<{ payment: string[]; delivery: string[] }>({ payment: [], delivery: [] });
+  const [settingDefaultProvider, setSettingDefaultProvider] = useState<DeliveryProvider | null>(null);
 
   // Load delivery settings on mount
   useEffect(() => {
     loadDeliverySettings();
+    apiClient.get('/shop/platform-priority')
+      .then(res => setPriority(res.data?.data || { payment: [], delivery: [] }))
+      .catch(() => {});
   }, []);
+
+  const defaultProvider = priority.delivery[0];
+
+  const handleSetDefault = async (provider: DeliveryProvider) => {
+    try {
+      setSettingDefaultProvider(provider);
+      setError(null);
+      setSuccessMessage(null);
+      const nextDelivery = [provider, ...priority.delivery.filter((p) => p !== provider)];
+      const nextPriority = { payment: priority.payment, delivery: nextDelivery };
+      await apiClient.put('/shop/platform-priority', nextPriority);
+      setPriority(nextPriority);
+      const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
+      setSuccessMessage(`${config?.display_name} now used as default courier`);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to update default');
+    } finally {
+      setSettingDefaultProvider(null);
+    }
+  };
 
   const loadDeliverySettings = async () => {
     try {
@@ -653,7 +678,15 @@ export default function DeliverySettings() {
                       {config.logo}
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">{config.display_name}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg font-semibold text-gray-900">{config.display_name}</h3>
+                        {defaultProvider === config.provider && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                            <Star className="w-3 h-3 fill-current" />
+                            Default
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600 mt-1">{config.description}</p>
                       {isConnected && (
                         <div className="flex items-center gap-4 mt-2">
@@ -701,6 +734,19 @@ export default function DeliverySettings() {
                     >
                       {isConnecting && <Loader2 className="w-4 h-4 animate-spin" />}
                       {t('common.connect')}
+                    </button>
+                  )}
+
+                  {isConnected && isActive && defaultProvider !== config.provider && (
+                    <button
+                      onClick={() => handleSetDefault(config.provider)}
+                      disabled={settingDefaultProvider === config.provider}
+                      className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 border border-emerald-200"
+                    >
+                      {settingDefaultProvider === config.provider
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Star className="w-4 h-4" />}
+                      Set as Default
                     </button>
                   )}
 
