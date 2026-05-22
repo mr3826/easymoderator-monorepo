@@ -26,10 +26,13 @@ class ConversationStateService {
         try {
             const channelType = platform === 'facebook' ? 'messenger' : platform;
 
-            // Find or create customer
+            // Find or create customer. channel_type must be included — the same
+            // channel_user_id can exist on both 'messenger' and 'instagram' rows
+            // (two-row-per-channel design, locked 2026-05-22).
             let customer = await Customer.findOne({
                 where: {
                     shop_id,
+                    channel_type: channelType,
                     channel_user_id: customer_channel_id
                 }
             });

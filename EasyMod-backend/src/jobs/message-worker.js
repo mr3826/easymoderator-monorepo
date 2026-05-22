@@ -260,8 +260,12 @@ async function processMessageJob(job) {
     // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
     // old guard list. Every send (including non-AI) flows through this gate.
     const policyChannelType = platform === 'messenger' ? 'facebook' : platform;
+    // channel_type must be included — the same channel_user_id can exist on both
+    // 'messenger' and 'instagram' rows (two-row-per-channel design, locked
+    // 2026-05-22). Without it findOne returns an arbitrary row and the 24h
+    // window / opt-out checks read consent for the wrong platform.
     const customer = await Customer.findOne({
-        where: { shop_id: shopId, channel_user_id: String(recipientId) },
+        where: { shop_id: shopId, channel_type: platform, channel_user_id: String(recipientId) },
     }).catch(() => null);
     const channel = jobChannel;
     let channelSettings = aiSettings;
