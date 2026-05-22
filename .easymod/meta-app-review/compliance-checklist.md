@@ -46,4 +46,4 @@ These 10 checks are verified against the codebase:
 2. Founder: Complete **Meta Business Verification** for Hexabyte Limited (checklist item 8)
 3. Founder: Record screencasts using storyboards in `screencast-storyboards.md`
 4. Founder: Create and populate test accounts per `test-user-credentials.md`, share via 1Password secure link
-5. Team: Confirm Data Deletion Callback URL is registered in Meta App Dashboard as `https://api.easymod.tech/webhooks/meta/data-deletion`
+5. Team: Confirm Data Deletion Callback URL is registered in Meta App Dashboard as `https://easymod.tech/api/webhooks/meta/data-deletion`

@@ -27,13 +27,9 @@ easymod.tech {
         }
     }
 
-    handle /webhooks/* {
-        reverse_proxy backend:3000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
+    # Legacy /webhooks/* paths → 301 to canonical /api/webhooks/* so any old
+    # Meta dashboard registrations or external callers still resolve.
+    redir /webhooks/* /api{uri} 301
 
     # ── SPA: serve built static files ────────────────────────────────────────
     # The frontend image is NOT used here for Caddy deployments.

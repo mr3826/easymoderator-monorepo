@@ -17,7 +17,7 @@ When a user removes Easy Moderator from their Facebook App Settings, Meta sends 
 ```
 Meta Platform
      |
-     | POST /webhooks/meta/data-deletion
+     | POST /api/webhooks/meta/data-deletion
      | body: signed_request=<base64url-encoded-signed-payload>
      |
      v
@@ -92,7 +92,7 @@ A 25-second `Promise.race` timeout prevents the deletion from blocking the HTTP 
 
 ### Deauthorize Callback
 
-A separate `POST /webhooks/meta/deauthorize` endpoint handles the Meta Deauthorize Callback (when a user revokes the app's access token but does not trigger full data deletion). This marks the customer record with `metadata.deauthorized = true` without deleting the record.
+A separate `POST /api/webhooks/meta/deauthorize` endpoint handles the Meta Deauthorize Callback (when a user revokes the app's access token but does not trigger full data deletion). This marks the customer record with `metadata.deauthorized = true` without deleting the record.
 
 ---
 
@@ -101,9 +101,9 @@ A separate `POST /webhooks/meta/deauthorize` endpoint handles the Meta Deauthori
 The callback URL must be registered in the Meta App Dashboard under:
 **App Settings > Advanced > Data Deletion Request Callback URL**
 
-Value: `https://api.easymod.tech/webhooks/meta/data-deletion`
+Value: `https://easymod.tech/api/webhooks/meta/data-deletion`
 
 The deauthorize URL:
 **App Settings > Advanced > Deauthorize Callback URL**
 
-Value: `https://api.easymod.tech/webhooks/meta/deauthorize`
+Value: `https://easymod.tech/api/webhooks/meta/deauthorize`
