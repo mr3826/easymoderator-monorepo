@@ -173,6 +173,7 @@ class ConversationService {
                 metadata: message.metadata || null,
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                source_references: message.source_references || null,
                 message_tag: message.message_tag || null,
                 created_at: message.created_at,
                 updated_at: message.updated_at || message.created_at
@@ -310,6 +311,7 @@ class ConversationService {
                 metadata: message.metadata || null,
                 ai_suggestion: message.ai_suggestion || null,
                 ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                source_references: message.source_references || null,
                 message_tag: message.message_tag || null,
                 created_at: message.created_at,
                 updated_at: message.updated_at || message.created_at
@@ -675,6 +677,7 @@ class ConversationService {
             content: message.content,
             sender: message.sender === 'business' ? 'agent' : message.sender,
             ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+            source_references: message.source_references || null,
             created_at: message.created_at,
             updated_at: message.updated_at || message.created_at
         };

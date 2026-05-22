@@ -248,7 +248,18 @@ const route = async ({
                     incrementFaqHit(best.faq.id);
 
                     if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, answer);
-                    return { response: answer, confidence: best.score, source: 'faq', provider };
+                    return {
+                        response: answer,
+                        confidence: best.score,
+                        source: 'faq',
+                        provider,
+                        sourceReferences: [{
+                            kind: 'faq',
+                            id: String(best.faq.id),
+                            title: best.faq.category || null,
+                            score: Number(best.score.toFixed(3)),
+                        }],
+                    };
                 }
             }
         }
@@ -266,6 +277,10 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     const recentTurns = history.slice(-CONTEXT_WINDOW);
 
     const llmMessages = [];
+    // Accumulates RAG / product sources that ground this reply. Surfaced back
+    // to the worker so agents reviewing the AI message in the inbox can see
+    // which knowledge drove the answer (architect §16).
+    const sourceReferences = [];
 
     for (const turn of recentTurns) {
         llmMessages.push({
@@ -304,6 +319,11 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                     `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
                     `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.\n` +
                     `- If no matching product found, say you couldn't identify the exact product and ask the customer to describe it.`;
+                for (const p of products) {
+                    if (p && p.id) {
+                        sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
+                    }
+                }
             } else {
                 // No product match — tell LLM there is no match
                 groundedSystemPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') +
@@ -339,6 +359,11 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                     `GROUNDING RULES:\n` +
                     `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
                     `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
+                for (const p of validProducts) {
+                    if (p && p.id) {
+                        sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
+                    }
+                }
             }
         }
     }
@@ -354,15 +379,23 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             const { queryData } = require('../rag/rag.service');
             const ragResult = await queryData({ query: message, limit: 4, shopId });
             if (ragResult.success && ragResult.results.length > 0) {
-                const ragSnippets = ragResult.results
-                    .filter(r => r.score > 0.5 && r.content)
-                    .map(r => r.content.trim())
-                    .join('\n---\n');
+                const usedResults = ragResult.results.filter(r => r.score > 0.5 && r.content);
+                const ragSnippets = usedResults.map(r => r.content.trim()).join('\n---\n');
 
                 if (ragSnippets) {
                     groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
                         `KNOWLEDGE BASE CONTEXT (use this to answer customer questions about the shop, delivery, products, and policies):\n${ragSnippets}\n\n` +
                         `IMPORTANT: Only use the knowledge above. If the answer is not in the context, say you don't know or ask the customer to contact support.`;
+
+                    for (const r of usedResults) {
+                        const md = r.metadata || {};
+                        sourceReferences.push({
+                            kind: 'rag',
+                            id: md.documentId || md.id || null,
+                            title: md.title || md.source || md.kind || null,
+                            score: typeof r.score === 'number' ? Number(r.score.toFixed(3)) : null,
+                        });
+                    }
                 }
             }
         } catch (_) { /* RAG unavailable — continue without it */ }
@@ -408,7 +441,13 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         await intentCache.setex(cacheKey, CACHE_TTL, response);
     }
 
-    return { response, confidence: 0.9, source: 'llm', provider };
+    return {
+        response,
+        confidence: 0.9,
+        source: 'llm',
+        provider,
+        sourceReferences: sourceReferences.length ? sourceReferences : null,
+    };
 };
 
 // ---------------------------------------------------------------------------

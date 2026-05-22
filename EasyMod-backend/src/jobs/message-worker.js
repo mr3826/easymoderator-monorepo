@@ -226,7 +226,7 @@ async function processMessageJob(job) {
 
     // AIChatbotController is loaded lazily to avoid circular requires
     const AIChatbotController = require('../modules/conversation/ai-chatbot.controller');
-    const { response: rawResponse, confidence } = await AIChatbotController.processNewIntent(
+    const { response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
         message, history, entities, detectedLanguage, aiSettings, ingestionResult, []
     );
 
@@ -248,6 +248,7 @@ async function processMessageJob(job) {
         platform,
         confidence,
         automation_mode: aiSettings.automation_mode,
+        sourceReferences: sourceReferences || null,
     });
 
     // Notify connected agent tabs about the AI response in real-time

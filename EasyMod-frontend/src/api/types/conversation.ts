@@ -5,6 +5,15 @@
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type MessageType = 'text' | 'image' | 'file' | 'location';
 
+export type MessageSourceKind = 'rag' | 'faq' | 'product';
+
+export interface MessageSourceReference {
+  kind: MessageSourceKind;
+  id?: string | null;
+  title?: string | null;
+  score?: number | null;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -14,6 +23,7 @@ export interface Message {
   metadata?: unknown;
   ai_suggestion?: string;
   ai_confidence?: number;
+  source_references?: MessageSourceReference[] | null;
   created_at: string;
   updated_at: string;
 }

@@ -149,6 +149,13 @@ const Message = sequelize.define('Message', {
         type: DataTypes.DECIMAL(3, 2),
         allowNull: true
     },
+    // Architect §16 — source references that grounded the AI reply.
+    // Shape: [{ kind: 'rag'|'faq'|'product', id?, title?, score? }, ...]
+    // NULL for non-AI messages or AI replies with no grounding (cache / greeting).
+    source_references: {
+        type: DataTypes.JSONB,
+        allowNull: true
+    },
     message_tag: {
         type: DataTypes.STRING(50),
         allowNull: true,

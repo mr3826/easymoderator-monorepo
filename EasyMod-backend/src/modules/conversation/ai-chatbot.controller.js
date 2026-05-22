@@ -125,6 +125,7 @@ class AIChatbotController {
             // Step 4: Determine if we should continue order session or process new intent
             let response;
             let confidence;
+            let sourceReferences = null;
             let shouldContinueOrderSession = false;
 
             if (active_order_session && active_order_session.status === 'ACTIVE') {
@@ -161,6 +162,7 @@ class AIChatbotController {
                 );
                 response = intentResult.response;
                 confidence = intentResult.confidence;
+                sourceReferences = intentResult.sourceReferences || null;
             }
 
             // H3: Confidence gate — if below threshold, intercept and request verification
@@ -190,7 +192,8 @@ class AIChatbotController {
                 confidence,
                 gate_triggered: gateFailed,
                 is_draft: isDraft,
-                is_onboarding: !!isOnboarding
+                is_onboarding: !!isOnboarding,
+                sourceReferences,
             });
 
             // Step 6: Return response
@@ -274,7 +277,11 @@ class AIChatbotController {
                 confidenceThreshold: aiSettings.confidence_threshold
             });
 
-            return { response: routerResult.response, confidence: routerResult.confidence };
+            return {
+                response: routerResult.response,
+                confidence: routerResult.confidence,
+                sourceReferences: routerResult.sourceReferences || null,
+            };
         } catch (llmError) {
             // LLM/router unavailable — fall through to keyword matching
             console.warn('Intent router unavailable, falling back to keyword matching:', llmError.message);

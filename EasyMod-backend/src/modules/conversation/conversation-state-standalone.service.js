@@ -183,14 +183,21 @@ class ConversationStateService {
      */
     static async storeAIResponse(conversationId, response, metadata = {}) {
         try {
+            // Extract first-class columns from metadata bag; keep the rest in JSON.
+            const { confidence, sourceReferences, ...restMeta } = metadata;
             const message = await Message.create({
                 id: uuidv4(),
                 conversation_id: conversationId,
                 content: response,
                 sender: 'ai',
                 external_id: null,
+                ai_confidence: typeof confidence === 'number' ? confidence : null,
+                source_references: Array.isArray(sourceReferences) && sourceReferences.length
+                    ? sourceReferences
+                    : null,
                 metadata: {
-                    ...metadata,
+                    ...restMeta,
+                    confidence,
                     timestamp: new Date().toISOString(),
                     type: 'ai_response'
                 }
