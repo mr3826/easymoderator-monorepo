@@ -28,9 +28,10 @@ const DEFAULT_SCOPES = [
     'pages_show_list',
     'instagram_basic',
     'instagram_manage_messages',
+    'instagram_manage_comments',
     'pages_read_engagement',
     'pages_manage_metadata',
-    'pages_manage_posts'  // for IG comment reply support (Phase 4)
+    'pages_manage_posts'
 ];
 
 const WEBHOOK_FIELDS = [
