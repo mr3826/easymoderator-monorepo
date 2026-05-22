@@ -18,6 +18,13 @@ export interface Message {
   updated_at: string;
 }
 
+export interface ConversationMetaChannel {
+  id: string;
+  displayName: string | null;
+  platform: 'facebook' | 'instagram' | null;
+  purposeLabel: string | null;
+}
+
 export interface Conversation {
   id: string;
   customer_id: string;
@@ -28,6 +35,8 @@ export interface Conversation {
     phone?: string;
   };
   channel: 'telegram' | 'messenger' | 'facebook' | 'instagram' | 'web';
+  meta_channel_id?: string | null;
+  metaChannel?: ConversationMetaChannel | null;
   title?: string;
   status: 'active' | 'closed' | 'archived';
   hitl?: boolean;

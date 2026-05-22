@@ -151,4 +151,96 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     return { ...channel.toJSON(), webhookWarning };
 }
 
-module.exports = { initiateOAuth, handleCallback, connectPage };
+/**
+ * Unified FB+IG OAuth: one consent dialog covering both platforms.
+ * Customer-facing benefit — single popup instead of two. Backed by the
+ * MetaMessengerProvider since `me/accounts` already returns both pages and
+ * their linked instagram_business_account.
+ *
+ * Scopes combine MessengerProvider.DEFAULT_SCOPES + InstagramProvider.DEFAULT_SCOPES,
+ * de-duped. The auth URL still hits dialog/oauth — same endpoint, wider scope.
+ */
+async function initiateUnifiedOAuth(userId, shopId) {
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const state = `unified:${shopId}:${userId}:${nonce}`;
+
+    storeTemp(state, { userId, shopId, platform: 'unified' });
+
+    // Combined scope set covers both Messenger and Instagram messaging.
+    // Provider DEFAULT_SCOPES are module-private; this list mirrors them.
+    const unifiedScopes = [
+        'pages_show_list',
+        'pages_messaging',
+        'pages_read_engagement',
+        'pages_manage_metadata',
+        'pages_manage_posts',
+        'instagram_basic',
+        'instagram_manage_messages',
+        'instagram_manage_comments',
+    ];
+
+    // Build the auth URL via the Messenger provider (same dialog endpoint).
+    const fb = getProvider('facebook');
+    const redirectUrl = await fb.buildAuthUrl({ state, scopes: unifiedScopes });
+
+    logger.info('Unified OAuth initiated', { shopId, scopeCount: unifiedScopes.length });
+    return { redirectUrl, state };
+}
+
+/**
+ * Unified callback: returns BOTH FB pages and their linked IG accounts in a
+ * single response so the picker can render everything the merchant can connect.
+ *
+ * Stored tempToken is keyed under both 'facebook' and 'instagram' so the
+ * existing per-platform connectAsset() works unchanged for either platform.
+ */
+async function handleUnifiedCallback(code, state, userId, shopId) {
+    const stored = consumeTemp(state);
+    if (!stored) {
+        throw Object.assign(new Error('Invalid or expired OAuth state token'), { status: 400 });
+    }
+
+    const fb = getProvider('facebook');
+
+    // Single token exchange via Messenger provider.
+    const { userToken } = await fb.exchangeCode({ code });
+
+    // `me/accounts` already includes nested instagram_business_account when
+    // the page has one linked — MessengerProvider.listManagedAssets exposes it
+    // as `instagramAccount` on each page entry.
+    const pages = await fb.listManagedAssets({ userToken });
+
+    // Flatten into two arrays for the frontend: facebook pages + instagram accounts.
+    const facebookPages = pages.map(p => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        pictureUrl: p.pictureUrl,
+        platform: 'facebook',
+    }));
+    const instagramAccounts = pages
+        .filter(p => p.instagramAccount?.id)
+        .map(p => ({
+            id: p.instagramAccount.id,
+            name: p.instagramAccount.name || p.instagramAccount.username,
+            username: p.instagramAccount.username,
+            linkedPageId: p.id,
+            linkedPageName: p.name,
+            platform: 'instagram',
+        }));
+
+    const tempToken = userToken;
+    // Store under BOTH platform keys so connectAsset(platform, ...) works for either.
+    storeTemp(`callback:${shopId}:facebook`, { userToken, platform: 'facebook', pages: facebookPages });
+    storeTemp(`callback:${shopId}:instagram`, { userToken, platform: 'instagram', pages: instagramAccounts });
+
+    logger.info('Unified OAuth callback processed', {
+        shopId,
+        fbPageCount: facebookPages.length,
+        igAccountCount: instagramAccounts.length,
+    });
+
+    return { facebookPages, instagramAccounts, tempToken };
+}
+
+module.exports = { initiateOAuth, handleCallback, connectPage, initiateUnifiedOAuth, handleUnifiedCallback };

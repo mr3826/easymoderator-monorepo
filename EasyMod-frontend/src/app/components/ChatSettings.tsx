@@ -24,6 +24,8 @@ import {
   listMetaChannels,
   initiateMetaOAuth,
   handleMetaOAuthCallback,
+  initiateMetaUnifiedOAuth,
+  handleMetaUnifiedOAuthCallback,
   connectMetaAsset,
   pingMetaChannel,
   disconnectMetaChannel,
@@ -35,6 +37,10 @@ import {
   type MetaChannelConsentSummary,
   type MetaConsentEventType,
 } from "@/api/domains/meta-channels";
+
+// Picker entry covers both per-platform flow (no `platform`, falls back to
+// activeOAuth.platform) and unified flow (each asset carries its own platform).
+type PickerEntry = MetaOAuthAsset & { platform?: MetaPlatform };
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { getMetaErrorMessage } from "@/lib/meta/error-messages";
 
@@ -80,10 +86,10 @@ export default function ChatSettings() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeOAuth, setActiveOAuth] = useState<{
-    platform: MetaPlatform;
+    platform: MetaPlatform | "unified";
     step: "connecting" | "page-select";
   } | null>(null);
-  const [availablePages, setAvailablePages] = useState<MetaOAuthAsset[]>([]);
+  const [availablePages, setAvailablePages] = useState<PickerEntry[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<Set<string>>(new Set());
   const [tempToken, setTempToken] = useState("");
   const [isConnectingPage, setIsConnectingPage] = useState(false);
@@ -238,6 +244,91 @@ export default function ChatSettings() {
     }
   };
 
+  // Unified FB+IG consent — one popup, picker lists assets from both platforms.
+  // Each asset carries its own `platform` so connectMetaAsset routes correctly.
+  const handleConnectUnified = async () => {
+    if (oauthInProgressRef.current) {
+      toast.error("একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।");
+      return;
+    }
+    oauthInProgressRef.current = true;
+    try {
+      const { redirectUrl } = await initiateMetaUnifiedOAuth();
+
+      try {
+        const urlState = new URL(redirectUrl).searchParams.get("state");
+        if (urlState) sessionStorage.setItem(OAUTH_NONCE_KEY, urlState);
+      } catch { /* non-critical */ }
+      sessionStorage.setItem("easymod_oauth_channel_type", "unified");
+
+      oauthPopupRef.current = window.open(
+        redirectUrl,
+        "meta_oauth",
+        "width=600,height=700,left=200,top=100",
+      );
+      setActiveOAuth({ platform: "unified", step: "connecting" });
+
+      const handler = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
+        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+
+        if (e.data?.type === "OAUTH_SUCCESS") {
+          const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
+          sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          if (expectedNonce && e.data.state !== expectedNonce) {
+            toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
+            setActiveOAuth(null);
+            oauthInProgressRef.current = false;
+            window.removeEventListener("message", handler);
+            oauthListenerRef.current = null;
+            return;
+          }
+
+          handleMetaUnifiedOAuthCallback(e.data.code, e.data.state)
+            .then((result) => {
+              const fbEntries: PickerEntry[] = result.facebookPages.map((p) => ({
+                id: p.id,
+                name: p.name,
+                category: p.category ?? null,
+                pictureUrl: p.pictureUrl ?? null,
+                instagramAccount: null,
+                platform: "facebook",
+              }));
+              const igEntries: PickerEntry[] = result.instagramAccounts.map((a) => ({
+                id: a.id,
+                name: a.linkedPageName ? `${a.name} · IG of ${a.linkedPageName}` : a.name,
+                category: null,
+                pictureUrl: null,
+                instagramAccount: null,
+                platform: "instagram",
+              }));
+              setAvailablePages([...fbEntries, ...igEntries]);
+              setSelectedPageIds(new Set());
+              setTempToken(result.tempToken);
+              setActiveOAuth({ platform: "unified", step: "page-select" });
+            })
+            .catch(() => {
+              toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
+              setActiveOAuth(null);
+            });
+        } else if (e.data?.type === "OAUTH_ERROR") {
+          sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          toast.error(e.data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
+          setActiveOAuth(null);
+        }
+        window.removeEventListener("message", handler);
+        oauthListenerRef.current = null;
+        oauthInProgressRef.current = false;
+      };
+      oauthListenerRef.current = handler;
+      window.addEventListener("message", handler);
+    } catch {
+      sessionStorage.removeItem(OAUTH_NONCE_KEY);
+      oauthInProgressRef.current = false;
+      toast.error(t("channels.errors.oauthInitFailed", "সংযোগ শুরু করা যায়নি"));
+    }
+  };
+
   const handleCancelOAuth = () => {
     oauthPopupRef.current?.close();
     oauthInProgressRef.current = false;
@@ -267,11 +358,16 @@ export default function ChatSettings() {
     try {
       let webhookWarning: string | null = null;
       for (const page of availablePages.filter((p) => selectedPageIds.has(p.id))) {
+        // Unified flow: each entry carries its own platform. Per-platform flow:
+        // fall back to the active OAuth platform.
+        const assetPlatform =
+          page.platform ??
+          (activeOAuth.platform === "unified" ? "facebook" : activeOAuth.platform);
         const result = await connectMetaAsset({
           assetId: page.id,
           displayName: page.name,
           tempToken,
-          platform: activeOAuth.platform,
+          platform: assetPlatform,
         });
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }
@@ -371,14 +467,17 @@ export default function ChatSettings() {
     return { platform, platformChannels, cards };
   });
 
-  // Asset IDs already connected for the currently-active OAuth platform —
-  // used to disable those rows in the page picker so users don't pointlessly
-  // re-select pages they've already added.
+  // Asset IDs already connected — used to disable those rows in the page
+  // picker. Per-platform flow filters to the active platform; unified flow
+  // considers all connected channels since both platforms can appear in the
+  // picker.
   const alreadyConnectedAssetIds = new Set(
     activeOAuth
-      ? channels
-          .filter((c) => c.platform === activeOAuth.platform)
-          .map((c) => c.metaAssetId)
+      ? (activeOAuth.platform === "unified"
+          ? channels.map((c) => c.metaAssetId)
+          : channels
+              .filter((c) => c.platform === activeOAuth.platform)
+              .map((c) => c.metaAssetId))
       : [],
   );
 
@@ -420,6 +519,127 @@ export default function ChatSettings() {
             Retry
           </button>
         </div>
+      )}
+
+      {!isLoading && !loadError && activeOAuth?.platform === "unified" && (
+        <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-1">
+              <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
+                <MessageSquare className="w-3.5 h-3.5" style={{ color: "#1877F2" }} />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
+                <Instagram className="w-3.5 h-3.5" style={{ color: "#E1306C" }} />
+              </div>
+            </div>
+            <h3 className="font-semibold text-gray-900">Facebook + Instagram একসাথে সংযুক্ত করুন</h3>
+          </div>
+
+          {activeOAuth.step === "connecting" && (
+            <div className="text-center py-4">
+              <Loader2 className="w-7 h-7 animate-spin mx-auto mb-2 text-blue-600" />
+              <p className="text-sm text-gray-700">পপ-আপে Meta-তে লগইন করুন...</p>
+              <button
+                onClick={handleCancelOAuth}
+                className="mt-2 text-xs text-gray-600 hover:text-gray-800 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {activeOAuth.step === "page-select" && (
+            <div>
+              <p className="text-xs text-gray-700 mb-3">
+                আপনার Facebook Page এবং linked Instagram অ্যাকাউন্ট নির্বাচন করুন
+              </p>
+              {availablePages.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  কোনো asset পাওয়া যায়নি।
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {availablePages.map((page) => {
+                    const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
+                    const itemPlatform: MetaPlatform = page.platform ?? "facebook";
+                    const brand = itemPlatform === "instagram" ? "#E1306C" : "#1877F2";
+                    const bg = itemPlatform === "instagram" ? "bg-pink-50" : "bg-blue-100";
+                    return (
+                      <label
+                        key={`${itemPlatform}-${page.id}`}
+                        className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
+                          isAlreadyConnected
+                            ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
+                            : selectedPageIds.has(page.id)
+                            ? "border-blue-500 bg-white cursor-pointer"
+                            : "border-gray-200 bg-white hover:bg-gray-50 cursor-pointer"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 accent-blue-600"
+                          checked={selectedPageIds.has(page.id)}
+                          disabled={isAlreadyConnected}
+                          onChange={() => togglePageSelection(page.id)}
+                        />
+                        <div className={`w-8 h-8 rounded-full ${bg} flex items-center justify-center`}>
+                          <PlatformIcon id={itemPlatform} color={brand} size={14} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500">
+                            {itemPlatform === "instagram" ? "Instagram" : "Facebook Page"}
+                          </p>
+                        </div>
+                        {isAlreadyConnected && (
+                          <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                            <Check className="w-3 h-3" />
+                            Connected
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={handleCancelOAuth}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConnectPages}
+                  disabled={selectedPageIds.size === 0 || isConnectingPage}
+                  className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {isConnectingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Connect ({selectedPageIds.size})
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isLoading && !loadError && !activeOAuth && channels.length === 0 && (
+        <button
+          onClick={handleConnectUnified}
+          className="w-full rounded-xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 to-pink-50 hover:from-blue-100 hover:to-pink-100 p-4 flex items-center justify-center gap-3 transition-colors"
+        >
+          <div className="flex -space-x-1">
+            <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
+              <MessageSquare className="w-3.5 h-3.5" style={{ color: "#1877F2" }} />
+            </div>
+            <div className="w-7 h-7 rounded-full bg-white border-2 border-pink-300 flex items-center justify-center">
+              <Instagram className="w-3.5 h-3.5" style={{ color: "#E1306C" }} />
+            </div>
+          </div>
+          <span className="font-semibold text-gray-900 text-sm">
+            Facebook + Instagram একসাথে সংযুক্ত করুন (one popup)
+          </span>
+        </button>
       )}
 
       {!isLoading && !loadError && (

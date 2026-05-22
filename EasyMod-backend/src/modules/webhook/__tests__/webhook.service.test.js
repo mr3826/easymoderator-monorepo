@@ -30,6 +30,11 @@ jest.mock('../../channel-providers/meta-channel.entity', () => ({
     findByPk: jest.fn().mockResolvedValue(mockMetaChannel),
 }));
 
+// Customer is now looked up in the shim so the policy engine has opt-out context.
+jest.mock('../../customer/customer.entity', () => ({
+    findOne: jest.fn().mockResolvedValue(null),
+}));
+
 // ── Mock provider registry ───────────────────────────────────────────────────
 const mockSendMessage = jest.fn();
 

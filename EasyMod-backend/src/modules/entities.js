@@ -418,6 +418,19 @@ MetaChannel.belongsTo(Shop, {
     as: 'shop'
 });
 
+// Conversation <-> MetaChannel (Phase 2 FK). Each conversation can be pinned
+// to a specific Meta page / IG account; null for legacy rows. Surfaced in the
+// inbox so the operator sees which channel a thread arrived on.
+MetaChannel.hasMany(Conversation, {
+    foreignKey: 'meta_channel_id',
+    as: 'conversations',
+    onDelete: 'SET NULL'
+});
+Conversation.belongsTo(MetaChannel, {
+    foreignKey: 'meta_channel_id',
+    as: 'metaChannel'
+});
+
 // MetaChannel <-> MetaChannelSettings (1:1)
 MetaChannel.hasOne(MetaChannelSettings, {
     foreignKey: 'channel_id',

@@ -226,9 +226,22 @@ async function processMessageJob(job) {
 
     // AIChatbotController is loaded lazily to avoid circular requires
     const AIChatbotController = require('../modules/conversation/ai-chatbot.controller');
-    const { response, confidence } = await AIChatbotController.processNewIntent(
+    const { response: rawResponse, confidence } = await AIChatbotController.processNewIntent(
         message, history, entities, detectedLanguage, aiSettings, ingestionResult, []
     );
+
+    // ── Bot attribution (Meta Platform Policy 4.2) ──────────────────────────
+    // Customers must be able to identify automated replies. Default-on; can be
+    // disabled per-channel by setting `bot_attribution_suffix` to an empty string
+    // in meta_channel_settings, or globally via AI_BOT_ATTRIBUTION_ENABLED=false.
+    // Suffix is applied before storage so the in-app inbox shows the same text
+    // the customer received.
+    const attributionEnabled = process.env.AI_BOT_ATTRIBUTION_ENABLED !== 'false';
+    const attributionSuffix = process.env.AI_BOT_ATTRIBUTION_SUFFIX || ' 🤖';
+    const alreadyMarked = /🤖|\(ai\)|\bAI assistant\b/i.test(rawResponse || '');
+    const response = (attributionEnabled && rawResponse && !alreadyMarked)
+        ? `${rawResponse.trimEnd()}${attributionSuffix}`
+        : rawResponse;
 
     // ── Store AI response ───────────────────────────────────────────────────
     const aiStoreResult = await ConversationStateService.storeAIResponse(conversationId, response, {

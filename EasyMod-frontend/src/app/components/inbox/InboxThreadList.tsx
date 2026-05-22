@@ -188,6 +188,19 @@ export function InboxThreadList({
                       <div className="flex items-center gap-1 text-xs text-gray-500">
                         <span>{getChannelIcon(conversation.channel)}</span>
                         <span>{conversation.channel}</span>
+                        {conversation.metaChannel?.displayName && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="truncate">
+                              {conversation.metaChannel.displayName}
+                            </span>
+                            {conversation.metaChannel.purposeLabel && (
+                              <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] leading-none">
+                                {conversation.metaChannel.purposeLabel}
+                              </span>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>

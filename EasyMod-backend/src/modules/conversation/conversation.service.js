@@ -1,4 +1,4 @@
-const { Conversation, Message, Customer } = require('../entities');
+const { Conversation, Message, Customer, MetaChannel, MetaChannelSettings } = require('../entities');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -13,11 +13,25 @@ class ConversationService {
                 ? 'webchat'
                 : conversation.channel;
 
+        // Phase 2 FK + Phase 4 purpose label. Lets the inbox label which page
+        // / IG account a thread arrived on without a separate API call.
+        const metaChannel = conversation.metaChannel || null;
+        const metaChannelInfo = metaChannel
+            ? {
+                id: metaChannel.id,
+                displayName: metaChannel.display_name || null,
+                platform: metaChannel.platform || null,
+                purposeLabel: metaChannel.settings?.purpose_label || null,
+            }
+            : null;
+
         return {
             id: conversation.id,
             customer_id: conversation.customer_id,
             customer: conversation.customer || null,
             channel,
+            meta_channel_id: conversation.meta_channel_id || null,
+            metaChannel: metaChannelInfo,
             title: conversation.title || meta.title || conversation.intent || null,
             status: conversation.status || meta.status || 'active',
             hitl: conversation.hitl ?? false,
@@ -51,11 +65,25 @@ class ConversationService {
                 order: [['created_at', 'DESC']],
                 limit,
                 offset,
-                include: [{
-                    model: Customer,
-                    as: 'customer',
-                    attributes: ['id', 'name', 'phone']
-                }]
+                include: [
+                    {
+                        model: Customer,
+                        as: 'customer',
+                        attributes: ['id', 'name', 'phone']
+                    },
+                    {
+                        model: MetaChannel,
+                        as: 'metaChannel',
+                        required: false,
+                        attributes: ['id', 'display_name', 'platform'],
+                        include: [{
+                            model: MetaChannelSettings,
+                            as: 'settings',
+                            required: false,
+                            attributes: ['purpose_label']
+                        }]
+                    }
+                ]
             });
 
             return {
@@ -79,7 +107,21 @@ class ConversationService {
                     id: conversationId,
                     shop_id: shopId
                 },
-                include: [{ model: Customer, as: 'customer' }]
+                include: [
+                    { model: Customer, as: 'customer' },
+                    {
+                        model: MetaChannel,
+                        as: 'metaChannel',
+                        required: false,
+                        attributes: ['id', 'display_name', 'platform'],
+                        include: [{
+                            model: MetaChannelSettings,
+                            as: 'settings',
+                            required: false,
+                            attributes: ['purpose_label']
+                        }]
+                    }
+                ]
             });
 
             if (!conversation) {

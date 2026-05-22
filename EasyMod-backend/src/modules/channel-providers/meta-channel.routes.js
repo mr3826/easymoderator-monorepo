@@ -32,6 +32,8 @@ router.use(authenticate);
 // ── OAuth (declared first to avoid /:channelId collision) ──────────────────
 router.post('/oauth/initiate', validate(v.initiate), oauthController.initiate);
 router.post('/oauth/callback', validate(v.callback), oauthController.callback);
+router.post('/oauth/initiate-unified', validate(v.initiateUnified), oauthController.initiateUnified);
+router.post('/oauth/callback-unified', validate(v.callbackUnified), oauthController.callbackUnified);
 router.post('/oauth/connect-asset', validate(v.connectAsset), oauthController.connectAsset);
 
 // ── Channel lifecycle ─────────────────────────────────────────────────────

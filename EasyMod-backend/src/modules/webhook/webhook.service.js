@@ -31,6 +31,7 @@
  */
 
 const MetaChannel = require('../channel-providers/meta-channel.entity');
+const Customer = require('../customer/customer.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 const { createLogger } = require('../../utils/structured-logger');
@@ -107,12 +108,37 @@ async function sendMessage(channel, recipientId, messageText) {
         senderRole: 'system',
     };
 
+    // Resolve the customer so the policy engine can enforce opt-out / consent.
+    // Without this, `messengerOptedOut` and `consentRequired` short-circuit to
+    // NO_CUSTOMER_CONTEXT (allow) and transactional sends (payment confirm,
+    // delivery, invoice, owner notification) reach opted-out users.
+    // channel_type stores 'messenger' for FB, 'instagram' for IG.
+    const customerChannelType = platform === 'instagram' ? 'instagram' : 'messenger';
+    let customer = null;
+    try {
+        customer = await Customer.findOne({
+            where: {
+                shop_id: channel.shop_id,
+                channel_type: customerChannelType,
+                channel_user_id: recipientIdStr,
+            },
+        });
+    } catch (lookupErr) {
+        logger.warn('Customer lookup failed in webhook shim — proceeding without customer context', {
+            shopId: channel.shop_id,
+            platform,
+            error: lookupErr.message,
+        });
+    }
+
     // Policy pre-flight (defense-in-depth — provider also evaluates internally)
     const policyCtx = {
         shopId: channel.shop_id,
         channelId: metaChannel.id,
         recipientId: recipientIdStr,
         channel: metaChannel,
+        customer,
+        platform,
     };
 
     let decision;

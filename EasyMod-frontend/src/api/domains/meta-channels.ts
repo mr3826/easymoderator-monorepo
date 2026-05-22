@@ -69,6 +69,23 @@ export interface MetaOAuthCallbackResult {
   tempToken: string;
 }
 
+export interface MetaUnifiedAsset {
+  id: string;
+  name: string;
+  platform: MetaPlatform;
+  category?: string | null;
+  pictureUrl?: string | null;
+  username?: string;
+  linkedPageId?: string;
+  linkedPageName?: string;
+}
+
+export interface MetaUnifiedCallbackResult {
+  facebookPages: MetaUnifiedAsset[];
+  instagramAccounts: MetaUnifiedAsset[];
+  tempToken: string;
+}
+
 export interface MetaConnectAssetResult extends MetaChannel {
   webhookSubscribed: boolean;
   webhookWarning: string | null;
@@ -136,6 +153,25 @@ export async function handleMetaOAuthCallback(
 ): Promise<MetaOAuthCallbackResult> {
   const res: AxiosResponse<ApiResponse<MetaOAuthCallbackResult>> = await httpClient.post(
     `${BASE}/oauth/callback`,
+    { code, state },
+  );
+  return res.data.data;
+}
+
+// Unified FB+IG consent — one popup covers both platforms. Returns the
+// merchant's FB pages and any IG business accounts linked to them.
+export async function initiateMetaUnifiedOAuth(): Promise<{ redirectUrl: string; state: string }> {
+  const res: AxiosResponse<ApiResponse<{ redirectUrl: string; state: string }>> =
+    await httpClient.post(`${BASE}/oauth/initiate-unified`, {});
+  return res.data.data;
+}
+
+export async function handleMetaUnifiedOAuthCallback(
+  code: string,
+  state: string,
+): Promise<MetaUnifiedCallbackResult> {
+  const res: AxiosResponse<ApiResponse<MetaUnifiedCallbackResult>> = await httpClient.post(
+    `${BASE}/oauth/callback-unified`,
     { code, state },
   );
   return res.data.data;

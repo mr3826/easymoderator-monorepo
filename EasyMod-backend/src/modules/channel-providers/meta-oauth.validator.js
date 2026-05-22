@@ -24,13 +24,38 @@ exports.initiate = {
     }),
 };
 
+// Unified initiate carries no platform — covers FB + IG in one consent.
+exports.initiateUnified = {
+    body: Joi.object({}).unknown(false),
+};
+
+// State token format is `{platform}:{shopId}:{userId}:{32-hex-nonce}` —
+// ~115 chars for facebook, ~116 for instagram. The previous length(64) cap
+// was a leftover from a pre-Phase-5 nonce-only design and would 400 every
+// real callback. Range guard preserved against junk values.
 exports.callback = {
     body: Joi.object({
         code: Joi.string().trim().min(10).required().messages({
             'any.required': 'OAuth code is required',
         }),
-        state: Joi.string().trim().length(64).required().messages({
-            'string.length': 'Invalid state token',
+        state: Joi.string().trim().min(40).max(128).required().messages({
+            'string.min': 'Invalid state token',
+            'string.max': 'Invalid state token',
+            'any.required': 'State token is required',
+        }),
+    }),
+};
+
+// Unified callback uses a longer state prefix ('unified:'), so the strict
+// length(64) doesn't fit. Range guard preserved.
+exports.callbackUnified = {
+    body: Joi.object({
+        code: Joi.string().trim().min(10).required().messages({
+            'any.required': 'OAuth code is required',
+        }),
+        state: Joi.string().trim().min(40).max(128).required().messages({
+            'string.min': 'Invalid state token',
+            'string.max': 'Invalid state token',
             'any.required': 'State token is required',
         }),
     }),
@@ -45,8 +70,14 @@ exports.connectAsset = {
         displayName: Joi.string().trim().max(255).required().messages({
             'any.required': 'displayName is required',
         }),
-        tempToken: Joi.string().trim().length(64).required().messages({
-            'string.length': 'Invalid temp token',
+        // tempToken is the raw Meta long-lived user access token returned by
+        // /oauth/callback (handleCallback assigns userToken → tempToken).
+        // Meta user tokens are ~180-220 chars; the previous length(64) cap was
+        // a leftover from a pre-Phase-5 hex-nonce design and would 400 every
+        // real first connection. Range guard preserved against junk values.
+        tempToken: Joi.string().trim().min(40).max(512).required().messages({
+            'string.min': 'tempToken is too short',
+            'string.max': 'tempToken is too long',
             'any.required': 'tempToken is required',
         }),
         platform: PLATFORM.messages({

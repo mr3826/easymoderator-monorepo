@@ -66,6 +66,21 @@ const GREETING_REPLIES = {
 const _greetingReply = (language = 'mixed') =>
     GREETING_REPLIES[language] || GREETING_REPLIES.mixed;
 
+// Regex fast-path for unambiguous greetings — runs before BERT so we still
+// short-circuit when the local ML service is unavailable or low-confidence.
+// Tight intentionally: only short messages that are PURELY greeting tokens.
+// If the customer wrote "hi, is this saree available?", product intent wins
+// and the LLM handles it.
+const GREETING_PATTERN = /^(?:hi|hii+|hey+|hello+|yo|salam|assalam(?:u)?\s*alaikum|walaikum\s*assalam|nomoshkar|নমস্কার|আসসালামু\s*আলাইকুম|ওয়ালাইকুম\s*আসসালাম|হ্যালো|হাই|good\s*(?:morning|afternoon|evening|night))[\s!.,👋😊🙏]*$/i;
+
+const isPlainGreeting = (message) => {
+    if (!message || typeof message !== 'string') return false;
+    const trimmed = message.trim();
+    if (trimmed.length === 0 || trimmed.length > 40) return false;
+    if (hasProductIntent(trimmed)) return false;
+    return GREETING_PATTERN.test(trimmed);
+};
+
 // ---------------------------------------------------------------------------
 // Core routing
 // ---------------------------------------------------------------------------
@@ -145,6 +160,17 @@ const route = async ({
                 }
             } catch (_) { /* DB unavailable — fall through */ }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Stage 1.7: Regex greeting fast-path (runs before BERT so it works
+    // even when the local ML service is down or low-confidence).
+    // Only fires on short messages that are PURELY greeting tokens.
+    // ------------------------------------------------------------------
+    if (!imageUrls.length && isPlainGreeting(message)) {
+        const greetingResponse = _greetingReply(language);
+        if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, greetingResponse);
+        return { response: greetingResponse, confidence: 0.95, source: 'greeting_fastpath' };
     }
 
     // ------------------------------------------------------------------
