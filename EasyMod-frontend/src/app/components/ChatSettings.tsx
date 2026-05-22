@@ -13,6 +13,8 @@ import {
   Unplug,
   RefreshCw,
   ShieldCheck,
+  Plus,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
@@ -328,10 +330,33 @@ export default function ChatSettings() {
       ? "bg-red-50 text-red-700"
       : "bg-green-50 text-green-700";
 
-  const cardsByPlatform = PLATFORMS.map((platform) => ({
-    platform,
-    channel: channels.find((c) => c.platform === platform.id),
-  }));
+  // Group connected channels by platform. Each platform renders a section
+  // with one card per connected channel plus an "Add another" tile. When no
+  // channels are connected for a platform, the single card becomes the
+  // first-time-connect CTA (with permissions disclosure).
+  type CardEntry = { channel: MetaChannel | null; isAddTile: boolean };
+  const platformSections = PLATFORMS.map((platform) => {
+    const platformChannels = channels.filter((c) => c.platform === platform.id);
+    const cards: CardEntry[] =
+      platformChannels.length > 0
+        ? [
+            ...platformChannels.map((c) => ({ channel: c, isAddTile: false })),
+            { channel: null, isAddTile: true },
+          ]
+        : [{ channel: null, isAddTile: false }];
+    return { platform, platformChannels, cards };
+  });
+
+  // Asset IDs already connected for the currently-active OAuth platform —
+  // used to disable those rows in the page picker so users don't pointlessly
+  // re-select pages they've already added.
+  const alreadyConnectedAssetIds = new Set(
+    activeOAuth
+      ? channels
+          .filter((c) => c.platform === activeOAuth.platform)
+          .map((c) => c.metaAssetId)
+      : [],
+  );
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -374,33 +399,80 @@ export default function ChatSettings() {
       )}
 
       {!isLoading && !loadError && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {cardsByPlatform.map(({ platform, channel }) => {
+        <div className="space-y-8">
+          {platformSections.map(({ platform, platformChannels, cards }) => (
+            <section key={platform.id} className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full ${platform.bgColor} flex items-center justify-center`}>
+                  <PlatformIcon id={platform.id} color={platform.brandColor} size={18} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold text-gray-900">{platform.name}</h3>
+                  <p className="text-xs text-gray-500">
+                    {platformChannels.length === 0
+                      ? "Not connected"
+                      : `${platformChannels.length} connected`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+          {cards.map((entry, cardIdx) => {
+            const { channel, isAddTile } = entry;
             const isConnected = channel?.status === "CONNECTED";
             const isTokenExpired = channel?.status === "TOKEN_EXPIRED" || channel?.status === "REVOKED";
             const isErrored = channel?.status === "ERROR";
-            const isThisCardOAuth = activeOAuth?.platform === platform.id;
+            // OAuth in-flight surfaces in the non-connected slot for the matching
+            // platform — that's the add-tile (when channels exist) or the
+            // first-time-connect card (when none do).
+            const isThisCardOAuth =
+              activeOAuth?.platform === platform.id && channel === null;
             const isPermissionsExpanded = expandedPermissions === platform.id;
             const isConsentExpanded = !!channel && expandedConsentChannelId === channel.id;
             const consentSummary = channel ? consentByChannelId[channel.id] : undefined;
             const isConsentLoading = !!channel && loadingConsentId === channel.id;
+            const cardKey = channel?.id ?? `${platform.id}-${isAddTile ? "add" : "new"}-${cardIdx}`;
 
             return (
               <div
-                key={platform.id}
-                className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow p-5"
+                key={cardKey}
+                className={`bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow p-5 ${
+                  isAddTile && !isThisCardOAuth
+                    ? "border-dashed hover:border-gray-400"
+                    : "hover:shadow-md"
+                }`}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div className={`w-11 h-11 rounded-full ${platform.bgColor} flex items-center justify-center`}>
-                      <PlatformIcon id={platform.id} color={platform.brandColor} />
+                      {channel?.pictureUrl ? (
+                        <img
+                          src={channel.pictureUrl}
+                          alt={channel.displayName}
+                          className="w-11 h-11 rounded-full object-cover"
+                        />
+                      ) : (
+                        <PlatformIcon id={platform.id} color={platform.brandColor} />
+                      )}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">{platform.name}</h3>
-                      {isConnected && channel ? (
-                        <p className="text-sm text-gray-500 truncate max-w-[180px]">{channel.displayName}</p>
+                      {channel ? (
+                        <>
+                          <h4 className="font-semibold text-gray-900 truncate max-w-[180px]">
+                            {channel.displayName}
+                          </h4>
+                          <p className="text-xs text-gray-400">{platform.name}</p>
+                        </>
+                      ) : isAddTile ? (
+                        <>
+                          <h4 className="font-semibold text-gray-700">Add another</h4>
+                          <p className="text-xs text-gray-400">{platform.name}</p>
+                        </>
                       ) : (
-                        <p className="text-xs text-gray-400">Not connected</p>
+                        <>
+                          <h4 className="font-semibold text-gray-900">{platform.name}</h4>
+                          <p className="text-xs text-gray-400">Not connected</p>
+                        </>
                       )}
                     </div>
                   </div>
@@ -424,7 +496,16 @@ export default function ChatSettings() {
                   )}
                 </div>
 
-                <p className="text-sm text-gray-600 mb-4">{platform.description}</p>
+                {!isAddTile && !isConnected && (
+                  <p className="text-sm text-gray-600 mb-4">{platform.description}</p>
+                )}
+                {isAddTile && !isThisCardOAuth && (
+                  <p className="text-sm text-gray-500 mb-4">
+                    {platform.id === "instagram"
+                      ? "আরেকটি Instagram অ্যাকাউন্ট যোগ করুন"
+                      : "আরেকটি Facebook Page যোগ করুন"}
+                  </p>
+                )}
 
                 {isConnected &&
                   channel?.tokenExpiresAt &&
@@ -475,42 +556,54 @@ export default function ChatSettings() {
                       </p>
                     ) : (
                       <div className="space-y-2 max-h-56 overflow-y-auto">
-                        {availablePages.map((page) => (
-                          <label
-                            key={page.id}
-                            className={`flex items-center gap-3 p-2.5 rounded-lg border-2 cursor-pointer transition-colors ${
-                              selectedPageIds.has(page.id)
-                                ? "border-blue-500 bg-white"
-                                : "border-gray-200 bg-white hover:bg-gray-50"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 accent-blue-600"
-                              checked={selectedPageIds.has(page.id)}
-                              onChange={() => togglePageSelection(page.id)}
-                            />
-                            {page.pictureUrl ? (
-                              <img
-                                src={page.pictureUrl}
-                                alt={page.name}
-                                className="w-8 h-8 rounded-full object-cover"
+                        {availablePages.map((page) => {
+                          const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
+                          return (
+                            <label
+                              key={page.id}
+                              className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
+                                isAlreadyConnected
+                                  ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
+                                  : selectedPageIds.has(page.id)
+                                  ? "border-blue-500 bg-white cursor-pointer"
+                                  : "border-gray-200 bg-white hover:bg-gray-50 cursor-pointer"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 accent-blue-600"
+                                checked={selectedPageIds.has(page.id)}
+                                disabled={isAlreadyConnected}
+                                onChange={() => togglePageSelection(page.id)}
                               />
-                            ) : (
-                              <div
-                                className={`w-8 h-8 rounded-full ${platform.bgColor} flex items-center justify-center`}
-                              >
-                                <PlatformIcon id={platform.id} color={platform.brandColor} size={14} />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
-                              {page.instagramAccount && (
-                                <p className="text-xs text-pink-600">@{page.instagramAccount.username}</p>
+                              {page.pictureUrl ? (
+                                <img
+                                  src={page.pictureUrl}
+                                  alt={page.name}
+                                  className="w-8 h-8 rounded-full object-cover"
+                                />
+                              ) : (
+                                <div
+                                  className={`w-8 h-8 rounded-full ${platform.bgColor} flex items-center justify-center`}
+                                >
+                                  <PlatformIcon id={platform.id} color={platform.brandColor} size={14} />
+                                </div>
                               )}
-                            </div>
-                          </label>
-                        ))}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
+                                {page.instagramAccount && (
+                                  <p className="text-xs text-pink-600">@{page.instagramAccount.username}</p>
+                                )}
+                              </div>
+                              {isAlreadyConnected && (
+                                <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                  <Check className="w-3 h-3" />
+                                  Connected
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                     <div className="mt-3 flex gap-2">
@@ -532,7 +625,17 @@ export default function ChatSettings() {
                   </div>
                 )}
 
-                {!isConnected && !isThisCardOAuth && (
+                {!isConnected && !isThisCardOAuth && isAddTile && (
+                  <button
+                    onClick={() => handleConnectClick(platform.id)}
+                    className="w-full py-2.5 border-2 border-dashed border-gray-300 text-gray-700 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:border-gray-400 hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {platform.id === "instagram" ? "Add Instagram account" : "Add Facebook Page"}
+                  </button>
+                )}
+
+                {!isConnected && !isThisCardOAuth && !isAddTile && (
                   <div className="space-y-3">
                     <button
                       onClick={() => handleConnectClick(platform.id)}
@@ -745,6 +848,9 @@ export default function ChatSettings() {
               </div>
             );
           })}
+              </div>
+            </section>
+          ))}
         </div>
       )}
 
