@@ -58,8 +58,15 @@ if (config.env === 'production') {
     app.set('trust proxy', 1);
 }
 
-// Security headers
-app.use(helmet());
+// Security headers.
+// COOP override: default `same-origin` severs `window.opener` when an OAuth
+// popup navigates to facebook.com and back, breaking the postMessage handshake
+// in [OAuthCallbackPage.tsx](../../EasyMod-frontend/src/app/components/OAuthCallbackPage.tsx).
+// `same-origin-allow-popups` keeps the opener reference for popups WE open
+// while still preventing external pages from grabbing it.
+app.use(helmet({
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
+}));
 
 // CORS with allowlist
 const allowedOrigins = config.corsOrigins || [];
