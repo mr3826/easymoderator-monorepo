@@ -440,6 +440,9 @@
     "noVariants": "No variants",
     "aiSource": "AI ({{confidence}}%)",
     "loading": "Loading products...",
+    "loadError": "Could not load products. Please try again.",
+    "emptyTitle": "No products yet",
+    "emptySubtitle": "Upload a CSV with your catalog or add your first product manually to get started.",
     "uploadModal": {
       "title": "Upload Product File",
       "subtitle": "Upload CSV, TSV, or text files for AI processing",

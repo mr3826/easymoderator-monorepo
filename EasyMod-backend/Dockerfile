@@ -3,6 +3,13 @@ FROM node:20-alpine
 # Set production environment
 ENV NODE_ENV=production
 
+# Build-time identifiers exposed via GET /api/version so we can verify
+# "is this commit actually deployed?" with one curl.
+ARG GIT_SHA=
+ARG BUILD_TIME=
+ENV GIT_SHA=${GIT_SHA}
+ENV BUILD_TIME=${BUILD_TIME}
+
 WORKDIR /app
 
 COPY package*.json ./

@@ -74,6 +74,7 @@ export default function Products() {
   const {
     data: allProducts = [],
     isLoading,
+    isFetched,
     isError,
     error: queryError,
     refetch: fetchProducts
@@ -83,15 +84,21 @@ export default function Products() {
       if (!shopId) throw new Error("No shop selected");
       return apiClient.getProducts(queryParams);
     },
-    enabled: !!shopId
+    enabled: !!shopId,
+    // The axios client already retries 5xx twice with 1s + 2s backoff
+    // ([client.ts:159-174]). Layering react-query's default retry: 2 on top
+    // produced ~30 s of spinner before the user saw any error — see plan
+    // cached-finding-lerdorf.md Phase 3.2. One retry is enough here.
+    retry: 1
   });
 
-  // Use TanStack Query for categories
+  // Use TanStack Query for categories — same retry rationale as products above.
   const {
     data: categoriesData = []
   } = useQuery({
     queryKey: ["categories"],
-    queryFn: () => apiClient.getCategories()
+    queryFn: () => apiClient.getCategories(),
+    retry: 1
   });
 
   // Build categoryNameMap and categoryMap from categoriesData
@@ -117,12 +124,8 @@ export default function Products() {
     }
   }, [categoriesData]);
 
-  // Error handling
-  useEffect(() => {
-    if (isError && queryError instanceof Error) {
-      setError(queryError.message);
-    }
-  }, [isError, queryError]);
+  // Query errors render inline below via `isError + queryError` so we don't
+  // mirror them into `error` (which would double-display them in the top banner).
 
   // Get unique categories list
   const categoriesList = useMemo(() => categoriesData.map((c: Category) => c.name), [categoriesData]);
@@ -394,10 +397,45 @@ export default function Products() {
         </div>
       )}
 
-      {isLoading ? (
+      {isError && !isLoading ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <AlertCircle className="h-8 w-8 text-red-600" />
+          <p className="text-gray-700">{queryError instanceof Error ? queryError.message : t('products.loadError', 'Could not load products. Please try again.')}</p>
+          <button
+            onClick={() => fetchProducts()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      ) : isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
           <span className="ml-2 text-gray-600">{t('products.loading')}</span>
+        </div>
+      ) : isFetched && allProducts.length === 0 && !appliedSearchQuery && !appliedFilters.category_id && !appliedFilters.is_active && !appliedFilters.minPrice && !appliedFilters.maxPrice ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white rounded-xl border border-dashed border-gray-300">
+          <Bot className="h-12 w-12 text-gray-300" />
+          <div className="text-center max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('products.emptyTitle', 'No products yet')}</h3>
+            <p className="text-sm text-gray-500">{t('products.emptySubtitle', 'Upload a CSV with your catalog or add your first product manually to get started.')}</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+            >
+              <Upload className="w-5 h-5" />
+              {t('products.uploadFile')}
+            </button>
+            <button
+              onClick={() => navigate('/app/products/add')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <Plus className="w-5 h-5" />
+              {t('products.addManually')}
+            </button>
+          </div>
         </div>
       ) : (
         <>

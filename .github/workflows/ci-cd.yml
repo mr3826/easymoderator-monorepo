@@ -118,6 +118,9 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.backend_tag }}
             ${{ env.GHCR_BACKEND }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.repository.updated_at }}
           cache-from: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache,mode=max
 

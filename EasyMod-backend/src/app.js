@@ -206,6 +206,10 @@ initSentry(app);
 // Health check endpoints (no auth required, must be before other routes)
 app.use('/health', healthRoutes);
 
+// Unauthenticated version probe — answers "is the fix live on prod?" in one curl.
+// Must be mounted before `/api` so it bypasses every authenticated route module.
+app.use('/api/version', require('./routes/version.routes'));
+
 // API routes
 app.use('/api', routes);
 
