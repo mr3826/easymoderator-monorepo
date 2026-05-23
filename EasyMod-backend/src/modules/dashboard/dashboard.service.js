@@ -23,6 +23,7 @@ const getDashboardMetrics = async (userId, shopId, period = 30) => {
     const startOfToday  = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const startOfPeriod = new Date(today.getTime() - periodDays * 24 * 60 * 60 * 1000);
     const startOfLast   = new Date(today.getTime() - periodDays * 2 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const [
         totalMessages,
@@ -33,7 +34,9 @@ const getDashboardMetrics = async (userId, shopId, period = 30) => {
         ordersLastPeriod,
         activeChannels,
         totalChannels,
-        analyticsRow
+        analyticsRow,
+        inTransitRow,
+        atRiskRow
     ] = await Promise.all([
         Analytics.sum('total_messages', { where: { shop_id: shopId } }).then(v => Number(v) || 0),
         Analytics.sum('total_messages', {
@@ -47,7 +50,31 @@ const getDashboardMetrics = async (userId, shopId, period = 30) => {
         }),
         Channel.count({ where: { shop_id: shopId, is_active: true } }),
         Channel.count({ where: { shop_id: shopId } }),
-        Analytics.findOne({ where: { shop_id: shopId }, order: [['date', 'DESC']] })
+        Analytics.findOne({ where: { shop_id: shopId }, order: [['date', 'DESC']] }),
+        Order.findAll({
+            where: {
+                shop_id: shopId,
+                delivery_status: { [Op.in]: ['booked', 'picked_up', 'in_transit', 'out_for_delivery'] },
+                delivery_dispatched_at: { [Op.ne]: null }
+            },
+            attributes: [
+                [fn('COALESCE', fn('SUM', col('total')), 0), 'amount'],
+                [fn('COUNT', col('id')), 'count']
+            ],
+            raw: true
+        }),
+        Order.findAll({
+            where: {
+                shop_id: shopId,
+                delivery_status: { [Op.in]: ['failed_delivery', 'returned'] },
+                updated_at: { [Op.gte]: thirtyDaysAgo }
+            },
+            attributes: [
+                [fn('COALESCE', fn('SUM', col('total')), 0), 'amount'],
+                [fn('COUNT', col('id')), 'count']
+            ],
+            raw: true
+        })
     ]);
 
     const conversionRate = messagesInPeriod > 0
@@ -69,6 +96,17 @@ const getDashboardMetrics = async (userId, shopId, period = 30) => {
         channels:  { active: activeChannels || 0, total: totalChannels || 0 },
         analytics: analyticsRow || null,
         period:    periodDays,
+        cashPosition: {
+            inTransit: {
+                amount: Number(inTransitRow?.[0]?.amount) || 0,
+                count:  Number(inTransitRow?.[0]?.count)  || 0
+            },
+            atRisk: {
+                amount:     Number(atRiskRow?.[0]?.amount) || 0,
+                count:      Number(atRiskRow?.[0]?.count)  || 0,
+                windowDays: 30
+            }
+        }
     };
 
     await cacheService.setForShop(shopId, cacheKey, result, SUMMARY_CACHE_TTL).catch(() => {});
