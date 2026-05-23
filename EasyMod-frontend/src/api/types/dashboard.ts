@@ -27,6 +27,10 @@ export interface DashboardMetrics {
     date: string;
     orders: number;
   }>;
+  cashPosition?: {
+    inTransit: { amount: number; count: number };
+    atRisk: { amount: number; count: number; windowDays: number };
+  };
 }
 
 export interface DashboardQueue {
