@@ -30,6 +30,13 @@ const items = [
     icon: CreditCard,
     color: 'text-amber-600 bg-amber-50',
   },
+  {
+    name: 'সাবস্ক্রিপশন',
+    description: 'প্ল্যান, ব্যবহার ও ইনভয়েস ম্যানেজ করুন',
+    path: '/app/subscription',
+    icon: CreditCard,
+    color: 'text-rose-600 bg-rose-50',
+  },
 ];
 
 export default function SettingsHub() {

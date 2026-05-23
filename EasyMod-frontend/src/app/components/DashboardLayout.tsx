@@ -64,8 +64,10 @@ export default function DashboardLayout() {
 
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
+  const subscriptionItem = { name: 'সাবস্ক্রিপশন', path: `${appBasePath}/subscription`, icon: CreditCard };
+
   // Derive page title from current route (check settings group first — more specific paths)
-  const allNavItems = [...settingsNavigation, ...navigation];
+  const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
   const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
@@ -170,6 +172,33 @@ export default function DashboardLayout() {
           </div>
         </nav>
 
+        {/* Billing footer: Subscription */}
+        <div className="border-t border-gray-100 px-2 pt-2 pb-1 shrink-0">
+          {(() => {
+            const isActive =
+              location.pathname === subscriptionItem.path ||
+              location.pathname.startsWith(subscriptionItem.path);
+            return (
+              <Link
+                to={subscriptionItem.path}
+                aria-label={collapsed ? subscriptionItem.name : undefined}
+                title={collapsed ? subscriptionItem.name : undefined}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
+                  isActive
+                    ? 'bg-blue-50 text-blue-600'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <CreditCard className="w-5 h-5 shrink-0" />
+                {!collapsed && <span className="text-sm font-medium">{subscriptionItem.name}</span>}
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
+                )}
+              </Link>
+            );
+          })()}
+        </div>
+
         {/* Footer: language + privacy */}
         {!collapsed && (
           <div className="px-4 pb-2 flex items-center justify-between shrink-0">
@@ -235,13 +264,6 @@ export default function DashboardLayout() {
                     >
                       <Store className="w-4 h-4 text-gray-400" />
                       শপ সেটিংস
-                    </button>
-                    <button
-                      onClick={() => { setShowShopPanel(false); navigate(`${appBasePath}/subscription`); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <CreditCard className="w-4 h-4 text-gray-400" />
-                      সাবস্ক্রিপশন
                     </button>
                   </div>
                   {/* Logout */}
