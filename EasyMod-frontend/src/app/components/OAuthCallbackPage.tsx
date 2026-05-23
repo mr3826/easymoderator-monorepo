@@ -3,16 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { handleMetaOAuthCallback } from '@/api/domains/meta-channels';
 
-/**
- * Popup landing page for Meta OAuth callback.
- * Facebook redirects here with ?code=&state= after user authorizes.
- *
- * Happy path  (popup): post OAUTH_SUCCESS to opener → opener handles
- *   the handshake → this window closes.
- *
- * Fallback (opener cleared by browser security or direct tab navigation):
- *   complete the OAuth exchange here, then navigate to /app/manage-shop/chat-settings.
- */
+// Same-origin signalling between the popup and the opener tab.
+// Facebook's COOP severs `window.opener` when the popup navigates to
+// facebook.com, so a BroadcastChannel that both windows subscribe to
+// is the only reliable channel back to the originating tab.
+const OAUTH_CHANNEL_NAME = 'easymod_oauth';
+
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
 
@@ -21,60 +17,51 @@ export default function OAuthCallbackPage() {
     const state = searchParams.get('state');
     const error = searchParams.get('error');
 
-    // ── Error case ────────────────────────────────────────────────────────────
+    const broadcast = (payload: Record<string, unknown>) => {
+      try {
+        const bc = new BroadcastChannel(OAUTH_CHANNEL_NAME);
+        bc.postMessage(payload);
+        bc.close();
+      } catch { /* BroadcastChannel unsupported — opener path handles it */ }
+    };
+
+    const closeOrRedirect = () => {
+      window.close();
+      // window.close() is a no-op when the browser blocks it; redirect ~120ms
+      // later if we're still here so the user lands on the dashboard instead of
+      // being stranded on the spinner.
+      setTimeout(() => {
+        if (!window.closed) {
+          window.location.href = '/app/manage-shop/chat-settings';
+        }
+      }, 120);
+    };
+
     if (error) {
+      broadcast({ type: 'OAUTH_ERROR', error });
       if (window.opener) {
         try {
           window.opener.postMessage({ type: 'OAUTH_ERROR', error }, window.location.origin);
-          window.close();
-          return;
-        } catch { /* opener from different origin — fall through */ }
+        } catch { /* opener from different origin — broadcast already sent */ }
       }
       sessionStorage.removeItem('easymod_oauth_channel_type');
       sessionStorage.removeItem('easymod_oauth_nonce');
-      window.location.href = '/app/manage-shop/chat-settings';
+      closeOrRedirect();
       return;
     }
 
     if (!code || !state) return;
 
-    // Reconnect flow (Phase 2): the opener stashes the channelId it wants to
-    // refresh under `easymod_oauth_channel_id` before opening the popup. We
-    // forward it back in the OAUTH_SUCCESS payload so the opener knows which
-    // channel record to update. Absent for fresh connections.
     const reconnectChannelId = sessionStorage.getItem('easymod_oauth_channel_id') || undefined;
+    const payload = { type: 'OAUTH_SUCCESS', code, state, channelId: reconnectChannelId };
 
-    // ── Happy path: popup with live opener ───────────────────────────────────
+    broadcast(payload);
     if (window.opener) {
       try {
-        window.opener.postMessage(
-          { type: 'OAUTH_SUCCESS', code, state, channelId: reconnectChannelId },
-          window.location.origin,
-        );
-        window.close();
-        return;
-      } catch { /* opener from different origin — fall through to self-complete */ }
+        window.opener.postMessage(payload, window.location.origin);
+      } catch { /* opener cross-origin — broadcast already delivered to the main tab */ }
     }
-
-    // ── Fallback: opener was cleared (cross-origin redirect security) ────────
-    // Complete the OAuth exchange in this tab directly.
-    sessionStorage.removeItem('easymod_oauth_channel_type');
-    sessionStorage.removeItem('easymod_oauth_nonce');
-    sessionStorage.removeItem('easymod_oauth_channel_id');
-
-    handleMetaOAuthCallback(code, state)
-      .catch((err: unknown) => {
-        // Surface the failure on the channels page instead of silently redirecting.
-        // The channels page reads and clears this key on mount.
-        const message =
-          (err as any)?.response?.data?.error?.message ||
-          (err as any)?.message ||
-          'Failed to connect your account. Please try again.';
-        sessionStorage.setItem('oauth_error', message);
-      })
-      .finally(() => {
-        window.location.href = '/app/manage-shop/chat-settings';
-      });
+    closeOrRedirect();
   }, []);
 
   return (

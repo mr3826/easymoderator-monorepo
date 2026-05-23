@@ -199,23 +199,26 @@ export default function ChatSettings() {
       );
       setActiveOAuth({ platform, step: "connecting" });
 
-      const handler = (e: MessageEvent) => {
-        if (e.origin !== window.location.origin) return;
-        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+      const bc = new BroadcastChannel("easymod_oauth");
+      const cleanup = () => {
+        window.removeEventListener("message", handler);
+        bc.close();
+        oauthListenerRef.current = null;
+        oauthInProgressRef.current = false;
+      };
 
-        if (e.data?.type === "OAUTH_SUCCESS") {
+      const processPayload = (data: any) => {
+        if (data?.type === "OAUTH_SUCCESS") {
           const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          if (expectedNonce && e.data.state !== expectedNonce) {
+          if (expectedNonce && data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
             setActiveOAuth(null);
-            oauthInProgressRef.current = false;
-            window.removeEventListener("message", handler);
-            oauthListenerRef.current = null;
+            cleanup();
             return;
           }
 
-          handleMetaOAuthCallback(e.data.code, e.data.state)
+          handleMetaOAuthCallback(data.code, data.state)
             .then((result) => {
               setAvailablePages(result.pages);
               setSelectedPageIds(new Set());
@@ -226,15 +229,20 @@ export default function ChatSettings() {
               toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
               setActiveOAuth(null);
             });
-        } else if (e.data?.type === "OAUTH_ERROR") {
+        } else if (data?.type === "OAUTH_ERROR") {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          toast.error(e.data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
+          toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
           setActiveOAuth(null);
         }
-        window.removeEventListener("message", handler);
-        oauthListenerRef.current = null;
-        oauthInProgressRef.current = false;
+        cleanup();
       };
+
+      const handler = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
+        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+        processPayload(e.data);
+      };
+      bc.onmessage = (e) => processPayload(e.data);
       oauthListenerRef.current = handler;
       window.addEventListener("message", handler);
     } catch {
@@ -268,23 +276,26 @@ export default function ChatSettings() {
       );
       setActiveOAuth({ platform: "unified", step: "connecting" });
 
-      const handler = (e: MessageEvent) => {
-        if (e.origin !== window.location.origin) return;
-        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+      const bc = new BroadcastChannel("easymod_oauth");
+      const cleanup = () => {
+        window.removeEventListener("message", handler);
+        bc.close();
+        oauthListenerRef.current = null;
+        oauthInProgressRef.current = false;
+      };
 
-        if (e.data?.type === "OAUTH_SUCCESS") {
+      const processPayload = (data: any) => {
+        if (data?.type === "OAUTH_SUCCESS") {
           const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          if (expectedNonce && e.data.state !== expectedNonce) {
+          if (expectedNonce && data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
             setActiveOAuth(null);
-            oauthInProgressRef.current = false;
-            window.removeEventListener("message", handler);
-            oauthListenerRef.current = null;
+            cleanup();
             return;
           }
 
-          handleMetaUnifiedOAuthCallback(e.data.code, e.data.state)
+          handleMetaUnifiedOAuthCallback(data.code, data.state)
             .then((result) => {
               const fbEntries: PickerEntry[] = result.facebookPages.map((p) => ({
                 id: p.id,
@@ -311,15 +322,20 @@ export default function ChatSettings() {
               toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
               setActiveOAuth(null);
             });
-        } else if (e.data?.type === "OAUTH_ERROR") {
+        } else if (data?.type === "OAUTH_ERROR") {
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          toast.error(e.data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
+          toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
           setActiveOAuth(null);
         }
-        window.removeEventListener("message", handler);
-        oauthListenerRef.current = null;
-        oauthInProgressRef.current = false;
+        cleanup();
       };
+
+      const handler = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
+        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+        processPayload(e.data);
+      };
+      bc.onmessage = (e) => processPayload(e.data);
       oauthListenerRef.current = handler;
       window.addEventListener("message", handler);
     } catch {
