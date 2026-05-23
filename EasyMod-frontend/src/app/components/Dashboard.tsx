@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Bot, CheckCircle2, Clock4, Loader2, Wallet } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Clock4, Loader2, Truck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+
+type CashPosition = {
+  inTransit: { amount: number; count: number };
+  atRisk:    { amount: number; count: number; windowDays: number };
+};
 
 type PulseData = {
   todaySales: number;
@@ -13,7 +18,41 @@ type PulseData = {
   needsAttention: number;
   atRiskCount: number;
   lastFiveOrders: Awaited<ReturnType<typeof apiClient.getOrders>>;
+  cashPosition: CashPosition | null;
 };
+
+type CashPositionCardProps = {
+  label: string;
+  subLabel: string;
+  amount: number;
+  count: number;
+  icon: typeof Truck;
+  accent: "neutral" | "warning";
+  onClick: () => void;
+  formatCurrency: (v: number) => string;
+};
+
+function CashPositionCard({ label, subLabel, amount, count, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
+  const accentClass = accent === "warning"
+    ? "bg-red-50 border-red-200"
+    : "bg-card border-border";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${accentClass} min-h-[112px] rounded-2xl border p-4 text-left`}
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <Icon className="h-5 w-5 text-gray-700" />
+        <span className="text-xs font-medium text-muted-foreground">{subLabel}</span>
+      </div>
+      <p className="text-2xl font-black text-foreground md:text-3xl">{formatCurrency(amount)}</p>
+      <p className="mt-1 text-sm font-semibold text-muted-foreground">
+        {label} · {count} অর্ডার
+      </p>
+    </button>
+  );
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -99,6 +138,7 @@ export default function Dashboard() {
         needsAttention: (queue?.unread_count || 0) + (queue?.pending_payment_count || 0),
         atRiskCount: queue?.at_risk_orders?.length || 0,
         lastFiveOrders: todayOrders,
+        cashPosition: metrics?.cashPosition ?? null,
       });
       setLastUpdatedAt(new Date());
     } catch (loadError: unknown) {
@@ -224,6 +264,35 @@ export default function Dashboard() {
             </button>
           );
         })}
+      </section>
+
+      <section className="mb-4">
+        <div className="mb-2 flex items-end justify-between">
+          <h2 className="text-base font-bold text-foreground">ক্যাশ পজিশন</h2>
+          <span className="text-xs font-medium text-muted-foreground">Cash Position</span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <CashPositionCard
+            label="কুরিয়ারে আটকে আছে"
+            subLabel="Cash in Transit"
+            amount={pulseData.cashPosition?.inTransit.amount ?? 0}
+            count={pulseData.cashPosition?.inTransit.count ?? 0}
+            icon={Truck}
+            accent="neutral"
+            onClick={() => navigate("/app/orders")}
+            formatCurrency={formatCurrency}
+          />
+          <CashPositionCard
+            label="ফেরত আসছে"
+            subLabel={`At Risk · ${pulseData.cashPosition?.atRisk.windowDays ?? 30} days`}
+            amount={pulseData.cashPosition?.atRisk.amount ?? 0}
+            count={pulseData.cashPosition?.atRisk.count ?? 0}
+            icon={AlertTriangle}
+            accent="warning"
+            onClick={() => navigate("/app/orders")}
+            formatCurrency={formatCurrency}
+          />
+        </div>
       </section>
 
       <section className="mb-4 rounded-2xl border border-border bg-card p-4">
