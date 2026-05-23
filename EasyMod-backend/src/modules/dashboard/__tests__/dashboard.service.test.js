@@ -25,7 +25,7 @@ jest.mock('../../entities', () => ({
 
 jest.mock('../../../utils/cache.service', () => ({
     getForShop: jest.fn(),
-    setForShop: jest.fn()
+    setForShop: jest.fn().mockResolvedValue(undefined)
 }));
 
 const { Order, Product, Channel, Analytics } = require('../../entities');
@@ -120,7 +120,7 @@ describe('Dashboard Service', () => {
 
         it('should calculate weekly change correctly', async () => {
             cacheService.getForShop.mockResolvedValue(null);
-            
+
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
             Order.count
@@ -134,6 +134,86 @@ describe('Dashboard Service', () => {
 
             // (20 - 16) / 16 * 100 = 25%
             expect(result.metrics.weeklyChange).toBe(25);
+        });
+
+        it('should return cashPosition with inTransit and atRisk aggregates', async () => {
+            cacheService.getForShop.mockResolvedValue(null);
+
+            Analytics.sum.mockResolvedValue(0);
+            Product.count.mockResolvedValue(0);
+            Channel.count.mockResolvedValue(0);
+            Analytics.findOne.mockResolvedValue(null);
+            // Existing dashboard count calls (ordersToday, ordersInPeriod, ordersLastPeriod) return 0
+            Order.count.mockResolvedValue(0);
+
+            // Two new findAll calls — inTransit row, then atRisk row.
+            Order.findAll
+                .mockResolvedValueOnce([{ amount: '1500.00', count: '3' }])  // inTransit
+                .mockResolvedValueOnce([{ amount: '700.50',  count: '2' }]); // atRisk
+
+            const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
+
+            expect(result.cashPosition).toEqual({
+                inTransit: { amount: 1500,   count: 3 },
+                atRisk:    { amount: 700.5,  count: 2, windowDays: 30 }
+            });
+        });
+
+        it('should default cashPosition to zeros when no orders match', async () => {
+            cacheService.getForShop.mockResolvedValue(null);
+            Analytics.sum.mockResolvedValue(0);
+            Product.count.mockResolvedValue(0);
+            Channel.count.mockResolvedValue(0);
+            Analytics.findOne.mockResolvedValue(null);
+            Order.count.mockResolvedValue(0);
+
+            // Empty aggregate rows
+            Order.findAll
+                .mockResolvedValueOnce([{ amount: null, count: '0' }])
+                .mockResolvedValueOnce([{ amount: null, count: '0' }]);
+
+            const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
+
+            expect(result.cashPosition).toEqual({
+                inTransit: { amount: 0, count: 0 },
+                atRisk:    { amount: 0, count: 0, windowDays: 30 }
+            });
+        });
+
+        it('should query inTransit with the four active delivery statuses', async () => {
+            cacheService.getForShop.mockResolvedValue(null);
+            Analytics.sum.mockResolvedValue(0);
+            Product.count.mockResolvedValue(0);
+            Channel.count.mockResolvedValue(0);
+            Analytics.findOne.mockResolvedValue(null);
+            Order.count.mockResolvedValue(0);
+            Order.findAll.mockResolvedValue([{ amount: 0, count: 0 }]);
+
+            await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
+
+            const inTransitCall = Order.findAll.mock.calls[0][0];
+            const statuses = inTransitCall.where.delivery_status[Object.getOwnPropertySymbols(inTransitCall.where.delivery_status)[0]];
+            expect(statuses).toEqual(['booked', 'picked_up', 'in_transit', 'out_for_delivery']);
+            expect(inTransitCall.where.shop_id).toBe(mockShopId);
+        });
+
+        it('should query atRisk with failed_delivery and returned statuses within 30 days', async () => {
+            cacheService.getForShop.mockResolvedValue(null);
+            Analytics.sum.mockResolvedValue(0);
+            Product.count.mockResolvedValue(0);
+            Channel.count.mockResolvedValue(0);
+            Analytics.findOne.mockResolvedValue(null);
+            Order.count.mockResolvedValue(0);
+            Order.findAll.mockResolvedValue([{ amount: 0, count: 0 }]);
+
+            await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
+
+            const atRiskCall = Order.findAll.mock.calls[1][0];
+            const statuses = atRiskCall.where.delivery_status[Object.getOwnPropertySymbols(atRiskCall.where.delivery_status)[0]];
+            expect(statuses).toEqual(['failed_delivery', 'returned']);
+            expect(atRiskCall.where.shop_id).toBe(mockShopId);
+            // updated_at filter must be present (30-day window)
+            expect(atRiskCall.where.updated_at).toBeDefined();
         });
     });
 

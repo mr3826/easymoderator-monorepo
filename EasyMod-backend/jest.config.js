@@ -39,7 +39,6 @@ module.exports = {
         'src/modules/notification/__tests__/notification.api.integration.test.js',
         'src/modules/notification/__tests__/notification.controller.test.js',
         'src/modules/customer/__tests__/customer.service.test.js',
-        'src/modules/dashboard/__tests__/dashboard.service.test.js',
     ],
     moduleNameMapper: {
         '^src/(.*)$': '<rootDir>/src/$1',
