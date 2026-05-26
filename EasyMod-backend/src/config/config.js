@@ -91,6 +91,13 @@ module.exports = {
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     sessionSecret: process.env.SESSION_SECRET,
     metaWebhookAppSecret: process.env.META_WEBHOOK_APP_SECRET,
+    // Global verify token used by Meta App Dashboard when configuring the webhook
+    // subscription (the single GET /webhooks/meta?hub.challenge handshake at
+    // dashboard-config time). Per-channel webhook_verify_token rows in
+    // meta_channels are unrelated — they were a Phase-1 artefact and don't match
+    // what the App Dashboard sends. Without this fallback, App Review fails the
+    // webhook setup step.
+    metaWebhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN,
     metaAppId: process.env.META_APP_ID,
     metaAppSecret: process.env.META_APP_SECRET,
     metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI

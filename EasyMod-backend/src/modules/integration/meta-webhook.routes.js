@@ -93,6 +93,23 @@ router.get('/', async (req, res) => {
         return res.sendStatus(403);
     }
 
+    // Path 1 — global App Dashboard verify token. This is what Meta sends when
+    // the founder clicks "Verify and Save" in the App Dashboard webhook config.
+    // Constant-time compare so a length / content side-channel can't be used to
+    // brute-force the token.
+    const globalToken = config.metaWebhookVerifyToken;
+    if (globalToken) {
+        try {
+            const a = Buffer.from(verifyToken);
+            const b = Buffer.from(globalToken);
+            if (a.length === b.length && crypto.timingSafeEqual(a, b)) {
+                return res.status(200).send(challenge);
+            }
+        } catch (_) { /* fall through to per-channel lookup */ }
+    }
+
+    // Path 2 — per-channel verify token (Phase-1 artefact, retained for any
+    // legacy direct subscriptions that still use it).
     try {
         const MetaChannel = require('../channel-providers/meta-channel.entity');
         const channel = await MetaChannel.findOne({

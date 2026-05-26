@@ -148,7 +148,7 @@ Required before submitting any new permission to Meta for review:
 
 - [ ] Privacy Policy live at `/privacy-policy` route ✅
 - [ ] Terms of Service live at `/terms` route ✅
-- [ ] Data Deletion Callback endpoint live: `POST /api/webhooks/data-deletion`
+- [ ] Data Deletion Callback endpoint live: `POST /api/webhooks/meta/data-deletion`
 - [ ] Webhook verification (`hub.challenge` response) tested ✅
 - [ ] All requested permissions have written use case justifications (in PR description)
 - [ ] No test/sandbox data visible in production screenshots

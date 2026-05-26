@@ -87,7 +87,6 @@ export interface MetaUnifiedCallbackResult {
 }
 
 export interface MetaConnectAssetResult extends MetaChannel {
-  webhookSubscribed: boolean;
   webhookWarning: string | null;
 }
 
