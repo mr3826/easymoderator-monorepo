@@ -57,11 +57,32 @@ class AppError extends Error {
   }
 }
 
+// Map a Sequelize ValidationError / UniqueConstraintError to an AppError that
+// carries the *actual* offending field(s) instead of the generic
+// "Validation error" parent message. Without this the global handler buried
+// the err.errors[] array and returned an opaque 500, making field-level
+// constraint failures hours of log-diving to diagnose (see migration 018).
+function tryMapSequelizeError(err) {
+  if (!err || err.name !== 'SequelizeValidationError' && err.name !== 'SequelizeUniqueConstraintError') return null;
+  const items = Array.isArray(err.errors) ? err.errors : [];
+  const fieldSummary = items
+    .map(e => e.path ? `${e.path}: ${e.message}` : e.message)
+    .filter(Boolean)
+    .join('; ') || err.message || 'Validation failed';
+  const status = err.name === 'SequelizeUniqueConstraintError' ? 409 : 400;
+  const code = err.name === 'SequelizeUniqueConstraintError' ? 'UNIQUE_VIOLATION' : 'VALIDATION_ERROR';
+  return new AppError(fieldSummary, status, code, {
+    originalError: err.name,
+    fields: items.map(e => ({ path: e.path, message: e.message, validatorKey: e.validatorKey })),
+  });
+}
+
 const globalErrorHandler = (err, req, res, next) => {
   const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
   let appError = err;
   if (!(err instanceof AppError)) {
-    appError = new AppError(err.message || 'Internal Server Error', err.status || 500, 'INTERNAL_ERROR', { originalError: err.name });
+    appError = tryMapSequelizeError(err)
+      || new AppError(err.message || 'Internal Server Error', err.status || 500, 'INTERNAL_ERROR', { originalError: err.name });
   }
   const statusCode = appError.status || 500;
   const logContext = { ...appError.getFullContext(), requestId, method: req.method, url: req.originalUrl, clientIp: req.ip };

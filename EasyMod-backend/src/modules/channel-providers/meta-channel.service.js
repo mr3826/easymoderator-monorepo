@@ -150,7 +150,20 @@ class MetaChannelService {
             return channel;
         } catch (err) {
             await transaction.rollback();
-            logger.error('MetaChannelService.upsertFromOAuth: failed', { error: err.message, shopId, platform });
+            // Expand Sequelize ValidationError/UniqueConstraintError so the
+            // log line names the offending field instead of the parent
+            // "Validation error" summary, which is useless on its own.
+            const fields = Array.isArray(err.errors)
+                ? err.errors.map(e => ({ path: e.path, message: e.message, validatorKey: e.validatorKey }))
+                : undefined;
+            logger.error('MetaChannelService.upsertFromOAuth: failed', {
+                error: err.message,
+                errorName: err.name,
+                fields,
+                shopId,
+                platform,
+                metaAssetId,
+            });
             throw err;
         }
     }
