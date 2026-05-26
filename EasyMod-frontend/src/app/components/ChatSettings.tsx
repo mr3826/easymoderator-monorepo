@@ -133,7 +133,13 @@ export default function ChatSettings() {
       setIsLoading(true);
       setLoadError(null);
       const fetched = await listMetaChannels();
-      setChannels(fetched.filter((c) => c.platform === "facebook" || c.platform === "instagram"));
+      setChannels(
+        fetched.filter(
+          (c) =>
+            (c.platform === "facebook" || c.platform === "instagram") &&
+            c.status !== "DISCONNECTED",
+        ),
+      );
     } catch (error: any) {
       const code = error.response?.data?.error?.code;
       const rawMsg = error.response?.data?.error?.message || "";
@@ -466,22 +472,15 @@ export default function ChatSettings() {
       ? "bg-red-50 text-red-700"
       : "bg-green-50 text-green-700";
 
-  // Group connected channels by platform. Each platform renders a section
-  // with one card per connected channel plus an "Add another" tile. When no
-  // channels are connected for a platform, the single card becomes the
-  // first-time-connect CTA (with permissions disclosure).
+  // Group connected channels by platform. Platforms with zero channels are
+  // skipped — first-time and additional adds both go through the unified
+  // "Connect Messenger + Instagram" button at the top of the page.
   type CardEntry = { channel: MetaChannel | null; isAddTile: boolean };
   const platformSections = PLATFORMS.map((platform) => {
     const platformChannels = channels.filter((c) => c.platform === platform.id);
-    const cards: CardEntry[] =
-      platformChannels.length > 0
-        ? [
-            ...platformChannels.map((c) => ({ channel: c, isAddTile: false })),
-            { channel: null, isAddTile: true },
-          ]
-        : [{ channel: null, isAddTile: false }];
+    const cards: CardEntry[] = platformChannels.map((c) => ({ channel: c, isAddTile: false }));
     return { platform, platformChannels, cards };
-  });
+  }).filter(({ cards }) => cards.length > 0);
 
   // Asset IDs already connected — used to disable those rows in the page
   // picker. Per-platform flow filters to the active platform; unified flow
@@ -639,7 +638,7 @@ export default function ChatSettings() {
         </div>
       )}
 
-      {!isLoading && !loadError && !activeOAuth && channels.length === 0 && (
+      {!isLoading && !loadError && !activeOAuth && (
         <button
           onClick={handleConnectUnified}
           className="w-full rounded-xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 to-pink-50 hover:from-blue-100 hover:to-pink-100 p-4 flex items-center justify-center gap-3 transition-colors"

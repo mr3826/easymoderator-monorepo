@@ -120,8 +120,11 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
 
     const provider = getProvider(platform === 'instagram' ? 'instagram' : 'facebook');
 
-    // Get page-specific access token
-    const { token: pageToken, expiresAt } = await provider.getAssetAccessToken({
+    // Get page-specific access token.
+    // MetaInstagramProvider.getAssetAccessToken also returns linkedFbPageId (the
+    // parent Facebook Page ID required for IG webhook subscription).
+    // MetaMessengerProvider returns { token, expiresAt } with no linkedFbPageId.
+    const { token: pageToken, expiresAt, linkedFbPageId = null } = await provider.getAssetAccessToken({
         assetId,
         userToken: tempToken,
     });
@@ -134,6 +137,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         displayName,
         pageAccessToken: pageToken,
         tokenExpiresAt: expiresAt,
+        linkedFbPageId,          // null for FB pages; parent Page ID for IG accounts
         connectedByUserId: userId,
     });
 

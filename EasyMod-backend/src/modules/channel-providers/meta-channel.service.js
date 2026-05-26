@@ -18,6 +18,7 @@ const { sequelize } = require('../../utils/database/database-setup');
 const MetaChannel = require('./meta-channel.entity');
 const MetaChannelSettings = require('./meta-channel-settings.entity');
 const { createLogger } = require('../../utils/structured-logger');
+const { drainChannelJobs } = require('../../jobs/message-queue');
 
 const logger = createLogger('MetaChannelService');
 
@@ -302,8 +303,9 @@ class MetaChannelService {
     }
 
     /**
-     * Disconnect a channel: set status to DISCONNECTED and clear the stored token.
-     * The row is preserved for audit history.
+     * Disconnect a channel: set status to DISCONNECTED, clear the stored token,
+     * and drain any pending message-processing queue jobs for this channel so
+     * they don't keep retrying with a now-cleared token until they hit the DLQ.
      *
      * @param {string} channelId
      * @returns {Promise<MetaChannel>}
@@ -317,7 +319,16 @@ class MetaChannelService {
         channel.disconnected_at = new Date();
         channel.last_error = null;
         await channel.save();
-        logger.info('MetaChannelService.disconnect', { channelId });
+
+        // Best-effort: drain queued jobs for this channel. Non-fatal — if Redis
+        // is temporarily unavailable the disconnect still succeeds and the jobs
+        // will simply fail on their next attempt with a token-absent error.
+        const { removed } = await drainChannelJobs({
+            metaChannelId: channel.id,
+            shopId: channel.shop_id,
+            platform: channel.platform,
+        });
+        logger.info('MetaChannelService.disconnect', { channelId, queueJobsDrained: removed });
         return channel;
     }
 

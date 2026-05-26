@@ -48,4 +48,63 @@ messageQueue.on('error', (err) => {
     console.error('[messageQueue] Queue error:', err.message);
 });
 
-module.exports = { messageQueue, connection };
+/**
+ * Drain all pending (waiting + delayed) message-processing jobs that belong to
+ * a specific channel. Called when a channel is disconnected so queued jobs
+ * don't keep retrying with a now-cleared token.
+ *
+ * Match strategy: primary key `metaChannelId` in job data (set by the webhook
+ * dispatcher for all jobs since Phase 1). Legacy jobs that pre-date the FK
+ * threading carry only `shopId + platform`; those are matched via the
+ * `shopId + platform` fallback pair so they are also cleaned up.
+ *
+ * @param {object} params
+ * @param {string} params.metaChannelId  - UUID primary key of the MetaChannel row
+ * @param {string} params.shopId         - Multi-tenant guard / fallback matcher
+ * @param {'facebook'|'instagram'} params.platform - Fallback matcher for legacy jobs
+ * @returns {Promise<{ removed: number }>}
+ */
+async function drainChannelJobs({ metaChannelId, shopId, platform }) {
+    try {
+        const states = ['waiting', 'delayed', 'prioritized'];
+        const jobs = await messageQueue.getJobs(states, 0, -1);
+        let removed = 0;
+        await Promise.all(
+            jobs.map(async (job) => {
+                const d = job.data || {};
+                // Primary match: job payload carries the channel's primary key UUID.
+                const matchesPk =
+                    metaChannelId && d.metaChannelId === metaChannelId;
+                // Legacy fallback: pre-Phase-1 jobs have no metaChannelId in their
+                // payload. Match only when the job itself has no metaChannelId AND
+                // the shopId+platform pair matches.  Jobs that DO carry a different
+                // metaChannelId belong to a different channel and must be left alone.
+                const jobHasChannelId = Boolean(d.metaChannelId);
+                const matchesLegacy =
+                    !matchesPk && !jobHasChannelId &&
+                    shopId && platform &&
+                    d.shopId === shopId &&
+                    (d.platform === platform || (platform === 'facebook' && d.platform === 'messenger'));
+                if (matchesPk || matchesLegacy) {
+                    try {
+                        await job.remove();
+                        removed++;
+                    } catch (removeErr) {
+                        // Job may have moved to active between the list and remove — ignore.
+                        console.warn(`[messageQueue] drainChannelJobs: could not remove job ${job.id}: ${removeErr.message}`);
+                    }
+                }
+            }),
+        );
+        if (removed > 0) {
+            console.log(`[messageQueue] drainChannelJobs: removed ${removed} pending job(s) for channel ${metaChannelId}`);
+        }
+        return { removed };
+    } catch (err) {
+        // Non-fatal: if Redis is down during a disconnect we don't want to block the disconnect itself.
+        console.error(`[messageQueue] drainChannelJobs failed (non-fatal): ${err.message}`);
+        return { removed: 0 };
+    }
+}
+
+module.exports = { messageQueue, connection, drainChannelJobs };
