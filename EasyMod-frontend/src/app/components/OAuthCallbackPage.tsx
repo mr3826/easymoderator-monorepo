@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { handleMetaOAuthCallback } from '@/api/domains/meta-channels';
 
 // Same-origin signalling between the popup and the opener tab.
 // Facebook's COOP severs `window.opener` when the popup navigates to

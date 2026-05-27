@@ -102,15 +102,39 @@ class MetaMessengerProvider extends ChannelProvider {
 
     async listManagedAssets({ userToken }) {
         try {
-            const resp = await axios.get(`${GRAPH_BASE}/me/accounts`, {
-                params: {
-                    fields: 'id,name,category,picture{url},instagram_business_account{id,name,username}',
-                    access_token: userToken,
-                    appsecret_proof: appsecretProof(userToken)
+            // Fetch all pages the user manages, following pagination cursors.
+            // Without limit=100, Meta uses a server-side default (often 10–25) that
+            // silently truncates merchants who manage many pages — producing an empty
+            // or partial picker. We follow `paging.next` until exhausted.
+            const fields = 'id,name,category,picture{url},instagram_business_account{id,name,username}';
+            const allRaw = [];
+
+            let url = `${GRAPH_BASE}/me/accounts`;
+            let params = {
+                fields,
+                limit: 100,
+                access_token: userToken,
+                appsecret_proof: appsecretProof(userToken),
+            };
+
+            while (url) {
+                const resp = await axios.get(url, { params });
+                const batch = resp.data?.data || [];
+                allRaw.push(...batch);
+
+                // Follow cursor-based pagination if Meta signals more pages exist.
+                const next = resp.data?.paging?.next;
+                if (next && batch.length > 0) {
+                    // The `next` URL already contains all params (including access_token
+                    // and appsecret_proof), so pass it as-is without extra params.
+                    url = next;
+                    params = {};
+                } else {
+                    url = null;
                 }
-            });
-            const pages = resp.data?.data || [];
-            return pages.map(p => ({
+            }
+
+            return allRaw.map(p => ({
                 id: p.id,
                 name: p.name,
                 category: p.category || null,

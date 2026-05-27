@@ -3,14 +3,18 @@
  *
  * Unit tests for the Facebook Messenger provider — focused on pure functions
  * that don't require Meta API access: webhook parsing, signature verification,
- * webhook field list, and the abstract-class contract.
+ * webhook field list, pagination in listManagedAssets, and the abstract-class
+ * contract.
  */
 
 'use strict';
 
 const crypto = require('crypto');
+const axios = require('axios');
 const MetaMessengerProvider = require('../providers/MetaMessengerProvider');
 const ChannelProvider = require('../ChannelProvider');
+
+jest.mock('axios');
 
 describe('MetaMessengerProvider', () => {
     let provider;
@@ -173,6 +177,84 @@ describe('MetaMessengerProvider', () => {
                 }]
             });
             expect(events).toEqual([]);
+        });
+    });
+
+    describe('listManagedAssets() pagination', () => {
+        beforeEach(() => {
+            process.env.META_APP_SECRET = 'test-secret';
+            process.env.META_APP_ID = 'test-app-id';
+        });
+
+        afterEach(() => {
+            jest.resetAllMocks();
+        });
+
+        test('returns all pages from a single-page response (no next cursor)', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P1', name: 'Page 1', category: 'Shopping', picture: { data: { url: 'http://img/1' } }, instagram_business_account: null },
+                        { id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: { id: 'IG2', name: 'Shop IG', username: 'shopig' } },
+                    ],
+                    paging: { cursors: { before: 'abc', after: 'def' } }
+                    // No `next` key — signals last page
+                }
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
+
+            expect(result).toHaveLength(2);
+            expect(result[0]).toMatchObject({ id: 'P1', name: 'Page 1', pictureUrl: 'http://img/1', instagramAccount: null });
+            expect(result[1]).toMatchObject({
+                id: 'P2',
+                instagramAccount: { id: 'IG2', name: 'Shop IG', username: 'shopig' }
+            });
+            // Should only call the API once (no pagination needed)
+            expect(axios.get).toHaveBeenCalledTimes(1);
+            // Must include limit=100 to avoid server-side truncation
+            expect(axios.get).toHaveBeenCalledWith(
+                expect.stringContaining('/me/accounts'),
+                expect.objectContaining({ params: expect.objectContaining({ limit: 100 }) })
+            );
+        });
+
+        test('follows pagination cursor when next page exists', async () => {
+            // First page — signals more pages via `next`
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 'P1', name: 'Page 1', category: null, picture: null, instagram_business_account: null }],
+                    paging: { next: 'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR' }
+                }
+            });
+            // Second page — no `next`, pagination ends
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: null }],
+                    paging: { cursors: { before: 'x', after: 'y' } }
+                }
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_xyz' });
+
+            expect(result).toHaveLength(2);
+            expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
+            expect(axios.get).toHaveBeenCalledTimes(2);
+            // Second call uses the `next` URL directly (no extra params)
+            expect(axios.get).toHaveBeenNthCalledWith(
+                2,
+                'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR',
+                { params: {} }
+            );
+        });
+
+        test('returns empty array when me/accounts returns no pages', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+            const result = await provider.listManagedAssets({ userToken: 'tok_empty' });
+            expect(result).toEqual([]);
+            expect(axios.get).toHaveBeenCalledTimes(1);
         });
     });
 });
