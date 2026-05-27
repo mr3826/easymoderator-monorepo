@@ -613,7 +613,7 @@ const getAIDiagnostics = async (req, res, next) => {
 
         // All connected channels + their settings (backfill missing rows idempotently)
         const channels = await MetaChannel.findAll({
-            where: { shop_id: shopId, status: 'connected' },
+            where: { shop_id: shopId, status: 'CONNECTED' },
             attributes: ['id', 'display_name', 'platform', 'page_access_token'],
         });
         const channelDiagnostics = await Promise.all(channels.map(async (ch) => {

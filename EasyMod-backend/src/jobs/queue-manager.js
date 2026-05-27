@@ -121,6 +121,12 @@ class QueueManager {
             });
         }
 
+        // Start the AI message-processing worker. Must be registered AFTER the generic
+        // event-listener loop above so its own detailed listeners (set inside startWorker)
+        // are not overridden by the generic ones.
+        const { startWorker: startMessageProcessingWorker } = require('./message-worker');
+        this.workers.messageProcessing = startMessageProcessingWorker();
+
         console.log('✅ Job queues initialized with BullMQ');
     }
 
