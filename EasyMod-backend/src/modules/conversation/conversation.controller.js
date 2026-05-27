@@ -66,8 +66,18 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
             return;
         }
 
-        const normalizedMessage = { text: content, attachments: [], platform, direction: 'outbound', senderRole: 'agent' };
-        const policyCtx = { shopId, channelId: metaChannel.id, recipientId, channel: metaChannel };
+        const normalizedMessage = {
+            text: content, attachments: [], platform, direction: 'outbound', senderRole: 'agent',
+            policy: { messageTag: 'HUMAN_AGENT' }, // human agent replies are allowed outside the 24h window
+        };
+        const policyCtx = {
+            shopId,
+            channelId: metaChannel.id,
+            recipientId,
+            channel: metaChannel,
+            customer: conversation.customer, // already loaded via include above
+            platform,
+        };
         const decision = await policyEngine.evaluateOutbound(normalizedMessage, policyCtx);
         if (!decision.allow) {
             failureReason = `Message blocked by policy: ${decision.reason}`;

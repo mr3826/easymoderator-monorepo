@@ -147,16 +147,8 @@ async function processMessageJob(job) {
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
 
     // ── Guard 3: AI pause (30-min mute when agent sends manually) ──────────
-    // If HITL is off the agent has stepped back — clear any stale pause key so
-    // AI replies immediately rather than waiting out the remainder of the timer.
     const paused = await cacheRedis.get(`ai:pause:${conversationId}`);
-    if (paused) {
-        if (!conversation.hitl) {
-            await cacheRedis.del(`ai:pause:${conversationId}`).catch(() => {});
-        } else {
-            return { skipped: true, reason: 'ai_paused' };
-        }
-    }
+    if (paused) return { skipped: true, reason: 'ai_paused' };
 
     // ── Guard 4: Automation mode ────────────────────────────────────────────
     const [shopAISettings, channelAISettings] = await Promise.all([
@@ -265,8 +257,12 @@ async function processMessageJob(job) {
     // 'messenger' and 'instagram' rows (two-row-per-channel design, locked
     // 2026-05-22). Without it findOne returns an arbitrary row and the 24h
     // window / opt-out checks read consent for the wrong platform.
+    // Customers are stored with channel_type='messenger' for Facebook (mirrors
+    // the webhook handler mapping: facebook→messenger). The job platform is
+    // already normalised to 'facebook', so we reverse the mapping here.
+    const customerChannelType = platform === 'facebook' ? 'messenger' : platform;
     const customer = await Customer.findOne({
-        where: { shop_id: shopId, channel_type: platform, channel_user_id: String(recipientId) },
+        where: { shop_id: shopId, channel_type: customerChannelType, channel_user_id: String(recipientId) },
     }).catch(() => null);
     const channel = jobChannel;
     let channelSettings = aiSettings;
