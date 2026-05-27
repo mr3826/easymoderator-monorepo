@@ -603,6 +603,69 @@ const updatePlatformPriority = async (req, res, next) => {
     }
 };
 
+const getAIDiagnostics = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        const { MetaChannel, MetaChannelSettings, PolicyDecision } = require('../entities');
+
+        // Shop-level effective AI settings
+        const shopAI = await shopService.getShopAiSettings(shopId);
+
+        // All connected channels + their settings (backfill missing rows idempotently)
+        const channels = await MetaChannel.findAll({
+            where: { shop_id: shopId, status: 'connected' },
+            attributes: ['id', 'display_name', 'platform', 'page_access_token'],
+        });
+        const channelDiagnostics = await Promise.all(channels.map(async (ch) => {
+            const [settings] = await MetaChannelSettings.findOrCreate({
+                where: { channel_id: ch.id },
+                defaults: { channel_id: ch.id },
+            });
+            return {
+                channel_id: ch.id,
+                display_name: ch.display_name,
+                platform: ch.platform,
+                token_present: !!ch.page_access_token,
+                ai_auto_reply: settings.ai_auto_reply,
+                automation_mode: settings.automation_mode,
+            };
+        }));
+
+        // Last 5 policy decisions for this shop (shows what's blocking)
+        const decisions = await PolicyDecision.findAll({
+            where: { shop_id: shopId },
+            order: [['created_at', 'DESC']],
+            limit: 5,
+            attributes: ['allow', 'reason', 'platform', 'created_at'],
+        });
+
+        // BullMQ queue stats
+        let queueStats = null;
+        try {
+            const { messageQueue } = require('../../jobs/message-queue');
+            queueStats = await messageQueue.getJobCounts('waiting', 'active', 'failed', 'delayed');
+        } catch (_) { /* Redis unavailable */ }
+
+        res.json({
+            success: true,
+            data: {
+                worker_queue: queueStats,
+                shop_automation_mode: shopAI.automation_mode,
+                shop_auto_reply_enabled: shopAI.auto_reply_enabled,
+                channels: channelDiagnostics,
+                recent_policy_decisions: decisions.map(d => ({
+                    allow: d.allow,
+                    reason: d.reason,
+                    platform: d.platform,
+                    created_at: d.created_at,
+                })),
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getUserShops,
     getShop,
@@ -626,5 +689,6 @@ module.exports = {
     updateBdSettings,
     getShopAgents,
     getPlatformPriority,
-    updatePlatformPriority
+    updatePlatformPriority,
+    getAIDiagnostics,
 };

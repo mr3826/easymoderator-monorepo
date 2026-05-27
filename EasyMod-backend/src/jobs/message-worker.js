@@ -160,6 +160,12 @@ async function processMessageJob(job) {
         return { skipped: true, reason: 'manual_mode' };
     }
 
+    // ── Guard 4b: Per-channel ai_auto_reply flag ────────────────────────────
+    // Explicit false disables auto-reply for this channel regardless of mode.
+    if (channelAISettings.ai_auto_reply === false) {
+        return { skipped: true, reason: 'channel_ai_disabled' };
+    }
+
     // ── Guard 5: Sentiment — auto-escalate angry/frustrated customers ──────
     // Fast keyword pre-check first (no LLM cost); LLM used only for ambiguous cases.
     // On any failure, default to treating the customer as negative/escalation-needed (safe fallback).

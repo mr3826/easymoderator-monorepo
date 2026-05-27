@@ -2,9 +2,8 @@
  * Shop AI Defaults
  *
  * Canonical default values for shop AI settings.
- * New shops default to AUTO mode — the bot sends directly.
- * DRAFT is enforced automatically for the first 48h (onboarding window) so
- * the merchant can see what the bot says before it goes fully live.
+ * Uses 'AI_ACTIVE' (aligned with MetaChannelSettings enum) so merged settings
+ * are consistent when channel settings override shop settings.
  *
  * tone_persona options:
  *   'formal'        — Professional, neutral English/Bangla
@@ -16,7 +15,7 @@ const DEFAULT_AI_SETTINGS = {
     auto_send_enabled: true,
     auto_send_confidence_threshold: 75,
 
-    automation_mode: 'AUTO',
+    automation_mode: 'AI_ACTIVE',
     confidence_threshold: 75,
     model_preset: 'standard',           // 'standard' (cheap) | 'advanced' (powerful)
     auto_reply_enabled: true,

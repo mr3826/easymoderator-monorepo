@@ -85,4 +85,7 @@ router.get('/platform-priority', shopController.getPlatformPriority);
 // PUT /shop/platform-priority - Update payment/delivery platform priority order
 router.put('/platform-priority', shopController.updatePlatformPriority);
 
+// GET /shop/ai-diagnostics - Debug auto-reply: queue stats, channel settings, recent policy denials
+router.get('/ai-diagnostics', shopController.getAIDiagnostics);
+
 module.exports = router;
