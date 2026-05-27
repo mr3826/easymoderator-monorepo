@@ -46,6 +46,7 @@ const THRESHOLD_BUFFER = 50;
 
 const BASE_FEATURES = Object.freeze({
     // Supported channels: Facebook Messenger + Instagram Direct
+    ai_auto_reply: true,
     facebook_channel: true,
     instagram_channel: true,
     webchat_channel: true,
@@ -73,7 +74,7 @@ const BASE_FEATURES = Object.freeze({
     rate_limit_per_minute: 40
 });
 
-const AI_SETTINGS_FULL = Object.freeze([
+const AI_SETTINGS_ALL = Object.freeze([
     'automation_mode',
     'auto_reply_enabled',
     'primary_language',
@@ -81,7 +82,12 @@ const AI_SETTINGS_FULL = Object.freeze([
     'max_auto_order_value',
     'handoff_settings',
     'payment_methods',
-    'tone_persona'
+    'tone_persona',
+    'required_fields',
+    'llm_model',
+    'llm_temperature',
+    'api_enable',
+    'custom_webhook',
 ]);
 
 const PRICING_TIERS = Object.freeze({
@@ -102,12 +108,7 @@ const PRICING_TIERS = Object.freeze({
             api_access: false,
             rate_limit_per_minute: 15
         }),
-        ai_settings_access: Object.freeze([
-            'automation_mode',
-            'auto_reply_enabled',
-            'primary_language',
-            'confidence_threshold'
-        ])
+        ai_settings_access: AI_SETTINGS_ALL
     },
 
     [PlanCode.PACKAGE_2]: {
@@ -127,7 +128,7 @@ const PRICING_TIERS = Object.freeze({
             api_access: false,
             rate_limit_per_minute: 40
         }),
-        ai_settings_access: AI_SETTINGS_FULL
+        ai_settings_access: AI_SETTINGS_ALL
     },
 
     [PlanCode.PARTNER]: {
@@ -147,14 +148,7 @@ const PRICING_TIERS = Object.freeze({
             api_access: true,
             rate_limit_per_minute: 100
         }),
-        ai_settings_access: Object.freeze([
-            ...AI_SETTINGS_FULL,
-            'required_fields',
-            'llm_model',
-            'llm_temperature',
-            'api_enable',
-            'custom_webhook'
-        ])
+        ai_settings_access: AI_SETTINGS_ALL
     }
 });
 
