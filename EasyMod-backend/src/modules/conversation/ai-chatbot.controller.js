@@ -179,7 +179,7 @@ class AIChatbotController {
             const shopCreatedAt = aiSettings.shop_created_at;
             const isOnboarding = shopCreatedAt
                 && (Date.now() - new Date(shopCreatedAt).getTime()) < 48 * 60 * 60 * 1000;
-            const effectiveMode = isOnboarding ? 'DRAFT' : (aiSettings.automation_mode || 'AUTO');
+            const effectiveMode = isOnboarding ? 'DRAFT' : (aiSettings.automation_mode || 'AI_ACTIVE');
             const isDraft = effectiveMode === 'DRAFT';
 
             // Step 5: Store AI response

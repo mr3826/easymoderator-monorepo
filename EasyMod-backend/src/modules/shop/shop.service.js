@@ -343,11 +343,15 @@ const getShopAiSettings = async (shopId) => {
     // shop_created_at is included so callers can enforce the 48h onboarding DRAFT window.
     const defaultSettings = { ...DEFAULT_AI_SETTINGS };
 
-    return {
+    const merged = {
         ...defaultSettings,
         ...(shop.settings?.ai || {}),
         shop_created_at: shop.created_at
     };
+    // Normalize legacy 'AUTO' → 'AI_ACTIVE' for shops that were created before the
+    // enum was standardised (stored value wins over default in the spread above).
+    if (merged.automation_mode === 'AUTO') merged.automation_mode = 'AI_ACTIVE';
+    return merged;
 };
 
 /**

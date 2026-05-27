@@ -224,9 +224,19 @@ async function processMessageJob(job) {
 
     // AIChatbotController is loaded lazily to avoid circular requires
     const AIChatbotController = require('../modules/conversation/ai-chatbot.controller');
-    const { response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
-        message, history, entities, detectedLanguage, aiSettings, ingestionResult, []
-    );
+    let rawResponse, confidence, sourceReferences;
+    try {
+        ({ response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
+            message, history, entities, detectedLanguage, aiSettings, ingestionResult, []
+        ));
+    } catch (aiErr) {
+        console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
+        rawResponse = detectedLanguage === 'bn'
+            ? 'আপনার বার্তার জন্য ধন্যবাদ! আমরা শীঘ্রই সাড়া দেব।'
+            : 'Thank you for your message! We will respond shortly.';
+        confidence = 0;
+        sourceReferences = null;
+    }
 
     // ── Bot attribution (Meta Platform Policy 4.2) ──────────────────────────
     // Customers must be able to identify automated replies. Default-on; can be
