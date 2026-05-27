@@ -191,6 +191,7 @@ describe('MetaMessengerProvider', () => {
         });
 
         test('returns all pages from a single-page response (no next cursor)', async () => {
+            // 1. /me/accounts — 2 pages, no next cursor
             axios.get.mockResolvedValueOnce({
                 data: {
                     data: [
@@ -201,6 +202,10 @@ describe('MetaMessengerProvider', () => {
                     // No `next` key — signals last page
                 }
             });
+            // 2. /me/businesses — no businesses (no Portfolio)
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
 
             const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
 
@@ -210,9 +215,9 @@ describe('MetaMessengerProvider', () => {
                 id: 'P2',
                 instagramAccount: { id: 'IG2', name: 'Shop IG', username: 'shopig' }
             });
-            // Should only call the API once (no pagination needed)
-            expect(axios.get).toHaveBeenCalledTimes(1);
-            // Must include limit=100 to avoid server-side truncation
+            // /me/accounts + /me/businesses = 2 calls
+            expect(axios.get).toHaveBeenCalledTimes(2);
+            // First call must include limit=100 and hit /me/accounts
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/me/accounts'),
                 expect.objectContaining({ params: expect.objectContaining({ limit: 100 }) })
@@ -220,27 +225,32 @@ describe('MetaMessengerProvider', () => {
         });
 
         test('follows pagination cursor when next page exists', async () => {
-            // First page — signals more pages via `next`
+            // 1. /me/accounts page 1 — signals more pages via `next`
             axios.get.mockResolvedValueOnce({
                 data: {
                     data: [{ id: 'P1', name: 'Page 1', category: null, picture: null, instagram_business_account: null }],
                     paging: { next: 'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR' }
                 }
             });
-            // Second page — no `next`, pagination ends
+            // 2. /me/accounts page 2 — no `next`, pagination ends
             axios.get.mockResolvedValueOnce({
                 data: {
                     data: [{ id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: null }],
                     paging: { cursors: { before: 'x', after: 'y' } }
                 }
             });
+            // 3. /me/businesses — no businesses
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
 
             const result = await provider.listManagedAssets({ userToken: 'tok_xyz' });
 
             expect(result).toHaveLength(2);
             expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
-            expect(axios.get).toHaveBeenCalledTimes(2);
-            // Second call uses the `next` URL directly (no extra params)
+            // 2 pages of me/accounts + 1 businesses call = 3 total
+            expect(axios.get).toHaveBeenCalledTimes(3);
+            // Second call (cursor follow) uses the `next` URL directly (no extra params)
             expect(axios.get).toHaveBeenNthCalledWith(
                 2,
                 'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR',
@@ -248,13 +258,247 @@ describe('MetaMessengerProvider', () => {
             );
         });
 
-        test('returns empty array when me/accounts returns no pages', async () => {
+        test('returns empty array when me/accounts returns no pages and no businesses', async () => {
+            // 1. /me/accounts — empty
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+            // 2. /me/businesses — empty (truly nothing to show)
             axios.get.mockResolvedValueOnce({
                 data: { data: [], paging: {} }
             });
             const result = await provider.listManagedAssets({ userToken: 'tok_empty' });
             expect(result).toEqual([]);
-            expect(axios.get).toHaveBeenCalledTimes(1);
+            // 2 calls: /me/accounts + /me/businesses
+            expect(axios.get).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    // ── Business Portfolio fallback ────────────────────────────────────────────
+    // Pages owned by a Meta Business Portfolio are NOT returned by /me/accounts.
+    // The fix: after exhausting /me/accounts, also query /me/businesses →
+    // /{business-id}/owned_pages and /{business-id}/client_pages, then dedup by
+    // page id.
+
+    describe('listManagedAssets() Business Portfolio fallback', () => {
+        beforeEach(() => {
+            process.env.META_APP_SECRET = 'test-secret';
+            process.env.META_APP_ID = 'test-app-id';
+        });
+
+        afterEach(() => {
+            jest.resetAllMocks();
+        });
+
+        // (a) Only /me/accounts populated — no businesses, result unchanged
+        test('(a) only me/accounts pages present — no business fallback needed', async () => {
+            // 1. /me/accounts → 2 pages
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P1', name: 'Personal Page 1', category: 'Shopping', picture: null, instagram_business_account: null },
+                        { id: 'P2', name: 'Personal Page 2', category: null, picture: null, instagram_business_account: { id: 'IG2', name: 'IG Shop', username: 'igshop' } },
+                    ],
+                    paging: {}
+                }
+            });
+            // 2. /me/businesses → empty
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_personal' });
+
+            expect(result).toHaveLength(2);
+            expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
+            // me/accounts + me/businesses = 2 calls minimum
+            expect(axios.get).toHaveBeenCalledTimes(2);
+        });
+
+        // (b) Only business-owned pages present — /me/accounts empty
+        test('(b) only Business Portfolio pages present — me/accounts empty', async () => {
+            // 1. /me/accounts → empty
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+            // 2. /me/businesses → one business
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 'BIZ_1', name: 'Hexabyte Ltd' }],
+                    paging: {}
+                }
+            });
+            // 3. /BIZ_1/owned_pages → one page with IG
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        {
+                            id: 'BP1',
+                            name: 'Business Page 1',
+                            category: 'E-Commerce',
+                            access_token: 'PAGE_TOKEN_BP1',
+                            picture: { data: { url: 'http://img/bp1' } },
+                            instagram_business_account: { id: 'IGBP1', name: 'BizIG', username: 'bizig', profile_picture_url: 'http://img/igbp1' },
+                        }
+                    ],
+                    paging: {}
+                }
+            });
+            // 4. /BIZ_1/client_pages → empty
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_biz' });
+
+            expect(result).toHaveLength(1);
+            expect(result[0]).toMatchObject({
+                id: 'BP1',
+                name: 'Business Page 1',
+                category: 'E-Commerce',
+                pictureUrl: 'http://img/bp1',
+            });
+            expect(result[0].instagramAccount).toMatchObject({
+                id: 'IGBP1',
+                username: 'bizig',
+            });
+        });
+
+        // (c) Both /me/accounts and business-owned pages present, with an overlapping page — dedup by id
+        test('(c) both me/accounts and business-owned pages present — overlapping page deduped', async () => {
+            // 1. /me/accounts → pages P1 and P_SHARED
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P1', name: 'Classic Page', category: 'Retail', picture: null, instagram_business_account: null },
+                        { id: 'P_SHARED', name: 'Shared Page', category: 'Shopping', picture: null, instagram_business_account: null },
+                    ],
+                    paging: {}
+                }
+            });
+            // 2. /me/businesses → one business
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 'BIZ_1', name: 'Acme Corp' }],
+                    paging: {}
+                }
+            });
+            // 3. /BIZ_1/owned_pages → P_SHARED (duplicate) + P_BIZ_ONLY
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P_SHARED', name: 'Shared Page', category: 'Shopping', access_token: 'tok_shared', picture: null, instagram_business_account: null },
+                        { id: 'P_BIZ_ONLY', name: 'Biz Exclusive', category: 'E-Commerce', access_token: 'tok_biz_only', picture: null, instagram_business_account: null },
+                    ],
+                    paging: {}
+                }
+            });
+            // 4. /BIZ_1/client_pages → empty
+            axios.get.mockResolvedValueOnce({
+                data: { data: [], paging: {} }
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_overlap' });
+
+            // 3 unique pages: P1, P_SHARED (deduped), P_BIZ_ONLY
+            expect(result).toHaveLength(3);
+            const ids = result.map(p => p.id);
+            expect(ids).toContain('P1');
+            expect(ids).toContain('P_SHARED');
+            expect(ids).toContain('P_BIZ_ONLY');
+            // P_SHARED appears exactly once
+            expect(ids.filter(id => id === 'P_SHARED')).toHaveLength(1);
+        });
+
+        // (d) IG account attached to business page vs not attached
+        test('(d) IG account attached to business-owned page is exposed; missing IG returns null', async () => {
+            // 1. /me/accounts → empty
+            axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
+            // 2. /me/businesses → one business
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ id: 'BIZ_2', name: 'Shop Biz' }], paging: {} }
+            });
+            // 3. /BIZ_2/owned_pages → one page WITH IG, one WITHOUT
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        {
+                            id: 'BP_WITH_IG',
+                            name: 'Page with IG',
+                            category: 'Fashion',
+                            access_token: 'PAGE_TOKEN_X',
+                            picture: null,
+                            instagram_business_account: { id: 'IG_OK', name: 'Fashion IG', username: 'fashionic', profile_picture_url: null },
+                        },
+                        {
+                            id: 'BP_NO_IG',
+                            name: 'Page without IG',
+                            category: 'Food',
+                            access_token: 'PAGE_TOKEN_Y',
+                            picture: null,
+                            instagram_business_account: null,
+                        },
+                    ],
+                    paging: {}
+                }
+            });
+            // 4. /BIZ_2/client_pages → empty
+            axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_ig_check' });
+
+            expect(result).toHaveLength(2);
+            const withIG = result.find(p => p.id === 'BP_WITH_IG');
+            const noIG = result.find(p => p.id === 'BP_NO_IG');
+
+            expect(withIG.instagramAccount).toMatchObject({ id: 'IG_OK', username: 'fashionic' });
+            expect(noIG.instagramAccount).toBeNull();
+        });
+
+        // Diagnostic log: metaAssetsListed emitted with correct counts.
+        // The logger writes JSON to console.log in test env — spy on console.log
+        // and find the matching log entry.
+        test('diagnostic log reports correct counts (mePages, ownedPages, clientPages, deduped, withIG)', async () => {
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            // 1. /me/accounts → 1 page (PA, no IG)
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ id: 'PA', name: 'A', category: null, picture: null, instagram_business_account: null }], paging: {} }
+            });
+            // 2. /me/businesses → one business
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ id: 'B1', name: 'Biz' }], paging: {} }
+            });
+            // 3. owned_pages → PA (overlap) + PB (unique, has IG)
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'PA', name: 'A', category: null, picture: null, instagram_business_account: null },
+                        { id: 'PB', name: 'B', category: null, picture: null, instagram_business_account: { id: 'IG_B', name: 'IG B', username: 'igb', profile_picture_url: null } },
+                    ],
+                    paging: {}
+                }
+            });
+            // 4. client_pages → 0
+            axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
+
+            await provider.listManagedAssets({ userToken: 'tok_log' });
+
+            // Parse all console.log calls and find the metaAssetsListed entry
+            const parsed = consoleSpy.mock.calls
+                .map(args => { try { return JSON.parse(args[0]); } catch { return null; } })
+                .filter(Boolean);
+            const entry = parsed.find(e => e.message === 'metaAssetsListed');
+            expect(entry).toBeDefined();
+            expect(entry).toMatchObject({
+                mePages: 1,
+                ownedPages: 2,
+                clientPages: 0,
+                deduped: 2,   // PA appears in both; final unique count = 2
+                withIG: 1,
+            });
+
+            consoleSpy.mockRestore();
         });
     });
 });

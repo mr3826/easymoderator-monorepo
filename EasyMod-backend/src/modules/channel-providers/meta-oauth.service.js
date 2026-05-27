@@ -170,7 +170,20 @@ async function initiateUnifiedOAuth(userId, shopId) {
 
     storeTemp(state, { userId, shopId, platform: 'unified' });
 
-    // Combined scope set covers both Messenger and Instagram messaging.
+    // Combined scope set covers both Messenger and Instagram messaging, plus
+    // Business Portfolio asset discovery.
+    //
+    // business_management is required to call /me/businesses → owned_pages /
+    // client_pages, which is the only reliable way to discover pages that belong
+    // to a Meta Business Portfolio (Business Suite / Business Manager). Without
+    // it, merchants whose pages are portfolio-owned see an empty asset picker.
+    //
+    // Meta policy note: business_management is a standard permission for Business
+    // Login configurations; it does not require special App Review when used with
+    // a Login Configuration (Granular Business Login). It IS required in the
+    // App Review submission if the app uses the server-side business-asset APIs
+    // post-launch in LIVE mode.
+    //
     // Provider DEFAULT_SCOPES are module-private; this list mirrors them.
     const unifiedScopes = [
         'pages_show_list',
@@ -181,6 +194,7 @@ async function initiateUnifiedOAuth(userId, shopId) {
         'instagram_basic',
         'instagram_manage_messages',
         'instagram_manage_comments',
+        'business_management',
     ];
 
     // Build the auth URL via the Messenger provider (same dialog endpoint).
