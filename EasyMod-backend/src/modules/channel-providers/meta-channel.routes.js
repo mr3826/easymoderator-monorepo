@@ -53,6 +53,16 @@ router.post(
     validate(v.channelIdParam),
     channelController.testWebhook
 );
+router.get(
+    '/:channelId/settings',
+    validate(v.channelIdParam),
+    channelController.getSettings
+);
+router.patch(
+    '/:channelId/settings',
+    validate(v.channelIdParam),
+    channelController.updateChannelSettings
+);
 router.patch(
     '/:channelId/purpose-label',
     validate(v.updatePurposeLabel),

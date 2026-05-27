@@ -203,6 +203,85 @@ exports.consentSummary = async (req, res, next) => {
     }
 };
 
+const SETTINGS_WHITELIST = [
+    'ai_auto_reply', 'automation_mode',
+    'confidence_threshold_send', 'confidence_threshold_suggest',
+    'allow_order_creation',
+    'comment_to_dm_enabled', 'comment_to_dm_keywords',
+    'purpose_label',
+];
+
+function serializeSettings(s) {
+    if (!s) return null;
+    return {
+        aiAutoReply:                s.ai_auto_reply,
+        automationMode:             s.automation_mode,
+        confidenceThresholdSend:    parseFloat(s.confidence_threshold_send),
+        confidenceThresholdSuggest: parseFloat(s.confidence_threshold_suggest),
+        allowOrderCreation:         s.allow_order_creation,
+        commentToDmEnabled:         s.comment_to_dm_enabled,
+        commentToDmKeywords:        s.comment_to_dm_keywords ?? [],
+        purposeLabel:               s.purpose_label ?? null,
+    };
+}
+
+/**
+ * GET /api/channels/meta/:channelId/settings
+ */
+exports.getSettings = async (req, res, next) => {
+    try {
+        const { channelId } = req.params;
+        const { shopId } = req.user;
+        await assertChannelBelongsToShop(channelId, shopId);
+        const settings = await metaChannelService.getSettings(channelId);
+        res.json({ success: true, data: serializeSettings(settings) });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * PATCH /api/channels/meta/:channelId/settings
+ * Accepts camelCase keys (frontend-friendly); converts to snake_case before writing.
+ */
+exports.updateChannelSettings = async (req, res, next) => {
+    try {
+        const { channelId } = req.params;
+        const { shopId } = req.user;
+        await assertChannelBelongsToShop(channelId, shopId);
+
+        const camelToSnake = {
+            aiAutoReply: 'ai_auto_reply',
+            automationMode: 'automation_mode',
+            confidenceThresholdSend: 'confidence_threshold_send',
+            confidenceThresholdSuggest: 'confidence_threshold_suggest',
+            allowOrderCreation: 'allow_order_creation',
+            commentToDmEnabled: 'comment_to_dm_enabled',
+            commentToDmKeywords: 'comment_to_dm_keywords',
+            purposeLabel: 'purpose_label',
+        };
+
+        const patch = {};
+        for (const [camel, snake] of Object.entries(camelToSnake)) {
+            if (req.body[camel] !== undefined) patch[snake] = req.body[camel];
+        }
+        // also accept snake_case keys directly
+        for (const key of SETTINGS_WHITELIST) {
+            if (req.body[key] !== undefined) patch[key] = req.body[key];
+        }
+
+        if (Object.keys(patch).length === 0) {
+            return res.json({ success: true, data: serializeSettings(await metaChannelService.getSettings(channelId)) });
+        }
+
+        await metaChannelService.updateSettings(channelId, patch);
+        const updated = await metaChannelService.getSettings(channelId);
+        res.json({ success: true, data: serializeSettings(updated) });
+    } catch (err) {
+        next(err);
+    }
+};
+
 /**
  * PATCH /api/channels/meta/:channelId/purpose-label
  * Cosmetic per-channel label that lets a merchant disambiguate multiple
