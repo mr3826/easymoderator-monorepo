@@ -103,14 +103,14 @@ const Subscription = sequelize.define('Subscription', {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0
     },
-    // Features
+    // Features — available on every package; packages differ only by conversation quota.
     features: {
         type: DataTypes.JSON,
         defaultValue: {
-            image_understanding: false,
-            advanced_ai: false,
-            priority_support: false,
-            custom_branding: false
+            image_understanding: true,
+            advanced_ai: true,
+            priority_support: true,
+            custom_branding: true
         }
     },
     // Billing dates

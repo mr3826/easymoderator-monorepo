@@ -3,7 +3,6 @@ const { Shop } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
-const { getAiSettingsAccess, getAllowedLanguages, getAllowedAutomationModes } = require('../subscription/subscription.plans');
 const cacheService = require('../../utils/cache.service');
 const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
 
@@ -283,16 +282,6 @@ const updateLLMConfig = async (req, res, next) => {
         const { shopId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
 
-        // Plan gate — LLM model/temperature config requires Pro or Business
-        const planCode = await getShopPlanCode(shopId);
-        const planAccess = getAiSettingsAccess(planCode);
-        if (!planAccess.has('llm_model')) {
-            throw new AppError(
-                `Your current plan (${planCode}) does not include LLM model configuration. Upgrade to Pro or Business.`,
-                403
-            );
-        }
-
         const { model, temperature } = req.body;
 
         if (!model || !ALLOWED_LLM_MODELS.has(model)) {
@@ -372,49 +361,17 @@ const updateAISettings = async (req, res, next) => {
             required_fields, handoff_settings, payment_methods
         } = req.body;
 
-        // ── Plan-based access enforcement ─────────────────────────────────────
-        const planCode = await getShopPlanCode(shopId);
-        const planAccess = getAiSettingsAccess(planCode);
-        const planLanguages = getAllowedLanguages(planCode);
-        const planAutomationModes = getAllowedAutomationModes(planCode);
-
-        // Fields that require explicit plan access (beyond basic on/off)
-        const planGatedFields = {
-            confidence_threshold, max_auto_order_value, handoff_settings,
-            required_fields, payment_methods
-        };
-        for (const [field, value] of Object.entries(planGatedFields)) {
-            if (value !== undefined && !planAccess.has(field)) {
-                throw new AppError(
-                    `Your current plan (${planCode}) does not include access to '${field}'. Upgrade to configure this setting.`,
-                    403
-                );
-            }
-        }
-
-        // Automation mode — format check first, then plan check
+        // Automation mode — format validation
         if (automation_mode !== undefined) {
             if (!ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
                 throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
             }
-            if (!planAutomationModes.has(automation_mode)) {
-                throw new AppError(
-                    `Your current plan (${planCode}) only supports automation modes: ${[...planAutomationModes].join(', ')}.`,
-                    403
-                );
-            }
         }
 
-        // Language — format check first, then plan check
+        // Language — format validation
         if (primary_language !== undefined) {
             if (!ALLOWED_LANGUAGES.has(primary_language)) {
                 throw new AppError(`primary_language must be one of: ${[...ALLOWED_LANGUAGES].join(', ')}`, 400);
-            }
-            if (!planLanguages.has(primary_language)) {
-                throw new AppError(
-                    `Your current plan (${planCode}) supports these languages: ${[...planLanguages].join(', ')}. Upgrade to use '${primary_language}'.`,
-                    403
-                );
             }
         }
 
