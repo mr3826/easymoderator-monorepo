@@ -110,8 +110,11 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
  * When `cachedContentName` is set, the system prompt is already server-cached.
  */
 const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName }, geminiModel) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+    // Accept either name: code historically read GEMINI_API_KEY, but the
+    // provisioning tooling (generate-secrets.*, github-secrets-checklist) sets
+    // GOOGLE_GEMINI_API_KEY. Read both so prod isn't silently keyless.
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_GEMINI_API_KEY) not set');
 
     const timeoutMs = parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000;
     const contents = await Promise.all(messages.map(async (m) => ({

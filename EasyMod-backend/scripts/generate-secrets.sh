@@ -104,6 +104,7 @@ EMAIL_FROM=noreply@yourdomain.com
 THIRD-PARTY APIs (Fill these in)
 ========================================
 
+GEMINI_API_KEY=__FILL_ME__
 GOOGLE_GEMINI_API_KEY=__FILL_ME__
 PINECONE_API_KEY=__FILL_ME__
 PINECONE_INDEX=__FILL_ME__

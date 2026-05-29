@@ -23,8 +23,8 @@ const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('VoiceProcessing');
 
-// Gemini API
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Gemini API — accept either env name (see llm.service.js note).
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 const GEMINI_MODEL = 'gemini-1.5-flash'; // or gemini-1.5-pro for better quality
 
 /**

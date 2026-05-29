@@ -62,7 +62,7 @@ class VoiceProcessingController {
       res.status(200).json({
         success: true,
         data: {
-          voiceProcessingEnabled: process.env.GEMINI_API_KEY ? true : false,
+          voiceProcessingEnabled: (process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY) ? true : false,
           supportedLanguages: ['bengali', 'english', 'banglish', 'auto'],
           model: 'gemini-1.5-flash',
           transcriptionChargePerMinute: 0.02
