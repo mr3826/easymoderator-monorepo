@@ -1,0 +1,33 @@
+name: Ops Droplet Diagnostic (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    name: Inspect droplet state (read-only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH diagnostic
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 120s
+          script: |
+            echo "===== docker ps -a ====="
+            docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' || true
+            echo "===== compose ps ====="
+            docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml ps || true
+            echo "===== listening sockets (80/443/3000/8080) ====="
+            ss -tlnp 2>/dev/null | grep -E ':80 |:443 |:3000 |:8080 ' || echo "none of 80/443/3000/8080 listening"
+            echo "===== host caddy systemd ====="
+            systemctl is-active caddy 2>/dev/null || echo "no host caddy service"
+            echo "===== compose services defined ====="
+            grep -nE '^  [a-z].*:$' /opt/easymod/docker-compose.prod.yml || true
+            echo "===== backend internal health ====="
+            docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>{console.log(r.statusCode, d.slice(0,200))})}).on('error',e=>console.log('ERR',e.message))" 2>&1 || true
+            echo "===== caddy container logs (if any) ====="
+            (docker logs --tail 25 easymod-caddy-1 2>&1 || docker logs --tail 25 $(docker ps -a --filter name=caddy -q | head -1) 2>&1) || echo "no caddy container"
+            echo "===== DONE ====="
