@@ -313,7 +313,12 @@ const updateLLMConfig = async (req, res, next) => {
 };
 
 // Allowed values for AI behaviour fields — validated server-side.
-const ALLOWED_AUTOMATION_MODES = new Set(['DRAFT', 'AUTO', 'MANUAL']);
+// Must mirror the MetaChannelSettings.automation_mode ENUM
+// ('AI_ACTIVE'|'AI_SUGGEST_ONLY'|'HUMAN_ACTIVE'|'MANUAL'|'DRAFT'). 'AUTO' is kept
+// as a legacy alias that getShopAiSettings normalises to 'AI_ACTIVE' on read.
+const ALLOWED_AUTOMATION_MODES = new Set([
+    'AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT', 'AUTO',
+]);
 const ALLOWED_LANGUAGES        = new Set(['mixed', 'en', 'bn']);
 const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms']);
 

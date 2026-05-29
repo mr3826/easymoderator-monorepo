@@ -8,7 +8,6 @@ import {
   Loader2,
   Shield,
   Cpu,
-  Lock,
   FlaskConical,
   Unplug,
   RefreshCw,
@@ -31,17 +30,19 @@ import {
   disconnectMetaChannel,
   getMetaChannelConsentSummary,
   updateMetaChannelPurposeLabel,
+  getMetaChannelSettings,
+  updateMetaChannelSettings,
   type MetaChannel,
   type MetaPlatform,
   type MetaOAuthAsset,
   type MetaChannelConsentSummary,
   type MetaConsentEventType,
+  type MetaChannelSettings,
 } from "@/api/domains/meta-channels";
 
 // Picker entry covers both per-platform flow (no `platform`, falls back to
 // activeOAuth.platform) and unified flow (each asset carries its own platform).
 type PickerEntry = MetaOAuthAsset & { platform?: MetaPlatform };
-import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { getMetaErrorMessage } from "@/lib/meta/error-messages";
 
 const PLATFORMS: Array<{
@@ -79,7 +80,6 @@ function PlatformIcon({ id, color, size = 22 }: { id: MetaPlatform; color: strin
 
 export default function ChatSettings() {
   const { t } = useTranslation();
-  const { features: planFeatures } = useSubscriptionFeatures();
 
   const [channels, setChannels] = useState<MetaChannel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1000,6 +1000,8 @@ export default function ChatSettings() {
                       />
                     </div>
 
+                    <ChannelAutoReplyToggle channelId={channel.id} />
+
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       <button
                         onClick={() => handleTestPipeline(channel.id)}
@@ -1154,47 +1156,21 @@ export default function ChatSettings() {
             <p className="text-sm text-gray-500">AI auto-reply এর ভাষা মডেল</p>
           </div>
         </div>
-        {!planFeatures.advanced_ai ? (
-          <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <Lock className="w-5 h-5 text-gray-400 flex-shrink-0" />
+        {/* AI model selection is available on every plan — packages differ only
+            by conversation quota, not by feature access. */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Cpu className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-gray-700">
-                PACKAGE_2 ও PARTNER প্ল্যানে available
+              <p className="text-sm font-medium text-gray-900">
+                AI Model: Auto-Selected for Best Results
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                <a href="/app/subscription" className="text-purple-600 hover:underline">
-                  Plan upgrade করুন
-                </a>{" "}
-                AI model selection এর জন্য
+              <p className="text-xs text-gray-600 mt-1">
+                EasyMod আপনার সব কথোপকথনের জন্য সেরা মডেল স্বয়ংক্রিয়ভাবে বেছে নেয় — সব প্ল্যানে available।
               </p>
             </div>
           </div>
-        ) : (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <Cpu className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-gray-900">
-                  AI Model: Auto-Selected Based on Your Plan
-                </p>
-                <p className="text-xs text-gray-600 mt-1">
-                  আপনার subscription tier অনুযায়ী EasyMod সেরা মডেল বেছে নেয়।
-                </p>
-                <ul className="mt-2 text-xs text-gray-600 space-y-0.5 ml-3 list-disc list-inside">
-                  <li>
-                    <span className="font-medium">PACKAGE_1:</span> GPT-4o-mini (fast)
-                  </li>
-                  <li>
-                    <span className="font-medium">PACKAGE_2:</span> Balanced mix
-                  </li>
-                  <li>
-                    <span className="font-medium">PARTNER:</span> Claude with caching
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {confirmDisconnect && (
@@ -1223,6 +1199,87 @@ export default function ChatSettings() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Per-channel AI auto-reply toggle. Loads the channel's MetaChannelSettings and
+ * lets the merchant turn AI auto-reply on/off for that Page/IG account. This is
+ * a per-channel control available on every plan — packages differ only by
+ * conversation quota, never by feature access.
+ */
+function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
+  const [settings, setSettings] = useState<MetaChannelSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    getMetaChannelSettings(channelId)
+      .then((s) => active && setSettings(s))
+      .catch(() => active && setSettings(null))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [channelId]);
+
+  const toggle = async () => {
+    if (!settings || saving) return;
+    const next = !settings.aiAutoReply;
+    setSaving(true);
+    try {
+      const updated = await updateMetaChannelSettings(channelId, { aiAutoReply: next });
+      setSettings(updated);
+      toast.success(next ? "AI auto-reply চালু হয়েছে" : "AI auto-reply বন্ধ হয়েছে");
+    } catch {
+      toast.error("সেটিং সেভ করা যায়নি");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="mb-3 flex items-center gap-2 text-xs text-gray-400">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI সেটিং লোড হচ্ছে…
+      </div>
+    );
+  }
+  if (!settings) return null;
+
+  return (
+    <div className="mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <Cpu className="w-4 h-4 text-purple-600 flex-shrink-0" />
+        <div>
+          <p className="text-xs font-medium text-gray-800">AI auto-reply</p>
+          <p className="text-[11px] text-gray-500">
+            {settings.aiAutoReply
+              ? "নতুন বার্তায় AI স্বয়ংক্রিয়ভাবে উত্তর দেবে"
+              : "AI উত্তর বন্ধ — শুধু খসড়া তৈরি হবে"}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={settings.aiAutoReply}
+        onClick={toggle}
+        disabled={saving}
+        title="AI auto-reply toggle"
+        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
+          settings.aiAutoReply ? "bg-purple-600" : "bg-gray-300"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+            settings.aiAutoReply ? "translate-x-4" : "translate-x-1"
+          }`}
+        />
+      </button>
     </div>
   );
 }

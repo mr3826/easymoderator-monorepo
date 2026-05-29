@@ -70,7 +70,9 @@ const BASE_FEATURES = Object.freeze({
     api_access: false,
     advanced_ai: true,
     allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
-    allowed_automation_modes: Object.freeze(['DRAFT', 'MANUAL', 'AUTO']),
+    // Canonical automation modes advertised to the client (matches the
+    // MetaChannelSettings ENUM). All modes are available on every plan.
+    allowed_automation_modes: Object.freeze(['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'MANUAL', 'DRAFT']),
     rate_limit_per_minute: 40
 });
 
@@ -207,11 +209,6 @@ const calculatePartnerCharge = (deliveredOrders) => {
     return total;
 };
 
-const getAiSettingsAccess = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.PACKAGE_1];
-    return new Set(tier.ai_settings_access);
-};
-
 const getAllowedLanguages = (planCode) => {
     const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.PACKAGE_1];
     return new Set(tier.features.allowed_languages);
@@ -238,7 +235,6 @@ module.exports = {
     isPerOrderBilling,
     calculatePartnerCharge,
     getPerOrderCharge: calculatePartnerCharge,
-    getAiSettingsAccess,
     getAllowedLanguages,
     getAllowedAutomationModes,
     getTopupPack

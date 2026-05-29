@@ -48,7 +48,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     },
     highlights: [
       "AI Inbox — ৫০০ কথোপকথন/মাস",
-      "সব চ্যানেল (FB, WA, IG)",
+      "সব চ্যানেল (FB, IG)",
       "RTO Shield",
       "গ্রাহক যাত্রা ট্র্যাক করুন",
       "7 দিনের Analytics",
@@ -88,7 +88,10 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     description: "মাসে ৩০০+ অর্ডার আছে? আমাদের পার্টনার হোন।",
     monthlyPrice: 0,
     yearlyPrice: 0,
-    perOrderChargeBdt: 22,
+    // Entry per-order rate. Backend bills on a tiered scale (15/12/10 BDT by
+    // monthly delivered-order volume — see PARTNER_ORDER_TIERS); the headline
+    // shows the entry rate and the highlights convey the ৳10–15 range.
+    perOrderChargeBdt: 15,
     limits: {
       conversations: UNLIMITED,
       orders: UNLIMITED,

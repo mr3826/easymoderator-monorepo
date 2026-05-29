@@ -229,3 +229,42 @@ export async function getMetaChannelConsentSummary(
   );
   return res.data.data;
 }
+
+/** Per-channel AI / automation behaviour. Available on every plan. */
+export type MetaAutomationMode =
+  | 'AI_ACTIVE'
+  | 'AI_SUGGEST_ONLY'
+  | 'HUMAN_ACTIVE'
+  | 'MANUAL'
+  | 'DRAFT';
+
+export interface MetaChannelSettings {
+  aiAutoReply: boolean;
+  automationMode: MetaAutomationMode;
+  confidenceThresholdSend: number;
+  confidenceThresholdSuggest: number;
+  allowOrderCreation: boolean;
+  commentToDmEnabled: boolean;
+  commentToDmKeywords: string[];
+  purposeLabel: string | null;
+}
+
+export async function getMetaChannelSettings(
+  channelId: string,
+): Promise<MetaChannelSettings> {
+  const res: AxiosResponse<ApiResponse<MetaChannelSettings>> = await httpClient.get(
+    `${BASE}/${channelId}/settings`,
+  );
+  return res.data.data;
+}
+
+export async function updateMetaChannelSettings(
+  channelId: string,
+  patch: Partial<MetaChannelSettings>,
+): Promise<MetaChannelSettings> {
+  const res: AxiosResponse<ApiResponse<MetaChannelSettings>> = await httpClient.patch(
+    `${BASE}/${channelId}/settings`,
+    patch,
+  );
+  return res.data.data;
+}

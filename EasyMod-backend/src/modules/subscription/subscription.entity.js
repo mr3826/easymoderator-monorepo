@@ -103,6 +103,22 @@ const Subscription = sequelize.define('Subscription', {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0
     },
+    // Conversation top-up packs purchased separately (via BKash). Added to the
+    // effective limit by conversation-limit.middleware.js. Column exists in the
+    // initial schema migration; this attribute lets Sequelize read/write it.
+    topup_balance: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
+    // Grace buffer (+50) granted once the plan limit is exhausted; charged
+    // against the next billing cycle. Read/written by the conversation-limit
+    // middleware when the limit is hit.
+    threshold_conversations: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
     // Features — available on every package; packages differ only by conversation quota.
     features: {
         type: DataTypes.JSON,

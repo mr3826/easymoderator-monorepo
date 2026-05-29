@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const { AppError } = require('../utils/AppError');
 const { createLogger } = require('../utils/structured-logger');
+const config = require('../config/config');
 const logger = createLogger('WebhookSignatureMiddleware');
 const timingSafeCompare = (a, b) => {
   try {
@@ -37,8 +38,10 @@ const getWebhookSecret = async (req, webhookType = 'default', integrationId = nu
       const channel = await MetaChannel.findOne({ where: { webhook_verify_token: integrationId, status: 'CONNECTED' } });
       if (channel) {
         // MetaChannel stores the per-channel verify token; the shared app secret
-        // lives in the META_WEBHOOK_APP_SECRET env var — return it for HMAC.
-        const envSecret = process.env.META_WEBHOOK_APP_SECRET;
+        // is exposed via config.metaWebhookAppSecret (sourced from
+        // META_WEBHOOK_APP_SECRET) — return it for HMAC. Fall back to the raw
+        // env var for safety if config was not loaded.
+        const envSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
         if (envSecret) {
           logger.debug('Using app secret via MetaChannel lookup');
           return envSecret;
