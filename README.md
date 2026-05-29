@@ -435,3 +435,4 @@ Images pull from `ghcr.io` on each deploy. The backend `Dockerfile` is multi-sta
 - **RAG on every AI response** — product context always injected into LLM; not a toggle
 - **Migrations as source of truth** — never use `db:sync` in production; always run `migrate`
 - **Plan codes** — use `PACKAGE_1`, `PACKAGE_2`, `PARTNER`; `STARTER`/`GROWTH` are rejected by the validator
+<!-- push-marker: small automated change for main push 2026-05-29 -->
