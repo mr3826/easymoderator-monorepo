@@ -58,7 +58,7 @@ const _promptHash = (prompt) =>
  * @returns {Promise<string|null>} cachedContent name, or null on failure
  */
 const _createCachedContent = async (systemPrompt, model) => {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
 
     try {

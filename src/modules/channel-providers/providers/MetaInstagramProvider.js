@@ -359,25 +359,6 @@ class MetaInstagramProvider extends ChannelProvider {
         }
     }
 
-    /**
-     * Fetch the Instagram user's profile (name/username) via the IG messaging
-     * user-profile API. Best-effort: returns null on any failure.
-     */
-    async getUserProfile(channel, userId) {
-        const token = channel?.page_access_token_ct;
-        if (!token || !userId) return null;
-        try {
-            const resp = await axios.get(`${GRAPH_BASE}/${userId}`, {
-                params: { fields: 'name,username', access_token: token },
-            });
-            const d = resp.data || {};
-            const name = d.name || d.username || null;
-            return name ? { name } : null;
-        } catch (err) {
-            return null;
-        }
-    }
-
     async ping({ channel }) {
         const token = channel.page_access_token_ct;
         if (!token) return { ok: false, latencyMs: 0 };

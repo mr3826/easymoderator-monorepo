@@ -1,0 +1,325 @@
+name: CI / CD
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Required GitHub secrets (Settings → Secrets → Actions):
+#   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
+#   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
+#   VITE_API_BASE_URL    — leave empty for same-origin SPA (easymod.tech)
+#   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
+#   VITE_SENTRY_DSN      — Sentry DSN (optional)
+#
+# The droplet must have:
+#   /opt/easymod/docker-compose.prod.yml  (committed to repo, synced by deploy)
+#   /opt/easymod/Caddyfile                (committed to repo, synced by deploy)
+#   /opt/easymod/.env.prod                (manually placed, never committed)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which service to deploy'
+        required: false
+        default: 'all'
+        type: choice
+        options: [all, backend, frontend]
+      wipe_db_first:
+        description: 'DESTRUCTIVE — wipe easymod DB before deploy. Type WIPE to confirm (anything else = no-op).'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymod-backend
+  GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymod-frontend
+
+jobs:
+  # ── 1. Detect which services changed ────────────────────────────────────────
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend') || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend') || steps.filter.outputs.frontend == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'EasyMod-backend/**'
+              - 'docker-compose.prod.yml'
+              - '.github/workflows/ci-cd.yml'
+            frontend:
+              - 'EasyMod-frontend/**'
+              - 'Caddyfile'
+              - '.github/workflows/ci-cd.yml'
+
+  # ── 2. Build & push Docker images ──────────────────────────────────────────
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: |
+      needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    outputs:
+      backend_tag: ${{ steps.meta.outputs.backend_tag }}
+      frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image tags
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          SHORT="${SHA::8}"
+          if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
+            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHORT}" >> $GITHUB_OUTPUT
+          else
+            echo "backend_tag=" >> $GITHUB_OUTPUT
+          fi
+          if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
+            echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHORT}" >> $GITHUB_OUTPUT
+          else
+            echo "frontend_tag=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build & push backend image
+        if: needs.changes.outputs.backend == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./EasyMod-backend
+          file: ./EasyMod-backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.backend_tag }}
+            ${{ env.GHCR_BACKEND }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.repository.updated_at }}
+          cache-from: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache,mode=max
+
+      - name: Build & push frontend image
+        if: needs.changes.outputs.frontend == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./EasyMod-frontend
+          file: ./EasyMod-frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.frontend_tag }}
+            ${{ env.GHCR_FRONTEND }}:latest
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_ENV=production
+          cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
+
+  # ── 3. Deploy to DO droplet ──────────────────────────────────────────────────
+  deploy:
+    name: Deploy to DO Droplet
+    runs-on: ubuntu-latest
+    needs: [changes, build]
+    environment: production
+    steps:
+      - name: Render .env.prod from secrets
+        run: |
+          mkdir -p _tmp
+          cat > _tmp/.env.prod <<'ENVEOF'
+          NODE_ENV=production
+          PORT=3000
+          LOG_LEVEL=info
+
+          DATABASE_URL=postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.POSTGRES_DB }}
+          DB_USER=${{ secrets.POSTGRES_USER }}
+          DB_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME=${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+
+          REDIS_URL=redis://redis:6379
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          DB_SSL=false
+
+          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN=${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN=${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+
+          PAYMENT_ENCRYPTION_KEY=${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          DELIVERY_ENCRYPTION_KEY=${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY=${{ secrets.CHANNEL_ENCRYPTION_KEY }}
+          PAYMENT_CALLBACK_HMAC_SECRET=${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          INTERNAL_WEBHOOK_SECRET=${{ secrets.INTERNAL_WEBHOOK_SECRET }}
+
+          CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
+          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+          BASE_URL=${{ secrets.BASE_URL }}
+          COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
+          META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }}
+
+          META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+          META_APP_SECRET=${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_APP_SECRET=${{ secrets.META_WEBHOOK_APP_SECRET }}
+          META_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL=${{ secrets.GEMINI_EMBEDDING_MODEL }}
+          EMBEDDING_PROVIDER=${{ secrets.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL=${{ secrets.EMBEDDING_MODEL }}
+          PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX=${{ secrets.PINECONE_INDEX }}
+          PINECONE_NAMESPACE=${{ secrets.PINECONE_NAMESPACE }}
+          QDRANT_URL=${{ secrets.QDRANT_URL }}
+
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
+
+          SEED_ADMIN_EMAIL=admin@easymod.tech
+          SEED_ADMIN_PASSWORD=${{ secrets.SEED_ADMIN_PASSWORD }}
+          SEED_ADMIN_NAME=EasyMod Admin
+          SEED_ADMIN_PHONE=01700000000
+
+          ALLOW_SELF_SIGNED_TLS=${{ secrets.ALLOW_SELF_SIGNED_TLS }}
+          BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT }}
+          WF1_WEBHOOK_URL=${{ secrets.WF1_WEBHOOK_URL }}
+
+          START_EMBEDDED_WORKERS=false
+          RUN_MIGRATIONS_ON_STARTUP=false
+          MAX_LOGIN_ATTEMPTS=5
+          LOGIN_LOCKOUT_MINUTES=15
+          ENVEOF
+
+      - name: Copy .env.prod to droplet
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
+          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/.env.prod
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod'
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 600s
+          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB
+          script: |
+            set -e
+
+            export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
+            export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
+
+            cd /opt/easymod
+
+            # Sync compose + Caddy config from repo (already checked out on runner,
+            # but we pull directly on the droplet to keep files in sync)
+            git -C /opt/easymod fetch origin main && git -C /opt/easymod checkout origin/main -- docker-compose.prod.yml Caddyfile 2>/dev/null || true
+
+            # Authenticate to ghcr.io on the droplet
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+            # Pull rebuilt images
+            if [ -n "$BACKEND_TAG" ]; then
+              echo "Pulling backend: $BACKEND_TAG"
+              docker pull "$BACKEND_TAG"
+              docker tag "$BACKEND_TAG" "$GHCR_BACKEND:latest"
+            fi
+
+            if [ -n "$FRONTEND_TAG" ]; then
+              echo "Pulling frontend: $FRONTEND_TAG"
+              docker pull "$FRONTEND_TAG"
+              docker tag "$FRONTEND_TAG" "$GHCR_FRONTEND:latest"
+            fi
+
+            # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
+            if [ "$WIPE_DB" = "WIPE" ]; then
+              echo "==> WIPE_DB=WIPE detected — dropping easymod database"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml stop backend worker 2>/dev/null || true
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'easymod' AND pid <> pg_backend_pid();"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "DROP DATABASE IF EXISTS easymod;"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d postgres -c "CREATE DATABASE easymod OWNER easymod_user;"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres psql -U easymod_user -d easymod -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+              echo "==> Bootstrapping entity tables via npm run db:sync"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run db:sync
+              echo "==> Seeding migrations table so the runner skips already-applied DDL"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate:seed-executed
+              echo "==> DB wiped, synced, and migration history primed"
+            fi
+
+            # Restart services with latest images
+            docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
+
+            # Run migrations only when backend was updated (skip on wipe — already seeded)
+            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
+              echo "Running database migrations..."
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run migrate
+            fi
+
+            # Health check
+            for i in $(seq 1 20); do
+              STATUS=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "Health check passed on attempt $i"
+                break
+              fi
+              echo "Attempt $i: status=$STATUS — retrying in 5s..."
+              sleep 5
+              if [ "$i" = "20" ]; then
+                echo "ERROR: Health check failed after 100s"
+                exit 1
+              fi
+            done
+
+            # Clean up dangling images
+            docker image prune -f
+
+        env:
+          GHCR_BACKEND: ${{ env.GHCR_BACKEND }}
+          GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}
+          BACKEND_TAG: ${{ needs.build.outputs.backend_tag }}
+          FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
