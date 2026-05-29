@@ -354,56 +354,6 @@ const listCustomers = async (req, res, next) => {
     }
 };
 
-/**
- * POST /:id/blacklist — set blacklisted_at + reason in metadata
- */
-const blacklistCustomer = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
-            });
-        }
-        const customer = await customerService.getCustomerById(req.params.id, req.user.userId, shopId);
-        const updatedMetadata = {
-            ...(typeof customer.metadata === 'object' && customer.metadata !== null ? customer.metadata : {}),
-            blacklisted: true,
-            blacklisted_at: new Date().toISOString(),
-            blacklist_reason: req.body.reason || null
-        };
-        const updated = await customerService.updateCustomer(req.params.id, req.user.userId, shopId, { metadata: updatedMetadata });
-        res.status(200).json({ success: true, data: updated.customer || updated });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * DELETE /:id/blacklist — clear blacklist flags from metadata
- */
-const removeFromBlacklist = async (req, res, next) => {
-    try {
-        const { shopId } = req.user;
-        if (!shopId) {
-            return res.status(400).json({
-                success: false,
-                error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' }
-            });
-        }
-        const customer = await customerService.getCustomerById(req.params.id, req.user.userId, shopId);
-        const existing = typeof customer.metadata === 'object' && customer.metadata !== null ? { ...customer.metadata } : {};
-        delete existing.blacklisted;
-        delete existing.blacklisted_at;
-        delete existing.blacklist_reason;
-        const updated = await customerService.updateCustomer(req.params.id, req.user.userId, shopId, { metadata: existing });
-        res.status(200).json({ success: true, data: updated.customer || updated });
-    } catch (error) {
-        next(error);
-    }
-};
-
 module.exports = {
     getCustomers,
     getCustomerById,
@@ -416,7 +366,5 @@ module.exports = {
     listCustomers,
     getCustomerExternal,
     createCustomerExternal,
-    updateCustomerExternal,
-    blacklistCustomer,
-    removeFromBlacklist
+    updateCustomerExternal
 };

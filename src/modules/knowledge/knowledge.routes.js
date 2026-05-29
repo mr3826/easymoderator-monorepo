@@ -9,8 +9,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', validate(knowledgeValidator.getKnowledge), knowledgeController.getKnowledge);
-// PUT /knowledge/business-info — FE-canonical endpoint (mirrors /shop/business-info)
-router.put('/business-info', knowledgeController.updateBusinessInfo);
+// Business info is managed via PUT /shop/business-info — keeping GET /knowledge/ as the read endpoint.
 router.put('/branding', validate(knowledgeValidator.updateBrandingRules), knowledgeController.updateBrandingRules);
 router.post('/faq/search', knowledgeController.searchFaq);
 router.get('/shop-settings/:shopId/policies', knowledgeController.getPolicies);

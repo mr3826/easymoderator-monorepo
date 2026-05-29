@@ -80,8 +80,14 @@ scripts/output/
 .pnpm-store
 database.sqlite
 *.sqlite
+*.sqlite3
+database.sqlite3
+cookies.txt
+*.cookies
+*.session
 GITHUB_SECRETS.txt
 secrets-generated-*.txt
 
-# Local skills library (separate repo)
-claude-skills/
+# Local dev tools
+ngrok.exe
+start-ngrok.ps1

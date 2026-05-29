@@ -35,16 +35,8 @@ router.post('/', validate(orderValidator.createOrder), orderController.createOrd
 router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
 router.patch('/:orderId/cancel', orderController.cancelOrder);
 router.post('/:orderId/return-request', orderController.createReturnRequest);
-// Courier booking (canonical)
+// Courier booking
 router.post('/:orderId/book-courier', orderController.bookCourier);
-// FE alias: POST /:orderId/courier → same controller
-router.post('/:orderId/courier', orderController.bookCourier);
-
-// FE alias: POST /:orderId/confirm → injects param as body.orderId
-router.post('/:orderId/confirm', (req, res, next) => {
-    req.body = { ...req.body, orderId: req.params.orderId };
-    return orderController.confirmOrder(req, res, next);
-});
 // D3: Return automation endpoints
 router.post('/:orderId/return', orderController.initiateReturn);
 router.patch('/:orderId/return/status', orderController.updateReturnStatus);

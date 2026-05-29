@@ -77,23 +77,4 @@ router.post(
     conversationController.createMessage
 );
 
-// FE alias: POST /:id/message (singular) → same as /messages
-router.post(
-    '/:conversationId/message',
-    validate(conversationValidator.createMessage),
-    conversationController.createMessage
-);
-
-// FE alias: POST /:id/close → PATCH /:id with status:'closed'
-router.post('/:conversationId/close', async (req, res, next) => {
-    req.body = { ...req.body, status: 'closed' };
-    return conversationController.updateConversation(req, res, next);
-});
-
-// FE alias: POST /:id/reopen → PATCH /:id with status:'active'
-router.post('/:conversationId/reopen', async (req, res, next) => {
-    req.body = { ...req.body, status: 'active' };
-    return conversationController.updateConversation(req, res, next);
-});
-
 module.exports = router;

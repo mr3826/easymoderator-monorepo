@@ -122,12 +122,6 @@ router.delete(
     auditLogMiddleware('DELETE', 'CUSTOMER')
 );
 
-// ─── Blacklist routes — must come before generic /:id DELETE ──────────────
-// POST /:id/blacklist — add customer to blacklist
-router.post('/:id/blacklist', customerController.blacklistCustomer);
-// DELETE /:id/blacklist — remove customer from blacklist
-router.delete('/:id/blacklist', customerController.removeFromBlacklist);
-
 // ─── Customer Memory routes ─────────────────────────────────────────────────
 
 const customerMemoryService = require('./customer-memory.service');
