@@ -227,21 +227,6 @@ export default function UnifiedInbox() {
       );
     }, []),
 
-    onCustomerUpdated: useCallback(({ customer_id, name }) => {
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.customer?.id === customer_id
-            ? { ...conv, customer: { ...conv.customer, name } }
-            : conv
-        )
-      );
-      setSelectedConversation((prev) =>
-        prev?.customer?.id === customer_id
-          ? { ...prev, customer: { ...prev.customer, name } }
-          : prev
-      );
-    }, []),
-
     onDeliveryFailed: useCallback(({ reason }) => {
       toast.warning(`Reply not delivered: ${reason}`, { duration: 6000 });
     }, []),

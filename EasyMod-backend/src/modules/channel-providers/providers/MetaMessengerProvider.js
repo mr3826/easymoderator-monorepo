@@ -438,27 +438,6 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    /**
-     * Fetch the customer's public profile (name) via the Messenger User Profile API.
-     * Best-effort: returns null on any failure so the inbound path never breaks.
-     * Requires the PSID to have messaged the Page (which is always true here).
-     */
-    async getUserProfile(channel, userId) {
-        const token = channel?.page_access_token_ct;
-        if (!token || !userId) return null;
-        try {
-            const resp = await axios.get(`${GRAPH_BASE}/${userId}`, {
-                params: { fields: 'first_name,last_name,name', access_token: token },
-            });
-            const d = resp.data || {};
-            const name = d.name || [d.first_name, d.last_name].filter(Boolean).join(' ').trim();
-            return name ? { name } : null;
-        } catch (err) {
-            logger.warn('getUserProfile failed', { metaMsg: err.response?.data?.error?.message || err.message });
-            return null;
-        }
-    }
-
     async sendPrivateReplyToComment({ channel, commentId, normalizedMessage }) {
         const token = channel.page_access_token_ct;
         if (!token) throw new Error('sendPrivateReplyToComment: channel has no token');

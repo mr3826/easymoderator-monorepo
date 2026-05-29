@@ -114,28 +114,10 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
   },
 ];
 
-// Map any plan identifier the backend might send — display name ("Package 1"),
-// canonical code ("PACKAGE_1"), internal id ("package_1"), or a legacy alias
-// (Free/Starter/Pro/Business → package_1, Growth → package_2) — to a plan id.
-// Keeps the frontend in sync with backend PlanCode + normalizePlanCode().
-const PLAN_ALIAS_TO_ID: Record<string, string> = {
-  "package 1": "package_1", package_1: "package_1", "package_1": "package_1",
-  free: "package_1", starter: "package_1", pro: "package_1", business: "package_1",
-  "package 2": "package_2", package_2: "package_2", growth: "package_2",
-  partner: "partner",
-};
-
-export const findPlanByName = (name?: string | null) => {
-  if (!name) return undefined;
-  const key = String(name).trim().toLowerCase();
-  const directId = PLAN_ALIAS_TO_ID[key];
-  return subscriptionPlans.find(
-    (plan) =>
-      plan.id === directId ||
-      plan.name.toLowerCase() === key ||
-      plan.id === key
+export const findPlanByName = (name: string) =>
+  subscriptionPlans.find(
+    (plan) => plan.name.toLowerCase() === name.toLowerCase()
   );
-};
 
 export const getPlanPrice = (
   plan: SubscriptionPlanDefinition,

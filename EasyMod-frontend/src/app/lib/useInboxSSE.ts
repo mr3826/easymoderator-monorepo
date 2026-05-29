@@ -9,7 +9,6 @@ interface SSECallbacks {
     onHitlChanged: (data: { conversation_id: string; hitl: boolean }) => void;
     onDeliveryFailed?: (data: { conversation_id: string; reason: string }) => void;
     onChannelError?: (data: { type: string; page_id: string; display_name: string; message: string }) => void;
-    onCustomerUpdated?: (data: { customer_id: string; name: string }) => void;
     onSSEOffline?: () => void;
     onSSEOnline?: () => void;
 }
@@ -22,10 +21,10 @@ interface SSECallbacks {
  * Reconnects automatically with exponential back-off (1s → 30s cap) on error.
  * Cookies are sent automatically by EventSource (withCredentials: true).
  */
-export function useInboxSSE({ onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onCustomerUpdated, onSSEOffline, onSSEOnline }: SSECallbacks): void {
+export function useInboxSSE({ onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline }: SSECallbacks): void {
     // Keep callbacks in a ref so reconnects always use the latest closures
-    const callbacksRef = useRef<SSECallbacks>({ onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onCustomerUpdated, onSSEOffline, onSSEOnline });
-    callbacksRef.current = { onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onCustomerUpdated, onSSEOffline, onSSEOnline };
+    const callbacksRef = useRef<SSECallbacks>({ onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline });
+    callbacksRef.current = { onNewMessage, onHitlChanged, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline };
 
     const shopId = authService.getCurrentShopId();
 
@@ -71,14 +70,6 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onDeliveryFailed, onC
             es.addEventListener('channel_error', (e: MessageEvent) => {
                 try {
                     callbacksRef.current.onChannelError?.(JSON.parse(e.data));
-                } catch (e) {
-                    console.error('[useInboxSSE] Failed to parse SSE event data:', e);
-                }
-            });
-
-            es.addEventListener('customer_updated', (e: MessageEvent) => {
-                try {
-                    callbacksRef.current.onCustomerUpdated?.(JSON.parse(e.data));
                 } catch (e) {
                     console.error('[useInboxSSE] Failed to parse SSE event data:', e);
                 }

@@ -22,16 +22,10 @@ let cachedResult: UseSubscriptionFeaturesResult | null = null;
 let fetchPromise: Promise<void> | null = null;
 let cacheListeners: Array<() => void> = [];
 
-// Safe fallback when the subscription cannot be resolved (fetch error or an
-// unrecognised plan_name). EVERY paid plan — including the cheapest PACKAGE_1
-// (750 BDT) — ships the AI inbox, image understanding, and priority support
-// (see subscriptionPlans.ts / backend subscription.plans.js BASE_FEATURES).
-// Defaulting these to false locks the AI inbox ("Upgrade for AI") on any
-// transient hiccup, which is wrong. custom_branding stays false (Partner-only).
 const defaultFeatures: SubscriptionFeatures = {
-  image_understanding: true,
-  advanced_ai: true,
-  priority_support: true,
+  image_understanding: false,
+  advanced_ai: false,
+  priority_support: false,
   custom_branding: false,
 };
 
@@ -40,7 +34,7 @@ async function fetchAndCache(): Promise<void> {
     const response = await apiClient.getSubscription();
     if (response.data?.success && response.data?.data?.subscription) {
       const sub = response.data.data.subscription;
-      const matched = findPlanByName(sub.plan_name) ?? findPlanByName(sub.plan_code) ?? null;
+      const matched = findPlanByName(sub.plan_name) ?? null;
       cachedResult = {
         features: matched?.features
           ? {

@@ -21,42 +21,8 @@ const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { dispatchCommentEvents, notifyDmOpened } = require('./meta-webhook-comments.handler');
 const { extractCommentEvents } = require('../commentToDm/comment-to-dm.webhook-handler');
-const { getProvider } = require('../channel-providers/provider.registry');
 
 const logger = createLogger('MetaWebhookEvents');
-
-// Placeholder names assigned when a customer is first seen via webhook (before
-// we've fetched their real Meta profile). enrichCustomerName replaces these.
-const PLACEHOLDER_NAME_RE = /^(facebook|instagram) user$|^customer$/i;
-
-/**
- * Best-effort: fetch the customer's real name from Meta and persist it, replacing
- * the "facebook user" / "instagram user" placeholder. Non-blocking and never throws
- * — a failed profile lookup must not affect inbound message handling. Emits a
- * `customer_updated` SSE event so open inboxes refresh the displayed name live.
- */
-async function enrichCustomerName({ channel, platform, senderId, customerId }) {
-    try {
-        if (!channel || !customerId || !senderId) return;
-        const customer = await Customer.findByPk(customerId);
-        if (!customer) return;
-        // Only fetch when the name is still a placeholder (avoids a Graph call per message).
-        if (customer.name && !PLACEHOLDER_NAME_RE.test(customer.name)) return;
-
-        const provider = getProvider(platform);
-        if (!provider?.getUserProfile) return;
-        const profile = await provider.getUserProfile(channel, senderId);
-        if (!profile?.name) return;
-
-        await customer.update({ name: profile.name });
-        sseManager.emit(channel.shop_id, 'customer_updated', {
-            customer_id: customerId,
-            name: profile.name,
-        });
-    } catch (err) {
-        logger.warn('enrichCustomerName failed (continuing)', { error: err.message });
-    }
-}
 
 // ─── BullMQ dispatch ──────────────────────────────────────────────────────────
 
@@ -219,7 +185,7 @@ async function storeIncomingMessage(event) {
         }
 
         return await sequelize.transaction(async (t) => {
-            const [customer, customerCreated] = await Customer.findOrCreate({
+            const [customer] = await Customer.findOrCreate({
                 where: { shop_id, channel_type: channelType, channel_user_id: sender },
                 defaults: {
                     shop_id,
@@ -294,7 +260,6 @@ async function storeIncomingMessage(event) {
             return {
                 customer_id: customer.id,
                 customer_name: customer.name,
-                customer_created: customerCreated,
                 conversation_id: conversation.id,
                 message_id: msgRecord.id,
                 message: msgRecord,
@@ -379,21 +344,11 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                     const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
                     sseManager.emit(channel.shop_id, 'new_message', {
                         conversation_id: storeResult.conversation_id,
-                        message: {
-                            ...msgJson,
-                            message_type: msgJson.metadata?.message_type || 'text',
-                            sender: 'customer',
-                            // Guarantee a timestamp so the inbox never renders "Invalid Date"
-                            // if the freshly-created row's created_at isn't populated yet.
-                            created_at: msgJson.created_at || new Date().toISOString(),
-                        }
+                        message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
                     });
                 }
                 const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
                 if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
-                if (storeResult.customer_created) {
-                    enrichCustomerName({ channel, platform: 'facebook', senderId: messaging.sender.id, customerId: storeResult.customer_id }).catch(() => {});
-                }
                 notifyDmOpened(channel, messaging.sender.id, messageText);
             } catch (err) {
                 logger.error(`Failed to store message from ${messaging.sender.id} (page ${pageId})`, {
@@ -464,21 +419,11 @@ async function handleInstagramWebhook(payload, resolveConnectedChannel) {
                     const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
                     sseManager.emit(channel.shop_id, 'new_message', {
                         conversation_id: storeResult.conversation_id,
-                        message: {
-                            ...msgJson,
-                            message_type: msgJson.metadata?.message_type || 'text',
-                            sender: 'customer',
-                            // Guarantee a timestamp so the inbox never renders "Invalid Date"
-                            // if the freshly-created row's created_at isn't populated yet.
-                            created_at: msgJson.created_at || new Date().toISOString(),
-                        }
+                        message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
                     });
                 }
                 const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
                 if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
-                if (storeResult.customer_created) {
-                    enrichCustomerName({ channel, platform: 'instagram', senderId: message.sender.id, customerId: storeResult.customer_id }).catch(() => {});
-                }
                 notifyDmOpened(channel, message.sender.id, messageText);
             } catch (err) {
                 logger.error(`Failed to store Instagram message from ${message.sender.id} (account ${igAccountId})`, {

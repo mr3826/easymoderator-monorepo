@@ -35,10 +35,8 @@ const getChannelIcon = (channel: string): string => {
   return icons[channel] || "💬";
 };
 
-const formatDate = (dateString: string | null | undefined): string => {
-  if (!dateString) return "";
+const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "";
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const minutes = Math.floor(diff / 60000);

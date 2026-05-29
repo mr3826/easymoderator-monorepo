@@ -26,10 +26,8 @@ function isValidMediaUrl(url: unknown): url is string {
   }
 }
 
-function formatDate(dateString: string | null | undefined): string {
-  if (!dateString) return "";
+function formatDate(dateString: string): string {
   const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) return "";
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const minutes = Math.floor(diff / 60000);
@@ -53,10 +51,10 @@ const MessageItem = memo(function MessageItem({
   customerName: string;
   t: (key: string) => string;
 }) {
-  const tsDate = new Date(message.created_at);
-  const ts = Number.isNaN(tsDate.getTime())
-    ? ""
-    : tsDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  const ts = new Date(message.created_at).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   return (
     <div className={`flex ${message.sender === "customer" ? "justify-start" : "justify-end"}`}>
