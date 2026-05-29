@@ -6,11 +6,14 @@ const entities = require('../../modules/entities');
 
 const syncDatabase = async () => {
     try {
-        // Use alter to update schema without deleting data
-        // This will add new columns, remove columns that don't exist in the model,
-        // and change column types if needed, but will preserve existing data
-        await sequelize.sync({ alter: true });
-        console.log('Database synchronized successfully (schema updated, data preserved).');
+        // Plain sync (CREATE TABLE IF NOT EXISTS) — db:sync only runs against a
+        // freshly-dropped database in the deploy WIPE path, where there is
+        // nothing to alter. `alter: true` is avoided because Sequelize emits
+        // malformed enum-change DDL (ALTER ... USING (col::enum)) that aborts
+        // the whole sync on Postgres. Incremental schema changes go through
+        // migrations, not db:sync.
+        await sequelize.sync();
+        console.log('Database synchronized successfully (tables created).');
         process.exit(0);
     } catch (error) {
         console.error('Error synchronizing database:', error);
