@@ -76,7 +76,7 @@
       "subheadline": "Chat with customers on Facebook & Instagram using AI, take orders, track deliveries — all in one place.",
       "ctaStart": "Get Started →",
       "ctaDemo": "View Demo",
-      "stat1Value": "500+",
+      "stat1Value": "10+",
       "stat1Label": "Shops using it",
       "stat2Value": "98%",
       "stat2Label": "Customer satisfaction",
@@ -138,7 +138,7 @@
       "heading": "Make your business smart.",
       "subheading": "Facebook & Instagram — manage all channels together.",
       "stats": [
-        { "stat": "10,000+", "label": "Active Businesses" },
+        { "stat": "10+", "label": "Active Businesses" },
         { "stat": "98%", "label": "Happy Customers" },
         { "stat": "5 min", "label": "Setup Time" },
         { "stat": "24/7", "label": "AI Support" }
@@ -158,7 +158,7 @@
       "signInButton": "Sign in →",
       "noAccount": "Don't have an account?",
       "createAccount": "Create new account",
-      "trustBadge": "10,000+ Bangladeshi businesses use Easy Moderator",
+      "trustBadge": "10+ Bangladeshi businesses use Easy Moderator",
       "errors": {
         "emailRequired": "Please enter your email",
         "passwordRequired": "Please enter your password",
@@ -168,7 +168,7 @@
     "signup": {
       "alreadyHaveAccount": "Already have an account?",
       "signIn": "Sign in",
-      "badge": "🇧🇩 10,000+ Bangladeshi businesses use us",
+      "badge": "🇧🇩 10+ Bangladeshi businesses use us",
       "heading": "Start Today",
       "subheading": "Grow your Bangladeshi business with AI — set up in just 5 minutes.",
       "choosePlan": "Choose your plan",
@@ -698,6 +698,7 @@
       "channelWebChat": "Web Chat",
       "channelTelegram": "Telegram",
       "address": "Delivery Address",
+      "zone": "Zone",
       "addressPlaceholder": "Enter complete delivery address",
       "division": "Division",
       "district": "District",

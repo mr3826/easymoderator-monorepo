@@ -720,7 +720,7 @@ export default function Orders() {
                   />
                   {manualOrder.division && manualOrder.district && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Zone: <span className="font-medium text-blue-600">{deriveZone(manualOrder.division, manualOrder.district)?.replace(/_/g, ' ')}</span>
+                      {t('orders.createModal.zone')}: <span className="font-medium text-blue-600">{deriveZone(manualOrder.division, manualOrder.district)?.replace(/_/g, ' ')}</span>
                     </p>
                   )}
                 </div>

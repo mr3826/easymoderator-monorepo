@@ -1,6 +1,6 @@
 {
   "common": {
-    "privacyPolicy": "Privacy Policy",
+    "privacyPolicy": "গোপনীয়তা নীতি",
     "terms": "সেবার শর্তাবলী",
     "signIn": "লগইন",
     "signUp": "সাইনআপ",
@@ -62,9 +62,9 @@
   },
   "landing": {
     "nav": {
-      "features": "Features",
-      "pricing": "Pricing",
-      "contact": "Contact",
+      "features": "ফিচার",
+      "pricing": "প্রাইসিং",
+      "contact": "যোগাযোগ",
       "getStarted": "শুরু করুন"
     },
     "hero": {
@@ -75,7 +75,7 @@
       "subheadline": "ফেসবুক ও ইনস্টাগ্রামে কাস্টমারদের সাথে AI দিয়ে কথা বলুন, অর্ডার নিন, ডেলিভারি ট্র্যাক করুন — সব এক জায়গায়।",
       "ctaStart": "শুরু করুন →",
       "ctaDemo": "ডেমো দেখুন",
-      "stat1Value": "৫০০+",
+      "stat1Value": "১০+",
       "stat1Label": "শপ ব্যবহার করছে",
       "stat2Value": "৯৮%",
       "stat2Label": "গ্রাহক সন্তুষ্টি",
@@ -83,7 +83,7 @@
       "stat3Label": "সাপোর্ট উপলব্ধ"
     },
     "features": {
-      "label": "Features",
+      "label": "ফিচার",
       "heading": "কেন EasyModerator?",
       "subheading": "বাংলাদেশের শপ অওনারদের জন্য বিশেষভাবে তৈরি",
       "items": [
@@ -96,7 +96,7 @@
       ]
     },
     "pricing": {
-      "label": "Pricing",
+      "label": "প্রাইসিং",
       "heading": "সহজ মূল্য পরিকল্পনা",
       "subheading": "আপনার ব্যবসার আকার অনুযায়ী প্ল্যান বেছে নিন",
       "perMonth": "/মাস",
@@ -104,7 +104,7 @@
       "getStarted": "শুরু করুন"
     },
     "testimonials": {
-      "label": "Testimonials",
+      "label": "গ্রাহক মতামত",
       "heading": "শপ অওনাররা কী বলেন",
       "items": [
         {
@@ -137,7 +137,7 @@
       "heading": "আপনার ব্যবসাকে স্মার্ট করুন।",
       "subheading": "Facebook ও Instagram — সব চ্যানেল একসাথে পরিচালনা করুন।",
       "stats": [
-        { "stat": "১০,০০০+", "label": "সক্রিয় ব্যবসায়ী" },
+        { "stat": "১০+", "label": "সক্রিয় ব্যবসায়ী" },
         { "stat": "৯৮%", "label": "সন্তুষ্ট গ্রাহক" },
         { "stat": "৫ মিনিট", "label": "সেটআপ সময়" },
         { "stat": "২৪/৭", "label": "AI সাপোর্ট" }
@@ -157,17 +157,17 @@
       "signInButton": "লগইন করুন →",
       "noAccount": "অ্যাকাউন্ট নেই?",
       "createAccount": "নতুন অ্যাকাউন্ট তৈরি করুন",
-      "trustBadge": "১০,০০০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
+      "trustBadge": "১০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
       "errors": {
-        "emailRequired": "Please enter your email",
-        "passwordRequired": "Please enter your password",
-        "invalidCredentials": "Invalid email or password"
+        "emailRequired": "আপনার ইমেইল লিখুন",
+        "passwordRequired": "আপনার পাসওয়ার্ড লিখুন",
+        "invalidCredentials": "ইমেইল বা পাসওয়ার্ড সঠিক নয়"
       }
     },
     "signup": {
       "alreadyHaveAccount": "ইতিমধ্যে অ্যাকাউন্ট আছে?",
       "signIn": "লগইন করুন",
-      "badge": "🇧🇩 ১০,০০০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
+      "badge": "🇧🇩 ১০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
       "heading": "শুরু করুন আজই",
       "subheading": "আপনার বাংলাদেশী ব্যবসাকে AI দিয়ে এগিয়ে নিন — মাত্র ৫ মিনিটে সেটআপ করুন।",
       "choosePlan": "আপনার প্ল্যান বেছে নিন",
@@ -210,12 +210,12 @@
         "chatbot": { "title": "AI চ্যাটবট", "desc": "২৪/৭ অটো রিপ্লাই" }
       },
       "errors": {
-        "selectPlan": "Please select a subscription plan.",
-        "enterName": "Please enter your full name.",
-        "enterEmail": "Please enter a valid email.",
-        "createPassword": "Please create a password.",
-        "acceptTerms": "Please accept the terms to continue.",
-        "unableToCreate": "Unable to create account."
+        "selectPlan": "একটি সাবস্ক্রিপশন প্ল্যান নির্বাচন করুন।",
+        "enterName": "আপনার পূর্ণ নাম লিখুন।",
+        "enterEmail": "একটি বৈধ ইমেইল লিখুন।",
+        "createPassword": "একটি পাসওয়ার্ড তৈরি করুন।",
+        "acceptTerms": "চালিয়ে যেতে শর্তাবলীতে সম্মত হন।",
+        "unableToCreate": "অ্যাকাউন্ট তৈরি করা যায়নি।"
       }
     },
     "forgotPassword": {
@@ -290,16 +290,16 @@
       "lastUpdated": "· শেষ আপডেট {{time}}"
     },
     "nav": {
-      "dashboard": "Dashboard",
-      "inbox": "Inbox",
-      "products": "Products",
-      "categories": "Categories",
-      "orders": "Orders",
-      "customer": "Customer",
-      "manageShop": "Manage Shop",
-      "aiKnowledge": "AI Knowledge",
-      "reports": "Reports",
-      "subscription": "Subscription"
+      "dashboard": "ড্যাশবোর্ড",
+      "inbox": "ইনবক্স",
+      "products": "পণ্য",
+      "categories": "ক্যাটাগরি",
+      "orders": "অর্ডার",
+      "customer": "গ্রাহক",
+      "manageShop": "শপ পরিচালনা",
+      "aiKnowledge": "AI নলেজ",
+      "reports": "রিপোর্ট",
+      "subscription": "সাবস্ক্রিপশন"
     },
     "activeShop": "সক্রিয় শপ",
     "createNewShop": "নতুন শপ তৈরি করুন",
@@ -313,7 +313,7 @@
     "logoutConfirm": "আপনি কি এই প্রজেক্ট থেকে লগআউট করতে চান?",
     "cancel": "বাতিল",
     "home": {
-      "title": "Dashboard",
+      "title": "ড্যাশবোর্ড",
       "subtitle": "স্বাগতম! আপনার ব্যবসার সারসংক্ষেপ দেখুন।",
       "metrics": {
         "totalMessages": "মোট বার্তা",
@@ -368,7 +368,7 @@
     "messageTagPlaceholder": "উপরে Message Tag বেছে নিন...",
     "send": "পাঠান",
     "sending": "পাঠানো হচ্ছে...",
-    "messageTag": "Message Tag",
+    "messageTag": "মেসেজ ট্যাগ",
     "messageTagRequired": "আবশ্যিক: Message Tag বেছে নিন",
     "messageTagOptional": "ঐচ্ছিক: Message Tag",
     "selectConversation": "বার্তা দেখতে একটি কথোপকথন বেছে নিন",
@@ -697,6 +697,7 @@
       "channelWebChat": "ওয়েব চ্যাট",
       "channelTelegram": "টেলিগ্রাম",
       "address": "ডেলিভারি ঠিকানা",
+      "zone": "জোন",
       "addressPlaceholder": "সম্পূর্ণ ডেলিভারি ঠিকানা লিখুন",
       "productsSection": "পণ্যসমূহ",
       "addProduct": "পণ্য যোগ করুন",
@@ -980,7 +981,7 @@
       "closingLabel": "বিদায়ের ধরন",
       "closingPlaceholder": "ধন্যবাদ!",
       "forbiddenLabel": "নিষিদ্ধ বাক্যাংশ (কমা দিয়ে আলাদা করুন)",
-      "forbiddenPlaceholder": "maybe, I think, not sure",
+      "forbiddenPlaceholder": "যেমন: হয়তো, আমার মনে হয়, নিশ্চিত নই",
       "escalationLabel": "এস্কেলেশন কীওয়ার্ড (কমা দিয়ে আলাদা করুন)",
       "escalationPlaceholder": "মানুষ, এজেন্ট, সাহায্য",
       "escalationHint": "কাস্টমার এই কীওয়ার্ড পাঠালে AI অটো-রিপ্লাই স্বয়ংক্রিয়ভাবে বিরতি নেবে এবং কথোপকথনটি মানব পর্যালোচনার জন্য চিহ্নিত হবে।",
