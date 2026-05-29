@@ -286,6 +286,17 @@ jobs:
               echo "==> Seeding migrations table so the runner skips already-applied DDL"
               docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate:seed-executed
               echo "==> DB wiped, synced, and migration history primed"
+
+              # Full reset: a true first-time state must also clear the other
+              # stateful stores, otherwise stale dedup keys can suppress new
+              # messages and orphaned RAG vectors can bleed into AI replies.
+              echo "==> Flushing Redis (BullMQ jobs, dedup keys, rate buckets, SSE replay, sessions)"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T redis redis-cli FLUSHALL || true
+              echo "==> Resetting Qdrant vector store (RAG embeddings)"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml stop qdrant 2>/dev/null || true
+              docker compose --env-file .env.prod -f docker-compose.prod.yml rm -f qdrant 2>/dev/null || true
+              for v in $(docker volume ls -q | grep -i qdrant); do docker volume rm "$v" 2>/dev/null || true; done
+              echo "==> Redis flushed and Qdrant volume reset"
             fi
 
             # Restart services with latest images
