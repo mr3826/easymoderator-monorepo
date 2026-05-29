@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Production docker-compose for Digital Ocean Droplet (2vCPU 2GB)
 # Images pulled from GitHub Container Registry (ghcr.io)
 # Set GHCR_IMAGE_BACKEND, GHCR_IMAGE_FRONTEND env vars on the droplet
@@ -52,79 +51,10 @@ services:
       RUN_MIGRATIONS_ON_STARTUP: "false"
     ports:
       - "3000:3000"
-=======
-version: "3.9"
-
-# ──────────────────────────────────────────────────────────────────────────────
-# EasyModerator — Production Single-Droplet Stack
-#
-# Services:
-#   caddy     — TLS termination (Let's Encrypt), reverse proxy, SPA serving
-#   backend   — Node 20 Express API (port 3000, internal only)
-#   worker    — BullMQ background jobs (same image, different command)
-#   postgres  — PostgreSQL 15 (internal only)
-#   redis     — Redis 7 (internal only)
-#   qdrant    — Vector DB for RAG (internal only)
-#
-# Usage:
-#   cp .env.prod.example .env.prod
-#   # fill in .env.prod
-#   docker compose -f docker-compose.prod.yml up -d
-# ──────────────────────────────────────────────────────────────────────────────
-
-networks:
-  internal:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  redis_data:
-  qdrant_data:
-  caddy_data:
-  caddy_config:
-
-services:
-  # ── Caddy: TLS + reverse proxy ────────────────────────────────────────────
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks:
-      - internal
-    depends_on:
-      backend:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-    environment:
-      - ACME_AGREE=true
-
-  # ── Backend: Express API ──────────────────────────────────────────────────
-  backend:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymod-backend:latest}
-    restart: unless-stopped
-    command: ["node", "server.js"]
-    env_file:
-      - .env.prod
-    environment:
-      - NODE_ENV=production
-      - START_EMBEDDED_WORKERS=false
-      - RUN_MIGRATIONS_ON_STARTUP=false
-    networks:
-      - internal
->>>>>>> 5bd89ff29d9f5e81df58ebd5dde4e3d7229cb67c
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-<<<<<<< HEAD
         condition: service_started
     networks:
       - easymod-network
@@ -137,36 +67,16 @@ services:
 
   worker:
     image: ${GHCR_IMAGE_BACKEND}
-=======
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      start_period: 60s
-      retries: 5
-
-  # ── Worker: BullMQ background jobs ───────────────────────────────────────
-  worker:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymod-backend:latest}
->>>>>>> 5bd89ff29d9f5e81df58ebd5dde4e3d7229cb67c
     restart: unless-stopped
     command: ["node", "src/jobs/worker.js"]
     env_file:
       - .env.prod
     environment:
-<<<<<<< HEAD
       NODE_ENV: production
-=======
-      - NODE_ENV=production
-    networks:
-      - internal
->>>>>>> 5bd89ff29d9f5e81df58ebd5dde4e3d7229cb67c
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-<<<<<<< HEAD
         condition: service_started
     networks:
       - easymod-network
@@ -241,59 +151,3 @@ volumes:
 networks:
   easymod-network:
     driver: bridge
-=======
-        condition: service_healthy
-
-  # ── Frontend: nginx serving built SPA ────────────────────────────────────
-  frontend:
-    image: ${GHCR_IMAGE_FRONTEND:-ghcr.io/mr3826/easymod-frontend:latest}
-    restart: unless-stopped
-    networks:
-      - internal
-    # Port 8080 is internal only — Caddy proxies to it
-
-  # ── PostgreSQL 15 ─────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DB_USER:-easymod_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-      POSTGRES_DB: ${DB_NAME:-easymod}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-easymod_user} -d ${DB_NAME:-easymod}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
-  # ── Redis 7 ──────────────────────────────────────────────────────────────
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── Qdrant: Vector DB ────────────────────────────────────────────────────
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: unless-stopped
-    volumes:
-      - qdrant_data:/qdrant/storage
-    networks:
-      - internal
-    # No ports exposed externally — backend accesses via internal network
-    # Internal URL: http://qdrant:6333
->>>>>>> 5bd89ff29d9f5e81df58ebd5dde4e3d7229cb67c
