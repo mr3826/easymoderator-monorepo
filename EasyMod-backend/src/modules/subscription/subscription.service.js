@@ -690,6 +690,35 @@ const deliverConversationPackCredit = async (invoice) => {
 };
 
 /**
+ * Grant bonus conversations to a shop (e.g. referral reward, promo credit).
+ * Atomic increment on extra_conversations; safe under concurrency.
+ * No-op if the shop has no subscription row yet (lazy-created on first use).
+ *
+ * @param {string} shopId - Shop UUID
+ * @param {number} amount - Conversations to add (must be > 0)
+ * @param {string} [reason] - Audit reason for structured logging
+ * @returns {Promise<{ granted: boolean, amount: number }>}
+ */
+const grantBonusConversations = async (shopId, amount, reason = 'bonus') => {
+    if (!shopId || !Number.isInteger(amount) || amount <= 0) {
+        return { granted: false, amount: 0 };
+    }
+
+    const [affected] = await Subscription.increment(
+        { extra_conversations: amount },
+        { where: { shop_id: shopId } }
+    );
+
+    // Sequelize returns affectedCount differently per dialect; treat falsy as no-op
+    const granted = Array.isArray(affected) ? affected[1] > 0 : true;
+
+    const logger = createLogger('subscription-bonus', shopId);
+    logger.info('Bonus conversations granted', { amount, reason });
+
+    return { granted, amount };
+};
+
+/**
  * PARTNER PLAN: Charge per delivered order.
  *
  * Called by order.service.js whenever an order transitions to order_status = 'delivered'.
@@ -754,5 +783,6 @@ module.exports = {
     verifyNoDoubleCount,
     checkRateLimit,
     incrementRateLimit,
-    deliverConversationPackCredit
+    deliverConversationPackCredit,
+    grantBonusConversations
 };

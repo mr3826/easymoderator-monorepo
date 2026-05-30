@@ -4,7 +4,7 @@ import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
   Store, LogOut,
   CreditCard, Bell, ChevronLeft, ChevronRight,
-  ChevronDown, Building2, MessageSquare, Truck, Settings,
+  ChevronDown, Building2, MessageSquare, Truck, Settings, Gift,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -65,9 +65,10 @@ export default function DashboardLayout() {
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
   const subscriptionItem = { name: 'সাবস্ক্রিপশন', path: `${appBasePath}/subscription`, icon: CreditCard };
+  const referralItem = { name: t('referral.navLabel'), path: `${appBasePath}/referral`, icon: Gift };
 
   // Derive page title from current route (check settings group first — more specific paths)
-  const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
+  const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem, referralItem];
   const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
@@ -172,31 +173,33 @@ export default function DashboardLayout() {
           </div>
         </nav>
 
-        {/* Billing footer: Subscription */}
-        <div className="border-t border-gray-100 px-2 pt-2 pb-1 shrink-0">
-          {(() => {
+        {/* Billing footer: Referral + Subscription */}
+        <div className="border-t border-gray-100 px-2 pt-2 pb-1 shrink-0 space-y-1">
+          {[referralItem, subscriptionItem].map((item) => {
             const isActive =
-              location.pathname === subscriptionItem.path ||
-              location.pathname.startsWith(subscriptionItem.path);
+              location.pathname === item.path ||
+              location.pathname.startsWith(item.path);
+            const Icon = item.icon;
             return (
               <Link
-                to={subscriptionItem.path}
-                aria-label={collapsed ? subscriptionItem.name : undefined}
-                title={collapsed ? subscriptionItem.name : undefined}
+                key={item.path}
+                to={item.path}
+                aria-label={collapsed ? item.name : undefined}
+                title={collapsed ? item.name : undefined}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group relative ${
                   isActive
                     ? 'bg-blue-50 text-blue-600'
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
-                <CreditCard className="w-5 h-5 shrink-0" />
-                {!collapsed && <span className="text-sm font-medium">{subscriptionItem.name}</span>}
+                <Icon className="w-5 h-5 shrink-0" />
+                {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
                 {isActive && (
                   <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-600 rounded-r-full" />
                 )}
               </Link>
             );
-          })()}
+          })}
         </div>
 
         {/* Footer: language + privacy */}

@@ -146,7 +146,7 @@ const createUserWithShop = async (userData) => {
     const transaction = await sequelize.transaction();
 
     try {
-        const { email, password, full_name, phone, shop_name } = userData;
+        const { email, password, full_name, phone, shop_name, referral_code } = userData;
 
         // Check if user already exists
         const existingUser = await User.findOne({ where: { email } });
@@ -197,6 +197,21 @@ const createUserWithShop = async (userData) => {
 
         // Set the first shop as last logged shop
         await user.update({ last_logged_shop_id: shop.id });
+
+        // Acquisition: if signed up via an invite code, record the referral and
+        // reward both shops. Non-fatal — signup must never fail on this.
+        if (referral_code) {
+            try {
+                const referralService = require('../referral/referral.service');
+                await referralService.recordReferral({
+                    code: referral_code,
+                    referredShopId: shop.id,
+                    referredUserId: user.id
+                });
+            } catch (referralError) {
+                console.error('Referral recording failed (non-fatal):', referralError.message);
+            }
+        }
 
         // Generate tokens with shopId and token_version included
         const accessToken = generateAccessToken({

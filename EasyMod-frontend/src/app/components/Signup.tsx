@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,9 +39,30 @@ export default function Signup() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { signup } = useAuth();
+  const [searchParams] = useSearchParams();
   const [billingAnnual, setBillingAnnual] = useState(false);
   // Default new signups to the FREE tier — no-card on-ramp.
   const [selectedPlanId, setSelectedPlanId] = useState("free");
+
+  // Acquisition: capture an invite code from ?ref= and confirm who invited them.
+  const referralCode = (searchParams.get("ref") || "").trim();
+  const [referredByName, setReferredByName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!referralCode) return;
+    let active = true;
+    apiClient
+      .validateReferralCode(referralCode)
+      .then((res) => {
+        if (active && res.valid) setReferredByName(res.shop_name);
+      })
+      .catch(() => {
+        /* invalid/unreachable code — silently ignore, signup still works */
+      });
+    return () => {
+      active = false;
+    };
+  }, [referralCode]);
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -76,6 +97,7 @@ export default function Signup() {
         password: data.password,
         full_name: data.fullName,
         phone: data.phone?.trim() || undefined,
+        referral_code: referralCode || undefined,
       });
 
       await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
@@ -283,6 +305,13 @@ export default function Signup() {
                 <span className="font-medium" style={{ color: '#00A651' }}>{selectedPlan.name}</span>{' '}
                 {t('auth.signup.activatePlan')}
               </p>
+
+              {referredByName && (
+                <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
+                  <span>🎁</span>
+                  <span>{t('auth.signup.referredBy', { shop: referredByName })}</span>
+                </div>
+              )}
 
               <AnimatePresence>
                 {errors.root && (

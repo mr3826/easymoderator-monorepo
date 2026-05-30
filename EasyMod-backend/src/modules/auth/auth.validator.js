@@ -29,7 +29,15 @@ const signupValidator = Joi.object({
         }),
     phone: Joi.string()
         .trim()
+        .optional(),
+    referral_code: Joi.string()
+        .trim()
+        .max(20)
         .optional()
+        .allow('', null)
+        .messages({
+            'string.max': 'Referral code is invalid'
+        })
 });
 
 const signinValidator = Joi.object({

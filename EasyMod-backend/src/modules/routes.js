@@ -56,6 +56,7 @@ router.use('/knowledge', knowledgeRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/rto-shield', require('./rto-shield/rto-shield.routes'));
+router.use('/referral', require('./referral/referral.routes'));
 router.use('/language', banglishRoutes);
 router.use('/voice', voiceProcessingRoutes);
 router.use('/sentiment', sentimentRoutes);
