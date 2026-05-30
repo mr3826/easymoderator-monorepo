@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { motion, useScroll, useMotionValue, useMotionValueEvent, useInView, animate } from "motion/react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -64,12 +64,39 @@ export default function LandingPage() {
   const testimonialsRef = useRef<HTMLDivElement>(null);
   const testimonialsInView = useInView(testimonialsRef, { once: true, margin: "-80px" });
 
+  // Live proof — real platform aggregates (cached server-side). Fails silently.
+  const [liveStats, setLiveStats] = useState<{
+    messages_handled: number; orders_captured: number; fake_orders_blocked: number;
+  } | null>(null);
+  useEffect(() => {
+    fetch("/api/public/live-stats")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.success && j?.data) setLiveStats(j.data); })
+      .catch(() => {});
+  }, []);
+  // Only surface the live strip once the numbers are meaningful.
+  const showLiveProof = !!liveStats && liveStats.messages_handled >= 100;
+
+  // ROI calculator — estimate monthly savings from the seller's order volume.
+  const [roiOrders, setRoiOrders] = useState(300);
+  const roi = useMemo(() => {
+    const hoursSaved = Math.round(roiOrders * 0.25);            // ~3 inquiries/order × 5 min
+    const fakeAvoided = Math.round(roiOrders * 0.2);            // ~20% COD RTO rate avoided
+    const moneySaved = hoursSaved * 150 + fakeAvoided * 120;    // ৳150/hr labour + ৳120/RTO
+    return { hoursSaved, fakeAvoided, moneySaved };
+  }, [roiOrders]);
+  const bn = (n: number) => n.toLocaleString();
+
   const features = t("landing.features.items", { returnObjects: true }) as {
     icon: string; title: string; desc: string; colorClass: string;
   }[];
 
   const testimonials = t("landing.testimonials.items", { returnObjects: true }) as {
     quote: string; name: string; location: string; shop: string; avatar: string; avatarColor: string;
+  }[];
+
+  const trustItems = t("landing.trust.items", { returnObjects: true }) as {
+    icon: string; title: string; desc: string;
   }[];
 
   const scrollTo = (id: string) => {
@@ -201,6 +228,66 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
+      {/* ── Trust + Live proof ─────────────────────────────────── */}
+      <section className="bg-white px-6 py-20 border-b border-gray-50">
+        <div className="mx-auto max-w-7xl">
+          <motion.div
+            className="mb-12 text-center"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.5 }}
+          >
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+              {t("landing.trust.label")}
+            </p>
+            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.trust.heading")}</h2>
+          </motion.div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            {trustItems.map((item, i) => (
+              <motion.div
+                key={item.title}
+                className="rounded-2xl border border-gray-100 bg-slate-50/60 p-6 text-center"
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-60px" }}
+                transition={{ duration: 0.45, delay: i * 0.1 }}
+              >
+                <div className="mb-3 text-3xl">{item.icon}</div>
+                <h3 className="mb-1.5 text-lg font-semibold text-gray-900">{item.title}</h3>
+                <p className="text-sm leading-relaxed text-gray-500">{item.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+
+          {showLiveProof && liveStats && (
+            <motion.div
+              className="mt-10 flex flex-wrap items-center justify-center gap-x-12 gap-y-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-6 py-6"
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+            >
+              <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-emerald-700">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                {t("landing.liveProof.label")}
+              </span>
+              {[
+                { v: liveStats.messages_handled, l: t("landing.liveProof.messagesHandled") },
+                { v: liveStats.orders_captured, l: t("landing.liveProof.ordersCaptured") },
+                { v: liveStats.fake_orders_blocked, l: t("landing.liveProof.fakeBlocked") },
+              ].map((s) => (
+                <div key={s.l} className="text-center">
+                  <div className="text-2xl font-bold text-gray-900">{bn(s.v)}</div>
+                  <div className="mt-0.5 text-xs text-gray-500">{s.l}</div>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </div>
+      </section>
+
       {/* ── Features ───────────────────────────────────────────── */}
       <section id="features" className="bg-white px-6 py-24">
         <div className="mx-auto max-w-7xl">
@@ -240,6 +327,70 @@ export default function LandingPage() {
                 <p className="text-sm leading-relaxed text-gray-500">{f.desc}</p>
               </motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── ROI Calculator ─────────────────────────────────────── */}
+      <section className="bg-white px-6 py-24">
+        <div className="mx-auto max-w-4xl">
+          <motion.div
+            className="mb-12 text-center"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-60px" }}
+            transition={{ duration: 0.5 }}
+          >
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+              {t("landing.roi.label")}
+            </p>
+            <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.roi.heading")}</h2>
+            <p className="mt-3 text-gray-500">{t("landing.roi.subheading")}</p>
+          </motion.div>
+
+          <div className="rounded-3xl border border-gray-100 bg-slate-50 p-8 shadow-sm">
+            <div className="mb-8">
+              <div className="mb-3 flex items-baseline justify-between">
+                <label htmlFor="roi-orders" className="text-sm font-semibold text-gray-700">
+                  {t("landing.roi.ordersLabel")}
+                </label>
+                <span className="text-2xl font-bold text-[#00A651]">{bn(roiOrders)}</span>
+              </div>
+              <input
+                id="roi-orders"
+                type="range"
+                min={20}
+                max={2000}
+                step={10}
+                value={roiOrders}
+                onChange={(e) => setRoiOrders(Number(e.target.value))}
+                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-emerald-100 accent-[#00A651]"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {[
+                { value: `${bn(roi.hoursSaved)}`, label: t("landing.roi.hoursSaved") },
+                { value: `৳${bn(roi.moneySaved)}`, label: t("landing.roi.moneySaved") },
+                { value: `${bn(roi.fakeAvoided)}`, label: t("landing.roi.fakeBlocked") },
+              ].map((c) => (
+                <div key={c.label} className="rounded-2xl border border-gray-100 bg-white p-5 text-center">
+                  <div className="text-3xl font-bold text-gray-900">{c.value}</div>
+                  <div className="mt-1 text-sm text-gray-500">{c.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-5 text-center text-xs text-gray-400">{t("landing.roi.note")}</p>
+
+            <div className="mt-7 text-center">
+              <Link
+                to="/signup"
+                className="inline-block rounded-xl bg-[#00A651] px-9 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#00A651]/25 transition-all hover:bg-[#008040]"
+              >
+                {t("landing.roi.cta")}
+              </Link>
+            </div>
           </div>
         </div>
       </section>

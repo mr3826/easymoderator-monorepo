@@ -294,7 +294,7 @@ export default function Pricing() {
         </div>
 
         {/* Plan cards — Partner is invite-only during beta */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl mx-auto mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto mb-6">
           {subscriptionPlans.filter(p => p.id !== 'partner').map((plan) => (
             <PlanCard
               key={plan.id}

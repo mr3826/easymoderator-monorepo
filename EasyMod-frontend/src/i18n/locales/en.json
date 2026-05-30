@@ -83,17 +83,85 @@
       "stat3Value": "24/7",
       "stat3Label": "Support available"
     },
+    "trust": {
+      "label": "Built on trust",
+      "heading": "Safe for your page, your customers, and your money",
+      "items": [
+        {
+          "icon": "🛡️",
+          "title": "Meta-approved & ban-safe",
+          "desc": "We follow Facebook & Instagram messaging rules, so your page stays safe."
+        },
+        {
+          "icon": "🙋",
+          "title": "AI hands hard questions to you",
+          "desc": "Unsure? The AI steps back and lets you reply personally — no wrong answers to customers."
+        },
+        {
+          "icon": "🔒",
+          "title": "Your data is secure",
+          "desc": "Bank-grade encryption for payments and customer data. We never sell your data."
+        }
+      ]
+    },
+    "liveProof": {
+      "label": "Live on EasyModerator",
+      "messagesHandled": "Messages handled",
+      "ordersCaptured": "Orders captured",
+      "fakeBlocked": "Fake orders blocked"
+    },
+    "roi": {
+      "label": "ROI Calculator",
+      "heading": "See how much you save every month",
+      "subheading": "Estimate based on your monthly order volume.",
+      "ordersLabel": "Orders per month",
+      "hoursSaved": "Hours saved / month",
+      "moneySaved": "৳ saved / month",
+      "fakeBlocked": "Fake orders avoided",
+      "note": "Based on ~5 min saved per conversation and ~20% COD return rate avoided.",
+      "cta": "Start free →"
+    },
     "features": {
       "label": "Features",
       "heading": "Why EasyModerator?",
       "subheading": "Built specifically for Bangladesh shop owners",
       "items": [
-        { "icon": "🤖", "title": "AI Chat", "desc": "Automated answers to customer questions", "colorClass": "bg-blue-500/15 text-blue-400" },
-        { "icon": "📦", "title": "Order Management", "desc": "Create orders directly from chat", "colorClass": "bg-emerald-500/15 text-emerald-400" },
-        { "icon": "🛡️", "title": "RTO Shield", "desc": "Filter fake orders, reduce losses", "colorClass": "bg-orange-500/15 text-orange-400" },
-        { "icon": "🚚", "title": "Pathao Integration", "desc": "Book delivery with one click", "colorClass": "bg-purple-500/15 text-purple-400" },
-        { "icon": "📊", "title": "Analytics", "desc": "Detailed reports on sales and conversations", "colorClass": "bg-cyan-500/15 text-cyan-400" },
-        { "icon": "📱", "title": "All Channels", "desc": "Facebook & Instagram together", "colorClass": "bg-pink-500/15 text-pink-400" }
+        {
+          "icon": "🤖",
+          "title": "AI Chat",
+          "desc": "Automated answers to customer questions",
+          "colorClass": "bg-blue-500/15 text-blue-400"
+        },
+        {
+          "icon": "📦",
+          "title": "Order Management",
+          "desc": "Create orders directly from chat",
+          "colorClass": "bg-emerald-500/15 text-emerald-400"
+        },
+        {
+          "icon": "🛡️",
+          "title": "RTO Shield",
+          "desc": "Filter fake orders, reduce losses",
+          "colorClass": "bg-orange-500/15 text-orange-400"
+        },
+        {
+          "icon": "🚚",
+          "title": "Pathao Integration",
+          "desc": "Book delivery with one click",
+          "colorClass": "bg-purple-500/15 text-purple-400"
+        },
+        {
+          "icon": "📊",
+          "title": "Analytics",
+          "desc": "Detailed reports on sales and conversations",
+          "colorClass": "bg-cyan-500/15 text-cyan-400"
+        },
+        {
+          "icon": "📱",
+          "title": "All Channels",
+          "desc": "Facebook & Instagram together",
+          "colorClass": "bg-pink-500/15 text-pink-400"
+        }
       ]
     },
     "pricing": {
@@ -110,15 +178,27 @@
       "items": [
         {
           "quote": "Since using EasyModerator, orders at my shop have increased by 40%. Customers get answers even at night!",
-          "name": "Rahela Begum", "location": "Dhaka", "shop": "Rahela Fashion House", "avatar": "R", "avatarColor": "bg-pink-500"
+          "name": "Rahela Begum",
+          "location": "Dhaka",
+          "shop": "Rahela Fashion House",
+          "avatar": "R",
+          "avatarColor": "bg-pink-500"
         },
         {
           "quote": "RTO Shield solved the biggest problem in my business. Fake orders are basically a thing of the past.",
-          "name": "Karim Bhai", "location": "Chittagong", "shop": "Karim Electronics BD", "avatar": "K", "avatarColor": "bg-blue-500"
+          "name": "Karim Bhai",
+          "location": "Chittagong",
+          "shop": "Karim Electronics BD",
+          "avatar": "K",
+          "avatarColor": "bg-blue-500"
         },
         {
           "quote": "Delivery booking with Pathao integration is so easy now. It used to take 1 hour, now it takes 5 minutes.",
-          "name": "Sumaiya Akter", "location": "Sylhet", "shop": "Sumaiya Lifestyle", "avatar": "S", "avatarColor": "bg-emerald-500"
+          "name": "Sumaiya Akter",
+          "location": "Sylhet",
+          "shop": "Sumaiya Lifestyle",
+          "avatar": "S",
+          "avatarColor": "bg-emerald-500"
         }
       ]
     },
@@ -202,13 +282,26 @@
       "billing": "Billing",
       "payToday": "Payment today",
       "devModeAmount": "৳0 (Dev Mode)",
+      "freeAmount": "৳0 — Free forever",
+      "noCardFree": "No card needed — start free",
+      "upgradeAnytime": "Upgrade anytime as you grow.",
+      "startFreeButton": "Start Free →",
       "creating": "Creating account...",
       "createButton": "Create Account →",
       "secure": "🔒 Your information is completely secure",
       "features": {
-        "rtoShield": { "title": "RTO Shield", "desc": "Block fake orders" },
-        "delivery": { "title": "Pathao & Steadfast", "desc": "Direct delivery" },
-        "chatbot": { "title": "AI Chatbot", "desc": "24/7 Auto Reply" }
+        "rtoShield": {
+          "title": "RTO Shield",
+          "desc": "Block fake orders"
+        },
+        "delivery": {
+          "title": "Pathao & Steadfast",
+          "desc": "Direct delivery"
+        },
+        "chatbot": {
+          "title": "AI Chatbot",
+          "desc": "24/7 Auto Reply"
+        }
       },
       "errors": {
         "selectPlan": "Please select a subscription plan.",
@@ -1196,8 +1289,8 @@
       "paymentInstructions": "Payment Instructions",
       "paymentInstructionsPlaceholder": "Enter instructions for customers...",
       "paymentInstructionsHint": "These instructions will be shown to customers after order confirmation",
-      "saveMFS": "Save Self MFS"
-      ,"errors": {
+      "saveMFS": "Save Self MFS",
+      "errors": {
         "loadFailed": "Failed to load payment configurations",
         "testFailed": "Connection test failed. Please check your credentials.",
         "saveConfigFailed": "Failed to save configuration. Please check your credentials.",
@@ -1253,6 +1346,7 @@
     "invoiceNote": "Conversations will be available immediately after invoice approval.",
     "planIncludes": "Your Plan Includes",
     "planFeatures": [
+      "AI Auto-Reply & Chatbot",
       "Image-based product understanding",
       "Product question answering",
       "Order draft creation",

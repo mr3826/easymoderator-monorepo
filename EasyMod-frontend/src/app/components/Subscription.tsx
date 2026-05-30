@@ -31,7 +31,11 @@ export default function Subscription() {
   const [success, setSuccess] = useState<string | null>(null);
   const [hasSubscriptionData, setHasSubscriptionData] = useState(true);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState(subscriptionPlans[1]?.id || "PACKAGE_1");
+  // Pre-select the recommended (popular) paid plan, order-independent so adding
+  // the FREE tier at the top of the list doesn't change the default selection.
+  const [selectedPlanId, setSelectedPlanId] = useState(
+    subscriptionPlans.find((p) => p.popular)?.id || "package_2"
+  );
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
@@ -44,6 +48,7 @@ export default function Subscription() {
     status: 'active',
     features: {
       imageUnderstanding: false,
+      aiAutoReply: true,
     }
   });
 
@@ -154,7 +159,8 @@ export default function Subscription() {
           }),
           status: subscription.status,
           features: {
-            imageUnderstanding: subscription.features?.image_understanding || false
+            imageUnderstanding: subscription.features?.image_understanding || false,
+            aiAutoReply: subscription.features?.ai_auto_reply ?? true,
           }
         });
 
@@ -230,6 +236,7 @@ export default function Subscription() {
   };
 
   const planFeatures = [
+    'AI Auto-Reply & Chatbot',
     'Image-based product understanding',
     'Product question answering',
     'Order draft creation',
@@ -760,29 +767,25 @@ export default function Subscription() {
               </div>
             ))}
           </div>
-          {/* Contextual upgrade gates for locked features */}
-          <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="PACKAGE_2">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <TrendingUp className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">Image Understanding</p>
-                <p className="text-xs text-gray-500">AI reads product images to answer customer questions</p>
-              </div>
+          {/* Included AI features — available on every package */}
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <TrendingUp className="w-4 h-4 text-blue-600" />
             </div>
-          </FeatureGate>
-          <FeatureGate feature="advanced_ai" featureLabel="Advanced AI" requiredPlan="PACKAGE_2">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mt-2">
-              <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
-                <MessageSquare className="w-4 h-4 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">Advanced AI</p>
-                <p className="text-xs text-gray-500">Higher accuracy responses + 30 req/min rate limit</p>
-              </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Image Understanding</p>
+              <p className="text-xs text-gray-500">AI reads product images to answer customer questions</p>
             </div>
-          </FeatureGate>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mt-2">
+            <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+              <MessageSquare className="w-4 h-4 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Advanced AI</p>
+              <p className="text-xs text-gray-500">Higher accuracy responses + 30 req/min rate limit</p>
+            </div>
+          </div>
         </div>
       </div>
 

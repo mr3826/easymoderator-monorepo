@@ -13,6 +13,7 @@
 const UNLIMITED = -1;
 
 const PlanCode = Object.freeze({
+    FREE: 'FREE',
     PACKAGE_1: 'PACKAGE_1',
     PACKAGE_2: 'PACKAGE_2',
     PARTNER: 'PARTNER'
@@ -76,6 +77,32 @@ const BASE_FEATURES = Object.freeze({
     rate_limit_per_minute: 40
 });
 
+/**
+ * FREE tier — a genuine no-card on-ramp for new BD shop owners.
+ * Hard-capped (NO threshold buffer, NO overage charge, NO invoice — enforced in
+ * conversation-limit.middleware, daily-overage-calculator and invoice-generator).
+ * Keeps the core differentiators that prove value (Bangla/Banglish AI auto-reply,
+ * FB+IG, comment auto-reply, basic RTO shield) and gates the cost/premium ones.
+ */
+const FREE_FEATURES = Object.freeze({
+    ...BASE_FEATURES,
+    image_understanding: false,        // vision API cost — gated
+    voice_note_transcription: false,   // transcription cost — gated
+    tone_persona: false,
+    campaign_broadcast: false,
+    max_campaigns_per_month: 0,
+    rto_shield_level: 'basic',
+    analytics_days: 3,
+    analytics_export: false,
+    fcommerce_kpis: false,
+    customer_journey_timeline: false,
+    priority_support: false,
+    api_access: false,
+    advanced_ai: false,                // gates premium AI UI/settings; LLM cost is
+                                       // capped by the 50-conv hard cap + low rate limit
+    rate_limit_per_minute: 8
+});
+
 const AI_SETTINGS_ALL = Object.freeze([
     'automation_mode',
     'auto_reply_enabled',
@@ -92,7 +119,33 @@ const AI_SETTINGS_ALL = Object.freeze([
     'custom_webhook',
 ]);
 
+// FREE tier exposes only the essential settings; advanced/model/API knobs are gated.
+const AI_SETTINGS_FREE = Object.freeze([
+    'automation_mode',
+    'auto_reply_enabled',
+    'primary_language',
+    'confidence_threshold',
+    'handoff_settings',
+    'payment_methods',
+    'required_fields',
+]);
+
 const PRICING_TIERS = Object.freeze({
+    [PlanCode.FREE]: {
+        code: PlanCode.FREE,
+        name: 'Free',
+        billingModel: 'free',
+        priceBdtMonthly: 0,
+        priceBdtYearly: 0,
+        perOrderChargeBdt: null,
+        conversationsLimit: 50,
+        ordersLimit: UNLIMITED,        // never cap real sales — only the AI cost driver
+        productsLimit: 30,
+        keyFeature: 'Free forever — 50 AI conversations/month',
+        features: FREE_FEATURES,
+        ai_settings_access: AI_SETTINGS_FREE
+    },
+
     [PlanCode.PACKAGE_1]: {
         code: PlanCode.PACKAGE_1,
         name: 'Package 1',
@@ -165,8 +218,9 @@ const isLimitExceeded = (used, limit) => {
 
 const normalizePlanCode = (planCode) => {
     const normalized = String(planCode || '').toUpperCase();
-    // Legacy aliases
-    if (['FREE', 'STARTER', 'PRO', 'BUSINESS'].includes(normalized)) return PlanCode.PACKAGE_1;
+    // FREE is now a first-class plan (no longer an alias of PACKAGE_1).
+    // Legacy aliases for renamed paid tiers only:
+    if (['STARTER', 'PRO', 'BUSINESS'].includes(normalized)) return PlanCode.PACKAGE_1;
     if (['GROWTH'].includes(normalized)) return PlanCode.PACKAGE_2;
     return normalized;
 };

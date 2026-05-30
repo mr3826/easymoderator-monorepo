@@ -67,6 +67,12 @@ class InvoiceGenerator extends BaseJob {
 
             for (const subscription of subscriptions) {
                 try {
+                    // FREE tier has no recurring charge — never generate an invoice for it.
+                    if (String(subscription.plan_code || '').toUpperCase() === 'FREE') {
+                        results.invoicesSkipped++;
+                        continue;
+                    }
+
                     // Yearly subscriptions: generate one invoice per year, not every month
                     if (subscription.billing_cycle === 'yearly') {
                         const yearlyInvoiceExists = await this.checkExistingYearlyInvoice(subscription, runDate);

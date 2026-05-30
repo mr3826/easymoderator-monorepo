@@ -82,17 +82,85 @@
       "stat3Value": "২৪/৭",
       "stat3Label": "সাপোর্ট উপলব্ধ"
     },
+    "trust": {
+      "label": "বিশ্বাসের উপর তৈরি",
+      "heading": "আপনার পেজ, গ্রাহক ও টাকা — সবই নিরাপদ",
+      "items": [
+        {
+          "icon": "🛡️",
+          "title": "Meta-অনুমোদিত ও ban-নিরাপদ",
+          "desc": "আমরা Facebook ও Instagram-এর মেসেজিং নিয়ম মেনে চলি, তাই আপনার পেজ নিরাপদ থাকে।"
+        },
+        {
+          "icon": "🙋",
+          "title": "কঠিন প্রশ্ন AI আপনাকে দিয়ে দেয়",
+          "desc": "নিশ্চিত নয়? AI পিছিয়ে গিয়ে আপনাকে নিজে উত্তর দিতে দেয় — গ্রাহককে কোনো ভুল উত্তর নয়।"
+        },
+        {
+          "icon": "🔒",
+          "title": "আপনার ডেটা সুরক্ষিত",
+          "desc": "পেমেন্ট ও গ্রাহক ডেটার জন্য ব্যাংক-গ্রেড এনক্রিপশন। আমরা কখনো আপনার ডেটা বিক্রি করি না।"
+        }
+      ]
+    },
+    "liveProof": {
+      "label": "EasyModerator-এ লাইভ",
+      "messagesHandled": "মেসেজ হ্যান্ডল হয়েছে",
+      "ordersCaptured": "অর্ডার নেওয়া হয়েছে",
+      "fakeBlocked": "ভুয়া অর্ডার আটকানো হয়েছে"
+    },
+    "roi": {
+      "label": "ROI ক্যালকুলেটর",
+      "heading": "প্রতি মাসে কত সাশ্রয় হয় দেখুন",
+      "subheading": "আপনার মাসিক অর্ডার সংখ্যার ভিত্তিতে আনুমানিক হিসাব।",
+      "ordersLabel": "মাসে অর্ডার সংখ্যা",
+      "hoursSaved": "মাসে সাশ্রয়ী ঘণ্টা",
+      "moneySaved": "মাসে ৳ সাশ্রয়",
+      "fakeBlocked": "ভুয়া অর্ডার এড়ানো",
+      "note": "প্রতি কথোপকথনে ~৫ মিনিট ও ~২০% COD রিটার্ন এড়ানোর ভিত্তিতে।",
+      "cta": "ফ্রি শুরু করুন →"
+    },
     "features": {
       "label": "ফিচার",
       "heading": "কেন EasyModerator?",
       "subheading": "বাংলাদেশের শপ অওনারদের জন্য বিশেষভাবে তৈরি",
       "items": [
-        { "icon": "🤖", "title": "AI চ্যাট", "desc": "কাস্টমারের প্রশ্নের স্বয়ংক্রিয় উত্তর", "colorClass": "bg-blue-500/15 text-blue-400" },
-        { "icon": "📦", "title": "অর্ডার ম্যানেজমেন্ট", "desc": "চ্যাট থেকে সরাসরি অর্ডার তৈরি করুন", "colorClass": "bg-emerald-500/15 text-emerald-400" },
-        { "icon": "🛡️", "title": "RTO Shield", "desc": "ভুয়া অর্ডার ফিল্টার করুন, ক্ষতি কমান", "colorClass": "bg-orange-500/15 text-orange-400" },
-        { "icon": "🚚", "title": "Pathao ইন্টিগ্রেশন", "desc": "এক ক্লিকে ডেলিভারি বুক করুন", "colorClass": "bg-purple-500/15 text-purple-400" },
-        { "icon": "📊", "title": "Analytics", "desc": "বিক্রয় ও কথোপকথনের বিস্তারিত রিপোর্ট", "colorClass": "bg-cyan-500/15 text-cyan-400" },
-        { "icon": "📱", "title": "সব চ্যানেল", "desc": "Facebook ও Instagram একসাথে", "colorClass": "bg-pink-500/15 text-pink-400" }
+        {
+          "icon": "🤖",
+          "title": "AI চ্যাট",
+          "desc": "কাস্টমারের প্রশ্নের স্বয়ংক্রিয় উত্তর",
+          "colorClass": "bg-blue-500/15 text-blue-400"
+        },
+        {
+          "icon": "📦",
+          "title": "অর্ডার ম্যানেজমেন্ট",
+          "desc": "চ্যাট থেকে সরাসরি অর্ডার তৈরি করুন",
+          "colorClass": "bg-emerald-500/15 text-emerald-400"
+        },
+        {
+          "icon": "🛡️",
+          "title": "RTO Shield",
+          "desc": "ভুয়া অর্ডার ফিল্টার করুন, ক্ষতি কমান",
+          "colorClass": "bg-orange-500/15 text-orange-400"
+        },
+        {
+          "icon": "🚚",
+          "title": "Pathao ইন্টিগ্রেশন",
+          "desc": "এক ক্লিকে ডেলিভারি বুক করুন",
+          "colorClass": "bg-purple-500/15 text-purple-400"
+        },
+        {
+          "icon": "📊",
+          "title": "Analytics",
+          "desc": "বিক্রয় ও কথোপকথনের বিস্তারিত রিপোর্ট",
+          "colorClass": "bg-cyan-500/15 text-cyan-400"
+        },
+        {
+          "icon": "📱",
+          "title": "সব চ্যানেল",
+          "desc": "Facebook ও Instagram একসাথে",
+          "colorClass": "bg-pink-500/15 text-pink-400"
+        }
       ]
     },
     "pricing": {
@@ -109,15 +177,27 @@
       "items": [
         {
           "quote": "EasyModerator ব্যবহার করার পর থেকে আমার শপের অর্ডার ৪০% বেড়েছে। কাস্টমাররা রাতেও উত্তর পায়!",
-          "name": "রাহেলা বেগম", "location": "ঢাকা", "shop": "Rahela Fashion House", "avatar": "র", "avatarColor": "bg-pink-500"
+          "name": "রাহেলা বেগম",
+          "location": "ঢাকা",
+          "shop": "Rahela Fashion House",
+          "avatar": "র",
+          "avatarColor": "bg-pink-500"
         },
         {
           "quote": "RTO Shield আমার ব্যবসার সবচেয়ে বড় সমস্যা সমাধান করেছে। নকল অর্ডার এখন আর নেই বললেই চলে।",
-          "name": "করিম ভাই", "location": "চট্টগ্রাম", "shop": "Karim Electronics BD", "avatar": "ক", "avatarColor": "bg-blue-500"
+          "name": "করিম ভাই",
+          "location": "চট্টগ্রাম",
+          "shop": "Karim Electronics BD",
+          "avatar": "ক",
+          "avatarColor": "bg-blue-500"
         },
         {
           "quote": "Pathao ইন্টিগ্রেশন দিয়ে ডেলিভারি বুকিং এখন অনেক সহজ। আগে ১ ঘন্টা লাগত, এখন ৫ মিনিট।",
-          "name": "সুমাইয়া আক্তার", "location": "সিলেট", "shop": "Sumaiya Lifestyle", "avatar": "স", "avatarColor": "bg-emerald-500"
+          "name": "সুমাইয়া আক্তার",
+          "location": "সিলেট",
+          "shop": "Sumaiya Lifestyle",
+          "avatar": "স",
+          "avatarColor": "bg-emerald-500"
         }
       ]
     },
@@ -201,13 +281,26 @@
       "billing": "বিলিং",
       "payToday": "আজ পেমেন্ট",
       "devModeAmount": "৳০ (Dev Mode)",
+      "freeAmount": "৳০ — চিরকাল ফ্রি",
+      "noCardFree": "কার্ড লাগবে না — ফ্রি শুরু করুন",
+      "upgradeAnytime": "ব্যবসা বাড়লে যেকোনো সময় আপগ্রেড করুন।",
+      "startFreeButton": "ফ্রি শুরু করুন →",
       "creating": "অ্যাকাউন্ট তৈরি হচ্ছে...",
       "createButton": "অ্যাকাউন্ট তৈরি করুন →",
       "secure": "🔒 আপনার তথ্য সম্পূর্ণ সুরক্ষিত",
       "features": {
-        "rtoShield": { "title": "RTO Shield", "desc": "ভুয়া অর্ডার ব্লক" },
-        "delivery": { "title": "Pathao & Steadfast", "desc": "সরাসরি ডেলিভারি" },
-        "chatbot": { "title": "AI চ্যাটবট", "desc": "২৪/৭ অটো রিপ্লাই" }
+        "rtoShield": {
+          "title": "RTO Shield",
+          "desc": "ভুয়া অর্ডার ব্লক"
+        },
+        "delivery": {
+          "title": "Pathao & Steadfast",
+          "desc": "সরাসরি ডেলিভারি"
+        },
+        "chatbot": {
+          "title": "AI চ্যাটবট",
+          "desc": "২৪/৭ অটো রিপ্লাই"
+        }
       },
       "errors": {
         "selectPlan": "একটি সাবস্ক্রিপশন প্ল্যান নির্বাচন করুন।",
@@ -1247,6 +1340,7 @@
     "invoiceNote": "ইনভয়েস অনুমোদনের পরপরই কথোপকথন পাওয়া যাবে।",
     "planIncludes": "আপনার প্ল্যানে যা আছে",
     "planFeatures": [
+      "এআই অটো-রিপ্লাই ও চ্যাটবট",
       "ছবিভিত্তিক পণ্য বোঝার ক্ষমতা",
       "পণ্য সম্পর্কিত প্রশ্নের উত্তর",
       "অর্ডার ড্রাফট তৈরি",

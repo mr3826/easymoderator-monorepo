@@ -29,6 +29,33 @@ export const UNLIMITED = -1;
 
 export const subscriptionPlans: SubscriptionPlanDefinition[] = [
   {
+    id: "free",
+    name: "Free",
+    description: "বিনামূল্যে শুরু করুন — কার্ড লাগবে না। AI আপনার পেজে অটো-রিপ্লাই দেবে।",
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    limits: {
+      conversations: 50,
+      orders: UNLIMITED,
+      products: 30,
+    },
+    features: {
+      image_understanding: false,
+      advanced_ai: false,
+      priority_support: false,
+      custom_branding: false,
+      comment_auto_reply: true,
+    },
+    highlights: [
+      "৫০ AI কথোপকথন/মাস — ফ্রি",
+      "Facebook + Instagram",
+      "Comment অটো-রিপ্লাই",
+      "বাংলা ও Banglish AI",
+      "কার্ড ছাড়াই শুরু",
+    ],
+    popular: false,
+  },
+  {
     id: "package_1",
     name: "Package 1",
     description: "আপনার প্রথম AI সেলস টিম — ঘুমের মধ্যেও অর্ডার আসবে।",
@@ -43,7 +70,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       image_understanding: true,
       advanced_ai: true,
       priority_support: true,
-      custom_branding: false,
+      custom_branding: true,
       comment_auto_reply: true,
     },
     highlights: [
@@ -70,7 +97,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       image_understanding: true,
       advanced_ai: true,
       priority_support: true,
-      custom_branding: false,
+      custom_branding: true,
       comment_auto_reply: true,
     },
     highlights: [
@@ -117,6 +144,12 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
 export const findPlanByName = (name: string) =>
   subscriptionPlans.find(
     (plan) => plan.name.toLowerCase() === name.toLowerCase()
+  );
+
+/** Match by plan code (e.g. "PACKAGE_1" → Package 1 plan). */
+export const findPlanByCode = (code: string) =>
+  subscriptionPlans.find(
+    (plan) => plan.id.toLowerCase() === code.toLowerCase()
   );
 
 export const getPlanPrice = (

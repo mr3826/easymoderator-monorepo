@@ -40,7 +40,8 @@ export default function Signup() {
   const { t } = useTranslation();
   const { signup } = useAuth();
   const [billingAnnual, setBillingAnnual] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState("PACKAGE_1");
+  // Default new signups to the FREE tier — no-card on-ramp.
+  const [selectedPlanId, setSelectedPlanId] = useState("free");
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -61,6 +62,9 @@ export default function Signup() {
     () => subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0],
     [selectedPlanId]
   );
+
+  // FREE tier needs no payment method or "pay today" — keep signup card-free.
+  const isFreePlan = selectedPlan.id === "free";
 
   const formatPrice = (value: number) => `৳${value.toLocaleString()}`;
 
@@ -364,15 +368,25 @@ export default function Signup() {
                   <PasswordStrengthMeter password={passwordValue || ''} />
                 </div>
 
-                {/* BD Payment section — BKash only */}
-                <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-4">
-                  <p className="text-xs font-semibold text-gray-700 mb-2">সাবস্ক্রিপশন পেমেন্ট পদ্ধতি</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-pink-100 text-pink-700 border-pink-200">
-                      bKash
-                    </span>
+                {/* BD Payment section — only for paid plans. FREE stays card-free. */}
+                {isFreePlan ? (
+                  <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 p-4 flex items-start gap-2.5">
+                    <span className="text-lg">✅</span>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-800">{t('auth.signup.noCardFree')}</p>
+                      <p className="text-xs text-emerald-600 mt-0.5">{t('auth.signup.upgradeAnytime')}</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-4">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">সাবস্ক্রিপশন পেমেন্ট পদ্ধতি</p>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-pink-100 text-pink-700 border-pink-200">
+                        bKash
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Terms */}
                 <div className="flex items-start gap-2.5">
@@ -416,7 +430,9 @@ export default function Signup() {
                   </div>
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="text-gray-700 font-medium">{t('auth.signup.payToday')}</span>
-                    <span className="font-bold text-emerald-600">{t('auth.signup.devModeAmount')}</span>
+                    <span className="font-bold text-emerald-600">
+                      {isFreePlan ? t('auth.signup.freeAmount') : t('auth.signup.devModeAmount')}
+                    </span>
                   </div>
                 </div>
 
@@ -436,7 +452,7 @@ export default function Signup() {
                         {t('auth.signup.creating')}
                       </span>
                     ) : (
-                      t('auth.signup.createButton')
+                      isFreePlan ? t('auth.signup.startFreeButton') : t('auth.signup.createButton')
                     )}
                   </Button>
                 </motion.div>

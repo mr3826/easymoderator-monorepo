@@ -51,6 +51,10 @@ class DailyOverageCalculator extends BaseJob {
             const subscriptions = await Subscription.findAll({
                 where: {
                     status: 'active',
+                    // FREE tier is a hard cap with no overage — never bill it.
+                    // (Belt-and-suspenders: the middleware already blocks free shops
+                    // at the limit, so used should never exceed limit here.)
+                    plan_code: { [Op.ne]: 'FREE' },
                     // Only load shops that are actually over their limit.
                     // conversations_limit > 0 excludes unlimited plans (stored as -1).
                     // The DB-level filter avoids a full table scan at 10k+ tenants.
