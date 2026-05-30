@@ -2,6 +2,8 @@ const express = require('express');
 const { body } = require('express-validator');
 const AnalyticsController = require('./analytics.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { sequelize } = require('../../utils/database/database-setup');
+const { QueryTypes } = require('sequelize');
 
 const router = express.Router();
 
@@ -14,6 +16,52 @@ const validateKnowledgeGap = [
 ];
 
 // Routes
+
+/**
+ * GET /api/analytics — summary payload (total_messages, llm_calls, cache_hits, keyword_matches, cost_estimate)
+ * Consumed by the frontend dashboard (api/domains/dashboard.ts getAnalytics).
+ */
+router.get('/', authenticate, async (req, res) => {
+    try {
+        const shopId = req.user?.shopId;
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'No shop selected.' } });
+        }
+        const period = Math.min(parseInt(req.query.period) || 30, 365);
+        const since = new Date(Date.now() - period * 24 * 60 * 60 * 1000);
+
+        // Count messages in the period for this shop via conversations join
+        const [msgRow] = await sequelize.query(
+            `SELECT COUNT(m.id) AS total_messages
+             FROM messages m
+             JOIN conversations c ON c.id = m.conversation_id
+             WHERE c.shop_id = :shopId AND m.created_at >= :since`,
+            { replacements: { shopId, since }, type: QueryTypes.SELECT }
+        ).catch(() => [{ total_messages: 0 }]);
+
+        // Count knowledge-gap logs as a proxy for unanswered (llm) calls
+        const [gapRow] = await sequelize.query(
+            `SELECT COUNT(id) AS llm_calls FROM knowledge_gaps WHERE shop_id = :shopId AND created_at >= :since`,
+            { replacements: { shopId, since }, type: QueryTypes.SELECT }
+        ).catch(() => [{ llm_calls: 0 }]);
+
+        const total_messages = parseInt(msgRow?.total_messages) || 0;
+        const llm_calls = parseInt(gapRow?.llm_calls) || 0;
+
+        res.json({
+            success: true,
+            data: {
+                total_messages,
+                llm_calls,
+                cache_hits: 0,
+                keyword_matches: 0,
+                cost_estimate: +(llm_calls * 0.002).toFixed(4)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: { code: 'ANALYTICS_ERROR', message: err.message } });
+    }
+});
 
 /**
  * POST /api/analytics/knowledge-gap

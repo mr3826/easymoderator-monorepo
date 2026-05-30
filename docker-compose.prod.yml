@@ -27,6 +27,7 @@ volumes:
   qdrant_data:
   caddy_data:
   caddy_config:
+  invoice_data:
 
 services:
   # ── Caddy: TLS + reverse proxy ────────────────────────────────────────────
@@ -62,6 +63,11 @@ services:
       - NODE_ENV=production
       - START_EMBEDDED_WORKERS=false
       - RUN_MIGRATIONS_ON_STARTUP=false
+    volumes:
+      # Generated invoice PDFs (written by the worker, served by the backend at
+      # /uploads/invoices). Shared named volume so they survive container
+      # recreation on every deploy and the emailed download links keep working.
+      - invoice_data:/app/uploads/invoices
     networks:
       - internal
     depends_on:
@@ -85,6 +91,9 @@ services:
       - .env.prod
     environment:
       - NODE_ENV=production
+    volumes:
+      # Worker generates invoice PDFs into this shared volume; the backend serves them.
+      - invoice_data:/app/uploads/invoices
     networks:
       - internal
     depends_on:

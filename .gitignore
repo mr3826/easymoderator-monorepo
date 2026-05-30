@@ -85,3 +85,8 @@ secrets-generated-*.txt
 
 # Local skills library (separate repo)
 claude-skills/
+
+# Local agent / tooling working state (not source)
+.easymod/
+.claude/
+.kilo/
