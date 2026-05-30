@@ -58,6 +58,11 @@ jest.mock('../../rto-shield/rto-shield.service', () => ({
     checkPhone: jest.fn()
 }));
 
+// RTO network participation lookup (reads shop.settings.rto_network) — default to enforcing.
+jest.mock('../../rto-shield/rto-network-settings', () => ({
+    getNetworkSettings: jest.fn().mockResolvedValue({ contribute: true, enforce: true })
+}));
+
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({
         info: jest.fn(),

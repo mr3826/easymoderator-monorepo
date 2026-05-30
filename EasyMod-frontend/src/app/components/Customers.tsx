@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Customer, CustomerFilters } from "@/api/types/customer";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
+import RtoNetworkSettings from './RtoNetworkSettings';
 
 // Channel type string — facebook | instagram (MetaChannel platforms + legacy manual)
 type ChannelType = string;
@@ -219,6 +220,9 @@ export default function Customers() {
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{t('customers.title')}</h1>
           <p className="text-gray-600 text-sm md:text-base">{t('customers.subtitle')}</p>
         </div>
+
+        {/* Network RTO / Fake-Order Shield participation */}
+        <RtoNetworkSettings />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

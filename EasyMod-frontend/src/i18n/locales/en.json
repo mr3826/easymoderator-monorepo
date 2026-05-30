@@ -1407,5 +1407,20 @@
       "fieldsRequired": "Please fill in all required fields",
       "bookingFailed": "Failed to book courier. Check your courier credentials in Settings."
     }
+  },
+  "rtoShield": {
+    "title": "Network Fake-Order Shield",
+    "subtitle": "Block fraud customers across the whole network",
+    "settings": {
+      "title": "Fake-Order Shield Network",
+      "subtitle": "Protect your shop with shared fraud signals from every shop",
+      "enforceLabel": "Use the shared network",
+      "enforceHelp": "Block & flag customers other shops have reported for repeat returns (RTO), not just your own list.",
+      "contributeLabel": "Contribute my delivery results",
+      "contributeHelp": "Anonymously add your delivery outcomes so the network protects everyone — including you.",
+      "privacyNote": "Only a phone number's delivery/return history is shared — never names, messages or other details.",
+      "saved": "Network settings saved",
+      "saveFailed": "Could not save network settings"
+    }
   }
 }

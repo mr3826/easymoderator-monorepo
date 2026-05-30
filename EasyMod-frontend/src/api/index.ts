@@ -67,6 +67,7 @@ import * as conversationDomain from './domains/conversation';
 import * as shopDomain from './domains/shop';
 import * as paymentDomain from './domains/payment';
 import * as auditDomain from './domains/audit';
+import * as rtoShieldDomain from './domains/rto-shield';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
@@ -125,6 +126,13 @@ export const apiClient = {
   blacklistCustomer: customerDomain.blacklistCustomer,
   removeFromBlacklist: customerDomain.removeFromBlacklist,
   deleteCustomer: customerDomain.deleteCustomer,
+
+  // RTO Shield (cross-shop fraud network) methods
+  rtoCheckPhone: rtoShieldDomain.checkPhone,
+  rtoNetworkStats: rtoShieldDomain.getNetworkStats,
+  rtoWhitelistPhone: rtoShieldDomain.whitelistPhone,
+  getRtoNetworkSettings: rtoShieldDomain.getNetworkSettings,
+  updateRtoNetworkSettings: rtoShieldDomain.updateNetworkSettings,
 
   // Meta channel methods (Phase 5 — canonical)
   listMetaChannels,

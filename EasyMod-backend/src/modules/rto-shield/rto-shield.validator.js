@@ -39,4 +39,27 @@ const listSchema = {
   })
 };
 
-module.exports = { addEntrySchema, checkPhoneSchema, bulkImportSchema, listSchema };
+const whitelistSchema = {
+  body: Joi.object({
+    phone: BD_PHONE,
+    notes: Joi.string().trim().max(1000).optional().allow('')
+  })
+};
+
+const networkStatsSchema = {
+  query: Joi.object({
+    phone: BD_PHONE
+  })
+};
+
+const networkSettingsSchema = {
+  body: Joi.object({
+    contribute: Joi.boolean().optional(),
+    enforce: Joi.boolean().optional()
+  }).min(1)
+};
+
+module.exports = {
+  addEntrySchema, checkPhoneSchema, bulkImportSchema, listSchema,
+  whitelistSchema, networkStatsSchema, networkSettingsSchema
+};

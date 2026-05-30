@@ -105,7 +105,15 @@ const runRtoShieldCheck = async (customerPhone, shopId) => {
     if (!customerPhone) return { blocked: false };
 
     const RtoShieldService = require('../rto-shield/rto-shield.service');
-    const result = await RtoShieldService.checkPhone(customerPhone, shopId);
+    const { getNetworkSettings } = require('../rto-shield/rto-network-settings');
+
+    // Honor the shop's network participation: opted-out shops are scored on their own list only.
+    let enforceNetwork = true;
+    try {
+        enforceNetwork = (await getNetworkSettings(shopId)).enforce !== false;
+    } catch (_) { /* default to enforcing if settings unavailable */ }
+
+    const result = await RtoShieldService.checkPhone(customerPhone, shopId, { enforceNetwork });
 
     if (result.flagged && result.risk_score >= RTO_RISK_THRESHOLD) {
         return {
@@ -114,7 +122,8 @@ const runRtoShieldCheck = async (customerPhone, shopId) => {
         };
     }
 
-    return { blocked: false };
+    // Mid-risk (verify tier): allow the order but tell the caller to confirm before dispatch.
+    return { blocked: false, tier: result.tier, requiresVerification: result.tier === 'verify' };
 };
 
 /**
@@ -284,6 +293,12 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
         const rtoCheck = await runRtoShieldCheck(orderData.customer_phone, shopId);
         if (rtoCheck.blocked) {
             throw new AppError(rtoCheck.reason, 422);
+        }
+        if (rtoCheck.requiresVerification) {
+            // Mid-risk COD: allowed through, but flagged so the seller verifies before dispatch.
+            logger.warn('RTO Shield: COD order requires manual verification before dispatch', {
+                shopId, phone: orderData.customer_phone
+            });
         }
     }
 
