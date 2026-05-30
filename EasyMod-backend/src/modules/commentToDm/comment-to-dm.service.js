@@ -24,6 +24,8 @@ const { canTransition } = require('./comment-to-dm.state-machine');
 const CommentToDmEvent = require('./comment-to-dm.entity');
 const MetaChannelSettings = require('../channel-providers/meta-channel-settings.entity');
 const MetaChannel = require('../channel-providers/meta-channel.entity');
+const { parseLiveOrderIntent } = require('./live-order-parser');
+const { getLiveSellingSettings } = require('./live-selling-settings');
 const sse = require('../../utils/sse-manager');
 
 const logger = createLogger('CommentToDm');
@@ -64,6 +66,22 @@ function getCommentToDmQueue() {
 function getProvider(platform) {
     const registry = require('../channel-providers/provider.registry');
     return registry.getProvider(platform);
+}
+
+/**
+ * Build the private-reply (DM invite) text. When a live-selling order intent was
+ * captured from the comment, the invite confirms what we saw and asks the buyer
+ * to finalize — still a single reactive private reply (Meta-policy SAFE).
+ */
+function buildDmInviteText(liveOrder) {
+    if (liveOrder && liveOrder.isPurchaseIntent) {
+        const parts = [];
+        if (liveOrder.quantity) parts.push(`Qty: ${liveOrder.quantity}`);
+        if (liveOrder.size) parts.push(`Size: ${liveOrder.size}`);
+        const detail = parts.length ? ` (${parts.join(', ')})` : '';
+        return `Hi! Thanks for your order from our live${detail}. Please confirm your details here and we'll place it for you. 🛍️`;
+    }
+    return 'Hi! Thank you for your interest. Feel free to ask us anything here in DM.';
 }
 
 class CommentToDmService {
@@ -158,17 +176,19 @@ class CommentToDmService {
         // Determine initial state: MATCHED or BLOCKED
         let matchedState = 'MATCHED';
         let matchedKeyword = null;
+        let liveOrder = null; // parsed live-selling purchase intent, if any
 
         // Post filter: if non-empty, comment must be on one of those posts
         const postFilter = Array.isArray(settings.comment_to_dm_post_filter)
             ? settings.comment_to_dm_post_filter
             : [];
-        if (postFilter.length > 0 && !postFilter.includes(postId)) {
+        const postAllowed = !(postFilter.length > 0 && !postFilter.includes(postId));
+        if (!postAllowed) {
             matchedState = 'BLOCKED';
         }
 
         // Keyword filter: if non-empty, comment text must contain a keyword
-        if (matchedState !== 'BLOCKED') {
+        if (postAllowed) {
             const keywords = Array.isArray(settings.comment_to_dm_keywords)
                 ? settings.comment_to_dm_keywords
                 : [];
@@ -182,6 +202,30 @@ class CommentToDmService {
                 }
             }
             // empty keywords list = any comment matches
+
+            // ── Live-selling capture ──────────────────────────────────────────
+            // When the shop is live-selling, a purchase-intent comment ("nibo",
+            // "size M", "2 ta") is captured as an order even without an exact
+            // configured keyword. This only widens the MATCH set on the shop's
+            // OWN channel; the DM send path (rate limit, opt-out, idempotency,
+            // 24h window) is unchanged → Meta-policy SAFE.
+            try {
+                const liveSettings = await getLiveSellingSettings(channel.shop_id);
+                if (liveSettings.enabled) {
+                    const intent = parseLiveOrderIntent(text, liveSettings.intent_keywords);
+                    if (intent.isPurchaseIntent) {
+                        liveOrder = intent;
+                        if (matchedState === 'BLOCKED') {
+                            matchedState = 'MATCHED';
+                            matchedKeyword = matchedKeyword || 'live_intent';
+                        }
+                    }
+                }
+            } catch (liveErr) {
+                logger.warn('CommentToDm: live-selling intent check failed (non-fatal)', {
+                    channelId: channel.id, error: liveErr.message,
+                });
+            }
         }
 
         // Create DB row — idempotent via unique constraint on comment_id
@@ -200,6 +244,7 @@ class CommentToDmService {
                 matched_keyword:       matchedKeyword,
                 state:                 matchedState,
                 last_transition_at:    new Date(),
+                metadata:              liveOrder ? { live_order: liveOrder } : {},
             });
         } catch (err) {
             if (err.name === 'SequelizeUniqueConstraintError') {
@@ -318,7 +363,7 @@ class CommentToDmService {
                 channel,
                 commentId: event.comment_id,
                 normalizedMessage: {
-                    text: 'Hi! Thank you for your interest. Feel free to ask us anything here in DM.',
+                    text: buildDmInviteText(event.metadata?.live_order),
                 },
             });
         } catch (err) {

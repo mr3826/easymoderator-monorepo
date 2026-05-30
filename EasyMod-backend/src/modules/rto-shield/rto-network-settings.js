@@ -17,7 +17,7 @@
  * Defaults are ON (the network is only useful at scale), but a shop can opt out of either side.
  */
 
-const { Shop } = require('../shop/shop.entity');
+const Shop = require('../shop/shop.entity');
 const { AppError } = require('../../utils/AppError');
 
 const DEFAULT_NETWORK_SETTINGS = {

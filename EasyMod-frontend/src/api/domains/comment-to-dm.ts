@@ -82,6 +82,12 @@ export interface UpdateSettingsBody {
   comment_to_dm_post_filter?: string[];
 }
 
+/** Live-selling capture (per shop): turn purchase-intent live comments into orders. */
+export interface LiveSellingSettings {
+  enabled: boolean;
+  intent_keywords: string[];
+}
+
 // ── API functions ─────────────────────────────────────────────────────────────
 
 export async function listEvents(params?: ListEventsParams): Promise<ListEventsResponse> {
@@ -121,5 +127,19 @@ export async function updateSettings(
 ): Promise<CommentToDmSettings> {
   const response: AxiosResponse<ApiResponse<CommentToDmSettings>> =
     await httpClient.put(`/api/comment-to-dm/settings/${channelId}`, body);
+  return response.data.data;
+}
+
+export async function getLiveSelling(): Promise<LiveSellingSettings> {
+  const response: AxiosResponse<ApiResponse<LiveSellingSettings>> =
+    await httpClient.get('/api/comment-to-dm/live-selling');
+  return response.data.data;
+}
+
+export async function updateLiveSelling(
+  body: Partial<LiveSellingSettings>
+): Promise<LiveSellingSettings> {
+  const response: AxiosResponse<ApiResponse<LiveSellingSettings>> =
+    await httpClient.put('/api/comment-to-dm/live-selling', body);
   return response.data.data;
 }

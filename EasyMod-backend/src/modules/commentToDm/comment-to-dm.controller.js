@@ -18,6 +18,7 @@ const { createLogger } = require('../../utils/structured-logger');
 const CommentToDmEvent = require('./comment-to-dm.entity');
 const MetaChannelSettings = require('../channel-providers/meta-channel-settings.entity');
 const MetaChannel = require('../channel-providers/meta-channel.entity');
+const { getLiveSellingSettings, updateLiveSellingSettings } = require('./live-selling-settings');
 
 const logger = createLogger('CommentToDmController');
 
@@ -160,6 +161,50 @@ async function updateSettings(req, res) {
     }
 }
 
+/**
+ * GET /api/comment-to-dm/live-selling
+ * Per-shop live-selling capture settings (shop.settings.live_selling).
+ */
+async function getLiveSelling(req, res) {
+    try {
+        const shopId = req.user.shopId;
+        const settings = await getLiveSellingSettings(shopId);
+        return res.json({ success: true, data: settings });
+    } catch (err) {
+        logger.error('CommentToDm getLiveSelling error', { error: err.message });
+        return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+}
+
+/**
+ * PUT /api/comment-to-dm/live-selling
+ * Body: { enabled?: boolean, intent_keywords?: string[] }
+ */
+async function updateLiveSelling(req, res) {
+    try {
+        const shopId = req.user.shopId;
+        const { enabled, intent_keywords } = req.body;
+
+        if (enabled !== undefined && typeof enabled !== 'boolean') {
+            return res.status(400).json({ success: false, error: 'enabled must be a boolean' });
+        }
+        if (intent_keywords !== undefined && !Array.isArray(intent_keywords)) {
+            return res.status(400).json({ success: false, error: 'intent_keywords must be an array' });
+        }
+        if (enabled === undefined && intent_keywords === undefined) {
+            return res.status(400).json({ success: false, error: 'No valid fields to update' });
+        }
+
+        const updated = await updateLiveSellingSettings(shopId, { enabled, intent_keywords });
+        logger.info('CommentToDm live-selling settings updated', { shopId, enabled: updated.enabled });
+        return res.json({ success: true, data: updated });
+    } catch (err) {
+        const status = err.statusCode || 500;
+        logger.error('CommentToDm updateLiveSelling error', { error: err.message });
+        return res.status(status).json({ success: false, error: status === 500 ? 'Internal server error' : err.message });
+    }
+}
+
 // ── Serializers ───────────────────────────────────────────────────────────────
 
 function serializeEvent(event) {
@@ -197,4 +242,4 @@ function serializeSettings(settings) {
     };
 }
 
-module.exports = { listEvents, getEvent, getSettings, updateSettings };
+module.exports = { listEvents, getEvent, getSettings, updateSettings, getLiveSelling, updateLiveSelling };

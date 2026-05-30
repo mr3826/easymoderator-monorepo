@@ -27,6 +27,7 @@ import {
 import { listMetaChannels, type MetaChannel } from '@/api/domains/meta-channels';
 import CommentToDmSettings from './CommentToDmSettings';
 import CommentToDmEventLog from './CommentToDmEventLog';
+import LiveSellingSettings from './LiveSellingSettings';
 
 export default function CommentToDmPage() {
   const { t } = useTranslation();
@@ -79,6 +80,9 @@ export default function CommentToDmPage() {
           <TabsTrigger value="settings">
             {t('commentToDm.tabs.settings', 'Settings')}
           </TabsTrigger>
+          <TabsTrigger value="live-selling">
+            {t('commentToDm.tabs.liveSelling', 'Live selling')}
+          </TabsTrigger>
         </TabsList>
 
         {/* Event Log tab */}
@@ -129,6 +133,11 @@ export default function CommentToDmPage() {
               )}
             </>
           )}
+        </TabsContent>
+
+        {/* Live-selling tab — per-shop, channel-independent */}
+        <TabsContent value="live-selling" className="mt-4">
+          <LiveSellingSettings />
         </TabsContent>
       </Tabs>
     </div>

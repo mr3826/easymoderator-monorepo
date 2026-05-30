@@ -15,6 +15,8 @@ const {
     getEvent,
     getSettings,
     updateSettings,
+    getLiveSelling,
+    updateLiveSelling,
 } = require('./comment-to-dm.controller');
 
 const router = express.Router();
@@ -30,5 +32,9 @@ router.get('/events/:id',    getEvent);
 // Settings (per channel)
 router.get('/settings/:channelId',  getSettings);
 router.put('/settings/:channelId',  updateSettings);
+
+// Live-selling capture (per shop)
+router.get('/live-selling',  getLiveSelling);
+router.put('/live-selling',  updateLiveSelling);
 
 module.exports = router;
