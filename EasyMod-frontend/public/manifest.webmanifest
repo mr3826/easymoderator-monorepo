@@ -1,0 +1,28 @@
+{
+  "name": "Easy Moderator",
+  "short_name": "EasyMod",
+  "description": "Bangla AI manager for your Facebook & Instagram shop — block fake orders, capture live orders, sell more.",
+  "lang": "bn",
+  "dir": "ltr",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F9FAF8",
+  "theme_color": "#00A651",
+  "categories": ["business", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

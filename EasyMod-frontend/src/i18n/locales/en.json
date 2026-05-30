@@ -1445,5 +1445,11 @@
     "how1": "Share your invite link with another shop owner.",
     "how2": "They sign up for EasyModerator using your link.",
     "how3": "You earn {{referrer}} free conversations and they start with {{referred}} — instantly."
+  },
+  "pwa": {
+    "installTitle": "Install Easy Moderator",
+    "installSubtitle": "Add to your home screen for faster, app-like access.",
+    "install": "Install",
+    "dismiss": "Dismiss"
   }
 }

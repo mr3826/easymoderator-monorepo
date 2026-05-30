@@ -9,6 +9,7 @@ import {
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import OnboardingWizard from "./OnboardingWizard";
+import InstallPrompt from "./InstallPrompt";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
 import LanguageToggle from "./LanguageToggle";
@@ -322,6 +323,8 @@ export default function DashboardLayout() {
         <OnboardingWizard onComplete={handleOnboardingComplete} />
       )}
 
+      {/* ─── PWA install prompt ───────────────────────────────────── */}
+      <InstallPrompt />
 
     </div>
   );
