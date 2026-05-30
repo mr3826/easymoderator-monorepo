@@ -1,20 +1,17 @@
-version: "3.9"
-
 # ──────────────────────────────────────────────────────────────────────────────
 # EasyModerator — Production Single-Droplet Stack
 #
 # Services:
-#   caddy     — TLS termination (Let's Encrypt), reverse proxy, SPA serving
-#   backend   — Node 20 Express API (port 3000, internal only)
+#   caddy     — TLS termination (Let's Encrypt), reverse proxy, SPA routing
+#   backend   — Node Express API (port 3000, internal only)
 #   worker    — BullMQ background jobs (same image, different command)
+#   frontend  — nginx serving built SPA (port 8080, internal only)
 #   postgres  — PostgreSQL 15 (internal only)
 #   redis     — Redis 7 (internal only)
 #   qdrant    — Vector DB for RAG (internal only)
 #
-# Usage:
-#   cp .env.prod.example .env.prod
-#   # fill in .env.prod
-#   docker compose -f docker-compose.prod.yml up -d
+# Caddy reaches backend/frontend by service DNS on the `internal` network,
+# matching ./Caddyfile (reverse_proxy backend:3000 / frontend:8080).
 # ──────────────────────────────────────────────────────────────────────────────
 
 networks:
@@ -27,7 +24,6 @@ volumes:
   qdrant_data:
   caddy_data:
   caddy_config:
-  invoice_data:
 
 services:
   # ── Caddy: TLS + reverse proxy ────────────────────────────────────────────
@@ -49,8 +45,6 @@ services:
         condition: service_healthy
       frontend:
         condition: service_started
-    environment:
-      - ACME_AGREE=true
 
   # ── Backend: Express API ──────────────────────────────────────────────────
   backend:
@@ -63,11 +57,6 @@ services:
       - NODE_ENV=production
       - START_EMBEDDED_WORKERS=false
       - RUN_MIGRATIONS_ON_STARTUP=false
-    volumes:
-      # Generated invoice PDFs (written by the worker, served by the backend at
-      # /uploads/invoices). Shared named volume so they survive container
-      # recreation on every deploy and the emailed download links keep working.
-      - invoice_data:/app/uploads/invoices
     networks:
       - internal
     depends_on:
@@ -82,7 +71,7 @@ services:
       start_period: 60s
       retries: 5
 
-  # ── Worker: BullMQ background jobs ───────────────────────────────────────
+  # ── Worker: BullMQ background jobs ────────────────────────────────────────
   worker:
     image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymod-backend:latest}
     restart: unless-stopped
@@ -91,9 +80,6 @@ services:
       - .env.prod
     environment:
       - NODE_ENV=production
-    volumes:
-      # Worker generates invoice PDFs into this shared volume; the backend serves them.
-      - invoice_data:/app/uploads/invoices
     networks:
       - internal
     depends_on:
@@ -102,7 +88,7 @@ services:
       redis:
         condition: service_healthy
 
-  # ── Frontend: nginx serving built SPA ────────────────────────────────────
+  # ── Frontend: nginx serving built SPA ─────────────────────────────────────
   frontend:
     image: ${GHCR_IMAGE_FRONTEND:-ghcr.io/mr3826/easymod-frontend:latest}
     restart: unless-stopped
@@ -114,6 +100,8 @@ services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
+    env_file:
+      - .env.prod
     environment:
       POSTGRES_USER: ${DB_USER:-easymod_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
@@ -129,7 +117,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Redis 7 ──────────────────────────────────────────────────────────────
+  # ── Redis 7 ───────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -144,7 +132,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Qdrant: Vector DB ────────────────────────────────────────────────────
+  # ── Qdrant: Vector DB for RAG ─────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
@@ -152,5 +140,4 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - internal
-    # No ports exposed externally — backend accesses via internal network
     # Internal URL: http://qdrant:6333
