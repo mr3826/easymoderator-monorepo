@@ -19,13 +19,10 @@ module.exports = {
         DB_PASSWORD: process.env.DB_PASSWORD,
         // Redis configuration
         REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
-        // Vector DB configuration (Pinecone primary)
-        PINECONE_API_KEY: process.env.PINECONE_API_KEY || '',
-        PINECONE_INDEX: process.env.PINECONE_INDEX || 'easymod-knowledge',
-        PINECONE_NAMESPACE: process.env.PINECONE_NAMESPACE || 'knowledge_base',
-        // Qdrant fallback (legacy)
+        // Vector DB configuration (Qdrant — single vector store, Pinecone removed)
         QDRANT_URL: process.env.QDRANT_URL || 'http://localhost:6333',
         QDRANT_API_KEY: process.env.QDRANT_API_KEY || '',
+        QDRANT_COLLECTION: process.env.QDRANT_COLLECTION || 'knowledge_documents',
         // Workflow forwarding
         MAKE_WEBHOOK_URL: process.env.MAKE_WEBHOOK_URL || '',
         MAKE_INTERNAL_AUTH: process.env.MAKE_INTERNAL_AUTH || '',
@@ -73,9 +70,9 @@ module.exports = {
         PORT: process.env.PORT || 3000,
         // Worker-specific environment
         REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
-        PINECONE_API_KEY: process.env.PINECONE_API_KEY || '',
-        PINECONE_INDEX: process.env.PINECONE_INDEX || 'easymod-knowledge',
-        PINECONE_NAMESPACE: process.env.PINECONE_NAMESPACE || 'knowledge_base',
+        QDRANT_URL: process.env.QDRANT_URL || 'http://localhost:6333',
+        QDRANT_API_KEY: process.env.QDRANT_API_KEY || '',
+        QDRANT_COLLECTION: process.env.QDRANT_COLLECTION || 'knowledge_documents',
         DB_HOST: process.env.DB_HOST || 'localhost',
         DB_NAME: process.env.DB_NAME || 'easymod_prod',
         DB_USER: process.env.DB_USER || 'easymod_user',

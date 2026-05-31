@@ -2,7 +2,7 @@
  * Product Embedding Service
  *
  * Builds a canonical text document from a product record and upserts it
- * into the vector store (Qdrant / Pinecone via rag.service).
+ * into the vector store (Qdrant via rag.service).
  *
  * Document format (optimised for Bengali + Banglish search):
  *   "<name> | <name_bn> | sizes: <variants> | price: <price> BDT |

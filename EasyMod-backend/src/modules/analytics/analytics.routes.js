@@ -1,6 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const AnalyticsController = require('./analytics.controller');
+const growthMetrics = require('./growth-metrics.service');
 const { authenticate } = require('../../middleware/auth.middleware');
 const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
@@ -83,5 +84,22 @@ router.get('/intent-breakdown', authenticate, AnalyticsController.getIntentBreak
 
 // GET /api/analytics/confidence-distribution — AI confidence score buckets
 router.get('/confidence-distribution', authenticate, AnalyticsController.getConfidenceDistribution);
+
+/**
+ * GET /api/analytics/growth — cross-shop activation + retention (admin only).
+ * Powers the launch / 10-shop smoke-test dashboard: who activated (first AI
+ * reply), how fast, and who is still transacting this week vs last.
+ */
+router.get('/growth', authenticate, async (req, res) => {
+    if (req.user?.role !== 'admin') {
+        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required.' } });
+    }
+    try {
+        const data = await growthMetrics.getGrowthMetrics();
+        res.json({ success: true, data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: { code: 'GROWTH_METRICS_ERROR', message: err.message } });
+    }
+});
 
 module.exports = router;

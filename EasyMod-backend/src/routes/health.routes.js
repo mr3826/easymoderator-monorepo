@@ -68,7 +68,7 @@ router.get('/detailed', authenticate, async (req, res) => {
         redis: 'unknown',
         redis_details: {},
         vectorDb: 'unknown',
-        vectorProvider: process.env.PINECONE_API_KEY && process.env.PINECONE_INDEX ? 'pinecone' : 'qdrant',
+        vectorProvider: 'qdrant',
         queues: null
     };
 
@@ -88,18 +88,11 @@ router.get('/detailed', authenticate, async (req, res) => {
     }
 
     try {
-        if (checks.vectorProvider === 'pinecone') {
-            const { Pinecone } = require('@pinecone-database/pinecone');
-            const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-            await pc.index(process.env.PINECONE_INDEX).describeIndexStats();
-            checks.vectorDb = 'available';
-        } else {
-            const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
-            const qdrantRes = await fetch(`${qdrantUrl}/collections`, {
-                headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {}
-            });
-            checks.vectorDb = qdrantRes.ok ? 'available' : 'unavailable';
-        }
+        const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
+        const qdrantRes = await fetch(`${qdrantUrl}/collections`, {
+            headers: process.env.QDRANT_API_KEY ? { 'api-key': process.env.QDRANT_API_KEY } : {}
+        });
+        checks.vectorDb = qdrantRes.ok ? 'available' : 'unavailable';
     } catch (_) {
         checks.vectorDb = 'unavailable';
     }
@@ -112,8 +105,26 @@ router.get('/detailed', authenticate, async (req, res) => {
             const stats = await queueManager.getQueueStats(name);
             checks.queues[name] = stats || { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
         }
+        // Customer-facing reply pipeline (message-processing + comment-to-dm +
+        // notifications + the message-dlq sink). A non-zero dlq means real
+        // customers got no reply — this is the path that must never fail silently.
+        checks.criticalQueues = await queueManager.getCriticalQueueStats();
+        const dlqDepth = checks.criticalQueues?.messageDlq?.waiting || 0;
+        checks.autoReplyDlq = dlqDepth;
     } catch (_) {
         checks.queues = { error: 'queue_manager_unavailable' };
+    }
+
+    // Auto-reply canary freshness — proves the message-processing worker is alive
+    // and consuming the queue (the launch-readiness check reads this).
+    try {
+        const { cacheRedis } = require('../config/redis');
+        const lastOk = cacheRedis ? await cacheRedis.get('canary:msg:last_ok') : null;
+        const ageMs = lastOk ? Date.now() - parseInt(lastOk, 10) : null;
+        const maxStale = parseInt(process.env.CANARY_MAX_STALENESS_MS, 10) || 15 * 60 * 1000;
+        checks.autoReplyCanary = { lastOkAgeMs: ageMs, fresh: ageMs !== null && ageMs <= maxStale };
+    } catch (_) {
+        checks.autoReplyCanary = { lastOkAgeMs: null, fresh: false };
     }
 
     const unhealthy = checks.database === 'disconnected' || checks.redis === 'disconnected';

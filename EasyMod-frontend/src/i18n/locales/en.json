@@ -69,26 +69,31 @@
       "getStarted": "Get Started"
     },
     "hero": {
-      "badge": "Your Facebook Shop's AI Assistant",
-      "headline1": "Your Shop's",
-      "headline2": "24/7 AI",
-      "headline3": "Assistant",
-      "subheadline": "Chat with customers on Facebook & Instagram using AI, take orders, track deliveries — all in one place.",
+      "badge": "The COD-trust OS for Bangladesh f-commerce",
+      "headline1": "The Order &",
+      "headline2": "COD-Trust",
+      "headline3": "OS for Your Shop",
+      "subheadline": "AI replies to every Facebook & Instagram buyer, captures the order, and flags risky cash-on-delivery customers using a fraud network shared across shops — so you ship with confidence.",
       "ctaStart": "Get Started →",
       "ctaDemo": "View Demo",
       "stat1Value": "10+",
-      "stat1Label": "Shops using it",
-      "stat2Value": "98%",
-      "stat2Label": "Customer satisfaction",
-      "stat3Value": "24/7",
-      "stat3Label": "Support available"
+      "stat1Label": "Active shops",
+      "stat2Value": "24/7",
+      "stat2Label": "AI auto-reply",
+      "stat3Value": "3",
+      "stat3Label": "BD couriers built-in"
     },
     "trust": {
-      "label": "Built on trust",
-      "heading": "Safe for your page, your customers, and your money",
+      "label": "Built for COD commerce",
+      "heading": "Safe for your page, your customers, and your cash-on-delivery",
       "items": [
         {
           "icon": "🛡️",
+          "title": "RTO Shield — fewer fake COD orders",
+          "desc": "Risky cash-on-delivery buyers are flagged using a fraud signal shared across shops — before you ship and lose the return cost."
+        },
+        {
+          "icon": "🔒",
           "title": "Meta-approved & ban-safe",
           "desc": "We follow Facebook & Instagram messaging rules, so your page stays safe."
         },
@@ -96,11 +101,6 @@
           "icon": "🙋",
           "title": "AI hands hard questions to you",
           "desc": "Unsure? The AI steps back and lets you reply personally — no wrong answers to customers."
-        },
-        {
-          "icon": "🔒",
-          "title": "Your data is secure",
-          "desc": "Bank-grade encryption for payments and customer data. We never sell your data."
         }
       ]
     },
@@ -124,7 +124,7 @@
     "features": {
       "label": "Features",
       "heading": "Why EasyModerator?",
-      "subheading": "Built specifically for Bangladesh shop owners",
+      "subheading": "Built for Bangladesh cash-on-delivery commerce",
       "items": [
         {
           "icon": "🤖",
@@ -204,12 +204,12 @@
     },
     "cta": {
       "heading1": "Start Today —",
-      "heading2": "Automate Your Shop",
-      "subheading": "No hidden fees. Set up in 5 minutes.",
+      "heading2": "Protect Your COD Revenue",
+      "subheading": "Free to start. AI auto-reply + RTO Shield in 5 minutes.",
       "button": "Get Started Now →"
     },
     "footer": {
-      "tagline": "Your Facebook Shop's AI Assistant"
+      "tagline": "The order + COD-trust OS for Bangladesh f-commerce"
     }
   },
   "auth": {

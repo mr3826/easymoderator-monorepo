@@ -203,6 +203,60 @@ describe('Knowledge API', () => {
 
     });
 
+    // ── POST /knowledge/faqs/seed-starter ─────────────────────────────────
+
+    describe('POST /knowledge/faqs/seed-starter', () => {
+        beforeEach(() => {
+            FaqResponse.count = jest.fn();
+            FaqResponse.bulkCreate = jest.fn();
+        });
+
+        it('seeds the starter FAQ pack when the shop has no FAQs', async () => {
+            FaqResponse.count.mockResolvedValue(0);
+            FaqResponse.bulkCreate.mockImplementation((rows) =>
+                Promise.resolve(rows.map((r, i) => ({
+                    id: i + 1,
+                    category: r.category,
+                    template_bn: r.template_bn,
+                    template_en: r.template_en,
+                    is_active: true,
+                    use_count: 0,
+                    priority: r.priority,
+                    created_at: new Date(),
+                })))
+            );
+
+            const res = await request(app).post('/api/knowledge/faqs/seed-starter');
+
+            expect(res.status).toBe(201);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data.skipped).toBe(false);
+            expect(res.body.data.seeded).toBeGreaterThanOrEqual(5);
+            expect(Array.isArray(res.body.data.faqs)).toBe(true);
+            expect(FaqResponse.bulkCreate).toHaveBeenCalledTimes(1);
+        });
+
+        it('is idempotent — does not seed when FAQs already exist', async () => {
+            FaqResponse.count.mockResolvedValue(5);
+
+            const res = await request(app).post('/api/knowledge/faqs/seed-starter');
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.skipped).toBe(true);
+            expect(res.body.data.seeded).toBe(0);
+            expect(FaqResponse.bulkCreate).not.toHaveBeenCalled();
+        });
+
+        it('returns 403 when the user has no access to the shop', async () => {
+            UserShop.findOne.mockResolvedValueOnce(null);
+            FaqResponse.count.mockResolvedValue(0);
+
+            const res = await request(app).post('/api/knowledge/faqs/seed-starter');
+
+            expect(res.status).toBe(403);
+        });
+    });
+
     // ── PUT /knowledge/branding ───────────────────────────────────────────
 
     describe('PUT /knowledge/branding', () => {

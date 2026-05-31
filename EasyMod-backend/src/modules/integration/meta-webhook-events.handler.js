@@ -21,6 +21,7 @@ const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { dispatchCommentEvents, notifyDmOpened } = require('./meta-webhook-comments.handler');
 const { extractCommentEvents } = require('../commentToDm/comment-to-dm.webhook-handler');
+const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('MetaWebhookEvents');
 
@@ -45,18 +46,31 @@ function getMessageQueue() {
 async function dispatchMessageJob(storeResult, event) {
     const queue = getMessageQueue();
     if (!queue) {
-        logger.error('BullMQ unavailable — message stored in DB but AI pipeline skipped', {
+        // No Error object here (queue is simply null), so pass null as the 2nd
+        // arg and put context in meta — otherwise the logger reads .message off
+        // this object (undefined) and the shop/platform context is dropped.
+        logger.error('BullMQ unavailable — message stored in DB but AI pipeline skipped', null, {
             shopId: event.shop_id,
             platform: event.platform,
             externalId: event.raw_event?.message?.mid || event.raw_event?.id || null
         });
+        // Stage alert: webhook receipt OK, but the queue is down → no replies at all.
+        opsAlert('Webhook→AI dispatch skipped — message queue unavailable', {
+            detail: `shop=${event.shop_id} platform=${event.platform}. Messages are being stored `
+                + `but the AI pipeline is not running (Redis/BullMQ down?). No auto-replies are going out.`,
+            level: 'error',
+            context: { shopId: event.shop_id, platform: event.platform },
+        }).catch(() => {});
         return;
     }
 
     const { shop_id, sender, platform, message, attachments = [], raw_event, meta_channel_id = null } = event;
     const { conversation_id, message_id, customer_id } = storeResult;
     const externalId = raw_event?.message?.mid || raw_event?.id || null;
-    const jobId = externalId ? `${shop_id}:${externalId}` : undefined;
+    // BullMQ forbids ':' in custom job IDs (it's the internal key separator), so
+    // a UUID shop_id + Meta mid joined by ':' makes queue.add() throw and the AI
+    // job is silently never enqueued. Use '_' and strip any residual colon.
+    const jobId = externalId ? `${shop_id}_${externalId}`.replace(/:/g, '_') : undefined;
 
     try {
         await queue.add(
@@ -79,7 +93,25 @@ async function dispatchMessageJob(storeResult, event) {
             }
         );
     } catch (err) {
-        logger.error('Failed to dispatch BullMQ job', { error: err.message, shop_id, externalId });
+        // Pass the Error as the logger's 2nd positional arg — it extracts
+        // .message/.code (and .stack outside prod). The previous call shoved a
+        // plain object into that slot, so .message was undefined (logged as
+        // `error:{}`) and shop_id/externalId were dropped entirely, hiding a
+        // hard dispatch failure for weeks. jobId is logged too: a malformed
+        // custom job id (e.g. one containing ':') is a common, silent cause.
+        logger.error('Failed to dispatch BullMQ AI job — message stored but auto-reply skipped', err, {
+            shop_id,
+            externalId,
+            jobId,
+            platform,
+        });
+        // Stage alert: enqueue threw (e.g. malformed jobId) → this customer gets no
+        // reply. Throttled per-title so a systemic bug pages once, not per message.
+        opsAlert('Webhook→AI enqueue FAILED — message stored but no auto-reply', {
+            detail: `shop=${shop_id} platform=${platform} jobId=${jobId}\nerror: ${err.message}`,
+            level: 'error',
+            context: { shop_id, externalId, jobId, platform, error: err.message },
+        }).catch(() => {});
     }
 }
 

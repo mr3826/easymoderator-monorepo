@@ -23,6 +23,7 @@
 const { Worker, Queue } = require('bullmq');
 const { connection } = require('./message-queue');
 const { cacheRedis } = require('../config/redis');
+const { opsAlert } = require('../utils/ops-alert');
 const { Conversation, Message } = require('../modules/conversation/conversation.entity');
 const ConversationStateService = require('../modules/conversation/conversation-state-standalone.service');
 const { getProvider } = require('../modules/channel-providers/provider.registry');
@@ -111,6 +112,16 @@ async function claimDedupKey(key) {
  *   platform, recipientId, senderInfo
  */
 async function processMessageJob(job) {
+    // ── Canary short-circuit ────────────────────────────────────────────────
+    // Synthetic probe enqueued by pipeline-canary.job.js to prove the
+    // enqueue → worker → complete loop is alive (the exact path the BullMQ jobId
+    // bug silently broke). Sets a heartbeat and returns BEFORE any DB / AI / send
+    // work, so it costs nothing and never messages a real customer.
+    if (job.data && job.data.canary) {
+        try { await cacheRedis.set('canary:msg:last_ok', String(Date.now())); } catch (_) { /* best-effort */ }
+        return { canary: true, ok: true };
+    }
+
     const {
         shopId,
         conversationId,
@@ -231,6 +242,13 @@ async function processMessageJob(job) {
         ));
     } catch (aiErr) {
         console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
+        // Stage alert (warning): the customer still gets a reply, but it's the
+        // generic fallback — the AI pipeline (LLM/RAG/Gemini) is degraded. Throttled.
+        opsAlert('AI reply degraded — LLM pipeline failed, sent fallback message', {
+            detail: `shop=${shopId} conv=${conversationId}\nerror: ${aiErr.message}`,
+            level: 'warning',
+            context: { shopId, conversationId, error: aiErr.message },
+        }).catch(() => {});
         rawResponse = detectedLanguage === 'bn'
             ? 'আপনার বার্তার জন্য ধন্যবাদ! আমরা শীঘ্রই সাড়া দেব।'
             : 'Thank you for your message! We will respond shortly.';
@@ -348,6 +366,12 @@ async function processMessageJob(job) {
         throw err; // Other send errors bubble up for normal retry/DLQ handling
     }
 
+    // Activation tracking: the first successful AI reply activates the shop.
+    // Fire-and-forget + Redis NX-gated, so it runs once and never blocks the reply.
+    require('../modules/analytics/growth-metrics.service')
+        .recordActivation(shopId, conversationId)
+        .catch(() => {});
+
     return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
 }
 
@@ -380,8 +404,20 @@ function startWorker() {
                     failedAt: new Date().toISOString()
                 });
                 console.error(`[worker/DLQ] Job ${job.id} moved to message-dlq after exhausting retries`);
+                // A dead-lettered message means this customer got NO reply — page a human.
+                opsAlert('Auto-reply job dead-lettered — customer received no reply', {
+                    detail: `shop=${job.data?.shopId} platform=${job.data?.platform} jobId=${job.id} `
+                        + `conv=${job.data?.conversationId}\nerror: ${err.message}`,
+                    level: 'error',
+                    context: { shopId: job.data?.shopId, jobId: job.id, error: err.message },
+                }).catch(() => {});
             } catch (dlqErr) {
                 console.error('[worker] Failed to add to DLQ', { error: dlqErr.message });
+                opsAlert('Auto-reply job failed AND could not be dead-lettered', {
+                    detail: `jobId=${job.id} dlqError: ${dlqErr.message} originalError: ${err.message}`,
+                    level: 'error',
+                    context: { jobId: job.id, dlqError: dlqErr.message },
+                }).catch(() => {});
             }
         } else {
             console.warn(`[worker] Job ${job?.id} attempt ${job?.attemptsMade} failed (will retry): ${err.message}`);

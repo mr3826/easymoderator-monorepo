@@ -166,6 +166,7 @@ export const apiClient = {
   listKnowledgeGaps: knowledgeDomain.listKnowledgeGaps,
   listKnowledgeDocuments: knowledgeDomain.listDocuments,
   createKnowledgeDocument: knowledgeDomain.createDocument,
+  seedStarterFaqs: knowledgeDomain.seedStarterFaqs,
 
   // Subscription methods
   getSubscription: subscriptionDomain.getSubscription,

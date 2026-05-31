@@ -65,6 +65,19 @@ const createFaq = async (req, res, next) => {
     }
 };
 
+const seedStarterFaqs = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) {
+            return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'No shop selected. Please login again.' } });
+        }
+        const data = await knowledgeService.seedStarterFaqs(userId, shopId);
+        res.status(data.skipped ? 200 : 201).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};
+
 const updateFaq = async (req, res, next) => {
     try {
         const { shopId, userId } = req.user;
@@ -208,6 +221,7 @@ module.exports = {
     updateBrandingRules,
     listFaqs,
     createFaq,
+    seedStarterFaqs,
     updateFaq,
     deleteFaq,
     listGaps,

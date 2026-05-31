@@ -7,7 +7,7 @@
  * Three-tier matching strategy (cheapest → most expensive):
  *   1. Image hash   — perceptual hash match vs. product catalog images (~0ms)
  *                     Falls back if no hash match above threshold
- *   2. Vector RAG   — semantic search via embeddings in Qdrant/Pinecone (~30ms)
+ *   2. Vector RAG   — semantic search via embeddings in Qdrant (~30ms)
  *                     Uses Banglish-normalised text + Gemini Vision description
  *   3. Gemini Vision — full image description → text search (~1s, costs money)
  *                     Only triggered when tiers 1 & 2 return nothing useful

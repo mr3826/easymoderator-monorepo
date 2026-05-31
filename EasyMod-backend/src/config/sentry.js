@@ -11,11 +11,18 @@ const initSentry = (app) => {
 
     const Sentry = require('@sentry/node');
 
+    // Tie every event to the exact deploy. GIT_SHA is baked into the image by the
+    // Dockerfile (ARG GIT_SHA → ENV GIT_SHA); BUILD_TIME is the image dist marker.
+    const release = process.env.GIT_SHA || process.env.APP_VERSION || undefined;
+    const dist = process.env.BUILD_TIME || undefined;
+
     try {
         const { nodeProfilingIntegration } = require('@sentry/profiling-node');
         Sentry.init({
             dsn: process.env.SENTRY_DSN,
             environment: process.env.NODE_ENV || 'development',
+            release,
+            dist,
             integrations: [nodeProfilingIntegration()],
             tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
             profilesSampleRate: 0.1,
@@ -24,6 +31,8 @@ const initSentry = (app) => {
         Sentry.init({
             dsn: process.env.SENTRY_DSN,
             environment: process.env.NODE_ENV || 'development',
+            release,
+            dist,
             tracesSampleRate: 0.1,
         });
     }
@@ -47,4 +56,15 @@ const sentryCaptureException = (err, context = {}) => {
     Sentry.captureException(err, { extra: context });
 };
 
-module.exports = { initSentry, sentryCaptureException };
+/**
+ * Capture a message-level event (no Error object) — used for operational
+ * alerts such as a stale auto-reply pipeline or a non-empty DLQ, where there
+ * is no thrown exception but the condition still needs to page someone.
+ */
+const sentryCaptureMessage = (message, { level = 'error', extra = {} } = {}) => {
+    if (!process.env.SENTRY_DSN) return;
+    const Sentry = require('@sentry/node');
+    Sentry.captureMessage(message, { level, extra });
+};
+
+module.exports = { initSentry, sentryCaptureException, sentryCaptureMessage };

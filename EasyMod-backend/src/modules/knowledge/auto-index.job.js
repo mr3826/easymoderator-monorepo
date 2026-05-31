@@ -3,7 +3,7 @@
 /**
  * Knowledge Auto-Index Job
  *
- * Watches for knowledge base changes and re-indexes into the vector DB (Pinecone/Qdrant).
+ * Watches for knowledge base changes and re-indexes into the vector DB (Qdrant).
  * Should run daily or be triggered after knowledge base updates.
  *
  * Indexed sources (all non-analytics):
@@ -36,8 +36,16 @@ const indexShop = async (shopId) => {
     const ingest = async (text, metadata) => {
         if (!text || text.trim().length < 5) return;
         try {
-            await ingestData({ text, metadata: { shopId, ...metadata } });
-            indexed++;
+            // ingestData swallows vector-store failures and returns { success:false }
+            // (so an incremental FAQ/product write never breaks on a Qdrant blip).
+            // For a reindex we must treat that as an error, not a silent success.
+            const res = await ingestData({ text, metadata: { shopId, ...metadata } });
+            if (res && res.success) {
+                indexed++;
+            } else {
+                logger.warn('Ingestion reported failure', { shopId, docType: metadata.type, reason: res && res.message });
+                errors++;
+            }
         } catch (err) {
             logger.warn('Ingestion failed', { shopId, docType: metadata.type, err: err.message });
             errors++;

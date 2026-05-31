@@ -18,8 +18,16 @@ vi.mock('@/api', () => ({
 }));
 
 // ── Mock react-i18next (t returns the key so we can match translation keys) ───
+// `t` MUST be identity-stable across renders. Dashboard wraps refreshPulse in
+// useCallback([t]) and runs its data-loading effect on [refreshPulse]; a fresh
+// `t` each render would recreate refreshPulse, re-fire the effect, and flicker
+// the component back to its loading state — which made this test flaky. Real
+// react-i18next returns a stable `t`, so we mirror that with vi.hoisted.
+const { tMock } = vi.hoisted(() => ({
+  tMock: (key: string, _opts?: Record<string, unknown>) => key,
+}));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, _opts?: Record<string, unknown>) => key }),
+  useTranslation: () => ({ t: tMock }),
 }));
 
 // ── Mock sonner so toast calls don't throw ────────────────────────────────────

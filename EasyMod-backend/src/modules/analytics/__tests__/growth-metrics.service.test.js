@@ -1,0 +1,104 @@
+'use strict';
+
+/**
+ * Unit tests for the activation/retention growth-metrics service.
+ * Shop, Order and the Redis cache are mocked — no DB.
+ */
+
+const mockShop = { findByPk: jest.fn(), findAll: jest.fn() };
+const mockOrder = { count: jest.fn() };
+const mockCache = { set: jest.fn() };
+
+jest.mock('src/modules/shop/shop.entity', () => mockShop);
+jest.mock('src/modules/order/order.entity', () => mockOrder);
+jest.mock('src/config/redis', () => ({ cacheRedis: mockCache }));
+
+const { recordActivation, getGrowthMetrics } = require('src/modules/analytics/growth-metrics.service');
+
+describe('growth-metrics.service', () => {
+    beforeEach(() => jest.resetAllMocks());
+
+    describe('recordActivation', () => {
+        it('records activation on first NX claim and preserves existing settings', async () => {
+            mockCache.set.mockResolvedValue('OK');
+            const update = jest.fn().mockResolvedValue();
+            mockShop.findByPk.mockResolvedValue({ settings: { businessInfo: { x: 1 } }, update });
+
+            await recordActivation('shop-1', 'conv-9');
+
+            expect(mockCache.set).toHaveBeenCalledWith('shop:activated:shop-1', '1', 'NX');
+            expect(update).toHaveBeenCalledTimes(1);
+            const arg = update.mock.calls[0][0];
+            expect(arg.settings.activation.activated_at).toBeTruthy();
+            expect(arg.settings.activation.first_conversation_id).toBe('conv-9');
+            expect(arg.settings.businessInfo).toEqual({ x: 1 }); // not clobbered
+        });
+
+        it('skips entirely when the NX claim was already taken', async () => {
+            mockCache.set.mockResolvedValue(null); // key already exists
+            await recordActivation('shop-1');
+            expect(mockShop.findByPk).not.toHaveBeenCalled();
+        });
+
+        it('does not overwrite an existing activation timestamp', async () => {
+            mockCache.set.mockResolvedValue('OK');
+            const update = jest.fn();
+            mockShop.findByPk.mockResolvedValue({
+                settings: { activation: { activated_at: '2026-01-01T00:00:00Z' } },
+                update,
+            });
+            await recordActivation('shop-1');
+            expect(update).not.toHaveBeenCalled();
+        });
+
+        it('never throws when redis/db fails', async () => {
+            mockCache.set.mockRejectedValue(new Error('redis down'));
+            await expect(recordActivation('shop-1')).resolves.toBeUndefined();
+        });
+
+        it('is a no-op without a shopId', async () => {
+            await recordActivation(null);
+            expect(mockCache.set).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('getGrowthMetrics', () => {
+        it('computes activation + retention and sorts by recent orders', async () => {
+            mockShop.findAll.mockResolvedValue([
+                { id: 's1', shop_name: 'Shop One', settings: { activation: { activated_at: '2026-05-20T00:00:00Z' } }, created_at: new Date('2026-05-18T00:00:00Z') },
+                { id: 's2', shop_name: 'Shop Two', settings: {}, created_at: new Date('2026-05-25T00:00:00Z') },
+            ]);
+            // Deterministic call order: s1-last7, s1-prev7, s2-last7, s2-prev7
+            mockOrder.count
+                .mockResolvedValueOnce(3)
+                .mockResolvedValueOnce(0)
+                .mockResolvedValueOnce(0)
+                .mockResolvedValueOnce(0);
+
+            const result = await getGrowthMetrics({ now: new Date('2026-05-31T00:00:00Z') });
+
+            expect(result.totals.shops).toBe(2);
+            expect(result.totals.activated).toBe(1);
+            expect(result.totals.activationRate).toBe(50);
+            expect(result.totals.retainedThisWeek).toBe(1);
+            expect(result.totals.retentionRate).toBe(100); // 1 of 1 activated shops retained
+
+            // Sorted by ordersLast7d desc → s1 (3 orders) first
+            expect(result.shops[0].shopId).toBe('s1');
+            expect(result.shops[0].activated).toBe(true);
+            expect(result.shops[0].daysToActivation).toBe(2); // May 18 → May 20
+            expect(result.shops[1].shopId).toBe('s2');
+            expect(result.shops[1].activated).toBe(false);
+            expect(result.shops[1].retainedThisWeek).toBe(false);
+        });
+
+        it('handles zero shops without dividing by zero', async () => {
+            mockShop.findAll.mockResolvedValue([]);
+            const result = await getGrowthMetrics();
+            expect(result.totals.shops).toBe(0);
+            expect(result.totals.activationRate).toBe(0);
+            expect(result.totals.retentionRate).toBe(0);
+            expect(result.shops).toEqual([]);
+        });
+    });
+});

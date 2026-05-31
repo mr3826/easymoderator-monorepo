@@ -27,6 +27,7 @@ const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { parseLiveOrderIntent } = require('./live-order-parser');
 const { getLiveSellingSettings } = require('./live-selling-settings');
 const sse = require('../../utils/sse-manager');
+const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('CommentToDm');
 
@@ -273,13 +274,26 @@ class CommentToDmService {
                     await queue.add('processQueuedComment',
                         { eventId: event.id },
                         {
-                            jobId: `ctd:${event.id}`, // BullMQ-level deduplication
+                            jobId: `ctd_${event.id}`, // BullMQ-level dedup ('_' not ':' — BullMQ forbids ':' in custom job IDs)
                             attempts: 3,
                             backoff: { type: 'exponential', delay: 5000 },
                         }
                     );
                 } catch (qErr) {
-                    logger.error('CommentToDm: failed to enqueue job', { eventId: event.id, error: qErr.message });
+                    // Error must be the logger's 2nd positional arg so .message/.code
+                    // are captured; context (eventId, jobId) goes in meta. Passing a
+                    // plain object here would log `error:{}` and swallow the cause.
+                    logger.error('CommentToDm: failed to enqueue job', qErr, {
+                        eventId: event.id,
+                        jobId: `ctd_${event.id}`,
+                    });
+                    // Stage alert: comment matched but the DM job never enqueued →
+                    // the commenter gets no auto-DM. Throttled per-title.
+                    opsAlert('Comment→DM enqueue FAILED — commenter gets no auto-DM', {
+                        detail: `eventId=${event.id} jobId=ctd_${event.id}\nerror: ${qErr.message}`,
+                        level: 'error',
+                        context: { eventId: event.id, error: qErr.message },
+                    }).catch(() => {});
                 }
             } else {
                 logger.warn('CommentToDm: BullMQ queue unavailable, job not enqueued', { eventId: event.id });
