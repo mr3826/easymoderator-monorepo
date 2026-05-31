@@ -69,10 +69,17 @@ const indexShop = async (shopId) => {
             if (biz) await ingest(biz, { type: 'business_info', documentId: `biz-${shopId}` });
         }
 
-        // 2. FAQ responses
-        const faqs = await FaqResponse.findAll({ where: { shop_id: shopId } });
+        // 2. FAQ responses. The faq_responses table stores `category` (the topic
+        // the FAQ answers) plus bilingual `template_bn` / `template_en` answers —
+        // there are no `question`/`answer` columns. Index the category and both
+        // language templates so RAG retrieval matches Bengali and English queries.
+        const faqs = await FaqResponse.findAll({ where: { shop_id: shopId, is_active: true } });
         for (const faq of faqs) {
-            const text = `Q: ${faq.question}\nA: ${faq.answer}`;
+            const text = [
+                `Q: ${faq.category}`,
+                faq.template_bn && `A (BN): ${faq.template_bn}`,
+                faq.template_en && `A (EN): ${faq.template_en}`
+            ].filter(Boolean).join('\n');
             await ingest(text, { type: 'faq', documentId: `faq-${faq.id}`, faq_id: faq.id });
         }
 
@@ -91,9 +98,9 @@ const indexShop = async (shopId) => {
             await ingest(text, { type: 'product', documentId: `product-${product.id}`, product_id: product.id });
         }
 
-        // 4. Custom knowledge documents
+        // 4. Custom knowledge documents (table is `knowledge_documents`)
         const [docs] = await sequelize.query(
-            `SELECT id, title, content FROM shop_knowledge_documents WHERE shop_id=:shopId LIMIT 100`,
+            `SELECT id, title, content FROM knowledge_documents WHERE shop_id=:shopId AND is_active=true LIMIT 100`,
             { replacements: { shopId } }
         ).catch(() => [[]]);
 
