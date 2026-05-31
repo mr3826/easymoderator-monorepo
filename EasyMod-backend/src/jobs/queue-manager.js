@@ -2,7 +2,7 @@
 
 const { Queue, Worker } = require('bullmq');
 const config = require('../config/config');
-const { connection } = require('./message-queue');
+const { connection, messageQueue } = require('./message-queue');
 
 const {
     DailyOverageCalculator,
@@ -12,6 +12,7 @@ const {
     MetaTokenRefreshJob,
     CommentToDmWorker,
     CommentToDmExpiryJob,
+    PipelineCanaryJob,
 } = require('./index');
 
 class QueueManager {
@@ -44,6 +45,8 @@ class QueueManager {
             ['meta-token-refresh', 'metaTokenRefresh', MetaTokenRefreshJob],
             // Phase 4 — Comment-to-DM expiry cron (daily sweep)
             ['comment-to-dm-expiry', 'commentToDmExpiry', CommentToDmExpiryJob],
+            // Reliability — auto-reply pipeline canary (every 5 min, see scheduleJobs)
+            ['pipeline-canary', 'pipelineCanary', PipelineCanaryJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -92,6 +95,15 @@ class QueueManager {
             connection,
             limiter: { max: 50, duration: 10000 },
         });
+
+        // Observability-only handles for the customer-facing reply pipeline.
+        // The message-processing queue is the singleton created in message-queue.js
+        // (and consumed by the worker started below); message-dlq is the sink that
+        // message-worker.js writes dead-lettered jobs into. Registering references
+        // here lets /health/detailed and getCriticalQueueStats() read their depths.
+        // No worker is attached — message-dlq is intentionally a manual-drain sink.
+        this.queues.messageProcessing = messageQueue;
+        this.queues.messageDlq = new Queue('message-dlq', { connection });
 
         for (const [name, worker] of Object.entries(this.workers)) {
             worker.on('completed', (job) => {
@@ -174,6 +186,14 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Reliability — run the auto-reply pipeline canary every 5 minutes so a
+        // down/wedged worker or a non-empty DLQ pages within one interval.
+        await this.queues.pipelineCanary.upsertJobScheduler(
+            'pipeline-canary',
+            { pattern: '*/5 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -185,6 +205,7 @@ class QueueManager {
             'failed_payment_reconciler': 'paymentReconciler',
             'meta_token_refresh': 'metaTokenRefresh',
             'comment_to_dm_expiry': 'commentToDmExpiry',
+            'pipeline_canary': 'pipelineCanary',
         };
 
         const queueKey = queueMap[jobName];
@@ -211,6 +232,25 @@ class QueueManager {
         ]);
 
         return { waiting, active, completed, failed, delayed };
+    }
+
+    /**
+     * Stats for the CUSTOMER-FACING reply pipeline — the queues that actually
+     * decide whether a buyer gets an answer. Surfaced by /health/detailed so the
+     * reply path and its dead-letter queue are observable (previously only the
+     * billing queues were). `dlq > 0` means messages failed every retry.
+     */
+    async getCriticalQueueStats() {
+        const keys = ['messageProcessing', 'commentToDm', 'notifications', 'messageDlq'];
+        const out = {};
+        await Promise.all(keys.map(async (key) => {
+            try {
+                out[key] = (await this.getQueueStats(key)) || null;
+            } catch (_) {
+                out[key] = { error: 'unavailable' };
+            }
+        }));
+        return out;
     }
 
     async cleanup() {

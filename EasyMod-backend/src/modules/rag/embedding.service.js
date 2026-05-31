@@ -122,7 +122,8 @@ const getOpenAiEmbedding = async (text) => {
       Authorization: `Bearer ${apiKey}`
     },
     // text-embedding-3-* supports a `dimensions` param to truncate output.
-    // Always pass it so the vector size matches the Pinecone index (512).
+    // Always pass it so the embedding size matches the Qdrant collection's
+    // configured vector size (QDRANT_VECTOR_SIZE).
     body: JSON.stringify({ model, input: text, dimensions: vectorSize })
   });
 

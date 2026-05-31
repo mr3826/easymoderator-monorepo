@@ -15,6 +15,8 @@ const CourierReconciliationJob = require('./courier-reconciliation.job');
 // Phase 4 — Comment-to-DM worker and expiry cron
 const CommentToDmWorker = require('./comment-to-dm.worker');
 const CommentToDmExpiryJob = require('./comment-to-dm-expiry.job');
+// Reliability — synthetic auto-reply pipeline canary + DLQ/backlog watchdog
+const PipelineCanaryJob = require('./pipeline-canary.job');
 
 module.exports = {
     DailyOverageCalculator,
@@ -26,4 +28,5 @@ module.exports = {
     // Phase 4
     CommentToDmWorker,
     CommentToDmExpiryJob,
+    PipelineCanaryJob,
 };

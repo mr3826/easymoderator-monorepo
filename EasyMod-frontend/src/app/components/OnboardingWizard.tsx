@@ -15,6 +15,7 @@ import {
   X, Facebook, Package, Brain, Bot, Eye,
   CheckCircle2, ChevronRight, ChevronLeft, Sparkles,
 } from "lucide-react";
+import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { useAuth } from "../../features/auth/AuthProvider";
 import { fadeUp, staggerChildren } from "@/lib/motion";
@@ -129,8 +130,29 @@ const STEPS = [
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const [step, setStep] = useState<number>(() => loadPersistedStep());
   const [completing, setCompleting] = useState(false);
+  const [seedingFaqs, setSeedingFaqs] = useState(false);
   const navigate = useNavigate();
   const { currentShop } = useAuth();
+
+  // One-tap starter FAQ seed — gives the AI a working knowledge base on day one
+  // without the seller having to hand-write FAQs. Idempotent on the backend.
+  const handleSeedStarterFaqs = async () => {
+    if (seedingFaqs) return;
+    try {
+      setSeedingFaqs(true);
+      const result = await apiClient.seedStarterFaqs();
+      if (result.skipped) {
+        toast.info("আপনার আগে থেকেই FAQ আছে — Starter FAQ যোগ করা হয়নি।");
+      } else {
+        toast.success(`${result.seeded}টি Starter FAQ যোগ হয়েছে! AI এখন common প্রশ্নের উত্তর দিতে পারবে।`);
+      }
+      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    } catch (_) {
+      toast.error("FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
+    } finally {
+      setSeedingFaqs(false);
+    }
+  };
 
   // Persist step to localStorage on every change
   useEffect(() => {
@@ -316,6 +338,16 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               </>
             )}
           </motion.button>
+
+          {current.id === "faqs" && (
+            <button
+              onClick={handleSeedStarterFaqs}
+              disabled={seedingFaqs}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60 font-bn"
+            >
+              {seedingFaqs ? "যোগ করা হচ্ছে…" : "✨ Starter FAQ যোগ করুন (১ ট্যাপে)"}
+            </button>
+          )}
 
           {current.skipLabel && (
             <button
