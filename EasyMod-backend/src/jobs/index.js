@@ -17,6 +17,8 @@ const CommentToDmWorker = require('./comment-to-dm.worker');
 const CommentToDmExpiryJob = require('./comment-to-dm-expiry.job');
 // Reliability — synthetic auto-reply pipeline canary + DLQ/backlog watchdog
 const PipelineCanaryJob = require('./pipeline-canary.job');
+// Pricing — expire 14-day GROWTH trials + send trial-ending nudges
+const TrialExpiryJob = require('./trial-expiry.job');
 
 module.exports = {
     DailyOverageCalculator,
@@ -29,4 +31,5 @@ module.exports = {
     CommentToDmWorker,
     CommentToDmExpiryJob,
     PipelineCanaryJob,
+    TrialExpiryJob,
 };

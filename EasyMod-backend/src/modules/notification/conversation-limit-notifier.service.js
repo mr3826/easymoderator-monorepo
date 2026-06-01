@@ -30,15 +30,27 @@ const NOTIFICATION_TYPES = Object.freeze({
         urgency: 'high'
     },
     CONV_LIMIT_EXCEEDED: {
-        title: '🚫 কথোপকথন সীমা শেষ — জরুরি বাফার সক্রিয়',
-        body: () => '+৫০টি জরুরি কথোপকথন যোগ করা হয়েছে। এটি পরবর্তী প্যাকেজ থেকে কাটা হবে।',
-        bodyEn: () => '+50 emergency conversations added. These will be deducted from your next package.',
+        title: '🚀 কথোপকথন সীমা শেষ — ৫০টি ফ্রি বাফার চালু',
+        body: () => '+৫০টি ফ্রি কথোপকথন যোগ করা হলো। শেষ হওয়ার আগে টপ-আপ করুন বা আপগ্রেড করুন যাতে AI চালু থাকে।',
+        bodyEn: () => '+50 free conversations added. Top up or upgrade before they run out to keep your AI replying.',
         urgency: 'high'
     },
     CONV_THRESHOLD_ACTIVE: {
-        title: '⚡ জরুরি কথোপকথন বাফার সক্রিয়',
-        body: () => 'আপনার জরুরি বাফার ব্যবহার হচ্ছে। টপ-আপ করুন বা প্ল্যান আপগ্রেড করুন।',
-        bodyEn: () => 'Emergency buffer active. Please top up or upgrade your plan.',
+        title: '⚡ ফ্রি বাফার ব্যবহার হচ্ছে',
+        body: () => 'আপনার ফ্রি বাফার শেষ হয়ে আসছে। AI চালু রাখতে টপ-আপ করুন বা প্ল্যান আপগ্রেড করুন।',
+        bodyEn: () => 'Your free buffer is running low. Top up or upgrade to keep your AI replying.',
+        urgency: 'high'
+    },
+    TRIAL_ENDING: {
+        title: '⏳ আপনার ফ্রি ট্রায়াল শেষ হতে চলেছে',
+        body: (data) => `আপনার ১৪-দিনের ফ্রি ট্রায়ালে আর ${data.daysLeft || 1} দিন বাকি। ৳৯৯৯-এ আপগ্রেড করে AI চালু রাখুন।`,
+        bodyEn: (data) => `Only ${data.daysLeft || 1} day(s) left in your free trial. Upgrade for ৳999 to keep your AI running.`,
+        urgency: 'normal'
+    },
+    TRIAL_EXPIRED: {
+        title: '🔔 ট্রায়াল শেষ — AI বিরতি নিয়েছে',
+        body: () => 'আপনার ফ্রি ট্রায়াল শেষ। AI অটো-রিপ্লাই বন্ধ — তবে আপনি নিজে রিপ্লাই দিতে পারবেন। ৳৯৯৯-এ আপগ্রেড করুন।',
+        bodyEn: () => 'Your free trial has ended. AI auto-reply is paused (you can still reply manually). Upgrade for ৳999 to resume.',
         urgency: 'high'
     }
 });

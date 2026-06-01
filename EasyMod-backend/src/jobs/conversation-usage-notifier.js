@@ -22,8 +22,10 @@ const run = async () => {
     logger.info('Starting conversation usage notifier job');
 
     try {
+        // Trialing shops use real quota too — include them so the daily backstop
+        // nudges (75/90/100) reach trial users, not just paid `active` ones.
         const activeSubscriptions = await Subscription.findAll({
-            where: { status: 'active' }
+            where: { status: { [Op.in]: ['active', 'trialing'] } }
         });
 
         let notified = 0;

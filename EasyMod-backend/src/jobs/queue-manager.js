@@ -13,6 +13,7 @@ const {
     CommentToDmWorker,
     CommentToDmExpiryJob,
     PipelineCanaryJob,
+    TrialExpiryJob,
 } = require('./index');
 
 class QueueManager {
@@ -47,6 +48,8 @@ class QueueManager {
             ['comment-to-dm-expiry', 'commentToDmExpiry', CommentToDmExpiryJob],
             // Reliability — auto-reply pipeline canary (every 5 min, see scheduleJobs)
             ['pipeline-canary', 'pipelineCanary', PipelineCanaryJob],
+            // Pricing — expire 14-day GROWTH trials + trial-ending nudges (daily)
+            ['trial-expiry', 'trialExpiry', TrialExpiryJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -194,6 +197,14 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Pricing — expire 14-day GROWTH trials + send trial-ending nudges daily
+        // at 04:00 UTC (10:00 Bangladesh time).
+        await this.queues.trialExpiry.upsertJobScheduler(
+            'trial-expiry',
+            { pattern: '0 4 * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -206,6 +217,7 @@ class QueueManager {
             'meta_token_refresh': 'metaTokenRefresh',
             'comment_to_dm_expiry': 'commentToDmExpiry',
             'pipeline_canary': 'pipelineCanary',
+            'trial_expiry': 'trialExpiry',
         };
 
         const queueKey = queueMap[jobName];

@@ -23,7 +23,8 @@ const JOB_MAP = {
     'monthly_usage_reset': jobs.MonthlyUsageReset,
     'invoice_generator': jobs.InvoiceGenerator,
     'failed_payment_reconciler': jobs.FailedPaymentReconciler,
-    'courier_reconciliation': jobs.CourierReconciliationJob  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
+    'courier_reconciliation': jobs.CourierReconciliationJob,  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
+    'trial_expiry': jobs.TrialExpiryJob  // Schedule: cron '0 4 * * *' (daily 04:00 UTC)
 };
 
 async function runJob() {
