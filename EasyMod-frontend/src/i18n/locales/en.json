@@ -166,11 +166,11 @@
     },
     "pricing": {
       "label": "Pricing",
-      "heading": "Simple Pricing",
-      "subheading": "Choose a plan that fits your business size",
+      "heading": "One simple price",
+      "subheading": "৳999/month — start with a 14-day free trial, no card needed.",
       "perMonth": "/mo",
       "mostPopular": "Most Popular",
-      "getStarted": "Get Started"
+      "getStarted": "Start 14-day free trial"
     },
     "testimonials": {
       "label": "Testimonials",

@@ -412,11 +412,11 @@ export default function LandingPage() {
             <p className="mt-3 text-gray-500">{t("landing.pricing.subheading")}</p>
           </motion.div>
 
-          <div ref={pricingRef} className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {subscriptionPlans.map((plan, i) => (
+          <div ref={pricingRef} className="flex justify-center">
+            {subscriptionPlans.filter((p) => p.id !== "partner").map((plan, i) => (
               <motion.div
                 key={plan.id}
-                className={`relative flex flex-col rounded-2xl p-6 ${
+                className={`relative flex w-full max-w-sm flex-col rounded-2xl p-6 ${
                   plan.popular
                     ? "border-2 border-[#00A651] bg-white shadow-2xl shadow-[#00A651]/15"
                     : "border border-gray-200 bg-white shadow-sm"

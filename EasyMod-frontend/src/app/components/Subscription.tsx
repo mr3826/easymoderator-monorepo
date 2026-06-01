@@ -31,17 +31,16 @@ export default function Subscription() {
   const [success, setSuccess] = useState<string | null>(null);
   const [hasSubscriptionData, setHasSubscriptionData] = useState(true);
   const [isUpdatingPlan, setIsUpdatingPlan] = useState(false);
-  // Pre-select the recommended (popular) paid plan, order-independent so adding
-  // the FREE tier at the top of the list doesn't change the default selection.
+  // Pre-select the recommended (popular) plan — now the single GROWTH plan.
   const [selectedPlanId, setSelectedPlanId] = useState(
-    subscriptionPlans.find((p) => p.popular)?.id || "package_2"
+    subscriptionPlans.find((p) => p.popular)?.id || "growth"
   );
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // State for actual data from API
   const [currentPlan, setCurrentPlan] = useState({
-    name: 'Free',
+    name: 'Growth',
     price: 0,
     cycle: 'Monthly',
     nextBillingDate: '',
@@ -243,10 +242,12 @@ export default function Subscription() {
     'Cash on Delivery support'
   ];
 
+  // Top-up packs — must mirror the backend TOPUP_PACKS (subscription.plans.js)
+  // so the displayed price matches what is charged.
   const conversationPacks = [
-    { amount: 100, price: 250 },
-    { amount: 300, price: 675 },
-    { amount: 500, price: 1000 }
+    { amount: 100, price: 150 },
+    { amount: 250, price: 350 },
+    { amount: 500, price: 650 }
   ];
 
   const getUsagePercentage = (used: number, limit: number) => {

@@ -29,40 +29,17 @@ export const UNLIMITED = -1;
 
 export const subscriptionPlans: SubscriptionPlanDefinition[] = [
   {
-    id: "free",
-    name: "Free",
-    description: "বিনামূল্যে শুরু করুন — কার্ড লাগবে না। AI আপনার পেজে অটো-রিপ্লাই দেবে।",
-    monthlyPrice: 0,
-    yearlyPrice: 0,
+    id: "growth",
+    name: "Growth",
+    description:
+      "আপনার সম্পূর্ণ AI সেলস টিম — একটাই সহজ দাম। ১৪ দিন ফ্রি ট্রায়াল, কার্ড লাগবে না।",
+    monthlyPrice: 999,
+    yearlyPrice: 9990, // ~2 months free
+    // 300 is the hidden fair-use cap (+50 grace buffer) enforced server-side; it
+    // is intentionally NOT the headline. The in-app usage meter shows it; the
+    // marketing surface frames it as fair-use with top-ups.
     limits: {
-      conversations: 50,
-      orders: UNLIMITED,
-      products: 30,
-    },
-    features: {
-      image_understanding: false,
-      advanced_ai: false,
-      priority_support: false,
-      custom_branding: false,
-      comment_auto_reply: true,
-    },
-    highlights: [
-      "৫০ AI কথোপকথন/মাস — ফ্রি",
-      "Facebook + Instagram",
-      "Comment অটো-রিপ্লাই",
-      "বাংলা ও Banglish AI",
-      "কার্ড ছাড়াই শুরু",
-    ],
-    popular: false,
-  },
-  {
-    id: "package_1",
-    name: "Package 1",
-    description: "আপনার প্রথম AI সেলস টিম — ঘুমের মধ্যেও অর্ডার আসবে।",
-    monthlyPrice: 750,
-    yearlyPrice: 7500,
-    limits: {
-      conversations: 500,
+      conversations: 300,
       orders: UNLIMITED,
       products: UNLIMITED,
     },
@@ -74,38 +51,11 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       comment_auto_reply: true,
     },
     highlights: [
-      "AI Inbox — ৫০০ কথোপকথন/মাস",
-      "সব চ্যানেল (FB, IG)",
-      "RTO Shield",
-      "গ্রাহক যাত্রা ট্র্যাক করুন",
-      "7 দিনের Analytics",
-    ],
-    popular: false,
-  },
-  {
-    id: "package_2",
-    name: "Package 2",
-    description: "সব চ্যানেলে ৫০০+ অর্ডার পরিচালনা করুন প্রতি সপ্তাহে।",
-    monthlyPrice: 1950,
-    yearlyPrice: 19500,
-    limits: {
-      conversations: 1500,
-      orders: UNLIMITED,
-      products: UNLIMITED,
-    },
-    features: {
-      image_understanding: true,
-      advanced_ai: true,
-      priority_support: true,
-      custom_branding: true,
-      comment_auto_reply: true,
-    },
-    highlights: [
-      "Full AI Inbox — ১৫০০ কথোপকথন/মাস",
-      "সব চ্যানেল আনলিমিটেড",
-      "Advanced RTO Shield",
-      "৩০ দিনের Analytics + Export",
-      "Broadcast + Campaign",
+      "সব ফিচার আনলিমিটেড — কোনো লক নেই",
+      "Facebook + Instagram AI Inbox",
+      "Advanced RTO Shield + Analytics",
+      "Broadcast + Campaign + ভয়েস/ছবি বোঝে",
+      "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই",
     ],
     popular: true,
   },

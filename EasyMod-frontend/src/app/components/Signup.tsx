@@ -41,8 +41,8 @@ export default function Signup() {
   const { signup } = useAuth();
   const [searchParams] = useSearchParams();
   const [billingAnnual, setBillingAnnual] = useState(false);
-  // Default new signups to the FREE tier — no-card on-ramp.
-  const [selectedPlanId, setSelectedPlanId] = useState("free");
+  // Every new signup starts a card-less 14-day GROWTH trial.
+  const [selectedPlanId, setSelectedPlanId] = useState("growth");
 
   // Acquisition: capture an invite code from ?ref= and confirm who invited them.
   const referralCode = (searchParams.get("ref") || "").trim();
@@ -84,13 +84,13 @@ export default function Signup() {
     [selectedPlanId]
   );
 
-  // FREE tier needs no payment method or "pay today" — keep signup card-free.
-  const isFreePlan = selectedPlan.id === "free";
+  // Signup is always card-free now: every new shop gets a 14-day GROWTH trial
+  // with no payment upfront. Keep the no-payment signup UX.
+  const isFreePlan = true;
 
   const formatPrice = (value: number) => `৳${value.toLocaleString()}`;
 
   const onSubmit = async (data: SignupFormData) => {
-    const billingCycle = billingAnnual ? "yearly" : "monthly";
     try {
       await signup({
         email: data.email,
@@ -100,7 +100,9 @@ export default function Signup() {
         referral_code: referralCode || undefined,
       });
 
-      await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
+      // Materialize the card-less 14-day GROWTH trial (the backend creates it on
+      // first read). Do NOT convert to a paid plan here — that would end the trial.
+      await apiClient.getSubscription().catch(() => {});
 
       sessionStorage.setItem(
         "easymod_selected_plan",
@@ -212,7 +214,7 @@ export default function Signup() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {subscriptionPlans.map((plan, i) => {
+                {subscriptionPlans.filter((p) => p.id !== "partner").map((plan, i) => {
                   const isSelected = plan.id === selectedPlanId;
                   const price = getPlanPrice(plan, billingAnnual ? "yearly" : "monthly");
                   return (

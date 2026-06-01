@@ -205,7 +205,8 @@ function PlanCard({
       {/* Limits */}
       <div className={`rounded-xl p-3 mb-5 space-y-1.5 ${isPopular ? "bg-blue-500" : "bg-gray-50"}`}>
         {[
-          { icon: MessageSquare, label: plan.limits.conversations === -1 ? "Unlimited conversations" : `${plan.limits.conversations.toLocaleString()} conversations/mo` },
+          // Fair-use framing — we intentionally don't headline the 300 cap.
+          { icon: MessageSquare, label: plan.limits.conversations === -1 ? "Unlimited conversations" : "AI conversations — fair use" },
           { icon: ShoppingCart, label: plan.limits.orders === -1 ? "Unlimited orders" : `${plan.limits.orders.toLocaleString()} orders/mo` },
           { icon: Package, label: plan.limits.products === -1 ? "Unlimited products" : `${plan.limits.products.toLocaleString()} products` },
         ].map(({ icon: Icon, label }) => (
@@ -234,7 +235,7 @@ function PlanCard({
             : "bg-blue-600 text-white hover:bg-blue-700"
         }`}
       >
-        {isPartner ? "আবেদন করুন" : `Start ${plan.name}`}
+        {isPartner ? "আবেদন করুন" : "১৪ দিন ফ্রি ট্রায়াল শুরু করুন"}
         <ArrowRight className="w-4 h-4" />
       </button>
     </div>
@@ -293,14 +294,15 @@ export default function Pricing() {
           </p>
         </div>
 
-        {/* Plan cards — Partner is invite-only during beta */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl mx-auto mb-6">
+        {/* Single Growth plan — one simple price. Partner applies separately. */}
+        <div className="flex justify-center mb-6">
           {subscriptionPlans.filter(p => p.id !== 'partner').map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              onSelect={() => handlePlanSelect(plan.id)}
-            />
+            <div key={plan.id} className="w-full max-w-sm">
+              <PlanCard
+                plan={plan}
+                onSelect={() => handlePlanSelect(plan.id)}
+              />
+            </div>
           ))}
         </div>
 
@@ -315,50 +317,27 @@ export default function Pricing() {
           </a>
         </p>
 
-        {/* Feature comparison table */}
+        {/* Everything included — Growth bundles every feature at one price. */}
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-16">
           <div className="px-6 py-5 border-b border-gray-100">
-            <h2 className="text-xl font-bold text-gray-900">Full feature comparison</h2>
+            <h2 className="text-xl font-bold text-gray-900">Growth-এ সবকিছু আছে</h2>
+            <p className="text-sm text-gray-500 mt-0.5">কোনো ফিচার লক নেই — একটাই দাম, ৳৯৯৯/মাস।</p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left p-4 text-sm font-semibold text-gray-600 w-48">Feature</th>
-                  {subscriptionPlans.filter(p => p.id !== 'partner').map((p) => (
-                    <th key={p.id} className="text-center p-4 text-sm font-semibold text-gray-900">
-                      {p.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {FEATURE_ROWS.map(({ label, key }) => (
-                  <tr key={key} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                    <td className="p-4 text-sm text-gray-700">{label}</td>
-                    {subscriptionPlans.filter(p => p.id !== 'partner').map((p) => (
-                      <td key={p.id} className="p-4 text-center">
-                        {p.features[key] ? (
-                          <Check className="w-5 h-5 text-green-600 mx-auto" />
-                        ) : (
-                          <span className="text-gray-300 text-lg">—</span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                <tr className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="p-4 text-sm font-semibold text-gray-900">Conversations/মাস</td>
-                  <td className="p-4 text-center text-sm text-gray-700 font-medium">Unlimited</td>
-                  <td className="p-4 text-center text-sm text-gray-700 font-medium">Unlimited</td>
-                </tr>
-                <tr className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="p-4 text-sm font-semibold text-gray-900">Extra conversation pack</td>
-                  <td className="p-4 text-center text-sm text-gray-500">কিনুন</td>
-                  <td className="p-4 text-center text-sm text-gray-500">কিনুন</td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-100">
+            {FEATURE_ROWS.map(({ label }) => (
+              <div key={label} className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
+                <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                {label}
+              </div>
+            ))}
+            <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
+              <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+              Facebook + Instagram AI Inbox
+            </div>
+            <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
+              <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+              Extra conversation pack — যখন দরকার, টপ-আপ করুন
+            </div>
           </div>
         </div>
 
@@ -366,11 +345,11 @@ export default function Pricing() {
         <div className="max-w-2xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 text-center mb-8">Frequently asked questions</h2>
           {[
-            { q: "Conversation limit শেষ হলে কী হবে?", a: "AI auto-reply বন্ধ হয়ে যাবে। তবে আপনি Subscription পেজ থেকে extra conversation pack কিনে limit বাড়াতে পারবেন।" },
-            { q: "Extra conversation pack কিনলে কীভাবে যোগ হয়?", a: "কেনা conversation pack সরাসরি আপনার মাসিক limit-এ যোগ হয়। পরবর্তী বিলিং চক্রে expire হয়।" },
-            { q: "Partner প্লানে কীভাবে আবেদন করব?", a: "Pricing পেজের নিচে 'Partner Plan সম্পর্কে জানুন' লিংকে ক্লিক করে ইমেইল পাঠান। আমরা ৩০০+ অর্ডার/মাস যাচাই করে অ্যাক্টিভ করব।" },
-            { q: "কি যেকোনো সময় আপগ্রেড বা ডাউনগ্রেড করতে পারি?", a: "হাঁ। আপগ্রেড অবিলম্বে কার্যকর হয়। ডাউনগ্রেড পরবর্তী বিলিং তারিখে প্রযোজ্য।" },
-            { q: "কি বিনামূল্যে ট্রায়াল আছে?", a: "নতুন শপ PACKAGE_1 প্ল্যানে শুরু করতে পারে। Partner প্লানে আবেদন করলে আমাদের টিম যাচাই করে অ্যাক্টিভ করবে।" },
+            { q: "কি বিনামূল্যে ট্রায়াল আছে?", a: "হ্যাঁ — নতুন শপ ১৪ দিনের ফ্রি ট্রায়াল পায়, কোনো কার্ড লাগে না। ট্রায়াল চলাকালীন Growth-এর সব ফিচার চালু থাকে।" },
+            { q: "ট্রায়াল শেষ হলে কী হবে?", a: "ট্রায়াল শেষে ৳৯৯৯/মাস-এ আপগ্রেড করলে AI চালু থাকবে। না করলে AI অটো-রিপ্লাই বিরতি নেবে, তবে আপনি নিজে ইনবক্স থেকে রিপ্লাই দিতে পারবেন — কোনো ডেটা হারাবে না।" },
+            { q: "মাসে কতগুলো AI কথোপকথন পাব?", a: "একটি সাধারণ ক্রমবর্ধমান শপের জন্য যথেষ্ট পরিমাণ (fair-use)। বেশি দরকার হলে Subscription পেজ থেকে যেকোনো সময় conversation top-up কিনে নিতে পারবেন।" },
+            { q: "Conversation limit শেষ হলে কী হবে?", a: "একটি ফ্রি বাফার দেওয়া হয়; এরপর AI auto-reply বিরতি নেবে। Subscription পেজ থেকে top-up pack কিনে সাথে সাথে আবার চালু করতে পারবেন।" },
+            { q: "Partner প্লানে কীভাবে আবেদন করব?", a: "Pricing পেজের নিচে 'Partner Plan সম্পর্কে জানুন'-এ আবেদন করুন। আমরা ৩০০+ অর্ডার/মাস যাচাই করে অ্যাক্টিভ করি — প্রতি ডেলিভার্ড অর্ডারে চার্জ, কোনো মাসিক ফি নেই।" },
           ].map(({ q, a }) => (
             <div key={q} className="border-b border-gray-100 py-5">
               <p className="font-semibold text-gray-900 mb-1">{q}</p>

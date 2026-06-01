@@ -45,7 +45,7 @@ const getSubscription = async (shopId, userId) => {
         where: { shop_id: shopId }
     });
 
-    // If no subscription exists, create a default free plan
+    // If no subscription exists, start the card-less 14-day GROWTH trial
     if (!subscription) {
         subscription = await createDefaultSubscription(shopId);
     }
