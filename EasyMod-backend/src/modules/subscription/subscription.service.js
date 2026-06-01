@@ -98,33 +98,40 @@ const getUsagePercentage = (used, limit) => {
     return (used / limit) * 100;
 };
 
+/** Length of the card-less trial granted to every new shop. */
+const TRIAL_DAYS = 14;
+
 /**
- * Create default free subscription for new shop
+ * Create the default subscription for a new shop: a card-less 14-day GROWTH
+ * trial. The shop gets full Growth access immediately (every feature, the
+ * 300-conv fair-use cap + 50 grace buffer). At `trial_ends_at` the trial-expiry
+ * job flips `trialing → trial_expired` (AI pauses; manual inbox stays) unless
+ * the owner activates the ৳999 plan first.
  */
 const createDefaultSubscription = async (shopId) => {
     const now = new Date();
-    const nextMonth = new Date(now);
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    // New shops default to the FREE tier (no-card on-ramp). They can upgrade
-    // to a paid plan from Subscription / Signup at any time.
-    const starterTier = PRICING_TIERS[PlanCode.FREE];
+    const trialEnds = new Date(now);
+    trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS);
+    const growthTier = PRICING_TIERS[PlanCode.GROWTH];
 
     return await Subscription.create({
         shop_id: shopId,
-        plan_code: starterTier.code,
-        plan_name: starterTier.name,
-        plan_price: starterTier.priceBdtMonthly,
+        plan_code: growthTier.code,
+        plan_name: growthTier.name,
+        plan_price: growthTier.priceBdtMonthly,
         billing_cycle: 'monthly',
-        billing_model: starterTier.billingModel,
-        per_order_charge_bdt: starterTier.perOrderChargeBdt,
-        status: 'active',
-        conversations_limit: starterTier.conversationsLimit,
-        orders_limit: starterTier.ordersLimit,
-        products_limit: starterTier.productsLimit,
+        billing_model: growthTier.billingModel,
+        per_order_charge_bdt: growthTier.perOrderChargeBdt,
+        status: 'trialing',
+        trial_ends_at: trialEnds,
+        conversations_limit: growthTier.conversationsLimit,
+        orders_limit: growthTier.ordersLimit,
+        products_limit: growthTier.productsLimit,
+        // During the trial the "billing period" is the trial window itself.
         current_period_start: now,
-        current_period_end: nextMonth,
-        next_billing_date: nextMonth,
-        features: starterTier.features
+        current_period_end: trialEnds,
+        next_billing_date: trialEnds,
+        features: growthTier.features
     });
 };
 

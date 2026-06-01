@@ -63,28 +63,6 @@ const convLimitMiddleware = async (req, res, next) => {
 
         const notifState = getNotifState(shopId, billingPeriod);
 
-        // ── FREE tier: HARD CAP ────────────────────────────────────────────────
-        // Free shops never get the paid threshold buffer or overage. At the cap we
-        // stop the AI and prompt an upgrade (the seller can still reply manually).
-        const isFreeTier = String(sub.plan_code || '').toUpperCase() === 'FREE';
-        if (isFreeTier && used >= planLimit + topup) {
-            if (!notifState.notifiedExceeded) {
-                notifState.notifiedExceeded = true;
-                setImmediate(() =>
-                    notificationService.sendConvLimitNotification(shopId, 'CONV_LIMIT_FREE_TIER', {
-                        used, limit: planLimit, topup
-                    }).catch(() => {})
-                );
-            }
-            logger.warn('Free-tier conversation cap reached — prompting upgrade', { used, planLimit });
-            return res.status(402).json({
-                success: false,
-                code: 'CONV_LIMIT_FREE_TIER',
-                message: 'You have used all your free conversations this month. Upgrade to keep your AI replying automatically.',
-                data: { used, limit: planLimit, topup_balance: topup }
-            });
-        }
-
         // ── 100% exceeded with no threshold remaining ──────────────────────────
         if (used >= effectiveLimit && threshold === 0) {
             if (!notifState.notifiedExceeded) {

@@ -98,18 +98,18 @@ async function main() {
             console.log(`[seed] Created shop: ${shop.id} (${SEED_SHOP})`);
         }
 
-        // 4. Find or create subscription (PACKAGE_2 for dev — full features)
+        // 4. Find or create subscription (GROWTH, active, for dev — full features)
         const [sub, subCreated] = await Subscription.findOrCreate({
             where: { shop_id: shop.id },
             defaults: {
                 id: uuidv4(),
                 shop_id: shop.id,
-                plan_name: 'Package 2',
-                plan_code: 'PACKAGE_2',
-                plan_price: 1950,
+                plan_name: 'Growth',
+                plan_code: 'GROWTH',
+                plan_price: 999,
                 billing_cycle: 'monthly',
                 status: 'active',
-                conversations_limit: 1500,
+                conversations_limit: 300,
                 conversations_used: 0,
                 topup_balance: 0,
                 threshold_conversations: 0,

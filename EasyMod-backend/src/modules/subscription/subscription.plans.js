@@ -1,10 +1,11 @@
 /**
  * Easy Moderator subscription plan definitions.
  *
- * Active plans:
- * - PACKAGE_1 : flat monthly (750 BDT / 500 moderator conversations)
- * - PACKAGE_2 : flat monthly (1950 BDT / 1500 moderator conversations)
- * - PARTNER   : 0 BDT upfront; tiered per-delivered-order billing
+ * Active plans (simplified 2026-05-31):
+ * - GROWTH  : flat monthly (999 BDT / 300 moderator conversations + 50 grace buffer).
+ *             Fronted by a card-less 14-day trial (a `trialing` status, not a plan).
+ *             Every feature is included; packages no longer differ by feature.
+ * - PARTNER : 0 BDT upfront; tiered per-delivered-order billing (apply → approve).
  *
  * Conversation limits apply across ALL connected channels.
  * Supported channels: Facebook Messenger and Instagram Direct (WhatsApp removed 2026-05-20).
@@ -13,9 +14,7 @@
 const UNLIMITED = -1;
 
 const PlanCode = Object.freeze({
-    FREE: 'FREE',
-    PACKAGE_1: 'PACKAGE_1',
-    PACKAGE_2: 'PACKAGE_2',
+    GROWTH: 'GROWTH',
     PARTNER: 'PARTNER'
 });
 
@@ -77,32 +76,6 @@ const BASE_FEATURES = Object.freeze({
     rate_limit_per_minute: 40
 });
 
-/**
- * FREE tier — a genuine no-card on-ramp for new BD shop owners.
- * Hard-capped (NO threshold buffer, NO overage charge, NO invoice — enforced in
- * conversation-limit.middleware, daily-overage-calculator and invoice-generator).
- * Keeps the core differentiators that prove value (Bangla/Banglish AI auto-reply,
- * FB+IG, comment auto-reply, basic RTO shield) and gates the cost/premium ones.
- */
-const FREE_FEATURES = Object.freeze({
-    ...BASE_FEATURES,
-    image_understanding: false,        // vision API cost — gated
-    voice_note_transcription: false,   // transcription cost — gated
-    tone_persona: false,
-    campaign_broadcast: false,
-    max_campaigns_per_month: 0,
-    rto_shield_level: 'basic',
-    analytics_days: 3,
-    analytics_export: false,
-    fcommerce_kpis: false,
-    customer_journey_timeline: false,
-    priority_support: false,
-    api_access: false,
-    advanced_ai: false,                // gates premium AI UI/settings; LLM cost is
-                                       // capped by the 50-conv hard cap + low rate limit
-    rate_limit_per_minute: 8
-});
-
 const AI_SETTINGS_ALL = Object.freeze([
     'automation_mode',
     'auto_reply_enabled',
@@ -119,64 +92,20 @@ const AI_SETTINGS_ALL = Object.freeze([
     'custom_webhook',
 ]);
 
-// FREE tier exposes only the essential settings; advanced/model/API knobs are gated.
-const AI_SETTINGS_FREE = Object.freeze([
-    'automation_mode',
-    'auto_reply_enabled',
-    'primary_language',
-    'confidence_threshold',
-    'handoff_settings',
-    'payment_methods',
-    'required_fields',
-]);
-
 const PRICING_TIERS = Object.freeze({
-    [PlanCode.FREE]: {
-        code: PlanCode.FREE,
-        name: 'Free',
-        billingModel: 'free',
-        priceBdtMonthly: 0,
-        priceBdtYearly: 0,
-        perOrderChargeBdt: null,
-        conversationsLimit: 50,
-        ordersLimit: UNLIMITED,        // never cap real sales — only the AI cost driver
-        productsLimit: 30,
-        keyFeature: 'Free forever — 50 AI conversations/month',
-        features: FREE_FEATURES,
-        ai_settings_access: AI_SETTINGS_FREE
-    },
-
-    [PlanCode.PACKAGE_1]: {
-        code: PlanCode.PACKAGE_1,
-        name: 'Package 1',
+    [PlanCode.GROWTH]: {
+        code: PlanCode.GROWTH,
+        name: 'Growth',
         billingModel: 'flat_monthly',
-        priceBdtMonthly: 750,
-        priceBdtYearly: 7500,
+        priceBdtMonthly: 999,
+        priceBdtYearly: 9990,          // ~2 months free vs monthly
         perOrderChargeBdt: null,
-        conversationsLimit: 500,
+        // Hidden fair-use cap (300) + 50 free grace buffer applied by the
+        // conversation-limit middleware. Never marketed as the headline.
+        conversationsLimit: 300,
         ordersLimit: UNLIMITED,
         productsLimit: UNLIMITED,
-        keyFeature: 'AI Inbox — 500 moderator conversations/month',
-        features: Object.freeze({
-            ...BASE_FEATURES,
-            analytics_days: 7,
-            api_access: false,
-            rate_limit_per_minute: 15
-        }),
-        ai_settings_access: AI_SETTINGS_ALL
-    },
-
-    [PlanCode.PACKAGE_2]: {
-        code: PlanCode.PACKAGE_2,
-        name: 'Package 2',
-        billingModel: 'flat_monthly',
-        priceBdtMonthly: 1950,
-        priceBdtYearly: 19500,
-        perOrderChargeBdt: null,
-        conversationsLimit: 1500,
-        ordersLimit: UNLIMITED,
-        productsLimit: UNLIMITED,
-        keyFeature: 'Full AI Inbox — 1500 moderator conversations/month',
+        keyFeature: 'Your full AI sales team — one simple price',
         features: Object.freeze({
             ...BASE_FEATURES,
             analytics_days: 30,
@@ -218,11 +147,11 @@ const isLimitExceeded = (used, limit) => {
 
 const normalizePlanCode = (planCode) => {
     const normalized = String(planCode || '').toUpperCase();
-    // FREE is now a first-class plan (no longer an alias of PACKAGE_1).
-    // Legacy aliases for renamed paid tiers only:
-    if (['STARTER', 'PRO', 'BUSINESS'].includes(normalized)) return PlanCode.PACKAGE_1;
-    if (['GROWTH'].includes(normalized)) return PlanCode.PACKAGE_2;
-    return normalized;
+    // Single paid plan now. Every legacy/free/renamed flat tier collapses to GROWTH;
+    // only PARTNER is distinct. Unknown/empty also defaults to GROWTH (fail-safe: a
+    // shop should always have full AI rather than be locked out).
+    if (normalized === 'PARTNER') return PlanCode.PARTNER;
+    return PlanCode.GROWTH;
 };
 
 const getTierByCode = (planCode) => {
@@ -264,12 +193,12 @@ const calculatePartnerCharge = (deliveredOrders) => {
 };
 
 const getAllowedLanguages = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.PACKAGE_1];
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.GROWTH];
     return new Set(tier.features.allowed_languages);
 };
 
 const getAllowedAutomationModes = (planCode) => {
-    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.PACKAGE_1];
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.GROWTH];
     return new Set(tier.features.allowed_automation_modes);
 };
 

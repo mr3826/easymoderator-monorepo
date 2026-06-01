@@ -25,7 +25,7 @@ const Subscription = sequelize.define('Subscription', {
     plan_name: {
         type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: 'Free'
+        defaultValue: 'Growth'
     },
     plan_price: {
         type: DataTypes.DECIMAL(10, 2),
@@ -61,15 +61,19 @@ const Subscription = sequelize.define('Subscription', {
         defaultValue: 0
     },
     status: {
-        type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended'),
+        // trialing      — card-less 14-day GROWTH trial (full AI)
+        // active         — paid & current (or approved Partner)
+        // trial_expired  — trial ended unpaid; AI paused, manual inbox stays
+        // suspended      — paid plan unpaid past due; AI paused
+        type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended', 'trialing', 'trial_expired'),
         allowNull: false,
-        defaultValue: 'active'
+        defaultValue: 'trialing'
     },
     // Usage limits
     conversations_limit: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 100
+        defaultValue: 300
     },
     orders_limit: {
         type: DataTypes.INTEGER,

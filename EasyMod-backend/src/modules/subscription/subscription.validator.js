@@ -6,8 +6,8 @@ const { body } = require('express-validator');
 const updatePlanValidator = [
     body('plan_code')
         .optional()
-        .isIn(['FREE', 'PACKAGE_1', 'PACKAGE_2', 'PARTNER'])
-        .withMessage('plan_code must be one of FREE, PACKAGE_1, PACKAGE_2, PARTNER'),
+        .isIn(['GROWTH', 'PARTNER'])
+        .withMessage('plan_code must be one of GROWTH, PARTNER'),
     body().custom((value) => {
         if (value.plan_code) {
             return true;

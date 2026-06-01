@@ -19,7 +19,7 @@ const createSessionMiddleware = require('./middleware/session.middleware');
 const xssSanitize = require('./middleware/xss-sanitize.middleware');
 
 const cacheService = require('./utils/cache.service');
-const { PRICING_TIERS } = require('./modules/subscription/subscription.plans');
+const { getTierByCode } = require('./modules/subscription/subscription.plans');
 
 // Extract shopId for rate-limit key derivation.
 // Prefers req.user.shopId (set by verified auth middleware) to prevent shopId spoofing.
@@ -107,7 +107,7 @@ if (config.env !== 'test') {
     };
 
     // Per-shop rate limiter — keyed by shopId when authenticated, falls back to IP.
-    // Per-plan limits come from PRICING_TIERS.features.rate_limit_per_minute (cached 5 min).
+    // Per-plan limits come from the plan tier's features.rate_limit_per_minute (cached 5 min).
     const shopRateLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15-minute window
         keyGenerator: (req) => {
@@ -122,8 +122,8 @@ if (config.env !== 'test') {
                 if (cached !== null) return cached;
                 const { Subscription } = require('./modules/entities');
                 const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
-                const planCode = (sub?.plan_code || 'FREE').toUpperCase();
-                const ratePerMin = PRICING_TIERS[planCode]?.features?.rate_limit_per_minute ?? 10;
+                // getTierByCode normalizes legacy/unknown codes → GROWTH (fail-safe).
+                const ratePerMin = getTierByCode(sub?.plan_code)?.features?.rate_limit_per_minute ?? 40;
                 const limit = ratePerMin * 15;
                 await cacheService.setForShop(shopId, 'subscription:plan_ratelimit', limit, 300);
                 return limit;
