@@ -529,6 +529,21 @@ class CommentToDmService {
             throw new Error(`CommentToDm: automation_mode ${settings.automation_mode} does not allow AI`);
         }
 
+        // Condition 4b: subscription billing status allows AI. An expired trial
+        // or a suspended/cancelled plan pauses automation (manual replies still
+        // work). Fails open when no subscription row exists.
+        {
+            const { Subscription } = require('../entities');
+            const { isAiActive } = require('../subscription/subscription.access');
+            const billingSub = await Subscription.findOne({
+                where: { shop_id: event.shop_id },
+                attributes: ['status'],
+            });
+            if (!isAiActive(billingSub)) {
+                throw new Error(`CommentToDm: subscription status ${billingSub?.status} pauses AI`);
+            }
+        }
+
         // Condition 5: policy engine dry-run
         const policyEngine = require('../policy/policy.engine');
         const channel = await MetaChannel.findOne({ where: { id: event.channel_id } });

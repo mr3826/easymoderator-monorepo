@@ -177,6 +177,25 @@ async function processMessageJob(job) {
         return { skipped: true, reason: 'channel_ai_disabled' };
     }
 
+    // ── Guard 4c: Subscription billing status ───────────────────────────────
+    // Pause automated AI replies when the shop's 14-day trial has expired or its
+    // plan is suspended/cancelled. The inbound message is already persisted and
+    // the manual inbox still works — we withhold only the *automated* reply, and
+    // do so before the (LLM-costing) sentiment/AI steps below. Fails open: a
+    // missing subscription row never blocks AI.
+    {
+        const { Subscription } = require('../modules/entities');
+        const { isAiActive } = require('../modules/subscription/subscription.access');
+        const billingSub = await Subscription.findOne({
+            where: { shop_id: shopId },
+            attributes: ['status'],
+        }).catch(() => null);
+        if (!isAiActive(billingSub)) {
+            console.log(`[worker] AI paused for shop ${shopId}: subscription status=${billingSub?.status}`);
+            return { skipped: true, reason: 'subscription_inactive', status: billingSub?.status || null };
+        }
+    }
+
     // ── Guard 5: Sentiment — auto-escalate angry/frustrated customers ──────
     // Fast keyword pre-check first (no LLM cost); LLM used only for ambiguous cases.
     // On any failure, default to treating the customer as negative/escalation-needed (safe fallback).
