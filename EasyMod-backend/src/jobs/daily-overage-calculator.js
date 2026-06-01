@@ -51,10 +51,13 @@ class DailyOverageCalculator extends BaseJob {
             const subscriptions = await Subscription.findAll({
                 where: {
                     status: 'active',
-                    // FREE tier is a hard cap with no overage — never bill it.
-                    // (Belt-and-suspenders: the middleware already blocks free shops
-                    // at the limit, so used should never exceed limit here.)
-                    plan_code: { [Op.ne]: 'FREE' },
+                    // Flat GROWTH plans are NEVER auto-billed for conversation overage:
+                    // the new model hard-stops the AI at the fair-use cap (+50 grace)
+                    // and the shop buys top-up packs instead of a surprise ৳/conv
+                    // charge. Excluding flat_monthly leaves this job effectively
+                    // inert (Partner is unlimited), but the machinery is retained
+                    // for any future metered add-ons.
+                    billing_model: { [Op.ne]: 'flat_monthly' },
                     // Only load shops that are actually over their limit.
                     // conversations_limit > 0 excludes unlimited plans (stored as -1).
                     // The DB-level filter avoids a full table scan at 10k+ tenants.
@@ -153,9 +156,9 @@ class DailyOverageCalculator extends BaseJob {
      * @param {Object} overage 
      */
     async recordOverage(subscription, overage) {
-        // Update subscription with overage amount
+        // Update subscription with overage amount (entity column is `extra_charge`)
         await subscription.update({
-            extra_charges: overage.totalAmount,
+            extra_charge: overage.totalAmount,
             updated_at: new Date()
         });
 

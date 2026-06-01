@@ -52,6 +52,7 @@ router.use('/shop/delivery', deliveryRoutes);
 router.use('/delivery/rag', deliveryRagRoutes);
 router.use('/subscription', subscriptionRoutes);
 router.use('/partner', require('./subscription/partner-apply.routes'));
+router.use('/admin/partner', require('./subscription/partner-admin.routes'));
 router.use('/knowledge', knowledgeRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/analytics', analyticsRoutes);

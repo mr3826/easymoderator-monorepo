@@ -21,6 +21,7 @@ const KnownArea = require('./delivery/known-area.entity');
 const PaymentConfig = require('./payment/payment-config.entity');
 const Subscription = require('./subscription/subscription.entity');
 const Invoice = require('./subscription/invoice.entity');
+const PartnerApplication = require('./subscription/partner-application.entity');
 const UsageEvent = require('./subscription/usage-event.entity');
 const Keyword = require('./keyword/keyword.entity');
 const FaqResponse = require('./knowledge/faq-response.entity');
@@ -294,6 +295,9 @@ Shop.hasMany(PaymentConfig, { foreignKey: 'shop_id', as: 'payment_configs' });
 Subscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasOne(Subscription, { foreignKey: 'shop_id', as: 'subscription' });
 
+// Partner application — shop_id is nullable (public applicants), so no FK constraint.
+PartnerApplication.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop', constraints: false });
+
 // Define invoice relationships
 Invoice.belongsTo(Subscription, { foreignKey: 'subscription_id', as: 'subscription' });
 Invoice.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
@@ -512,6 +516,7 @@ module.exports = {
     PaymentConfig,
     Subscription,
     Invoice,
+    PartnerApplication,
     UsageEvent,
     Keyword,
     FaqResponse,

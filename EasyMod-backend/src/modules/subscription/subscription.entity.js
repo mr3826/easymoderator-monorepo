@@ -63,9 +63,10 @@ const Subscription = sequelize.define('Subscription', {
     status: {
         // trialing      — card-less 14-day GROWTH trial (full AI)
         // active         — paid & current (or approved Partner)
+        // past_due       — invoice 7+ days overdue; AI still on (grace + dunning)
         // trial_expired  — trial ended unpaid; AI paused, manual inbox stays
-        // suspended      — paid plan unpaid past due; AI paused
-        type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended', 'trialing', 'trial_expired'),
+        // suspended      — invoice 30+ days overdue; AI paused
+        type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended', 'trialing', 'trial_expired', 'past_due'),
         allowNull: false,
         defaultValue: 'trialing'
     },

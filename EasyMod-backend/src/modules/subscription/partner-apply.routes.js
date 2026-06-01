@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const emailService = require('../../utils/email.service');
+const partnerService = require('./partner.service');
 
 const router = express.Router();
 
@@ -21,19 +21,17 @@ router.post('/apply', validate, async (req, res) => {
     }
 
     const { businessName, phone, pageLink } = req.body;
-    const adminEmail = process.env.ADMIN_EMAIL || 'hello@hexabyte.co';
+    // shopId is optional — present only when an authenticated in-app shop applies.
+    const shopId = req.user?.shopId || null;
 
-    await emailService.sendEmail({
-        to: adminEmail,
-        subject: `[Easy Moderator] New Partner Application — ${businessName}`,
-        text: `New Partner plan application received.\n\nBusiness: ${businessName}\nPhone: ${phone}\nFacebook Page: ${pageLink}\n`,
-        html: `<h2>New Partner Plan Application</h2>
-               <p><strong>Business:</strong> ${businessName}</p>
-               <p><strong>Phone:</strong> ${phone}</p>
-               <p><strong>Facebook Page:</strong> <a href="${pageLink}">${pageLink}</a></p>`,
-    }).catch(() => {});
-
-    return res.status(200).json({ success: true });
+    try {
+        const application = await partnerService.applyForPartner({ businessName, phone, pageLink, shopId });
+        return res.status(200).json({ success: true, application_id: application.id });
+    } catch (err) {
+        // Never leak internals to the public form; the email is best-effort and
+        // persistence failure is the only real error path.
+        return res.status(500).json({ success: false, message: 'Could not submit application' });
+    }
 });
 
 module.exports = router;

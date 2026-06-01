@@ -95,6 +95,14 @@ class InvoiceGenerator extends BaseJob {
 
                     const invoiceData = await this.calculateInvoice(subscription, runDate);
 
+                    // Skip per-order Partner shops with no billable deliveries this
+                    // period — no point issuing a ৳0 invoice (and it would suspend
+                    // them via the reconciler for "non-payment").
+                    if (subscription.billing_model === 'per_order' && invoiceData.totalAmount <= 0) {
+                        results.invoicesSkipped++;
+                        continue;
+                    }
+
                     if (!dryRun) {
                         const invoice = await this.createInvoice(subscription, invoiceData, runDate);
                         invoiceData.invoiceId = invoice.id;
@@ -167,7 +175,7 @@ class InvoiceGenerator extends BaseJob {
     async calculateInvoice(subscription, runDate) {
         // Previous month's usage (before reset)
         const startOfMonth = new Date(runDate.getFullYear(), runDate.getMonth() - 1, 1);
-        const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 0);
+        const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 0, 23, 59, 59);
 
         const invoiceData = {
             shopId: subscription.shop_id,
@@ -176,25 +184,47 @@ class InvoiceGenerator extends BaseJob {
             billingCycle: subscription.billing_cycle,
             billingPeriodStart: startOfMonth,
             billingPeriodEnd: endOfMonth,
-            
-            // Base subscription amount
+
+            // Base subscription amount (0 for per-order Partner plans)
             baseAmount: parseFloat(subscription.plan_price),
-            
-            // Usage charges
+
+            // Usage charges (entity column is `extra_charge`, singular)
             conversationsUsed: subscription.conversations_used,
             ordersUsed: subscription.orders_used,
             productsUsed: subscription.products_used,
-            extraCharges: parseFloat(subscription.extra_charges || 0),
-            
+            extraCharges: parseFloat(subscription.extra_charge || 0),
+
+            // Partner (per-order) charge — populated below for per_order plans
+            deliveredOrders: 0,
+            partnerCharge: 0,
+
             // Totals
             subtotal: 0,
             tax: 0,
             totalAmount: 0
         };
 
+        // Partner (per-order) billing: charge delivered orders in the billing
+        // period at the tiered PARTNER_ORDER_TIERS rates. Computed from the Order
+        // table (not a per-order accrual counter) so it is race-free and
+        // re-runnable. Delivery time is approximated by the order's last update.
+        if (subscription.billing_model === 'per_order') {
+            const { Order } = require('../modules/entities');
+            const { calculatePartnerCharge } = require('../modules/subscription/subscription.plans');
+            const deliveredOrders = await Order.count({
+                where: {
+                    shop_id: subscription.shop_id,
+                    order_status: 'delivered',
+                    updated_at: { [Op.gte]: startOfMonth, [Op.lte]: endOfMonth }
+                }
+            });
+            invoiceData.deliveredOrders = deliveredOrders;
+            invoiceData.partnerCharge = calculatePartnerCharge(deliveredOrders);
+        }
+
         // Calculate subtotal
-        invoiceData.subtotal = invoiceData.baseAmount + invoiceData.extraCharges;
-        
+        invoiceData.subtotal = invoiceData.baseAmount + invoiceData.extraCharges + invoiceData.partnerCharge;
+
         // Bangladesh VAT on digital services: 15% (NBR regulation)
         const BD_VAT_RATE = 0.15;
         invoiceData.tax = Math.round(invoiceData.subtotal * BD_VAT_RATE);
@@ -220,7 +250,12 @@ class InvoiceGenerator extends BaseJob {
             subscription_id: subscription.id,
             shop_id: subscription.shop_id,
             invoice_number: invoiceNumber,
+            invoice_type: invoiceData.billingCycle === 'per_order' ? 'partner_per_order' : 'monthly_subscription',
             amount: invoiceData.totalAmount,
+            base_amount: invoiceData.baseAmount,
+            // Partner per-order charge + any conversation extras are usage-based.
+            extra_usage_amount: invoiceData.extraCharges + invoiceData.partnerCharge,
+            billing_period: invoiceData.billingPeriodStart.toISOString().substring(0, 7),
             status: 'pending',
             billing_period_start: invoiceData.billingPeriodStart,
             billing_period_end: invoiceData.billingPeriodEnd,
@@ -230,6 +265,8 @@ class InvoiceGenerator extends BaseJob {
                 billingCycle: invoiceData.billingCycle,
                 baseAmount: invoiceData.baseAmount,
                 extraCharges: invoiceData.extraCharges,
+                deliveredOrders: invoiceData.deliveredOrders,
+                partnerCharge: invoiceData.partnerCharge,
                 conversationsUsed: invoiceData.conversationsUsed,
                 ordersUsed: invoiceData.ordersUsed,
                 productsUsed: invoiceData.productsUsed,
@@ -249,8 +286,10 @@ class InvoiceGenerator extends BaseJob {
         // Reset overage counters — they've been captured in this invoice.
         // The monthly usage reset does NOT reset these (it only resets *_used counters)
         // so they accumulate accurately until invoiced, then clear here.
+        // (Entity column is `extra_charge`, singular — the previous `extra_charges`
+        // key was a no-op write that never cleared the accrued amount.)
         await subscription.update({
-            extra_charges: 0,
+            extra_charge: 0,
             extra_conversations: 0
         });
 
