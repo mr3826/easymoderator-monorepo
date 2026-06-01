@@ -10,7 +10,7 @@
  */
 
 const webpush = require('web-push');
-const { createLogger } = require('../utils/structured-logger');
+const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('PushNotification');
 
