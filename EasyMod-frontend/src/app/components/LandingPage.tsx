@@ -412,13 +412,15 @@ export default function LandingPage() {
             <p className="mt-3 text-gray-500">{t("landing.pricing.subheading")}</p>
           </motion.div>
 
-          <div ref={pricingRef} className="flex justify-center">
-            {subscriptionPlans.filter((p) => p.id !== "partner").map((plan, i) => (
+          <div ref={pricingRef} className="flex flex-col items-center justify-center gap-6 md:flex-row md:items-stretch">
+            {subscriptionPlans.map((plan, i) => (
               <motion.div
                 key={plan.id}
                 className={`relative flex w-full max-w-sm flex-col rounded-2xl p-6 ${
                   plan.popular
                     ? "border-2 border-[#00A651] bg-white shadow-2xl shadow-[#00A651]/15"
+                    : plan.id === "partner"
+                    ? "border border-purple-200 bg-white shadow-sm"
                     : "border border-gray-200 bg-white shadow-sm"
                 }`}
                 initial={{ opacity: 0, scale: 0.92, y: 20 }}
@@ -433,16 +435,32 @@ export default function LandingPage() {
                     </span>
                   </div>
                 )}
+                {plan.id === "partner" && (
+                  <div className="absolute -top-4 left-0 right-0 flex justify-center">
+                    <span className="rounded-full bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white shadow-md">
+                      ৩০০+ অর্ডার/মাস
+                    </span>
+                  </div>
+                )}
 
                 <div className="mb-5 pt-1">
                   <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
                   <div className="mt-2 flex items-end gap-1">
-                    <span className="text-4xl font-bold text-gray-900">
-                      ৳{plan.monthlyPrice.toLocaleString()}
-                    </span>
-                    <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.perMonth")}</span>
+                    {plan.id === "partner" ? (
+                      <>
+                        <span className="text-4xl font-bold text-gray-900">৳10–15</span>
+                        <span className="mb-1 text-sm text-gray-400">/ডেলিভার্ড অর্ডার</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-4xl font-bold text-gray-900">
+                          ৳{plan.monthlyPrice.toLocaleString()}
+                        </span>
+                        <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.perMonth")}</span>
+                      </>
+                    )}
                   </div>
-                  <p className="mt-2 text-xs font-semibold text-[#00A651]">{plan.description}</p>
+                  <p className={`mt-2 text-xs font-semibold ${plan.id === "partner" ? "text-purple-600" : "text-[#00A651]"}`}>{plan.description}</p>
                 </div>
 
                 <ul className="mb-6 flex-1 space-y-2.5">
@@ -454,16 +472,25 @@ export default function LandingPage() {
                   ))}
                 </ul>
 
-                <Link
-                  to="/signup"
-                  className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
-                    plan.popular
-                      ? "bg-[#00A651] text-white shadow-lg shadow-[#00A651]/25 hover:bg-[#008040]"
-                      : "border border-gray-200 text-gray-700 hover:border-[#00A651] hover:text-[#00A651]"
-                  }`}
-                >
-                  {t("landing.pricing.getStarted")}
-                </Link>
+                {plan.id === "partner" ? (
+                  <Link
+                    to="/pricing"
+                    className="block rounded-xl bg-purple-600 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-purple-600/25 transition-all hover:bg-purple-700"
+                  >
+                    পার্টনার হোন →
+                  </Link>
+                ) : (
+                  <Link
+                    to="/signup"
+                    className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
+                      plan.popular
+                        ? "bg-[#00A651] text-white shadow-lg shadow-[#00A651]/25 hover:bg-[#008040]"
+                        : "border border-gray-200 text-gray-700 hover:border-[#00A651] hover:text-[#00A651]"
+                    }`}
+                  >
+                    {t("landing.pricing.getStarted")}
+                  </Link>
+                )}
               </motion.div>
             ))}
           </div>
