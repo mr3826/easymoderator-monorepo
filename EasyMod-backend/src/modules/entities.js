@@ -52,9 +52,6 @@ const PolicyDecision = require('./policy/policy-decision.entity');
 // Phase 4 — Comment-to-DM state machine
 const CommentToDmEvent = require('./commentToDm/comment-to-dm.entity');
 
-// Acquisition — referral / invite-a-shop loop
-const Referral = require('./referral/referral.entity');
-
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
     through: UserShop,
@@ -471,28 +468,6 @@ MetaChannelConsentEvent.belongsTo(Customer, {
     as: 'customer'
 });
 
-// ── Referral associations ──────────────────────────────────────────────────
-// referrer shop -> many referrals it generated
-Shop.hasMany(Referral, {
-    foreignKey: 'referrer_shop_id',
-    as: 'referralsMade',
-    onDelete: 'CASCADE'
-});
-Referral.belongsTo(Shop, {
-    foreignKey: 'referrer_shop_id',
-    as: 'referrerShop'
-});
-// referred shop -> the single referral that created it
-Shop.hasOne(Referral, {
-    foreignKey: 'referred_shop_id',
-    as: 'referredBy',
-    onDelete: 'CASCADE'
-});
-Referral.belongsTo(Shop, {
-    foreignKey: 'referred_shop_id',
-    as: 'referredShop'
-});
-
 // Export entities
 module.exports = {
     User,
@@ -543,6 +518,4 @@ module.exports = {
     PolicyDecision,
     // Phase 4 — Comment-to-DM
     CommentToDmEvent,
-    // Acquisition — referral loop
-    Referral,
 };

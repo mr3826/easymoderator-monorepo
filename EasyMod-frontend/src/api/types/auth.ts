@@ -42,8 +42,6 @@ export interface SignupRequest {
   password: string;
   full_name: string;
   phone?: string;
-  /** Invite code from a referring shop (acquisition loop). */
-  referral_code?: string;
 }
 
 export interface CreateShopRequest {

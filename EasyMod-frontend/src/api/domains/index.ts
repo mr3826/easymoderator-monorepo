@@ -15,4 +15,3 @@ export * as subscription from './subscription';
 export * as shop from './shop';
 export * as payment from './payment';
 export * as rtoShield from './rto-shield';
-export * as referral from './referral';

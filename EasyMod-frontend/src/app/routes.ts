@@ -32,7 +32,6 @@ const ResetPassword = lazy(() => import("./components/ResetPassword"));
 const TwoFactorVerify = lazy(() => import("./components/TwoFactorVerify"));
 const RouteError = lazy(() => import("./components/RouteError"));
 const Subscription = lazy(() => import("./components/Subscription"));
-const Referral = lazy(() => import("./components/Referral"));
 const PrivacyPolicy = lazy(() => import("./components/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./components/TermsOfService"));
 const LandingPage = lazy(() => import("./components/LandingPage"));
@@ -165,7 +164,6 @@ export const router = createBrowserRouter([
 			{ path: "reports", Component: withSuspense(Reports) },
 			{ path: "audit-logs", Component: withSuspense(AuditLogs) },
 			{ path: "subscription", Component: withSuspense(Subscription) },
-			{ path: "referral", Component: withSuspense(Referral) },
 			{
 				path: "admin/users",
 				Component: withSuspense((props: any) =>

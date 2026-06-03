@@ -68,7 +68,6 @@ import * as shopDomain from './domains/shop';
 import * as paymentDomain from './domains/payment';
 import * as auditDomain from './domains/audit';
 import * as rtoShieldDomain from './domains/rto-shield';
-import * as referralDomain from './domains/referral';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
@@ -134,10 +133,6 @@ export const apiClient = {
   rtoWhitelistPhone: rtoShieldDomain.whitelistPhone,
   getRtoNetworkSettings: rtoShieldDomain.getNetworkSettings,
   updateRtoNetworkSettings: rtoShieldDomain.updateNetworkSettings,
-
-  // Referral (invite-a-shop acquisition loop) methods
-  getMyReferral: referralDomain.getMyReferral,
-  validateReferralCode: referralDomain.validateCode,
 
   // Meta channel methods (Phase 5 — canonical)
   listMetaChannels,

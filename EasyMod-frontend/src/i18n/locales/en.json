@@ -285,7 +285,6 @@
       "freeAmount": "৳0 — Free forever",
       "noCardFree": "No card needed — start free",
       "upgradeAnytime": "Upgrade anytime as you grow.",
-      "referredBy": "🎁 Invited by {{shop}} — you'll both earn bonus conversations when you sign up.",
       "startFreeButton": "Start Free →",
       "creating": "Creating account...",
       "createButton": "Create Account →",
@@ -1423,28 +1422,6 @@
       "saved": "Network settings saved",
       "saveFailed": "Could not save network settings"
     }
-  },
-  "referral": {
-    "navLabel": "Invite & Earn",
-    "title": "Invite a shop, earn free conversations",
-    "subtitle": "For every shop that signs up with your link, you get {{referrer}} free conversations and they start with {{referred}} — forever.",
-    "loadFailed": "Could not load your referral details",
-    "copied": "Invite link copied!",
-    "copyFailed": "Could not copy the link",
-    "copiedShort": "Copied",
-    "copy": "Copy link",
-    "shareMessage": "Try EasyModerator — the Bangla AI manager for your Facebook & Instagram shop. Sign up with my link and get {{reward}} free conversations:",
-    "statShops": "Shops invited",
-    "statEarned": "Conversations earned",
-    "yourLink": "Your invite link",
-    "yourLinkHelp": "Share this with other shop owners. You both get rewarded when they sign up.",
-    "shareMessenger": "Share on Messenger",
-    "shareMore": "More",
-    "codeLabel": "Your code:",
-    "howTitle": "How it works",
-    "how1": "Share your invite link with another shop owner.",
-    "how2": "They sign up for EasyModerator using your link.",
-    "how3": "You earn {{referrer}} free conversations and they start with {{referred}} — instantly."
   },
   "pwa": {
     "installTitle": "Install Easy Moderator",

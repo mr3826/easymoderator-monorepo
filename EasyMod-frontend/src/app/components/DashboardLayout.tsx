@@ -4,7 +4,7 @@ import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
   Store, LogOut,
   CreditCard, Bell, ChevronLeft, ChevronRight,
-  ChevronDown, Building2, MessageSquare, Truck, Settings, Gift,
+  ChevronDown, Building2, MessageSquare, Truck, Settings,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -66,10 +66,9 @@ export default function DashboardLayout() {
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
   const subscriptionItem = { name: 'সাবস্ক্রিপশন', path: `${appBasePath}/subscription`, icon: CreditCard };
-  const referralItem = { name: t('referral.navLabel'), path: `${appBasePath}/referral`, icon: Gift };
 
   // Derive page title from current route (check settings group first — more specific paths)
-  const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem, referralItem];
+  const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
   const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
@@ -174,9 +173,9 @@ export default function DashboardLayout() {
           </div>
         </nav>
 
-        {/* Billing footer: Referral + Subscription */}
+        {/* Billing footer: Subscription */}
         <div className="border-t border-gray-100 px-2 pt-2 pb-1 shrink-0 space-y-1">
-          {[referralItem, subscriptionItem].map((item) => {
+          {[subscriptionItem].map((item) => {
             const isActive =
               location.pathname === item.path ||
               location.pathname.startsWith(item.path);
