@@ -9,6 +9,11 @@ const { queueProductProcessing } = require('./product-ai.service');
 const { embedProduct, removeProductEmbedding } = require('./product-embedding.service');
 const { removeProductIndex: removeClipIndex } = require('./clip-client.service');
 const { HTTP_STATUS } = require('../../constants/http-status');
+
+// Module-level logger for fire-and-forget side effects (embedding upserts).
+// Without this, a throw inside the detached setImmediate vanished silently —
+// leaving products un-embedded with no trace.
+const moduleLogger = createLogger('ProductService');
 // Atomic stock update utility
 const updateProductStock = async (shopId, sku, delta, transaction = null) => {
     // Find product by shop and SKU
@@ -303,7 +308,9 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
         queueProductProcessing(productId, shopId);
     } else {
         // Text/price/category/tag changes: re-embed immediately so vector store stays current
-        setImmediate(() => embedProduct(productId, shopId).catch(() => {}));
+        setImmediate(() => embedProduct(productId, shopId).catch(
+            (err) => moduleLogger.error('Re-embed after update threw', err, { productId, shopId })
+        ));
     }
 
     // Fetch updated product with category
@@ -712,7 +719,9 @@ const bulkUpdateProducts = async (shopId, productIds, updates) => {
     if (updatedCount > 0) {
         setImmediate(async () => {
             for (const productId of productIds) {
-                await embedProduct(productId, shopId).catch(() => {});
+                await embedProduct(productId, shopId).catch(
+                    (err) => moduleLogger.error('Bulk re-embed threw', err, { productId, shopId })
+                );
             }
         });
     }

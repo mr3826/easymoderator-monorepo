@@ -201,8 +201,31 @@ const getGcpEmbedding = async (text) => {
   return ensureVectorSize(vector);
 };
 
+// Providers that produce real semantic vectors. Anything not in this set
+// (local fallback, anthropic, unset, typos) is NON-semantic and will wreck
+// retrieval quality — getProviderInfo().semantic surfaces that to health checks.
+const SEMANTIC_PROVIDERS = new Set(['openai', 'gcp']);
+
+/**
+ * Resolve the raw EMBEDDING_PROVIDER env value to a canonical provider.
+ * 'http' and 'tei' are accepted aliases for the HTTP embedding client
+ * (Text-Embeddings-Inference / OpenAI-compatible servers) handled by
+ * getGcpEmbedding — so a deployment that followed the documented
+ * `EMBEDDING_PROVIDER=http` example gets real semantic embeddings instead of
+ * silently degrading to the local n-gram fallback.
+ * Anything unrecognised (incl. 'anthropic', which has no embeddings API) → local.
+ */
+const resolveProvider = (raw) => {
+  const p = (raw == null ? (process.env.EMBEDDING_PROVIDER || 'local') : raw)
+    .toString().trim().toLowerCase();
+  if (p === 'openai') return 'openai';
+  if (p === 'gcp' || p === 'http' || p === 'tei') return 'gcp';
+  return 'local';
+};
+
 const getEmbedding = async (text) => {
-  const provider = (process.env.EMBEDDING_PROVIDER || 'local').toLowerCase();
+  const rawProvider = (process.env.EMBEDDING_PROVIDER || 'local').toLowerCase();
+  const provider = resolveProvider(rawProvider);
   const content = normalizeText(text);
   if (!content) {
     throw new Error('Text is required for embedding');
@@ -218,7 +241,7 @@ const getEmbedding = async (text) => {
 
   // 'anthropic' provider removed — Claude is a generative LLM, not an embedding
   // model; it has no embeddings API. Fall through to local with a clear warning.
-  if (provider === 'anthropic') {
+  if (rawProvider === 'anthropic') {
     console.error(
       '❌ EMBEDDING_PROVIDER=anthropic is not supported. ' +
       'Claude does not have an embeddings API. Falling back to local (non-semantic). ' +
@@ -229,7 +252,69 @@ const getEmbedding = async (text) => {
   return localEmbed(content);
 };
 
+/**
+ * Report the effective embedding configuration WITHOUT a network call.
+ * Lets /health/detailed and the embedding-audit script detect the silent
+ * "running on the non-semantic local fallback" failure mode — the #1 cause of
+ * the chatbot hallucinating because RAG retrieval returns near-random matches.
+ *
+ * @returns {{configured:string, effective:string, semantic:boolean,
+ *            keyPresent:boolean|null, vectorSize:number, model:string|null}}
+ */
+const getProviderInfo = () => {
+  const configured = (process.env.EMBEDDING_PROVIDER || 'local').toLowerCase();
+  const effective = resolveProvider(configured);
+  const semantic = SEMANTIC_PROVIDERS.has(effective);
+
+  // Whether the credential/endpoint that the effective provider needs is present.
+  let keyPresent = null;
+  if (effective === 'openai') keyPresent = Boolean(process.env.OPENAI_API_KEY);
+  if (effective === 'gcp') keyPresent = Boolean(process.env.EMBEDDING_API_URL);
+
+  return {
+    configured,
+    effective,
+    semantic,
+    keyPresent,
+    vectorSize,
+    model: effective === 'openai'
+      ? (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')
+      : (process.env.EMBEDDING_MODEL || null),
+  };
+};
+
+/**
+ * Live embedding probe — embeds a fixed short string and validates the vector.
+ * Returns a structured result (never throws) so health checks stay resilient.
+ *
+ * @param {string} [sample]
+ * @returns {Promise<{ok:boolean, provider:string, semantic:boolean,
+ *                     dimensions:number|null, error?:string}>}
+ */
+const probe = async (sample = 'health check probe') => {
+  const info = getProviderInfo();
+  try {
+    const vector = await getEmbedding(sample);
+    return {
+      ok: true,
+      provider: info.effective,
+      semantic: info.semantic,
+      dimensions: Array.isArray(vector) ? vector.length : null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: info.effective,
+      semantic: info.semantic,
+      dimensions: null,
+      error: error.message,
+    };
+  }
+};
+
 module.exports = {
   getEmbedding,
-  localEmbed
+  localEmbed,
+  getProviderInfo,
+  probe
 };

@@ -39,9 +39,14 @@ const PRODUCT_INTENT_KEYWORDS = [
     'available', 'price', 'cost', 'stock', 'buy', 'order', 'purchase',
     'want', 'need', 'looking', 'show', 'color', 'colour', 'size', 'delivery',
     'shipping', 'discount', 'offer', 'product', 'item',
-    // Banglish / Bengali
+    // Banglish / Bengali (romanised)
     'ache', 'nai', 'daam', 'dam', 'lagbe', 'nibo', 'chai', 'dekhao',
-    'pabo', 'koto', 'takar', 'taka', 'paoa', 'pawa', 'deliver', 'stock'
+    'pabo', 'koto', 'takar', 'taka', 'paoa', 'pawa', 'deliver', 'stock',
+    // Bengali script — without these, a customer typing "এই জামার দাম কত?"
+    // never triggers the live DB product/price lookup → the LLM hallucinates a price.
+    'দাম', 'মূল্য', 'কত', 'টাকা', 'দেখান', 'দেখাও', 'আছে', 'নাই', 'নেই',
+    'কিনব', 'কিনবো', 'লাগবে', 'চাই', 'অর্ডার', 'সাইজ', 'মাপ', 'রং', 'কালার',
+    'স্টক', 'ডেলিভারি', 'ছাড়', 'অফার', 'প্রোডাক্ট', 'পাব', 'পাবো', 'নিব', 'নিবো'
 ];
 
 const hasProductIntent = (message) => {
@@ -281,6 +286,10 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // to the worker so agents reviewing the AI message in the inbox can see
     // which knowledge drove the answer (architect §16).
     const sourceReferences = [];
+    // Product IDs already injected as live grounded facts — prevents the RAG
+    // tier from re-injecting (or worse, dumping the price-less embedding text of)
+    // a product the DB product-search already grounded.
+    const injectedProductIds = new Set();
 
     for (const turn of recentTurns) {
         llmMessages.push({
@@ -321,6 +330,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                     `- If no matching product found, say you couldn't identify the exact product and ask the customer to describe it.`;
                 for (const p of products) {
                     if (p && p.id) {
+                        injectedProductIds.add(String(p.id));
                         sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
                     }
                 }
@@ -361,6 +371,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                     `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
                 for (const p of validProducts) {
                     if (p && p.id) {
+                        injectedProductIds.add(String(p.id));
                         sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
                     }
                 }
@@ -379,15 +390,32 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             const { queryData } = require('../rag/rag.service');
             const ragResult = await queryData({ query: message, limit: 4, shopId });
             if (ragResult.success && ragResult.results.length > 0) {
-                const usedResults = ragResult.results.filter(r => r.score > 0.5 && r.content);
-                const ragSnippets = usedResults.map(r => r.content.trim()).join('\n---\n');
+                const usedResults = ragResult.results.filter(r => r.score > 0.5);
 
+                // Split product-type hits from knowledge hits. Product embeddings
+                // deliberately EXCLUDE price/stock (they change too often), so the
+                // stored product text must NOT be fed to the LLM as ground truth —
+                // doing so is a direct cause of hallucinated prices. Instead we
+                // re-fetch matched products LIVE from the DB (with current price).
+                const productHitIds = [];
+                const knowledgeResults = [];
+                for (const r of usedResults) {
+                    const md = r.metadata || {};
+                    if (md.type === 'product' && md.product_id) {
+                        const id = String(md.product_id);
+                        if (!injectedProductIds.has(id)) productHitIds.push(id);
+                    } else if (r.content) {
+                        knowledgeResults.push(r);
+                    }
+                }
+
+                const ragSnippets = knowledgeResults.map(r => r.content.trim()).join('\n---\n');
                 if (ragSnippets) {
                     groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
                         `KNOWLEDGE BASE CONTEXT (use this to answer customer questions about the shop, delivery, products, and policies):\n${ragSnippets}\n\n` +
                         `IMPORTANT: Only use the knowledge above. If the answer is not in the context, say you don't know or ask the customer to contact support.`;
 
-                    for (const r of usedResults) {
+                    for (const r of knowledgeResults) {
                         const md = r.metadata || {};
                         sourceReferences.push({
                             kind: 'rag',
@@ -395,6 +423,29 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                             title: md.title || md.source || md.kind || null,
                             score: typeof r.score === 'number' ? Number(r.score.toFixed(3)) : null,
                         });
+                    }
+                }
+
+                // Convert semantic product hits into LIVE grounded facts (price, stock,
+                // sizes from the DB). This is what stops "what's the price of X?" from
+                // hallucinating when X was matched via the vector store rather than the
+                // SQL product-search above.
+                if (productHitIds.length) {
+                    const liveProducts = await productSearch
+                        .getProductsByIds(productHitIds, shopId)
+                        .catch(() => []);
+                    const validLive = liveProducts.filter(p => p && p.name);
+                    if (validLive.length) {
+                        const productContext = productSearch.formatProductsForLlm(validLive);
+                        groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
+                            `RELEVANT SHOP PRODUCTS (live data — use ONLY these facts):\n${productContext}\n\n` +
+                            `GROUNDING RULES:\n` +
+                            `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
+                            `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
+                        for (const p of validLive) {
+                            injectedProductIds.add(String(p.id));
+                            sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
+                        }
                     }
                 }
             }

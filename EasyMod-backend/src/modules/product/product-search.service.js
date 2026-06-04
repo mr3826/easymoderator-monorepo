@@ -88,6 +88,7 @@ const getSearchSql = () => `
                 ts_rank(
                     to_tsvector('english',
                         coalesce(p.name,'') || ' ' ||
+                        coalesce(p.name_bn,'') || ' ' ||
                         coalesce(p.ai_search_text,'') || ' ' ||
                         coalesce(p.ai_category,'') || ' ' ||
                         coalesce(p.ai_color_primary,'') || ' ' ||
@@ -112,6 +113,7 @@ const getSearchSql = () => `
                 :tsQuery != '' AND
                 to_tsvector('english',
                     coalesce(p.name,'') || ' ' ||
+                    coalesce(p.name_bn,'') || ' ' ||
                     coalesce(p.ai_search_text,'') || ' ' ||
                     coalesce(p.ai_category,'') || ' ' ||
                     coalesce(p.ai_color_primary,'') || ' ' ||

@@ -83,7 +83,7 @@ const embedProduct = async (productId, shopId) => {
         const text = buildEmbeddingText(product);
         if (!text.trim()) return false;
 
-        await ingestData({
+        const result = await ingestData({
             text,
             metadata: {
                 documentId: `product:${product.id}`,
@@ -97,6 +97,17 @@ const embedProduct = async (productId, shopId) => {
                 stock_key: `stock:${product.shop_id}:${product.id}`
             }
         });
+
+        // ingestData swallows vector-store/embedding errors and returns
+        // { success:false } INSTEAD of throwing. We must check the flag —
+        // otherwise a failed upsert is logged as success and the product is
+        // silently never searchable (the "is it embedded?" blind spot).
+        if (!result || !result.success) {
+            logger.warn('Product embedding NOT stored — vector store/embedding unavailable', {
+                productId, shopId, reason: result && result.message
+            });
+            return false;
+        }
 
         logger.info('Embedded product', { productId, shopId });
         return true;

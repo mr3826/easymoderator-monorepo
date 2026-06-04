@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { v5: uuidv5, validate: uuidValidate } = require('uuid');
 const { getEmbedding } = require('./embedding.service');
 
 const config = require('../../config/config');
@@ -19,6 +20,20 @@ if ((config.env === 'production' || config.env === 'staging') && qdrantUrl && qd
 }
 
 const normalizeText = (text) => (text || '').toString().trim();
+
+// Qdrant ONLY accepts unsigned-integer or UUID point IDs. Human-readable
+// document IDs (e.g. "product:<uuid>", "faq-42", "biz-<shopId>") are rejected
+// with a 400 — and because ingestData swallows that error, every product/
+// knowledge upsert was silently failing to store, leaving RAG retrieval empty.
+// Map any non-UUID documentId to a DETERMINISTIC UUIDv5 so upserts stay
+// idempotent and deletes target the same point. The original documentId is kept
+// in the payload (so source references / dedupe still work).
+const POINT_ID_NAMESPACE = '5f6c1f1e-6b2a-4c3d-8e7f-0a1b2c3d4e5f';
+const toPointId = (documentId) => {
+    if (!documentId) return crypto.randomUUID();
+    const id = String(documentId);
+    return uuidValidate(id) ? id : uuidv5(id, POINT_ID_NAMESPACE);
+};
 
 const resolveCollectionName = (shopId) => {
     if (perTenantMode && shopId) {
@@ -111,10 +126,11 @@ const searchPoints = async ({ vector, limit = 5, filter, shopId }) => {
 
 const deletePoint = async (id, shopId) => {
     const collection = resolveCollectionName(shopId);
+    // Map the human-readable documentId to the same UUID used at upsert time.
     const response = await fetch(`${qdrantUrl}/collections/${collection}/points/delete?wait=true`, {
         method: 'POST',
         headers: getQdrantHeaders(),
-        body: JSON.stringify({ points: [id] })
+        body: JSON.stringify({ points: [toPointId(id)] })
     });
 
     if (!response.ok) {
@@ -159,7 +175,8 @@ const ingestData = async ({ text, metadata = {} }) => {
     try {
         await ensureCollection(shopId);
 
-        const pointId = metadata.documentId || crypto.randomUUID();
+        // Human-readable documentId → valid Qdrant UUID (see toPointId).
+        const pointId = toPointId(metadata.documentId);
         const vector = await getEmbedding(content);
 
         await upsertPoint({
@@ -175,7 +192,8 @@ const ingestData = async ({ text, metadata = {} }) => {
         return {
             success: true,
             message: 'Data ingested successfully',
-            ingestionId: pointId
+            ingestionId: pointId,
+            documentId: metadata.documentId || null
         };
     } catch (error) {
         console.warn('RAG ingestion skipped (service unavailable):', error.message);

@@ -83,19 +83,29 @@ const indexShop = async (shopId) => {
             await ingest(text, { type: 'faq', documentId: `faq-${faq.id}`, faq_id: faq.id });
         }
 
-        // 3. Products
+        // 3. Products — delegate to the canonical product embedder so the vector
+        // text, metadata, and point ID exactly match the per-product upsert path.
+        // This also enforces the invariant that PRICE is never embedded (it changes
+        // too often — always fetched live from the DB), which the old inline text
+        // here violated by baking "Price: BDT ..." into the embedding.
         const [products] = await sequelize.query(
-            `SELECT id, name, description, price FROM products WHERE shop_id=:shopId AND is_active=true LIMIT 200`,
+            `SELECT id FROM products WHERE shop_id=:shopId AND is_active=true LIMIT 200`,
             { replacements: { shopId } }
         ).catch(() => [[]]);
 
-        for (const product of products) {
-            const text = [
-                `Product: ${product.name}`,
-                product.description && `Description: ${product.description}`,
-                product.price && `Price: BDT ${product.price}`
-            ].filter(Boolean).join('\n');
-            await ingest(text, { type: 'product', documentId: `product-${product.id}`, product_id: product.id });
+        if (products.length) {
+            // Lazy-require so the canonical embedder (and its Product entity) is only
+            // loaded when there is actually a product to embed.
+            const { embedProduct } = require('../product/product-embedding.service');
+            for (const product of products) {
+                try {
+                    const ok = await embedProduct(product.id, shopId);
+                    if (ok) { indexed++; } else { errors++; }
+                } catch (err) {
+                    logger.warn('Product embedding failed', { shopId, productId: product.id, err: err.message });
+                    errors++;
+                }
+            }
         }
 
         // 4. Custom knowledge documents (table is `knowledge_documents`)

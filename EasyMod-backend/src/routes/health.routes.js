@@ -97,6 +97,27 @@ router.get('/detailed', authenticate, async (req, res) => {
         checks.vectorDb = 'unavailable';
     }
 
+    // Embedding provider self-check. embedding.semantic === false means the
+    // chatbot is running on the non-semantic local fallback — retrieval returns
+    // near-random matches and the AI will hallucinate. This must never hide.
+    try {
+        const { getProviderInfo, probe } = require('../modules/rag/embedding.service');
+        const info = getProviderInfo();
+        const probeResult = await probe();
+        checks.embedding = {
+            provider: info.effective,
+            configured: info.configured,
+            semantic: info.semantic,
+            keyPresent: info.keyPresent,
+            vectorSize: info.vectorSize,
+            probeOk: probeResult.ok,
+            probeDimensions: probeResult.dimensions,
+            ...(probeResult.error ? { probeError: probeResult.error } : {}),
+        };
+    } catch (err) {
+        checks.embedding = { provider: 'unknown', semantic: false, probeOk: false, probeError: err.message };
+    }
+
     try {
         const queueManager = require('../jobs/queue-manager');
         const queueNames = ['dailyOverage', 'monthlyReset', 'invoiceGenerator', 'paymentReconciler'];
