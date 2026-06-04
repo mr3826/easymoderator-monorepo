@@ -177,8 +177,10 @@ class MetaMessengerProvider extends ChannelProvider {
                     }
                 }
             } catch (err) {
+                // Non-fatal and expected when business_management was not granted.
+                // Captured here; the metaAssetsListed metrics log below carries
+                // portfolioError, so we don't emit a separate (redundant) warn line.
                 portfolioError = err.response?.data?.error?.message || err.message;
-                logger.warn('Business Portfolio discovery skipped (non-fatal)', { reason: portfolioError });
             }
         }
 
@@ -204,7 +206,8 @@ class MetaMessengerProvider extends ChannelProvider {
                 : null,
         }));
 
-        // ── Task 3: per-source discovery metrics — every callback emits this ──
+        // ── Per-source discovery metrics — emitted on every call ──
+        // source_* counts are raw (pre-dedup); `deduped` is the post-merge total.
         logger.info('metaAssetsListed', {
             source_me_accounts: meAccountsRaw.length,
             source_owned_pages: ownedCount,
