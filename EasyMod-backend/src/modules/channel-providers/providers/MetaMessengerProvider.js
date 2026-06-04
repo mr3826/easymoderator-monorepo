@@ -100,64 +100,44 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async listManagedAssets({ userToken }) {
+    async listManagedAssets({ userToken, includeBusinessPortfolio = false }) {
+        const PAGE_FIELDS =
+            'id,name,category,access_token,' +
+            'picture{data{url}},' +
+            'instagram_business_account{id,name,username,profile_picture_url},' +
+            'tasks';
+
+        // ── Step 1: /me/accounts — REQUIRED. A failure here is fatal (nothing to show).
+        const meAccountsRaw = [];
         try {
-            // ── Step 1: /me/accounts ─────────────────────────────────────────────
-            // Historically returns "classic" personally-administered pages.
-            // Pages owned by a Meta Business Portfolio may NOT appear here — hence
-            // Step 2 below augments the result with the business-asset path.
-            //
-            // Without limit=100, Meta uses a server-side default (often 10–25) that
-            // silently truncates merchants who manage many pages — producing an empty
-            // or partial picker. We follow `paging.next` until exhausted.
-            const PAGE_FIELDS =
-                'id,name,category,access_token,' +
-                'picture{data{url}},' +
-                'instagram_business_account{id,name,username,profile_picture_url},' +
-                'tasks';
-
-            const meAccountsRaw = [];
-
-            {
-                let url = `${GRAPH_BASE}/me/accounts`;
-                let params = {
-                    fields: PAGE_FIELDS,
-                    limit: 100,
-                    access_token: userToken,
-                    appsecret_proof: appsecretProof(userToken),
-                };
-
-                while (url) {
-                    const resp = await axios.get(url, { params });
-                    const batch = resp.data?.data || [];
-                    meAccountsRaw.push(...batch);
-
-                    // Follow cursor-based pagination if Meta signals more pages exist.
-                    const next = resp.data?.paging?.next;
-                    if (next && batch.length > 0) {
-                        // The `next` URL already contains all params (including access_token
-                        // and appsecret_proof), so pass it as-is without extra params.
-                        url = next;
-                        params = {};
-                    } else {
-                        url = null;
-                    }
-                }
+            let url = `${GRAPH_BASE}/me/accounts`;
+            let params = {
+                fields: PAGE_FIELDS,
+                limit: 100,
+                access_token: userToken,
+                appsecret_proof: appsecretProof(userToken),
+            };
+            while (url) {
+                const resp = await axios.get(url, { params });
+                const batch = resp.data?.data || [];
+                meAccountsRaw.push(...batch);
+                const next = resp.data?.paging?.next;
+                if (next && batch.length > 0) { url = next; params = {}; }
+                else { url = null; }
             }
+        } catch (err) {
+            throw metaError(err, 'listManagedAssets:me/accounts');
+        }
 
-            // ── Step 2: Business Portfolio fallback ──────────────────────────────
-            // Pages owned by a Meta Business Portfolio (Business Suite / Business
-            // Manager) are administered via a Business entity, not the personal user
-            // directly. They need to be fetched via:
-            //   /me/businesses → /{biz-id}/owned_pages + /{biz-id}/client_pages
-            //
-            // This requires the `business_management` permission in the OAuth grant.
-            // The business_management scope is included in the unified OAuth scope
-            // list (see meta-oauth.service.js: unifiedScopes).
-            const bizPagesRaw = [];
-
-            {
-                // Fetch all businesses the user is a member of.
+        // ── Step 2: Business Portfolio — OPTIONAL + ISOLATED. Only runs when the
+        // caller opts in (i.e. business_management was actually granted). ANY failure
+        // here is swallowed so it can never discard the Step 1 results above.
+        const bizPagesRaw = [];
+        let ownedCount = 0;
+        let clientCount = 0;
+        let portfolioError = null;
+        if (includeBusinessPortfolio) {
+            try {
                 let bizUrl = `${GRAPH_BASE}/me/businesses`;
                 let bizParams = {
                     fields: 'id,name',
@@ -165,96 +145,77 @@ class MetaMessengerProvider extends ChannelProvider {
                     access_token: userToken,
                     appsecret_proof: appsecretProof(userToken),
                 };
-
                 const businesses = [];
                 while (bizUrl) {
                     const resp = await axios.get(bizUrl, { params: bizParams });
                     const batch = resp.data?.data || [];
                     businesses.push(...batch);
                     const next = resp.data?.paging?.next;
-                    if (next && batch.length > 0) {
-                        bizUrl = next;
-                        bizParams = {};
-                    } else {
-                        bizUrl = null;
-                    }
+                    if (next && batch.length > 0) { bizUrl = next; bizParams = {}; }
+                    else { bizUrl = null; }
                 }
-
-                // For each business, fetch owned_pages and client_pages.
-                const bizPageFields = PAGE_FIELDS;
 
                 for (const biz of businesses) {
                     for (const edge of ['owned_pages', 'client_pages']) {
                         let edgeUrl = `${GRAPH_BASE}/${biz.id}/${edge}`;
                         let edgeParams = {
-                            fields: bizPageFields,
+                            fields: PAGE_FIELDS,
                             limit: 100,
                             access_token: userToken,
                             appsecret_proof: appsecretProof(userToken),
                         };
-
                         while (edgeUrl) {
                             const resp = await axios.get(edgeUrl, { params: edgeParams });
                             const batch = resp.data?.data || [];
                             bizPagesRaw.push(...batch);
+                            if (edge === 'owned_pages') ownedCount += batch.length;
+                            else clientCount += batch.length;
                             const next = resp.data?.paging?.next;
-                            if (next && batch.length > 0) {
-                                edgeUrl = next;
-                                edgeParams = {};
-                            } else {
-                                edgeUrl = null;
-                            }
+                            if (next && batch.length > 0) { edgeUrl = next; edgeParams = {}; }
+                            else { edgeUrl = null; }
                         }
                     }
                 }
+            } catch (err) {
+                portfolioError = err.response?.data?.error?.message || err.message;
+                logger.warn('Business Portfolio discovery skipped (non-fatal)', { reason: portfolioError });
             }
-
-            // ── Step 3: Merge + deduplicate by page id ───────────────────────────
-            // me/accounts may return a page that is ALSO in owned_pages (e.g. the
-            // user is both a personal admin and a Business Member for the same page).
-            // Deduplicate: me/accounts entries take priority (they already have
-            // access_token from the user grant).
-            const seenIds = new Set();
-            const mergedRaw = [];
-            for (const p of [...meAccountsRaw, ...bizPagesRaw]) {
-                if (!seenIds.has(p.id)) {
-                    seenIds.add(p.id);
-                    mergedRaw.push(p);
-                }
-            }
-
-            // ── Step 4: Normalise to the standard return shape ───────────────────
-            // Keep the same output contract so the controller and frontend are
-            // unaffected by this change.
-            const result = mergedRaw.map(p => ({
-                id: p.id,
-                name: p.name,
-                category: p.category || null,
-                // Graph API wraps picture differently: {data:{url}} in page fields
-                pictureUrl: p.picture?.data?.url || p.picture?.url || null,
-                instagramAccount: p.instagram_business_account
-                    ? {
-                        id: p.instagram_business_account.id,
-                        name: p.instagram_business_account.name,
-                        username: p.instagram_business_account.username
-                    }
-                    : null
-            }));
-
-            // ── Diagnostic log ────────────────────────────────────────────────────
-            // Helps confirm in prod whether the Business Portfolio path is firing.
-            logger.info('metaAssetsListed', {
-                mePages: meAccountsRaw.length,
-                ownedPages: bizPagesRaw.length,   // raw (before dedup, across all businesses/edges)
-                clientPages: 0,                   // already merged into bizPagesRaw above
-                deduped: result.length,
-                withIG: result.filter(p => p.instagramAccount !== null).length,
-            });
-
-            return result;
-        } catch (err) {
-            throw metaError(err, 'listManagedAssets');
         }
+
+        // ── Step 3: merge + dedup by page id (me/accounts wins) ──
+        const seenIds = new Set();
+        const mergedRaw = [];
+        for (const p of [...meAccountsRaw, ...bizPagesRaw]) {
+            if (!seenIds.has(p.id)) { seenIds.add(p.id); mergedRaw.push(p); }
+        }
+
+        // ── Step 4: normalise ──
+        const result = mergedRaw.map(p => ({
+            id: p.id,
+            name: p.name,
+            category: p.category || null,
+            pictureUrl: p.picture?.data?.url || p.picture?.url || null,
+            instagramAccount: p.instagram_business_account
+                ? {
+                    id: p.instagram_business_account.id,
+                    name: p.instagram_business_account.name,
+                    username: p.instagram_business_account.username,
+                }
+                : null,
+        }));
+
+        // ── Task 3: per-source discovery metrics — every callback emits this ──
+        logger.info('metaAssetsListed', {
+            source_me_accounts: meAccountsRaw.length,
+            source_owned_pages: ownedCount,
+            source_client_pages: clientCount,
+            portfolioAttempted: includeBusinessPortfolio,
+            portfolioError,
+            deduped: result.length,
+            withIG: result.filter(p => p.instagramAccount !== null).length,
+        });
+
+        return result;
     }
 
     async getAssetAccessToken({ assetId, userToken }) {

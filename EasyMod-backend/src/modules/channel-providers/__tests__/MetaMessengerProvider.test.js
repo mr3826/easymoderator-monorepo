@@ -191,7 +191,6 @@ describe('MetaMessengerProvider', () => {
         });
 
         test('returns all pages from a single-page response (no next cursor)', async () => {
-            // 1. /me/accounts — 2 pages, no next cursor
             axios.get.mockResolvedValueOnce({
                 data: {
                     data: [
@@ -199,25 +198,17 @@ describe('MetaMessengerProvider', () => {
                         { id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: { id: 'IG2', name: 'Shop IG', username: 'shopig' } },
                     ],
                     paging: { cursors: { before: 'abc', after: 'def' } }
-                    // No `next` key — signals last page
                 }
             });
-            // 2. /me/businesses — no businesses (no Portfolio)
-            axios.get.mockResolvedValueOnce({
-                data: { data: [], paging: {} }
-            });
+            // NO /me/businesses mock — default flow must not call it.
 
             const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
 
             expect(result).toHaveLength(2);
             expect(result[0]).toMatchObject({ id: 'P1', name: 'Page 1', pictureUrl: 'http://img/1', instagramAccount: null });
-            expect(result[1]).toMatchObject({
-                id: 'P2',
-                instagramAccount: { id: 'IG2', name: 'Shop IG', username: 'shopig' }
-            });
-            // /me/accounts + /me/businesses = 2 calls
-            expect(axios.get).toHaveBeenCalledTimes(2);
-            // First call must include limit=100 and hit /me/accounts
+            expect(result[1]).toMatchObject({ id: 'P2', instagramAccount: { id: 'IG2', name: 'Shop IG', username: 'shopig' } });
+            // Only /me/accounts is hit by default now.
+            expect(axios.get).toHaveBeenCalledTimes(1);
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/me/accounts'),
                 expect.objectContaining({ params: expect.objectContaining({ limit: 100 }) })
@@ -239,17 +230,14 @@ describe('MetaMessengerProvider', () => {
                     paging: { cursors: { before: 'x', after: 'y' } }
                 }
             });
-            // 3. /me/businesses — no businesses
-            axios.get.mockResolvedValueOnce({
-                data: { data: [], paging: {} }
-            });
+            // No /me/businesses mock — default flow does not call it
 
             const result = await provider.listManagedAssets({ userToken: 'tok_xyz' });
 
             expect(result).toHaveLength(2);
             expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
-            // 2 pages of me/accounts + 1 businesses call = 3 total
-            expect(axios.get).toHaveBeenCalledTimes(3);
+            // 2 pages of me/accounts only (no businesses call)
+            expect(axios.get).toHaveBeenCalledTimes(2);
             // Second call (cursor follow) uses the `next` URL directly (no extra params)
             expect(axios.get).toHaveBeenNthCalledWith(
                 2,
@@ -263,14 +251,11 @@ describe('MetaMessengerProvider', () => {
             axios.get.mockResolvedValueOnce({
                 data: { data: [], paging: {} }
             });
-            // 2. /me/businesses — empty (truly nothing to show)
-            axios.get.mockResolvedValueOnce({
-                data: { data: [], paging: {} }
-            });
+            // No /me/businesses mock — default flow does not call it
             const result = await provider.listManagedAssets({ userToken: 'tok_empty' });
             expect(result).toEqual([]);
-            // 2 calls: /me/accounts + /me/businesses
-            expect(axios.get).toHaveBeenCalledTimes(2);
+            // Only 1 call: /me/accounts
+            expect(axios.get).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -307,7 +292,7 @@ describe('MetaMessengerProvider', () => {
                 data: { data: [], paging: {} }
             });
 
-            const result = await provider.listManagedAssets({ userToken: 'tok_personal' });
+            const result = await provider.listManagedAssets({ userToken: 'tok_personal', includeBusinessPortfolio: true });
 
             expect(result).toHaveLength(2);
             expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
@@ -349,7 +334,7 @@ describe('MetaMessengerProvider', () => {
                 data: { data: [], paging: {} }
             });
 
-            const result = await provider.listManagedAssets({ userToken: 'tok_biz' });
+            const result = await provider.listManagedAssets({ userToken: 'tok_biz', includeBusinessPortfolio: true });
 
             expect(result).toHaveLength(1);
             expect(result[0]).toMatchObject({
@@ -398,7 +383,7 @@ describe('MetaMessengerProvider', () => {
                 data: { data: [], paging: {} }
             });
 
-            const result = await provider.listManagedAssets({ userToken: 'tok_overlap' });
+            const result = await provider.listManagedAssets({ userToken: 'tok_overlap', includeBusinessPortfolio: true });
 
             // 3 unique pages: P1, P_SHARED (deduped), P_BIZ_ONLY
             expect(result).toHaveLength(3);
@@ -445,7 +430,7 @@ describe('MetaMessengerProvider', () => {
             // 4. /BIZ_2/client_pages → empty
             axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
 
-            const result = await provider.listManagedAssets({ userToken: 'tok_ig_check' });
+            const result = await provider.listManagedAssets({ userToken: 'tok_ig_check', includeBusinessPortfolio: true });
 
             expect(result).toHaveLength(2);
             const withIG = result.find(p => p.id === 'BP_WITH_IG');
@@ -458,7 +443,7 @@ describe('MetaMessengerProvider', () => {
         // Diagnostic log: metaAssetsListed emitted with correct counts.
         // The logger writes JSON to console.log in test env — spy on console.log
         // and find the matching log entry.
-        test('diagnostic log reports correct counts (mePages, ownedPages, clientPages, deduped, withIG)', async () => {
+        test('diagnostic log reports correct counts (source_me_accounts, source_owned_pages, source_client_pages, deduped, withIG)', async () => {
             const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
             // 1. /me/accounts → 1 page (PA, no IG)
@@ -482,7 +467,7 @@ describe('MetaMessengerProvider', () => {
             // 4. client_pages → 0
             axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
 
-            await provider.listManagedAssets({ userToken: 'tok_log' });
+            await provider.listManagedAssets({ userToken: 'tok_log', includeBusinessPortfolio: true });
 
             // Parse all console.log calls and find the metaAssetsListed entry
             const parsed = consoleSpy.mock.calls
@@ -491,14 +476,43 @@ describe('MetaMessengerProvider', () => {
             const entry = parsed.find(e => e.message === 'metaAssetsListed');
             expect(entry).toBeDefined();
             expect(entry).toMatchObject({
-                mePages: 1,
-                ownedPages: 2,
-                clientPages: 0,
+                source_me_accounts: 1,
+                source_owned_pages: 2,
+                source_client_pages: 0,
+                portfolioAttempted: true,
                 deduped: 2,   // PA appears in both; final unique count = 2
                 withIG: 1,
             });
 
             consoleSpy.mockRestore();
+        });
+
+        test('does NOT query /me/businesses when includeBusinessPortfolio is false (default)', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ id: 'P1', name: 'Page 1', category: null, picture: null, instagram_business_account: null }], paging: {} }
+            });
+            const result = await provider.listManagedAssets({ userToken: 'tok_default' });
+            expect(result).toHaveLength(1);
+            expect(axios.get).toHaveBeenCalledTimes(1);
+            expect(axios.get).not.toHaveBeenCalledWith(
+                expect.stringContaining('/me/businesses'),
+                expect.anything()
+            );
+        });
+
+        test('portfolio discovery failure does NOT discard /me/accounts results', async () => {
+            // 1. /me/accounts succeeds with one page
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ id: 'P1', name: 'Page 1', category: null, picture: null, instagram_business_account: null }], paging: {} }
+            });
+            // 2. /me/businesses throws (e.g. permission missing)
+            axios.get.mockRejectedValueOnce({ response: { status: 403, data: { error: { message: 'missing business_management', code: 200 } } } });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_partial', includeBusinessPortfolio: true });
+
+            // Step 1 pages survive even though Step 2 blew up.
+            expect(result).toHaveLength(1);
+            expect(result[0]).toMatchObject({ id: 'P1' });
         });
     });
 });
