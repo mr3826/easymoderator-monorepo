@@ -244,7 +244,7 @@ class MetaInstagramProvider extends ChannelProvider {
             const fields = apps.flatMap(a => a.subscribed_fields || []);
             return { ok: apps.length > 0 && fields.includes('messages'), fields };
         } catch (err) {
-            logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id });
+            logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id, targetId });
             return { ok: false, fields: [] };
         }
     }

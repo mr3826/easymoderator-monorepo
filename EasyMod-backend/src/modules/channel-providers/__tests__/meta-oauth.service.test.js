@@ -21,12 +21,12 @@ jest.mock('../provider.registry', () => ({
 
 const mockUpsertFromOAuth = jest.fn();
 const mockUpdateStatus = jest.fn().mockResolvedValue({});
-const mockMarkWebhookVerified = jest.fn().mockResolvedValue({});
+const mockConfirmWebhookActive = jest.fn().mockResolvedValue({});
 
 jest.mock('../meta-channel.service', () => ({
     upsertFromOAuth: mockUpsertFromOAuth,
     updateStatus: mockUpdateStatus,
-    markWebhookVerified: mockMarkWebhookVerified,
+    confirmWebhookActive: mockConfirmWebhookActive,
 }));
 
 const oauthService = require('../meta-oauth.service');
@@ -71,15 +71,15 @@ describe('connectPage() webhook verify wiring', () => {
         expect(mockSubscribeWebhook).toHaveBeenCalledTimes(1);
         expect(mockVerifyWebhookSubscription).toHaveBeenCalledTimes(1);
         expect(mockUpdateStatus).toHaveBeenCalledWith('chan-1', 'ERROR', 'webhook_subscription_unverified');
-        expect(mockMarkWebhookVerified).not.toHaveBeenCalled();
+        expect(mockConfirmWebhookActive).not.toHaveBeenCalled();
     });
 
-    test('calls markWebhookVerified and NOT updateStatus(ERROR) when verify returns ok:true', async () => {
+    test('calls confirmWebhookActive and NOT updateStatus(ERROR) when verify returns ok:true', async () => {
         mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages', 'feed'] });
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockMarkWebhookVerified).toHaveBeenCalledWith('chan-1');
+        expect(mockConfirmWebhookActive).toHaveBeenCalledWith('chan-1');
         expect(mockUpdateStatus).not.toHaveBeenCalledWith('chan-1', 'ERROR', expect.anything());
     });
 
@@ -90,7 +90,7 @@ describe('connectPage() webhook verify wiring', () => {
 
         expect(mockUpdateStatus).toHaveBeenCalledWith('chan-1', 'ERROR', 'webhook_subscription_failed');
         expect(result.webhookWarning).toContain('network timeout');
-        expect(mockMarkWebhookVerified).not.toHaveBeenCalled();
+        expect(mockConfirmWebhookActive).not.toHaveBeenCalled();
     });
 
     test('surfaces webhookWarning in returned object when verify fails', async () => {
