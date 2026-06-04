@@ -170,19 +170,12 @@ async function initiateUnifiedOAuth(userId, shopId) {
 
     storeTemp(state, { userId, shopId, platform: 'unified' });
 
-    // Combined scope set covers both Messenger and Instagram messaging, plus
-    // Business Portfolio asset discovery.
-    //
-    // business_management is required to call /me/businesses → owned_pages /
-    // client_pages, which is the only reliable way to discover pages that belong
-    // to a Meta Business Portfolio (Business Suite / Business Manager). Without
-    // it, merchants whose pages are portfolio-owned see an empty asset picker.
-    //
-    // Meta policy note: business_management is a standard permission for Business
-    // Login configurations; it does not require special App Review when used with
-    // a Login Configuration (Granular Business Login). It IS required in the
-    // App Review submission if the app uses the server-side business-asset APIs
-    // post-launch in LIVE mode.
+    // business_management was intentionally REMOVED before App Review: it is a
+    // high-sensitivity scope and the only thing it bought was discovering pages
+    // owned by a Business Portfolio that /me/accounts omits — a minority of BD
+    // f-commerce merchants, who are personal Page admins. Portfolio discovery is
+    // now opt-in (MetaMessengerProvider.listManagedAssets includeBusinessPortfolio)
+    // and isolated, so its absence degrades gracefully to /me/accounts only.
     //
     // Provider DEFAULT_SCOPES are module-private; this list mirrors them.
     const unifiedScopes = [
@@ -194,7 +187,6 @@ async function initiateUnifiedOAuth(userId, shopId) {
         'instagram_basic',
         'instagram_manage_messages',
         'instagram_manage_comments',
-        'business_management',
     ];
 
     // Build the auth URL via the Messenger provider (same dialog endpoint).
@@ -226,7 +218,7 @@ async function handleUnifiedCallback(code, state, userId, shopId) {
     // `me/accounts` already includes nested instagram_business_account when
     // the page has one linked — MessengerProvider.listManagedAssets exposes it
     // as `instagramAccount` on each page entry.
-    const pages = await fb.listManagedAssets({ userToken });
+    const pages = await fb.listManagedAssets({ userToken, includeBusinessPortfolio: false });
 
     // Flatten into two arrays for the frontend: facebook pages + instagram accounts.
     const facebookPages = pages.map(p => ({
