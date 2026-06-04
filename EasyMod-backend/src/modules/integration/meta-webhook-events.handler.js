@@ -40,8 +40,12 @@ function getMessageQueue() {
 }
 
 /**
- * Dispatch a BullMQ job for AI processing after a message has been stored to DB.
- * Non-blocking — errors are logged but never propagate back to the webhook handler.
+ * Schedule AI processing after a message has been stored to DB.
+ *
+ * Rather than enqueue one reply job per message, we (re)schedule a single
+ * debounced "burst-flush" per conversation: rapid-fire messages collapse into
+ * ONE AI turn and ONE reply (see burst-coalescer.js). Non-blocking — errors are
+ * logged but never propagate back to the webhook handler.
  */
 async function dispatchMessageJob(storeResult, event) {
     const queue = getMessageQueue();
@@ -64,55 +68,44 @@ async function dispatchMessageJob(storeResult, event) {
         return;
     }
 
-    const { shop_id, sender, platform, message, attachments = [], raw_event, meta_channel_id = null } = event;
-    const { conversation_id, message_id, customer_id } = storeResult;
-    const externalId = raw_event?.message?.mid || raw_event?.id || null;
-    // BullMQ forbids ':' in custom job IDs (it's the internal key separator), so
-    // a UUID shop_id + Meta mid joined by ':' makes queue.add() throw and the AI
-    // job is silently never enqueued. Use '_' and strip any residual colon.
-    const jobId = externalId ? `${shop_id}_${externalId}`.replace(/:/g, '_') : undefined;
+    const { shop_id, sender, platform, meta_channel_id = null } = event;
+    const { conversation_id, customer_id } = storeResult;
 
     try {
-        await queue.add(
-            `msg:${shop_id}`,
-            {
-                shopId: shop_id,
-                conversationId: conversation_id,
-                messageId: message_id,
-                externalId,
-                message: message || '',
-                platform,
-                recipientId: sender,
-                senderInfo: { customer_id },
-                attachments,
-                metaChannelId: meta_channel_id,
-            },
-            {
-                jobId,
-                group: { id: shop_id },
-            }
-        );
+        const { scheduleBurstFlush } = require('../../jobs/burst-coalescer');
+        await scheduleBurstFlush({
+            shopId: shop_id,
+            conversationId: conversation_id,
+            platform,
+            recipientId: sender,
+            metaChannelId: meta_channel_id,
+            senderInfo: { customer_id },
+        });
     } catch (err) {
-        // Pass the Error as the logger's 2nd positional arg — it extracts
-        // .message/.code (and .stack outside prod). The previous call shoved a
-        // plain object into that slot, so .message was undefined (logged as
-        // `error:{}`) and shop_id/externalId were dropped entirely, hiding a
-        // hard dispatch failure for weeks. jobId is logged too: a malformed
-        // custom job id (e.g. one containing ':') is a common, silent cause.
-        logger.error('Failed to dispatch BullMQ AI job — message stored but auto-reply skipped', err, {
+        logger.error('Failed to schedule burst flush — message stored but auto-reply skipped', err, {
             shop_id,
-            externalId,
-            jobId,
+            conversationId: conversation_id,
             platform,
         });
-        // Stage alert: enqueue threw (e.g. malformed jobId) → this customer gets no
-        // reply. Throttled per-title so a systemic bug pages once, not per message.
-        opsAlert('Webhook→AI enqueue FAILED — message stored but no auto-reply', {
-            detail: `shop=${shop_id} platform=${platform} jobId=${jobId}\nerror: ${err.message}`,
+        // Stage alert: scheduling threw → this customer gets no reply. Throttled
+        // per-title so a systemic bug pages once, not per message.
+        opsAlert('Webhook→AI schedule FAILED — message stored but no auto-reply', {
+            detail: `shop=${shop_id} platform=${platform} conv=${conversation_id}\nerror: ${err.message}`,
             level: 'error',
-            context: { shop_id, externalId, jobId, platform, error: err.message },
+            context: { shop_id, conversationId: conversation_id, platform, error: err.message },
         }).catch(() => {});
     }
+}
+
+/**
+ * Cancel any pending burst-flush for a conversation (e.g. on a STOP keyword,
+ * where no reply should be sent). Best-effort; never throws into the handler.
+ */
+async function cancelPendingDispatch(conversationId) {
+    try {
+        const { cancelBurstFlush } = require('../../jobs/burst-coalescer');
+        await cancelBurstFlush(conversationId);
+    } catch (_) { /* best-effort */ }
 }
 
 // ─── Consent processing ────────────────────────────────────────────────────────
@@ -381,6 +374,7 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                 }
                 const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
                 if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
+                else cancelPendingDispatch(storeResult.conversation_id);
                 notifyDmOpened(channel, messaging.sender.id, messageText);
             } catch (err) {
                 logger.error(`Failed to store message from ${messaging.sender.id} (page ${pageId})`, {
@@ -456,6 +450,7 @@ async function handleInstagramWebhook(payload, resolveConnectedChannel) {
                 }
                 const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
                 if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
+                else cancelPendingDispatch(storeResult.conversation_id);
                 notifyDmOpened(channel, message.sender.id, messageText);
             } catch (err) {
                 logger.error(`Failed to store Instagram message from ${message.sender.id} (account ${igAccountId})`, {

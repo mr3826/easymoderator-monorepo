@@ -69,16 +69,19 @@ const getChannelAISettings = async (channel) => {
 };
 
 /**
- * Load the last 10 messages prior to the current one, as LLM conversation history.
+ * Load the last 10 messages prior to the current turn, as LLM conversation
+ * history. `excludeIds` is the id (or ids, for a coalesced burst) of the message(s)
+ * that make up the *current* turn — they must not appear in history as well.
  */
-async function loadConversationHistory(conversationId, currentMessageId) {
+async function loadConversationHistory(conversationId, excludeIds) {
+    const exclude = new Set((Array.isArray(excludeIds) ? excludeIds : [excludeIds]).filter(Boolean));
     const messages = await Message.findAll({
         where: { conversation_id: conversationId },
         order: [['created_at', 'DESC']],
-        limit: 11,
+        limit: 11 + exclude.size,
     });
     return messages
-        .filter(m => m.id !== currentMessageId)
+        .filter(m => !exclude.has(m.id))
         .slice(0, 10)
         .reverse()
         .map(m => ({
@@ -134,6 +137,29 @@ async function processMessageJob(job) {
         metaChannelId = null,
     } = job.data;
 
+    // ── Burst flush: coalesce a rapid-fire multi-message turn into ONE reply ──
+    // A burst-flush job carries no single message — it stands in for every
+    // unanswered customer message in the conversation. Load them, fold them into
+    // one turn, and feed the rest of the pipeline as if they were one message.
+    // See burst-coalescer.js for why this exists (multi-message → one answer).
+    let effMessage = message;
+    let effExternalId = externalId;
+    let effImageUrls = [];
+    let historyExcludeIds = messageId ? [messageId] : [];
+    if (job.data.burstFlush) {
+        const burst = require('../jobs/burst-coalescer');
+        await burst.clearBurstState(conversationId); // next inbound opens a fresh window
+        const turn = await burst.loadPendingCustomerTurn(conversationId);
+        if (!turn.messages.length) {
+            return { skipped: true, reason: 'burst_already_handled' };
+        }
+        effMessage = turn.combinedText || '';
+        // Dedup anchor for the coalesced reply — a retried flush won't double-send.
+        effExternalId = `burst:${turn.lastMessageId}`;
+        effImageUrls = turn.imageUrls;
+        historyExcludeIds = turn.messageIds;
+    }
+
     // Resolve the channel once and pass it to every step that needs it. With
     // multi-page shops (one shop owns N FB Pages and/or IG accounts), routing
     // every send back through the same channel the message arrived on is the
@@ -141,9 +167,9 @@ async function processMessageJob(job) {
     const jobChannel = await resolveChannelForJob(shopId, platform, metaChannelId);
 
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
-    if (externalId) {
-        const isNew = await claimDedupKey(`msg:dedup:${shopId}:${externalId}`);
-        if (!isNew) return { skipped: true, reason: 'duplicate', externalId };
+    if (effExternalId) {
+        const isNew = await claimDedupKey(`msg:dedup:${shopId}:${effExternalId}`);
+        if (!isNew) return { skipped: true, reason: 'duplicate', externalId: effExternalId };
     }
 
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────
@@ -203,7 +229,7 @@ async function processMessageJob(job) {
         let sentimentResult;
         try {
             const { analyzeSentiment } = require('../modules/ai/sentiment.service');
-            sentimentResult = await analyzeSentiment(message, shopId);
+            sentimentResult = await analyzeSentiment(effMessage, shopId);
         } catch (sentimentErr) {
             console.error(`[worker] Sentiment analysis failed, defaulting to escalation`, { error: sentimentErr.message });
             sentimentResult = { sentiment: 'negative', score: -1, method: 'fallback' };
@@ -240,9 +266,9 @@ async function processMessageJob(job) {
     }
 
     // ── Run AI pipeline ─────────────────────────────────────────────────────
-    const history = await loadConversationHistory(conversationId, messageId);
-    const detectedLanguage = ConversationStateService.detectLanguage(message);
-    const entities = ConversationStateService.extractEntities(message);
+    const history = await loadConversationHistory(conversationId, historyExcludeIds);
+    const detectedLanguage = ConversationStateService.detectLanguage(effMessage);
+    const entities = ConversationStateService.extractEntities(effMessage);
 
     const ingestionResult = {
         shop_id: shopId,
@@ -257,7 +283,7 @@ async function processMessageJob(job) {
     let rawResponse, confidence, sourceReferences;
     try {
         ({ response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
-            message, history, entities, detectedLanguage, aiSettings, ingestionResult, []
+            effMessage, history, entities, detectedLanguage, aiSettings, ingestionResult, effImageUrls
         ));
     } catch (aiErr) {
         console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
