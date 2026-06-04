@@ -29,12 +29,15 @@ async function take(key) {
     if (useRedis) {
         const raw = await cacheRedis.get(PREFIX + key);
         if (raw == null) return null;
-        await cacheRedis.del(PREFIX + key); // single-use
+        // Single-use: must delete after reading. If del rejects (Redis degraded),
+        // we deliberately let the error propagate rather than swallow it — a
+        // surviving key could be replayed, so the OAuth flow should fail loudly.
+        await cacheRedis.del(PREFIX + key);
         try { return JSON.parse(raw); } catch { return null; }
     }
     const entry = _mem.get(key);
     if (!entry) return null;
-    _mem.delete(key);
+    _mem.delete(key); // single-use: remove unconditionally, then check it was still valid
     if (Date.now() > entry.expiresAt) return null;
     try { return JSON.parse(entry.value); } catch { return null; }
 }
