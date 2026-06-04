@@ -232,6 +232,23 @@ class MetaInstagramProvider extends ChannelProvider {
         }
     }
 
+    async verifyWebhookSubscription({ channel }) {
+        const token = channel.page_access_token_ct;
+        const targetId = channel.linked_fb_page_id || channel.meta_asset_id;
+        if (!token) return { ok: false, fields: [] };
+        try {
+            const resp = await axios.get(`${GRAPH_BASE}/${targetId}/subscribed_apps`, {
+                params: { access_token: token }
+            });
+            const apps = resp.data?.data || [];
+            const fields = apps.flatMap(a => a.subscribed_fields || []);
+            return { ok: apps.length > 0 && fields.includes('messages'), fields };
+        } catch (err) {
+            logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id });
+            return { ok: false, fields: [] };
+        }
+    }
+
     async verifyWebhookSignature({ rawBody, signature }) {
         if (!signature || typeof signature !== 'string' || !signature.startsWith('sha256=')) {
             return false;

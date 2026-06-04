@@ -171,6 +171,19 @@ class ChannelProvider {
     }
 
     /**
+     * Confirm the connected asset actually has this app subscribed for inbound
+     * events. Returns { ok: boolean, fields: string[] }. Never throws on a
+     * non-subscribed page — returns ok:false so the caller can flag the channel.
+     *
+     * @param {object} params
+     * @param {object} params.channel - MetaChannel instance (token decrypted by getter)
+     * @returns {Promise<{ ok: boolean, fields: string[] }>}
+     */
+    async verifyWebhookSubscription({ channel }) { // eslint-disable-line no-unused-vars
+        throw new Error('verifyWebhookSubscription() not implemented');
+    }
+
+    /**
      * Verify the HMAC-SHA256 signature on an inbound webhook request.
      *
      * @param {object} params

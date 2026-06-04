@@ -8,8 +8,11 @@
 'use strict';
 
 const crypto = require('crypto');
+const axios = require('axios');
 const MetaInstagramProvider = require('../providers/MetaInstagramProvider');
 const ChannelProvider = require('../ChannelProvider');
+
+jest.mock('axios');
 
 describe('MetaInstagramProvider', () => {
     let provider;
@@ -130,6 +133,43 @@ describe('MetaInstagramProvider', () => {
                 commentId: 'IG_C_456',
                 postId: 'IG_POST_789'
             });
+        });
+    });
+
+    describe('verifyWebhookSubscription()', () => {
+        beforeEach(() => { process.env.META_APP_SECRET = 'test-secret'; });
+        afterEach(() => jest.resetAllMocks());
+
+        // IG verifies against the PARENT page id (linked_fb_page_id), not the IG asset id
+        const channel = {
+            meta_asset_id: 'IG_1',
+            linked_fb_page_id: 'PAGE_1',
+            page_access_token_ct: 'tok_page'
+        };
+
+        test('returns ok:true when the parent page has a subscription including messages', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ subscribed_fields: ['messages', 'messaging_postbacks', 'comments'] }] }
+            });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(true);
+            // Must target the PARENT page id, not the IG account id
+            expect(axios.get).toHaveBeenCalledWith(
+                expect.stringContaining('/PAGE_1/subscribed_apps'),
+                expect.objectContaining({ params: expect.objectContaining({ access_token: 'tok_page' }) })
+            );
+        });
+
+        test('returns ok:false when no app is subscribed', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
+        });
+
+        test('returns ok:false when messages field is missing', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['comments'] }] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
         });
     });
 });

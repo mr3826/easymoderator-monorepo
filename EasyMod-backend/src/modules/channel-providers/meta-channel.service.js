@@ -291,6 +291,24 @@ class MetaChannelService {
     }
 
     /**
+     * Stamp a successful webhook verification: writes webhook_last_verified_at and
+     * (re)asserts CONNECTED. Called only after verifyWebhookSubscription returns ok.
+     *
+     * @param {string} channelId
+     * @returns {Promise<MetaChannel>}
+     */
+    async markWebhookVerified(channelId) {
+        const channel = await MetaChannel.findByPk(channelId);
+        if (!channel) throw new Error(`markWebhookVerified: channel ${channelId} not found`);
+        channel.webhook_last_verified_at = new Date();
+        channel.status = 'CONNECTED';
+        channel.last_error = null;
+        await channel.save();
+        logger.info('MetaChannelService.markWebhookVerified', { channelId });
+        return channel;
+    }
+
+    /**
      * Update a channel's tokens (used by the token refresh job).
      * Resets refresh_attempts to 0 on success and stamps token_last_refreshed_at.
      *

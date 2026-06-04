@@ -141,14 +141,25 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         connectedByUserId: userId,
     });
 
-    // Best-effort webhook subscription
+    // Subscribe, then HARD-VERIFY. A page can report success on subscribe yet not
+    // actually deliver — so we re-read subscribed_apps and only keep CONNECTED if
+    // the app is really subscribed for `messages`.
     let webhookWarning = null;
     try {
         await provider.subscribeWebhook({ channel });
-        logger.info('Webhook subscribed', { channelId: channel.id, platform });
+        const verify = await provider.verifyWebhookSubscription({ channel });
+        if (verify.ok) {
+            await metaChannelService.markWebhookVerified(channel.id);
+            logger.info('Webhook subscribed + verified', { channelId: channel.id, platform });
+        } else {
+            webhookWarning = 'Webhook subscription could not be verified — action required.';
+            await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_unverified');
+            logger.warn('Webhook unverified after subscribe', { channelId: channel.id, fields: verify.fields });
+        }
     } catch (err) {
         webhookWarning = `Webhook subscription failed: ${err.message}`;
-        logger.warn('Webhook subscription failed (non-fatal)', { channelId: channel.id, err: err.message });
+        await metaChannelService.updateStatus(channel.id, 'ERROR', 'webhook_subscription_failed');
+        logger.warn('Webhook subscription failed', { channelId: channel.id, err: err.message });
     }
 
     logger.info('Asset connected', { shopId, assetId, channelId: channel.id, webhookWarning: !!webhookWarning });

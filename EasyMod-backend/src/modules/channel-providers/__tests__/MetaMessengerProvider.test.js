@@ -259,6 +259,37 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
+    describe('verifyWebhookSubscription()', () => {
+        beforeEach(() => { process.env.META_APP_SECRET = 'test-secret'; });
+        afterEach(() => jest.resetAllMocks());
+
+        const channel = { meta_asset_id: 'PAGE_1', page_access_token_ct: 'tok_page' };
+
+        test('returns ok:true when the page has a subscription including messages', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: { data: [{ subscribed_fields: ['messages', 'feed', 'messaging_postbacks'] }] }
+            });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(true);
+            expect(axios.get).toHaveBeenCalledWith(
+                expect.stringContaining('/PAGE_1/subscribed_apps'),
+                expect.objectContaining({ params: expect.objectContaining({ access_token: 'tok_page' }) })
+            );
+        });
+
+        test('returns ok:false when no app is subscribed', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
+        });
+
+        test('returns ok:false when messages field is missing', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['feed'] }] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
+        });
+    });
+
     // ── Business Portfolio fallback ────────────────────────────────────────────
     // Pages owned by a Meta Business Portfolio are NOT returned by /me/accounts.
     // The fix: after exhausting /me/accounts, also query /me/businesses →
