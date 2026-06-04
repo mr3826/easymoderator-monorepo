@@ -87,6 +87,8 @@ secrets-generated-*.txt
 claude-skills/
 
 # Local agent / tooling working state (not source)
-.easymod/
+.easymod/*
+# ...except the Meta App Review deliverables, which are version-controlled docs
+!.easymod/meta-app-review/
 .claude/
 .kilo/
