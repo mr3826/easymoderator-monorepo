@@ -57,16 +57,27 @@ describe('initiateUnifiedOAuth scopes', () => {
     });
 });
 
-describe('handleCallback() null-state guard', () => {
+describe('OAuth callback null-state guards', () => {
     const stateStore = require('../oauth-state.store');
 
     beforeEach(() => jest.clearAllMocks());
 
-    test('rejects with status 400 and "Invalid or expired" when stateStore.take returns null', async () => {
+    test('handleCallback rejects with status 400 and "Invalid or expired" when stateStore.take returns null', async () => {
         stateStore.take.mockResolvedValueOnce(null);
 
         await expect(
             oauthService.handleCallback('auth-code', 'stale-state', 'user-xyz', 'shop-abc'),
+        ).rejects.toMatchObject({
+            message: 'Invalid or expired OAuth state token',
+            status: 400,
+        });
+    });
+
+    test('handleUnifiedCallback rejects with status 400 when stateStore.take returns null', async () => {
+        stateStore.take.mockResolvedValueOnce(null);
+
+        await expect(
+            oauthService.handleUnifiedCallback('auth-code', 'stale-state', 'user-xyz', 'shop-abc'),
         ).rejects.toMatchObject({
             message: 'Invalid or expired OAuth state token',
             status: 400,

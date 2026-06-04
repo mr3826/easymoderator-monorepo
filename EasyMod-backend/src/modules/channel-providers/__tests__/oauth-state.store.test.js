@@ -19,4 +19,15 @@ describe('oauth-state.store (memory fallback)', () => {
     test('returns null for unknown state', async () => {
         expect(await store.take('nope')).toBeNull();
     });
+
+    test('expires an entry after the TTL window', async () => {
+        jest.useFakeTimers();
+        const base = new Date('2026-01-01T00:00:00Z').getTime();
+        jest.setSystemTime(base);
+        await store.put('state-ttl', { shopId: 's2', platform: 'unified' });
+        // Jump just past the 15-min TTL; the lazy read-time check should drop it.
+        jest.setSystemTime(base + store.TTL_SECONDS * 1000 + 1);
+        expect(await store.take('state-ttl')).toBeNull();
+        jest.useRealTimers();
+    });
 });
