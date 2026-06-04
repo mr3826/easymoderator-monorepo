@@ -40,8 +40,19 @@ const {
 
 // ── Mock meta-channels client ─────────────────────────────────────────────
 vi.mock('@/api/domains/meta-channels', () => ({
-  listMetaChannels:       mockListMetaChannels,
-  disconnectMetaChannel:  mockDisconnectMetaChannel,
+  listMetaChannels:           mockListMetaChannels,
+  disconnectMetaChannel:      mockDisconnectMetaChannel,
+  reconnectMetaChannel:       vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com', state: 'st', channelId: 'mc-1', platform: 'facebook' }),
+  pingMetaChannel:            vi.fn().mockResolvedValue({ ping: { ok: true, latencyMs: 10 } }),
+  getMetaChannelConsentSummary: vi.fn().mockResolvedValue({ channelId: 'mc-1', counts: { optIns: 0, optOuts: 0, deauthorized: 0, dataDeleted: 0 }, recentEvents: [] }),
+  updateMetaChannelPurposeLabel: vi.fn().mockResolvedValue({}),
+  getMetaChannelSettings:     vi.fn().mockResolvedValue({ aiAutoReply: false }),
+  updateMetaChannelSettings:  vi.fn().mockResolvedValue({ aiAutoReply: true }),
+  initiateMetaOAuth:          vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com' }),
+  initiateMetaUnifiedOAuth:   vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com' }),
+  handleMetaOAuthCallback:    vi.fn().mockResolvedValue({ pages: [], tempToken: '' }),
+  handleMetaUnifiedOAuthCallback: vi.fn().mockResolvedValue({ facebookPages: [], instagramAccounts: [], tempToken: '' }),
+  connectMetaAsset:           vi.fn().mockResolvedValue({ webhookWarning: null }),
 }));
 
 // ── Mock subscription hook — include advanced_ai so LLM section renders ───
@@ -66,8 +77,9 @@ vi.mock('lucide-react', () => {
   const Icon = () => null;
   return {
     MessageSquare: Icon, Instagram: Icon, CheckCircle: Icon, Clock: Icon,
-    X: Icon, AlertCircle: Icon, Info: Icon, ChevronDown: Icon,
-    Loader2: Icon, Shield: Icon, Cpu: Icon, Lock: Icon, Plus: Icon,
+    X: Icon, AlertCircle: Icon, Info: Icon, ChevronDown: Icon, ChevronUp: Icon,
+    Loader2: Icon, Shield: Icon, Cpu: Icon, Lock: Icon, Plus: Icon, Check: Icon,
+    FlaskConical: Icon, Unplug: Icon, RefreshCw: Icon, ShieldCheck: Icon,
   };
 });
 
@@ -227,7 +239,7 @@ describe('ChatSettings', () => {
     }, { timeout: 2000 });
   });
 
-  it('shows DISCONNECTED channel as not_connected status', async () => {
+  it('filters out DISCONNECTED channels (does not render their cards)', async () => {
     mockListMetaChannels.mockResolvedValueOnce([{
       ...mockMetaChannel,
       status: 'DISCONNECTED',
@@ -236,9 +248,58 @@ describe('ChatSettings', () => {
     await renderComponent();
 
     await waitFor(() => {
-      // Both the disconnected facebook card and the default instagram card show "Not Connected"
-      const labels = screen.getAllByText(/Not Connected/i);
-      expect(labels.length).toBeGreaterThan(0);
+      // DISCONNECTED channels are filtered out by fetchChannels; no channel-name card is rendered
+      const pageNames = screen.queryAllByText(/My Facebook Page/i);
+      expect(pageNames.length).toBe(0);
+      // The settings header is still present
+      expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
+    }, { timeout: 2000 });
+  });
+
+  // ── HealthRow grid (E3/E4) ─────────────────────────────────────────────
+
+  it('renders health grid with Connected and Active labels for a healthy channel', async () => {
+    // mockMetaChannel has status=CONNECTED, webhookLastVerifiedAt set, tokenExpiresAt=null
+    mockListMetaChannels.mockResolvedValueOnce([{ ...mockMetaChannel }]);
+
+    await renderComponent();
+
+    await waitFor(() => {
+      // "Connected" okText appears in the Connection health row
+      expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
+      // "Active" okText appears in the Webhook health row
+      expect(screen.getAllByText('Active').length).toBeGreaterThan(0);
+      // "Valid" okText appears in the Token health row (tokenExpiresAt is null → ok=true)
+      expect(screen.getAllByText('Valid').length).toBeGreaterThan(0);
+    }, { timeout: 2000 });
+  });
+
+  it('renders Action Required badge for webhook_subscription_unverified error', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'ERROR',
+      lastError: 'webhook_subscription_unverified',
+    }]);
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText('Action Required')).toBeInTheDocument();
+    }, { timeout: 2000 });
+  });
+
+  it('renders generic Error badge for non-actionable ERROR status', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([{
+      ...mockMetaChannel,
+      status: 'ERROR',
+      lastError: 'some_other_error',
+    }]);
+
+    await renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText('Error')).toBeInTheDocument();
+      expect(screen.queryByText('Action Required')).toBeNull();
     }, { timeout: 2000 });
   });
 });

@@ -28,6 +28,7 @@ import {
   connectMetaAsset,
   pingMetaChannel,
   disconnectMetaChannel,
+  reconnectMetaChannel,
   getMetaChannelConsentSummary,
   updateMetaChannelPurposeLabel,
   getMetaChannelSettings,
@@ -439,6 +440,80 @@ export default function ChatSettings() {
     }
   };
 
+  const handleReconnect = async (channel: MetaChannel) => {
+    if (oauthInProgressRef.current) {
+      toast.error(t("channels.errors.oauthInProgress", "একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।"));
+      return;
+    }
+    oauthInProgressRef.current = true;
+    try {
+      const { redirectUrl, state } = await reconnectMetaChannel(channel.id);
+
+      try {
+        if (state) sessionStorage.setItem(OAUTH_NONCE_KEY, state);
+      } catch { /* non-critical */ }
+      sessionStorage.setItem("easymod_oauth_channel_type", channel.platform);
+
+      oauthPopupRef.current = window.open(
+        redirectUrl,
+        "meta_oauth",
+        "width=600,height=700,left=200,top=100",
+      );
+      setActiveOAuth({ platform: channel.platform, step: "connecting" });
+
+      const bc = new BroadcastChannel("easymod_oauth");
+      const cleanup = () => {
+        window.removeEventListener("message", handler);
+        bc.close();
+        oauthListenerRef.current = null;
+        oauthInProgressRef.current = false;
+      };
+
+      const processPayload = (data: any) => {
+        if (data?.type === "OAUTH_SUCCESS") {
+          const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
+          sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          if (expectedNonce && data.state !== expectedNonce) {
+            toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
+            setActiveOAuth(null);
+            cleanup();
+            return;
+          }
+
+          handleMetaOAuthCallback(data.code, data.state)
+            .then((result) => {
+              setAvailablePages(result.pages);
+              setSelectedPageIds(new Set());
+              setTempToken(result.tempToken);
+              setActiveOAuth({ platform: channel.platform, step: "page-select" });
+            })
+            .catch(() => {
+              toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
+              setActiveOAuth(null);
+            });
+        } else if (data?.type === "OAUTH_ERROR") {
+          sessionStorage.removeItem(OAUTH_NONCE_KEY);
+          toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
+          setActiveOAuth(null);
+        }
+        cleanup();
+      };
+
+      const handler = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
+        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
+        processPayload(e.data);
+      };
+      bc.onmessage = (e) => processPayload(e.data);
+      oauthListenerRef.current = handler;
+      window.addEventListener("message", handler);
+    } catch {
+      sessionStorage.removeItem(OAUTH_NONCE_KEY);
+      oauthInProgressRef.current = false;
+      toast.error(t("channels.errors.oauthInitFailed", "সংযোগ শুরু করা যায়নি"));
+    }
+  };
+
   const handleToggleConsent = async (channelId: string) => {
     if (expandedConsentChannelId === channelId) {
       setExpandedConsentChannelId(null);
@@ -568,6 +643,26 @@ export default function ChatSettings() {
               <p className="text-xs text-gray-700 mb-3">
                 আপনার Facebook Page এবং linked Instagram অ্যাকাউন্ট নির্বাচন করুন
               </p>
+              {availablePages.filter((p) => p.platform === "instagram").length === 0 &&
+                availablePages.filter((p) => p.platform === "facebook").length > 0 && (
+                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                    <span>
+                      {t(
+                        "channels.picker.noInstagramLinked",
+                        "No Instagram Business account is linked to these Pages.",
+                      )}{" "}
+                      <a
+                        href="https://www.facebook.com/business/help/connect-instagram-to-page"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-blue-900"
+                      >
+                        {t("channels.picker.learnMore", "Learn more")}
+                      </a>
+                    </span>
+                  </div>
+                )}
               {availablePages.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-4">
                   কোনো asset পাওয়া যায়নি।
@@ -681,6 +776,10 @@ export default function ChatSettings() {
             const isConnected = channel?.status === "CONNECTED";
             const isTokenExpired = channel?.status === "TOKEN_EXPIRED" || channel?.status === "REVOKED";
             const isErrored = channel?.status === "ERROR";
+            const isActionRequired =
+              channel?.status === "ERROR" &&
+              (channel?.lastError === "webhook_subscription_unverified" ||
+                channel?.lastError === "webhook_subscription_failed");
             // OAuth in-flight surfaces in the non-connected slot for the matching
             // platform — that's the add-tile (when channels exist) or the
             // first-time-connect card (when none do).
@@ -754,10 +853,16 @@ export default function ChatSettings() {
                       Reconnect
                     </span>
                   )}
-                  {isErrored && (
+                  {isErrored && isActionRequired && (
+                    <span className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-medium">
+                      <AlertCircle className="w-3 h-3" />
+                      {t("channels.badge.actionRequired", "Action Required")}
+                    </span>
+                  )}
+                  {isErrored && !isActionRequired && (
                     <span className="flex items-center gap-1 px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
                       <AlertCircle className="w-3 h-3" />
-                      Error
+                      {t("channels.badge.error", "Error")}
                     </span>
                   )}
                 </div>
@@ -1002,7 +1107,59 @@ export default function ChatSettings() {
 
                     <ChannelAutoReplyToggle channelId={channel.id} />
 
-                    <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="mb-3 grid grid-cols-2 gap-1.5 text-[11px]">
+                      <HealthRow
+                        label={t("channels.health.connection", "Connection")}
+                        ok={channel.status === "CONNECTED"}
+                        okText={t("channels.health.connected", "Connected")}
+                        badText={channel.status}
+                      />
+                      <HealthRow
+                        label={t("channels.health.webhook", "Webhook")}
+                        ok={!!channel.webhookLastVerifiedAt}
+                        okText={t("channels.health.active", "Active")}
+                        badText={t("channels.health.notVerified", "Not verified")}
+                      />
+                      <HealthRow
+                        label={t("channels.health.token", "Token")}
+                        ok={
+                          !channel.tokenExpiresAt ||
+                          new Date(channel.tokenExpiresAt).getTime() > Date.now()
+                        }
+                        okText={t("channels.health.valid", "Valid")}
+                        badText={t("channels.health.expired", "Expired")}
+                      />
+                      <HealthRow
+                        label={t("channels.health.lastWebhook", "Last webhook")}
+                        ok={!!channel.webhookLastVerifiedAt}
+                        okText={
+                          channel.webhookLastVerifiedAt
+                            ? new Date(channel.webhookLastVerifiedAt).toLocaleDateString()
+                            : "—"
+                        }
+                        badText={t("channels.health.noneYet", "None yet")}
+                        neutral
+                      />
+                      {channel.platform === "instagram" && (
+                        <HealthRow
+                          label={t("channels.health.instagram", "Instagram")}
+                          ok={!!channel.linkedFbPageId}
+                          okText={t("channels.health.linked", "Linked")}
+                          badText={t("channels.health.notLinked", "Not linked")}
+                        />
+                      )}
+                    </div>
+
+                    {channel.platform === "instagram" && !channel.linkedFbPageId && (
+                      <p className="mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                        {t(
+                          "channels.health.igNotLinkedHint",
+                          "Link this IG account to its Facebook Page in Meta Business Suite, then Refresh permissions.",
+                        )}
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 mb-3">
                       <button
                         onClick={() => handleTestPipeline(channel.id)}
                         disabled={testingId === channel.id}
@@ -1014,15 +1171,23 @@ export default function ChatSettings() {
                         ) : (
                           <FlaskConical className="w-3.5 h-3.5" />
                         )}
-                        Test
+                        {t("channels.actions.test", "Test")}
                       </button>
                       <button
                         onClick={fetchChannels}
-                        title="Refresh"
+                        title="Refresh list"
                         className="flex items-center justify-center gap-1 px-2 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs hover:bg-gray-50"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        Refresh
+                        {t("channels.actions.refreshList", "Refresh list")}
+                      </button>
+                      <button
+                        onClick={() => handleReconnect(channel)}
+                        title="Refresh permissions"
+                        className="flex items-center justify-center gap-1 px-2 py-1.5 border border-blue-200 text-blue-700 rounded-lg text-xs hover:bg-blue-50"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {t("channels.actions.refreshPermissions", "Refresh permissions")}
                       </button>
                       <button
                         onClick={() => setConfirmDisconnect(channel)}
@@ -1034,7 +1199,7 @@ export default function ChatSettings() {
                         ) : (
                           <Unplug className="w-3.5 h-3.5" />
                         )}
-                        Disconnect
+                        {t("channels.actions.disconnect", "Disconnect")}
                       </button>
                     </div>
 
@@ -1199,6 +1364,31 @@ export default function ChatSettings() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Compact single-row health indicator used inside the per-channel health grid.
+ */
+function HealthRow({
+  label,
+  ok,
+  okText,
+  badText,
+  neutral = false,
+}: {
+  label: string;
+  ok: boolean;
+  okText: string;
+  badText: string;
+  neutral?: boolean;
+}) {
+  const tone = neutral ? "text-gray-500" : ok ? "text-green-700" : "text-amber-700";
+  return (
+    <div className="flex items-center justify-between rounded bg-gray-50 px-2 py-1">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-medium ${tone}`}>{ok ? okText : badText}</span>
     </div>
   );
 }
