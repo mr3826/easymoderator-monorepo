@@ -17,26 +17,9 @@ const crypto = require('crypto');
 const metaChannelService = require('./meta-channel.service');
 const { getProvider } = require('./provider.registry');
 const { createLogger } = require('../../utils/structured-logger');
+const stateStore = require('./oauth-state.store');
 
 const logger = createLogger('MetaOAuthService');
-
-// In-memory temp-token store (keyed by state).
-// A Redis-backed store could be used here if needed; for short-lived OAuth state
-// (< 15 minutes) in-memory is sufficient and avoids a Redis dependency.
-const _tempTokenStore = new Map();
-const TEMP_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes
-
-function storeTemp(state, payload) {
-    _tempTokenStore.set(state, { payload, expiresAt: Date.now() + TEMP_TOKEN_TTL_MS });
-}
-
-function consumeTemp(state) {
-    const entry = _tempTokenStore.get(state);
-    if (!entry) return null;
-    _tempTokenStore.delete(state);
-    if (Date.now() > entry.expiresAt) return null;
-    return entry.payload;
-}
 
 /**
  * Generate a CSRF-safe OAuth state token containing shopId + platform.
@@ -51,7 +34,7 @@ async function initiateOAuth(userId, shopId, platform) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const state = `${platform}:${shopId}:${userId}:${nonce}`;
 
-    storeTemp(state, { userId, shopId, platform });
+    await stateStore.put(state, { userId, shopId, platform });
 
     const provider = getProvider(platform === 'instagram' ? 'instagram' : 'facebook');
     const redirectUrl = await provider.buildAuthUrl({ state, scopes: [] });
@@ -72,7 +55,7 @@ async function initiateOAuth(userId, shopId, platform) {
  */
 async function handleCallback(code, state, userId, shopId) {
     // Recover state (validates CSRF nonce)
-    const stored = consumeTemp(state);
+    const stored = await stateStore.take(state);
     if (!stored) {
         throw Object.assign(new Error('Invalid or expired OAuth state token'), { status: 400 });
     }
@@ -90,7 +73,7 @@ async function handleCallback(code, state, userId, shopId) {
     // scoped by platform so concurrent FB and IG OAuth flows for the same shop
     // do not clobber each other's callback payloads.
     const tempToken = userToken;
-    storeTemp(`callback:${shopId}:${platform}`, { userToken, platform, pages });
+    await stateStore.put(`callback:${shopId}:${platform}`, { userToken, platform, pages });
 
     logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
     return { pages, tempToken };
@@ -116,7 +99,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     }
     // Consume the platform-scoped callback entry. Other platforms' entries (if
     // a concurrent flow is in progress) remain untouched.
-    consumeTemp(`callback:${shopId}:${platform}`);
+    await stateStore.take(`callback:${shopId}:${platform}`);
 
     const provider = getProvider(platform === 'instagram' ? 'instagram' : 'facebook');
 
@@ -179,7 +162,7 @@ async function initiateUnifiedOAuth(userId, shopId) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const state = `unified:${shopId}:${userId}:${nonce}`;
 
-    storeTemp(state, { userId, shopId, platform: 'unified' });
+    await stateStore.put(state, { userId, shopId, platform: 'unified' });
 
     // business_management was intentionally REMOVED before App Review: it is a
     // high-sensitivity scope and the only thing it bought was discovering pages
@@ -216,7 +199,7 @@ async function initiateUnifiedOAuth(userId, shopId) {
  * existing per-platform connectAsset() works unchanged for either platform.
  */
 async function handleUnifiedCallback(code, state, userId, shopId) {
-    const stored = consumeTemp(state);
+    const stored = await stateStore.take(state);
     if (!stored) {
         throw Object.assign(new Error('Invalid or expired OAuth state token'), { status: 400 });
     }
@@ -252,8 +235,8 @@ async function handleUnifiedCallback(code, state, userId, shopId) {
 
     const tempToken = userToken;
     // Store under BOTH platform keys so connectAsset(platform, ...) works for either.
-    storeTemp(`callback:${shopId}:facebook`, { userToken, platform: 'facebook', pages: facebookPages });
-    storeTemp(`callback:${shopId}:instagram`, { userToken, platform: 'instagram', pages: instagramAccounts });
+    await stateStore.put(`callback:${shopId}:facebook`, { userToken, platform: 'facebook', pages: facebookPages });
+    await stateStore.put(`callback:${shopId}:instagram`, { userToken, platform: 'instagram', pages: instagramAccounts });
 
     logger.info('Unified OAuth callback processed', {
         shopId,

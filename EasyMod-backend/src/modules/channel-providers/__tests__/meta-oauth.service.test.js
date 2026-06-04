@@ -1,5 +1,12 @@
 'use strict';
 
+// Mock the OAuth state store so tests don't need a real Redis instance.
+jest.mock('../oauth-state.store', () => ({
+    put:  jest.fn().mockResolvedValue(undefined),
+    take: jest.fn().mockResolvedValue({ userId: 'user-xyz', shopId: 'shop-abc', platform: 'facebook' }),
+    TTL_SECONDS: 900,
+}));
+
 // Capture the scopes passed into buildAuthUrl by stubbing the provider registry.
 const mockBuildAuthUrl = jest.fn().mockResolvedValue('https://www.facebook.com/v22.0/dialog/oauth?scope=stub');
 const mockSubscribeWebhook = jest.fn().mockResolvedValue(undefined);
