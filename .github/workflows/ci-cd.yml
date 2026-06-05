@@ -42,6 +42,10 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  # Required by the dorny/paths-filter step in the `changes` job: on
+  # pull_request events it reads the PR's changed files via the GitHub API.
+  # Without this the `changes` job fails and the whole PR gate skips.
+  pull-requests: read
 
 env:
   GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymod-backend

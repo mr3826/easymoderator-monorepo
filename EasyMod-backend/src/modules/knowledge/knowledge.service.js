@@ -206,9 +206,13 @@ const STARTER_FAQS = Object.freeze([
         template_en: 'Yes, Cash on Delivery (COD) is available — you pay when you receive the product.',
     },
     {
+        // COD-only by default — do NOT seed bKash/Nagad here. The seller adds
+        // those after connecting a payment method; advertising rails the shop
+        // hasn't connected is a direct cause of the bot asking for advance
+        // payment it can't accept. (Update for your shop once configured.)
         category: 'পেমেন্ট কিভাবে করব? / How can I pay?',
-        template_bn: 'আপনি bKash, Nagad, অথবা ক্যাশ অন ডেলিভারিতে পেমেন্ট করতে পারেন।',
-        template_en: 'You can pay via bKash, Nagad, or Cash on Delivery.',
+        template_bn: 'ক্যাশ অন ডেলিভারিতে পেমেন্ট করতে পারেন — পণ্য হাতে পেয়ে টাকা দিবেন। (আপনার শপ অনুযায়ী আপডেট করুন)',
+        template_en: 'You can pay by Cash on Delivery — pay when you receive the product. (Please update for your shop.)',
     },
     {
         category: 'ডেলিভারিতে কত দিন লাগে? / How long does delivery take?',

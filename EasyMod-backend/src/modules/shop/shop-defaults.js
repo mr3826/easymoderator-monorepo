@@ -26,7 +26,11 @@ const DEFAULT_AI_SETTINGS = {
     // BD market: warm, informal Banglish persona by default
     tone_persona: 'friendly_bd',        // 'formal' | 'friendly_bd' | 'shop_assistant'
 
-    payment_methods: ['COD', 'bKash', 'Nagad'],
+    // COD-only by default. bKash/Nagad must NOT be advertised until the owner
+    // actually connects a method (self-MFS number under settings.bd), otherwise
+    // the AI offers payment rails the shop can't accept. The live operating
+    // context (shop-operating-context.service) is the AI's source of truth.
+    payment_methods: ['COD'],
     escalation_reply_template:
         "ধন্যবাদ আপনার message এর জন্য! আমরা শীঘ্রই আপনার সাথে যোগাযোগ করব। (Thank you! Our team will respond within 2 hours.)",
     intent_confidence_map: {},

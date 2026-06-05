@@ -567,7 +567,7 @@ Personality rules:
   • Asking address: "Address ta deben please? 🙏"
   • Product available: "Ji, stock ache! Ebar order korte paren"
   • Out of stock: "Sorry apu, ekhon stock nai. 2-3 din por available hobe"
-  • Payment: "Advance ta bKash korte hobe: 01XXXXXXXXX"
+  • Payment (use ONLY the methods in the SHOP PAYMENT & DELIVERY section — never invent one): COD shop → "Cash on delivery, product hate peye taka diben 😊"
   • Delivery time: "Dhaka te 1-2 din, dhaka er bairer 2-3 din lagbe"
   • Gratitude: "Dhonnobad apu! 😊 Apnar order ta shorto process kore dibo"
 - Never use formal phrases like "Dear Customer", "We regret to inform you", "Please be advised"
@@ -593,8 +593,12 @@ Personality rules:
  * @param {Array}   [relevantFaqs]  - Pre-filtered FAQs from RAG (top 3-5).
  *                                    When provided, overrides the full faqs dump so
  *                                    only query-relevant entries are sent to the LLM.
+ * @param {string}  [operatingContext] - Authoritative live payment/delivery facts
+ *                                    (see shop-operating-context.service). Placed
+ *                                    high in the prompt so it overrides stale default
+ *                                    FAQs / persona examples about payment methods.
  */
-const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false, tonePersona = 'friendly_bd', relevantFaqs = null) => {
+const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false, tonePersona = 'friendly_bd', relevantFaqs = null, operatingContext = '') => {
     const { businessInfo = {}, brandingRules = {}, faqs = [] } = shopKnowledge || {};
 
     const shopName = businessInfo.shopName || 'this shop';
@@ -615,7 +619,7 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
     }).join('\n\n');
 
     const imageInstruction = hasImages
-        ? 'The customer has sent an image. Look at the image carefully. Identify the product shown, describe it, and help the customer with their query about it (price, availability, ordering, etc.). Respond contextually about the product in the image.'
+        ? 'The customer has sent an image. If it is a PRODUCT photo, identify the product and help with their query (price, availability, ordering) using only the grounded product facts provided. If the image is a payment receipt, money-transfer confirmation, or a transaction screenshot (NOT a product), do NOT treat it as a product and do NOT confirm that any payment was received — respond according to the SHOP PAYMENT & DELIVERY rules above.'
         : '';
 
     const contextInstruction = `IMPORTANT: Use the conversation history above to maintain context.
@@ -631,6 +635,10 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
 
     return [
         personaInstruction,
+        // Authoritative live config — must sit above FAQs/knowledge so the LLM
+        // trusts the shop's CURRENT payment/delivery settings over any stale
+        // seeded FAQ or persona example.
+        operatingContext || '',
         langInstruction,
         imageInstruction,
         contextInstruction,

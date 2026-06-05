@@ -15,9 +15,22 @@ class OrderValidator {
                 'string.pattern.base': 'Must be a valid Bangladeshi mobile number (e.g. 01712345678)',
                 'any.required': 'Phone/Mobile number is required'
             }),
-            delivery_address: Joi.string().trim().min(10).max(500).optional().allow('').messages({
-                'string.min': 'Delivery address must be at least 10 characters',
-                'string.max': 'Delivery address must not exceed 500 characters'
+            // Accepts EITHER a free-text address line (legacy / bulk import) OR the
+            // structured BD address the manual-order form sends. The order entity
+            // JSON-stringifies an object on save and parses it back on read, so both
+            // shapes persist correctly — the validator must allow both or the app's
+            // structured payload is rejected with a 400 before it ever reaches the DB.
+            delivery_address: Joi.alternatives().try(
+                Joi.string().trim().min(10).max(500).allow(''),
+                Joi.object({
+                    division: Joi.string().trim().max(100).allow('').optional(),
+                    district: Joi.string().trim().max(100).allow('').optional(),
+                    upazila: Joi.string().trim().max(100).allow('').optional(),
+                    street_address: Joi.string().trim().max(500).allow('').optional(),
+                    zone: Joi.string().trim().max(50).allow('').optional()
+                }).unknown(true)
+            ).optional().messages({
+                'alternatives.match': 'Delivery address must be a text address or a structured address object'
             }),
             delivery_district: Joi.string().trim().max(100).optional(),
             delivery_thana: Joi.string().trim().max(100).optional(),

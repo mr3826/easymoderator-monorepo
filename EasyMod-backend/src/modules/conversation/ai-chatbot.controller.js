@@ -250,12 +250,21 @@ class AIChatbotController {
                 ? null  // image flow doesn't benefit; fall back to full FAQ list
                 : await knowledgeService.getRelevantFaqs(shop_id, message, 5).catch(() => null);
 
+            // Authoritative live payment/delivery facts for THIS shop. Grounds the
+            // bot in what's actually configured (COD-only until the owner connects
+            // bKash/Nagad/a courier) so it stops advertising default methods and
+            // never "confirms" a payment on a shop that takes no online payment.
+            const operatingContext = await require('../ai/shop-operating-context.service')
+                .getOperatingContext(shop_id)
+                .catch(() => '');
+
             const systemPrompt = intentRouter.buildSystemPrompt(
                 shopKnowledge || {},
                 language,
                 hasImages,
                 aiSettings.tone_persona || 'friendly_bd',
-                relevantFaqs
+                relevantFaqs,
+                operatingContext
             );
 
             // Map model_preset to preferredProvider
