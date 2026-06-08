@@ -113,7 +113,7 @@ describe('Conversation Domain API', () => {
 
       const result = await conversation.transcribeVoice(request as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/conversation/transcribe', request);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/voice/transcribe', request);
       expect(result.text).toBe('কেমন আছেন');
     });
   });

@@ -37,6 +37,9 @@ vi.mock('@/api', () => ({
         testPaymentConnection: vi.fn().mockResolvedValue({ success: true }),
         getShop: mockGetShop,
         getAISettings: vi.fn().mockResolvedValue({ success: true, data: {} }),
+        // Raw HTTP passthrough used by the component for platform-priority
+        get: vi.fn().mockResolvedValue({ data: { data: { payment: [], delivery: [] } } }),
+        put: vi.fn().mockResolvedValue({ data: { data: { payment: [], delivery: [] } } }),
     }
 }));
 

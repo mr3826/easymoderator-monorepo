@@ -36,7 +36,7 @@ describe('Knowledge Domain API', () => {
 
       const result = await knowledge.getKnowledgeSummary();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/knowledge');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/knowledge');
       expect(result.faqs).toHaveLength(1);
     });
   });
@@ -49,7 +49,7 @@ describe('Knowledge Domain API', () => {
 
       await knowledge.updateBusinessInfo(businessInfo as any);
 
-      expect(httpClient.put).toHaveBeenCalledWith('/knowledge/business-info', businessInfo);
+      expect(httpClient.put).toHaveBeenCalledWith('/api/knowledge/business-info', businessInfo);
     });
   });
 
@@ -61,7 +61,7 @@ describe('Knowledge Domain API', () => {
 
       await knowledge.updateBrandingRules(brandingRules as any);
 
-      expect(httpClient.put).toHaveBeenCalledWith('/knowledge/branding', brandingRules);
+      expect(httpClient.put).toHaveBeenCalledWith('/api/knowledge/branding', brandingRules);
     });
   });
 
@@ -79,7 +79,7 @@ describe('Knowledge Domain API', () => {
 
       const result = await knowledge.listFaqs();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/knowledge/faqs');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/knowledge/faqs');
       expect(result).toHaveLength(2);
     });
   });
@@ -92,7 +92,7 @@ describe('Knowledge Domain API', () => {
 
       const result = await knowledge.createFaq(faqData as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/knowledge/faqs', faqData);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/knowledge/faqs', faqData);
       expect(result.id).toBe('3');
     });
   });
@@ -105,7 +105,7 @@ describe('Knowledge Domain API', () => {
 
       await knowledge.updateFaq('1', updateData);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/knowledge/faqs/1', updateData);
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/knowledge/faqs/1', updateData);
     });
   });
 
@@ -115,7 +115,7 @@ describe('Knowledge Domain API', () => {
 
       await knowledge.deleteFaq('1');
 
-      expect(httpClient.delete).toHaveBeenCalledWith('/knowledge/faqs/1');
+      expect(httpClient.delete).toHaveBeenCalledWith('/api/knowledge/faqs/1');
     });
   });
 
@@ -132,7 +132,7 @@ describe('Knowledge Domain API', () => {
 
       const result = await knowledge.listKnowledgeGaps();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/knowledge/gaps');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/knowledge/gaps');
       expect(result[0].frequency).toBe(10);
     });
   });
@@ -150,7 +150,7 @@ describe('Knowledge Domain API', () => {
 
       const result = await knowledge.listDocuments();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/knowledge/documents');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/knowledge/documents');
       expect(result[0].fileType).toBe('pdf');
     });
   });

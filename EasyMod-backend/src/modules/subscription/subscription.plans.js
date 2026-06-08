@@ -45,7 +45,10 @@ const TOPUP_PACKS = Object.freeze({
 const THRESHOLD_BUFFER = 50;
 
 const BASE_FEATURES = Object.freeze({
-    // Supported channels: Facebook Messenger + Instagram Direct
+    // Connectable channels are Facebook Messenger + Instagram Direct only.
+    // The webchat/telegram capability flags below are legacy taxonomy kept for
+    // historical/non-Meta conversation records — they are NOT connectable
+    // channels in the product and are not surfaced as connect options.
     ai_auto_reply: true,
     facebook_channel: true,
     instagram_channel: true,

@@ -33,7 +33,7 @@ describe('Dashboard Domain API', () => {
 
       const result = await dashboard.getDashboardMetrics();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/dashboard/metrics', { params: { period: 30 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/dashboard/metrics', { params: { period: 30 } });
       expect(result.totalRevenue).toBe(50000);
     });
 
@@ -43,7 +43,7 @@ describe('Dashboard Domain API', () => {
 
       await dashboard.getDashboardMetrics(7);
 
-      expect(httpClient.get).toHaveBeenCalledWith('/dashboard/metrics', { params: { period: 7 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/dashboard/metrics', { params: { period: 7 } });
     });
   });
 
@@ -62,7 +62,7 @@ describe('Dashboard Domain API', () => {
 
       const result = await dashboard.getDashboardQueue();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/dashboard/queue');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/dashboard/queue');
       expect(result.pendingOrders).toBe(5);
     });
   });
@@ -80,7 +80,7 @@ describe('Dashboard Domain API', () => {
 
       const result = await dashboard.getKnowledgeGaps();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/analytics/knowledge-gap', { params: { limit: 20 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/analytics/knowledge-gap', { params: { limit: 20 } });
       expect(result).toHaveLength(1);
     });
   });
@@ -102,7 +102,7 @@ describe('Dashboard Domain API', () => {
 
       const result = await dashboard.getAnalytics();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/analytics', { params: { period: 30 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/analytics', { params: { period: 30 } });
       expect(result.llm_calls).toBe(500);
     });
   });

@@ -10,6 +10,7 @@ vi.mock('@/shared/lib/http/client', () => ({
   httpClient: {
     get: vi.fn(),
     post: vi.fn(),
+    put: vi.fn(),
   },
 }));
 
@@ -33,7 +34,7 @@ describe('Subscription Domain API', () => {
 
       const result = await subscription.getSubscription();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/subscription');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/subscription');
       expect(result.plan).toBe('PRO');
     });
   });
@@ -52,7 +53,7 @@ describe('Subscription Domain API', () => {
 
       const result = await subscription.getSubscriptionPlans();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/subscription/plans');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/subscription/plans');
       expect(result).toHaveLength(2);
     });
   });
@@ -62,41 +63,42 @@ describe('Subscription Domain API', () => {
       const mockResponse = {
         data: { data: { plan: 'PRO', status: 'active' } },
       };
-      (httpClient.post as any).mockResolvedValue(mockResponse);
+      (httpClient.put as any).mockResolvedValue(mockResponse);
 
-      const result = await subscription.subscribeToPlan('pro', 'monthly');
+      const result = await subscription.subscribeToPlan('pro', 'yearly');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/subscribe', { planId: 'pro', billingCycle: 'monthly' });
+      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'pro', billing_cycle: 'yearly' });
       expect(result.plan).toBe('PRO');
     });
 
     it('should use monthly as default billing cycle', async () => {
       const mockResponse = { data: { data: {} } };
-      (httpClient.post as any).mockResolvedValue(mockResponse);
+      (httpClient.put as any).mockResolvedValue(mockResponse);
 
       await subscription.subscribeToPlan('PACKAGE_1');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/subscribe', { planId: 'PACKAGE_1', billingCycle: 'monthly' });
+      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'PACKAGE_1', billing_cycle: 'monthly' });
     });
   });
 
   describe('cancelSubscription', () => {
-    it('should cancel at period end by default', async () => {
+    it('should cancel with no reason by default', async () => {
       const mockResponse = { data: { data: { status: 'cancelled' } } };
       (httpClient.post as any).mockResolvedValue(mockResponse);
 
       const result = await subscription.cancelSubscription();
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/cancel', { atPeriodEnd: true });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/subscription/cancel', { reason: undefined });
+      expect(result.status).toBe('cancelled');
     });
 
-    it('should cancel immediately when specified', async () => {
+    it('should forward a cancellation reason when provided', async () => {
       const mockResponse = { data: { data: { status: 'cancelled' } } };
       (httpClient.post as any).mockResolvedValue(mockResponse);
 
-      await subscription.cancelSubscription(false);
+      await subscription.cancelSubscription('Too expensive');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/cancel', { atPeriodEnd: false });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/subscription/cancel', { reason: 'Too expensive' });
     });
   });
 
@@ -107,7 +109,7 @@ describe('Subscription Domain API', () => {
 
       const result = await subscription.reactivateSubscription();
 
-      expect(httpClient.post).toHaveBeenCalledWith('/subscription/reactivate');
+      expect(httpClient.post).toHaveBeenCalledWith('/api/subscription/reactivate');
       expect(result.status).toBe('active');
     });
   });
@@ -125,7 +127,7 @@ describe('Subscription Domain API', () => {
 
       const result = await subscription.getPaymentMethods();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/subscription/payment-methods');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/payment-methods/available');
       expect(result[0].last4).toBe('4242');
     });
   });

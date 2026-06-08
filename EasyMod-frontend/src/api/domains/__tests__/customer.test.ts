@@ -37,7 +37,7 @@ describe('Customer Domain API', () => {
 
       const result = await customer.getCustomers();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/customer?');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/customer?');
       expect(result.items).toHaveLength(2);
     });
 
@@ -47,7 +47,7 @@ describe('Customer Domain API', () => {
 
       await customer.getCustomers({ search: 'john', phone: '017' });
 
-      expect(httpClient.get).toHaveBeenCalledWith('/customer?search=john&phone=017');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/customer?search=john&phone=017');
     });
   });
 
@@ -62,7 +62,7 @@ describe('Customer Domain API', () => {
 
       const result = await customer.getCustomer('1');
 
-      expect(httpClient.get).toHaveBeenCalledWith('/customer/1');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/customer/1');
       expect(result.name).toBe('Customer 1');
     });
   });
@@ -77,7 +77,7 @@ describe('Customer Domain API', () => {
 
       const result = await customer.createCustomer(customerData as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/customer', customerData);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/customer', customerData);
       expect(result.id).toBe('3');
     });
   });
@@ -92,7 +92,7 @@ describe('Customer Domain API', () => {
 
       const result = await customer.updateCustomer('1', updateData);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/customer/1', updateData);
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/customer/1', updateData);
     });
   });
 
@@ -102,7 +102,7 @@ describe('Customer Domain API', () => {
 
       await customer.blacklistCustomer('1', 'Spam behavior');
 
-      expect(httpClient.post).toHaveBeenCalledWith('/customer/1/blacklist', { reason: 'Spam behavior' });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/customer/1/blacklist', { reason: 'Spam behavior' });
     });
   });
 
@@ -112,7 +112,7 @@ describe('Customer Domain API', () => {
 
       await customer.removeFromBlacklist('1');
 
-      expect(httpClient.delete).toHaveBeenCalledWith('/customer/1/blacklist');
+      expect(httpClient.delete).toHaveBeenCalledWith('/api/customer/1/blacklist');
     });
   });
 });

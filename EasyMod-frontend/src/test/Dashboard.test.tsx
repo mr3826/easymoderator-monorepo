@@ -32,13 +32,16 @@ describe('Dashboard', () => {
   it('renders dashboard with pulse data', async () => {
     render(<Dashboard />)
 
-    // Wait for async data load — heading is always present after load
+    // Wait for async data load — heading is always present after load.
+    // The test runtime resolves i18n to the English locale, so assert against
+    // the English copy (dashboard.pulse.* keys).
     await waitFor(() => {
-      expect(screen.getByText('আজকের অবস্থা')).toBeInTheDocument()
+      expect(screen.getByText('Today\'s Status')).toBeInTheDocument()
     })
 
-    // Stat cards rendered
-    expect(screen.getByText('আজকের বিক্রি')).toBeInTheDocument()
-    expect(screen.getByText('নিশ্চিত হয়েছে')).toBeInTheDocument()
+    // Stat cards rendered. "Confirmed" can also appear as an order-status badge,
+    // so allow more than one match.
+    expect(screen.getByText('Today\'s Sales')).toBeInTheDocument()
+    expect(screen.getAllByText('Confirmed').length).toBeGreaterThan(0)
   })
 })

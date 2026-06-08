@@ -1,437 +1,383 @@
-# EasyMod Backend
+# Easy Moderator — Backend
 
-Node.js/Express API server for Easy Moderator — an AI-powered f-commerce moderation platform for Bangladesh merchants. Handles automated customer conversations across Facebook, WhatsApp, Instagram, and other channels; subscription billing via BKash; order management; and RAG-based product knowledge.
+AI customer-service and order-automation API for Bangladeshi f-commerce sellers. Merchants connect their **Facebook Page** and **Instagram** account; Easy Moderator answers inbound DMs and comments with a Bengali/Banglish-capable AI agent, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
+
+> **Channels:** Facebook Messenger + Instagram Direct only. WhatsApp, Telegram and other providers were removed from the product. The `telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable channels.
+
+---
+
+## Table of Contents
+
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Module / Route Map](#module--route-map)
+- [AI & RAG Pipeline](#ai--rag-pipeline)
+- [Meta Integration & Compliance](#meta-integration--compliance)
+- [Billing Model](#billing-model)
+- [Background Jobs](#background-jobs)
+- [Database](#database)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Operational Endpoints](#operational-endpoints)
+- [Project Conventions](#project-conventions)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 20 (alpine in prod) |
+| Web framework | Express 4 |
+| ORM / DB | Sequelize 6 + PostgreSQL 15 (`pg`, `pg-hstore`) |
+| Queue / cache | BullMQ 5 + Redis 7 (`ioredis`) |
+| Vector store | Qdrant (`@qdrant/qdrant-js`) — RAG retrieval |
+| AI / LLM | Google Gemini (primary) + OpenAI (fallback) |
+| Auth | JWT (`jsonwebtoken`) + `bcryptjs`, HttpOnly refresh cookies, CSRF (`csrf-csrf`) |
+| Security | `helmet`, `cors`, `express-rate-limit` + `rate-limit-redis`, XSS sanitiser, HMAC webhook verification |
+| Validation | `joi` + `express-validator` |
+| Notifications | `web-push` + `firebase-admin` (FCM), `resend` (transactional email) |
+| Docs / invoices | `pdfkit` |
+| Observability | Sentry (`@sentry/node`, profiling), structured logger, ops/Slack alerts |
+| Process mgmt | PM2 (`ecosystem.config.js`), Docker Compose |
+| Tests | Jest 30 + Supertest, SQLite in-memory DB |
 
 ---
 
 ## Architecture
 
+Easy Moderator is a **modular monolith**. One codebase and one Docker image run in three process roles in production:
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Digital Ocean Droplet (2vCPU / 4GB)                           │
-│                                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌─────────────┐  │
-│  │ backend  │  │  worker  │  │ scheduler │  │  frontend   │  │
-│  │ :3000    │  │ (BullMQ) │  │ (cron)    │  │   :8080     │  │
-│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └─────────────┘  │
-│       │              │              │                           │
-│  ┌────▼──────────────▼──────────────▼──────┐                  │
-│  │        Redis :6379 (BullMQ + sessions)   │                  │
-│  └──────────────────────────────────────────┘                  │
-│  ┌──────────────────────────────────────────┐                  │
-│  │        PostgreSQL :5432                   │                  │
-│  └──────────────────────────────────────────┘                  │
-└─────────────────────────────────────────────────────────────────┘
+                         Meta Graph API (FB / IG)
+                                  │  webhooks (HMAC-signed)
+                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Digital Ocean Droplet                                            │
+│                                                                    │
+│   ┌───────────┐     ┌────────────┐      ┌────────────┐            │
+│   │   api     │     │   worker   │      │ scheduler  │            │
+│   │ Express   │     │ BullMQ     │      │ cron       │            │
+│   │ :3000     │     │ consumer   │      │ runner     │            │
+│   └─────┬─────┘     └─────┬──────┘      └─────┬──────┘            │
+│         │   (same image, different entrypoint)                    │
+│         └─────────────────┼───────────────────┘                  │
+│                           ▼                                       │
+│   ┌────────────┐   ┌────────────┐   ┌────────────┐               │
+│   │ PostgreSQL │   │   Redis    │   │  Qdrant    │               │
+│   │  :5432     │   │  :6379     │   │  :6333     │               │
+│   └────────────┘   └────────────┘   └────────────┘               │
+│                                                                    │
+│   ┌────────────┐                                                  │
+│   │  frontend  │  nginx-served React SPA (separate image)         │
+│   └────────────┘                                                  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Services (docker-compose.prod.yml)
+**Why a queue?** Inbound webhooks must return `200` to Meta within seconds. The API enqueues each event to BullMQ and returns immediately; the **worker** does the slow AI/LLM work. This decouples Meta's latency budget from our processing time and lets the worker scale independently.
 
-| Service | Image | Role |
-|---|---|---|
-| `backend` | `ghcr.io/.../easymod-backend` | Express API on port 3000 |
-| `worker` | same image | BullMQ message processor (`src/jobs/worker.js`) |
-| `scheduler` | same image | Daily cron runner (`src/jobs/job-runner.js`) |
-| `frontend` | `ghcr.io/.../easymod-frontend` | nginx serving React SPA on port 8080 |
-| `postgres` | postgres:15-alpine | Primary database |
-| `redis` | redis:7-alpine | BullMQ queue + rate-limit store |
+### Entry points
 
-### Entry Points
+| File | Role |
+|---|---|
+| `server.js` | Boots secrets → DB → Redis → migrations, then starts Express. Optionally starts an embedded worker in dev. |
+| `src/app.js` | Express app factory: middleware stack + route mounting. |
+| `src/modules/routes.js` | Central router registry — mounts every domain router under `/api/*`. |
+| `src/jobs/worker.js` | Standalone BullMQ worker (separate prod container). |
+| `src/jobs/job-runner.js` | Cron scheduler for recurring jobs. |
+| `src/jobs/queue-manager.js` | Registers repeatable BullMQ jobs. |
 
-- **`server.js`** — bootstraps secrets, DB connection, Redis, migrations, then starts Express
-- **`src/app.js`** — Express app: middleware stack (helmet, cors, csrf-csrf, morgan, rate-limit)
-- **`src/modules/routes.js`** — mounts all domain routers under `/api/*`
-- **`src/jobs/worker.js`** — standalone BullMQ worker (runs as separate container in prod)
-- **`src/jobs/queue-manager.js`** — schedules recurring BullMQ jobs
-
-### Module Layout
+### Source layout
 
 ```
 src/
-├── app.js                      # Express app factory
-├── config/
-│   ├── config.js               # All env vars with defaults
-│   └── secrets-loader.js       # DO secrets → process.env (no-op in dev)
+├── app.js                  # Express app factory
+├── config/                 # config.js (env), secrets-loader, redis, sentry
+├── constants/
 ├── database/
-│   ├── migrate.js              # Sequelize-based migration runner
-│   └── migrations/             # Timestamped migration files (YYYYMMDD_NNN_*.js)
-├── jobs/                       # Background jobs (BullMQ + cron)
-├── middleware/                 # Auth, rate-limit, conversation-limit, CSRF
-├── modules/                    # Domain modules (see below)
-│   ├── routes.js               # Central router registry
-│   └── entities.js             # Sequelize model registry
-├── scripts/                    # One-time admin scripts (seed-admin, etc.)
-└── utils/
-    ├── database/               # Sequelize setup, sync
-    └── redis-client.js         # ioredis singleton
+│   ├── migrate.js          # Sequelize migration runner
+│   ├── migrations/         # YYYYMMDD_NNN_*.js  (+ archive/ for superseded ones)
+│   └── seed*.js
+├── jobs/                   # BullMQ workers + cron jobs (see Background Jobs)
+├── middleware/             # auth, csrf, rate-limit, shop-access, validation, …
+├── modules/                # Domain modules (see Module / Route Map)
+│   ├── routes.js           # central router registry
+│   └── entities.js         # Sequelize model registry
+├── routes/                 # health.routes.js (liveness / readiness / SSE)
+├── scripts/                # one-off ops scripts (seed-admin, reindex-qdrant, …)
+├── uploads/                # local upload scratch dir
+└── utils/                  # sequelize setup, redis-client, structured-logger, …
 ```
 
----
-
-## Features
-
-### Authentication (`/api/auth`)
-
-JWT-based auth with short-lived access tokens (15m) and long-lived refresh tokens (30d) stored as HttpOnly cookies. Token version incremented on password change to invalidate all sessions.
-
-- `POST /auth/signup` — register + create shop in one transaction
-- `POST /auth/signin` — returns access token + sets refresh cookie
-- `POST /auth/refresh` — rotates refresh token
-- `POST /auth/logout` — clears cookies
-- `GET  /auth/me` — current user + shop context
-
-**One-shop-per-user rule:** signup atomically creates exactly one shop. There is no shop-switch.
+Each domain module is self-contained: `*.routes.js` → `*.controller.js` → `*.service.js`, with `*.entity.js` (Sequelize model), `*.validator.js` (Joi), and `__tests__/`.
 
 ---
 
-### Shop (`/api/shop`)
+## Module / Route Map
 
-Shop is the central entity. Every other resource (products, orders, conversations, channels) belongs to a shop.
+All routers mount under `/api`. Source of truth: `src/modules/routes.js`.
 
-- CRUD for shop settings (name, address, business info)
-- `GET /shop/context` — returns shop + current subscription plan + conversation usage (used by frontend on every load)
-- `POST /shop/platform-priority` — saves `payment_platform_priority` and `delivery_platform_priority` JSONB arrays (drag-to-reorder in UI)
-
----
-
-### Channels (`/api/channel`)
-
-Merchants connect communication channels. All channels are available on all plans — no channel limits.
-
-Supported channels: **Facebook Page**, **WhatsApp Business**, **Instagram**, **Webchat**, **Telegram**.
-
-- `POST /channel/connect/meta` — initiates Meta OAuth (Facebook/Instagram/WhatsApp)
-- `GET  /channel` — list connected channels with status
-- `DELETE /channel/:id` — disconnect channel
-- WhatsApp connected via permanent WABA token (WABA ID + Phone Number ID) — no OAuth flow required
-
-Token refresh check runs daily via scheduler (`src/jobs/token-refresh-check.job.js`).
-
----
-
-### Conversations & AI Chatbot (`/api/conversation`, `/api/ai-chatbot`)
-
-Core feature. Incoming messages from Meta webhooks → BullMQ queue → worker processes with AI.
-
-**Flow:**
-1. Meta Webhook → `POST /webhooks/meta` → push to BullMQ `message-queue`
-2. Worker (`message-worker.js`) picks up job → `ConversationStateSandalone` resolves conversation state
-3. `IntentRouter` classifies intent (ORDER_TAKING, PAYMENT_INQUIRY, SUPPORT, etc.)
-4. `AutoApprove` service decides draft/auto-send
-5. Response sent back via Meta Graph API
-
-**Conversation state machine:** `new` → `active` → `handoff` → `resolved`
-
-- `GET  /conversation` — paginated inbox with filters
-- `POST /conversation/:id/handoff` — escalate to human agent
-- `POST /conversation/:id/resolve` — close conversation
-- `POST /ai-chatbot/send` — manual agent message
-- Conversation limit middleware (`src/middleware/conversation-limit.middleware.js`) blocks new conversations when monthly quota is exceeded (with 50-conversation threshold buffer)
-
----
-
-### Orders & Order Sessions (`/api/order`, `/api/order-session`)
-
-Orders created from conversation context. An `OrderSession` tracks the in-progress order negotiation within a conversation.
-
-- Order lifecycle: `pending` → `confirmed` → `processing` → `shipped` → `delivered` / `cancelled` / `returned`
-- `POST /order` — create order (from agent or AI)
-- `PATCH /order/:id/status` — update status
-- `GET  /order` — list with filters (status, date range, customer)
-- `GET  /order/stats` — aggregate stats for dashboard
-
-**RTO Shield** (`/api/rto-shield`): ML-based return-to-origin prediction. Scores each order at creation; high-risk orders flagged in inbox.
-
----
-
-### Products & Categories (`/api/product`, `/api/category`)
-
-Standard catalog management. Products are indexed into the knowledge base for RAG.
-
-- Full CRUD for products (name, price, variants, images, stock)
-- Category hierarchy (category → subcategory)
-- `POST /product/:id/sync-knowledge` — manually trigger RAG index for a product
-- Auto-index job (`src/modules/knowledge/auto-index.job.js`) runs on schedule
-
----
-
-### Subscription & Billing (`/api/subscription`)
-
-**Plans:**
-
-| Plan | Price | Conversation Limit |
+| Mount | Module | Responsibility |
 |---|---|---|
-| `PACKAGE_1` | 750 BDT/month | 500/month |
-| `PACKAGE_2` | 1,950 BDT/month | 1,500/month |
-| `PARTNER` | 0 BDT upfront | Unlimited — billed per delivered order |
+| `/auth` | `auth` | Signup (atomically creates one shop), signin, refresh, logout, 2FA, password reset |
+| `/shop` | `shop` | Shop profile, business info, `GET /shop/context` (plan + usage), platform-priority ordering |
+| `/shop/delivery` | `delivery` | Courier zones & mapping (Pathao, Steadfast, RedX, PaperFly, …) |
+| `/channels/meta` | `channel-providers` | Meta OAuth (Business Login), connect/disconnect FB & IG, per-channel health, token refresh |
+| `/conversation` | `conversation` | Unified inbox: list, filter, assign, handoff, resolve |
+| `/ai-chatbot` | `conversation` | Manual agent send, AI draft/suggest endpoints |
+| `/customer` | `customer` | Customer records across channels |
+| `/order`, `/order-session` | `order` | Order lifecycle + in-conversation order capture |
+| `/product`, `/category` | `product`, `category` | Catalog (indexed into RAG) |
+| `/knowledge` | `knowledge` | Merchant FAQ/policy docs → vector index |
+| `/rag`, `/delivery/rag` | `rag`, `delivery` | Retrieval-augmented context for replies |
+| `/payment`, `/payment/bangladesh`, `/payment-methods` | `payment` | bKash tokenized checkout + payment config |
+| `/subscription` | `subscription` | Plan, usage, top-ups, invoices |
+| `/partner`, `/admin/partner` | `subscription` | Partner-plan application + admin approval |
+| `/dashboard`, `/analytics` | `dashboard`, `analytics` | KPIs, GMV, resolution rate, growth metrics |
+| `/notifications` | `notification` | Web-push subscriptions + delivery |
+| `/audit` | `audit` | Audit log of sensitive actions |
+| `/rto-shield` | `rto-shield` | Return-to-origin / fake-order risk scoring |
+| `/comment-to-dm` | `commentToDm` | Comment-keyword → DM automation state machine |
+| `/templates` | `template` | Canned response templates |
+| `/language`, `/voice`, `/sentiment` | `language`, `ai` | Banglish handling, voice-note transcription, sentiment |
+| `/admin/failed-jobs` | `admin` | Inspect & retry dead-lettered BullMQ jobs |
+| `/public` | `public` | Unauthenticated marketing stats |
+| `/webhooks/meta` | `integration` | Inbound Meta webhooks (mounted in `app.js`, outside `/api`) |
 
-**PARTNER billing tiers** (per delivered order/month):
-- 1–500 orders: 15 BDT/order
-- 501–1,000 orders: 12 BDT/order
-- 1,001+: 10 BDT/order
+---
 
-**Top-up packs** (BKash only):
+## AI & RAG Pipeline
 
-| Pack | Conversations | Price |
+Inbound message → reply, end to end:
+
+1. **Webhook in** — `POST /webhooks/meta` verifies the `x-hub-signature-256` HMAC, then enqueues the event to the `message-queue` (returns `200` immediately).
+2. **Burst coalescing** — `burst-coalescer.js` waits for a short window (`AI_BURST_WINDOW_MS`, default 8s) so a customer who splits one thought across several quick messages (or a photo + a caption) gets **one** combined reply, not many.
+3. **Worker** — `message-worker.js` resolves conversation state, enforces policy guards, and builds context.
+4. **Intent routing** — `intent-router.service.js` classifies the message (order, payment, support, …) and decides whether to retrieve product/FAQ context.
+5. **RAG** — `rag.service.js` embeds the query and queries **Qdrant** (per-tenant collection) for the top-K product/knowledge chunks; live prices are read from Postgres so the model never quotes a stale price.
+6. **LLM failover chain** (`llm.service.js`):
+   1. `gemini-3.1-flash-lite` — primary (fast, cheap)
+   2. `gemini-3.1-pro-preview` — fallback / high-stakes
+   3. `gpt-4.1-mini` — final fallback
+   A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
+7. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff.
+8. **Attribution** — AI replies carry a configurable marker (default ` 🤖`) so customers know the message was automated (**Meta Platform Policy 4.2**). Toggle with `AI_BOT_ATTRIBUTION_ENABLED`.
+9. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
+
+**Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.
+
+---
+
+## Meta Integration & Compliance
+
+This product is built for **Meta App Review**. Relevant code and guarantees:
+
+- **OAuth (Business Login):** `channel-providers/meta-channel.*` — short-lived state stored in Redis for multi-instance safety; per-page/IG access tokens stored **AES-256 encrypted** at rest (`CHANNEL_ENCRYPTION_KEY`).
+- **Webhook verification:** `integration/meta-webhook.routes.js` — `GET` challenge with a constant-time verify-token compare; `POST` rejected unless the HMAC-SHA256 signature matches `META_WEBHOOK_APP_SECRET` (timing-safe).
+- **Data Deletion Callback:** `integration/meta-webhook-gdpr.handler.js` — validates Meta's `signed_request`, hard-deletes all records for the affected user (idempotent), returns the confirmation code. Mounted at `POST /webhooks/meta/data-deletion`.
+- **Deauthorize callback:** same handler — disconnects the channel when a user removes the app.
+- **Consent + policy engine:** `consent/` records inbound consent; the policy engine blocks cold outreach, honours opt-outs, enforces the 24-hour messaging window, and rate-limits outbound DMs per page.
+- **Reviewer docs:** see `../.easymod/meta-app-review/` (permission justifications, compliance checklist, data-deletion flow, screencast storyboards, test-user credentials).
+
+Requested permissions: `pages_messaging`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_manage_messages`. Each is justified in `permissions-justification.md`.
+
+---
+
+## Billing Model
+
+Source of truth: `src/modules/subscription/subscription.plans.js`.
+
+| Plan | Price | Limit | Notes |
+|---|---|---|---|
+| **Growth** | ৳999 / month (৳9,990 / year) | 300 AI conversations/mo + 50 grace buffer | Every feature included. Fronted by a **card-less 14-day trial** (a `trialing` status, not a separate plan). |
+| **Partner** | ৳0 upfront | Unlimited conversations | Billed per **delivered order**, tiered: ≤500 → ৳15, ≤1,000 → ৳12, 1,000+ → ৳10. Apply → admin approves. |
+
+**Top-up packs** (bKash): `TOPUP_100` ৳150, `TOPUP_250` ৳350, `TOPUP_500` ৳650, `TOPUP_1000` ৳1,200.
+
+Conversation limits are enforced by `conversation-limit.middleware.js` across all connected channels. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
+
+**Payments: bKash only.** No other gateway is wired. Adding one requires implementing its full tokenized-checkout + webhook-verification path.
+
+---
+
+## Background Jobs
+
+`src/jobs/` — workers (BullMQ consumers) and cron jobs (registered by `job-runner.js` / `queue-manager.js`):
+
+| File | Type | Purpose |
 |---|---|---|
-| TOPUP_100 | +100 | 150 BDT |
-| TOPUP_250 | +250 | 350 BDT |
-| TOPUP_500 | +500 | 650 BDT |
-| TOPUP_1000 | +1,000 | 1,200 BDT |
-
-- `POST /subscription/upgrade` — switch plan (BKash payment initiated)
-- `POST /subscription/topup` — purchase conversation pack
-- `GET  /subscription/usage` — current month conversation count + limit
-- PDF invoices generated via pdfkit (`src/modules/subscription/invoice.service.js`)
-
----
-
-### Payment (`/api/payment`, `/api/payment/bangladesh`)
-
-**BKash only.** No other payment gateways. Do not add Nagad or Rocket without re-implementing the full webhook + verification layer.
-
-Payment webhook: `POST /webhooks/bkash/callback` → verifies signature → updates subscription/topup record → triggers invoice generation.
-
----
-
-### Knowledge Base & RAG (`/api/knowledge`, `/api/rag`)
-
-Merchant product/policy documents stored as vector embeddings (Qdrant). Injected into AI context for all non-analytics queries.
-
-- `POST /knowledge` — upload document (PDF, DOCX, text)
-- `GET  /knowledge` — list documents
-- `DELETE /knowledge/:id` — remove + un-index
-- Auto-index job re-indexes all products nightly
-- RAG retrieval via `src/modules/rag/rag.service.js` → Qdrant vector search → top-K chunks injected into LLM system prompt
-
----
-
-### Analytics & Dashboard (`/api/analytics`, `/api/dashboard`)
-
-- Conversation volume, resolution rate, AI accuracy by day/week/month
-- Order stats (GMV, fulfillment rate, RTO rate)
-- Customer lifetime value (CLV)
-- Top products by order frequency
-- Google Sheets sync job (`google-sheets-sync.job.js`) — exports daily order data
-
----
-
-### Delivery (`/api/shop/delivery`)
-
-Delivery zone configuration. Supports: Pathao, Steadfast, Redx, PaperFly, Sundarban, E-courier.
-
-- `GET  /shop/delivery/zones` — list configured zones
-- `POST /shop/delivery/zones` — add/update zone + courier mapping
-- `platform_priority` JSONB array on shop determines preferred courier order
-
----
-
-### Notifications (`/api/notifications`)
-
-Web Push notifications (Firebase FCM) for:
-- New conversation assigned
-- Order status changes
-- Conversation limit threshold warnings (75%, 90%, 100%)
-
-`conversation-usage-notifier.js` job checks daily and sends push if threshold crossed.
-
----
-
-### Admin (`/api/admin/users`, `/api/admin/failed-jobs`)
-
-Internal admin endpoints (role: `admin`):
-- User management (list, role assignment)
-- Failed BullMQ job inspection and retry
-
----
-
-### Background Jobs
-
-| Job file | Trigger | Purpose |
-|---|---|---|
-| `message-worker.js` | BullMQ consumer | Process incoming messages via AI |
-| `queue-manager.js` | Startup | Schedules all recurring BullMQ jobs |
-| `invoice-generator.js` | Monthly | Generate subscription invoices |
-| `monthly-usage-reset.js` | 1st of month | Reset conversation_usage counters |
-| `conversation-usage-notifier.js` | Daily | Push notifications for quota warnings |
-| `daily-overage-calculator.js` | Daily | Calculate PARTNER plan overages |
-| `token-refresh-check.job.js` | Daily 08:00 UTC | Re-auth expiring Meta tokens |
-| `courier-reconciliation.job.js` | Daily | Reconcile delivery statuses |
-| `google-sheets-sync.job.js` | Daily | Export orders to Google Sheets |
-| `failed-payment-reconciler.js` | Daily | Retry/flag failed BKash payments |
+| `message-worker.js` | Worker | Process inbound messages through the AI pipeline |
+| `burst-coalescer.js` | Helper | Debounce rapid message bursts into one reply |
+| `comment-to-dm.worker.js` | Worker | Drive the comment-keyword → DM flow |
+| `comment-to-dm-expiry.job.js` | Cron | Expire stale comment-to-DM sessions |
+| `meta-token-refresh.job.js` | Cron | Re-auth Meta tokens nearing expiry |
+| `trial-expiry.job.js` | Cron | End trials + send ending nudges |
+| `monthly-usage-reset.js` | Cron | Reset conversation counters on the 1st |
+| `conversation-usage-notifier.js` | Cron | Push notifications at usage thresholds |
+| `daily-overage-calculator.js` | Cron | Compute Partner-plan per-order charges |
+| `invoice-generator.js` | Cron | Generate subscription/partner invoices (PDF) |
+| `failed-payment-reconciler.js` | Cron | Retry/flag failed bKash payments |
+| `courier-reconciliation.job.js` | Cron | Reconcile courier delivery statuses |
+| `pipeline-canary.job.js` | Cron | Synthetic auto-reply canary + DLQ watchdog → ops alert |
+| `knowledge/auto-index.job.js` | Cron | Re-index product/knowledge embeddings |
 
 ---
 
 ## Database
 
-PostgreSQL 15. Sequelize ORM. Migrations in `src/database/migrations/` (filename: `YYYYMMDD_NNN_description.js`).
+PostgreSQL 15 via Sequelize. **Migrations are the source of truth** — never `db:sync` in production.
 
-**Key tables:**
-
-| Table | Purpose |
-|---|---|
-| `users` | Merchant accounts |
-| `shops` | One shop per user |
-| `subscriptions` | Active plan + BKash txn ref |
-| `conversation_usage` | Monthly conversation count per shop |
-| `topup_transactions` | Top-up pack purchases |
-| `conversations` | All conversations across channels |
-| `messages` | Individual messages (inbound + outbound) |
-| `orders` | Placed orders |
-| `order_sessions` | In-progress order negotiations |
-| `products` | Product catalog |
-| `channels` | Connected channel credentials |
-| `knowledge_documents` | RAG document metadata |
-
-Run migrations:
 ```sh
-npm run migrate          # apply pending
-npm run migrate:down     # rollback latest
-npm run migrate:status   # show applied/pending
+npm run migrate          # apply pending migrations
+npm run migrate:down     # roll back the latest
+npm run migrate:status   # show applied / pending
 ```
+
+Migration files live in `src/database/migrations/` (`YYYYMMDD_NNN_description.js`); superseded ones are moved to `migrations/archive/`. Key tables include `users`, `shops`, `subscriptions`, `conversation_usage`, `topup_transactions`, `conversations`, `messages`, `orders`, `order_sessions`, `products`, `meta_channels`, `knowledge_documents`, `customers`, `audit_logs`.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- Docker (for Postgres, Redis, and optionally Qdrant)
+- A Gemini API key and/or OpenAI API key for the AI pipeline
+
+### Setup
+
+```sh
+# 1. Install dependencies
+npm install
+
+# 2. Configure environment
+cp .env.example .env        # then fill in secrets
+
+# 3. Start Postgres + Redis (+ Qdrant)
+npm run docker:up
+
+# 4. Run migrations
+npm run migrate
+
+# 5. Seed an admin user
+npm run seed:admin
+
+# 6. Run the API (nodemon)
+npm run dev
+
+# 7. (Optional) run the worker in a second terminal
+npm run start:worker
+```
+
+For a fully self-contained local run, set `START_EMBEDDED_WORKERS=true` to run the worker inline with the API.
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in values. Key variables:
+Copy `.env.example` (the authoritative list) to `.env`. Highlights:
 
 ```env
-# Server
+# Core
 NODE_ENV=development
 PORT=3000
-
-# Database
 DATABASE_URL=postgres://user:pass@localhost:5432/easymod
-
-# Redis
 REDIS_URL=redis://localhost:6379
+CORS_ORIGINS=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
 
-# JWT
-JWT_SECRET=
-JWT_REFRESH_SECRET=
+# Auth & crypto
+JWT_ACCESS_SECRET=...
+JWT_REFRESH_SECRET=...
+SESSION_SECRET=...
+PAYMENT_ENCRYPTION_KEY=...            # 32 bytes
+CHANNEL_ENCRYPTION_KEY=...            # 64-hex (32 bytes) — encrypts Meta tokens at rest
 
-# BKash
-BKASH_APP_KEY=
-BKASH_APP_SECRET=
-BKASH_USERNAME=
-BKASH_PASSWORD=
-BKASH_BASE_URL=https://tokenized.pay.bka.sh/v1.2.0-beta/tokenized
+# Meta (Facebook / Instagram)
+META_APP_ID=...
+META_APP_SECRET=...
+META_OAUTH_REDIRECT_URI=http://localhost:5173/app/channels/oauth-callback
+META_WEBHOOK_VERIFY_TOKEN=...         # App Dashboard webhook handshake
+META_WEBHOOK_APP_SECRET=...           # HMAC signature secret (= your Meta App Secret)
 
-# Meta / Facebook
-META_APP_ID=
-META_APP_SECRET=
-META_WEBHOOK_VERIFY_TOKEN=
+# AI / LLM
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
+LLM_PROVIDER=gemini
 
-# WhatsApp
-WABA_ID=
-WA_PHONE_NUMBER_ID=
-WA_PERMANENT_TOKEN=
-
-# AI
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-
-# Vector DB (Qdrant)
-QDRANT_URL=
+# Vector DB (Qdrant) + embeddings
+QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
+QDRANT_COLLECTION=knowledge_documents
+QDRANT_PER_TENANT=true
+EMBEDDING_PROVIDER=openai             # openai | http | local(dev-only)
+QDRANT_VECTOR_SIZE=384
 
-# Email
-RESEND_API_KEY=
+# Email, push, errors, ops
+RESEND_API_KEY=...
+EMAIL_FROM=Easy Moderator <no-reply@easymod.tech>
+SENTRY_DSN=...
+SLACK_ALERT_WEBHOOK_URL=...
+ADMIN_EMAIL=hello@hexabyte.co
 
-# Firebase (Push Notifications)
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
-
-# Sentry
-SENTRY_DSN=
-
-# Feature flags
-RUN_MIGRATIONS_ON_STARTUP=true   # set false in prod (CI runs migrate step)
-START_EMBEDDED_WORKERS=false     # set true only for single-process dev
+# AI behaviour
+AI_BOT_ATTRIBUTION_ENABLED=true
+AI_BURST_WINDOW_MS=8000
 ```
 
----
-
-## Local Development
-
-```sh
-# Install
-npm install
-
-# Start postgres + redis via Docker
-npm run docker:up
-
-# Run migrations
-npm run migrate
-
-# Seed admin user
-npm run seed:admin
-
-# Start dev server (nodemon)
-npm run dev
-
-# Start BullMQ worker (separate terminal)
-npm run start:worker
-```
+See `.env.example` for the full annotated set (Redis multi-DB allocation, canary tuning, embedding retry/backoff, etc.).
 
 ---
 
 ## Testing
 
 ```sh
-npm test               # Jest with coverage
+npm test               # Jest with coverage (--forceExit --detectOpenHandles)
 npm run test:watch     # watch mode
 ```
 
-Tests in `tests/` and `src/**/__tests__/`. Integration tests hit a real SQLite in-memory DB (not mocked).
+Tests live in `src/**/__tests__/` and `tests/`. Integration tests run against a **real SQLite in-memory database** (not mocked), so they exercise actual Sequelize queries.
+
+> **Current state:** the full backend suite is green — **836 tests / 52 suites passing**.
+
+> **Monorepo note:** `EasyMod-backend/` may contain a stale nested `.git`. Always run git from the repository root (`git -C <repo-root>`). When running Jest from the root, wrap it in a subshell: `(cd EasyMod-backend && npm test)`.
 
 ---
 
 ## Deployment
 
-### GitHub Actions (`.github/workflows/deploy.yml`)
+CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 
-Triggered on push to `main` or manual `workflow_dispatch` (with target: `all | backend | frontend`).
+1. **Detect changes** — only rebuild the package that changed.
+2. **Test** — backend Jest suite against a Redis service container.
+3. **Build & push** — Docker images to GHCR, tagged with the commit SHA + `:latest`.
+4. **Deploy** — SSH into the droplet, pull images, `docker compose up -d`, run `npm run migrate`, health-check `/health/ready`.
 
-**Pipeline stages:**
-1. **Detect changes** — `dorny/paths-filter` checks if `EasyMod-backend/` or `EasyMod-frontend/` changed
-2. **Backend tests** — `npm test` against Redis service container
-3. **Build & push** — Docker images built and pushed to `ghcr.io` tagged with commit SHA + `:latest`
-4. **Deploy via SSH** — SSH into DO droplet → pull new images → `docker compose up -d` → `npm run migrate` → health check on `/health/ready`
+The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Process layout for non-Docker hosts is described in `ecosystem.config.js` (PM2).
 
-**Required GitHub Secrets:**
-
-| Secret | Description |
-|---|---|
-| `DO_HOST` | Droplet IP |
-| `DO_SSH_PRIVATE_KEY` | SSH key with root access |
-| `VITE_API_BASE_URL` | e.g. `https://api.easymod.tech` |
-| `VITE_META_APP_ID` | Meta App ID |
-| `VITE_SENTRY_DSN` | Sentry DSN (optional) |
-
-### Droplet Setup
-
-The droplet expects:
-- `/opt/easymod/docker-compose.prod.yml` — production compose file (copy from repo)
-- `/opt/easymod/.env.prod` — all production env vars
-
-Images pull from `ghcr.io` on each deploy. The backend `Dockerfile` is multi-stage, Node 20 alpine.
-
-### Health Checks
-
-- `GET /health/ready` — 200 when DB + Redis connected (used by CI health check)
-- `GET /health/live` — 200 always (container liveness probe)
+**Required GitHub secrets:** droplet host/SSH key, `VITE_API_BASE_URL`, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet.
 
 ---
 
-## Key Design Decisions
+## Operational Endpoints
 
-- **BullMQ over in-process workers** — message processing decoupled from HTTP; worker container scales independently
-- **One-shop-per-user** — enforced at signup; no shop-switch route or service exists
-- **BKash-only payments** — Nagad and Rocket fully removed; do not re-add without implementing webhook verification
-- **Conversation limits** — the only plan enforcement mechanism; all channels are accessible on every plan
-- **Threshold buffer** — 50 extra conversations granted after plan limit, charged to next cycle
-- **RAG on every AI response** — product context always injected into LLM; not a toggle
-- **Migrations as source of truth** — never use `db:sync` in production; always run `migrate`
-- **Plan codes** — use `PACKAGE_1`, `PACKAGE_2`, `PARTNER`; `STARTER`/`GROWTH` are rejected by the validator
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /health/live` | none | Liveness — always 200 if the process is up |
+| `GET /health/ready` | none | Readiness — 200 when DB + Redis are reachable (CI gate) |
+| `GET /health/detailed` | yes | Queue depths, infra topology, key presence, `embedding.semantic` |
+| `GET /health/sse` | — | Server-Sent Events stream for live inbox updates |
+
+---
+
+## Project Conventions
+
+- **One shop per user** — signup atomically creates exactly one shop; there is no shop-switch.
+- **Migrations over sync** — production schema changes always go through `npm run migrate`.
+- **bKash-only payments** — do not re-add other gateways without their full verification path.
+- **RAG always on** — product/knowledge context is injected on every relevant reply; it is not a toggle.
+- **Plan codes** — only `GROWTH` and `PARTNER` are canonical; legacy/unknown codes normalise to `GROWTH` (fail-safe to full AI rather than lock-out).
+- **AI attribution is policy** — keep the bot marker on for Meta compliance unless you have a documented reason.

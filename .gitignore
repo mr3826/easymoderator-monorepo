@@ -90,5 +90,11 @@ claude-skills/
 .easymod/*
 # ...except the Meta App Review deliverables, which are version-controlled docs
 !.easymod/meta-app-review/
+EasyMod-backend/.easymod/
 .claude/
 .kilo/
+.playwright-mcp/
+graphify-out/
+.code-review-graph/
+# Local screenshots / scratch captures
+partner-card-live.png

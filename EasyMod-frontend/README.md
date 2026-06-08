@@ -1,334 +1,237 @@
-# EasyMod Frontend
+# Easy Moderator — Frontend
 
-React 18 / Vite / TypeScript SPA for Easy Moderator. Provides a merchant dashboard for managing AI-powered customer conversations, orders, product catalog, subscription billing, and channel connections.
+The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect their Facebook Page and Instagram account, then manage a unified inbox, products, orders, couriers, and billing from this single-page app.
+
+Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and localised **Bengali-first**.
+
+---
+
+## Table of Contents
+
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Routes & Screens](#routes--screens)
+- [API Layer](#api-layer)
+- [State, Auth & Security](#state-auth--security)
+- [Internationalisation](#internationalisation)
+- [PWA & Push](#pwa--push)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Build & Deployment](#build--deployment)
+- [Conventions](#conventions)
+
+---
+
+## Tech Stack
+
+| Concern | Technology |
+|---|---|
+| Framework | React 18 |
+| Build tool | Vite 6 (`@vitejs/plugin-react`) |
+| Language | TypeScript |
+| Routing | React Router 7 (`react-router-dom`) — lazy/code-split routes |
+| Server state | TanStack Query 5 |
+| HTTP | Axios (withCredentials, CSRF + refresh interceptors) |
+| UI primitives | Radix UI + custom components |
+| Styling | Tailwind CSS 4 (`@tailwindcss/vite`) |
+| Forms / validation | React Hook Form + Zod |
+| Charts | Recharts |
+| Animation | Framer Motion / Motion |
+| i18n | i18next + react-i18next (Bengali default) |
+| Errors | Sentry (`@sentry/react`) |
+| Docs parsing | Mammoth (DOCX → text for knowledge upload) |
+| Tests | Vitest + Testing Library (unit, happy-dom), Playwright (e2e) |
 
 ---
 
 ## Architecture
 
+A client-rendered SPA served as static assets by nginx, talking to the [Easy Moderator backend](../EasyMod-backend) over a JSON API. In production the SPA is **same-origin** with the API (empty `VITE_API_BASE_URL`), so cookies and CSRF work without cross-site complications.
+
 ```
-src/
-├── app/                    # Application shell
-│   ├── App.tsx             # Root component (theme, i18n, query client, Sentry)
-│   ├── routes.ts           # React Router v6 route definitions
-│   ├── components/         # Page-level and feature components
-│   ├── features/           # Self-contained feature modules (e.g. users/)
-│   ├── lib/                # App-level utilities (auth, subscriptionPlans, etc.)
-│   └── constants/          # Static enums and configuration
-├── api/                    # HTTP client + domain API functions
-│   ├── index.ts            # Re-exports + legacy apiClient singleton
-│   ├── types/              # Shared TypeScript types for API responses
-│   └── domains/            # Domain-namespaced API functions (auth, product, etc.)
-├── shared/                 # Cross-cutting utilities
-│   ├── components/         # Shared UI components (guards, error boundaries, etc.)
-│   ├── context/            # React contexts (Auth)
-│   ├── hooks/              # Shared hooks (useDebounce, useIntersection, etc.)
-│   └── lib/
-│       └── http/           # Axios client, request interceptors, error helpers
-├── i18n/                   # Internationalization (en + bn locales)
-├── styles/                 # Global CSS / Tailwind base
-├── entry-client.tsx        # Client-side hydration entry
-└── main.tsx                # Dev entry point
+Browser
+  │
+  ├─ React SPA (this app)  ── static assets via nginx
+  │     │
+  │     ├─ TanStack Query  ── cache + request dedupe
+  │     └─ Axios client    ── credentials + CSRF + token refresh
+  │            │
+  └────────────┴─────────►  Backend API  (/api/*)
+                                 │
+                                 └─ SSE (/health/sse) ── live inbox updates
 ```
 
-### Tech Stack
-
-| Concern | Library |
-|---|---|
-| Framework | React 18 |
-| Build | Vite |
-| Language | TypeScript |
-| Routing | React Router v6 |
-| Server state | TanStack Query v5 |
-| Forms | React Hook Form + Zod |
-| UI components | Radix UI primitives + Tailwind CSS |
-| Drag-and-drop | react-dnd |
-| i18n | i18next (en + bn) |
-| Error tracking | Sentry |
-| Unit tests | Vitest |
-| E2E tests | Playwright |
+The app code lives almost entirely under `src/app/` (the product dashboard). `src/features/` holds a few self-contained feature slices (auth, users), and `src/shared/` + `src/lib/` hold cross-cutting utilities.
 
 ---
 
-## Routing
-
-All authenticated routes are children of `/app` (protected by `protectedLoader` — redirects to `/` if not authenticated). Public routes have `publicLoader` (redirects to `/app` if already authenticated).
+## Project Structure
 
 ```
-/                          Landing page
-/signin                    Sign in
-/signup                    Sign up
-/forgot-password
-/reset-password
-/pricing                   Public pricing page
-/privacy-policy
-/terms
-
-/app                       Dashboard (DashboardLayout shell)
-/app/inbox                 Shared Inbox
-/app/channels              Channel connections
-/app/manage-shop           Shop settings (tabbed)
-  /app/manage-shop                      Business info
-  /app/manage-shop/chat-settings        AI + automation config
-  /app/manage-shop/delivery-settings    Delivery zones
-  /app/manage-shop/payment-settings     Payment method config
-/app/products              Product list
-/app/products/add
-/app/products/:id
-/app/products/:id/edit
-/app/categories
-/app/orders
-/app/customers
-/app/knowledge             Knowledge base / RAG documents
-/app/reports
-/app/audit-logs
-/app/subscription          Subscription management + top-up
-/app/admin/users           Admin only — user management
-/app/channels/oauth-callback  Meta OAuth popup handler (standalone, no shell)
-
-/bd-lite                   Simplified BD seller view (BDSellerShell)
-/bd-lite/inbox
-/bd-lite/orders
-/bd-lite/settings
+src/
+├── main.tsx                # CSR entry (createRoot)
+├── entry-client.tsx        # hydration entry (hydrateRoot) for prerendered shell
+├── sentry.ts               # Sentry init
+├── api/
+│   ├── index.ts            # axios instance + interceptors (CSRF, refresh, errors)
+│   ├── domains/            # one typed client module per domain (see API Layer)
+│   └── types/              # shared API response/DTO types
+├── app/
+│   ├── App.tsx             # app shell + providers
+│   ├── routes.ts           # route table (lazy-loaded components)
+│   ├── components/         # screen + widget components
+│   │   ├── inbox/          # unified-inbox subcomponents
+│   │   └── bd-lite/        # streamlined "today's queue" seller shell
+│   ├── lib/                # meta (OAuth popup), motion, policy, push helpers
+│   ├── features/
+│   └── constants/
+├── features/
+│   ├── auth/               # sign-in/up, guards, auth context
+│   └── users/              # admin user management
+├── shared/                 # components, context, lib, types shared app-wide
+├── i18n/
+│   ├── index.ts            # i18next config (Bengali default)
+│   └── locales/{en,bn}.json
+├── assets/ · data/ · styles/
+└── test/ · __tests__/      # Vitest specs + setup
 ```
+
+---
+
+## Routes & Screens
+
+Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Authenticated app routes live under `/app/*` behind an auth guard; admin-only routes use `AdminRoute`.
+
+**Public / marketing**
+
+- `/` — Landing page
+- `/pricing` — Pricing
+- `/privacy-policy`, `/terms` — Legal (required for Meta App Review)
+- `/signin`, `/signup`, `/forgot-password`, `/reset-password`, 2FA verify
+
+**Dashboard (`/app/*`)**
+
+- Dashboard (KPIs / cash position)
+- Unified Inbox + Comment-to-DM automation
+- Products, Add/Edit Product, Categories & subcategories
+- Orders
+- Customers
+- Knowledge base (FAQ/policy upload)
+- Reports & Analytics, Audit Logs
+- Channels (Meta OAuth connect + per-channel health) + OAuth callback
+- Settings hub: Chat/AI, Delivery, Payment, Business Info
+- Subscription & billing
+- Users (admin)
+- `bd-lite` seller shell (`Today's Queue` simplified view)
 
 ---
 
 ## API Layer
 
-All HTTP calls go through a single Axios instance at `src/shared/lib/http/client.ts`. The interceptor:
-- Attaches `Authorization: Bearer <token>` from auth state
-- On 401 → calls `auth.refreshToken()` once, then retries
-- On refresh failure → clears auth state + redirects to `/signin`
-
-**Domain functions** live in `src/api/domains/`:
+`src/api/domains/` contains one typed client per backend domain, all sharing the configured Axios instance from `src/api/index.ts`:
 
 ```
-auth.ts         signup, signin, logout, refreshToken, getAuthContext
-product.ts      getProducts, createProduct, updateProduct, deleteProduct
-order.ts        getOrders, createOrder, updateOrderStatus, getOrderStats
-customer.ts     getCustomers, getCustomerById
-channel.ts      getChannels, connectMetaChannel, disconnectChannel
-dashboard.ts    getDashboardStats
-knowledge.ts    getDocuments, uploadDocument, deleteDocument
-subscription.ts getSubscription, upgradeSubscription, purchaseTopup, getUsage
-conversation.ts getConversations, resolveConversation, handoffConversation
-shop.ts         getShopContext, updateShop, updatePlatformPriority
-payment.ts      getPaymentMethods, updatePaymentMethods
-audit.ts        getAuditLogs
+auth · shop · conversation · customer · order · product · knowledge
+dashboard · payment · subscription · meta-channels · comment-to-dm
+audit · rto-shield
 ```
 
-**Prefer domain imports** over the legacy `apiClient` singleton:
-```typescript
-// Good
-import { subscription } from '@/api/domains';
-const usage = await subscription.getUsage();
-
-// Avoid (legacy, being phased out)
-import { apiClient } from '@/api';
-```
+The Axios instance sends credentials, attaches the CSRF token, transparently refreshes the access token on `401`, and normalises error shapes. Prefer adding new calls to the matching domain module rather than calling Axios directly from components.
 
 ---
 
-## Features
+## State, Auth & Security
 
-### Shared Inbox (`/app/inbox`)
-
-Core feature. Displays all active conversations across all connected channels. Each conversation card shows customer name, channel icon, last message, and AI confidence.
-
-- Real-time polling via TanStack Query
-- Conversation detail panel (inline, not a modal)
-- Send message / approve AI draft
-- Handoff to human / resolve conversation
-- Filter by: channel, status (new/active/handoff/resolved), date
-
-### Channels (`/app/channels`)
-
-Connect and manage communication channels. Supported: Facebook Page, WhatsApp Business (via permanent token), Instagram, Webchat, Telegram.
-
-- Meta OAuth popup (`/app/channels/oauth-callback` handles postMessage)
-- WhatsApp: enter WABA ID + Phone Number ID + permanent token directly (no OAuth)
-- Channel status (connected / token expired / error)
-- All channels available on all subscription plans — no channel limits
-
-### Subscription (`/app/subscription`)
-
-Subscription management page. Displays current plan, monthly conversation usage, and top-up options.
-
-**Plans:**
-
-| Code | Display name | Price | Conversation limit |
-|---|---|---|---|
-| `PACKAGE_1` | Package 1 | 750 BDT/month | 500/month |
-| `PACKAGE_2` | Package 2 | 1,950 BDT/month | 1,500/month |
-| `PARTNER` | Partner | 0 BDT upfront | Billed per delivered order |
-
-**PARTNER billing** is per-order tiered: 15 BDT (1–500 orders), 12 BDT (501–1,000), 10 BDT (1,001+).
-
-**Top-up packs** (BKash only): +100 (150 BDT), +250 (350 BDT), +500 (650 BDT), +1,000 (1,200 BDT).
-
-Conversation usage bar shown with threshold warnings at 75% / 90% / 100%. The `ConversationAlertBanner` component renders a sticky banner when usage is at or above 75%.
-
-### Manage Shop (`/app/manage-shop`)
-
-Tabbed settings area:
-
-- **Business Info** — name, address, logo, contact
-- **Chat Settings** — AI automation mode (DRAFT / MANUAL / AUTO), confidence threshold, language (en/bn/mixed), tone/persona, handoff rules
-- **Delivery Settings** — delivery zone configuration, courier mapping, inline "Set as Default" per provider
-- **Payment Settings** — accepted payment methods (BKash, COD, bank transfer), inline "Set as Default" per gateway
-
-Default selection is persisted to the shop's `payment_platform_priority` / `delivery_platform_priority` JSONB columns (index 0 = default). The current default is shown with a badge on its provider/gateway card.
-
-### Products & Categories
-
-Standard catalog management:
-- Product list with search, filter by category, pagination
-- Add/edit product: name, price, variants, images, stock level, SKU
-- Category → subcategory hierarchy
-- Manual "Sync to Knowledge Base" button per product
-
-### Orders (`/app/orders`)
-
-Order management table:
-- Filter by status, date range, courier
-- Click row → order detail (products, customer info, delivery address, payment status)
-- Status transitions: pending → confirmed → processing → shipped → delivered
-- RTO risk badge (high/medium/low) shown on risky orders
-
-### Customers (`/app/customers`)
-
-Customer list and detail view:
-- Order history, total spend, last active date
-- Customer journey timeline (sequence of conversation events)
-
-### Knowledge Base (`/app/knowledge`)
-
-Upload documents (PDF, DOCX, plain text) that the AI uses to answer product/policy questions.
-- Upload → backend extracts text → embeds into Qdrant
-- Delete removes vectors from Qdrant
-- Documents auto-indexed nightly from product catalog
-
-### Reports (`/app/reports`)
-
-Analytics charts:
-- Conversation volume by day/week/month
-- AI resolution rate, handoff rate
-- Order GMV, fulfillment rate, RTO rate
-- Top products by order count
-
-### Audit Logs (`/app/audit-logs`)
-
-Admin view of all system events (user actions, AI decisions, payment events).
-
-### BD-Lite (`/bd-lite`)
-
-Simplified shell (`BDSellerShell`) for mobile-first Bangladesh merchants. Subset of features: today's queue dashboard, inbox, orders, basic settings. Shares the same components as the main app.
+- **Server state:** TanStack Query owns all server data (caching, dedupe, invalidation). Avoid duplicating it in local state.
+- **Auth:** JWT access token + HttpOnly refresh cookie issued by the backend. `features/auth` provides the auth context, route guards, sign-in/up, password reset, and 2FA.
+- **CSRF:** double-submit token wired through the Axios interceptor (`csrf-csrf` on the backend).
+- **Errors:** Sentry captures runtime errors; an error boundary renders `RouteError`.
 
 ---
 
-## State Management
+## Internationalisation
 
-- **Server state** — TanStack Query. Query keys follow the pattern `[domain, operation, ...params]`.
-- **Auth state** — `AuthContext` (`src/shared/context/AuthContext.tsx`). Initialized once via `authService.ensureInitialized()` in route loaders. Do not read auth from localStorage directly.
-- **UI state** — local `useState` within components. No global client-side store.
+- `i18next` + `react-i18next`, with `i18next-browser-languagedetector`.
+- **Default language: Bengali (`bn`).** English (`en`) is the secondary locale.
+- Strings live in `src/i18n/locales/{en,bn}.json`. **Brand/product terms are intentionally kept in English** (e.g. "Easy Moderator", "RTO Shield").
+- Add a key to **both** locale files when introducing user-facing copy.
 
 ---
 
-## Internationalization
+## PWA & Push
 
-Two locales: `en` (English) and `bn` (Bengali). Language auto-detected from browser, switchable in UI.
+- Installable PWA: `public/manifest.webmanifest` + icons + `public/sw.js` (offline-tolerant shell).
+- Web Push notifications via `src/app/lib/pushNotification.ts` using a VAPID public key (`VITE_VAPID_PUBLIC_KEY`) — new conversations, order updates, and usage-threshold warnings.
 
-Locale files: `src/i18n/locales/en.json`, `src/i18n/locales/bn.json`.
+---
 
-Usage:
-```typescript
-import { useTranslation } from 'react-i18next';
-const { t } = useTranslation();
-// t('key.path')
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- A running [backend](../EasyMod-backend) (or point `VITE_API_BASE_URL` at a deployed one)
+
+### Setup
+
+```sh
+npm install
+
+# create a local env file (see Environment Variables)
+# point VITE_API_BASE_URL at your backend, e.g. http://localhost:3000
+
+npm run dev      # Vite dev server (default http://localhost:5173)
 ```
-
----
-
-## Feature Gating
-
-`FeatureGate` component (`src/app/components/FeatureGate.tsx`) shows an upgrade prompt when a feature requires a higher plan. Pass `requiredPlan="PACKAGE_2"` or `requiredPlan="PARTNER"`.
-
-`useSubscriptionFeatures` hook (`src/app/lib/useSubscriptionFeatures.ts`) returns the current plan's feature flags from the shop context.
 
 ---
 
 ## Environment Variables
 
-Vite env vars (prefix `VITE_` — available in browser bundle):
+Vite exposes only `VITE_`-prefixed variables to the client. Create `.env` / `.env.local`:
 
-```env
-VITE_API_BASE_URL=http://localhost:3000/api   # Backend API base URL
-VITE_META_APP_ID=                             # Meta App ID for OAuth popup
-VITE_SENTRY_DSN=                              # Optional Sentry DSN
-VITE_ENV=development                          # development | production
-```
+| Variable | Purpose |
+|---|---|
+| `VITE_API_BASE_URL` | Backend API origin. **Leave empty in production** (SPA is same-origin with the API). |
+| `VITE_API_URL` | Legacy alias for the API origin (kept for compatibility). |
+| `VITE_ENV` | Environment label (`development` / `production`). |
+| `VITE_SENTRY_DSN` | Sentry DSN (optional). |
+| `VITE_VAPID_PUBLIC_KEY` | Web-push VAPID public key. |
+| `VITE_BKASH_SANDBOX` | Toggle bKash sandbox UI behaviour. |
 
-Set at build time in CI (injected as `--build-arg` into Docker). **Do not put secrets here** — all values are visible in the built JS bundle.
-
----
-
-## Local Development
-
-```sh
-npm install
-npm run dev          # Vite dev server on :5173
-```
-
-The dev server proxies `/api` requests to `VITE_API_BASE_URL` (set in `.env.local`).
+`VITE_META_APP_ID` is injected at build time in CI for the Meta OAuth flow.
 
 ---
 
 ## Testing
 
 ```sh
-npm run test:unit    # Vitest unit tests
-npm run test:e2e     # Playwright end-to-end
-npm run test:all     # both
+npm run test         # Vitest (watch)
+npm run test:unit    # Vitest (run once)
+npm run test:e2e     # Playwright
+npm run test:all     # unit + e2e
 ```
 
-Unit tests in `src/**/__tests__/`. E2E tests in `tests/`.
+Unit specs sit beside the code in `__tests__/` folders and under `src/test/`. The Vitest environment is `happy-dom` with globals enabled (`vitest.config.js`).
 
 ---
 
-## Build & Docker
+## Build & Deployment
 
 ```sh
-npm run build        # Vite production build → dist/
+npm run build        # vite build → dist/
 ```
 
-`Dockerfile` is multi-stage:
-1. Node 20 alpine — `npm ci && npm run build`
-2. nginx alpine — serves `dist/` with `nginx.conf`
+CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the production `VITE_*` values, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the Digital Ocean droplet. The SPA is served same-origin with the API behind Caddy/nginx (`www → apex` 301; canonical origin `https://easymod.tech`).
 
-`nginx.conf` routes all paths to `index.html` (SPA fallback) and proxies `/api` to the backend container.
+> The build emits a large-chunk warning for `react-vendor` / `mammoth-vendor`. These are intentionally split vendor chunks; tighten `manualChunks` if bundle size becomes a concern.
 
 ---
 
-## Deployment
+## Conventions
 
-Same GitHub Actions workflow as the backend (`.github/workflows/deploy.yml`). On push to `main`:
-
-1. `dorny/paths-filter` detects `EasyMod-frontend/**` changes
-2. Docker image built with `VITE_*` build args injected from GitHub Secrets
-3. Image pushed to `ghcr.io/.../easymod-frontend:latest`
-4. Deploy job SSHs into droplet and runs `docker compose up -d`
-
-No database migrations for frontend. No health check step (nginx serves static files).
-
----
-
-## Key Design Decisions
-
-- **No global state store** — TanStack Query handles all server state; component-local state for UI
-- **Domain API functions over apiClient** — the `apiClient` singleton is legacy; prefer `import { auth } from '@/api/domains'`
-- **Lazy loading everywhere** — every page component is `React.lazy()` via `createBrowserRouter`; initial bundle is small
-- **BKash-only payment UI** — Nagad and Rocket removed from all UI; do not re-add
-- **No channel limits in UI** — do not show or enforce channel count; all channels are available on all plans
-- **Plan codes in logic, display names in i18n** — use `PACKAGE_1`/`PACKAGE_2`/`PARTNER` in code; translate to user-facing strings via i18n keys
-- **One shop per user** — no shop-switch UI; `DashboardLayout` does not render a shop selector
+- **API calls go through `src/api/domains/`** — never hand-roll Axios in a component.
+- **Server data lives in TanStack Query** — don't mirror it into `useState`.
+- **Every user-facing string is translated** and added to both `en.json` and `bn.json`; brand terms stay English.
+- **Routes are lazy-loaded** in `routes.ts` to keep the initial bundle small.

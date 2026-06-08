@@ -38,7 +38,7 @@ describe('Product Domain API', () => {
 
       const result = await product.getProducts();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/product', { params: undefined });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/product', { params: undefined });
       expect(result).toEqual(mockResponse.data.data);
     });
 
@@ -52,7 +52,7 @@ describe('Product Domain API', () => {
 
       await product.getProducts({ page: 1, limit: 10 });
 
-      expect(httpClient.get).toHaveBeenCalledWith('/product', { params: { page: 1, limit: 10 } });
+      expect(httpClient.get).toHaveBeenCalledWith('/api/product', { params: { page: 1, limit: 10 } });
     });
   });
 
@@ -67,7 +67,7 @@ describe('Product Domain API', () => {
 
       const result = await product.getProduct('1');
 
-      expect(httpClient.get).toHaveBeenCalledWith('/product/1');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/product/1');
       expect(result).toEqual(mockResponse.data.data);
     });
 
@@ -94,7 +94,7 @@ describe('Product Domain API', () => {
 
       const result = await product.createProduct(productData as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/product', productData);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/product', productData);
       expect(result.id).toBe('3');
     });
 
@@ -119,7 +119,7 @@ describe('Product Domain API', () => {
 
       const result = await product.updateProduct('1', updateData);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/product/1', updateData);
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/product/1', updateData);
       expect(result.name).toBe(updateData.name);
     });
   });
@@ -130,7 +130,7 @@ describe('Product Domain API', () => {
 
       await product.deleteProduct('1');
 
-      expect(httpClient.delete).toHaveBeenCalledWith('/product/1');
+      expect(httpClient.delete).toHaveBeenCalledWith('/api/product/1');
     });
   });
 
@@ -151,7 +151,7 @@ describe('Product Domain API', () => {
       const payload = { file: new File(['test'], 'test.csv'), format: 'csv' as const };
       const result = await product.extractProductsFromUpload(payload);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/product/ai-extract', payload);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/product/ai-extract', payload);
       expect(result).toEqual(mockResponse.data.data);
     });
   });
@@ -170,7 +170,7 @@ describe('Product Domain API', () => {
 
       const result = await product.getCategories();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/category');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/category');
       expect(result).toEqual(mockResponse.data.data);
     });
   });
@@ -184,7 +184,7 @@ describe('Product Domain API', () => {
 
       const result = await product.getCategory('1');
 
-      expect(httpClient.get).toHaveBeenCalledWith('/category/1');
+      expect(httpClient.get).toHaveBeenCalledWith('/api/category/1');
       expect(result).toEqual(mockResponse.data.data);
     });
   });
@@ -199,7 +199,7 @@ describe('Product Domain API', () => {
 
       const result = await product.createCategory(categoryData as any);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/category', categoryData);
+      expect(httpClient.post).toHaveBeenCalledWith('/api/category', categoryData);
       expect(result.id).toBe('3');
     });
   });
@@ -212,7 +212,7 @@ describe('Product Domain API', () => {
 
       const result = await product.updateCategory('1', updateData);
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/category/1', updateData);
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/category/1', updateData);
       expect(result.name).toBe('Updated Category');
     });
   });
@@ -223,7 +223,7 @@ describe('Product Domain API', () => {
 
       await product.deleteCategory('1');
 
-      expect(httpClient.delete).toHaveBeenCalledWith('/category/1');
+      expect(httpClient.delete).toHaveBeenCalledWith('/api/category/1');
     });
   });
 });

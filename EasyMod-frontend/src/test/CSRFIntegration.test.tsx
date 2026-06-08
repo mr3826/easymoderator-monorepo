@@ -1,220 +1,156 @@
+/**
+ * CSRF Integration — Vitest
+ *
+ * These tests exercise the REAL httpClient (axios) request/response interceptors
+ * by swapping the axios *adapter* (the lowest layer that actually performs the
+ * request). Mocking at the adapter level keeps the CSRF-injection and
+ * 403-handling interceptors in play, so the assertions verify genuine behaviour
+ * rather than a stubbed method.
+ */
+
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { httpClient } from '@/shared/lib/http/client';
+import CSRFErrorHandler from '@/shared/components/CSRFErrorHandler';
 
-// Mock the CSRF error handler component
-vi.mock('@/shared/components/CSRFErrorHandler', () => ({
-  default: ({ error, onRetry, className }) => (
-    <div data-testid="csrf-error-handler" className={className}>
-      <div>Mock CSRF Error Handler</div>
-      <button onClick={onRetry}>Retry</button>
-    </div>
-  ),
-}));
+const axiosInstance = httpClient.getAxiosInstance();
+const originalAdapter = axiosInstance.defaults.adapter;
+
+/** Install a controllable axios adapter; returns the spy that receives each final config. */
+function setAdapter(handler: (config: any) => unknown) {
+  const adapter = vi.fn((config: any) => Promise.resolve(handler(config)) as any);
+  (axiosInstance.defaults as any).adapter = adapter;
+  return adapter;
+}
+
+function ok(config: any, data: unknown, status = 200) {
+  return { data, status, statusText: 'OK', headers: {}, config };
+}
+
+function fail(config: any, status: number, data: unknown) {
+  const err: any = new Error(`Request failed with status ${status}`);
+  err.config = config;
+  err.isAxiosError = true;
+  err.response = { status, data, statusText: '', headers: {}, config };
+  return Promise.reject(err);
+}
+
+/** Default adapter: serve a CSRF token for /api/csrf, echo success otherwise. */
+function tokenThenEcho(config: any) {
+  if (config.url === '/api/csrf') return ok(config, { csrfToken: 'test-csrf-token-123' });
+  return ok(config, { success: true });
+}
 
 describe('CSRF Integration', () => {
   beforeEach(() => {
-    // Clear any existing tokens and reset HTTP client
     httpClient.clearCsrfToken();
     httpClient.setAccessToken(null);
-    
-    // Mock window events
-    window.dispatchEvent = vi.fn();
-    
-    // Clear all event listeners
-    window.removeEventListener = vi.fn();
+    setAdapter(tokenThenEcho);
   });
 
   afterEach(() => {
+    (axiosInstance.defaults as any).adapter = originalAdapter;
     vi.restoreAllMocks();
   });
 
   describe('CSRF Token Initialization', () => {
-    it('should initialize CSRF token on app load', async () => {
-      const mockResponse = {
-        data: { csrfToken: 'test-csrf-token-123' },
-        status: 200,
-      };
-      
-      vi.mocked(httpClient.get).mockResolvedValue(mockResponse);
+    it('should fetch a CSRF token from /api/csrf on init', async () => {
+      const adapter = setAdapter(tokenThenEcho);
 
       await httpClient.initCsrfToken();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/api/csrf');
-      expect(vi.mocked(httpClient.get)).toHaveBeenCalledTimes(1);
+      expect(adapter).toHaveBeenCalledTimes(1);
+      expect(adapter.mock.calls[0][0].url).toBe('/api/csrf');
     });
 
-    it('should handle CSRF token initialization failure', async () => {
-      const mockError = new Error('Network error');
-      vi.mocked(httpClient.get).mockRejectedValue(mockError);
+    it('should not throw when CSRF initialization fails', async () => {
+      // 400 (not 5xx) so the request-retry/backoff path stays out of this test.
+      setAdapter((config) => fail(config, 400, {}));
 
-      await httpClient.initCsrfToken();
-
-      // Should clear token on failure
-      expect(httpClient.getAxiosInstance().defaults.headers['X-CSRF-Token']).toBeUndefined();
+      await expect(httpClient.initCsrfToken()).resolves.toBeUndefined();
     });
   });
 
   describe('CSRF Token Injection', () => {
-    it('should inject CSRF token for POST requests', async () => {
-      // Initialize CSRF token
-      vi.mocked(httpClient.get).mockResolvedValue({
-        data: { csrfToken: 'test-csrf-token-123' },
-      });
+    it('should inject the X-CSRF-Token header on mutating requests', async () => {
+      const adapter = setAdapter(tokenThenEcho);
       await httpClient.initCsrfToken();
-
-      // Mock POST request
-      const mockPostResponse = { data: { success: true } };
-      vi.mocked(httpClient.post).mockResolvedValue(mockPostResponse);
 
       await httpClient.post('/api/test', { data: 'test' });
 
-      expect(httpClient.post).toHaveBeenCalledWith(
-        '/api/test',
-        { data: 'test' },
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'X-CSRF-Token': 'test-csrf-token-123',
-          }),
-        })
-      );
+      const postCall = adapter.mock.calls.find(([c]) => c.url === '/api/test');
+      expect(postCall?.[0].headers['X-CSRF-Token']).toBe('test-csrf-token-123');
     });
 
-    it('should not inject CSRF token for GET requests', async () => {
-      // Initialize CSRF token
-      vi.mocked(httpClient.get).mockResolvedValue({
-        data: { csrfToken: 'test-csrf-token-123' },
-      });
+    it('should not inject the X-CSRF-Token header on GET requests', async () => {
+      const adapter = setAdapter(tokenThenEcho);
       await httpClient.initCsrfToken();
-
-      // Mock GET request
-      const mockGetResponse = { data: { success: true } };
-      vi.mocked(httpClient.get).mockResolvedValue(mockGetResponse);
 
       await httpClient.get('/api/test');
 
-      expect(httpClient.get).toHaveBeenCalledWith(
-        '/api/test',
-        expect.not.objectContaining({
-          headers: expect.objectContaining({
-            'X-CSRF-Token': expect.any(String),
-          }),
-        })
-      );
+      const getCall = adapter.mock.calls.find(([c]) => c.url === '/api/test');
+      expect(getCall?.[0].headers['X-CSRF-Token']).toBeUndefined();
     });
   });
 
   describe('CSRF Error Handling', () => {
-    it('should clear CSRF token on 403 response', async () => {
-      // Mock 403 response for CSRF error
-      const mockError = {
-        response: {
-          status: 403,
-          data: { error: { message: 'invalid csrf token' } },
-        },
-      };
-      vi.mocked(httpClient.post).mockRejectedValue(mockError);
+    it('should clear the CSRF token and emit csrf:invalid on a 403 invalid-csrf response', async () => {
+      const onInvalid = vi.fn();
+      window.addEventListener('csrf:invalid', onInvalid);
 
-      try {
-        await httpClient.post('/api/test', { data: 'test' });
-      } catch (error) {
-        // Should have cleared the CSRF token
-        expect(httpClient.getAxiosInstance().defaults.headers['X-CSRF-Token']).toBeUndefined();
-      }
-    });
+      const adapter = setAdapter((config) => {
+        if (config.url === '/api/csrf') return ok(config, { csrfToken: 'test-csrf-token-123' });
+        return fail(config, 403, { error: { message: 'invalid csrf token' } });
+      });
 
-    it('should emit custom event for CSRF errors', async () => {
-      // Mock 403 response for CSRF error
-      const mockError = {
-        response: {
-          status: 403,
-          data: { error: { message: 'invalid csrf token' } },
-        },
-      };
-      vi.mocked(httpClient.post).mockRejectedValue(mockError);
+      await httpClient.initCsrfToken();
+      await expect(httpClient.post('/api/test', { data: 'test' })).rejects.toBeDefined();
 
-      // Add event listener
-      const handleCsrfInvalid = vi.fn();
-      window.addEventListener('csrf:invalid', handleCsrfInvalid);
+      expect(onInvalid).toHaveBeenCalled();
+      window.removeEventListener('csrf:invalid', onInvalid);
 
-      try {
-        await httpClient.post('/api/test', { data: 'test' });
-      } catch (error) {
-        // Should emit custom event
-        expect(handleCsrfInvalid).toHaveBeenCalled();
-      }
-
-      window.removeEventListener('csrf:invalid', handleCsrfInvalid);
+      // The token was cleared, so the next mutation must re-fetch /api/csrf.
+      adapter.mockClear();
+      const refetch = setAdapter(tokenThenEcho);
+      await httpClient.post('/api/test2', {});
+      expect(refetch.mock.calls.some(([c]) => c.url === '/api/csrf')).toBe(true);
     });
   });
 
   describe('CSRF Error Handler Component', () => {
-    it('should display CSRF error message', () => {
-      const mockError = new Error('invalid csrf token');
-      const mockRetry = vi.fn();
-
+    it('should display the session-expired message for a CSRF error', () => {
       render(
-        <CSRFErrorHandler 
-          error={mockError} 
-          onRetry={mockRetry}
-          className="test-class"
-        />
+        <CSRFErrorHandler error={new Error('invalid csrf token')} onRetry={vi.fn()} className="test-class" />
       );
 
-      expect(screen.getByTestId('csrf-error-handler')).toBeInTheDocument();
       expect(screen.getByText('Session Expired')).toBeInTheDocument();
-      expect(screen.getByText('Your session has expired. Please refresh the page and try again.')).toBeInTheDocument();
+      expect(
+        screen.getByText('Your session has expired. Please refresh the page and try again.')
+      ).toBeInTheDocument();
       expect(screen.getByText('Refresh Page')).toBeInTheDocument();
     });
 
-    it('should call onRetry when retry button is clicked', async () => {
-      const mockError = new Error('invalid csrf token');
-      const mockRetry = vi.fn();
+    it('should call onRetry when the refresh button is clicked', async () => {
+      const onRetry = vi.fn();
+      render(<CSRFErrorHandler error={new Error('invalid csrf token')} onRetry={onRetry} />);
 
-      render(
-        <CSRFErrorHandler 
-          error={mockError} 
-          onRetry={mockRetry}
-        />
-      );
+      await userEvent.click(screen.getByText('Refresh Page'));
 
-      const retryButton = screen.getByText('Refresh Page');
-      await userEvent.click(retryButton);
-
-      expect(mockRetry).toHaveBeenCalled();
+      expect(onRetry).toHaveBeenCalled();
     });
   });
 
   describe('End-to-End CSRF Flow', () => {
-    it('should complete full CSRF flow successfully', async () => {
-      // Mock successful CSRF token initialization
-      vi.mocked(httpClient.get).mockResolvedValue({
-        data: { csrfToken: 'test-csrf-token-123' },
-      });
+    it('should initialize then send a mutation carrying the CSRF token', async () => {
+      const adapter = setAdapter(tokenThenEcho);
 
-      // Mock successful POST request with CSRF token
-      vi.mocked(httpClient.post).mockResolvedValue({
-        data: { success: true },
-      });
-
-      // 1. Initialize CSRF token
       await httpClient.initCsrfToken();
-      expect(httpClient.getAxiosInstance().defaults.headers['X-CSRF-Token']).toBe('test-csrf-token-123');
-
-      // 2. Make POST request with CSRF token
       const response = await httpClient.post('/api/test', { data: 'test payload' });
-      
+
       expect(response.data).toEqual({ success: true });
-      expect(httpClient.post).toHaveBeenCalledWith(
-        '/api/test',
-        { data: 'test payload' },
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'X-CSRF-Token': 'test-csrf-token-123',
-          }),
-        })
-      );
+      const postCall = adapter.mock.calls.find(([c]) => c.url === '/api/test');
+      expect(postCall?.[0].headers['X-CSRF-Token']).toBe('test-csrf-token-123');
     });
   });
 });
