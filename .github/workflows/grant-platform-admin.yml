@@ -1,0 +1,69 @@
+name: Grant Platform Admin
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Manually grant / revoke an EasyModerator platform-operator role on production.
+#
+# This is the supported way to seed the FIRST SUPER_ADMIN and to manage operator
+# access afterwards, without anyone needing direct SSH access to the droplet.
+# It SSHes into the prod droplet using the same secrets as the deploy job and
+# runs src/scripts/grant-platform-admin.js inside the running backend container.
+#
+# The target email MUST already exist as a registered app user — this only sets
+# users.platform_role on an existing account, it does not create users.
+#   SUPER_ADMIN   = read + mutate (incl. emergency AI kill switch)
+#   SUPPORT_ADMIN = read-only
+#   NONE          = revoke admin access
+#
+# Trigger:  Actions → "Grant Platform Admin" → Run workflow   (or `gh workflow run`)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Email of an EXISTING app user to grant/revoke'
+        required: true
+        type: string
+      role:
+        description: 'Platform role to set'
+        required: true
+        default: SUPER_ADMIN
+        type: choice
+        options:
+          - SUPER_ADMIN
+          - SUPPORT_ADMIN
+          - NONE
+
+# Never run two role changes at once.
+concurrency:
+  group: grant-platform-admin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  grant:
+    name: Set platform_role on production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run grant-platform-admin on droplet
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 120s
+          # Forward inputs as named env vars so they are NOT string-interpolated
+          # into the remote shell (avoids command injection via the email field).
+          envs: TARGET_EMAIL,TARGET_ROLE
+          script: |
+            set -e
+            cd /opt/easymod
+            echo "==> Setting platform_role=${TARGET_ROLE} for ${TARGET_EMAIL}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
+              node src/scripts/grant-platform-admin.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
+            echo "==> Done."
+        env:
+          TARGET_EMAIL: ${{ inputs.email }}
+          TARGET_ROLE: ${{ inputs.role }}
