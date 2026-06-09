@@ -62,6 +62,9 @@ router.use('/voice', voiceProcessingRoutes);
 router.use('/sentiment', sentimentRoutes);
 router.use('/templates', require('./template/response-template.routes'));
 router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
+// Phase 1 — EasyModerator operations admin panel (platform-admin guarded inside the router).
+// Mounted AFTER /admin/partner and /admin/failed-jobs so those specific routers win first.
+router.use('/admin', require('./admin/admin.routes'));
 // Phase 4 — Comment-to-DM state machine
 router.use('/comment-to-dm', commentToDmRoutes);
 

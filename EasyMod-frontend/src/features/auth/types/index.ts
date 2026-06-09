@@ -26,6 +26,8 @@ export const UserSchema = z.object({
   email: z.string(),
   name: z.string(),
   role: z.enum(['admin', 'user', 'viewer']),
+  // EasyModerator operator role (null for normal merchants). Distinct from `role`.
+  platform_role: z.enum(['SUPPORT_ADMIN', 'SUPER_ADMIN']).nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

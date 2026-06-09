@@ -52,6 +52,14 @@ const User = sequelize.define('User', {
         type: DataTypes.JSON,
         allowNull: true,
         defaultValue: {}
+    },
+    // EasyModerator operator role. NULL = normal merchant user.
+    // 'SUPPORT_ADMIN' (read-only) | 'SUPER_ADMIN' (read + mutate). Distinct from
+    // the tenant user_shops.role (owner/admin/staff).
+    platform_role: {
+        type: DataTypes.STRING(20),
+        allowNull: true,
+        defaultValue: null
     }
 }, {
     tableName: 'users',

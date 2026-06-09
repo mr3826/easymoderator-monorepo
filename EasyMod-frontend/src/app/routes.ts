@@ -2,6 +2,7 @@ import { lazy, createElement, Suspense, type LazyExoticComponent } from "react";
 import { createBrowserRouter, redirect } from "react-router-dom";
 import { authService } from "./lib/auth";
 import { AdminRoute } from "@/shared/components/guards";
+import { PlatformAdminRoute } from "@/shared/components/guards/PlatformAdminRoute";
 import PageLoader from "./components/PageLoader";
 
 const DashboardLayout = lazy(() => import("./components/DashboardLayout"));
@@ -40,6 +41,13 @@ const UsersPage = lazy(() => import("./features/users/components/UsersPage"));
 
 // Phase 4 — Comment-to-DM page
 const CommentToDmPage = lazy(() => import("./components/CommentToDm"));
+
+// Phase 1 — EasyModerator operations admin panel (platform-admin only)
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
+const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
+const AdminShops = lazy(() => import("./components/admin/AdminShops"));
+const AdminShopDetail = lazy(() => import("./components/admin/AdminShopDetail"));
+const AdminAuditLogs = lazy(() => import("./components/admin/AdminAuditLogs"));
 
 const NotFound = lazy(() => import("./components/NotFound"));
 
@@ -169,6 +177,23 @@ export const router = createBrowserRouter([
 	{
 		path: "/settings/channels",
 		loader: () => redirect("/app/manage-shop/chat-settings"),
+	},
+	{
+		// EasyModerator operations admin panel. Must be logged in (protectedLoader)
+		// AND hold a platform_role (PlatformAdminRoute). Backend requirePlatformAdmin
+		// is the real authority; this guard is UX only.
+		path: "/admin",
+		loader: protectedLoader,
+		errorElement: createElement(RouteError),
+		Component: withSuspense((props: any) =>
+			createElement(PlatformAdminRoute, {}, createElement(AdminLayout, props))
+		),
+		children: [
+			{ index: true, Component: withSuspense(AdminDashboard) },
+			{ path: "shops", Component: withSuspense(AdminShops) },
+			{ path: "shops/:shopId", Component: withSuspense(AdminShopDetail) },
+			{ path: "audit-logs", Component: withSuspense(AdminAuditLogs) },
+		],
 	},
 	{
 		path: "*",

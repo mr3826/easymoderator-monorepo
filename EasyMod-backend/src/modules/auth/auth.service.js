@@ -526,7 +526,10 @@ const getAuthContext = async (userId, shopIdFromToken) => {
         email: user.email,
         full_name: user.full_name,
         phone: user.phone,
-        profile_picture: user.profile_picture
+        profile_picture: user.profile_picture,
+        // EasyModerator operator role (null for normal merchants). Read by the
+        // frontend PlatformAdminRoute guard to gate the /admin section.
+        platform_role: user.platform_role || null
     };
 
     return {

@@ -6,8 +6,8 @@
  * Exposes the BullMQ message-processing failed-job list so operators can inspect
  * messages that exhausted all retry attempts without silently disappearing.
  *
- * All endpoints require authentication. Add an isAdmin check here when the
- * User model gains a role column.
+ * All endpoints require authentication AND an EasyModerator platform-admin role
+ * (SUPPORT_ADMIN or SUPER_ADMIN), via requirePlatformAdmin.
  *
  * Endpoints:
  *   GET  /api/admin/failed-jobs          — list failed jobs (paginated)
@@ -17,10 +17,11 @@
 
 const express = require('express');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { requirePlatformAdmin } = require('../../middleware/platform-admin.middleware');
 
 const router = express.Router();
 
-router.use(authenticate);
+router.use(authenticate, requirePlatformAdmin());
 
 function getQueue() {
     try {
