@@ -278,27 +278,57 @@ async function processMessageJob(job) {
         sender_info: senderInfo,
     };
 
+    // ── Order capture (deterministic step-machine) ─────────────────────────
+    // Runs BEFORE the conversational LLM. Continues an active order session, or
+    // starts one when the customer shows clear purchase intent for an identified
+    // product. While a session is in progress the LLM is skipped so order data is
+    // captured reliably and an Order row is actually created on confirmation.
+    // (Without this, the bot collects name/phone/address as chat but never makes
+    // an order — see order-flow.service.js.)
+    let rawResponse, confidence, sourceReferences;
+    let orderFlow = { handled: false };
+    try {
+        const { handleOrderFlow } = require('../modules/conversation/order-flow.service');
+        orderFlow = await handleOrderFlow({
+            shopId,
+            customerChannelId: recipientId,
+            platform,
+            message: effMessage,
+            entities,
+            language: detectedLanguage,
+            imageUrls: effImageUrls,
+        });
+    } catch (ofErr) {
+        console.error(`[worker] handleOrderFlow failed for conv ${conversationId}:`, ofErr.message);
+        // Non-fatal — fall through to the conversational AI below.
+    }
+
     // AIChatbotController is loaded lazily to avoid circular requires
     const AIChatbotController = require('../modules/conversation/ai-chatbot.controller');
-    let rawResponse, confidence, sourceReferences;
-    try {
-        ({ response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
-            effMessage, history, entities, detectedLanguage, aiSettings, ingestionResult, effImageUrls
-        ));
-    } catch (aiErr) {
-        console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
-        // Stage alert (warning): the customer still gets a reply, but it's the
-        // generic fallback — the AI pipeline (LLM/RAG/Gemini) is degraded. Throttled.
-        opsAlert('AI reply degraded — LLM pipeline failed, sent fallback message', {
-            detail: `shop=${shopId} conv=${conversationId}\nerror: ${aiErr.message}`,
-            level: 'warning',
-            context: { shopId, conversationId, error: aiErr.message },
-        }).catch(() => {});
-        rawResponse = detectedLanguage === 'bn'
-            ? 'আপনার বার্তার জন্য ধন্যবাদ! আমরা শীঘ্রই সাড়া দেব।'
-            : 'Thank you for your message! We will respond shortly.';
-        confidence = 0;
-        sourceReferences = null;
+    if (orderFlow.handled) {
+        rawResponse = orderFlow.response;
+        confidence = orderFlow.confidence ?? 1.0;
+        sourceReferences = orderFlow.sourceReferences || null;
+    } else {
+        try {
+            ({ response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
+                effMessage, history, entities, detectedLanguage, aiSettings, ingestionResult, effImageUrls
+            ));
+        } catch (aiErr) {
+            console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
+            // Stage alert (warning): the customer still gets a reply, but it's the
+            // generic fallback — the AI pipeline (LLM/RAG/Gemini) is degraded. Throttled.
+            opsAlert('AI reply degraded — LLM pipeline failed, sent fallback message', {
+                detail: `shop=${shopId} conv=${conversationId}\nerror: ${aiErr.message}`,
+                level: 'warning',
+                context: { shopId, conversationId, error: aiErr.message },
+            }).catch(() => {});
+            rawResponse = detectedLanguage === 'bn'
+                ? 'আপনার বার্তার জন্য ধন্যবাদ! আমরা শীঘ্রই সাড়া দেব।'
+                : 'Thank you for your message! We will respond shortly.';
+            confidence = 0;
+            sourceReferences = null;
+        }
     }
 
     // ── Bot attribution (Meta Platform Policy 4.2) ──────────────────────────

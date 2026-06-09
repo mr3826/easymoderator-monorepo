@@ -1,0 +1,211 @@
+/**
+ * Tests for order-flow.service — the bridge that wires the deterministic order
+ * step-machine into the live message worker.
+ *
+ * Regression context: the production Messenger/IG pipeline
+ * (webhook → burst-coalescer → message-worker → processNewIntent → intentRouter)
+ * was PURELY conversational. It never started or continued an order session, so
+ * the LLM collected name/phone/address as chat and even claimed orders were
+ * "confirmed" — but no Order row was ever created. This service restores order
+ * capture by continuing an active session or starting one on clear purchase
+ * intent for an identified product, BEFORE the LLM runs.
+ */
+
+const OrderSessionService = require('../../order/order-session-standalone.service');
+const productSearch = require('../../product/product-search.service');
+const Customer = require('../../customer/customer.entity');
+
+jest.mock('../../order/order-session-standalone.service', () => ({
+    getActiveSession: jest.fn(),
+    processStep: jest.fn(),
+    startOrderSession: jest.fn(),
+    cancelSession: jest.fn(),
+}));
+jest.mock('../../product/product-search.service', () => ({
+    searchForOrder: jest.fn(),
+}));
+jest.mock('../../customer/customer.entity', () => ({
+    findOne: jest.fn(),
+}));
+
+const { handleOrderFlow, hasPurchaseIntent, isOrderCancel } = require('../order-flow.service');
+
+const SHOP = '11111111-1111-1111-1111-111111111111';
+const PSID = 'fb-psid-123';
+
+const base = (overrides = {}) => ({
+    shopId: SHOP,
+    customerChannelId: PSID,
+    platform: 'facebook',
+    message: '',
+    entities: {},
+    language: 'en',
+    imageUrls: [],
+    ...overrides,
+});
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    Customer.findOne.mockResolvedValue({ id: 'cust-1' });
+});
+
+describe('handleOrderFlow — continue an active session', () => {
+    test('routes every message to processStep while a session is ACTIVE (LLM skipped)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+        OrderSessionService.processStep.mockResolvedValue({
+            prompt: 'আপনার মোবাইল নম্বর কত?',
+            current_step: 'COLLECTING_PHONE',
+            completed: false,
+        });
+
+        const res = await handleOrderFlow(base({ message: 'John Doe' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.response).toBe('আপনার মোবাইল নম্বর কত?');
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, 'John Doe', null);
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('passes the image url through to the step machine (MFS screenshot step)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+        OrderSessionService.processStep.mockResolvedValue({ prompt: 'ok', current_step: 'COLLECTING_NOTES', completed: false });
+
+        await handleOrderFlow(base({ message: '[image]', imageUrls: ['https://x/y.jpg'] }));
+
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, '[image]', { imageUrl: 'https://x/y.jpg' });
+    });
+
+    test('a clear cancel message ends the session instead of stepping', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+
+        const res = await handleOrderFlow(base({ message: 'cancel korbo' }));
+
+        expect(res.handled).toBe(true);
+        expect(OrderSessionService.cancelSession).toHaveBeenCalledWith('sess-1', SHOP);
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+        expect(res.response).toMatch(/cancel/i);
+    });
+});
+
+describe('handleOrderFlow — start a session on purchase intent', () => {
+    test('starts a session with the identified product linked (single match)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-1', name: 'Red Saree', price: 1200, in_stock: true }],
+            wasFallback: false,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-2', prompt: 'আপনার নাম কী?' });
+
+        const res = await handleOrderFlow(base({ message: 'ei red saree ta nibo' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.response).toBe('আপনার নাম কী?');
+        const arg = OrderSessionService.startOrderSession.mock.calls[0][0];
+        expect(arg.shop_id).toBe(SHOP);
+        expect(arg.customer_channel_id).toBe(PSID);
+        expect(arg.customer_id).toBe('cust-1');
+        expect(arg.product_info).toEqual(expect.objectContaining({ id: 'prod-1', name: 'Red Saree' }));
+        expect(arg.product_candidates).toBeFalsy();
+    });
+
+    test('offers a numbered picker when multiple products match', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [
+                { id: 'prod-1', name: 'Red Saree', price: 1200, in_stock: true },
+                { id: 'prod-2', name: 'Blue Saree', price: 1500, in_stock: true },
+            ],
+            wasFallback: false,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-3', prompt: 'Pick a number' });
+
+        const res = await handleOrderFlow(base({ message: 'saree ta order korbo' }));
+
+        expect(res.handled).toBe(true);
+        const arg = OrderSessionService.startOrderSession.mock.calls[0][0];
+        expect(arg.product_info).toBeFalsy();
+        expect(arg.product_candidates).toHaveLength(2);
+        expect(arg.product_candidates[0]).toEqual(expect.objectContaining({ id: 'prod-1' }));
+    });
+
+    test('does NOT start a session when no product can be identified (defers to LLM)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+
+        const res = await handleOrderFlow(base({ message: 'ami ekta nibo' }));
+
+        expect(res.handled).toBe(false);
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('relays an out-of-stock prompt without leaving a dangling session', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-1', name: 'Red Saree', price: 1200, in_stock: false }],
+            wasFallback: false,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: null, prompt: 'Sorry, out of stock', out_of_stock: true });
+
+        const res = await handleOrderFlow(base({ message: 'red saree nibo' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.response).toMatch(/out of stock/i);
+    });
+});
+
+describe('handleOrderFlow — pass-through (no order handling)', () => {
+    test('a price question is left to the LLM (no search, no session)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+
+        const res = await handleOrderFlow(base({ message: 'ei saree tar dam koto?' }));
+
+        expect(res.handled).toBe(false);
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('an order-status query (contains order number) is not treated as a new order', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+
+        const res = await handleOrderFlow(base({ message: 'amar order 123456 kothay?' }));
+
+        expect(res.handled).toBe(false);
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+    });
+});
+
+describe('hasPurchaseIntent', () => {
+    test.each([
+        'nibo',
+        'order korbo',
+        'order dibo',
+        'kinte chai',
+        'I want to order this',
+        'অর্ডার করব',
+        'নিব',
+        'কিনবো',
+    ])('detects purchase intent in: %s', (msg) => {
+        expect(hasPurchaseIntent(msg)).toBe(true);
+    });
+
+    test.each([
+        'ei saree tar dam koto?',
+        'just looking',
+        'do you have this in blue?',
+        'amar order 123456 kothay?',
+        'delivery koto din lagbe?',
+    ])('does NOT fire on: %s', (msg) => {
+        expect(hasPurchaseIntent(msg)).toBe(false);
+    });
+});
+
+describe('isOrderCancel', () => {
+    test.each(['cancel', 'cancel korbo', 'order cancel', 'লাগবে না', 'lagbe na'])(
+        'detects cancel in: %s', (msg) => {
+            expect(isOrderCancel(msg)).toBe(true);
+        });
+
+    test.each(['হ্যাঁ', 'yes', 'John Doe', 'Mirpur 10'])('does NOT fire on: %s', (msg) => {
+        expect(isOrderCancel(msg)).toBe(false);
+    });
+});

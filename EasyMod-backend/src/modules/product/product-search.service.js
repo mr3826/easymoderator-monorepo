@@ -346,8 +346,46 @@ const getProductsByIds = async (productIds, shopId) => {
     return results.map(formatProduct);
 };
 
+/**
+ * Find products a customer can actually order from a free-text message.
+ *
+ * Unlike searchByAttributes (which falls back to dumping the whole catalog when
+ * the message has no usable search terms), this NEVER falls back — it returns an
+ * empty list when the message produced no real full-text query. That distinction
+ * matters for the order-capture flow: we must only auto-start an order session
+ * when we can confidently identify the product the customer named. Linking an
+ * arbitrary fallback product to an order would be worse than asking which item.
+ *
+ * @param {object} params
+ * @param {string} params.shopId
+ * @param {string} params.query    - raw customer message
+ * @param {number} [params.limit]  - max results (default 5)
+ * @returns {Promise<{ products: ProductResult[], wasFallback: boolean }>}
+ */
+const searchForOrder = async ({ shopId, query, limit = 5 }) => {
+    const tsQuery = buildSearchQuery({ query });
+    if (hasNoSearchAttributes(tsQuery, null, null)) {
+        // No real product terms in the message → don't guess a product.
+        return { products: [], wasFallback: true };
+    }
+
+    const results = await sequelize.query(
+        getSearchSql(),
+        {
+            replacements: buildQueryReplacements({ shopId, limit }, tsQuery),
+            type: QueryTypes.SELECT
+        }
+    ).catch(err => {
+        console.error('[ProductSearch] searchForOrder query error:', err.message);
+        return [];
+    });
+
+    return { products: results.map(formatProduct), wasFallback: false };
+};
+
 module.exports = {
     searchByAttributes,
+    searchForOrder,
     getProductsByIds,
     getProductLive,
     checkStock,
