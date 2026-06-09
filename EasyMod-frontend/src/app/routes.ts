@@ -41,12 +41,6 @@ const UsersPage = lazy(() => import("./features/users/components/UsersPage"));
 // Phase 4 — Comment-to-DM page
 const CommentToDmPage = lazy(() => import("./components/CommentToDm"));
 
-// BD-Lite specific imports
-const BDSellerShell = lazy(() => import("./components/bd-lite/BDSellerShell"));
-const TodayQueueDashboard = lazy(() => import("./components/bd-lite/TodayQueueDashboard"));
-const BDInbox = lazy(() => import("./components/bd-lite/BDInbox"));
-const BDOrders = lazy(() => import("./components/bd-lite/BDOrders"));
-
 const NotFound = lazy(() => import("./components/NotFound"));
 
 // Loader function to check authentication
@@ -170,18 +164,6 @@ export const router = createBrowserRouter([
 					createElement(AdminRoute, {}, createElement(UsersPage, props))
 				),
 			},
-		],
-	},
-	{
-		path: "/bd-lite",
-		Component: withSuspense(BDSellerShell),
-		loader: protectedLoader,
-		errorElement: createElement(RouteError),
-		children: [
-			{ index: true, Component: withSuspense(TodayQueueDashboard) },
-			{ path: "inbox", Component: withSuspense(BDInbox) },
-			{ path: "orders", Component: withSuspense(BDOrders) },
-			{ path: "settings", Component: withSuspense(BusinessInfoSettings) },
 		],
 	},
 	{
