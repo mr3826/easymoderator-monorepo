@@ -37,8 +37,14 @@ class ConversationService {
             hitl: conversation.hitl ?? false,
             lastMessage: conversation.message,
             unreadCount: meta.unreadCount || 0,
-            created_at: conversation.created_at,
-            updated_at: conversation.updated_at
+            // Sequelize timestamps with `underscored: true` are exposed on the
+            // instance as camelCase accessors (createdAt/updatedAt) even though
+            // the DB columns are snake_case. Reading conversation.created_at
+            // directly returns undefined → the inbox rendered "Invalid Date" and
+            // the 24h-window guard computed against NaN. Prefer the real accessor,
+            // falling back to the snake_case key for plain-object inputs.
+            created_at: conversation.createdAt ?? conversation.created_at,
+            updated_at: conversation.updatedAt ?? conversation.updated_at
         };
     }
 
