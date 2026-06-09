@@ -35,17 +35,19 @@ const getChannelIcon = (channel: string): string => {
   return icons[channel] || "💬";
 };
 
-const formatDate = (dateString: string): string => {
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+const formatDate = (dateString: string, t: TFunc): string => {
   const date = new Date(dateString);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
+  if (minutes < 1) return t("inbox.timeJustNow");
+  if (minutes < 60) return t("inbox.timeMinutes", { count: minutes });
+  if (hours < 24) return t("inbox.timeHours", { count: hours });
+  if (days < 7) return t("inbox.timeDays", { count: days });
   return date.toLocaleDateString();
 };
 
@@ -143,7 +145,7 @@ export function InboxThreadList({
           {filteredConversations.map((conversation) => {
             const isHITL = conversation.hitl === true;
             const isAIHandled = !isHITL && conversation.status === "active";
-            const lastAIReply = isAIHandled ? formatDate(conversation.updated_at) : null;
+            const lastAIReply = isAIHandled ? formatDate(conversation.updated_at, t) : null;
 
             return (
               <motion.div
@@ -186,8 +188,7 @@ export function InboxThreadList({
                         )}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-gray-500">
-                        <span>{getChannelIcon(conversation.channel)}</span>
-                        <span>{conversation.channel}</span>
+                        <span title={conversation.channel}>{getChannelIcon(conversation.channel)}</span>
                         {conversation.metaChannel?.displayName && (
                           <>
                             <span className="text-gray-300">·</span>
@@ -217,11 +218,11 @@ export function InboxThreadList({
                 {/* AI-handled: muted + relative timestamp */}
                 {isAIHandled && lastAIReply ? (
                   <p className="text-xs text-muted-foreground mt-1">
-                    AI replied {lastAIReply}
+                    {t("inbox.aiRepliedAt", { time: lastAIReply })}
                   </p>
                 ) : (
                   <p className="text-xs text-gray-400 mt-1">
-                    {formatDate(conversation.updated_at)}
+                    {formatDate(conversation.updated_at, t)}
                   </p>
                 )}
               </motion.div>

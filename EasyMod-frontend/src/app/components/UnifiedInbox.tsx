@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertTriangle, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
 import type { Conversation, Message, ResponseTemplate } from "@/api/types/conversation";
@@ -19,33 +19,6 @@ import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
 import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
-
-// ─── SSE Connection Chip ──────────────────────────────────────────────────────
-
-function SSEStatusChip({ connected, reconnecting }: { connected: boolean; reconnecting: boolean }) {
-  if (connected && !reconnecting) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-none" />
-        live
-      </span>
-    );
-  }
-  if (reconnecting) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-        <Loader2 className="w-3 h-3 animate-spin" />
-        reconnecting
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-destructive">
-      <WifiOff className="w-3 h-3" />
-      offline
-    </span>
-  );
-}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -92,7 +65,6 @@ export default function UnifiedInbox() {
   const [agents, setAgents] = useState<ShopAgent[]>([]);
   const [assigningAgent, setAssigningAgent] = useState(false);
   const [sseConnected, setSseConnected] = useState(true);
-  const [sseReconnecting, setSseReconnecting] = useState(false);
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -237,12 +209,10 @@ export default function UnifiedInbox() {
 
     onSSEOffline: useCallback(() => {
       setSseConnected(false);
-      setSseReconnecting(true);
     }, []),
 
     onSSEOnline: useCallback(() => {
       setSseConnected(true);
-      setSseReconnecting(false);
     }, []),
   });
 
@@ -371,8 +341,6 @@ export default function UnifiedInbox() {
         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm whitespace-nowrap">
           {t("inbox.active", { count: conversations.filter((c) => c.status === "active").length })}
         </span>
-        {/* SSE connection chip */}
-        <SSEStatusChip connected={sseConnected} reconnecting={sseReconnecting} />
         {error && (
           <span className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bn">{error}</span>
         )}
@@ -382,7 +350,7 @@ export default function UnifiedInbox() {
       {!sseConnected && (
         <div className="shrink-0 bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-sm text-yellow-800 flex items-center gap-2 font-bn">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>Real-time updates disconnected. Reconnecting automatically...</span>
+          <span>{t("inbox.offlineBanner")}</span>
         </div>
       )}
 

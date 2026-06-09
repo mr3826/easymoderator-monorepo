@@ -132,7 +132,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     render(<UnifiedInbox />)
 
     await waitFor(() => {
-      expect(screen.getByText(/24-hour messaging window closing soon/i)).toBeInTheDocument()
+      expect(screen.getByText(/Time to reply directly to this customer is almost up/i)).toBeInTheDocument()
     })
   })
 
@@ -151,10 +151,10 @@ describe('UnifiedInbox 24h window behavior', () => {
     render(<UnifiedInbox />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Messaging window expired/i)).toBeInTheDocument()
+      expect(screen.getByText(/messaged over 24h ago/i)).toBeInTheDocument()
     })
 
-    const input = screen.getByPlaceholderText(/Select a Message Tag above to continue/i)
+    const input = screen.getByPlaceholderText(/Pick a reason above to continue/i)
     expect(input).toBeDisabled()
 
     const sendButton = screen.getByRole('button', { name: /^Send$/i })
@@ -163,7 +163,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     const tagSelect = screen.getByRole('combobox')
     fireEvent.change(tagSelect, { target: { value: 'HUMAN_AGENT' } })
 
-    expect(screen.getByPlaceholderText(/type a message/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
   })
 
   it('sends message with message_tag after selecting tag in expired Meta window', async () => {
@@ -181,13 +181,13 @@ describe('UnifiedInbox 24h window behavior', () => {
     render(<UnifiedInbox />)
 
     await waitFor(() => {
-      expect(screen.getByText(/Messaging window expired/i)).toBeInTheDocument()
+      expect(screen.getByText(/messaged over 24h ago/i)).toBeInTheDocument()
     })
 
     const tagSelect = screen.getByRole('combobox')
     fireEvent.change(tagSelect, { target: { value: 'ACCOUNT_UPDATE' } })
 
-    const input = screen.getByPlaceholderText(/Type a message/i)
+    const input = screen.getByPlaceholderText(/Type your reply here/i)
     fireEvent.change(input, { target: { value: 'Order update from agent' } })
 
     fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
@@ -245,13 +245,13 @@ describe('UnifiedInbox 24h window behavior', () => {
     render(<UnifiedInbox />)
 
     await waitFor(() => {
-      expect(screen.getByText(/AI Suggestion/i)).toBeInTheDocument()
+      expect(screen.getByText(/AI's reply/i)).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /Use This/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Send this/i }))
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Select a Message Tag to send an out-of-window message.')
+      expect(toast.error).toHaveBeenCalledWith('Pick a reason first to send your reply.')
     })
     expect(apiClient.createMessage).not.toHaveBeenCalled()
   })

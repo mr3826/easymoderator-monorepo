@@ -238,10 +238,10 @@ export function InboxComposer({
             <option value="">
               {is24hExpired ? t("inbox.messageTagRequired") : t("inbox.messageTagOptional")}
             </option>
-            <option value="CONFIRMED_EVENT_UPDATE">Confirmed Event Update</option>
-            <option value="POST_PURCHASE_UPDATE">Post-Purchase Update</option>
-            <option value="ACCOUNT_UPDATE">Account Update</option>
-            <option value="HUMAN_AGENT">Human Agent</option>
+            <option value="CONFIRMED_EVENT_UPDATE">{t("inbox.tags.confirmedEvent")}</option>
+            <option value="POST_PURCHASE_UPDATE">{t("inbox.tags.postPurchase")}</option>
+            <option value="ACCOUNT_UPDATE">{t("inbox.tags.account")}</option>
+            <option value="HUMAN_AGENT">{t("inbox.tags.humanAgent")}</option>
           </select>
         </div>
       )}

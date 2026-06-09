@@ -4,7 +4,7 @@
  */
 import { memo } from "react";
 import {
-  Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, Tag, AlertTriangle,
+  Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, AlertTriangle,
   Clock, ArrowLeft, Lock, FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -26,17 +26,19 @@ function isValidMediaUrl(url: unknown): url is string {
   }
 }
 
-function formatDate(dateString: string): string {
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+function formatDate(dateString: string, t: TFunc): string {
   const date = new Date(dateString);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
+  if (minutes < 1) return t("inbox.timeJustNow");
+  if (minutes < 60) return t("inbox.timeMinutes", { count: minutes });
+  if (hours < 24) return t("inbox.timeHours", { count: hours });
+  if (days < 7) return t("inbox.timeDays", { count: days });
   return date.toLocaleDateString();
 }
 
@@ -222,11 +224,12 @@ export function InboxThreadDetail({
     !selectedConversation?.hitl;
   const isLowConfidence = hasAiSuggestion && aiConfidence < 0.65;
 
+  // Traffic-light dot only — no English jargon for non-tech shop owners.
   const confidenceTier = (() => {
     const pct = Math.round((aiConfidence ?? 0) * 100);
-    if (pct >= 85) return { label: "High Confidence", color: "bg-green-100 text-green-800 border border-green-200" };
-    if (pct >= 60) return { label: "Review Carefully", color: "bg-amber-100 text-amber-800 border border-amber-200" };
-    return { label: "Low — AI Unsure", color: "bg-red-100 text-red-800 border border-red-200" };
+    if (pct >= 85) return { dot: "bg-green-500" };
+    if (pct >= 60) return { dot: "bg-amber-500" };
+    return { dot: "bg-red-500" };
   })();
 
   const handleUseAiSuggestion = async (edit: boolean) => {
@@ -275,24 +278,13 @@ export function InboxThreadDetail({
                 {selectedConversation.customer?.name || "Unknown"}
               </h2>
               <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
-                <span>via {selectedConversation.channel}</span>
+                <span>{selectedConversation.channel}</span>
                 <span>•</span>
-                <span>Last active {formatDate(selectedConversation.updated_at)}</span>
+                <span>{t("inbox.lastActive", { time: formatDate(selectedConversation.updated_at, t) })}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                selectedConversation.status === "active"
-                  ? "bg-blue-100 text-blue-700"
-                  : selectedConversation.status === "closed"
-                  ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              {selectedConversation.status}
-            </span>
             {agents.length > 0 && (
               <select
                 value={selectedConversation.assignee_id || ""}
@@ -436,9 +428,10 @@ export function InboxThreadDetail({
               <Bot className="w-4 h-4 text-purple-600" />
               <span className="text-sm font-semibold text-purple-900">{t("inbox.aiSuggestion")}</span>
             </div>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${confidenceTier.color}`}>
-              {confidenceTier.label}
-            </span>
+            <span
+              className={`inline-block w-2.5 h-2.5 rounded-full ${confidenceTier.dot}`}
+              aria-hidden="true"
+            />
           </div>
           <p className="text-sm text-gray-800 mb-2 italic">"{aiSuggestion}"</p>
           {isLowConfidence && (
