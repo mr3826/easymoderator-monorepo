@@ -112,8 +112,10 @@ export default function Customers() {
       if (channelFilter !== 'all') filters.channel_type = channelFilter as ChannelType;
 
       const result = await apiClient.getCustomers(filters);
-      setCustomers(result.data);
-      setTableTotal(result.total);
+      // Guard against a malformed/empty payload so a shape drift degrades to an
+      // empty table rather than crashing the page on `customers.length`.
+      setCustomers(result?.data ?? []);
+      setTableTotal(result?.total ?? 0);
     } catch (err: any) {
       setError(err.message || t('customers.errors.fetchFailed'));
     } finally {

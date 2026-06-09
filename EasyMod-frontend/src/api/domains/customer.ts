@@ -27,10 +27,21 @@ export async function getCustomers(filters?: CustomerFilters): Promise<Paginated
     });
   }
 
-  const response: AxiosResponse<ApiResponse<PaginatedResponse<Customer>>> = await httpClient.get(
-    `/api/customer?${params}`
-  );
-  return response.data.data;
+  // The backend returns a FLAT body: { success, data: Customer[], total, page, pageSize }
+  // — total/page/pageSize are siblings of `data`, NOT nested inside it. Reconstruct
+  // the PaginatedResponse shape the callers expect. (Previously this returned
+  // response.data.data — i.e. the bare array — which made result.data undefined and
+  // crashed the Customers page on `customers.length`.)
+  const response: AxiosResponse<
+    ApiResponse<Customer[]> & { total: number; page: number; pageSize: number }
+  > = await httpClient.get(`/api/customer?${params}`);
+  const body = response.data;
+  return {
+    data: body.data ?? [],
+    total: body.total ?? 0,
+    page: body.page ?? 1,
+    pageSize: body.pageSize ?? filters?.pageSize ?? 10,
+  };
 }
 
 /**

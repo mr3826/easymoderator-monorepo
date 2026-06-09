@@ -12,7 +12,6 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/features/auth/hooks';
-import { useShopRole } from '@/shared/context/ShopContext';
 import {
   UserRole,
   ShopRole,
@@ -77,8 +76,12 @@ function permissionMatches(permission: Permission, action: string, resource: str
 }
 
 export function useUserPermissions(): UserPermissionResult {
-  const { user } = useAuth();
-  const currentShopRole = useShopRole();
+  const { user, currentShop } = useAuth();
+  // The app standardized on AuthProvider; <ShopProvider> is never mounted, so the
+  // old useShopRole() (which calls useShop()) threw "useShop must be used within
+  // <ShopProvider>" and crashed every page that uses this hook (e.g. /app/admin/users).
+  // The shop role already lives on the authenticated shop — read it from there.
+  const currentShopRole: string | undefined = currentShop?.role;
 
   // Compute effective permissions based on user role + shop role
   const effectivePermissions = useMemo(() => {

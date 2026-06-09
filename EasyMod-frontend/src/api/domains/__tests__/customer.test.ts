@@ -21,16 +21,19 @@ describe('Customer Domain API', () => {
   });
 
   describe('getCustomers', () => {
-    it('should return customer list', async () => {
+    it('should map the flat backend body to a PaginatedResponse', async () => {
+      // Backend sends { success, data: [...], total, page, pageSize } — total/page/pageSize
+      // are siblings of `data`, not nested. getCustomers must reconstruct PaginatedResponse.
       const mockResponse = {
         data: {
-          data: {
-            items: [
-              { id: '1', name: 'Customer 1', phone: '01711111111' },
-              { id: '2', name: 'Customer 2', phone: '01722222222' },
-            ],
-            pagination: { page: 1, totalPages: 1 },
-          },
+          success: true,
+          data: [
+            { id: '1', name: 'Customer 1', phone: '01711111111' },
+            { id: '2', name: 'Customer 2', phone: '01722222222' },
+          ],
+          total: 2,
+          page: 1,
+          pageSize: 10,
         },
       };
       (httpClient.get as any).mockResolvedValue(mockResponse);
@@ -38,16 +41,21 @@ describe('Customer Domain API', () => {
       const result = await customer.getCustomers();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/customer?');
-      expect(result.items).toHaveLength(2);
+      expect(result.data).toHaveLength(2);
+      expect(result.total).toBe(2);
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(10);
     });
 
-    it('should handle search filters', async () => {
-      const mockResponse = { data: { data: { items: [], pagination: {} } } };
+    it('should default to an empty list when the payload is empty', async () => {
+      const mockResponse = { data: { success: true, data: [], total: 0, page: 1, pageSize: 10 } };
       (httpClient.get as any).mockResolvedValue(mockResponse);
 
-      await customer.getCustomers({ search: 'john', phone: '017' });
+      const result = await customer.getCustomers({ search: 'john', phone: '017' });
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/customer?search=john&phone=017');
+      expect(result.data).toEqual([]);
+      expect(result.total).toBe(0);
     });
   });
 

@@ -530,15 +530,18 @@ const getShopAgents = async (req, res, next) => {
 const getPlatformPriority = async (req, res, next) => {
     try {
         const { shopId } = req.user;
-        const shop = await Shop.findByPk(shopId, {
-            attributes: ['payment_platform_priority', 'delivery_platform_priority']
-        });
+        // Persisted inside the shops.settings JSONB column. The dedicated
+        // payment_platform_priority / delivery_platform_priority columns were never
+        // migrated into the live schema (that migration was archived), so SELECTing
+        // them threw "column does not exist" → 500. settings always exists.
+        const shop = await Shop.findByPk(shopId, { attributes: ['settings'] });
         if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+        const settings = shop.settings || {};
         res.json({
             success: true,
             data: {
-                payment: shop.payment_platform_priority || [],
-                delivery: shop.delivery_platform_priority || []
+                payment: settings.payment_platform_priority || [],
+                delivery: settings.delivery_platform_priority || []
             }
         });
     } catch (error) {
@@ -555,9 +558,13 @@ const updatePlatformPriority = async (req, res, next) => {
         }
         const shop = await Shop.findByPk(shopId);
         if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+        // Merge into settings JSONB (preserve other keys like onboarding_completed).
         await shop.update({
-            payment_platform_priority: payment,
-            delivery_platform_priority: delivery
+            settings: {
+                ...(shop.settings || {}),
+                payment_platform_priority: payment,
+                delivery_platform_priority: delivery
+            }
         });
         res.json({ success: true, data: { payment, delivery } });
     } catch (error) {

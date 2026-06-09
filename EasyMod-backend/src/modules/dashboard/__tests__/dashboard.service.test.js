@@ -14,7 +14,7 @@ jest.mock('../../entities', () => ({
     Product: {
         count: jest.fn()
     },
-    Channel: {
+    MetaChannel: {
         count: jest.fn()
     },
     Analytics: {
@@ -28,7 +28,7 @@ jest.mock('../../../utils/cache.service', () => ({
     setForShop: jest.fn().mockResolvedValue(undefined)
 }));
 
-const { Order, Product, Channel, Analytics } = require('../../entities');
+const { Order, Product, MetaChannel, Analytics } = require('../../entities');
 
 describe('Dashboard Service', () => {
     const mockShopId = '550e8400-e29b-41d4-a716-446655440000';
@@ -59,7 +59,7 @@ describe('Dashboard Service', () => {
             Analytics.sum.mockResolvedValue(100);
             Product.count.mockResolvedValue(50);
             Order.count.mockResolvedValue(10);
-            Channel.count.mockResolvedValue(3);
+            MetaChannel.count.mockResolvedValue(3);
             Analytics.findOne.mockResolvedValue({ total_messages: 100 });
 
             const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
@@ -77,7 +77,7 @@ describe('Dashboard Service', () => {
             Analytics.sum.mockResolvedValue(null);
             Product.count.mockResolvedValue(null);
             Order.count.mockResolvedValue(null);
-            Channel.count.mockResolvedValue(null);
+            MetaChannel.count.mockResolvedValue(null);
             Analytics.findOne.mockResolvedValue(null);
 
             const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId);
@@ -95,7 +95,7 @@ describe('Dashboard Service', () => {
                 .mockResolvedValueOnce(100); // messages in period
             Product.count.mockResolvedValue(50);
             Order.count.mockResolvedValue(25);
-            Channel.count.mockResolvedValue(3);
+            MetaChannel.count.mockResolvedValue(3);
             Analytics.findOne.mockResolvedValue(null);
 
             const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId, 30);
@@ -110,7 +110,7 @@ describe('Dashboard Service', () => {
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
             Order.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
 
             const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId);
@@ -127,7 +127,7 @@ describe('Dashboard Service', () => {
                 .mockResolvedValueOnce(10) // orders today
                 .mockResolvedValueOnce(20) // orders in period
                 .mockResolvedValueOnce(16); // orders last period (20% increase from 16 to 20)
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
 
             const result = await dashboardService.getDashboardMetrics(mockUserId, mockShopId);
@@ -141,7 +141,7 @@ describe('Dashboard Service', () => {
 
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
             // Existing dashboard count calls (ordersToday, ordersInPeriod, ordersLastPeriod) return 0
             Order.count.mockResolvedValue(0);
@@ -163,7 +163,7 @@ describe('Dashboard Service', () => {
             cacheService.getForShop.mockResolvedValue(null);
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
             Order.count.mockResolvedValue(0);
 
@@ -184,7 +184,7 @@ describe('Dashboard Service', () => {
             cacheService.getForShop.mockResolvedValue(null);
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
             Order.count.mockResolvedValue(0);
             Order.findAll.mockResolvedValue([{ amount: 0, count: 0 }]);
@@ -201,7 +201,7 @@ describe('Dashboard Service', () => {
             cacheService.getForShop.mockResolvedValue(null);
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
             Order.count.mockResolvedValue(0);
             Order.findAll.mockResolvedValue([{ amount: 0, count: 0 }]);
@@ -274,7 +274,7 @@ describe('Dashboard Service', () => {
             Analytics.sum.mockResolvedValue(0);
             Product.count.mockResolvedValue(0);
             Order.count.mockResolvedValue(0);
-            Channel.count.mockResolvedValue(0);
+            MetaChannel.count.mockResolvedValue(0);
             Analytics.findOne.mockResolvedValue(null);
             Order.findAll.mockResolvedValue([]);
 

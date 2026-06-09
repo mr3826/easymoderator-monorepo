@@ -1,4 +1,4 @@
-const { Order, Product, Channel, UserShop, Analytics } = require('../entities');
+const { Order, Product, MetaChannel, Analytics } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { Op, fn, col } = require('sequelize');
 const cacheService = require('../../utils/cache.service');
@@ -48,8 +48,10 @@ const getDashboardMetrics = async (userId, shopId, period = 30) => {
         Order.count({
             where: { shop_id: shopId, created_at: { [Op.gte]: startOfLast, [Op.lt]: startOfPeriod } }
         }),
-        Channel.count({ where: { shop_id: shopId, is_active: true } }),
-        Channel.count({ where: { shop_id: shopId } }),
+        // Phase 1 Meta redesign renamed Channel -> MetaChannel (status enum, no is_active).
+        // A connected FB Page / IG account is status 'CONNECTED'.
+        MetaChannel.count({ where: { shop_id: shopId, status: 'CONNECTED' } }),
+        MetaChannel.count({ where: { shop_id: shopId } }),
         Analytics.findOne({ where: { shop_id: shopId }, order: [['date', 'DESC']] }),
         Order.findAll({
             where: {
