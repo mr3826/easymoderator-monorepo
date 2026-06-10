@@ -23,11 +23,11 @@ export const signupSchema = z
       .email("Please enter a valid email address"),
     phone: z
       .string()
-      .optional()
-      .refine((val) => {
-        if (!val) return true;
-        return /^[\d+\-()\s]+$/.test(val);
-      }, "Please enter a valid phone number"),
+      .min(1, "Mobile number is required")
+      .regex(
+        /^01[3-9]\d{8}$/,
+        "Enter a valid 11-digit mobile number (01XXXXXXXXX)"
+      ),
     password: z
       .string()
       .min(8, "Password must be at least 8 characters")

@@ -75,7 +75,7 @@ export default function Signup() {
         email: data.email,
         password: data.password,
         full_name: data.fullName,
-        phone: data.phone?.trim() || undefined,
+        phone: data.phone.trim(),
       });
 
       // Materialize the card-less 14-day GROWTH trial (the backend creates it on
@@ -341,7 +341,8 @@ export default function Signup() {
                     render={({ field }) => (
                       <BDPhoneInput
                         id="phone"
-                        label={`${t('auth.signup.phone')} (${t('auth.signup.optional')})`}
+                        label={t('auth.signup.phone')}
+                        required
                         value={field.value ?? ''}
                         onChange={field.onChange}
                         disabled={isSubmitting}

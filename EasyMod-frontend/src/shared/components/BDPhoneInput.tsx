@@ -1,9 +1,11 @@
 /**
  * BDPhoneInput — Bangladesh phone number input component.
  *
- * Locked +880 prefix, 10-digit entry, formats as 01XXX-XXX-XXX,
+ * BD flag adornment, local 11-digit entry (01XXXXXXXXX), formats as 01XXX-XXX-XXX,
  * validates against BD mobile regex ^01[3-9]\d{8}$.
  * Raw value in form state is the full 11-digit number (01XXXXXXXXX).
+ * (No +880 country-code prefix — BD numbers are entered in their local
+ *  0-leading form, so a +880 adornment would read as a contradictory +88001…)
  *
  * Uses only shadcn/ui Input + Label primitives — no new UI library.
  */
@@ -60,9 +62,9 @@ const BDPhoneInput = React.forwardRef<HTMLInputElement, BDPhoneInputProps>(
           </Label>
         )}
         <div className="flex h-9 rounded-md border border-input bg-input-background overflow-hidden focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px] transition-[color,box-shadow]">
-          {/* Locked +880 prefix adornment */}
-          <span className="flex items-center px-3 text-sm text-muted-foreground bg-muted border-r border-input select-none shrink-0">
-            +880
+          {/* Bangladesh flag adornment — number is entered in local 01XXXXXXXXX form */}
+          <span className="flex items-center px-3 text-base bg-muted border-r border-input select-none shrink-0" aria-hidden="true">
+            🇧🇩
           </span>
           <Input
             ref={ref}
