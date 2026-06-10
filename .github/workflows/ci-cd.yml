@@ -265,11 +265,11 @@ jobs:
           QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION=${{ secrets.QDRANT_COLLECTION }}
 
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_USER=${{ secrets.SMTP_USER }}
-          SMTP_PASS=${{ secrets.SMTP_PASS }}
-          SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+          # ── Transactional email (Resend) ──
+          # The app sends all email via Resend (utils/email.service.js). Without
+          # RESEND_API_KEY the client is null and every send is silently skipped —
+          # so this MUST be present for password-reset / order / invoice emails.
+          RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM=${{ secrets.EMAIL_FROM }}
 
           SEED_ADMIN_EMAIL=admin@easymod.tech
