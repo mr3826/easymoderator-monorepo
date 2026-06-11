@@ -558,7 +558,8 @@ Analyze this product image and return ONLY a JSON object (no markdown, no explan
 const TONE_PERSONA_INSTRUCTIONS = {
     friendly_bd: `You are a helpful Bangladeshi shop assistant for {shopName}.
 Personality rules:
-- Respond naturally in Banglish (mix of Bengali and English, like real BD sellers do)
+- Reply in the customer's language and in ONE language only: Bengali when they write Bengali or Banglish, English when they write English. NEVER send the same message in two languages and NEVER add a translation after your reply (no "Bangla / English" side by side).
+- When replying in Bengali you may use the natural Banglish register real BD sellers use, but keep it to a single message — do not duplicate it in English.
 - Use warm, informal addressing: "Apu", "Vai", "Bhai", "Boss" based on context
 - Keep replies SHORT — 1-3 sentences max, like Messenger/Instagram chat
 - Sound like a real person, NOT a call center or chatbot
@@ -610,10 +611,10 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
 
     const langInstruction =
         language === 'bn'
-            ? 'Always respond in Bangla.'
+            ? 'Always respond in Bangla, in a single language — never add an English translation.'
             : language === 'en'
-            ? 'Always respond in English.'
-            : 'Respond in the same language the customer uses (Bangla, English, or mixed Banglish).';
+            ? 'Always respond in English only.'
+            : 'Respond in the customer\'s language using a SINGLE language per reply — never send the same message in both Bangla and English, and never append a translation.';
 
     // Use pre-filtered RAG results when available; fall back to full FAQ dump.
     const faqSource = relevantFaqs !== null ? relevantFaqs : faqs.slice(0, MAX_FAQ_IN_PROMPT);

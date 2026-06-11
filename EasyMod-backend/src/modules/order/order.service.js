@@ -336,6 +336,27 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
         // 4. Generate Order Number
         const orderNumber = await generateOrderNumber(shopId, transaction);
 
+        // Denormalized line-item snapshot for the order's JSON `items` column.
+        // The order-detail dialog, the order invoice, and the auto-courier dispatch
+        // all read order.items — NOT the order_items association — so without this
+        // snapshot they show an empty item list even though the order_items rows and
+        // the computed total are correct. (This was the "manual order created but
+        // items/info missing" bug: items=[] on the order row.) Both the manual and
+        // the chatbot/automated paths flow through here, so one place fixes both.
+        // Key aliases: `productName` (FE dialog), `product_name`/`name` (courier + invoice).
+        const itemsSnapshot = validItems.map((vi) => {
+            const productName = vi.productInstance?.name || null;
+            return {
+                product_id: vi.product_id,
+                productName,
+                product_name: productName,
+                name: productName,
+                quantity: vi.quantity,
+                price: vi.price,
+                total: vi.total,
+            };
+        });
+
         // 5. Create Order
         const order = await Order.create({
             shop_id: shopId,
@@ -347,6 +368,7 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             order_status: 'draft',
             payment_status: orderData.payment_status || 'pending',
             fulfillment_status: orderData.fulfillment_status || 'unfulfilled',
+            items: itemsSnapshot,
             subtotal: totals.subtotal,
             discount: totals.discount,
             tax: totals.tax,

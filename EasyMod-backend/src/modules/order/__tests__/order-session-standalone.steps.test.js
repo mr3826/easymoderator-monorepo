@@ -29,6 +29,8 @@ const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
 const productSearch = require('../../product/product-search.service');
 const { issueInvoiceForOrder } = require('../../invoice/chat-invoice.service');
+const ShopEntity = require('../../shop/shop.entity');
+const PaymentConfigEntity = require('../../payment/payment-config.entity');
 
 const makeSession = (overrides = {}) => ({
     id: 'sess-1',
@@ -120,5 +122,87 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         expect(res.completed).toBe(true);
         expect(res.prompt).toContain('100001');
         expect(res.prompt).toMatch(/অর্ডার সফলভাবে|placed successfully/);
+    });
+});
+
+// Founder feedback 2026-06-12: the bot assumed 1 piece and never verified the
+// quantity, so the invoice product count was wrong. A dedicated step now asks.
+describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
+    test.each([
+        ['ami 3 ta nibo', 3],
+        ['2', 2],
+        ['৫', 5],          // Bengali numeral
+        ['duita', 2],       // spoken word
+        ['ekta', 1],
+    ])('parses "%s" → quantity %i and advances to name', async (answer, expected) => {
+        const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.current_step).toBe('COLLECTING_NAME');
+        expect(session.update).toHaveBeenCalledWith(
+            expect.objectContaining({ product_info: expect.objectContaining({ quantity: expected }) })
+        );
+    });
+
+    test('re-prompts (stays on the step) when no quantity is given', async () => {
+        const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'en' } });
+        const res = await OrderSessionService.handleCurrentStep(session, 'asdf', null);
+
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(res.prompt).toMatch(/how many/i);
+    });
+});
+
+// Founder feedback 2026-06-12: with only COD available, asking the customer to
+// "select a payment method" (with COD the sole option) is pointless friction.
+describe('COLLECTING_ZONE → payment routing', () => {
+    beforeEach(() => {
+        ShopEntity.findByPk.mockResolvedValue(null); // → default BD zones
+    });
+
+    const zoneSession = () => makeSession({
+        current_step: 'COLLECTING_ZONE',
+        step_data: {
+            language: 'bn',
+            address: 'Mirpur 10, Dhaka',
+            delivery_zones: [{ zone: 'inside_dhaka', charge: 60 }],
+        },
+    });
+
+    test('skips the payment step when COD is the only enabled gateway', async () => {
+        PaymentConfigEntity.findAll.mockResolvedValue([{ gateway: 'cod' }]);
+        const res = await OrderSessionService.handleCurrentStep(zoneSession(), '1', null);
+
+        expect(res.current_step).toBe('COLLECTING_NOTES');
+        expect(res.step_data.payment_method).toBe('cod');
+        expect(res.prompt).not.toMatch(/পেমেন্ট পদ্ধতি নির্বাচন|select payment method/i);
+    });
+
+    test('still asks for payment when a second gateway is enabled', async () => {
+        PaymentConfigEntity.findAll.mockResolvedValue([{ gateway: 'cod' }, { gateway: 'self-mfs' }]);
+        const res = await OrderSessionService.handleCurrentStep(zoneSession(), '1', null);
+
+        expect(res.current_step).toBe('COLLECTING_PAYMENT');
+        expect(res.prompt).toMatch(/পেমেন্ট পদ্ধতি/);
+    });
+});
+
+// Founder feedback 2026-06-12: the bot replied in Bengali AND English at once.
+// Every prompt must now be a single language matching the customer.
+describe('single-language prompts (never both at once)', () => {
+    test('an English session emits no Bengali script', async () => {
+        const session = makeSession({ current_step: 'COLLECTING_NAME', step_data: { language: 'en' } });
+        const res = await OrderSessionService.handleCurrentStep(session, 'Evan', null);
+
+        expect(res.prompt).toMatch(/mobile number/i);
+        expect(res.prompt).not.toMatch(/[ঀ-৿]/); // no Bengali codepoints
+    });
+
+    test('a Bengali session adds no English translation', async () => {
+        const session = makeSession({ current_step: 'COLLECTING_NAME', step_data: { language: 'bn' } });
+        const res = await OrderSessionService.handleCurrentStep(session, 'Evan', null);
+
+        expect(res.prompt).toMatch(/মোবাইল/);
+        expect(res.prompt).not.toMatch(/mobile number/i);
     });
 });

@@ -111,6 +111,9 @@ describe('handleOrderFlow — start a session on purchase intent', () => {
         expect(arg.customer_id).toBe('cust-1');
         expect(arg.product_info).toEqual(expect.objectContaining({ id: 'prod-1', name: 'Red Saree' }));
         expect(arg.product_candidates).toBeFalsy();
+        // The detected language is threaded into the session so its prompts reply
+        // in one language matching the customer.
+        expect(arg.language).toBe('en');
     });
 
     test('offers a numbered picker when multiple products match', async () => {
@@ -142,10 +145,13 @@ describe('handleOrderFlow — start a session on purchase intent', () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
 
+        // base() language is 'en' → the which-product ask comes back in English only
+        // (single language, matching the customer — never Bengali+English at once).
         const res = await handleOrderFlow(base({ message: 'evan, order korbo' }));
 
         expect(res.handled).toBe(true);
-        expect(res.response).toMatch(/kon product/i);
+        expect(res.response).toMatch(/which product/i);
+        expect(res.response).not.toMatch(/কোন প্রোডাক্ট/); // not dual-language
         expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
         expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
     });

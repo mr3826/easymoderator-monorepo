@@ -357,6 +357,22 @@ describe('Order Service', () => {
             expect(result).toBeDefined();
             expect(Order.create).toHaveBeenCalled();
             expect(subscriptionService.checkOrderLimit).toHaveBeenCalledWith('shop-1');
+
+            // The order's JSON `items` column must carry a denormalized line-item
+            // snapshot (with a display name) — the order-detail dialog, the invoice
+            // and the courier all read order.items, not the order_items association.
+            // Without this the manual order showed an empty "Order Items" list while
+            // its total was correct (founder bug 2026-06-12).
+            const createArg = Order.create.mock.calls[0][0];
+            expect(createArg.items).toEqual([
+                expect.objectContaining({
+                    product_id: 'prod-1',
+                    productName: 'Test Product',
+                    quantity: 2,
+                    price: 100,
+                    total: 200,
+                }),
+            ]);
         });
 
         it('should reject order when subscription limit exceeded', async () => {

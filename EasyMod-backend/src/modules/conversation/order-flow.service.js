@@ -96,9 +96,10 @@ async function resolveCustomerId(shopId, platform, channelUserId) {
 }
 
 function cancelMessage(language) {
-    return language === 'bn'
-        ? 'ঠিক আছে, অর্ডারটি বাতিল করা হলো। আর কিছু লাগলে জানাবেন! 😊'
-        : "No problem, I've cancelled that order. Let me know if you need anything else! 😊";
+    // Single language, matching the customer: Bengali for bn/mixed/Banglish, English only for en.
+    return language === 'en'
+        ? "No problem, I've cancelled that order. Let me know if you need anything else! 😊"
+        : 'ঠিক আছে, অর্ডারটি বাতিল করা হলো। আর কিছু লাগলে জানাবেন! 😊';
 }
 
 // ── Main entry ───────────────────────────────────────────────────────────────
@@ -175,9 +176,9 @@ async function handleOrderFlow({
     if (wasFallback || !products.length) {
         return {
             handled: true,
-            response: language === 'bn'
-                ? 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখে অথবা ছবি পাঠালে অর্ডারটি শুরু করে দিচ্ছি 😊'
-                : 'Kon product ta order korte chan? Product er nam likhe ba chobi pathale ami order ta shuru kore dibo 😊',
+            response: language === 'en'
+                ? 'Which product would you like to order? Send the product name or a photo and I\'ll start your order 😊'
+                : 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখে অথবা ছবি পাঠালে অর্ডারটি শুরু করে দিচ্ছি 😊',
             confidence: 1.0,
             sourceReferences: null,
             meta: { order_session: 'product_needed' },
@@ -194,6 +195,7 @@ async function handleOrderFlow({
         channel,
         initial_message: message,
         entities,
+        language,
     };
 
     if (products.length === 1) {

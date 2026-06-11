@@ -48,6 +48,20 @@ class ConversationStateService {
                     email: null,
                     metadata: {}
                 });
+
+                // Best-effort: replace the "Customer" placeholder with the real
+                // Facebook/Instagram name from the Graph profile API. Fire-and-forget
+                // so a slow or denied Graph call never blocks message processing.
+                try {
+                    const { enrichCustomerNameFromMeta } = require('../customer/customer-profile.service');
+                    enrichCustomerNameFromMeta({
+                        customerId: customer.id,
+                        metaChannelId: meta_channel_id,
+                        shopId: shop_id,
+                        platform: channelType,
+                        psid: customer_channel_id,
+                    }).catch(() => {});
+                } catch (_) { /* never block ingestion */ }
             }
 
             // Find or create conversation (24-hour window).

@@ -100,21 +100,58 @@ const OrderSession = sequelize.define('OrderSession', {
 // ─── Delivery zone config ─────────────────────────────────────────────────────
 const ZONE_KEYS = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
 const ZONE_LABELS = {
-    inside_dhaka:  'ঢাকার ভেতরে / Inside Dhaka',
-    sub_dhaka:     'ঢাকার কাছাকাছি / Sub-Dhaka',
-    outside_dhaka: 'ঢাকার বাইরে / Outside Dhaka'
+    inside_dhaka:  { bn: 'ঢাকার ভেতরে', en: 'Inside Dhaka' },
+    sub_dhaka:     { bn: 'ঢাকার কাছাকাছি', en: 'Sub-Dhaka' },
+    outside_dhaka: { bn: 'ঢাকার বাইরে', en: 'Outside Dhaka' }
 };
 const DEFAULT_ZONE_CHARGES = { inside_dhaka: 60, sub_dhaka: 80, outside_dhaka: 120 };
 
 // ─── Payment gateway config ───────────────────────────────────────────────────
 const GATEWAY_LABELS = {
-    'cod':      'ক্যাশ অন ডেলিভারি / Cash on Delivery (COD)',
-    'self-mfs': 'বিকাশ / নগদ / Mobile Banking (MFS)'
+    'cod':      { bn: 'ক্যাশ অন ডেলিভারি (COD)', en: 'Cash on Delivery (COD)' },
+    'self-mfs': { bn: 'বিকাশ / নগদ (মোবাইল ব্যাংকিং)', en: 'bKash / Nagad (Mobile Banking)' }
 };
 // Payment status to use when creating the order per gateway
 const GATEWAY_PAYMENT_STATUS = {
     'cod':      'unpaid',
     'self-mfs': 'pending'
+};
+
+// Reply in ONE language, matching the customer: Bengali for Bengali/Banglish/mixed,
+// English only when the customer clearly writes English. (Founder feedback 2026-06-12:
+// the order flow must never answer in Bengali AND English at once.)
+const pickLang = (lang, bn, en) => (lang === 'en' ? en : bn);
+const zoneLabel = (zone, lang) => (ZONE_LABELS[zone] ? pickLang(lang, ZONE_LABELS[zone].bn, ZONE_LABELS[zone].en) : zone);
+const gatewayLabel = (gw, lang) => (GATEWAY_LABELS[gw] ? pickLang(lang, GATEWAY_LABELS[gw].bn, GATEWAY_LABELS[gw].en) : gw);
+
+// Bengali (০-৯) + English digits, and the most common BD spoken quantities, → integer.
+// Used by the COLLECTING_QUANTITY step so the bot verifies "koyta?" instead of
+// silently assuming 1 piece (founder feedback 2026-06-12).
+const BN_DIGITS = { '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4', '৫': '5', '৬': '6', '৭': '7', '৮': '8', '৯': '9' };
+const QTY_WORDS = {
+    ekta: 1, akta: 1, ektা: 1, একটা: 1, একটি: 1, ek: 1, এক: 1, one: 1, single: 1,
+    duita: 2, duito: 2, dui: 2, duto: 2, দুইটা: 2, দুটি: 2, দুটো: 2, দুই: 2, two: 2,
+    tinta: 3, tin: 3, তিনটা: 3, তিনটি: 3, তিন: 3, three: 3,
+    charta: 4, char: 4, চারটা: 4, চারটি: 4, চার: 4, four: 4,
+    pachta: 5, pach: 5, পাঁচটা: 5, পাঁচ: 5, five: 5,
+};
+const extractQuantity = (text) => {
+    if (!text || typeof text !== 'string') return null;
+    let t = text.toLowerCase().trim();
+    // Normalise Bengali numerals to ASCII digits first.
+    t = t.replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d);
+    // A bare/embedded number wins ("2", "2 ta", "2 piece", "ami 3 ta nibo").
+    const num = t.match(/\d{1,2}/);
+    if (num) {
+        const n = parseInt(num[0], 10);
+        if (n >= 1 && n <= 99) return n;
+        return null;
+    }
+    // Otherwise look for a spoken-quantity word.
+    for (const [word, value] of Object.entries(QTY_WORDS)) {
+        if (new RegExp(`(^|\\s)${word}(\\s|$)`).test(t)) return value;
+    }
+    return null;
 };
 
 class OrderSessionService {
@@ -129,6 +166,7 @@ class OrderSessionService {
             channel = 'messenger',
             initial_message,
             entities = {},
+            language = 'bn',            // 'bn' | 'en' | 'mixed' — single-language replies
             product_info: incomingProductInfo = null,
             product_candidates = null   // Fix 14: array of 2+ matching products → numbered picker
         } = data;
@@ -156,7 +194,7 @@ class OrderSessionService {
             if (hoursSinceLastActivity < 24) {
                 return {
                     session_id: existingSession.id,
-                    prompt: this.generateStepPrompt(existingSession.current_step, existingSession.step_data),
+                    prompt: this.generateStepPrompt(existingSession.current_step, existingSession.step_data, existingSession.step_data?.language),
                     resumed: true
                 };
             } else {
@@ -174,7 +212,7 @@ class OrderSessionService {
                 customer_channel_id,
                 channel,
                 current_step: 'SELECTING_PRODUCT',
-                step_data: { initial_message, entities, product_candidates },
+                step_data: { initial_message, entities, language, product_candidates },
                 product_info: null,
                 automation_mode: 'DRAFT',
                 confidence_threshold: 60,
@@ -182,7 +220,7 @@ class OrderSessionService {
             });
             return {
                 session_id: session.id,
-                prompt: OrderSessionService.buildProductSelectionPrompt(product_candidates),
+                prompt: OrderSessionService.buildProductSelectionPrompt(product_candidates, language),
                 resumed: false
             };
         }
@@ -194,7 +232,7 @@ class OrderSessionService {
             if (!stockCheck.available) {
                 return {
                     session_id: null,
-                    prompt: this.buildOutOfStockPrompt(stockCheck.reason, product_info),
+                    prompt: this.buildOutOfStockPrompt(stockCheck.reason, product_info, language),
                     out_of_stock: true,
                     resumed: false
                 };
@@ -217,10 +255,13 @@ class OrderSessionService {
             customer_id,
             customer_channel_id,
             channel,
-            current_step: product_info ? 'COLLECTING_NAME' : 'PRODUCT_CONFIRMATION',
+            // When we already know the product, jump straight to asking the quantity
+            // ("koyta niben?") — the bot must verify pieces, not assume 1.
+            current_step: product_info ? 'COLLECTING_QUANTITY' : 'PRODUCT_CONFIRMATION',
             step_data: {
                 initial_message,
                 entities,
+                language,
                 product_info
             },
             product_info,
@@ -231,7 +272,7 @@ class OrderSessionService {
 
         return {
             session_id: session.id,
-            prompt: this.generateStepPrompt(session.current_step, session.step_data),
+            prompt: this.generateStepPrompt(session.current_step, session.step_data, language),
             resumed: false
         };
     }
@@ -266,6 +307,7 @@ class OrderSessionService {
         const { current_step } = session;
         // Spread into a new object so Sequelize's dirty-tracking detects the change
         const step_data = { ...(session.step_data || {}) };
+        const lang = step_data.language || 'bn'; // single-language replies (match the customer)
         let nextStep = current_step;
         let prompt = '';
         let completed = false;
@@ -299,11 +341,15 @@ class OrderSessionService {
                     }
                     await session.update({ product_info: chosen });
                     session.product_info = chosen;
-                    nextStep = 'COLLECTING_NAME';
-                    prompt = `"${chosen.name}" নির্বাচন করেছেন ✅\n\nআপনার নাম কী? / You selected "${chosen.name}" ✅\n\nWhat's your name?`;
+                    nextStep = 'COLLECTING_QUANTITY';
+                    prompt = pickLang(lang,
+                        `"${chosen.name}" নির্বাচন করেছেন ✅\n\nকয়টা নিবেন?`,
+                        `You selected "${chosen.name}" ✅\n\nHow many would you like?`);
                 } else {
-                    prompt = OrderSessionService.buildProductSelectionPrompt(candidates) +
-                        '\n\nঅনুগ্রহ করে সঠিক নম্বরটি লিখুন। / Please enter a valid number from the list above.';
+                    prompt = OrderSessionService.buildProductSelectionPrompt(candidates, lang) +
+                        pickLang(lang,
+                            '\n\nঅনুগ্রহ করে সঠিক নম্বরটি লিখুন।',
+                            '\n\nPlease enter a valid number from the list above.');
                 }
                 break;
             }
@@ -311,10 +357,30 @@ class OrderSessionService {
             case 'PRODUCT_CONFIRMATION': {
                 const confirmation = this.extractConfirmation(answer);
                 if (confirmation) {
-                    nextStep = 'COLLECTING_NAME';
-                    prompt = 'আপনার নাম কী? / What\'s your name?';
+                    nextStep = 'COLLECTING_QUANTITY';
+                    prompt = pickLang(lang, 'কয়টা নিবেন?', 'How many would you like?');
                 } else {
-                    prompt = 'পণ্যটি নিশ্চিত করুন। আপনি কি এই পণ্যটি অর্ডার করতে চান? / Please confirm the product. Do you want to order this item?';
+                    prompt = pickLang(lang,
+                        'পণ্যটি নিশ্চিত করুন। আপনি কি এই পণ্যটি অর্ডার করতে চান?',
+                        'Please confirm the product. Do you want to order this item?');
+                }
+                break;
+            }
+
+            case 'COLLECTING_QUANTITY': {
+                const qty = extractQuantity(answer);
+                if (qty) {
+                    // Quantity lives on product_info so the summary, invoice and
+                    // order creation all read product.quantity consistently.
+                    const pi = { ...(session.product_info || {}), quantity: qty };
+                    await session.update({ product_info: pi });
+                    session.product_info = pi;
+                    nextStep = 'COLLECTING_NAME';
+                    prompt = pickLang(lang, 'আপনার নাম কী?', "What's your name?");
+                } else {
+                    prompt = pickLang(lang,
+                        'কয়টা পণ্য নিতে চান? সংখ্যায় লিখুন (যেমন: ১, ২, ৩)।',
+                        'How many would you like? Please reply with a number (e.g. 1, 2, 3).');
                 }
                 break;
             }
@@ -325,15 +391,17 @@ class OrderSessionService {
                 // after the session starts — that's not their name. Exact-match only,
                 // so real names containing these substrings ("Jia", "Hannan") pass.
                 if (OrderSessionService.isBareConfirmationWord(name)) {
-                    prompt = 'অনুগ্রহ করে আপনার নাম লিখুন। / Please write your name.';
+                    prompt = pickLang(lang, 'অনুগ্রহ করে আপনার নাম লিখুন।', 'Please write your name.');
                     break;
                 }
                 if (name.length >= 2 && name.length <= 50) {
                     step_data.name = name;
                     nextStep = 'COLLECTING_PHONE';
-                    prompt = 'আপনার মোবাইল নম্বর কত? / What\'s your mobile number?';
+                    prompt = pickLang(lang, 'আপনার মোবাইল নম্বর কত?', "What's your mobile number?");
                 } else {
-                    prompt = 'অনুগ্রহ করে একটি বৈধ নাম দিন (২-৫০ অক্ষর)। / Please provide a valid name (2-50 characters).';
+                    prompt = pickLang(lang,
+                        'অনুগ্রহ করে একটি বৈধ নাম দিন (২-৫০ অক্ষর)।',
+                        'Please provide a valid name (2-50 characters).');
                 }
                 break;
             }
@@ -347,15 +415,19 @@ class OrderSessionService {
                         const rtoResult = await RtoShieldService.checkPhone(phone, session.shop_id);
                         if (rtoResult.flagged) {
                             // Stay on COLLECTING_PHONE — do not advance or store the phone
-                            prompt = 'দুঃখিত, এই নম্বর থেকে অর্ডার প্রক্রিয়া করা সম্ভব হচ্ছে না। আমাদের পেজে মেসেজ করুন। / Sorry, we are unable to process an order from this number. Please message our page for assistance.';
+                            prompt = pickLang(lang,
+                                'দুঃখিত, এই নম্বর থেকে অর্ডার প্রক্রিয়া করা সম্ভব হচ্ছে না। আমাদের পেজে মেসেজ করুন।',
+                                'Sorry, we are unable to process an order from this number. Please message our page for assistance.');
                             break;
                         }
                     } catch (_) { /* non-fatal — proceed if RTO check fails */ }
                     step_data.phone = phone;
                     nextStep = 'COLLECTING_ADDRESS';
-                    prompt = 'আপনার ডেলিভারির ঠিকানা কি? / What\'s your delivery address?';
+                    prompt = pickLang(lang, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?");
                 } else {
-                    prompt = 'অনুগ্রহ করে একটি বৈধ বাংলাদেশি মোবাইল নম্বর দিন (01xxxxxxxxx)। / Please provide a valid Bangladesh mobile number (01xxxxxxxxx).';
+                    prompt = pickLang(lang,
+                        'অনুগ্রহ করে একটি বৈধ বাংলাদেশি মোবাইল নম্বর দিন (01xxxxxxxxx)।',
+                        'Please provide a valid Bangladesh mobile number (01xxxxxxxxx).');
                 }
                 break;
             }
@@ -368,9 +440,11 @@ class OrderSessionService {
                     const zones = await OrderSessionService.getShopDeliveryZones(session.shop_id);
                     step_data.delivery_zones = zones; // store for zone step validation
                     nextStep = 'COLLECTING_ZONE';
-                    prompt = OrderSessionService.buildDeliveryZonePrompt(zones);
+                    prompt = OrderSessionService.buildDeliveryZonePrompt(zones, lang);
                 } else {
-                    prompt = 'অনুগ্রহ করে ঠিকানা লিখুন (যেমন: মিরপুর ১০, উত্তরা ৬)। / Please write your delivery address (e.g. Mirpur 10, Uttara 6).';
+                    prompt = pickLang(lang,
+                        'অনুগ্রহ করে ঠিকানা লিখুন (যেমন: মিরপুর ১০, উত্তরা ৬)।',
+                        'Please write your delivery address (e.g. Mirpur 10, Uttara 6).');
                 }
                 break;
             }
@@ -384,11 +458,27 @@ class OrderSessionService {
                     // Load shop's enabled payment gateways for prompt and validation
                     const gateways = await OrderSessionService.getEnabledPaymentGateways(session.shop_id);
                     step_data.enabled_gateways = gateways;
-                    nextStep = 'COLLECTING_PAYMENT';
-                    prompt = OrderSessionService.buildPaymentPrompt(gateways, zoneChoice);
+                    // Only one gateway (COD) → don't ask "select payment method"; it's the
+                    // only option. Auto-select COD and move on. The payment step is only
+                    // meaningful once the shop has integrated a second method (bKash/Nagad).
+                    if (gateways.length <= 1) {
+                        step_data.payment_method = gateways[0] || 'cod';
+                        nextStep = 'COLLECTING_NOTES';
+                        const chargeNote = pickLang(lang,
+                            `ডেলিভারি চার্জ ৳${zoneChoice.charge}, পেমেন্ট: ক্যাশ অন ডেলিভারি (COD)।`,
+                            `Delivery charge ৳${zoneChoice.charge}, payment: Cash on Delivery (COD).`);
+                        prompt = `${chargeNote}\n` + pickLang(lang,
+                            'কোনো বিশেষ নির্দেশনা আছে? (না থাকলে "না" লিখুন)',
+                            'Any special instructions for your order? (type "no" if none)');
+                    } else {
+                        nextStep = 'COLLECTING_PAYMENT';
+                        prompt = OrderSessionService.buildPaymentPrompt(gateways, zoneChoice, lang);
+                    }
                 } else {
-                    prompt = OrderSessionService.buildDeliveryZonePrompt(zones) +
-                        '\n\nঅনুগ্রহ করে সঠিক নম্বর বা এলাকার নাম লিখুন। / Please enter the correct number or area name.';
+                    prompt = OrderSessionService.buildDeliveryZonePrompt(zones, lang) +
+                        pickLang(lang,
+                            '\n\nঅনুগ্রহ করে সঠিক নম্বর বা এলাকার নাম লিখুন।',
+                            '\n\nPlease enter the correct number or area name.');
                 }
                 break;
             }
@@ -407,20 +497,24 @@ class OrderSessionService {
                             step_data.expected_mfs_number = bdSettings.mfs_number;
                             nextStep = 'AWAITING_MFS_SCREENSHOT';
                             const mfsLabel = bdSettings.mfs_type === 'nagad' ? 'নগদ' : bdSettings.mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                            prompt = `${mfsLabel} নম্বর: ${bdSettings.mfs_number}\n\nউপরের নম্বরে ৳${step_data.total || ''} পাঠিয়ে স্ক্রিনশট দিন।\nSend ৳${step_data.total || ''} to the number above and share the screenshot.`;
+                            prompt = pickLang(lang,
+                                `${mfsLabel} নম্বর: ${bdSettings.mfs_number}\n\nউপরের নম্বরে ৳${step_data.total || ''} পাঠিয়ে স্ক্রিনশট দিন।`,
+                                `${mfsLabel} number: ${bdSettings.mfs_number}\n\nSend ৳${step_data.total || ''} to the number above and share the screenshot.`);
                         } else {
                             nextStep = 'COLLECTING_NOTES';
-                            prompt = 'কোনো বিশেষ নির্দেশনা আছে? / Any special instructions for your order?';
+                            prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
                         }
                     } else {
                         nextStep = 'COLLECTING_NOTES';
-                        prompt = 'কোনো বিশেষ নির্দেশনা আছে? / Any special instructions for your order?';
+                        prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
                     }
                 } else {
                     prompt = OrderSessionService.buildPaymentPrompt(gateways, {
                         zone: step_data.delivery_zone,
                         charge: step_data.delivery_charge
-                    }) + '\n\nঅনুগ্রহ করে সঠিক নম্বর বা পেমেন্ট পদ্ধতির নাম লিখুন। / Please enter the correct number or payment method name.';
+                    }, lang) + pickLang(lang,
+                        '\n\nঅনুগ্রহ করে সঠিক নম্বর বা পেমেন্ট পদ্ধতির নাম লিখুন।',
+                        '\n\nPlease enter the correct number or payment method name.');
                 }
                 break;
             }
@@ -429,14 +523,16 @@ class OrderSessionService {
                 if (step_data.mfs_payment_verified) {
                     // Already verified (e.g. re-enter from summary back)
                     nextStep = 'COLLECTING_NOTES';
-                    prompt = 'কোনো বিশেষ নির্দেশনা আছে? / Any special instructions for your order?';
+                    prompt = pickLang(lang, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions for your order?');
                     break;
                 }
                 // rawMessage carries the imageUrl when called from the chatbot controller
                 const screenshotUrl = rawMessage?.imageUrl || null;
                 if (!screenshotUrl) {
                     const mfsLabel = step_data.expected_mfs_type === 'nagad' ? 'নগদ' : step_data.expected_mfs_type === 'rocket' ? 'রকেট' : 'বিকাশ';
-                    prompt = `${mfsLabel} স্ক্রিনশট পাঠান। / Please send your ${step_data.expected_mfs_type || 'MFS'} payment screenshot.`;
+                    prompt = pickLang(lang,
+                        `${mfsLabel} স্ক্রিনশট পাঠান।`,
+                        `Please send your ${step_data.expected_mfs_type || 'MFS'} payment screenshot.`);
                     break;
                 }
                 const verification = await verifyPaymentScreenshot({
@@ -452,17 +548,22 @@ class OrderSessionService {
                     step_data.mfs_trx_id = verification.trxId;
                     step_data.mfs_amount_paid = verification.amount;
                     nextStep = 'COLLECTING_NOTES';
-                    prompt = `পেমেন্ট নিশ্চিত হয়েছে ✅ (TrxID: ${verification.trxId})।\nকোনো বিশেষ নির্দেশনা আছে? / Payment confirmed ✅. Any special instructions?`;
+                    prompt = pickLang(lang,
+                        `পেমেন্ট নিশ্চিত হয়েছে ✅ (TrxID: ${verification.trxId})।\nকোনো বিশেষ নির্দেশনা আছে?`,
+                        `Payment confirmed ✅ (TrxID: ${verification.trxId}). Any special instructions?`);
                 } else {
-                    prompt = `${verification.reason}\n\nআবার স্ক্রিনশট পাঠান। / Please resend the screenshot.`;
+                    prompt = `${verification.reason}\n\n` + pickLang(lang, 'আবার স্ক্রিনশট পাঠান।', 'Please resend the screenshot.');
                 }
                 break;
             }
 
             case 'COLLECTING_NOTES': {
-                step_data.notes = answer.trim() || null;
+                // A bare "no/na/nai" means "no special instructions" — store null, not the word.
+                const rawNote = answer.trim();
+                const isNoNote = /^(no|none|na|nah|nope|নাই|না|নেই|nai|nei)\.?$/i.test(rawNote);
+                step_data.notes = (!rawNote || isNoNote) ? null : rawNote;
                 nextStep = 'ORDER_SUMMARY';
-                prompt = this.generateOrderSummary(session, step_data);
+                prompt = this.generateOrderSummary(session, step_data, lang);
                 break;
             }
 
@@ -491,7 +592,9 @@ class OrderSessionService {
                     let orderPrompt;
                     try {
                         order = await OrderSessionService.createOrderFromSession(session, step_data);
-                        orderPrompt = `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}\n\n✅ Order placed successfully! Order number: ${order.order_number}`;
+                        orderPrompt = pickLang(lang,
+                            `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}`,
+                            `✅ Order placed successfully! Order number: ${order.order_number}`);
 
                         // Issue the customer's invoice in the same confirmation message.
                         // Invoice failure must never un-confirm a created order.
@@ -515,7 +618,9 @@ class OrderSessionService {
                         // RTO Shield / subscription limit / other business error
                         const userMsg = orderErr.statusCode >= 400 && orderErr.statusCode < 500
                             ? orderErr.message
-                            : 'অর্ডার সম্পন্ন করা যায়নি। আমাদের টিম শীঘ্রই যোগাযোগ করবে। / Could not place order. Our team will contact you shortly.';
+                            : pickLang(lang,
+                                'অর্ডার সম্পন্ন করা যায়নি। আমাদের টিম শীঘ্রই যোগাযোগ করবে।',
+                                'Could not place order. Our team will contact you shortly.');
                         return {
                             session_id: session.id,
                             prompt: userMsg,
@@ -547,7 +652,7 @@ class OrderSessionService {
                     prompt = orderPrompt;
                 } else {
                     nextStep = 'COLLECTING_NOTES';
-                    prompt = 'কি পরিবর্তন করতে চান? / What would you like to change?';
+                    prompt = pickLang(lang, 'কি পরিবর্তন করতে চান?', 'What would you like to change?');
                 }
                 break;
             }
@@ -634,7 +739,6 @@ class OrderSessionService {
                 .filter(z => ZONE_KEYS.includes(z.zone))
                 .map(z => ({
                     zone: z.zone,
-                    label: ZONE_LABELS[z.zone] || z.zone,
                     charge: Number(z.charge) || DEFAULT_ZONE_CHARGES[z.zone] || 0
                 }));
         }
@@ -642,14 +746,14 @@ class OrderSessionService {
         // Default zones
         return ZONE_KEYS.map(zone => ({
             zone,
-            label: ZONE_LABELS[zone],
             charge: DEFAULT_ZONE_CHARGES[zone]
         }));
     }
 
-    static buildDeliveryZonePrompt(zones) {
-        const lines = zones.map((z, i) => `${i + 1}. ${z.label} — ৳${z.charge}`);
-        return `আপনার ডেলিভারি এলাকা নির্বাচন করুন / Select your delivery area:\n${lines.join('\n')}`;
+    static buildDeliveryZonePrompt(zones, lang = 'bn') {
+        const lines = zones.map((z, i) => `${i + 1}. ${zoneLabel(z.zone, lang)} — ৳${z.charge}`);
+        const header = pickLang(lang, 'আপনার ডেলিভারি এলাকা নির্বাচন করুন:', 'Select your delivery area:');
+        return `${header}\n${lines.join('\n')}`;
     }
 
     /**
@@ -673,7 +777,7 @@ class OrderSessionService {
         };
 
         for (const zone of zones) {
-            if (t === zone.zone || t === zone.label.toLowerCase()) return zone;
+            if (t === zone.zone) return zone;
             const kws = keywords[zone.zone] || [];
             if (kws.some(kw => t.includes(kw))) return zone;
         }
@@ -703,12 +807,15 @@ class OrderSessionService {
             .sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
     }
 
-    static buildPaymentPrompt(gateways, zoneChoice) {
+    static buildPaymentPrompt(gateways, zoneChoice, lang = 'bn') {
         const chargeNote = zoneChoice
-            ? `ডেলিভারি চার্জ: ৳${zoneChoice.charge} (${ZONE_LABELS[zoneChoice.zone] || zoneChoice.zone})\n`
+            ? pickLang(lang,
+                `ডেলিভারি চার্জ: ৳${zoneChoice.charge} (${zoneLabel(zoneChoice.zone, lang)})\n`,
+                `Delivery charge: ৳${zoneChoice.charge} (${zoneLabel(zoneChoice.zone, lang)})\n`)
             : '';
-        const lines = gateways.map((gw, i) => `${i + 1}. ${GATEWAY_LABELS[gw] || gw}`);
-        return `${chargeNote}পেমেন্ট পদ্ধতি নির্বাচন করুন / Select payment method:\n${lines.join('\n')}`;
+        const lines = gateways.map((gw, i) => `${i + 1}. ${gatewayLabel(gw, lang)}`);
+        const header = pickLang(lang, 'পেমেন্ট পদ্ধতি নির্বাচন করুন:', 'Select payment method:');
+        return `${chargeNote}${header}\n${lines.join('\n')}`;
     }
 
     /**
@@ -874,30 +981,35 @@ class OrderSessionService {
     /**
      * Fix 14: Build a numbered product list prompt for multi-match selection.
      */
-    static buildProductSelectionPrompt(candidates) {
+    static buildProductSelectionPrompt(candidates, lang = 'bn') {
         const lines = candidates.map((p, i) => {
-            const stockNote = p.in_stock === false ? ' [স্টক নেই / Out of stock]' : '';
+            const stockNote = p.in_stock === false ? pickLang(lang, ' [স্টক নেই]', ' [Out of stock]') : '';
             const bnName = p.name_bn ? ` (${p.name_bn})` : '';
             return `${i + 1}. ${p.name}${bnName} — ৳${p.price}${stockNote}`;
         });
-        return `একাধিক পণ্য পাওয়া গেছে। কোনটি চান তার নম্বর লিখুন:\n${lines.join('\n')}\n\n---\n\nMultiple products found. Enter the number of the item you'd like to order:\n${lines.join('\n')}`;
+        const header = pickLang(lang,
+            'একাধিক পণ্য পাওয়া গেছে। কোনটি চান তার নম্বর লিখুন:',
+            "Multiple products found. Enter the number of the item you'd like to order:");
+        return `${header}\n${lines.join('\n')}`;
     }
 
-    static generateStepPrompt(step, stepData) {
+    static generateStepPrompt(step, stepData, lang) {
+        const L = lang || stepData?.language || 'bn';
         const prompts = {
-            'SELECTING_PRODUCT':    'পণ্য নির্বাচন করুন / Select a product (enter a number)',
-            'PRODUCT_CONFIRMATION': 'আপনি কি এই পণ্যটি অর্ডার করতে চান? / Do you want to order this item?',
-            'COLLECTING_NAME':      'আপনার নাম কী? / What\'s your name?',
-            'COLLECTING_PHONE':     'আপনার মোবাইল নম্বর কত? / What\'s your mobile number?',
-            'COLLECTING_ADDRESS':   'আপনার ডেলিভারির ঠিকানা কি? / What\'s your delivery address?',
-            'COLLECTING_ZONE':      'আপনার ডেলিভারি এলাকা নির্বাচন করুন / Select your delivery area',
-            'COLLECTING_PAYMENT':      'পেমেন্ট পদ্ধতি নির্বাচন করুন / Select payment method',
-            'AWAITING_MFS_SCREENSHOT': 'পেমেন্ট স্ক্রিনশট পাঠান / Send your payment screenshot',
-            'COLLECTING_NOTES':        'কোনো বিশেষ নির্দেশনা আছে? / Any special instructions?',
-            'ORDER_SUMMARY':        'অর্ডার নিশ্চিত করুন / Confirm order'
+            'SELECTING_PRODUCT':    pickLang(L, 'পণ্য নির্বাচন করুন (নম্বর লিখুন)', 'Select a product (enter a number)'),
+            'PRODUCT_CONFIRMATION': pickLang(L, 'আপনি কি এই পণ্যটি অর্ডার করতে চান?', 'Do you want to order this item?'),
+            'COLLECTING_QUANTITY':  pickLang(L, 'কয়টা নিবেন?', 'How many would you like?'),
+            'COLLECTING_NAME':      pickLang(L, 'আপনার নাম কী?', "What's your name?"),
+            'COLLECTING_PHONE':     pickLang(L, 'আপনার মোবাইল নম্বর কত?', "What's your mobile number?"),
+            'COLLECTING_ADDRESS':   pickLang(L, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?"),
+            'COLLECTING_ZONE':      pickLang(L, 'আপনার ডেলিভারি এলাকা নির্বাচন করুন', 'Select your delivery area'),
+            'COLLECTING_PAYMENT':      pickLang(L, 'পেমেন্ট পদ্ধতি নির্বাচন করুন', 'Select payment method'),
+            'AWAITING_MFS_SCREENSHOT': pickLang(L, 'পেমেন্ট স্ক্রিনশট পাঠান', 'Send your payment screenshot'),
+            'COLLECTING_NOTES':        pickLang(L, 'কোনো বিশেষ নির্দেশনা আছে?', 'Any special instructions?'),
+            'ORDER_SUMMARY':        pickLang(L, 'অর্ডার নিশ্চিত করুন', 'Confirm order')
         };
 
-        return prompts[step] || 'পরবর্তী ধাপে যান / Proceed to next step';
+        return prompts[step] || pickLang(L, 'পরবর্তী ধাপে যান', 'Proceed to next step');
     }
 
     // ─── Extraction helpers ───────────────────────────────────────────────────
@@ -944,50 +1056,50 @@ class OrderSessionService {
 
     // ─── Out-of-stock prompt ──────────────────────────────────────────────────
 
-    static buildOutOfStockPrompt(reason, productInfo) {
-        const name = productInfo?.name || 'এই পণ্যটি';
-        return `দুঃখিত! "${name}" এখন ${reason || 'স্টক আউট'}। 😔\n\n` +
-            `আমাদের অন্য পণ্যগুলো দেখতে চান? অথবা অন্য কোনো সাহায্য লাগলে জানান!\n\n` +
-            `---\n` +
-            `Sorry! "${name}" is currently ${reason || 'out of stock'}. 😔\n` +
-            `Would you like to see our other products, or can I help you with something else?`;
+    static buildOutOfStockPrompt(reason, productInfo, lang = 'bn') {
+        const name = productInfo?.name || pickLang(lang, 'এই পণ্যটি', 'this item');
+        return pickLang(lang,
+            `দুঃখিত! "${name}" এখন ${reason || 'স্টক আউট'}। 😔\n\n` +
+            `আমাদের অন্য পণ্যগুলো দেখতে চান? অথবা অন্য কোনো সাহায্য লাগলে জানান!`,
+            `Sorry! "${name}" is currently ${reason || 'out of stock'}. 😔\n\n` +
+            `Would you like to see our other products, or can I help you with something else?`);
     }
 
     // ─── Order summary ────────────────────────────────────────────────────────
 
-    static generateOrderSummary(session, stepData) {
+    static generateOrderSummary(session, stepData, lang) {
+        const L = lang || stepData?.language || 'bn';
         const product = session.product_info;
         const { name, phone, address, delivery_zone, delivery_charge, payment_method, notes } = stepData;
-        const zoneLabel = ZONE_LABELS[delivery_zone] || delivery_zone || 'N/A';
-        const gatewayLabel = GATEWAY_LABELS[payment_method] || payment_method || 'N/A';
-        const productTotal = (product?.price || 0) * (product?.quantity || 1);
+        const zLabel = zoneLabel(delivery_zone, L) || 'N/A';
+        const gLabel = gatewayLabel(payment_method, L) || 'N/A';
+        const qty = product?.quantity || 1;
+        const productTotal = (product?.price || 0) * qty;
         const grandTotal = productTotal + (delivery_charge || 0);
 
-        return `✅ অর্ডার সারসংক্ষেপ:
-📦 পণ্য: ${product?.name || 'N/A'} x${product?.quantity || 1}
-💰 মূল্য: ৳${productTotal}
-🚚 ডেলিভারি: ৳${delivery_charge || 0} (${zoneLabel})
-💳 পেমেন্ট: ${gatewayLabel}
-📍 ঠিকানা: ${address}
-👤 নাম: ${name} | 📞 ${phone}
-${notes ? `📝 নোট: ${notes}\n` : ''}
-সর্বমোট: ৳${grandTotal}
-
-নিশ্চিত করতে "YES" লিখুন।
-
----
-
-✅ Order Summary:
-📦 Product: ${product?.name || 'N/A'} x${product?.quantity || 1}
+        if (L === 'en') {
+            return `✅ Order Summary:
+📦 Product: ${product?.name || 'N/A'} x${qty}
 💰 Price: ৳${productTotal}
-🚚 Delivery: ৳${delivery_charge || 0} (${zoneLabel})
-💳 Payment: ${gatewayLabel}
+🚚 Delivery: ৳${delivery_charge || 0} (${zLabel})
+💳 Payment: ${gLabel}
 📍 Address: ${address}
 👤 Name: ${name} | 📞 ${phone}
-${notes ? `📝 Note: ${notes}\n` : ''}
-Total: ৳${grandTotal}
+${notes ? `📝 Note: ${notes}\n` : ''}Total: ৳${grandTotal}
 
 Type "YES" to confirm.`;
+        }
+
+        return `✅ অর্ডার সারসংক্ষেপ:
+📦 পণ্য: ${product?.name || 'N/A'} x${qty}
+💰 মূল্য: ৳${productTotal}
+🚚 ডেলিভারি: ৳${delivery_charge || 0} (${zLabel})
+💳 পেমেন্ট: ${gLabel}
+📍 ঠিকানা: ${address}
+👤 নাম: ${name} | 📞 ${phone}
+${notes ? `📝 নোট: ${notes}\n` : ''}সর্বমোট: ৳${grandTotal}
+
+নিশ্চিত করতে "YES" লিখুন।`;
     }
 }
 
