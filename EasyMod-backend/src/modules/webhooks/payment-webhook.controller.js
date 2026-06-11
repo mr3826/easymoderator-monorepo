@@ -110,9 +110,13 @@ class PaymentWebhookController {
                 await OrderSessionService.autoConfirmOrder(activeSession);
             }
 
-            // Trigger invoice generation
-            const invoiceService = require('../invoice/invoice.service');
-            await invoiceService.generateInvoice(order);
+            // Trigger invoice generation. chat-invoice, NOT the legacy
+            // invoice.service: that one requires puppeteer at module load, which
+            // is absent from the production image — the require alone would throw
+            // and abort delivery booking + customer confirmation below.
+            const { issueInvoiceForOrder } = require('../invoice/chat-invoice.service');
+            await issueInvoiceForOrder(order).catch(err =>
+                this.logger.warn('Invoice generation failed (continuing fulfillment)', { error: err.message }));
 
             // Trigger delivery booking
             const deliveryService = require('../delivery/delivery.service');

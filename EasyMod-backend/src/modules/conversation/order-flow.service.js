@@ -37,11 +37,17 @@ const PURCHASE_PATTERNS = [
     'confirm order', 'i want to buy', 'want to buy', 'buy it', 'buy this', 'purchase it',
     // Banglish
     'order korbo', 'order dibo', 'order korte chai', 'order dite chai', 'order confirm',
+    'confirm korun', 'confirm koren', 'confirm koro', 'confirm kore din', 'confirm korlam',
     'nibo', 'nibe', 'nimu', 'nilam', 'kinbo', 'kinbe', 'kinte chai', 'kine nibo',
     // Bengali
-    'অর্ডার কর', 'অর্ডার দিব', 'অর্ডার দে', 'অর্ডার কনফার্ম',
+    'অর্ডার কর', 'অর্ডার দিব', 'অর্ডার দে', 'অর্ডার কনফার্ম', 'কনফার্ম কর',
     'নিব', 'নিবো', 'নিলাম', 'কিনব', 'কিনবো', 'কিনতে চাই', 'নিতে চাই',
 ];
+
+// BD buyers typo "order" constantly ("oder korbo", "odar dibo"). Normalise the
+// common misspellings to "order" before pattern matching — the live 2026-06-11
+// test failed intent detection on exactly "Oder korbo".
+const normalizeForIntent = (t) => t.replace(/\b(?:oder|odar|ordar)\b/g, 'order');
 
 // Status / tracking queries that may also contain "order" — must NOT be treated
 // as a new purchase. (Order-number queries are handled separately below.)
@@ -55,7 +61,7 @@ const CANCEL_PATTERNS = [
 
 function hasPurchaseIntent(message) {
     if (!message || typeof message !== 'string') return false;
-    const t = message.toLowerCase().trim();
+    const t = normalizeForIntent(message.toLowerCase().trim());
     // An order-number lookup ("where is order 123456") is a status query, not a buy.
     if (/\b\d{5,8}\b/.test(t)) return false;
     if (STATUS_HINTS.some(h => t.includes(h))) return false;
@@ -144,9 +150,23 @@ async function handleOrderFlow({
         return { handled: false };
     }
 
-    const { products, wasFallback } = await productSearch
+    let { products, wasFallback } = await productSearch
         .searchForOrder({ shopId, query: message, limit: 5 })
         .catch(() => ({ products: [], wasFallback: true }));
+
+    // The dominant F-commerce buy signal is a product PHOTO + "order korbo" —
+    // the text carries no product name, so text search finds nothing. Identify
+    // the product from the image instead (CLIP/RAG/Vision, already thresholded).
+    if ((wasFallback || !products.length) && imageUrls.length) {
+        try {
+            const { matchImageMessage } = require('../ai/image-product-matcher.service');
+            const imageMatch = await matchImageMessage({ shopId, imageUrl: imageUrls[0], text: message });
+            if (imageMatch.products?.length) {
+                products = imageMatch.products;
+                wasFallback = false;
+            }
+        } catch (_) { /* image matching is best-effort — fall through to the LLM */ }
+    }
 
     // No confident product match → let the conversational AI ask which item.
     if (wasFallback || !products.length) {

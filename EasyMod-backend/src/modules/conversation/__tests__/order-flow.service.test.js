@@ -27,7 +27,11 @@ jest.mock('../../product/product-search.service', () => ({
 jest.mock('../../customer/customer.entity', () => ({
     findOne: jest.fn(),
 }));
+jest.mock('../../ai/image-product-matcher.service', () => ({
+    matchImageMessage: jest.fn(),
+}));
 
+const { matchImageMessage } = require('../../ai/image-product-matcher.service');
 const { handleOrderFlow, hasPurchaseIntent, isOrderCancel } = require('../order-flow.service');
 
 const SHOP = '11111111-1111-1111-1111-111111111111';
@@ -47,6 +51,7 @@ const base = (overrides = {}) => ({
 beforeEach(() => {
     jest.clearAllMocks();
     Customer.findOne.mockResolvedValue({ id: 'cust-1' });
+    matchImageMessage.mockResolvedValue({ products: [], method: 'no_match', confidence: 0 });
 });
 
 describe('handleOrderFlow — continue an active session', () => {
@@ -153,6 +158,81 @@ describe('handleOrderFlow — start a session on purchase intent', () => {
     });
 });
 
+describe('handleOrderFlow — image-borne product (photo + "order korbo")', () => {
+    // Live regression 2026-06-11: customer sent a product PHOTO + "Oder korbo".
+    // The text carries no product name, so text search found nothing and the
+    // whole turn fell through to the LLM, which role-played the order.
+    test('identifies the product from the image when text search has no match', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+        matchImageMessage.mockResolvedValue({
+            products: [{ id: 'prod-9', name: 'Azal Lawn Two Piece', price: 1650, in_stock: true }],
+            method: 'clip',
+            confidence: 0.91,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-9', prompt: 'আপনার নাম কী?' });
+
+        const res = await handleOrderFlow(base({ message: 'Oder korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(res.handled).toBe(true);
+        expect(matchImageMessage).toHaveBeenCalledWith({ shopId: SHOP, imageUrl: 'https://cdn/img.jpg', text: 'Oder korbo' });
+        const arg = OrderSessionService.startOrderSession.mock.calls[0][0];
+        expect(arg.product_info).toEqual(expect.objectContaining({ id: 'prod-9', name: 'Azal Lawn Two Piece' }));
+    });
+
+    test('multiple image matches become a numbered picker', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+        matchImageMessage.mockResolvedValue({
+            products: [
+                { id: 'p1', name: 'Lawn Two Piece Red', price: 1650, in_stock: true },
+                { id: 'p2', name: 'Lawn Two Piece Blue', price: 1700, in_stock: true },
+            ],
+            method: 'rag',
+            confidence: 0.82,
+        });
+        OrderSessionService.startOrderSession.mockResolvedValue({ session_id: 'sess-10', prompt: 'Pick a number' });
+
+        const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(res.handled).toBe(true);
+        const arg = OrderSessionService.startOrderSession.mock.calls[0][0];
+        expect(arg.product_info).toBeFalsy();
+        expect(arg.product_candidates).toHaveLength(2);
+    });
+
+    test('still defers to the LLM when the image matches nothing', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+        matchImageMessage.mockResolvedValue({ products: [], method: 'no_match', confidence: 0 });
+
+        const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(res.handled).toBe(false);
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('does not consult the image matcher when there is no image', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+
+        const res = await handleOrderFlow(base({ message: 'order korbo' }));
+
+        expect(res.handled).toBe(false);
+        expect(matchImageMessage).not.toHaveBeenCalled();
+    });
+
+    test('image matcher failure is non-fatal (falls through to the LLM)', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+        matchImageMessage.mockRejectedValue(new Error('vision quota'));
+
+        const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
+
+        expect(res.handled).toBe(false);
+    });
+});
+
 describe('handleOrderFlow — pass-through (no order handling)', () => {
     test('a price question is left to the LLM (no search, no session)', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
@@ -184,6 +264,13 @@ describe('hasPurchaseIntent', () => {
         'অর্ডার করব',
         'নিব',
         'কিনবো',
+        // Live regression 2026-06-11: typo'd "order" + bare confirm phrases
+        'Oder korbo',
+        'odar dibo',
+        'ordar korte chai',
+        'Confirm korun',
+        'confirm koren',
+        'কনফার্ম করুন',
     ])('detects purchase intent in: %s', (msg) => {
         expect(hasPurchaseIntent(msg)).toBe(true);
     });

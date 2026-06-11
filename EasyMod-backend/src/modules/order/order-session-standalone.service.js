@@ -321,6 +321,13 @@ class OrderSessionService {
 
             case 'COLLECTING_NAME': {
                 const name = answer.trim();
+                // Customers often echo a confirmation ("confirm korun", "ok") right
+                // after the session starts — that's not their name. Exact-match only,
+                // so real names containing these substrings ("Jia", "Hannan") pass.
+                if (OrderSessionService.isBareConfirmationWord(name)) {
+                    prompt = 'অনুগ্রহ করে আপনার নাম লিখুন। / Please write your name.';
+                    break;
+                }
                 if (name.length >= 2 && name.length <= 50) {
                     step_data.name = name;
                     nextStep = 'COLLECTING_PHONE';
@@ -485,6 +492,25 @@ class OrderSessionService {
                     try {
                         order = await OrderSessionService.createOrderFromSession(session, step_data);
                         orderPrompt = `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}\n\n✅ Order placed successfully! Order number: ${order.order_number}`;
+
+                        // Issue the customer's invoice in the same confirmation message.
+                        // Invoice failure must never un-confirm a created order.
+                        try {
+                            const { issueInvoiceForOrder } = require('../invoice/chat-invoice.service');
+                            const sessProduct = session.product_info;
+                            const { text: invoiceText } = await issueInvoiceForOrder(order, {
+                                channel: session.channel || 'messenger',
+                                items: sessProduct ? [{
+                                    name: sessProduct.name,
+                                    quantity: sessProduct.quantity || 1,
+                                    price: sessProduct.price,
+                                    total: (sessProduct.price || 0) * (sessProduct.quantity || 1)
+                                }] : null
+                            });
+                            orderPrompt += `\n\n${invoiceText}`;
+                        } catch (invErr) {
+                            console.error(`[OrderSession] Invoice generation failed for order ${order.order_number}:`, invErr.message);
+                        }
                     } catch (orderErr) {
                         // RTO Shield / subscription limit / other business error
                         const userMsg = orderErr.statusCode >= 400 && orderErr.statusCode < 500
@@ -875,6 +901,21 @@ class OrderSessionService {
     }
 
     // ─── Extraction helpers ───────────────────────────────────────────────────
+
+    /**
+     * True when the whole message is just a confirmation/acknowledgement word —
+     * used to reject such answers where free text is expected (e.g. the name step).
+     * Exact equality only; never substring (would reject real names like "Jia").
+     */
+    static isBareConfirmationWord(text) {
+        const BARE_CONFIRMATIONS = new Set([
+            'yes', 'y', 'ok', 'okay', 'confirm', 'confirm korun', 'confirm koren',
+            'confirm koro', 'order confirm', 'ha', 'haa', 'han', 'hae', 'ji', 'jwi',
+            'জি', 'জ্বি', 'হ্যাঁ', 'ঠিক আছে', 'thik ache', 'thik ace', 'acha', 'accha',
+            'আচ্ছা', 'done', 'hmm', 'হুম', 'কনফার্ম', 'কনফার্ম করুন'
+        ]);
+        return BARE_CONFIRMATIONS.has(String(text || '').toLowerCase().trim());
+    }
 
     static extractConfirmation(text) {
         // BD F-commerce buyers confirm with many local phrases — catch all common ones

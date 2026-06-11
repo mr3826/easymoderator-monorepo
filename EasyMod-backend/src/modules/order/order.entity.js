@@ -139,6 +139,17 @@ const Order = sequelize.define('Order', {
     note: {
         type: DataTypes.TEXT,
         allowNull: true
+    },
+    // Same order on retry: createOrderInternal looks an order up by this key
+    // before creating (the chatbot passes its session id). Without the column
+    // on the model, Sequelize emitted raw SQL against a nonexistent column.
+    idempotency_key: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    usage_transaction_id: {
+        type: DataTypes.STRING,
+        allowNull: true
     }
 }, {
     tableName: 'orders',
