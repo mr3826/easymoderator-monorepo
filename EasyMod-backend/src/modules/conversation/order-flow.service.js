@@ -168,9 +168,20 @@ async function handleOrderFlow({
         } catch (_) { /* image matching is best-effort — fall through to the LLM */ }
     }
 
-    // No confident product match → let the conversational AI ask which item.
+    // No confident product match → ask which item, deterministically. Falling
+    // through to the LLM here is what produced the live 2026-06-11 failure:
+    // on "evan, order korbo" it role-played "amader system ekhon apnar order
+    // process ta shuru korbe" while no session existed at all.
     if (wasFallback || !products.length) {
-        return { handled: false };
+        return {
+            handled: true,
+            response: language === 'bn'
+                ? 'কোন প্রোডাক্টটি অর্ডার করতে চান? প্রোডাক্টের নাম লিখে অথবা ছবি পাঠালে অর্ডারটি শুরু করে দিচ্ছি 😊'
+                : 'Kon product ta order korte chan? Product er nam likhe ba chobi pathale ami order ta shuru kore dibo 😊',
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'product_needed' },
+        };
     }
 
     const customerId = await resolveCustomerId(shopId, platform, customerChannelId);

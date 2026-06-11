@@ -135,7 +135,9 @@ class PolicyEngine {
                 decision.decisionId = row.id;
             } catch (err) {
                 // Persistence failure must NOT block the send. Log loudly.
-                logger.error('PolicyEngine: failed to persist decision', { error: err.message });
+                // structured-logger.error() takes the Error as its second
+                // positional arg — wrapping it in {error: ...} masks it to {}.
+                logger.error('PolicyEngine: failed to persist decision', err);
             }
         }
 

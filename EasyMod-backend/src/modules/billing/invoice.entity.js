@@ -1,7 +1,10 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 
-const Invoice = sequelize.define('Invoice', {
+// Model name must differ from subscription/invoice.entity's 'Invoice' —
+// duplicate names silently replace each other in sequelize.models, which
+// breaks registry-based tooling (e.g. the schema-drift audit).
+const Invoice = sequelize.define('OrderInvoice', {
     id: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,

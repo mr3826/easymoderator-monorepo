@@ -57,6 +57,11 @@ const TrxIDLog = sequelize.define('TrxIDLog', {
     }
 }, {
     tableName: 'trx_id_logs',
+    timestamps: true,
+    // Without the explicit mapping Sequelize queries camelCase "createdAt"/
+    // "updatedAt" columns, which don't exist — the table is snake_case.
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     indexes: [
         { unique: true, fields: ['shop_id', 'trx_id'] },
         { fields: ['shop_id', 'order_id'] }

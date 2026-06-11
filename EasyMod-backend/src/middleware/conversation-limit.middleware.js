@@ -110,7 +110,9 @@ const convLimitMiddleware = async (req, res, next) => {
 
     } catch (err) {
         // Fail open — never block conversations due to middleware errors
-        logger.error('convLimitMiddleware error (failing open)', { err: err.message });
+        // structured-logger.error() expects the Error as the second positional
+        // arg — {err: ...} there serialized as error:{} and hid real failures.
+        logger.error('convLimitMiddleware error (failing open)', err);
         return next();
     }
 };
@@ -143,7 +145,7 @@ const recordConversation = async (shopId, conversationId, channel) => {
     } catch (err) {
         // Non-fatal — log and continue
         const logger = createLogger(null, shopId);
-        logger.error('recordConversation failed', { err: err.message });
+        logger.error('recordConversation failed', err);
     }
 };
 

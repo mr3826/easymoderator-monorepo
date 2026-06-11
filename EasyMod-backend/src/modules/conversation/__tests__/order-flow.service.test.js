@@ -133,14 +133,31 @@ describe('handleOrderFlow — start a session on purchase intent', () => {
         expect(arg.product_candidates[0]).toEqual(expect.objectContaining({ id: 'prod-1' }));
     });
 
-    test('does NOT start a session when no product can be identified (defers to LLM)', async () => {
+    // Live regression 2026-06-11 (afternoon): "evan, order korbo" matched no
+    // product, fell through to the LLM, and the LLM claimed "amader system
+    // ekhon apnar order process ta shuru korbe" — with no session existing.
+    // Purchase intent with no product must get a deterministic which-product
+    // ask, never an LLM turn that can hallucinate an order.
+    test('asks which product (deterministically) when none can be identified', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
 
-        const res = await handleOrderFlow(base({ message: 'ami ekta nibo' }));
+        const res = await handleOrderFlow(base({ message: 'evan, order korbo' }));
 
-        expect(res.handled).toBe(false);
+        expect(res.handled).toBe(true);
+        expect(res.response).toMatch(/kon product/i);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
         expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('the which-product ask is Bengali when the customer language is bn', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+        productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
+
+        const res = await handleOrderFlow(base({ message: 'অর্ডার করবো', language: 'bn' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.response).toMatch(/কোন প্রোডাক্ট/);
     });
 
     test('relays an out-of-stock prompt without leaving a dangling session', async () => {
@@ -201,14 +218,15 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
         expect(arg.product_candidates).toHaveLength(2);
     });
 
-    test('still defers to the LLM when the image matches nothing', async () => {
+    test('asks which product when the image matches nothing', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
         matchImageMessage.mockResolvedValue({ products: [], method: 'no_match', confidence: 0 });
 
         const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
 
-        expect(res.handled).toBe(false);
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
         expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
     });
 
@@ -218,18 +236,19 @@ describe('handleOrderFlow — image-borne product (photo + "order korbo")', () =
 
         const res = await handleOrderFlow(base({ message: 'order korbo' }));
 
-        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
         expect(matchImageMessage).not.toHaveBeenCalled();
     });
 
-    test('image matcher failure is non-fatal (falls through to the LLM)', async () => {
+    test('image matcher failure is non-fatal (still asks which product)', async () => {
         OrderSessionService.getActiveSession.mockResolvedValue(null);
         productSearch.searchForOrder.mockResolvedValue({ products: [], wasFallback: true });
         matchImageMessage.mockRejectedValue(new Error('vision quota'));
 
         const res = await handleOrderFlow(base({ message: 'order korbo', imageUrls: ['https://cdn/img.jpg'] }));
 
-        expect(res.handled).toBe(false);
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'product_needed' }));
     });
 });
 
