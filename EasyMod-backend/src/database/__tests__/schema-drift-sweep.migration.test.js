@@ -84,6 +84,27 @@ describe('20260611_003_schema_drift_sweep', () => {
     });
 });
 
+describe('20260611_004_relax_not_null_drift', () => {
+    const followUp = require('../migrations/20260611_004_relax_not_null_drift');
+
+    test('exports the custom-runner contract and relaxes the two intent-nullable columns', async () => {
+        expect(followUp.name).toBe('20260611_004_relax_not_null_drift');
+        const statements = [];
+        await followUp.up({ getDialect: () => 'postgres', query: async (sql) => { statements.push(sql); return [[]]; } });
+        const sql = statements.join('\n');
+        // The chatbot confirm step sends customer_id: null by design; global
+        // RTO blacklist rows send shop_id: null by design.
+        expect(sql).toContain('ALTER TABLE orders ALTER COLUMN customer_id DROP NOT NULL');
+        expect(sql).toContain('ALTER TABLE rto_blacklist ALTER COLUMN shop_id DROP NOT NULL');
+    });
+
+    test('is a no-op on non-postgres dialects', async () => {
+        const calls = [];
+        await followUp.up({ getDialect: () => 'sqlite', query: async (sql) => calls.push(sql) });
+        expect(calls).toHaveLength(0);
+    });
+});
+
 describe('order-number SQL ↔ schema alignment', () => {
     // generateOrderNumber() writes raw SQL, so no entity pins its column names.
     // This guards the exact mismatch that 500'd every manual and chatbot order.
