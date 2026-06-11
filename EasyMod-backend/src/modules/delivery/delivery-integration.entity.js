@@ -34,7 +34,10 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
         onDelete: 'CASCADE'
     },
     provider: {
-        type: DataTypes.ENUM('pathao', 'steadfast'),
+        // Must cover every provider in provider.registry — the Joi validator
+        // derives its whitelist from there, so a registry provider missing
+        // here passes validation and then dies on the model's enum check.
+        type: DataTypes.ENUM('pathao', 'steadfast', 'redx'),
         allowNull: false
     },
     credentials: {
