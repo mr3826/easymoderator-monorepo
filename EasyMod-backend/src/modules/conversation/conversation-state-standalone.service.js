@@ -371,15 +371,34 @@ class ConversationStateService {
     }
 
     /**
-     * Detect language from message
+     * Detect language from message.
+     *
+     * 'bn'  \u2014 Bengali script OR Banglish (Romanised Bengali)
+     * 'en'  \u2014 genuine English
+     * 'mixed' \u2014 Bengali script + Latin together
+     *
+     * Banglish ("ami order korbo", "naam Rahim", "koyta lagbe") is pure ASCII, so the
+     * old test (`hasEnglish \u2192 'en'`) misread it as English and the order flow asked
+     * name/phone/address in English to customers who were typing Bengali. BD f-commerce
+     * buyers overwhelmingly write Banglish and expect a Bengali reply, so recognisable
+     * Banglish is classified as 'bn'. (Founder feedback 2026-06-13.)
      */
     static detectLanguage(message) {
         const hasBangla = /[\u0980-\u09FF]/.test(message);
         const hasEnglish = /[a-zA-Z]/.test(message);
         if (hasBangla && hasEnglish) return 'mixed';
         if (hasBangla) return 'bn';
-        if (hasEnglish) return 'en';
+        if (hasEnglish) return ConversationStateService.isBanglish(message) ? 'bn' : 'en';
         return 'unknown';
+    }
+
+    /**
+     * True when Latin-script text is actually Romanised Bengali (Banglish).
+     * Conservative high-frequency word list \u2014 a single confident hit is enough,
+     * while genuine English ("I want to buy this dress") matches none and stays 'en'.
+     */
+    static isBanglish(message) {
+        return ConversationStateService.BANGLISH_MARKERS.test(String(message || ''));
     }
 
     /**
@@ -397,5 +416,20 @@ class ConversationStateService {
         return entities;
     }
 }
+
+// High-frequency Banglish (Romanised Bengali) markers. Word-boundary matched and
+// case-insensitive; a single hit classifies Latin text as Bengali. Deliberately
+// excludes ambiguous tokens that also occur in English (e.g. "chai", "dam", "han").
+ConversationStateService.BANGLISH_MARKERS = new RegExp(
+    '\\b(' + [
+        'ami', 'amar', 'amake', 'amra', 'apni', 'apnar', 'apnara', 'tumi', 'tomar',
+        'naam', 'koto', 'koto', 'koyta', 'koita', 'kothay', 'kobe', 'kemne', 'kibhabe',
+        'korbo', 'korbe', 'korben', 'korte', 'dibo', 'dibe', 'deben', 'debe',
+        'nibo', 'nibe', 'niben', 'nilam', 'lagbe', 'lagbe', 'ache', 'achhe', 'nai', 'naai',
+        'kinbo', 'kinben', 'kinte', 'kemon', 'bhai', 'apu', 'pathao', 'pathai', 'pathaben',
+        'jonno', 'taka', 'dorkar', 'order korbo', 'oder korbo'
+    ].join('|') + ')\\b',
+    'i'
+);
 
 module.exports = ConversationStateService;

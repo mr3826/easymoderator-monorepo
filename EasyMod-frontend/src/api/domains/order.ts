@@ -6,6 +6,7 @@ import { httpClient } from '@/shared/lib/http/client';
 import type { ApiResponse } from '../types/common';
 import type {
   Order,
+  OrderItem,
   DeliverySettings,
   CourierBookingPayload,
   CourierBookingResult,
@@ -13,6 +14,55 @@ import type {
   DeliveryProvider,
 } from '../types/order';
 import type { AxiosResponse } from 'axios';
+
+/**
+ * The backend serialises orders in snake_case (customer_name, order_status,
+ * delivery_address …) while the app's `Order` type — and every Orders/Dashboard
+ * component — reads camelCase (customerName, status, deliveryAddress). Only the
+ * Sequelize timestamps come through as camelCase, so without this mapping the
+ * customer name/phone were blank, the status pills/counts were empty, and the
+ * Cancel button (which sent `status`) was silently dropped by the API. Normalise
+ * every order at the API boundary so the rest of the app gets the shape it expects.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeOrderItem(raw: any): OrderItem {
+  return {
+    productId: raw?.product_id ?? raw?.productId ?? '',
+    productName: raw?.productName ?? raw?.product_name ?? raw?.name ?? '',
+    quantity: Number(raw?.quantity ?? 1),
+    price: Number(raw?.price ?? 0),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeOrder(raw: any): Order {
+  if (!raw || typeof raw !== 'object') return raw;
+  const da = raw.delivery_address;
+  const isStructured = da !== null && typeof da === 'object';
+  const deliveryAddressStr = isStructured
+    ? [da.street_address, da.upazila, da.district, da.division].filter(Boolean).join(', ')
+    : (typeof da === 'string' ? da : (raw.deliveryAddress ?? ''));
+
+  return {
+    ...raw,
+    id: raw.id,
+    customerName: raw.customerName ?? raw.customer_name ?? '',
+    customerPhone: raw.customerPhone ?? raw.customer_phone ?? '',
+    status: raw.status ?? raw.order_status ?? 'draft',
+    channel: raw.channel ?? '',
+    total: Number(raw.total ?? 0),
+    deliveryAddress: deliveryAddressStr,
+    // Keep the structured object only when it really is one, so the detail panel's
+    // structured branch is used for manual orders and the plain-text branch for
+    // chatbot orders (which store the address as free text).
+    delivery_address: isStructured ? da : undefined,
+    items: Array.isArray(raw.items) ? raw.items.map(normalizeOrderItem) : [],
+    createdAt: raw.createdAt ?? raw.created_at ?? '',
+    updatedAt: raw.updatedAt ?? raw.updated_at ?? '',
+    payment_status: raw.payment_status ?? raw.paymentStatus,
+    note: raw.note ?? '',
+  } as Order;
+}
 
 /**
  * Get all orders with optional filtering and pagination
@@ -26,7 +76,7 @@ import type { AxiosResponse } from 'axios';
  */
 export async function getOrders(params?: Record<string, unknown>): Promise<Order[]> {
   const response: AxiosResponse<ApiResponse<Order[]>> = await httpClient.get('/api/order', { params });
-  return response.data.data;
+  return Array.isArray(response.data.data) ? response.data.data.map(normalizeOrder) : [];
 }
 
 /**
@@ -42,7 +92,7 @@ export async function getOrders(params?: Record<string, unknown>): Promise<Order
  */
 export async function getOrder(orderId: string): Promise<Order> {
   const response: AxiosResponse<ApiResponse<Order>> = await httpClient.get(`/api/order/${orderId}`);
-  return response.data.data;
+  return normalizeOrder(response.data.data);
 }
 
 /**
@@ -62,8 +112,10 @@ export async function getOrder(orderId: string): Promise<Order> {
 export async function createOrder(
   order: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Order> {
+  // The manual-order form already sends a snake_case payload the create validator
+  // expects, so only the response is normalised back into the app's Order shape.
   const response: AxiosResponse<ApiResponse<Order>> = await httpClient.post('/api/order', order);
-  return response.data.data;
+  return normalizeOrder(response.data.data);
 }
 
 /**
@@ -78,11 +130,19 @@ export async function createOrder(
  * ```
  */
 export async function updateOrder(orderId: string, order: Partial<Order>): Promise<Order> {
+  // Translate the app's camelCase fields to the backend's contract. The status
+  // update buttons (incl. Cancel) send `status`, but the API only accepts
+  // `order_status` — sending the wrong key is exactly why Cancel did nothing.
+  const body: Record<string, unknown> = {};
+  if (order.status !== undefined) body.order_status = order.status;
+  if (order.note !== undefined) body.note = order.note;
+  if (order.payment_status !== undefined) body.payment_status = order.payment_status;
+
   const response: AxiosResponse<ApiResponse<Order>> = await httpClient.patch(
     `/api/order/${orderId}`,
-    order
+    body
   );
-  return response.data.data;
+  return normalizeOrder(response.data.data);
 }
 
 /**
@@ -100,7 +160,7 @@ export async function confirmOrder(orderId: string): Promise<Order> {
   const response: AxiosResponse<ApiResponse<Order>> = await httpClient.post(
     `/api/order/${orderId}/confirm`
   );
-  return response.data.data;
+  return normalizeOrder(response.data.data);
 }
 
 /**

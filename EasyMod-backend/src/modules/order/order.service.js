@@ -375,6 +375,7 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             delivery_fee: totals.deliveryFee,
             total: totals.total,
             delivery_address: orderData.delivery_address || null,
+            delivery_zone: orderData.delivery_zone || null,
             payment_method: orderData.payment_method || null,
             payment_method_id: orderData.paymentMethodId || orderData.payment_method_id || null,
             note: orderData.note,
@@ -496,6 +497,27 @@ const updateOrder = async (orderId, userId, shopId, updateData) => {
     updates.metadata = { ...existingMeta, audit_log: auditLog };
 
     await order.update(updates);
+
+    // Restore inventory when an order is cancelled here (the dashboard's Cancel button
+    // patches order_status='cancelled' through this path). Mirrors cancelOrder(). The
+    // audit guard fires only on a real transition INTO cancelled, so stock is never
+    // double-restored. Best-effort — a restore failure must not fail the cancel itself.
+    if (auditChanges.order_status && auditChanges.order_status.to === 'cancelled') {
+        try {
+            await sequelize.transaction(async (transaction) => {
+                const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
+                for (const item of items) {
+                    const product = await Product.findByPk(item.product_id, { transaction });
+                    if (product?.track_quantity) {
+                        await product.increment('quantity', { by: item.quantity, transaction });
+                        invalidateStockWithRetry(shopId, item.product_id);
+                    }
+                }
+            });
+        } catch (restoreErr) {
+            console.error('Stock restore on cancel failed:', restoreErr.message);
+        }
+    }
 
     // B2: When status changes to 'shipped', send tracking notification
     if (auditChanges.order_status && auditChanges.order_status.to === 'shipped') {

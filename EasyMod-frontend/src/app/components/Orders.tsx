@@ -1057,9 +1057,15 @@ export default function Orders() {
               <h3 className="font-semibold text-gray-900 mb-3">ডেলিভারি ঠিকানা</h3>
               {selectedOrder.delivery_address ? (
                 <div className="space-y-1 text-sm text-gray-700 mb-3">
-                  <p>{selectedOrder.delivery_address.street_address}</p>
-                  <p>{selectedOrder.delivery_address.upazila}, {selectedOrder.delivery_address.district}</p>
-                  <p>{selectedOrder.delivery_address.division}</p>
+                  {selectedOrder.delivery_address.street_address && (
+                    <p>{selectedOrder.delivery_address.street_address}</p>
+                  )}
+                  {(selectedOrder.delivery_address.upazila || selectedOrder.delivery_address.district) && (
+                    <p>{[selectedOrder.delivery_address.upazila, selectedOrder.delivery_address.district].filter(Boolean).join(', ')}</p>
+                  )}
+                  {selectedOrder.delivery_address.division && (
+                    <p>{selectedOrder.delivery_address.division}</p>
+                  )}
                   {selectedOrder.delivery_address.zone && (
                     <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full mt-1">
                       Zone: {selectedOrder.delivery_address.zone.replace(/_/g, ' ')}

@@ -250,6 +250,63 @@ describe('COLLECTING_ZONE → payment routing', () => {
     });
 });
 
+// Founder feedback 2026-06-13: infer the delivery zone from the typed address and
+// apply the charge automatically; only ask inside/outside Dhaka when it's unclear.
+describe('COLLECTING_ADDRESS → zone auto-detection', () => {
+    beforeEach(() => {
+        ShopEntity.findByPk.mockResolvedValue(null); // → default BD zones (60/80/120)
+        PaymentConfigEntity.findAll.mockResolvedValue([{ gateway: 'cod' }]); // COD only
+    });
+
+    const addressSession = () => makeSession({
+        current_step: 'COLLECTING_ADDRESS',
+        step_data: { language: 'bn', name: 'Evan', phone: '01712345678' },
+    });
+
+    test('a Dhaka-city address auto-applies inside_dhaka and skips the zone question', async () => {
+        const res = await OrderSessionService.handleCurrentStep(addressSession(), 'Mirpur 10, Dhaka', null);
+
+        expect(res.step_data.delivery_zone).toBe('inside_dhaka');
+        expect(res.step_data.delivery_charge).toBe(60);
+        expect(res.current_step).toBe('COLLECTING_NOTES');
+        expect(res.step_data.payment_method).toBe('cod');
+        expect(res.prompt).toMatch(/৳60/);
+        expect(res.prompt).not.toMatch(/ডেলিভারি এলাকা নির্বাচন|select your delivery area/i);
+    });
+
+    test('an out-of-Dhaka district auto-applies outside_dhaka', async () => {
+        const res = await OrderSessionService.handleCurrentStep(addressSession(), 'Agrabad, Chittagong', null);
+
+        expect(res.step_data.delivery_zone).toBe('outside_dhaka');
+        expect(res.step_data.delivery_charge).toBe(120);
+        expect(res.current_step).toBe('COLLECTING_NOTES');
+    });
+
+    test('a sub-Dhaka area auto-applies sub_dhaka', async () => {
+        const res = await OrderSessionService.handleCurrentStep(addressSession(), 'Savar Bazar Road', null);
+
+        expect(res.step_data.delivery_zone).toBe('sub_dhaka');
+        expect(res.step_data.delivery_charge).toBe(80);
+    });
+
+    test('an unrecognisable address falls back to ASKING the zone', async () => {
+        const res = await OrderSessionService.handleCurrentStep(addressSession(), 'House 5, Road 3, Block C', null);
+
+        expect(res.current_step).toBe('COLLECTING_ZONE');
+        expect(res.step_data.delivery_zone).toBeUndefined();
+        expect(res.prompt).toMatch(/এলাকা|delivery area/i);
+    });
+
+    test('with a second gateway enabled, detection still routes to the payment step', async () => {
+        PaymentConfigEntity.findAll.mockResolvedValue([{ gateway: 'cod' }, { gateway: 'self-mfs' }]);
+        const res = await OrderSessionService.handleCurrentStep(addressSession(), 'Uttara Sector 7', null);
+
+        expect(res.step_data.delivery_zone).toBe('inside_dhaka');
+        expect(res.current_step).toBe('COLLECTING_PAYMENT');
+        expect(res.prompt).toMatch(/পেমেন্ট পদ্ধতি/);
+    });
+});
+
 // Founder feedback 2026-06-12: the bot replied in Bengali AND English at once.
 // Every prompt must now be a single language matching the customer.
 describe('single-language prompts (never both at once)', () => {

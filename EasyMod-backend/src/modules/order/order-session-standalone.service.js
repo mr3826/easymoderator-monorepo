@@ -106,6 +106,56 @@ const ZONE_LABELS = {
 };
 const DEFAULT_ZONE_CHARGES = { inside_dhaka: 60, sub_dhaka: 80, outside_dhaka: 120 };
 
+// ─── Zone auto-detection keywords ─────────────────────────────────────────────
+// Map a free-text address to a delivery zone so the bot can apply the charge
+// itself instead of always asking "inside or outside Dhaka?" (founder 2026-06-13:
+// detect from the address; only ask when unsure). Lowercased substring match —
+// best-effort and fail-safe: no confident hit ⇒ fall back to asking.
+const ZONE_AREA_KEYWORDS = {
+    // Dhaka-city thanas / neighbourhoods → inside_dhaka
+    inside_dhaka: [
+        'mirpur', 'uttara', 'dhanmondi', 'dhanmandi', 'gulshan', 'banani', 'mohammadpur',
+        'motijheel', 'badda', 'rampura', 'bashundhara', 'baridhara', 'tejgaon', 'farmgate',
+        'mohakhali', 'malibagh', 'khilgaon', 'jatrabari', 'jatra bari', 'wari', 'lalbagh',
+        'kotwali', 'paltan', 'shahbag', 'shahbagh', 'new market', 'newmarket', 'azimpur',
+        'shyamoli', 'kalabagan', 'panthapath', 'kakrail', 'shantinagar', 'mugda', 'khilkhet',
+        'cantonment', 'agargaon', 'kafrul', 'pallabi', 'kazipara', 'shewrapara', 'demra',
+        'sabujbagh', 'hazaribagh', 'shyampur', 'gendaria', 'sutrapur', 'chawkbazar', 'bangshal',
+        'nikunja', 'adabor', 'ramna', 'hatirjheel', 'gulistan', 'mouchak', 'banasree', 'banashree',
+        'bashabo', 'maghbazar', 'moghbazar', 'kuril', 'vatara', 'jurain',
+        'মিরপুর', 'উত্তরা', 'ধানমন্ডি', 'গুলশান', 'বনানী', 'মোহাম্মদপুর', 'মতিঝিল', 'বাড্ডা',
+        'রামপুরা', 'বসুন্ধরা', 'বারিধারা', 'তেজগাঁও', 'ফার্মগেট', 'মহাখালী', 'মালিবাগ', 'খিলগাঁও',
+        'যাত্রাবাড়ী', 'ওয়ারী', 'লালবাগ', 'পল্টন', 'শাহবাগ', 'আজিমপুর', 'শ্যামলী', 'কলাবাগান',
+        'পান্থপথ', 'কাকরাইল', 'শান্তিনগর', 'মুগদা', 'খিলক্ষেত', 'ক্যান্টনমেন্ট', 'আগারগাঁও',
+        'পল্লবী', 'বনশ্রী', 'বাসাবো', 'মগবাজার', 'গুলিস্তান',
+    ],
+    // Greater-Dhaka / suburbs → sub_dhaka
+    sub_dhaka: [
+        'savar', 'ashulia', 'keraniganj', 'dhamrai', 'nabinagar', 'tongi', 'gazipur',
+        'narayanganj', 'fatullah', 'siddhirganj', 'rupganj', 'sonargaon', 'board bazar',
+        'kaliakair', 'joydebpur', 'kanchpur', 'hemayetpur',
+        'সাভার', 'আশুলিয়া', 'কেরানীগঞ্জ', 'ধামরাই', 'টঙ্গী', 'গাজীপুর', 'নারায়ণগঞ্জ',
+        'ফতুল্লা', 'সিদ্ধিরগঞ্জ', 'রূপগঞ্জ', 'সোনারগাঁও', 'জয়দেবপুর',
+    ],
+    // Other districts / divisions → outside_dhaka
+    outside_dhaka: [
+        'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barisal', 'barishal',
+        'rangpur', 'mymensingh', 'comilla', 'cumilla', 'kushtia', 'bogura', 'bogra', 'jessore',
+        'jashore', 'dinajpur', 'cox', 'feni', 'noakhali', 'brahmanbaria', 'tangail', 'pabna',
+        'sirajganj', 'narsingdi', 'faridpur', 'gopalganj', 'madaripur', 'shariatpur', 'jamalpur',
+        'sherpur', 'netrokona', 'kishoreganj', 'manikganj', 'munshiganj', 'magura', 'jhenaidah',
+        'chuadanga', 'meherpur', 'satkhira', 'bagerhat', 'narail', 'pirojpur', 'patuakhali',
+        'bhola', 'barguna', 'gaibandha', 'kurigram', 'lalmonirhat', 'nilphamari', 'panchagarh',
+        'thakurgaon', 'joypurhat', 'naogaon', 'natore', 'chapainawabganj', 'habiganj',
+        'moulvibazar', 'sunamganj', 'lakshmipur', 'chandpur', 'khagrachari', 'rangamati', 'bandarban',
+        'চট্টগ্রাম', 'সিলেট', 'রাজশাহী', 'খুলনা', 'বরিশাল', 'রংপুর', 'ময়মনসিংহ', 'কুমিল্লা',
+        'কুষ্টিয়া', 'বগুড়া', 'যশোর', 'দিনাজপুর', 'কক্সবাজার', 'ফেনী', 'নোয়াখালী',
+        'ব্রাহ্মণবাড়িয়া', 'টাঙ্গাইল', 'পাবনা', 'সিরাজগঞ্জ', 'নরসিংদী', 'ফরিদপুর', 'চাঁদপুর',
+    ],
+};
+// Most-specific first: a named city neighbourhood wins over the generic word "Dhaka".
+const ZONE_DETECT_ORDER = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
+
 // ─── Payment gateway config ───────────────────────────────────────────────────
 const GATEWAY_LABELS = {
     'cod':      { bn: 'ক্যাশ অন ডেলিভারি (COD)', en: 'Cash on Delivery (COD)' },
@@ -456,8 +506,17 @@ class OrderSessionService {
                     // Load shop's configured delivery zones
                     const zones = await OrderSessionService.getShopDeliveryZones(session.shop_id);
                     step_data.delivery_zones = zones; // store for zone step validation
-                    nextStep = 'COLLECTING_ZONE';
-                    prompt = OrderSessionService.buildDeliveryZonePrompt(zones, lang);
+                    // Try to infer the zone from the address so we apply the charge
+                    // ourselves; only ask the inside/outside question when unsure.
+                    const detectedZone = OrderSessionService.detectZoneFromAddress(address, zones);
+                    if (detectedZone) {
+                        const adv = await OrderSessionService._advanceAfterZone(session, step_data, detectedZone, lang, true);
+                        nextStep = adv.nextStep;
+                        prompt = adv.prompt;
+                    } else {
+                        nextStep = 'COLLECTING_ZONE';
+                        prompt = OrderSessionService.buildDeliveryZonePrompt(zones, lang);
+                    }
                 } else {
                     prompt = pickLang(lang,
                         'অনুগ্রহ করে ঠিকানা লিখুন (যেমন: মিরপুর ১০, উত্তরা ৬)।',
@@ -470,27 +529,9 @@ class OrderSessionService {
                 const zones = step_data.delivery_zones || await OrderSessionService.getShopDeliveryZones(session.shop_id);
                 const zoneChoice = this.extractZoneChoice(answer, zones);
                 if (zoneChoice) {
-                    step_data.delivery_zone = zoneChoice.zone;
-                    step_data.delivery_charge = zoneChoice.charge;
-                    // Load shop's enabled payment gateways for prompt and validation
-                    const gateways = await OrderSessionService.getEnabledPaymentGateways(session.shop_id);
-                    step_data.enabled_gateways = gateways;
-                    // Only one gateway (COD) → don't ask "select payment method"; it's the
-                    // only option. Auto-select COD and move on. The payment step is only
-                    // meaningful once the shop has integrated a second method (bKash/Nagad).
-                    if (gateways.length <= 1) {
-                        step_data.payment_method = gateways[0] || 'cod';
-                        nextStep = 'COLLECTING_NOTES';
-                        const chargeNote = pickLang(lang,
-                            `ডেলিভারি চার্জ ৳${zoneChoice.charge}, পেমেন্ট: ক্যাশ অন ডেলিভারি (COD)।`,
-                            `Delivery charge ৳${zoneChoice.charge}, payment: Cash on Delivery (COD).`);
-                        prompt = `${chargeNote}\n` + pickLang(lang,
-                            'কোনো বিশেষ নির্দেশনা আছে? (না থাকলে "না" লিখুন)',
-                            'Any special instructions for your order? (type "no" if none)');
-                    } else {
-                        nextStep = 'COLLECTING_PAYMENT';
-                        prompt = OrderSessionService.buildPaymentPrompt(gateways, zoneChoice, lang);
-                    }
+                    const adv = await OrderSessionService._advanceAfterZone(session, step_data, zoneChoice, lang, false);
+                    nextStep = adv.nextStep;
+                    prompt = adv.prompt;
                 } else {
                     prompt = OrderSessionService.buildDeliveryZonePrompt(zones, lang) +
                         pickLang(lang,
@@ -818,6 +859,67 @@ class OrderSessionService {
         return null;
     }
 
+    /**
+     * Best-effort infer the delivery zone from a free-text address so the bot can
+     * apply the charge without asking. Returns the matching configured zone object
+     * ({ zone, charge }) or null when the address gives no confident signal (→ ask).
+     * A named Dhaka-city area beats the bare word "Dhaka"; only zones the shop has
+     * actually configured are eligible.
+     */
+    static detectZoneFromAddress(address, zones) {
+        if (!address || !Array.isArray(zones) || zones.length === 0) return null;
+        const t = String(address).toLowerCase();
+        const configured = new Set(zones.map(z => z.zone));
+        for (const zoneKey of ZONE_DETECT_ORDER) {
+            if (!configured.has(zoneKey)) continue;
+            const kws = ZONE_AREA_KEYWORDS[zoneKey] || [];
+            if (kws.some(kw => t.includes(kw))) {
+                return zones.find(z => z.zone === zoneKey) || null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Apply a chosen/detected delivery zone and move the flow forward: record the
+     * zone + charge, load the shop's gateways, and route to payment (or straight to
+     * notes when COD is the only option). Shared by the manual zone pick and the
+     * address auto-detection so both behave identically.
+     *
+     * @param {boolean} detected — true when inferred from the address (we then name
+     *        the zone so a wrong guess is visible and the buyer can correct it).
+     * @returns {{ nextStep: string, prompt: string }}
+     */
+    static async _advanceAfterZone(session, stepData, zoneChoice, lang, detected = false) {
+        stepData.delivery_zone = zoneChoice.zone;
+        stepData.delivery_charge = zoneChoice.charge;
+        const gateways = await OrderSessionService.getEnabledPaymentGateways(session.shop_id);
+        stepData.enabled_gateways = gateways;
+
+        const chargeLine = detected
+            ? pickLang(lang,
+                `ঠিকানা অনুযায়ী: ${zoneLabel(zoneChoice.zone, lang)}, ডেলিভারি চার্জ ৳${zoneChoice.charge}।`,
+                `Based on your address: ${zoneLabel(zoneChoice.zone, lang)}, delivery charge ৳${zoneChoice.charge}.`)
+            : pickLang(lang,
+                `ডেলিভারি চার্জ ৳${zoneChoice.charge} (${zoneLabel(zoneChoice.zone, lang)})।`,
+                `Delivery charge ৳${zoneChoice.charge} (${zoneLabel(zoneChoice.zone, lang)}).`);
+
+        if (gateways.length <= 1) {
+            // Only COD → don't ask "select a payment method", it's the sole option.
+            stepData.payment_method = gateways[0] || 'cod';
+            const ask = pickLang(lang,
+                'পেমেন্ট: ক্যাশ অন ডেলিভারি (COD)।\nকোনো বিশেষ নির্দেশনা আছে? (না থাকলে "না" লিখুন)',
+                'Payment: Cash on Delivery (COD).\nAny special instructions for your order? (type "no" if none)');
+            return { nextStep: 'COLLECTING_NOTES', prompt: `${chargeLine}\n${ask}` };
+        }
+        // Multiple gateways → ask which. Pass null zoneChoice so buildPaymentPrompt
+        // doesn't reprint the charge line we just showed.
+        return {
+            nextStep: 'COLLECTING_PAYMENT',
+            prompt: `${chargeLine}\n` + OrderSessionService.buildPaymentPrompt(gateways, null, lang)
+        };
+    }
+
     // ─── Payment helpers ──────────────────────────────────────────────────────
 
     /**
@@ -897,6 +999,7 @@ class OrderSessionService {
             customer_name: stepData.name,
             customer_phone: stepData.phone,
             delivery_address: stepData.address,
+            delivery_zone: stepData.delivery_zone || null,
             channel: session.channel || 'chatbot',
             items: [{
                 product_id: product.id,

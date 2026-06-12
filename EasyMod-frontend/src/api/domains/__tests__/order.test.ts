@@ -25,12 +25,16 @@ describe('Order Domain API', () => {
   });
 
   describe('getOrders', () => {
-    it('should return list of orders', async () => {
+    it('should return list of orders, normalised from the backend snake_case shape', async () => {
       const mockResponse = {
         data: {
           data: [
-            { id: '1', total: 100, status: 'pending' },
-            { id: '2', total: 200, status: 'confirmed' },
+            {
+              id: '1', total: 100, order_status: 'confirmed',
+              customer_name: 'Rahim', customer_phone: '01712345678',
+              delivery_address: 'Mirpur 10, Dhaka', created_at: '2026-06-13T10:00:00Z',
+              items: [{ product_id: 'p1', product_name: 'Azal Lawn', quantity: 2, price: 1650 }],
+            },
           ],
         },
       };
@@ -39,7 +43,39 @@ describe('Order Domain API', () => {
       const result = await order.getOrders();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/order', { params: undefined });
-      expect(result).toEqual(mockResponse.data.data);
+      // The backend sends order_status / customer_name; the app reads status / customerName.
+      expect(result[0].status).toBe('confirmed');
+      expect(result[0].customerName).toBe('Rahim');
+      expect(result[0].customerPhone).toBe('01712345678');
+      expect(result[0].deliveryAddress).toBe('Mirpur 10, Dhaka');
+      expect(result[0].createdAt).toBe('2026-06-13T10:00:00Z');
+      expect(result[0].items[0].productName).toBe('Azal Lawn');
+      expect(result[0].items[0].quantity).toBe(2);
+    });
+
+    it('returns an empty array when the API sends a non-array payload', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { data: null } });
+      const result = await order.getOrders();
+      expect(result).toEqual([]);
+    });
+
+    it('keeps a structured delivery_address object and also exposes a readable string', async () => {
+      const mockResponse = {
+        data: {
+          data: [{
+            id: '9', total: 0, order_status: 'draft',
+            delivery_address: { street_address: 'House 5', upazila: 'Savar', district: 'Dhaka', division: 'Dhaka', zone: 'sub_dhaka' },
+            items: [],
+          }],
+        },
+      };
+      (httpClient.get as any).mockResolvedValue(mockResponse);
+
+      const result = await order.getOrders();
+      expect(typeof result[0].delivery_address).toBe('object');
+      expect(result[0].delivery_address?.zone).toBe('sub_dhaka');
+      expect(result[0].deliveryAddress).toContain('House 5');
+      expect(result[0].deliveryAddress).toContain('Savar');
     });
 
     it('should handle query parameters', async () => {
@@ -84,17 +120,25 @@ describe('Order Domain API', () => {
   });
 
   describe('updateOrder', () => {
-    it('should update order successfully', async () => {
-      const updateData = { status: 'confirmed' };
-      const mockResponse = {
-        data: { data: { id: '1', ...updateData } },
-      };
+    it('translates status → order_status so the backend actually applies it', async () => {
+      const mockResponse = { data: { data: { id: '1', order_status: 'cancelled' } } };
       (httpClient.patch as any).mockResolvedValue(mockResponse);
 
-      const result = await order.updateOrder('1', updateData);
+      const result = await order.updateOrder('1', { status: 'cancelled' });
 
-      expect(httpClient.patch).toHaveBeenCalledWith('/api/order/1', updateData);
+      // The bug: the app sent { status } but the API only honours { order_status },
+      // so Cancel silently did nothing. The boundary now maps it correctly.
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/order/1', { order_status: 'cancelled' });
       expect(result.id).toBe('1');
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('passes a note-only update through unchanged', async () => {
+      (httpClient.patch as any).mockResolvedValue({ data: { data: { id: '1', note: 'call before delivery' } } });
+
+      await order.updateOrder('1', { note: 'call before delivery' });
+
+      expect(httpClient.patch).toHaveBeenCalledWith('/api/order/1', { note: 'call before delivery' });
     });
   });
 

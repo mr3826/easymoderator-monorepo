@@ -705,6 +705,37 @@ describe('Order Service', () => {
         });
     });
 
+    describe('updateOrder', () => {
+        // The dashboard Cancel button patches order_status='cancelled' through this path,
+        // which must restore inventory (mirrors the dedicated cancelOrder endpoint).
+        it('restores tracked stock when an order is cancelled via order_status', async () => {
+            const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
+            const prod = { id: 'prod-1', track_quantity: true, increment: jest.fn().mockResolvedValue(true) };
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            OrderItem.findAll = jest.fn().mockResolvedValue([{ product_id: 'prod-1', quantity: 2 }]);
+            Product.findByPk = jest.fn().mockResolvedValue(prod);
+            sequelize.transaction = jest.fn(async (cb) => cb({ commit: jest.fn(), rollback: jest.fn() }));
+
+            await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'cancelled' });
+
+            expect(mockOrder.update).toHaveBeenCalledWith(expect.objectContaining({ order_status: 'cancelled' }));
+            expect(prod.increment).toHaveBeenCalledWith('quantity', expect.objectContaining({ by: 2 }));
+        });
+
+        it('does NOT touch stock for a non-cancel status change', async () => {
+            const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
+            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
+            UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
+            Product.findByPk = jest.fn();
+
+            await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'processing' });
+
+            expect(mockOrder.update).toHaveBeenCalledWith(expect.objectContaining({ order_status: 'processing' }));
+            expect(Product.findByPk).not.toHaveBeenCalled();
+        });
+    });
+
     describe('Helper Functions', () => {
         describe('isCodOrder', () => {
             it('should identify unpaid orders as COD', () => {
