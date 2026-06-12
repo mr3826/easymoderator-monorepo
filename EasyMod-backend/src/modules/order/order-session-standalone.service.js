@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const productSearch = require('../product/product-search.service');
 
@@ -326,7 +326,7 @@ class OrderSessionService {
                             await session.update({ status: 'CANCELLED' });
                             return {
                                 session_id: session.id,
-                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, chosen),
+                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, chosen, lang),
                                 current_step: 'CANCELLED',
                                 step_data,
                                 completed: false,
@@ -370,9 +370,26 @@ class OrderSessionService {
             case 'COLLECTING_QUANTITY': {
                 const qty = extractQuantity(answer);
                 if (qty) {
+                    // Verify the requested quantity is actually in stock NOW, before we
+                    // walk the customer through name/phone/address only to fail at order
+                    // creation with a scary generic error. checkStock without a quantity
+                    // defaulted to 1, so "I want 3" of a 2-in-stock item sailed through.
+                    // Fail-open: a stock-lookup error must never block a real order.
+                    const prod = session.product_info || {};
+                    if (prod.id) {
+                        const stock = await productSearch.checkStock(prod.id, session.shop_id, qty)
+                            .catch(() => ({ available: true }));
+                        if (!stock.available && typeof stock.quantity === 'number') {
+                            // Not enough units — tell them how many remain and re-ask. Stay on step.
+                            prompt = pickLang(lang,
+                                `দুঃখিত, এই মুহূর্তে স্টকে আছে ${stock.quantity}টি। কয়টা নিতে চান?`,
+                                `Sorry, only ${stock.quantity} in stock right now. How many would you like?`);
+                            break;
+                        }
+                    }
                     // Quantity lives on product_info so the summary, invoice and
                     // order creation all read product.quantity consistently.
-                    const pi = { ...(session.product_info || {}), quantity: qty };
+                    const pi = { ...prod, quantity: qty };
                     await session.update({ product_info: pi });
                     session.product_info = pi;
                     nextStep = 'COLLECTING_NAME';
@@ -573,12 +590,12 @@ class OrderSessionService {
                     // Re-check stock before committing
                     const product = session.product_info;
                     if (product && product.id) {
-                        const stockCheck = await productSearch.checkStock(product.id, session.shop_id);
+                        const stockCheck = await productSearch.checkStock(product.id, session.shop_id, product.quantity || 1);
                         if (!stockCheck.available) {
                             await session.update({ status: 'CANCELLED' });
                             return {
                                 session_id: session.id,
-                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, product),
+                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, product, lang),
                                 current_step: 'CANCELLED',
                                 step_data,
                                 completed: false,
@@ -615,8 +632,16 @@ class OrderSessionService {
                             console.error(`[OrderSession] Invoice generation failed for order ${order.order_number}:`, invErr.message);
                         }
                     } catch (orderErr) {
-                        // RTO Shield / subscription limit / other business error
-                        const userMsg = orderErr.statusCode >= 400 && orderErr.statusCode < 500
+                        // Surface genuine business rejections (out of stock, COD limit,
+                        // RTO block, product not found) to the customer with their real
+                        // reason. AppError exposes the HTTP code as `.status` (NOT
+                        // `.statusCode`) — reading the wrong property made every 4xx look
+                        // like a 5xx, so customers saw the scary "our team will contact
+                        // you" generic instead of "only 2 left in stock". Log the real
+                        // error too (the old catch swallowed it, hiding the root cause).
+                        const errCode = orderErr.status ?? orderErr.statusCode;
+                        console.error(`[OrderSession] Order creation failed for session ${session.id} (code=${errCode}):`, orderErr.message);
+                        const userMsg = (errCode >= 400 && errCode < 500)
                             ? orderErr.message
                             : pickLang(lang,
                                 'অর্ডার সম্পন্ন করা যায়নি। আমাদের টিম শীঘ্রই যোগাযোগ করবে।',
@@ -677,11 +702,19 @@ class OrderSessionService {
      * Get active session for a customer
      */
     static async getActiveSession(shopId, customerChannelId) {
+        // Only resume a session that is still within its TTL. A session left stuck at
+        // ORDER_SUMMARY (e.g. order creation kept failing) was otherwise resurfaced on
+        // EVERY later message — the customer felt the bot was "stuck on old data" and
+        // could never start fresh. Drop expired rows; keep legacy rows with null expiry.
         return await OrderSession.findOne({
             where: {
                 shop_id: shopId,
                 customer_channel_id: customerChannelId,
-                status: 'ACTIVE'
+                status: 'ACTIVE',
+                [Op.or]: [
+                    { expires_at: { [Op.gt]: new Date() } },
+                    { expires_at: { [Op.is]: null } }
+                ]
             },
             order: [['last_activity_at', 'DESC']]
         });

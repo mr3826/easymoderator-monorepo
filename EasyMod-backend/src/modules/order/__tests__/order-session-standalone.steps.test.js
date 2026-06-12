@@ -123,11 +123,47 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         expect(res.prompt).toContain('100001');
         expect(res.prompt).toMatch(/অর্ডার সফলভাবে|placed successfully/);
     });
+
+    // Founder's live failure: order creation threw a 400 "Insufficient stock"
+    // (AppError, exposed as `.status`), but the catch read `.statusCode` →
+    // undefined → treated as 5xx → customer saw the scary generic line instead
+    // of the real reason. A genuine business 4xx must surface its own message.
+    test('surfaces the real reason on a business 4xx (out of stock)', async () => {
+        const appErr = Object.assign(new Error('Insufficient stock for product: Azal Lawn Two Piece'), { status: 400 });
+        createOrderInternal.mockRejectedValue(appErr);
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+
+        expect(res.completed).toBeFalsy();
+        expect(res.current_step).toBe('ORDER_SUMMARY');           // stays so they can adjust
+        expect(res.prompt).toBe('Insufficient stock for product: Azal Lawn Two Piece');
+    });
+
+    test('keeps the generic apology on a real 5xx (server fault)', async () => {
+        const serverErr = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), { status: 500 });
+        createOrderInternal.mockRejectedValue(serverErr);
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            step_data: { ...stepData, language: 'en' },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+
+        expect(res.completed).toBeFalsy();
+        expect(res.prompt).toMatch(/contact you shortly/i);       // generic, not the raw DB error
+        expect(res.prompt).not.toMatch(/ECONNREFUSED/);
+    });
 });
 
 // Founder feedback 2026-06-12: the bot assumed 1 piece and never verified the
 // quantity, so the invoice product count was wrong. A dedicated step now asks.
 describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
+    beforeEach(() => {
+        // Requested quantity is verified against live stock before advancing.
+        productSearch.checkStock.mockResolvedValue({ available: true });
+    });
+
     test.each([
         ['ami 3 ta nibo', 3],
         ['2', 2],
@@ -139,6 +175,7 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
         const res = await OrderSessionService.handleCurrentStep(session, answer, null);
 
         expect(res.current_step).toBe('COLLECTING_NAME');
+        expect(productSearch.checkStock).toHaveBeenCalledWith('prod-1', 'shop-1', expected);
         expect(session.update).toHaveBeenCalledWith(
             expect.objectContaining({ product_info: expect.objectContaining({ quantity: expected }) })
         );
@@ -150,6 +187,32 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
 
         expect(res.current_step).toBe('COLLECTING_QUANTITY');
         expect(res.prompt).toMatch(/how many/i);
+    });
+
+    // Founder's live failure: ordering 3 of a 2-in-stock item used to sail past
+    // here (stock checked without the quantity) and only blew up at order
+    // creation with a scary generic error. Now it's caught early and re-asked.
+    test('re-asks with the remaining count when requested qty exceeds stock', async () => {
+        productSearch.checkStock.mockResolvedValue({
+            available: false, reason: 'Only 2 unit(s) left in stock', quantity: 2,
+        });
+        const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'en' } });
+        const res = await OrderSessionService.handleCurrentStep(session, '3', null);
+
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(res.prompt).toMatch(/only 2 in stock/i);
+        // Must NOT advance or persist the impossible quantity.
+        expect(session.update).not.toHaveBeenCalledWith(
+            expect.objectContaining({ product_info: expect.objectContaining({ quantity: 3 }) })
+        );
+    });
+
+    test('fails open (advances) when the stock lookup throws', async () => {
+        productSearch.checkStock.mockRejectedValue(new Error('db down'));
+        const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
+        const res = await OrderSessionService.handleCurrentStep(session, '2', null);
+
+        expect(res.current_step).toBe('COLLECTING_NAME');
     });
 });
 

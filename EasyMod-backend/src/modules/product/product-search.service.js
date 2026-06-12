@@ -191,7 +191,8 @@ const checkStock = async (productId, shopId, requestedQty = 1) => {
     if (!product.is_active) return { available: false, reason: 'Product is no longer available' };
     if (!product.in_stock) return { available: false, reason: 'Product is out of stock' };
     if (product.track_quantity && product.quantity < requestedQty) {
-        return { available: false, reason: `Only ${product.quantity} unit(s) left in stock` };
+        // Expose the live count so callers can localise "only N left" without re-querying.
+        return { available: false, reason: `Only ${product.quantity} unit(s) left in stock`, quantity: product.quantity };
     }
     return { available: true, reason: null, product };
 };
