@@ -4,6 +4,38 @@
  * Tracks request context, user actions, and side effects for auditing
  */
 
+/**
+ * Convert an Error into a JSON-serializable shape. A raw Error JSON.stringifies to
+ * `{}` because message/stack/name are non-enumerable, so we copy the fields we want
+ * explicitly. Stack traces leak internal paths → only included off-production.
+ */
+function serializeError(err) {
+    const out = { message: err.message, name: err.name };
+    if (err.code !== undefined) out.code = err.code;
+    if (err.status !== undefined) out.status = err.status;
+    if (err.statusCode !== undefined) out.statusCode = err.statusCode;
+    if (process.env.NODE_ENV !== 'production') out.stack = err.stack;
+    return out;
+}
+
+/**
+ * Normalize whatever was passed as `meta` into a safe, fully-serializable object.
+ * Crucially, this rescues two widespread call-site mistakes that used to log `{}`:
+ *   - the whole meta arg IS an Error (passed to warn/info/debug)
+ *   - a meta field VALUE is a raw Error (e.g. `{ error: errObj }`)
+ */
+function normalizeMeta(meta) {
+    if (meta == null) return {};
+    if (meta instanceof Error) return { error: serializeError(meta) };
+    if (typeof meta !== 'object') return { value: meta };
+    const out = {};
+    for (const key of Object.keys(meta)) {
+        const v = meta[key];
+        out[key] = v instanceof Error ? serializeError(v) : v;
+    }
+    return out;
+}
+
 class StructuredLogger {
     constructor(context = {}) {
         this.context = {
@@ -35,29 +67,46 @@ class StructuredLogger {
     }
 
     info(message, meta = {}) {
-        return this.log('INFO', message, meta);
+        return this.log('INFO', message, normalizeMeta(meta));
     }
 
+    /**
+     * Log an error. Robust to every shape the codebase uses for the 2nd arg:
+     *   - an Error             → extracted into `error: { message, code, ... }`
+     *   - a meta object        → spread as fields (the dominant `error('msg', {...})`
+     *                            idiom); any nested Error value is serialized too
+     *   - a primitive          → wrapped as `error: { message: String(arg) }`
+     * The optional 3rd `meta` is always merged on top. Error detail is never dropped.
+     */
     error(message, error, meta = {}) {
-        return this.log('ERROR', message, {
-            error: {
-                message: error?.message,
-                code: error?.code,
-                // Stack traces expose internal file paths and line numbers.
-                // Only include in non-production environments.
-                ...(process.env.NODE_ENV !== 'production' && { stack: error?.stack })
-            },
-            ...meta
-        });
+        if (error instanceof Error) {
+            return this.log('ERROR', message, {
+                error: serializeError(error),
+                ...normalizeMeta(meta)
+            });
+        }
+        if (error && typeof error === 'object') {
+            return this.log('ERROR', message, {
+                ...normalizeMeta(error),
+                ...normalizeMeta(meta)
+            });
+        }
+        if (error !== undefined && error !== null) {
+            return this.log('ERROR', message, {
+                error: { message: String(error) },
+                ...normalizeMeta(meta)
+            });
+        }
+        return this.log('ERROR', message, normalizeMeta(meta));
     }
 
     warn(message, meta = {}) {
-        return this.log('WARN', message, meta);
+        return this.log('WARN', message, normalizeMeta(meta));
     }
 
     debug(message, meta = {}) {
         if (process.env.DEBUG_ENABLED === 'true') {
-            return this.log('DEBUG', message, meta);
+            return this.log('DEBUG', message, normalizeMeta(meta));
         }
     }
 
