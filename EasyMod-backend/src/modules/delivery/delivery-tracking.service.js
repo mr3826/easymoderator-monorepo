@@ -4,7 +4,7 @@
  * Cost-optimized with webhook-first approach and smart polling
  */
 
-const { DeliveryTracking, Order, Shop, Channel } = require('../entities');
+const { DeliveryTracking, Order, Shop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const deliveryService = require('./delivery.service');
@@ -326,39 +326,33 @@ class DeliveryTrackingService {
                 return;
             }
 
-            const { Channel } = require('../entities');
             const webhookService = require('../webhook/webhook.service');
-
-            // Find active channel for the shop
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: tracking.shop_id,
-                    is_active: true
-                },
-                order: [['created_at', 'DESC']]
-            });
-
-            if (!channel) {
-                this.logger.warn('No active channel found for delivery notification');
-                return;
-            }
 
             // Build notification message
             const notificationMessage = `${message.bn}\n\n📦 অর্ডার: #${tracking.order.order_number}\n🚚 কুরিয়ার: ${tracking.provider}\n📱 ট্র্যাকিং: ${tracking.tracking_number}\n\n---\n\n${message.en}\n\n📦 Order: #${tracking.order.order_number}\n🚚 Courier: ${tracking.provider}\n📱 Tracking: ${tracking.tracking_number}`;
 
-            // Send to customer
-            await webhookService.sendMessage(channel, tracking.order.customer_phone, notificationMessage);
-
-            // Update tracking to mark as notified
-            await tracking.update({
-                customer_notified: true
+            // Send to the customer via their PSID (resolved from the order's customer).
+            // The old code looked up an undefined `Channel` model and passed a phone
+            // number as the Meta recipient, so this notification silently never sent.
+            const result = await webhookService.sendToCustomer({
+                shopId: tracking.shop_id,
+                customerId: tracking.order.customer_id,
+                message: notificationMessage,
             });
 
-            this.logger.info('Customer notified about delivery status', {
-                trackingId: tracking.id,
-                status,
-                customerPhone: tracking.order.customer_phone
-            });
+            if (result.sent) {
+                await tracking.update({ customer_notified: true });
+                this.logger.info('Customer notified about delivery status', {
+                    trackingId: tracking.id,
+                    status,
+                });
+            } else {
+                this.logger.info('Delivery notification not delivered', {
+                    trackingId: tracking.id,
+                    status,
+                    reason: result.reason,
+                });
+            }
 
         } catch (error) {
             this.logger.error('Failed to send customer notification', {
@@ -374,23 +368,15 @@ class DeliveryTrackingService {
      */
     async handleSuccessfulDelivery(tracking) {
         try {
-            // Send delivery completion notification
-            const { Channel } = require('../entities');
+            // Send delivery completion notification to the customer via their PSID.
             const webhookService = require('../webhook/webhook.service');
+            const completionMessage = `✅ ডেলিভারি সম্পন্ন হয়েছে!\n\nআপনার অর্ডার #${tracking.order.order_number} সফলভাবে ডেলিভারি হয়েছে।\n\nপণ্য পেয়ে থাকলে আমাদের জানান।\n\nধন্যবাদ!\n\n---\n\n✅ Delivery Completed!\n\nYour order #${tracking.order.order_number} has been successfully delivered.\n\nPlease let us know once you've received the package.\n\nThank you!`;
 
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: tracking.shop_id,
-                    is_active: true
-                },
-                order: [['created_at', 'DESC']]
+            await webhookService.sendToCustomer({
+                shopId: tracking.shop_id,
+                customerId: tracking.order.customer_id,
+                message: completionMessage,
             });
-
-            if (channel) {
-                const completionMessage = `✅ ডেলিভারি সম্পন্ন হয়েছে!\n\nআপনার অর্ডার #${tracking.order.order_number} সফলভাবে ডেলিভারি হয়েছে।\n\nপণ্য পেয়ে থাকলে আমাদের জানান।\n\nধন্যবাদ!\n\n---\n\n✅ Delivery Completed!\n\nYour order #${tracking.order.order_number} has been successfully delivered.\n\nPlease let us know once you've received the package.\n\nThank you!`;
-                
-                await webhookService.sendMessage(channel, tracking.order.customer_phone, completionMessage);
-            }
 
             // Update actual delivery time
             await tracking.update({

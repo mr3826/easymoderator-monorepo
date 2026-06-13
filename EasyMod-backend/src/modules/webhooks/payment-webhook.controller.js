@@ -159,21 +159,6 @@ class PaymentWebhookController {
     async sendPaymentConfirmationToCustomer(order, paymentInfo) {
         try {
             const webhookService = require('../webhook/webhook.service');
-            const { Channel } = require('../entities');
-
-            // Find active channel for the shop
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: order.shop_id,
-                    is_active: true
-                },
-                order: [['created_at', 'DESC']]
-            });
-
-            if (!channel) {
-                this.logger.warn('No active channel found for payment confirmation');
-                return;
-            }
 
             const confirmationMessage = `✅ পেমেন্ট সফলভাবে সম্পন্ন হয়েছে!
 
@@ -195,11 +180,21 @@ class PaymentWebhookController {
 
 Your order is confirmed and delivery process will start.`;
 
-            // Find customer channel ID
-            const customerChannelId = order.customer_id || order.customer_phone;
-            
-            if (customerChannelId) {
-                await webhookService.sendMessage(channel, customerChannelId, confirmationMessage);
+            // Resolve the customer's PSID from the order and send via the live
+            // provider. (The old code passed `order.customer_id` — the internal
+            // Customer UUID — or a phone number as the Meta recipient, neither of
+            // which the Graph API accepts, so confirmations silently never sent.)
+            if (!order.customer_id) {
+                this.logger.warn('No customer linked to order for payment confirmation', { orderId: order.id });
+                return;
+            }
+            const result = await webhookService.sendToCustomer({
+                shopId: order.shop_id,
+                customerId: order.customer_id,
+                message: confirmationMessage,
+            });
+            if (!result.sent) {
+                this.logger.info('Payment confirmation not delivered', { orderId: order.id, reason: result.reason });
             }
 
         } catch (error) {

@@ -5,7 +5,7 @@
  * WhatsApp removed from product scope 2026-05-20.
  */
 
-const { OwnerNotification, Shop, User, UserShop, Channel } = require('../entities');
+const { OwnerNotification, Shop, User, UserShop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sendEmail } = require('../../utils/email.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -225,33 +225,14 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
      * Send notification via Facebook Messenger
      */
     async sendViaFacebook(shopId, owner, message) {
-        try {
-            // Find Facebook channel for shop
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: shopId,
-                    type: { [require('sequelize').Op.in]: ['messenger', 'facebook'] },
-                    is_active: true
-                }
-            });
-
-            if (!channel) {
-                return { success: false, reason: 'no_facebook_channel' };
-            }
-
-            // Use webhook service to send message
-            const webhookService = require('../webhook/webhook.service');
-            await webhookService.sendMessage(channel, owner.phone, message);
-
-            return { success: true, channel: 'facebook' };
-
-        } catch (error) {
-            this.logger.warn('Facebook notification failed', {
-                shopId,
-                error: error.message
-            });
-            return { success: false, reason: 'send_error', error: error.message };
-        }
+        // Delivering an owner (merchant) notification over Messenger would require
+        // the owner's Meta PSID — which we do not have; `owner` is a merchant User,
+        // not a Meta customer, and `owner.phone` is a phone number the Graph API
+        // does not accept as a recipient. Owners are reliably reached via email and
+        // web push (see sendViaEmail / push), so this channel is intentionally a
+        // no-op rather than an undeliverable send. (Previously this looked up an
+        // undefined `Channel` model and threw on every call.)
+        return { success: false, reason: 'fb_owner_unsupported' };
     }
 
     /**
@@ -378,19 +359,31 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
                 ? `✅ আপনার পেমেন্ট নিশ্চিত হয়েছে! অর্ডার #${notification.customer_data.orderNumber} নিশ্চিত করা হয়েছে। ডেলিভারি প্রক্রিয়া শুরু হবে।\n\n✅ Your payment has been confirmed! Order #${notification.customer_data.orderNumber} is confirmed. Delivery process will start.`
                 : `❌ আপনার পেমেন্ট নিশ্চিত করা হয়নি। অনুগ্রহ করে আবার চেষ্টা করুন বা দোকানের সাথে যোগাযোগ করুন।\n\n❌ Your payment could not be confirmed. Please try again or contact the shop.`;
 
-            // Send via the same channel customer used
-            const webhookService = require('../webhook/webhook.service');
-            const channel = await Channel.findOne({
-                where: {
-                    shop_id: notification.shop_id,
-                    is_active: true
-                },
-                order: [['created_at', 'DESC']]
-            });
-
-            if (channel) {
-                await webhookService.sendMessage(channel, notification.customer_data.customerPhone, customerMessage);
+            // Resolve the order's customer and send to their PSID. (The old code
+            // looked up an undefined `Channel` model and passed a phone number as
+            // the Meta recipient, so this confirmation silently never reached the
+            // customer.)
+            const orderId = notification.customer_data?.orderId;
+            if (!orderId) {
+                this.logger.info('No orderId on notification — cannot send customer response', {
+                    notificationId: notification.id
+                });
+                return;
             }
+            const { Order } = require('../entities');
+            const order = await Order.findOne({ where: { id: orderId, shop_id: notification.shop_id } });
+            if (!order || !order.customer_id) {
+                this.logger.info('No customer linked to order — skipping customer response', {
+                    notificationId: notification.id
+                });
+                return;
+            }
+            const webhookService = require('../webhook/webhook.service');
+            await webhookService.sendToCustomer({
+                shopId: notification.shop_id,
+                customerId: order.customer_id,
+                message: customerMessage,
+            });
 
         } catch (error) {
             this.logger.warn('Failed to send customer response', {

@@ -38,57 +38,36 @@ const formatTrackingMessage = (order, options = {}) => {
  */
 const trySendViaChannel = async (order, shopId, message, logger) => {
     try {
-        const { Channel } = require('../entities');
-        const { Op } = require('sequelize');
-
-        // Find an active channel for this shop (prefer messenger/facebook)
-        const channel = await Channel.findOne({
-            where: {
-                shop_id: shopId,
-                is_active: true,
-                type: { [Op.in]: ['messenger', 'facebook', 'instagram'] }
-            },
-            order: [['created_at', 'DESC']]
-        });
-
-        if (!channel) {
-            logger.info('No active channel found for tracking notification — logging only', {
-                shopId,
-                orderId: order.id
-            });
-            console.log(`[TrackingNotification] Shop ${shopId} | Order ${order.order_number || order.id}: ${message}`);
-            return { sent: false, reason: 'no_channel' };
-        }
-
-        // If customer has an external_id (Facebook PSID), send via channel messenger API
-        const customerId = order.customer_id;
-        if (!customerId) {
+        // The order carries a customer_id (the Customer table PK), NOT a PSID.
+        // sendToCustomer resolves the customer's channel_user_id (PSID/IGSID) and
+        // platform, then sends via the live provider. (The old code looked up an
+        // undefined `Channel` model and read a nonexistent `customer.external_id`,
+        // so this notification silently never sent.)
+        if (!order.customer_id) {
             logger.info('No customer linked to order — logging only', { orderId: order.id });
             console.log(`[TrackingNotification] Shop ${shopId} | Order ${order.order_number || order.id}: ${message}`);
             return { sent: false, reason: 'no_customer' };
         }
 
-        const { Customer } = require('../entities');
-        const customer = await Customer.findOne({ where: { id: customerId, shop_id: shopId } });
+        const webhookService = require('../webhook/webhook.service');
+        const result = await webhookService.sendToCustomer({ shopId, customerId: order.customer_id, message });
 
-        if (!customer || !customer.external_id) {
-            logger.info('Customer has no external_id — logging notification only', {
+        if (result.sent) {
+            logger.info('Tracking notification sent via channel', {
+                shopId,
                 orderId: order.id,
-                customerId
+                channelType: result.channelType
             });
-            console.log(`[TrackingNotification] Shop ${shopId} | Order ${order.order_number || order.id}: ${message}`);
-            return { sent: false, reason: 'no_external_id' };
+            return { sent: true, channelType: result.channelType };
         }
 
-        const webhookService = require('../webhook/webhook.service');
-        await webhookService.sendMessage(channel, customer.external_id, message);
-
-        logger.info('Tracking notification sent via channel', {
+        logger.info('Tracking notification not delivered — logging only', {
             shopId,
             orderId: order.id,
-            channelType: channel.type
+            reason: result.reason
         });
-        return { sent: true, channelType: channel.type };
+        console.log(`[TrackingNotification] Shop ${shopId} | Order ${order.order_number || order.id}: ${message}`);
+        return { sent: false, reason: result.reason };
     } catch (err) {
         // Non-fatal: log and fall back
         logger.warn('Failed to send tracking notification via channel, falling back to log', {

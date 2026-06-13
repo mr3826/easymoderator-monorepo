@@ -494,22 +494,18 @@ Type "YES" to confirm.`;
                     }
                 });
 
-                // Send payment URL to customer
+                // Send payment URL to the customer. session.customer_channel_id is
+                // the customer's PSID/IGSID; the shim resolves the MetaChannel and
+                // drops gracefully if none is connected. (The old code looked up an
+                // undefined `Channel` model and threw here.)
                 const webhookService = require('../webhook/webhook.service');
-                const { Channel } = require('../entities');
-                const channel = await Channel.findOne({
-                    where: {
-                        shop_id: session.shop_id,
-                        is_active: true
-                    },
-                    order: [['created_at', 'DESC']]
-                });
+                const paymentMessage = `💳 পেমেন্ট লিংক তৈরি হয়েছে!\n\nপেমেন্ট করতে নিচের লিংকে ক্লিক করুন:\n${paymentResult.paymentUrl}\n\nপরিমাণ: ৳${orderData.total}\nঅর্ডার: #${orderData.order_number}\n\nলিংকটি ১০ মিনিটের মধ্যে ব্যবহার করুন।\n\n---\n\n💳 Payment link created!\n\nClick the link below to pay:\n${paymentResult.paymentUrl}\n\nAmount: ৳${orderData.total}\nOrder: #${orderData.order_number}\n\nUse the link within 10 minutes.`;
 
-                if (channel) {
-                    const paymentMessage = `💳 পেমেন্ট লিংক তৈরি হয়েছে!\n\nপেমেন্ট করতে নিচের লিংকে ক্লিক করুন:\n${paymentResult.paymentUrl}\n\nপরিমাণ: ৳${orderData.total}\nঅর্ডার: #${orderData.order_number}\n\nলিংকটি ১০ মিনিটের মধ্যে ব্যবহার করুন।\n\n---\n\n💳 Payment link created!\n\nClick the link below to pay:\n${paymentResult.paymentUrl}\n\nAmount: ৳${orderData.total}\nOrder: #${orderData.order_number}\n\nUse the link within 10 minutes.`;
-                    
-                    await webhookService.sendMessage(channel, session.customer_channel_id, paymentMessage);
-                }
+                await webhookService.sendMessage(
+                    { shop_id: session.shop_id, type: session.channel || 'messenger' },
+                    session.customer_channel_id,
+                    paymentMessage
+                );
             }
 
         } catch (error) {
@@ -553,21 +549,15 @@ Type "YES" to confirm.`;
                     }
                 });
 
-                // Send payment URL to customer
+                // Send payment URL to the customer (PSID = session.customer_channel_id).
                 const webhookService = require('../webhook/webhook.service');
-                const channel = await Channel.findOne({
-                    where: {
-                        shop_id: session.shop_id,
-                        is_active: true
-                    },
-                    order: [['created_at', 'DESC']]
-                });
+                const paymentMessage = `💳 পেমেন্ট লিংক তৈরি হয়েছে!\n\nপেমেন্ট করতে নিচের লিংকে ক্লিক করুন:\n${paymentResult.paymentUrl}\n\nপরিমাণ: ৳${orderData.total}\nঅর্ডার: #${orderData.order_number}\n\nলিংকটি ১০ মিনিটের মধ্যে ব্যবহার করুন।\n\n---\n\n💳 Payment link created!\n\nClick the link below to pay:\n${paymentResult.paymentUrl}\n\nAmount: ৳${orderData.total}\nOrder: #${orderData.order_number}\n\nUse the link within 10 minutes.`;
 
-                if (channel) {
-                    const paymentMessage = `💳 পেমেন্ট লিংক তৈরি হয়েছে!\n\nপেমেন্ট করতে নিচের লিংকে ক্লিক করুন:\n${paymentResult.paymentUrl}\n\nপরিমাণ: ৳${orderData.total}\nঅর্ডার: #${orderData.order_number}\n\nলিংকটি ১০ মিনিটের মধ্যে ব্যবহার করুন।\n\n---\n\n💳 Payment link created!\n\nClick the link below to pay:\n${paymentResult.paymentUrl}\n\nAmount: ৳${orderData.total}\nOrder: #${orderData.order_number}\n\nUse the link within 10 minutes.`;
-                    
-                    await webhookService.sendMessage(channel, session.customer_channel_id, paymentMessage);
-                }
+                await webhookService.sendMessage(
+                    { shop_id: session.shop_id, type: session.channel || 'messenger' },
+                    session.customer_channel_id,
+                    paymentMessage
+                );
             }
 
         } catch (error) {

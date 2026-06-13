@@ -189,4 +189,51 @@ async function sendMessage(channel, recipientId, messageText) {
     }
 }
 
-module.exports = { sendMessage };
+/**
+ * Send a transactional message to a customer identified by their internal
+ * Customer record id. Resolves the customer's real channel_user_id (PSID/IGSID)
+ * and platform, then delegates to sendMessage().
+ *
+ * This is the correct way for order/delivery/payment notifications to reach a
+ * customer: they hold an order with a `customer_id`, NOT a PSID. Passing a phone
+ * number or the internal customer UUID as the Meta recipient (as the legacy call
+ * sites did) is rejected by the Graph API and silently dropped.
+ *
+ * @param {object} params
+ * @param {string} params.shopId
+ * @param {string} params.customerId  - Customer table primary key
+ * @param {string} params.message     - plain-text message
+ * @returns {Promise<{sent: boolean, reason?: string, recipientId?: string, channelType?: string}>}
+ */
+async function sendToCustomer({ shopId, customerId, message } = {}) {
+    if (!shopId || !customerId || !message) {
+        return { sent: false, reason: 'missing_args' };
+    }
+
+    let customer = null;
+    try {
+        customer = await Customer.findOne({ where: { id: customerId, shop_id: shopId } });
+    } catch (err) {
+        logger.warn('sendToCustomer: customer lookup failed', { shopId, customerId, error: err.message });
+        return { sent: false, reason: 'lookup_error' };
+    }
+
+    if (!customer || !customer.channel_user_id) {
+        // No Meta-side identity for this customer (e.g. a manually-created order
+        // with only a phone) — nothing to deliver to over Messenger/Instagram.
+        return { sent: false, reason: 'no_customer_psid' };
+    }
+
+    // channel_type stores 'messenger' for Facebook, 'instagram' for IG.
+    const channelType = customer.channel_type === 'instagram' ? 'instagram' : 'messenger';
+
+    try {
+        await sendMessage({ shop_id: shopId, type: channelType }, customer.channel_user_id, message);
+        return { sent: true, recipientId: customer.channel_user_id, channelType };
+    } catch (err) {
+        logger.warn('sendToCustomer: send failed', { shopId, customerId, error: err.message });
+        return { sent: false, reason: 'send_error', error: err.message };
+    }
+}
+
+module.exports = { sendMessage, sendToCustomer };

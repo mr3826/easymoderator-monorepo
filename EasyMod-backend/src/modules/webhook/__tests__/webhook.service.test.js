@@ -54,9 +54,10 @@ jest.mock('../../policy/policy.engine', () => ({
 }));
 
 const MetaChannel = require('../../channel-providers/meta-channel.entity');
+const Customer = require('../../customer/customer.entity');
 const { getProvider } = require('../../channel-providers/provider.registry');
 const policyEngine = require('../../policy/policy.engine');
-const { sendMessage } = require('../webhook.service');
+const { sendMessage, sendToCustomer } = require('../webhook.service');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const buildChannel = (overrides = {}) => ({
@@ -175,5 +176,75 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
         expect(MetaChannel.findByPk).toHaveBeenCalledWith('mc-deleted');
         expect(MetaChannel.findOne).toHaveBeenCalledTimes(1);
         expect(mockSendMessage).toHaveBeenCalled();
+    });
+});
+
+// ── sendToCustomer: resolve a Customer record → PSID + platform, then send ─────
+// Regression coverage for the silent-notification bug: callers (order/delivery/
+// payment) used to look up an undefined `Channel` model and pass a phone or an
+// internal customer UUID as the recipient. sendToCustomer resolves the real
+// channel_user_id (PSID/IGSID) and the customer's platform.
+describe('sendToCustomer (resolve PSID from a customer record)', () => {
+    const buildCustomer = (overrides = {}) => ({
+        id: 'cust-uuid-1',
+        shop_id: 'shop-uuid-1234',
+        channel_type: 'messenger',
+        channel_user_id: 'psid-cust-9',
+        ...overrides,
+    });
+
+    test('resolves the customer PSID and sends via the customer platform', async () => {
+        Customer.findOne.mockResolvedValue(buildCustomer());
+        mockSendMessage.mockResolvedValueOnce({});
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        // The recipient must be the channel_user_id (PSID) — NOT the customer UUID or a phone.
+        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+            recipientId: 'psid-cust-9',
+            normalizedMessage: expect.objectContaining({ text: 'Your order shipped' }),
+        }));
+        expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
+    });
+
+    test('maps an instagram customer to an instagram send', async () => {
+        Customer.findOne.mockResolvedValue(buildCustomer({ channel_type: 'instagram', channel_user_id: 'igsid-7' }));
+        MetaChannel.findOne.mockResolvedValue({ ...mockMetaChannel, platform: 'instagram' });
+        mockSendMessage.mockResolvedValueOnce({});
+
+        await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
+
+        expect(MetaChannel.findOne).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ platform: 'instagram' }) })
+        );
+        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({ recipientId: 'igsid-7' }));
+    });
+
+    test('returns no_customer when the customer is not found', async () => {
+        Customer.findOne.mockResolvedValue(null);
+        const result = await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'missing', message: 'hi' });
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'no_customer_psid' }));
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('returns no_customer_psid when the customer has no channel_user_id', async () => {
+        Customer.findOne.mockResolvedValue(buildCustomer({ channel_user_id: null }));
+        const result = await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'no_customer_psid' }));
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('returns missing_args when required args are absent', async () => {
+        const r1 = await sendToCustomer({ shopId: null, customerId: 'c', message: 'hi' });
+        const r2 = await sendToCustomer({ shopId: 's', customerId: null, message: 'hi' });
+        const r3 = await sendToCustomer({ shopId: 's', customerId: 'c', message: '' });
+        expect(r1).toEqual(expect.objectContaining({ sent: false, reason: 'missing_args' }));
+        expect(r2).toEqual(expect.objectContaining({ sent: false, reason: 'missing_args' }));
+        expect(r3).toEqual(expect.objectContaining({ sent: false, reason: 'missing_args' }));
+        expect(mockSendMessage).not.toHaveBeenCalled();
     });
 });

@@ -366,24 +366,21 @@ class InvoiceService {
         try {
             const channels = [];
             
-            // Send via Facebook/Instagram channel
+            // Send via Facebook/Instagram channel — resolve the customer's PSID from
+            // the order. (The old code looked up an undefined `Channel` model and
+            // passed a phone number as the Meta recipient.)
             try {
                 const webhookService = require('../webhook/webhook.service');
-                const { Channel } = require('../entities');
-                
-                const channel = await Channel.findOne({
-                    where: {
-                        shop_id: invoice.shop_id,
-                        is_active: true
-                    },
-                    order: [['created_at', 'DESC']]
-                });
 
-                if (channel && invoiceData.customer.phone) {
+                if (invoiceData.order?.customer_id) {
                     const message = `📄 ইনভয়েস তৈরি হয়েছে!\n\nইনভয়েস নম্বর: ${invoice.invoice_number}\nঅর্ডার: #${invoiceData.order.order_number}\nপরিমাণ: ৳${invoiceData.total}\n\nইনভয়েস ডাউনলোড করতে: ${invoice.pdf_url}\n\n---\n\n📄 Invoice generated!\n\nInvoice Number: ${invoice.invoice_number}\nOrder: #${invoiceData.order.order_number}\nAmount: ৳${invoiceData.total}\n\nDownload invoice: ${invoice.pdf_url}`;
-                    
-                    await webhookService.sendMessage(channel, invoiceData.customer.phone, message);
-                    channels.push('facebook/instagram');
+
+                    const result = await webhookService.sendToCustomer({
+                        shopId: invoice.shop_id,
+                        customerId: invoiceData.order.customer_id,
+                        message,
+                    });
+                    if (result.sent) channels.push('facebook/instagram');
                 }
             } catch (error) {
                 this.logger.warn('Failed to send invoice via chat', { error: error.message });

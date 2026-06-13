@@ -63,6 +63,38 @@ describe('createOrderFromSession', () => {
         expect(order.order_number).toBe('1001');
     });
 
+    test('converts a multi-item cart into one order with all line items', async () => {
+        const session = {
+            id: 'sess-2',
+            shop_id: 'shop-1',
+            customer_id: 'cust-1',
+            channel: 'messenger',
+            // product_info holds only the last-configured item; the cart is the truth.
+            product_info: { id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },
+            step_data: {},
+        };
+        const stepData = {
+            name: 'Rahim',
+            phone: '01711111111',
+            address: 'Mirpur 10, Dhaka',
+            delivery_charge: 60,
+            payment_method: 'cod',
+            cart: [
+                { product_id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 },
+                { product_id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },
+            ],
+        };
+
+        await OrderSessionService.createOrderFromSession(session, stepData);
+
+        const [, orderData] = createOrderInternal.mock.calls[0];
+        // Catalog-priced (price omitted); one entry per cart line, quantities preserved.
+        expect(orderData.items).toEqual([
+            { product_id: 'prod-1', quantity: 1 },
+            { product_id: 'prod-2', quantity: 2 },
+        ]);
+    });
+
     test('refuses to create an order when no product is linked to the session', async () => {
         await expect(
             OrderSessionService.createOrderFromSession({ id: 's', shop_id: 'sh', product_info: null }, {})

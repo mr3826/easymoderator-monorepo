@@ -437,18 +437,56 @@ class OrderSessionService {
                             break;
                         }
                     }
-                    // Quantity lives on product_info so the summary, invoice and
-                    // order creation all read product.quantity consistently.
+                    // Quantity lives on product_info so the (last-configured) item
+                    // is always available; the cart is the source of truth for the
+                    // full multi-product order.
                     const pi = { ...prod, quantity: qty };
                     await session.update({ product_info: pi });
                     session.product_info = pi;
-                    nextStep = 'COLLECTING_NAME';
-                    prompt = pickLang(lang, 'আপনার নাম কী?', "What's your name?");
+
+                    // Append the configured item to the cart, then offer add-another.
+                    const cartItem = {
+                        product_id: pi.id,
+                        name: pi.name,
+                        name_bn: pi.name_bn || null,
+                        price: pi.price,
+                        quantity: qty,
+                    };
+                    step_data.cart = [...(step_data.cart || []), cartItem];
+                    nextStep = 'ADD_MORE';
+                    prompt = OrderSessionService.buildAddMorePrompt(pi, step_data.cart, lang);
                 } else {
                     prompt = pickLang(lang,
                         'কয়টা পণ্য নিতে চান? সংখ্যায় লিখুন (যেমন: ১, ২, ৩)।',
                         'How many would you like? Please reply with a number (e.g. 1, 2, 3).');
                 }
+                break;
+            }
+
+            // Multi-product loop: after each item is carted we ask whether to add
+            // another or proceed to checkout. "done"/"শেষ" → checkout; a bare
+            // affirmation → ask which product; anything else is treated as the next
+            // product to identify (name or photo).
+            case 'ADD_MORE': {
+                if (OrderSessionService.isCheckoutWord(answer)) {
+                    nextStep = 'COLLECTING_NAME';
+                    prompt = pickLang(lang, 'আপনার নাম কী?', "What's your name?");
+                    break;
+                }
+                if (OrderSessionService.isBareAddWord(answer)) {
+                    nextStep = 'ADDING_PRODUCT';
+                    prompt = pickLang(lang,
+                        'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান।',
+                        'Which product would you like to add? Send the name or a photo.');
+                    break;
+                }
+                // Treat the message itself as the next product.
+                ({ nextStep, prompt } = await OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang));
+                break;
+            }
+
+            case 'ADDING_PRODUCT': {
+                ({ nextStep, prompt } = await OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang));
                 break;
             }
 
@@ -628,15 +666,16 @@ class OrderSessionService {
             case 'ORDER_SUMMARY': {
                 const orderConfirmation = this.extractConfirmation(answer);
                 if (orderConfirmation) {
-                    // Re-check stock before committing
-                    const product = session.product_info;
-                    if (product && product.id) {
-                        const stockCheck = await productSearch.checkStock(product.id, session.shop_id, product.quantity || 1);
+                    // Re-check stock for EVERY line in the cart before committing.
+                    const cart = OrderSessionService.getCartItems(session, step_data);
+                    for (const item of cart) {
+                        if (!item.product_id) continue;
+                        const stockCheck = await productSearch.checkStock(item.product_id, session.shop_id, item.quantity || 1);
                         if (!stockCheck.available) {
                             await session.update({ status: 'CANCELLED' });
                             return {
                                 session_id: session.id,
-                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, product, lang),
+                                prompt: this.buildOutOfStockPrompt(stockCheck.reason, item, lang),
                                 current_step: 'CANCELLED',
                                 step_data,
                                 completed: false,
@@ -658,15 +697,14 @@ class OrderSessionService {
                         // Invoice failure must never un-confirm a created order.
                         try {
                             const { issueInvoiceForOrder } = require('../invoice/chat-invoice.service');
-                            const sessProduct = session.product_info;
                             const { text: invoiceText } = await issueInvoiceForOrder(order, {
                                 channel: session.channel || 'messenger',
-                                items: sessProduct ? [{
-                                    name: sessProduct.name,
-                                    quantity: sessProduct.quantity || 1,
-                                    price: sessProduct.price,
-                                    total: (sessProduct.price || 0) * (sessProduct.quantity || 1)
-                                }] : null
+                                items: cart.length ? cart.map(c => ({
+                                    name: c.name,
+                                    quantity: c.quantity || 1,
+                                    price: c.price,
+                                    total: (c.price || 0) * (c.quantity || 1)
+                                })) : null
                             });
                             orderPrompt += `\n\n${invoiceText}`;
                         } catch (invErr) {
@@ -988,9 +1026,9 @@ class OrderSessionService {
      */
     static async createOrderFromSession(session, stepData) {
         const { createOrderInternal } = getOrderServiceImports();
-        const product = session.product_info;
+        const cart = OrderSessionService.getCartItems(session, stepData);
 
-        if (!product || !product.id) {
+        if (!cart.length) {
             throw new Error('Cannot create order: no product linked to this session');
         }
 
@@ -1001,11 +1039,12 @@ class OrderSessionService {
             delivery_address: stepData.address,
             delivery_zone: stepData.delivery_zone || null,
             channel: session.channel || 'chatbot',
-            items: [{
-                product_id: product.id,
-                quantity: product.quantity || 1
-                // price omitted intentionally — server uses catalog price
-            }],
+            // One entry per cart line. price omitted intentionally — the server
+            // computes totals from the live catalog price.
+            items: cart.map(c => ({
+                product_id: c.product_id,
+                quantity: c.quantity || 1
+            })),
             delivery_fee: stepData.delivery_charge || 0,
             payment_status: GATEWAY_PAYMENT_STATUS[stepData.payment_method] || 'pending',
             payment_method: stepData.payment_method || null,
@@ -1135,6 +1174,8 @@ class OrderSessionService {
             'SELECTING_PRODUCT':    pickLang(L, 'পণ্য নির্বাচন করুন (নম্বর লিখুন)', 'Select a product (enter a number)'),
             'PRODUCT_CONFIRMATION': pickLang(L, 'আপনি কি এই পণ্যটি অর্ডার করতে চান?', 'Do you want to order this item?'),
             'COLLECTING_QUANTITY':  pickLang(L, 'কয়টা নিবেন?', 'How many would you like?'),
+            'ADD_MORE':             pickLang(L, 'আরো কিছু নিতে চান? নাম/ছবি দিন, না হলে "শেষ" লিখুন', 'Add another item? Send a name/photo, or type "done"'),
+            'ADDING_PRODUCT':       pickLang(L, 'কোন পণ্যটি যোগ করতে চান? নাম লিখুন বা ছবি পাঠান', 'Which product to add? Send a name or photo'),
             'COLLECTING_NAME':      pickLang(L, 'আপনার নাম কী?', "What's your name?"),
             'COLLECTING_PHONE':     pickLang(L, 'আপনার মোবাইল নম্বর কত?', "What's your mobile number?"),
             'COLLECTING_ADDRESS':   pickLang(L, 'আপনার ডেলিভারির ঠিকানা কি?', "What's your delivery address?"),
@@ -1201,22 +1242,169 @@ class OrderSessionService {
             `Would you like to see our other products, or can I help you with something else?`);
     }
 
+    // ─── Multi-product cart helpers ───────────────────────────────────────────
+
+    /**
+     * The order's line items. The cart (step_data.cart) is the source of truth;
+     * for sessions created before multi-product (or any single-item flow) we fall
+     * back to a one-item cart built from the last-configured product_info.
+     */
+    static getCartItems(session, stepData) {
+        const cart = stepData?.cart;
+        if (Array.isArray(cart) && cart.length) return cart;
+        const p = session?.product_info;
+        if (p && p.id) {
+            return [{
+                product_id: p.id,
+                name: p.name,
+                name_bn: p.name_bn || null,
+                price: p.price,
+                quantity: p.quantity || 1,
+            }];
+        }
+        return [];
+    }
+
+    /** Add-another prompt shown after an item is carted. */
+    static buildAddMorePrompt(lastItem, cart, lang) {
+        const count = Array.isArray(cart) ? cart.length : 0;
+        return pickLang(lang,
+            `"${lastItem.name}" কার্টে যোগ হয়েছে ✅ (মোট ${count}টি পণ্য)।\n\n` +
+            `আরো কিছু নিতে চান? পণ্যের নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `Added "${lastItem.name}" to your cart ✅ (${count} item${count > 1 ? 's' : ''}).\n\n` +
+            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+    }
+
+    /** Whole-message "finish / no more items" intent at the add-more step. */
+    static isCheckoutWord(text) {
+        const t = String(text || '').toLowerCase().trim();
+        const DONE = new Set([
+            'no', 'na', 'nah', 'nope', 'no more', 'done', 'finish', 'finished',
+            'checkout', 'check out', 'complete', 'enough', 'bas',
+            "that's all", 'thats all', 'shesh', 'sesh', 'sesh koro',
+            'শেষ', 'না', 'আর না', 'ar na', 'arna', 'ar lagbe na', 'aro lagbe na', 'বাস', 'হয়ে গেছে',
+        ]);
+        return DONE.has(t);
+    }
+
+    /** Whole-message "yes, add another (but I haven't named it yet)" intent. */
+    static isBareAddWord(text) {
+        const t = String(text || '').toLowerCase().trim();
+        const ADD = new Set([
+            'yes', 'y', 'add', 'add more', 'add another', 'more', 'aro', 'aaro',
+            'ar', 'ar ekta', 'aro nibo', 'aro lagbe', 'aro chai',
+            'আরো', 'আরও', 'হ্যাঁ', 'ha', 'haa', 'han', 'ji', 'জি',
+        ]);
+        return ADD.has(t);
+    }
+
+    /**
+     * Identify the next product from a free-text name and/or a photo, reusing the
+     * same search + image-match pipeline the session start uses.
+     * @returns {Promise<{products: Array, wasFallback: boolean}>}
+     */
+    static async identifyProduct(shopId, query, rawMessage) {
+        const result = await productSearch
+            .searchForOrder({ shopId, query, limit: 5 })
+            .catch(() => ({ products: [], wasFallback: true }));
+
+        let products = result.products || [];
+        let wasFallback = !!result.wasFallback;
+
+        // The dominant F-commerce signal is a product PHOTO — match on the image
+        // when text search comes up empty.
+        if ((wasFallback || !products.length) && rawMessage?.imageUrl) {
+            try {
+                const { matchImageMessage } = require('../ai/image-product-matcher.service');
+                const imageMatch = await matchImageMessage({ shopId, imageUrl: rawMessage.imageUrl, text: query });
+                if (imageMatch.products?.length) {
+                    products = imageMatch.products;
+                    wasFallback = false;
+                }
+            } catch (_) { /* image matching is best-effort */ }
+        }
+
+        return { products, wasFallback };
+    }
+
+    /**
+     * Resolve the customer's next-product message into a step transition:
+     *   no/unsure match → stay on ADDING_PRODUCT and re-ask
+     *   one match       → set product_info, go to COLLECTING_QUANTITY
+     *   many matches    → seed candidates, go to SELECTING_PRODUCT
+     * Mutates step_data.product_candidates when a picker is needed.
+     */
+    static async applyNextProduct(session, step_data, answer, rawMessage, lang) {
+        const { products, wasFallback } = await OrderSessionService.identifyProduct(session.shop_id, answer, rawMessage);
+
+        if (wasFallback || !products.length) {
+            return {
+                nextStep: 'ADDING_PRODUCT',
+                prompt: pickLang(lang,
+                    'এই নামে কোনো পণ্য খুঁজে পাইনি। পণ্যের নাম লিখুন বা ছবি পাঠান, অথবা "শেষ" লিখুন।',
+                    'Could not find that product. Send the product name or a photo, or type "done".'),
+            };
+        }
+
+        if (products.length === 1) {
+            const p = products[0];
+            const stock = await productSearch.checkStock(p.id, session.shop_id).catch(() => ({ available: true }));
+            if (!stock.available) {
+                return {
+                    nextStep: 'ADDING_PRODUCT',
+                    prompt: OrderSessionService.buildOutOfStockPrompt(stock.reason, p, lang),
+                };
+            }
+            const pi = {
+                id: p.id,
+                name: p.name,
+                name_bn: p.name_bn || null,
+                price: stock.product?.price ?? p.price,
+                quantity: 1,
+            };
+            await session.update({ product_info: pi });
+            session.product_info = pi;
+            return {
+                nextStep: 'COLLECTING_QUANTITY',
+                prompt: pickLang(lang,
+                    `"${pi.name}" ✅\n\nকয়টা নিবেন?`,
+                    `"${pi.name}" ✅\n\nHow many would you like?`),
+            };
+        }
+
+        step_data.product_candidates = products.slice(0, 5).map(p => ({
+            id: p.id,
+            name: p.name,
+            name_bn: p.name_bn || null,
+            price: p.price,
+            in_stock: p.in_stock,
+        }));
+        return {
+            nextStep: 'SELECTING_PRODUCT',
+            prompt: OrderSessionService.buildProductSelectionPrompt(step_data.product_candidates, lang),
+        };
+    }
+
     // ─── Order summary ────────────────────────────────────────────────────────
 
     static generateOrderSummary(session, stepData, lang) {
         const L = lang || stepData?.language || 'bn';
-        const product = session.product_info;
+        const cart = OrderSessionService.getCartItems(session, stepData);
         const { name, phone, address, delivery_zone, delivery_charge, payment_method, notes } = stepData;
         const zLabel = zoneLabel(delivery_zone, L) || 'N/A';
         const gLabel = gatewayLabel(payment_method, L) || 'N/A';
-        const qty = product?.quantity || 1;
-        const productTotal = (product?.price || 0) * qty;
-        const grandTotal = productTotal + (delivery_charge || 0);
+        const itemsTotal = cart.reduce((s, c) => s + (c.price || 0) * (c.quantity || 1), 0);
+        const grandTotal = itemsTotal + (delivery_charge || 0);
+        // One line per cart item; product names render the same in both languages.
+        const itemLines = (cart.length
+            ? cart.map(c => `📦 ${c.name || 'N/A'} x${c.quantity || 1} — ৳${(c.price || 0) * (c.quantity || 1)}`)
+            : ['📦 N/A']
+        ).join('\n');
 
         if (L === 'en') {
             return `✅ Order Summary:
-📦 Product: ${product?.name || 'N/A'} x${qty}
-💰 Price: ৳${productTotal}
+${itemLines}
+💰 Items: ৳${itemsTotal}
 🚚 Delivery: ৳${delivery_charge || 0} (${zLabel})
 💳 Payment: ${gLabel}
 📍 Address: ${address}
@@ -1227,8 +1415,8 @@ Type "YES" to confirm.`;
         }
 
         return `✅ অর্ডার সারসংক্ষেপ:
-📦 পণ্য: ${product?.name || 'N/A'} x${qty}
-💰 মূল্য: ৳${productTotal}
+${itemLines}
+💰 মোট পণ্য: ৳${itemsTotal}
 🚚 ডেলিভারি: ৳${delivery_charge || 0} (${zLabel})
 💳 পেমেন্ট: ${gLabel}
 📍 ঠিকানা: ${address}

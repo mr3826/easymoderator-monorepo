@@ -170,15 +170,21 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
         ['৫', 5],          // Bengali numeral
         ['duita', 2],       // spoken word
         ['ekta', 1],
-    ])('parses "%s" → quantity %i and advances to name', async (answer, expected) => {
+    ])('parses "%s" → quantity %i, carts the item and asks add-more', async (answer, expected) => {
         const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
         const res = await OrderSessionService.handleCurrentStep(session, answer, null);
 
-        expect(res.current_step).toBe('COLLECTING_NAME');
+        // Multi-product: after quantity we offer "add another or checkout" instead
+        // of jumping straight to the name step.
+        expect(res.current_step).toBe('ADD_MORE');
         expect(productSearch.checkStock).toHaveBeenCalledWith('prod-1', 'shop-1', expected);
         expect(session.update).toHaveBeenCalledWith(
             expect.objectContaining({ product_info: expect.objectContaining({ quantity: expected }) })
         );
+        // The configured item is now the first line in the cart.
+        expect(res.step_data.cart).toEqual([
+            expect.objectContaining({ product_id: 'prod-1', quantity: expected }),
+        ]);
     });
 
     test('re-prompts (stays on the step) when no quantity is given', async () => {
@@ -212,7 +218,170 @@ describe('COLLECTING_QUANTITY (verify pieces, not assume 1)', () => {
         const session = makeSession({ current_step: 'COLLECTING_QUANTITY', step_data: { language: 'bn' } });
         const res = await OrderSessionService.handleCurrentStep(session, '2', null);
 
+        expect(res.current_step).toBe('ADD_MORE');
+    });
+});
+
+// Multi-product: a customer can put several products in one order via an
+// add-another loop. Decision: deterministic loop, minimal editing (add + cancel).
+describe('ADD_MORE (multi-product cart)', () => {
+    const cartWith = (...items) => items;
+
+    beforeEach(() => {
+        productSearch.checkStock.mockResolvedValue({ available: true });
+    });
+
+    test('"done" proceeds to checkout (name step)', async () => {
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'en', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, 'done', null);
+
         expect(res.current_step).toBe('COLLECTING_NAME');
+        expect(res.prompt).toMatch(/name/i);
+    });
+
+    test('a Bengali "শেষ" also proceeds to checkout', async () => {
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'bn', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+        const res = await OrderSessionService.handleCurrentStep(session, 'শেষ', null);
+        expect(res.current_step).toBe('COLLECTING_NAME');
+    });
+
+    test('naming a second product identifies it and asks its quantity', async () => {
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-2', name: 'Silk Dupatta', price: 500, in_stock: true }],
+            wasFallback: false,
+        });
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'en', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'Silk Dupatta', null);
+
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(session.update).toHaveBeenCalledWith(
+            expect.objectContaining({ product_info: expect.objectContaining({ id: 'prod-2', name: 'Silk Dupatta' }) })
+        );
+    });
+
+    test('the second product quantity appends a second cart line and loops back to add-more', async () => {
+        const session = makeSession({
+            current_step: 'COLLECTING_QUANTITY',
+            product_info: { id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 1 },
+            step_data: { language: 'en', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, '2', null);
+
+        expect(res.current_step).toBe('ADD_MORE');
+        expect(res.step_data.cart).toHaveLength(2);
+        expect(res.step_data.cart[1]).toEqual(expect.objectContaining({ product_id: 'prod-2', quantity: 2 }));
+    });
+
+    test('an ambiguous second product routes to the numbered picker', async () => {
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [
+                { id: 'prod-2', name: 'Silk Dupatta', price: 500, in_stock: true },
+                { id: 'prod-3', name: 'Cotton Dupatta', price: 350, in_stock: true },
+            ],
+            wasFallback: false,
+        });
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'en', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'dupatta', null);
+
+        expect(res.current_step).toBe('SELECTING_PRODUCT');
+        expect(res.prompt).toMatch(/1\./); // a numbered list
+    });
+});
+
+describe('multi-item order: summary, create, invoice', () => {
+    const drainImmediates = () => new Promise(resolve => setImmediate(resolve));
+    const twoLineCart = () => ([
+        { product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 },
+        { product_id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },
+    ]);
+    const stepData = () => ({
+        language: 'en',
+        name: 'Evan',
+        phone: '01886895874',
+        address: 'Mirpur, Dhaka',
+        delivery_charge: 60,
+        payment_method: 'cod',
+        cart: twoLineCart(),
+    });
+
+    test('the summary lists every line and sums items + delivery', () => {
+        const session = makeSession({ product_info: null, step_data: {} });
+        const summary = OrderSessionService.generateOrderSummary(session, stepData(), 'en');
+
+        expect(summary).toContain('Azal Lawn');
+        expect(summary).toContain('Silk Dupatta');
+        expect(summary).toContain('2650');  // items subtotal: 1650 + 2*500
+        expect(summary).toContain('2710');  // grand total: + 60 delivery
+    });
+
+    test('confirming creates an order with N items and an N-line invoice', async () => {
+        productSearch.checkStock.mockResolvedValue({ available: true });
+        createOrderInternal.mockResolvedValue({
+            id: 'ord-2', order_number: '100002', total: 2710, shop_id: 'shop-1', payment_method: 'cod',
+        });
+        issueInvoiceForOrder.mockResolvedValue({
+            invoice: { invoice_number: 'INV-100002' },
+            text: '🧾 INVOICE\nTotal: ৳2710',
+        });
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            product_info: { id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },
+            step_data: stepData(),
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+        await drainImmediates();
+
+        expect(res.completed).toBe(true);
+
+        // Order created with both lines (catalog-priced — price omitted).
+        const [, orderData] = createOrderInternal.mock.calls[0];
+        expect(orderData.items).toEqual([
+            { product_id: 'prod-1', quantity: 1 },
+            { product_id: 'prod-2', quantity: 2 },
+        ]);
+
+        // Stock re-checked for EVERY line before committing.
+        expect(productSearch.checkStock).toHaveBeenCalledWith('prod-1', 'shop-1', 1);
+        expect(productSearch.checkStock).toHaveBeenCalledWith('prod-2', 'shop-1', 2);
+
+        // Invoice carries both display lines.
+        const [, optsArg] = issueInvoiceForOrder.mock.calls[0];
+        expect(optsArg.items).toHaveLength(2);
+        expect(optsArg.items[1]).toEqual(expect.objectContaining({ name: 'Silk Dupatta', quantity: 2, total: 1000 }));
+    });
+
+    test('an out-of-stock line at confirmation cancels with the real reason', async () => {
+        productSearch.checkStock
+            .mockResolvedValueOnce({ available: true })                                  // prod-1 ok
+            .mockResolvedValueOnce({ available: false, reason: 'out of stock' });         // prod-2 gone
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            product_info: { id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },
+            step_data: stepData(),
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+
+        expect(res.completed).toBeFalsy();
+        expect(res.cancelled).toBe(true);
+        expect(res.prompt).toMatch(/Silk Dupatta/);
+        expect(createOrderInternal).not.toHaveBeenCalled();
     });
 });
 
