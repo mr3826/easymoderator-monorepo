@@ -480,13 +480,14 @@ class OrderSessionService {
                         'Which product would you like to add? Send the name or a photo.');
                     break;
                 }
-                // Treat the message itself as the next product.
-                ({ nextStep, prompt } = await OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang));
+                // Treat the message as the next product(s) — one name, or several
+                // in one go ("2 lawn and 1 dupatta") via free-text parsing.
+                ({ nextStep, prompt } = await OrderSessionService.applyLineItems(session, step_data, answer, rawMessage, lang));
                 break;
             }
 
             case 'ADDING_PRODUCT': {
-                ({ nextStep, prompt } = await OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang));
+                ({ nextStep, prompt } = await OrderSessionService.applyLineItems(session, step_data, answer, rawMessage, lang));
                 break;
             }
 
@@ -664,6 +665,18 @@ class OrderSessionService {
             }
 
             case 'ORDER_SUMMARY': {
+                // A per-line edit ("remove the dupatta", "saree 3 ta koro") takes
+                // priority over confirmation: extractConfirmation uses includes(),
+                // so an edit phrase containing a confirm-substring must NOT place
+                // the order. Only fall through to confirm when it's not an edit.
+                const summaryCart = OrderSessionService.getCartItems(session, step_data);
+                const edit = OrderSessionService.detectCartEdit(answer, summaryCart);
+                if (edit.action) {
+                    ({ nextStep, prompt, completed } =
+                        await OrderSessionService.applyCartEdit(session, step_data, edit, summaryCart, lang));
+                    break;
+                }
+
                 const orderConfirmation = this.extractConfirmation(answer);
                 if (orderConfirmation) {
                     // Re-check stock for EVERY line in the cart before committing.
@@ -1382,6 +1395,186 @@ class OrderSessionService {
         return {
             nextStep: 'SELECTING_PRODUCT',
             prompt: OrderSessionService.buildProductSelectionPrompt(step_data.product_candidates, lang),
+        };
+    }
+
+    // ─── Free-text multi-item parsing ─────────────────────────────────────────
+
+    /**
+     * Split a single free-text message into multiple line items, e.g.
+     * "2 lawn + 1 dupatta" → [{quantity:2, query:'lawn'}, {quantity:1, query:'dupatta'}].
+     * Conservative by design: only splits on explicit "and"-style connectors
+     * (never inside a product name) and returns [] for a single item so the
+     * existing one-product flow is unchanged. The caller resolves each query and
+     * falls back gracefully when a segment doesn't match exactly one product.
+     */
+    static parseLineItems(text) {
+        if (!text || typeof text !== 'string') return [];
+        const normalized = text.replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).trim();
+        if (!normalized) return [];
+        // Explicit connectors only. Word connectors require surrounding whitespace
+        // so they are standalone words, not substrings of a product name. '+', ',',
+        // '&', 'and', 'plus', Bengali 'আর', Banglish 'ar'.
+        const CONNECTORS = /\s*\+\s*|\s*,\s*|\s*&\s*|\s+and\s+|\s+plus\s+|\s+আর\s+|\s+ar\s+/i;
+        const segments = normalized.split(CONNECTORS).map((s) => s.trim()).filter(Boolean);
+        if (segments.length < 2) return [];
+        const items = [];
+        for (const seg of segments) {
+            const query = OrderSessionService.stripQuantityTokens(seg);
+            if (!query) continue;
+            items.push({ quantity: extractQuantity(seg) || 1, query });
+        }
+        return items.length >= 2 ? items : [];
+    }
+
+    /**
+     * Strip a LEADING or TRAILING quantity expression from a segment, leaving the
+     * product query. Only the ends are touched, so a number-word inside a product
+     * name ("Azal Lawn Two Piece") survives. Trailing strips digits only — trailing
+     * number-words are rare and would clip names like "Two Piece".
+     */
+    static stripQuantityTokens(seg) {
+        const qw = Object.keys(QTY_WORDS).join('|');
+        const unit = '(?:ta|ti|টা|টি|pcs?|pc)';
+        let s = String(seg).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).trim();
+        s = s.replace(new RegExp(`^(?:\\d{1,2}|${qw})(?:\\s*${unit})?\\s+`, 'i'), '');
+        s = s.replace(new RegExp(`\\s+\\d{1,2}(?:\\s*${unit})?$`, 'i'), '');
+        return s.replace(/\s+/g, ' ').trim();
+    }
+
+    /**
+     * Resolve a free-text message that may name several products at once and add
+     * each resolved, in-stock line to the cart. Falls back to the single-product
+     * path when the message isn't multi-item. Mutates step_data.cart.
+     */
+    static async applyLineItems(session, step_data, answer, rawMessage, lang) {
+        const parsed = OrderSessionService.parseLineItems(answer);
+        if (parsed.length < 2) {
+            return OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang);
+        }
+
+        const added = [];
+        const unresolved = [];
+        for (const { quantity, query } of parsed) {
+            const { products, wasFallback } = await OrderSessionService.identifyProduct(session.shop_id, query, null);
+            if (wasFallback || products.length !== 1) { unresolved.push(query); continue; }
+            const p = products[0];
+            const stock = await productSearch.checkStock(p.id, session.shop_id, quantity).catch(() => ({ available: true }));
+            if (!stock.available) { unresolved.push(query); continue; }
+            const item = {
+                product_id: p.id,
+                name: p.name,
+                name_bn: p.name_bn || null,
+                price: stock.product?.price ?? p.price,
+                quantity,
+            };
+            step_data.cart = [...(step_data.cart || []), item];
+            added.push(item);
+        }
+
+        if (!added.length) {
+            // Nothing resolved cleanly — let the single-product path try the whole
+            // message (e.g. a multi-word product name that contains "and").
+            return OrderSessionService.applyNextProduct(session, step_data, answer, rawMessage, lang);
+        }
+
+        const last = added[added.length - 1];
+        session.product_info = last;
+        await session.update({ product_info: last });
+        return {
+            nextStep: 'ADD_MORE',
+            prompt: OrderSessionService.buildMultiAddPrompt(added, unresolved, step_data.cart, lang),
+        };
+    }
+
+    /** Add-more prompt after several items were carted in one message. */
+    static buildMultiAddPrompt(added, unresolved, cart, lang) {
+        const names = added.map((i) => `${i.name} x${i.quantity}`).join(', ');
+        const count = Array.isArray(cart) ? cart.length : added.length;
+        const missing = (unresolved && unresolved.length)
+            ? pickLang(lang,
+                `\n("${unresolved.join('", "')}" খুঁজে পাইনি — নাম লিখে আবার চেষ্টা করুন।)`,
+                `\n(Couldn't find "${unresolved.join('", "')}" — try its name again.)`)
+            : '';
+        return pickLang(lang,
+            `কার্টে যোগ হয়েছে ✅: ${names} (মোট ${count}টি পণ্য)।${missing}\n\n` +
+            `আরো কিছু নিতে চান? নাম লিখুন বা ছবি পাঠান।\nআর কিছু না লাগলে "শেষ" লিখুন।`,
+            `Added to your cart ✅: ${names} (${count} item${count > 1 ? 's' : ''}).${missing}\n\n` +
+            `Want to add anything else? Send a product name or photo.\nIf that's all, type "done".`);
+    }
+
+    // ─── Per-line cart editing (at the summary) ───────────────────────────────
+
+    /**
+     * Recognise a per-line cart edit at the summary step. Matches the message
+     * against the live cart's product names and returns the action to apply:
+     *   { action: 'remove', index }              — drop a line
+     *   { action: 'setqty', index, quantity }    — change a line's quantity
+     *   { action: null }                         — not an edit (fall through)
+     */
+    static detectCartEdit(text, cart) {
+        const NONE = { action: null };
+        if (!text || !Array.isArray(cart) || !cart.length) return NONE;
+        const t = String(text).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).toLowerCase().trim();
+
+        const idx = OrderSessionService._matchCartLine(t, cart);
+        if (idx < 0) return NONE;
+
+        const REMOVE = /\b(remove|delete|cancel|drop|baad|hatao|chai na|lagbe na|lagbena)\b|বাদ|চাই না|লাগবে না|সরাও/i;
+        if (REMOVE.test(t)) return { action: 'remove', index: idx };
+
+        const qty = extractQuantity(t);
+        if (qty) return { action: 'setqty', index: idx, quantity: qty };
+        return NONE;
+    }
+
+    /**
+     * Index of the cart line a message references, or -1. A line matches when a
+     * distinctive (≥3 char) token of its name/name_bn appears in the text. Two
+     * lines matching → -1 so we never edit the wrong item.
+     */
+    static _matchCartLine(text, cart) {
+        const tokensOf = (s) => String(s || '')
+            .toLowerCase()
+            .split(/[^a-z0-9ঀ-৿]+/)
+            .filter((w) => w.length >= 3);
+        let found = -1;
+        for (let i = 0; i < cart.length; i++) {
+            const names = [cart[i].name, cart[i].name_bn].filter(Boolean);
+            const hit = names.some((n) => tokensOf(n).some((tok) => text.includes(tok)));
+            if (hit) {
+                if (found >= 0) return -1; // ambiguous
+                found = i;
+            }
+        }
+        return found;
+    }
+
+    /** Apply a detected cart edit and produce the next step + re-rendered summary. */
+    static async applyCartEdit(session, step_data, edit, cart, lang) {
+        if (edit.action === 'remove') {
+            const newCart = cart.filter((_, i) => i !== edit.index);
+            if (!newCart.length) {
+                // Removed the last line — the cart is empty; ask what to order next.
+                step_data.cart = [];
+                session.product_info = null;
+                await session.update({ product_info: null });
+                return {
+                    nextStep: 'ADDING_PRODUCT',
+                    prompt: pickLang(lang,
+                        'কার্ট এখন খালি। কোন পণ্যটি অর্ডার করতে চান? নাম লিখুন বা ছবি পাঠান।',
+                        'Your cart is now empty. Which product would you like to order? Send a name or photo.'),
+                    completed: false,
+                };
+            }
+            step_data.cart = newCart;
+        } else if (edit.action === 'setqty') {
+            step_data.cart = cart.map((c, i) => (i === edit.index ? { ...c, quantity: edit.quantity } : c));
+        }
+        return {
+            nextStep: 'ORDER_SUMMARY',
+            prompt: OrderSessionService.generateOrderSummary(session, step_data, lang),
+            completed: false,
         };
     }
 
