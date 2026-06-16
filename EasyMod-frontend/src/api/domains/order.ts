@@ -180,7 +180,10 @@ export async function cancelOrder(orderId: string, reason?: string): Promise<Ord
     `/api/order/${orderId}/cancel`,
     { reason }
   );
-  return response.data.data;
+  // Normalise like every other order fn — without this the cancelled order comes
+  // back in raw snake_case, leaving the status pill blank and the courier check
+  // broken until a manual refresh.
+  return normalizeOrder(response.data.data);
 }
 
 /**

@@ -111,7 +111,7 @@ class OwnerNotificationService {
 
             // Process the response
             if (response === 'approve') {
-                await this.appvePayment(notification);
+                await this.approvePayment(notification);
             } else if (response === 'reject') {
                 await this.rejectPayment(notification);
             }

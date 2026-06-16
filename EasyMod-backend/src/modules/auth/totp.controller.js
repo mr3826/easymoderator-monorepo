@@ -64,8 +64,16 @@ const verify = async (req, res, next) => {
             throw new AppError('No active shop session found. Please login again.', 401);
         }
 
-        const accessToken = generateAccessToken({ userId: user.id, email: user.email, shopId });
-        const refreshToken = generateRefreshToken({ userId: user.id });
+        // Include tokenVersion so 2FA-issued sessions honour the same revocation
+        // check as the normal login path (auth.middleware.js) — a password reset
+        // must kill a 2FA session too.
+        const accessToken = generateAccessToken({
+            userId: user.id,
+            email: user.email,
+            shopId,
+            tokenVersion: user.token_version
+        });
+        const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
 
         // Use SHA-256 for refresh token storage (not bcrypt - too expensive for high-entropy tokens)
         const hashedRefreshToken = require('crypto').createHash('sha256').update(refreshToken).digest('hex');

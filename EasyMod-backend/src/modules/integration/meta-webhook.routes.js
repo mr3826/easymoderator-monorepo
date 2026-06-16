@@ -73,6 +73,12 @@ const isValidSignature = (rawBody, signature, secret) => {
 async function resolveConnectedChannel(assetId, platform) {
     const channel = await metaChannelService.findByMetaAssetId(assetId);
     if (!channel) return null;
+    // Only treat genuinely-connected channels as routable. A DISCONNECTED /
+    // TOKEN_EXPIRED / REVOKED channel can never send a reply, so dispatching an
+    // AI job just burns quota and produces a reply that fails at send. Returning
+    // null here routes into the handler's null-branch, which notifies the owner
+    // (via SSE) to reconnect the channel.
+    if (channel.status !== 'CONNECTED') return null;
     return {
         id: channel.id,
         shop_id: channel.shop_id,

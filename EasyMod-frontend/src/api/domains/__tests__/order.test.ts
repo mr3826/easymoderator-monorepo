@@ -178,6 +178,22 @@ describe('Order Domain API', () => {
 
       expect(httpClient.post).toHaveBeenCalledWith('/api/order/1/cancel', { reason: undefined });
     });
+
+    it('normalizes the snake_case response so the status pill is not blank', async () => {
+      // The bug: cancelOrder returned raw response.data.data, so the backend's
+      // snake_case (order_status / customer_name) left status undefined and the
+      // status pill blank until a manual refresh. It must normalize like every
+      // other order fn.
+      const mockResponse = {
+        data: { data: { id: '1', order_status: 'cancelled', customer_name: 'Karim' } },
+      };
+      (httpClient.post as any).mockResolvedValue(mockResponse);
+
+      const result = await order.cancelOrder('1', 'Out of stock');
+
+      expect(result.status).toBe('cancelled');
+      expect(result.customerName).toBe('Karim');
+    });
   });
 
   describe('bookCourier', () => {
