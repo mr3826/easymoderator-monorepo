@@ -14,13 +14,32 @@ export interface MessageSourceReference {
   score?: number | null;
 }
 
+/**
+ * Why an AI reply was held instead of delivered to the customer.
+ *  - 'low_confidence': auto-mode reply below the shop's confidence threshold;
+ *    the conversation was handed off to a human.
+ *  - 'draft_mode': suggest-only / DRAFT / policy-withheld reply.
+ */
+export type HeldReason = 'low_confidence' | 'draft_mode';
+
+export interface MessageMetadata {
+  message_type?: MessageType;
+  image_url?: string;
+  file_url?: string;
+  file_name?: string;
+  /** true = delivered to the customer; false = HELD as a reviewable suggestion. */
+  delivered?: boolean;
+  held_reason?: HeldReason;
+  [key: string]: unknown;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   content: string;
   sender: MessageSender;
   message_type: MessageType;
-  metadata?: unknown;
+  metadata?: MessageMetadata;
   ai_suggestion?: string;
   ai_confidence?: number;
   source_references?: MessageSourceReference[] | null;

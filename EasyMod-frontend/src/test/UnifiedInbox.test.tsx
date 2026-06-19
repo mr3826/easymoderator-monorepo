@@ -235,6 +235,7 @@ describe('UnifiedInbox 24h window behavior', () => {
           ai_confidence: 0.9,
           sender: 'ai',
           message_type: 'text',
+          metadata: { delivered: false, held_reason: 'draft_mode' },
           created_at: new Date(Date.now() - 30 * 1000).toISOString(),
           updated_at: new Date(Date.now() - 30 * 1000).toISOString(),
         },
@@ -254,5 +255,105 @@ describe('UnifiedInbox 24h window behavior', () => {
       expect(toast.error).toHaveBeenCalledWith('Pick a reason first to send your reply.')
     })
     expect(apiClient.createMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
+  const olderTs = new Date(Date.now() - 60 * 1000).toISOString()
+  const newerTs = new Date(Date.now() - 30 * 1000).toISOString()
+  const newestTs = new Date(Date.now() - 10 * 1000).toISOString()
+
+  const customerMsg = {
+    id: 'msg-customer-1',
+    conversation_id: 'conv-1',
+    content: 'Do you have this in red?',
+    sender: 'customer' as const,
+    message_type: 'text' as const,
+    created_at: olderTs,
+    updated_at: olderTs,
+  }
+
+  const aiMsg = (metadata: Record<string, unknown>, confidence = 0.9) => ({
+    id: 'msg-ai-1',
+    conversation_id: 'conv-1',
+    content: 'AI draft reply',
+    ai_suggestion: 'AI draft reply',
+    ai_confidence: confidence,
+    sender: 'ai' as const,
+    message_type: 'text' as const,
+    metadata,
+    created_at: newerTs,
+    updated_at: newerTs,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
+    ;(apiClient.getShopAgents as any).mockResolvedValue([])
+    ;(apiClient.updateConversation as any).mockResolvedValue({ id: 'conv-1', status: 'active' })
+  })
+
+  const renderWith = (conv: any, messages: any[]) => {
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      conversations: [conv],
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getMessages as any).mockResolvedValue({
+      messages,
+      pagination: { page: 1, totalPages: 1 },
+    })
+    render(<UnifiedInbox />)
+  }
+
+  it('HIDES the suggestion panel when the last AI reply was auto-delivered', async () => {
+    renderWith(baseConversation, [customerMsg, aiMsg({ delivered: true })])
+
+    // Wait for the thread to render (customer bubble present)…
+    await waitFor(() => {
+      expect(screen.getByText('Do you have this in red?')).toBeInTheDocument()
+    })
+    // …then the redundant "Send this" suggestion panel must NOT be present.
+    expect(screen.queryByRole('button', { name: /Send this/i })).not.toBeInTheDocument()
+  })
+
+  it('SHOWS the held suggestion even when the conversation is in HITL (handoff)', async () => {
+    renderWith({ ...baseConversation, hitl: true }, [
+      customerMsg,
+      aiMsg({ delivered: false, held_reason: 'draft_mode' }),
+    ])
+
+    expect(await screen.findByRole('button', { name: /Send this/i })).toBeInTheDocument()
+  })
+
+  it('shows the low-confidence note only when held_reason is low_confidence', async () => {
+    renderWith({ ...baseConversation, hitl: true }, [
+      customerMsg,
+      aiMsg({ delivered: false, held_reason: 'low_confidence' }, 0.9),
+    ])
+
+    expect(await screen.findByText(/Low confidence/i)).toBeInTheDocument()
+  })
+
+  it('surfaces the held draft, not the delivered holding message, after a handoff', async () => {
+    const holdingMsg = {
+      id: 'msg-ai-holding',
+      conversation_id: 'conv-1',
+      content: 'A representative will reply shortly.',
+      sender: 'ai' as const,
+      message_type: 'text' as const,
+      metadata: { delivered: true, type: 'escalation_auto_reply' },
+      created_at: newestTs,
+      updated_at: newestTs,
+    }
+    renderWith({ ...baseConversation, hitl: true }, [
+      customerMsg,
+      aiMsg({ delivered: false, held_reason: 'low_confidence' }, 0.4),
+      holdingMsg,
+    ])
+
+    // Even though the newest AI message is a delivered holding message, the panel
+    // must surface the earlier HELD draft (with its low-confidence note).
+    expect(await screen.findByRole('button', { name: /Send this/i })).toBeInTheDocument()
+    expect(screen.getByText(/Low confidence/i)).toBeInTheDocument()
   })
 })

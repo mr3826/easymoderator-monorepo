@@ -108,6 +108,30 @@ async function claimDedupKey(key) {
 }
 
 /**
+ * Stamp the delivery outcome on a stored AI message and emit it to agent tabs.
+ *
+ * `delivered:false` flags the message as a HELD suggestion the inbox should
+ * surface (Use this / Edit / Ignore); `delivered:true` is a normal sent reply
+ * and shows no suggestion panel. `held_reason` lets the UI distinguish a
+ * low-confidence hold (shows an "AI wasn't sure" note) from a draft/policy hold.
+ *
+ * The SSE emit moved here (from immediately after storeAIResponse) so connected
+ * agent tabs receive the message with its final delivery flag already set.
+ */
+async function finalizeAiMessage(aiMessage, shopId, conversationId, { delivered, heldReason = null }) {
+    if (aiMessage) {
+        try {
+            await aiMessage.update({
+                metadata: { ...(aiMessage.metadata || {}), delivered, held_reason: heldReason },
+            });
+        } catch (err) {
+            console.warn(`[worker] Failed to stamp delivery flag on AI message: ${err.message}`);
+        }
+    }
+    sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: aiMessage });
+}
+
+/**
  * Core job handler. Called by the BullMQ worker for each message job.
  *
  * Expected job.data shape:
@@ -238,25 +262,14 @@ async function processMessageJob(job) {
             const { shouldAutoEscalate } = require('../modules/ai/sentiment.service');
             if (shouldAutoEscalate(sentimentResult.sentiment)) {
                 console.log(`[worker] Auto-escalating conv ${conversationId}: sentiment=${sentimentResult.sentiment} (${sentimentResult.method})`);
-                await conversation.update({ hitl: true });
-                sseManager.emit(shopId, 'hitl_changed', { conversation_id: conversationId, hitl: true });
-                const { sendEscalationAutoReply } = require('../modules/conversation/escalation-auto-reply.service');
-                const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId).catch(() => null);
-                if (autoReplyMsg) {
-                    sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                    // Deliver escalation message to customer via provider registry.
-                    // Use the same channel the inbound message arrived on so multi-Page
-                    // shops reply from the correct Page.
-                    const pf = platform === 'messenger' ? 'facebook' : platform;
-                    if (jobChannel) {
-                        const escProvider = getProvider(pf);
-                        escProvider.sendMessage({
-                            channel: jobChannel, recipientId: String(recipientId),
-                            normalizedMessage: { text: autoReplyMsg.content, attachments: [], platform: pf, direction: 'outbound', senderRole: 'ai' },
-                            decision: { allow: true, reason: 'OK', augment: {} },
-                        }).catch(err => console.warn(`[worker] Escalation delivery failed: ${err.message}`));
-                    }
-                }
+                // Pause AI + reassure the customer + deliver on the same channel the
+                // inbound arrived on (shared with the low-confidence handoff path).
+                const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
+                await escalateToHuman({
+                    conversation, shopId, conversationId,
+                    platform, recipientId, channel: jobChannel,
+                    reason: `sentiment_${sentimentResult.sentiment}`,
+                });
                 return { skipped: true, reason: 'auto_escalated', sentiment: sentimentResult.sentiment };
             }
         } catch (escalateErr) {
@@ -351,12 +364,35 @@ async function processMessageJob(job) {
         automation_mode: aiSettings.automation_mode,
         sourceReferences: sourceReferences || null,
     });
+    const aiMessage = aiStoreResult.message;
+    // NOTE: the new_message SSE is emitted later (finalizeAiMessage) once the
+    // delivery outcome is known, so the inbox never shows a "suggestion" panel
+    // for a reply that was actually auto-sent.
 
-    // Notify connected agent tabs about the AI response in real-time
-    sseManager.emit(shopId, 'new_message', {
-        conversation_id: conversationId,
-        message: aiStoreResult.message
-    });
+    // ── Confidence gate: hold + hand off when the AI is unsure ──────────────
+    // In auto-send mode, an answer below the shop's confidence_threshold is NOT
+    // delivered. We mark it as a held suggestion, pause AI, pull in a human (who
+    // sees the held draft in the inbox), and send the customer one reassurance
+    // message so they are not left in silence. Order-flow turns are deterministic
+    // (confidence 1.0) and never held.
+    {
+        const { shouldHoldForLowConfidence } = require('../modules/ai/confidence-gate.service');
+        if (shouldHoldForLowConfidence({
+            confidence,
+            automationMode: aiSettings.automation_mode,
+            confidenceThreshold: aiSettings.confidence_threshold,
+            orderFlowHandled: orderFlow.handled,
+        })) {
+            await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'low_confidence' });
+            const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
+            await escalateToHuman({
+                conversation, shopId, conversationId,
+                platform, recipientId, channel: jobChannel, reason: 'low_confidence',
+            });
+            console.log(`[worker] Low-confidence handoff conv ${conversationId} (confidence=${confidence})`);
+            return { success: true, conversationId, confidence, sent: false, reason: 'low_confidence_handoff', handoff: true };
+        }
+    }
 
     // ── Policy Engine: mandatory outbound gate ─────────────────────────────
     // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
@@ -405,7 +441,9 @@ async function processMessageJob(job) {
             return { delayed: true, reason: 'policy_rate_limit', retryAfterMs: decision.retryAfterMs };
         }
         // DRAFT / SUGGEST_ONLY / MANUAL / OPTED_OUT / NO_CONSENT / OUTSIDE_24H:
-        // AI response is already stored; just don't deliver.
+        // AI response is already stored but withheld — surface it as a held
+        // suggestion the agent can review/send (delivered:false).
+        await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'draft_mode' });
         return {
             success: true, conversationId, confidence,
             sent: false, reason: decision.reason, decisionId: decision.decisionId,
@@ -440,6 +478,9 @@ async function processMessageJob(job) {
         }
         throw err; // Other send errors bubble up for normal retry/DLQ handling
     }
+
+    // Mark the reply delivered (no suggestion panel) and emit to agent tabs.
+    await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: true, heldReason: null });
 
     // Activation tracking: the first successful AI reply activates the shop.
     // Fire-and-forget + Redis NX-gated, so it runs once and never blocks the reply.

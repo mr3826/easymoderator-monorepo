@@ -10,7 +10,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
-import type { Conversation, Message, ResponseTemplate } from "@/api/types/conversation";
+import type { Conversation, Message, MessageMetadata, ResponseTemplate } from "@/api/types/conversation";
 import type { ShopAgent } from "@/api/types/dashboard";
 import { InboxComposer } from "./InboxComposer";
 
@@ -207,22 +207,33 @@ export function InboxThreadDetail({
 }: InboxThreadDetailProps) {
   const { t } = useTranslation();
 
-  // AI suggestion logic
-  const lastAiMsg = [...messages].reverse().find((m) => m.sender === "ai") ?? null;
-  const aiSuggestion = lastAiMsg?.ai_suggestion || lastAiMsg?.content || "";
-  const aiConfidence = lastAiMsg?.ai_confidence ?? 0;
+  // AI suggestion logic — show the panel ONLY for a HELD reply (one the AI did
+  // NOT auto-deliver to the customer). A delivered reply is already in the thread,
+  // so a "Use this / Edit / Ignore" panel for it would be redundant. A held reply
+  // carries metadata.delivered === false — either a suggest-only/DRAFT reply or a
+  // low-confidence handoff. We pick the most recent HELD message (not merely the
+  // most recent AI message) so the customer-facing holding message sent during a
+  // handoff never hides the actual draft the agent needs to review.
+  const heldAiMsg =
+    [...messages].reverse().find(
+      (m) => m.sender === "ai" && (m.metadata as MessageMetadata | undefined)?.delivered === false
+    ) ?? null;
+  const heldMeta = heldAiMsg?.metadata as MessageMetadata | undefined;
+  const aiSuggestion = heldAiMsg?.ai_suggestion || heldAiMsg?.content || "";
+  const aiConfidence = heldAiMsg?.ai_confidence ?? 0;
   const lastCustomerMsg = [...messages].reverse().find((m) => m.sender === "customer") ?? null;
   const lastAgentMsg = [...messages].reverse().find((m) => m.sender === "agent") ?? null;
   const customerSentAfterAgent =
     lastCustomerMsg &&
     (!lastAgentMsg ||
       new Date(lastCustomerMsg.created_at) > new Date(lastAgentMsg.created_at));
+  // No !hitl guard: a low-confidence handoff sets hitl=true, yet we WANT the held
+  // draft visible to the human who just took over.
   const hasAiSuggestion =
     !!aiSuggestion &&
-    lastAiMsg?.id !== dismissedSuggestionId &&
-    !!customerSentAfterAgent &&
-    !selectedConversation?.hitl;
-  const isLowConfidence = hasAiSuggestion && aiConfidence < 0.65;
+    heldAiMsg?.id !== dismissedSuggestionId &&
+    !!customerSentAfterAgent;
+  const isLowConfidence = hasAiSuggestion && heldMeta?.held_reason === "low_confidence";
 
   // Traffic-light dot only — no English jargon for non-tech shop owners.
   const confidenceTier = (() => {
@@ -455,7 +466,7 @@ export function InboxThreadDetail({
               {t("inbox.editAndUse")}
             </button>
             <button
-              onClick={() => lastAiMsg && onDismissSuggestion(lastAiMsg.id)}
+              onClick={() => heldAiMsg && onDismissSuggestion(heldAiMsg.id)}
               className="flex-1 py-2 sm:py-1.5 px-2 sm:px-3 bg-white border border-gray-300 text-gray-600 text-xs sm:text-sm font-medium rounded-lg hover:bg-gray-50 min-h-10"
             >
               {t("inbox.ignore")}
