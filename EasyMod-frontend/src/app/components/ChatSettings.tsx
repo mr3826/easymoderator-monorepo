@@ -44,7 +44,7 @@ import {
 // Picker entry covers both per-platform flow (no `platform`, falls back to
 // activeOAuth.platform) and unified flow (each asset carries its own platform).
 type PickerEntry = MetaOAuthAsset & { platform?: MetaPlatform };
-import { getMetaErrorMessage } from "@/lib/meta/error-messages";
+import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
 
 const PLATFORMS: Array<{
   id: MetaPlatform;
@@ -80,7 +80,21 @@ function PlatformIcon({ id, color, size = 22 }: { id: MetaPlatform; color: strin
 }
 
 export default function ChatSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+
+  // Surface the *real* reason a Meta connect/callback failed. Shows a
+  // merchant-friendly headline (mapped from the Meta error) plus the raw
+  // backend message as a sub-line, and logs the full error for support/QA.
+  // Replaces the old generic-toast-and-swallow that made App Review failures
+  // impossible to diagnose.
+  const reportConnectError = (context: string, err: unknown) => {
+    const { code, message } = extractMetaApiError(err);
+    const lang = i18n.language?.startsWith("en") ? "en" : "bn";
+    const friendly = getMetaErrorMessage(code, message, lang);
+    // eslint-disable-next-line no-console
+    console.error(`[Meta connect] ${context} failed`, { code, message, err });
+    toast.error(friendly, message ? { description: message, duration: 12000 } : undefined);
+  };
 
   const [channels, setChannels] = useState<MetaChannel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -141,10 +155,9 @@ export default function ChatSettings() {
             c.status !== "DISCONNECTED",
         ),
       );
-    } catch (error: any) {
-      const code = error.response?.data?.error?.code;
-      const rawMsg = error.response?.data?.error?.message || "";
-      setLoadError(getMetaErrorMessage(code, rawMsg, "en"));
+    } catch (error: unknown) {
+      const { code, message } = extractMetaApiError(error);
+      setLoadError(getMetaErrorMessage(code, message, "en"));
     } finally {
       setIsLoading(false);
     }
@@ -232,8 +245,8 @@ export default function ChatSettings() {
               setTempToken(result.tempToken);
               setActiveOAuth({ platform, step: "page-select" });
             })
-            .catch(() => {
-              toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
+            .catch((err) => {
+              reportConnectError("OAuth callback", err);
               setActiveOAuth(null);
             });
         } else if (data?.type === "OAUTH_ERROR") {
@@ -325,8 +338,8 @@ export default function ChatSettings() {
               setTempToken(result.tempToken);
               setActiveOAuth({ platform: "unified", step: "page-select" });
             })
-            .catch(() => {
-              toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
+            .catch((err) => {
+              reportConnectError("OAuth callback", err);
               setActiveOAuth(null);
             });
         } else if (data?.type === "OAUTH_ERROR") {
@@ -403,8 +416,8 @@ export default function ChatSettings() {
       if (webhookWarning) {
         setTimeout(() => toast.warning(webhookWarning!, { duration: 12000 }), 500);
       }
-    } catch {
-      toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
+    } catch (err) {
+      reportConnectError("connect-asset", err);
     } finally {
       setIsConnectingPage(false);
     }
@@ -487,8 +500,8 @@ export default function ChatSettings() {
               setTempToken(result.tempToken);
               setActiveOAuth({ platform: channel.platform, step: "page-select" });
             })
-            .catch(() => {
-              toast.error(t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ — আবার চেষ্টা করুন"));
+            .catch((err) => {
+              reportConnectError("OAuth callback", err);
               setActiveOAuth(null);
             });
         } else if (data?.type === "OAUTH_ERROR") {

@@ -34,12 +34,25 @@ const DEFAULT_SCOPES = [
     'pages_manage_posts'
 ];
 
+// These are sent as the PARENT PAGE's `subscribed_apps` subscribed_fields (IG
+// webhooks ride the linked Facebook Page). They MUST be valid *page-object*
+// fields: Meta rejects the ENTIRE subscribe call if any value isn't one — e.g.
+// `comments`/`live_comments` are Instagram-OBJECT fields and are INVALID here
+// (the live error was `... } - got "comments"`), which silently left every IG
+// channel un-subscribed (no inbound DMs/comments ever delivered).
+//
+// Actual IG message/comment delivery is governed by the app-level `instagram`
+// webhook object subscription (App Dashboard → Webhooks → instagram), NOT by
+// these page fields. We mirror the Messenger provider's valid page set so that
+// when a Page is connected for BOTH FB and IG, whichever subscribes last does
+// not clobber the other's fields.
 const WEBHOOK_FIELDS = [
     'messages',
     'messaging_postbacks',
-    'message_reactions',
-    'comments',
-    'live_comments'
+    'messaging_optins',
+    'message_deliveries',
+    'message_reads',
+    'feed'
 ];
 
 function appsecretProof(token) {

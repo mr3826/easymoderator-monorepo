@@ -32,11 +32,16 @@ describe('MetaInstagramProvider', () => {
     });
 
     describe('webhookFields()', () => {
-        test('includes IG-specific fields (messages, comments)', () => {
+        test('uses only valid PAGE subscribed_fields (no IG-object fields)', () => {
             const fields = provider.webhookFields();
             expect(fields).toContain('messages');
-            expect(fields).toContain('comments');
-            expect(fields).toContain('live_comments');
+            expect(fields).toContain('messaging_postbacks');
+            // `comments`/`live_comments` are Instagram-OBJECT webhook fields and are
+            // INVALID as page subscribed_fields — Meta rejects the whole subscribe
+            // call ("... got 'comments'"). IG comment/message delivery comes via the
+            // app-level `instagram` webhook object, not these page fields.
+            expect(fields).not.toContain('comments');
+            expect(fields).not.toContain('live_comments');
         });
 
         test('does NOT include whatsapp fields', () => {

@@ -112,7 +112,9 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         userToken: tempToken,
     });
 
-    // Upsert into meta_channels
+    // Upsert into meta_channels. NOTE: the key is `userId` — upsertFromOAuth
+    // destructures `userId` (not `connectedByUserId`); the old name left
+    // connected_by_user_id NULL on every connect.
     const channel = await metaChannelService.upsertFromOAuth({
         shopId,
         platform,
@@ -121,7 +123,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         pageAccessToken: pageToken,
         tokenExpiresAt: expiresAt,
         linkedFbPageId,          // null for FB pages; parent Page ID for IG accounts
-        connectedByUserId: userId,
+        userId,
     });
 
     // Subscribe, then HARD-VERIFY. A page can report success on subscribe yet not
