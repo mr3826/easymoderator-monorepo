@@ -49,6 +49,28 @@ describe('admin.service.getDashboard', () => {
   });
 });
 
+describe('admin.service.listShops', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('searches by shop name and owner identity using a dialect-safe LIKE', async () => {
+    entities.Shop.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+
+    const res = await adminService.listShops({ search: 'owner@example.com' });
+
+    expect(res.items).toEqual([]);
+    const query = entities.Shop.findAndCountAll.mock.calls[0][0];
+    const [orSymbol] = Object.getOwnPropertySymbols(query.where);
+    expect(orSymbol).toBeDefined();
+    expect(query.where[orSymbol]).toHaveLength(3);
+    expect(query.include[1]).toEqual(expect.objectContaining({
+      as: 'users',
+      required: false,
+      through: expect.objectContaining({ where: { role: 'owner' } }),
+    }));
+    expect(query.subQuery).toBe(false);
+  });
+});
+
 describe('admin.service mutations', () => {
   beforeEach(() => jest.clearAllMocks());
 

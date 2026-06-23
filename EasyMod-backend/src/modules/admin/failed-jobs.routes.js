@@ -17,11 +17,12 @@
 
 const express = require('express');
 const { authenticate } = require('../../middleware/auth.middleware');
-const { requirePlatformAdmin } = require('../../middleware/platform-admin.middleware');
+const { requirePlatformAdmin, PLATFORM_ROLES } = require('../../middleware/platform-admin.middleware');
 
 const router = express.Router();
 
 router.use(authenticate, requirePlatformAdmin());
+const superOnly = requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN);
 
 function getQueue() {
     try {
@@ -80,7 +81,7 @@ router.get('/', async (req, res) => {
  * POST /api/admin/failed-jobs/:id/retry
  * Moves the failed job back to the waiting queue for one more attempt.
  */
-router.post('/:id/retry', async (req, res) => {
+router.post('/:id/retry', superOnly, async (req, res) => {
     const queue = getQueue();
     if (!queue) return res.status(503).json({ success: false, error: 'Message queue not available' });
 
@@ -101,7 +102,7 @@ router.post('/:id/retry', async (req, res) => {
  * DELETE /api/admin/failed-jobs/:id
  * Permanently removes a failed job from the DLQ.
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', superOnly, async (req, res) => {
     const queue = getQueue();
     if (!queue) return res.status(503).json({ success: false, error: 'Message queue not available' });
 

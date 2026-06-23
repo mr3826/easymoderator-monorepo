@@ -1,6 +1,6 @@
 'use strict';
 
-const { Op } = require('sequelize');
+const { Op, fn, col, where: sequelizeWhere } = require('sequelize');
 const {
   Shop, Subscription, Message, Order, MetaChannel, AuditLog, User,
 } = require('../entities');
@@ -14,6 +14,10 @@ function startOfTodayUTC() {
   const d = new Date();
   d.setUTCHours(0, 0, 0, 0);
   return d;
+}
+
+function likeTerm(value) {
+  return `%${String(value).trim().toLowerCase()}%`;
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -60,13 +64,19 @@ async function listShops({ search = '', page = 1, limit = 20 } = {}) {
   const safePage = Math.max(parseInt(page, 10) || 1, 1);
   const offset = (safePage - 1) * safeLimit;
 
-  const where = {};
-  if (search) {
-    where[Op.or] = [{ shop_name: { [Op.iLike]: `%${search}%` } }];
+  const queryWhere = {};
+  const normalizedSearch = String(search || '').trim();
+  if (normalizedSearch) {
+    const match = { [Op.like]: likeTerm(normalizedSearch) };
+    queryWhere[Op.or] = [
+      sequelizeWhere(fn('LOWER', col('shop_name')), match),
+      sequelizeWhere(fn('LOWER', col('users.email')), match),
+      sequelizeWhere(fn('LOWER', col('users.full_name')), match),
+    ];
   }
 
   const { rows, count } = await Shop.findAndCountAll({
-    where,
+    where: queryWhere,
     include: [
       { model: Subscription, as: 'subscription', required: false },
       {
@@ -79,6 +89,7 @@ async function listShops({ search = '', page = 1, limit = 20 } = {}) {
     limit: safeLimit,
     offset,
     distinct: true,
+    subQuery: false,
   });
 
   const shopIds = rows.map((s) => s.id);

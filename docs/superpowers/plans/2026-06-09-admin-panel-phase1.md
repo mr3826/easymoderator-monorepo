@@ -1834,3 +1834,67 @@ controller; `adminApi` method names match the routes; `platform_role` string val
 - Subscription association alias on `Shop` (`as: 'subscription'`) — confirm in `entities.js`.
 - `getAuthContext` return shape for the `platform_role` field on `/me`.
 - App boot may need the same incidental mocks as `shop.api.integration.test.js`.
+
+## GSTACK REVIEW REPORT
+
+| Run | Status | Findings |
+| --- | --- | --- |
+| Step 0 scope challenge | DONE | Proceeded with full Phase 1 after explicit user decision. The plan is broad, but intentionally Phase 1, reuses existing services, and the current tree already contains the planned implementation shape. |
+| Architecture review | DONE_WITH_CONCERNS | Core architecture is sound: platform role is distinct from tenant role, admin routes are isolated under `/api/admin`, mutations reuse existing services, and audit logging is centralized in controllers. Concern: failed-job mutations are guarded only as read-level admin operations. |
+| Code quality review | DONE_WITH_CONCERNS | Implementation is explicit and mostly boring. Concern: shop search does not satisfy the spec's owner-email search requirement and uses `Op.iLike`, which is PostgreSQL-oriented in a codebase that still supports SQLite for local/test flows. |
+| Tests review | DONE_WITH_CONCERNS | Focused admin tests pass: `npx jest src/middleware/__tests__/platform-admin.middleware.test.js src/modules/admin --runInBand` passed 3 suites / 18 tests. Frontend `npm run build` passed. Broader backend `npx jest --runInBand` timed out after ~186s before producing useful output. |
+| Performance review | DONE_WITH_CONCERNS | Admin dashboard caching and paginated shop/audit reads are appropriate for low admin traffic. Concern: failed-job retry/delete scan the whole failed queue with `queue.getFailed()` instead of fetching the target job directly. |
+| Outside voice | DONE | This is a good "boring by default" operator panel, not an unnecessary new admin app. The remaining issues are mostly permission precision and operational polish, not architectural rewrites. |
+
+VERDICT: APPROVE_WITH_CHANGES. Do not shrink the scope; fix the authorization and search/test gaps before treating Phase 1 as production-ready.
+
+### Architecture
+
+```
+browser /admin
+  -> PlatformAdminRoute (/api/auth/me platform_role)
+  -> /api/admin/*
+       -> authenticate
+       -> requirePlatformAdmin(DB-backed, 60s cached users.platform_role)
+       -> admin controller
+       -> existing services + AuditService
+```
+
+- [P1] `failed-jobs.routes.js` applies `requirePlatformAdmin()` once at router level, so `SUPPORT_ADMIN` can retry and delete failed jobs. The global role policy says reads are SUPPORT/SUPER and mutations are SUPER only. Add `const superOnly = requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN)` and apply it to `POST /:id/retry` and `DELETE /:id`, plus router tests for SUPPORT_ADMIN 403.
+- [P2] The `/api/admin` module is well isolated from merchant shop-scoped middleware. Keep it that way; do not reuse `requireShop` for cross-tenant admin reads.
+- [P2] The DB-backed role re-check is the right call. The grant script writes the cache key immediately, so revocation/role changes take effect without waiting for TTL.
+
+### Code Quality
+
+- [P2] `admin.service.listShops` only searches `shop_name`; the spec says shop name or owner email. Add owner email/name search through `User`/`UserShop` or a two-query owner-id prefilter, and cover it with a service/integration test.
+- [P2] `Op.iLike` is PostgreSQL-specific in practice. Because this repo still uses SQLite in local/test flows, use a dialect-safe search path or normalize with `LOWER(...) LIKE LOWER(...)`.
+- [P3] `AdminShopDetail` renders SUPER_ADMIN-only controls for every platform admin. Backend protection is intact, but SUPPORT_ADMIN users will hit avoidable 403s. Read the role via `useIsPlatformAdmin()` and hide or disable mutation buttons with clear copy.
+
+### Tests
+
+- Add focused authz tests for `/api/admin/failed-jobs/:id/retry` and `/api/admin/failed-jobs/:id` proving SUPPORT_ADMIN is rejected and SUPER_ADMIN is allowed.
+- Add a shop-list test for owner-email search. This is the main spec mismatch not covered by the current mocked service tests.
+- Add frontend tests around SUPPORT_ADMIN vs SUPER_ADMIN rendering in `AdminShopDetail` once role-aware controls are added.
+- Keep the current focused admin sweep in CI; it is fast enough and protects the highest-risk surface.
+
+### Performance
+
+- `GET /api/admin/failed-jobs` is paginated and fine for Phase 1.
+- `POST /api/admin/failed-jobs/:id/retry` and `DELETE /api/admin/failed-jobs/:id` call `queue.getFailed()` without bounds and then scan in memory. Use a targeted BullMQ job lookup, then verify the job is failed before retry/remove. This prevents admin actions from degrading as the DLQ grows.
+- Dashboard caching at 30 seconds is reasonable for low-traffic internal operations.
+
+### Hardening Completion Remark
+
+DONE: Admin panel hardening tasks requested after this review were completed on `codex/admin-panel-hardening`.
+
+- Fixed failed-job retry/delete authorization so only `SUPER_ADMIN` can mutate the DLQ.
+- Updated admin shop search to cover shop name plus owner email/name without `Op.iLike`.
+- Disabled SUPER_ADMIN-only channel and billing controls for `SUPPORT_ADMIN` users.
+- Added regression coverage for failed-job authorization, shop search shaping, and role-aware admin UI controls.
+- Validation completed:
+  - `npx jest src/middleware/__tests__/platform-admin.middleware.test.js src/modules/admin --runInBand` passed: 4 suites, 23 tests.
+  - `npm run test:unit -- src/app/components/admin/__tests__/AdminShopDetail.test.tsx` passed: 1 suite, 2 tests.
+  - `npm run build` in `EasyMod-frontend` passed with existing Vite chunk/externalization warnings.
+  - Broader non-admin backend chunks and individual legacy files still timed out, consistent with the previously observed broad-suite timeout and outside this admin hardening scope.
+
+NO UNRESOLVED DECISIONS

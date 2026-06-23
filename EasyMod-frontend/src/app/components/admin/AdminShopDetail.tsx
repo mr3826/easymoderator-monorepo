@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { adminApi } from '@/api/domains/admin';
+import { useIsPlatformAdmin } from '@/shared/lib/auth/useIsPlatformAdmin';
 
 const TABS = ['Overview', 'Channels', 'Billing', 'AI & Inbox', 'Orders & Courier'] as const;
 type Tab = typeof TABS[number];
 
 export default function AdminShopDetail() {
   const { shopId = '' } = useParams();
+  const { role } = useIsPlatformAdmin();
+  const canMutate = role === 'SUPER_ADMIN';
   const [tab, setTab] = useState<Tab>('Overview');
   const [overview, setOverview] = useState<any>(null);
   const [channels, setChannels] = useState<any[]>([]);
@@ -56,15 +59,19 @@ export default function AdminShopDetail() {
       {tab === 'Channels' && (
         <div className="space-y-3">
           <button
+            disabled={!canMutate}
+            title={canMutate ? 'Stop all AI automation for this shop' : 'SUPER_ADMIN required'}
             onClick={() => {
+              if (!canMutate) return;
               if (window.confirm('EMERGENCY: stop ALL AI automation for this shop? Inbound messages still arrive; only automated replies stop.')) {
                 act(() => adminApi.emergencyAiOff(shopId), 'Emergency AI off');
               }
             }}
-            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
           >
             Emergency: stop AI
           </button>
+          {!canMutate && <span className="text-xs text-gray-500">SUPER_ADMIN required for channel actions.</span>}
           <table className="min-w-full rounded-lg border bg-white text-sm">
             <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
               <tr>
@@ -85,7 +92,14 @@ export default function AdminShopDetail() {
                   <td className="px-3 py-2">{c.webhookLastVerifiedAt ? 'verified' : '—'}</td>
                   <td className="px-3 py-2 text-red-600">{c.lastError || '—'}</td>
                   <td className="px-3 py-2">
-                    <button onClick={() => act(() => adminApi.markReconnect(shopId, c.id), 'Mark reconnect')} className="text-blue-600">
+                    <button
+                      disabled={!canMutate}
+                      title={canMutate ? 'Mark this channel as needing reconnect' : 'SUPER_ADMIN required'}
+                      onClick={() => {
+                        if (canMutate) act(() => adminApi.markReconnect(shopId, c.id), 'Mark reconnect');
+                      }}
+                      className="text-blue-600 disabled:cursor-not-allowed disabled:text-gray-400"
+                    >
                       Mark reconnect
                     </button>
                   </td>
@@ -104,12 +118,13 @@ export default function AdminShopDetail() {
           <div>
             Plan: <b>{billing.planName}</b> · Status: {billing.status} · Used {billing.conversationsUsed}/{billing.conversationsLimit} · Top-up {billing.topupBalance}
           </div>
+          {!canMutate && <p className="text-xs text-gray-500">SUPER_ADMIN required for billing actions.</p>}
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => act(() => adminApi.extendTrial(shopId, 7), 'Extend trial 7d')} className="rounded border px-3 py-1.5">Extend trial 7d</button>
-            <button onClick={() => act(() => adminApi.addCredits(shopId, 50, 'admin_grant'), 'Add 50 credits')} className="rounded border px-3 py-1.5">Add 50 credits</button>
+            <button disabled={!canMutate} onClick={() => act(() => adminApi.extendTrial(shopId, 7), 'Extend trial 7d')} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Extend trial 7d</button>
+            <button disabled={!canMutate} onClick={() => act(() => adminApi.addCredits(shopId, 50, 'admin_grant'), 'Add 50 credits')} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Add 50 credits</button>
             {billing.status === 'suspended'
-              ? <button onClick={() => act(() => adminApi.setStatus(shopId, 'active'), 'Reactivate')} className="rounded border px-3 py-1.5 text-green-700">Reactivate</button>
-              : <button onClick={() => act(() => adminApi.setStatus(shopId, 'suspended'), 'Suspend')} className="rounded border px-3 py-1.5 text-red-700">Suspend</button>}
+              ? <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'active'), 'Reactivate')} className="rounded border px-3 py-1.5 text-green-700 disabled:cursor-not-allowed disabled:opacity-45">Reactivate</button>
+              : <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'suspended'), 'Suspend')} className="rounded border px-3 py-1.5 text-red-700 disabled:cursor-not-allowed disabled:opacity-45">Suspend</button>}
           </div>
         </div>
       )}
