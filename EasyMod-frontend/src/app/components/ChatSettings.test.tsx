@@ -31,10 +31,18 @@ const mockChannels: MetaChannel[] = [mockMetaChannel];
 const {
   mockListMetaChannels,
   mockDisconnectMetaChannel,
+  mockInitiateMetaUnifiedOAuth,
+  mockHandleMetaUnifiedOAuthCallback,
 } = vi.hoisted(() => {
   return {
     mockListMetaChannels:     vi.fn().mockResolvedValue([]),
     mockDisconnectMetaChannel: vi.fn().mockResolvedValue({ id: 'mc-1' }),
+    mockInitiateMetaUnifiedOAuth: vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' }),
+    mockHandleMetaUnifiedOAuthCallback: vi.fn().mockResolvedValue({
+      facebookPages: [],
+      instagramAccounts: [],
+      tempToken: 'tmp',
+    }),
   };
 });
 
@@ -49,9 +57,9 @@ vi.mock('@/api/domains/meta-channels', () => ({
   getMetaChannelSettings:     vi.fn().mockResolvedValue({ aiAutoReply: false }),
   updateMetaChannelSettings:  vi.fn().mockResolvedValue({ aiAutoReply: true }),
   initiateMetaOAuth:          vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com' }),
-  initiateMetaUnifiedOAuth:   vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com' }),
+  initiateMetaUnifiedOAuth:   mockInitiateMetaUnifiedOAuth,
   handleMetaOAuthCallback:    vi.fn().mockResolvedValue({ pages: [], tempToken: '' }),
-  handleMetaUnifiedOAuthCallback: vi.fn().mockResolvedValue({ facebookPages: [], instagramAccounts: [], tempToken: '' }),
+  handleMetaUnifiedOAuthCallback: mockHandleMetaUnifiedOAuthCallback,
   connectMetaAsset:           vi.fn().mockResolvedValue({ webhookWarning: null }),
 }));
 
@@ -85,6 +93,7 @@ vi.mock('lucide-react', () => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 const flushPromises = () => new Promise(r => setTimeout(r, 0));
+let lastBroadcastChannel: { onmessage: ((event: { data: unknown }) => void) | null } | null = null;
 
 const renderComponent = async () => {
   let utils: ReturnType<typeof render> | undefined;
@@ -101,6 +110,27 @@ describe('ChatSettings', () => {
   beforeEach(() => {
     mockListMetaChannels.mockReset().mockResolvedValue(mockChannels);
     mockDisconnectMetaChannel.mockReset().mockResolvedValue({ id: 'mc-1' });
+    mockInitiateMetaUnifiedOAuth.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' });
+    mockHandleMetaUnifiedOAuthCallback.mockReset().mockResolvedValue({
+      facebookPages: [],
+      instagramAccounts: [],
+      tempToken: 'tmp',
+    });
+    lastBroadcastChannel = null;
+
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
+    Object.defineProperty(globalThis, 'BroadcastChannel', {
+      configurable: true,
+      writable: true,
+      value: class {
+        onmessage: ((event: { data: unknown }) => void) | null = null;
+        constructor() {
+          lastBroadcastChannel = this;
+        }
+        close = vi.fn();
+        postMessage = vi.fn();
+      },
+    });
   });
 
   // ── Basic render ────────────────────────────────────────────────────────
@@ -254,6 +284,30 @@ describe('ChatSettings', () => {
       // The settings header is still present
       expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
     }, { timeout: 2000 });
+  });
+
+  it('explains Meta Business access when OAuth returns no assets', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([]);
+
+    await renderComponent();
+
+    fireEvent.click(screen.getByRole('button', { name: /Facebook \+ Instagram/i }));
+
+    await waitFor(() => {
+      expect(mockInitiateMetaUnifiedOAuth).toHaveBeenCalled();
+      expect(lastBroadcastChannel).not.toBeNull();
+    });
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'code-123', state: 'state-123' },
+      });
+      await flushPromises();
+    });
+
+    expect(await screen.findByText('No Facebook Page or Instagram account found')).toBeInTheDocument();
+    expect(screen.getByText(/usually a Meta Business access issue/i)).toBeInTheDocument();
+    expect(screen.getByText('Open Meta Business Settings')).toBeInTheDocument();
   });
 
   // ── HealthRow grid (E3/E4) ─────────────────────────────────────────────

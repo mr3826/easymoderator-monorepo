@@ -379,6 +379,15 @@ export default function ChatSettings() {
     setTempToken("");
   };
 
+  const handleRetryOAuthAssetLookup = () => {
+    const target = activeOAuth?.platform;
+    handleCancelOAuth();
+    setTimeout(() => {
+      if (target === "unified") void handleConnectUnified();
+      else if (target) void handleConnectClick(target);
+    }, 0);
+  };
+
   const togglePageSelection = (pageId: string) => {
     setSelectedPageIds((prev) => {
       const next = new Set(prev);
@@ -677,9 +686,11 @@ export default function ChatSettings() {
                   </div>
                 )}
               {availablePages.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">
-                  কোনো asset পাওয়া যায়নি।
-                </p>
+                <NoMetaAssetsFound
+                  platform="unified"
+                  onRetry={handleRetryOAuthAssetLookup}
+                  onCancel={handleCancelOAuth}
+                />
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {availablePages.map((page) => {
@@ -933,11 +944,11 @@ export default function ChatSettings() {
                       যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন
                     </p>
                     {availablePages.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">
-                        {platform.id === "instagram"
-                          ? "কোনো Instagram Business অ্যাকাউন্ট পাওয়া যায়নি।"
-                          : "আপনি manage করেন এমন কোনো Page পাওয়া যায়নি।"}
-                      </p>
+                      <NoMetaAssetsFound
+                        platform={platform.id}
+                        onRetry={handleRetryOAuthAssetLookup}
+                        onCancel={handleCancelOAuth}
+                      />
                     ) : (
                       <div className="space-y-2 max-h-56 overflow-y-auto">
                         {availablePages.map((page) => {
@@ -1377,6 +1388,71 @@ export default function ChatSettings() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function NoMetaAssetsFound({
+  platform,
+  onRetry,
+  onCancel,
+}: {
+  platform: MetaPlatform | "unified";
+  onRetry: () => void;
+  onCancel: () => void;
+}) {
+  const title =
+    platform === "instagram"
+      ? "No Instagram Business account found"
+      : platform === "facebook"
+      ? "No Facebook Page found"
+      : "No Facebook Page or Instagram account found";
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-amber-900">{title}</p>
+          <p className="mt-1 text-xs text-amber-800">
+            This is usually a Meta Business access issue, not an EasyMod problem. Meta only
+            shows assets assigned to the Facebook login you just used.
+          </p>
+        </div>
+      </div>
+
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-amber-900">
+        <li>Open Meta Business Settings and select the correct Business Portfolio.</li>
+        <li>In Users &gt; People, confirm this Facebook login has full control or assigned access.</li>
+        <li>In Accounts &gt; Pages and Instagram accounts, confirm the assets are inside that portfolio.</li>
+        <li>For Instagram, confirm it is a professional account linked to the Facebook Page.</li>
+        <li>Remove EasyMod from Business Integrations, then retry the connection.</li>
+      </ol>
+
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <a
+          href="https://business.facebook.com/settings"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex flex-1 items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+        >
+          Open Meta Business Settings
+        </a>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex-1 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800"
+        >
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
