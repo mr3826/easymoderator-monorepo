@@ -17,7 +17,7 @@ const mockMetaChannel: MetaChannel = {
   lastError: null,
   tokenExpiresAt: null,
   tokenLastRefreshedAt: new Date().toISOString(),
-  webhookSubscribedFields: ['messages', 'messaging_postbacks'],
+  webhookSubscribedFields: ['messages', 'feed'],
   webhookLastVerifiedAt: new Date().toISOString(),
   connectedAt: new Date().toISOString(),
   disconnectedAt: null,

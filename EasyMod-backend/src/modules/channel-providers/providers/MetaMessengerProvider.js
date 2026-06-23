@@ -27,15 +27,11 @@ const DEFAULT_SCOPES = [
     'pages_messaging',
     'pages_read_engagement',
     'pages_manage_metadata',
-    'pages_manage_posts'  // added for comment reply support (Phase 4)
+    'pages_manage_engagement'  // required for Page comment replies
 ];
 
 const WEBHOOK_FIELDS = [
     'messages',
-    'messaging_postbacks',
-    'messaging_optins',
-    'message_deliveries',
-    'message_reads',
     'feed'  // 'feed' carries comment events for Comment-to-DM (Phase 4)
 ];
 
@@ -314,7 +310,11 @@ class MetaMessengerProvider extends ChannelProvider {
             });
             const apps = resp.data?.data || [];
             const fields = apps.flatMap(a => a.subscribed_fields || []);
-            return { ok: apps.length > 0 && fields.includes('messages'), fields };
+            const requiredFields = this.webhookFields();
+            return {
+                ok: apps.length > 0 && requiredFields.every(field => fields.includes(field)),
+                fields
+            };
         } catch (err) {
             logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id, targetId });
             return { ok: false, fields: [] };
@@ -326,7 +326,7 @@ class MetaMessengerProvider extends ChannelProvider {
             return false;
         }
         const expected = 'sha256=' + crypto
-            .createHmac('sha256', process.env.META_WEBHOOK_APP_SECRET || config.metaAppSecret)
+            .createHmac('sha256', process.env.META_APP_SECRET || config.metaAppSecret)
             .update(rawBody)
             .digest('hex');
         // timingSafeEqual requires equal-length buffers

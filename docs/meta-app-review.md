@@ -1,7 +1,7 @@
 # Meta App Review — Reviewer Guide
 
 **App:** Easy Moderator
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-23 (endpoint references reconciled against code — see [`meta-app-review-implementation-audit.md`](./meta-app-review-implementation-audit.md))
 **Graph API version:** v22.0
 **Login product:** Facebook Login for Business
 
@@ -27,13 +27,13 @@ removed before submission (see §5).
 | # | Permission | Feature it powers | Merchant screen | Key Graph API call(s) | Webhook field | How the reviewer sees it used |
 |---|------------|-------------------|-----------------|-----------------------|---------------|-------------------------------|
 | 1 | `pages_show_list` | Lists the merchant's Pages so they can pick which one to connect | Settings → Chat Settings (asset picker after consent) | `GET /me/accounts` | — | After granting consent, the picker shows the tester's Page(s) to choose from |
-| 2 | `pages_messaging` | Send/receive Messenger DMs — core inbox reply + AI auto-reply | Settings → Chat Settings → Shared Inbox | `POST /{page-id}/messages`, `GET /me/conversations` | `messages`, `messaging_postbacks` | Tester sends a Page DM → it appears in the inbox → AI auto-reply is sent back |
-| 3 | `pages_read_engagement` | Delivery/read receipts + read Page comment events for keyword triggers | Settings → Chat Settings → Auto-reply tab | `GET /{post-id}/comments`, receipt webhooks | `feed`, `message_deliveries`, `message_reads` | Tester comments a trigger keyword on a Page post → event is received |
+| 2 | `pages_messaging` | Send/receive Messenger DMs — core inbox reply + AI auto-reply | Settings → Chat Settings → Shared Inbox | `POST /me/messages` (Page token), `GET /{psid}?fields=first_name,last_name,name,profile_pic` (name enrichment) | `messages` | Tester sends a Page DM → it appears in the inbox (via webhook) → AI auto-reply is sent back |
+| 3 | `pages_read_engagement` | Read Page comment events for keyword triggers | Settings → Chat Settings → Auto-reply tab | comment content arrives in the `feed` webhook (no GET) | `feed` | Tester comments a trigger keyword on a Page post → event is received |
 | 4 | `pages_manage_metadata` | Subscribe/verify/unsubscribe the Page's webhooks on connect/disconnect | Settings → Chat Settings (health grid) | `POST` / `GET` / `DELETE /{page-id}/subscribed_apps` | — (manages subscription) | On connect the health grid shows **Webhook: Active** (hard-verified via `GET subscribed_apps`) |
-| 5 | `pages_manage_posts` | Public reply to a Page comment (alongside the DM) | Settings → Chat Settings → Auto-reply tab ("also reply publicly") | `POST /{comment-id}/replies` | — | Tester's keyword comment receives a public reply comment |
-| 6 | `instagram_basic` | Read the IG Business account linked to the Page; display it; gate IG webhooks | Settings → Chat Settings (IG shows under the linked Page) | `GET /me?fields=instagram_business_account`, `GET /{ig-user-id}?fields=name,profile_picture_url` | — | The connected Page's linked IG account name + avatar render in the channel card |
-| 7 | `instagram_manage_messages` | Send/receive Instagram DMs in the same inbox | Settings → Chat Settings → Shared Inbox | `POST /{ig-user-id}/messages` | `messages` (IG) | Tester sends an IG DM → it appears in the inbox alongside Messenger threads |
-| 8 | `instagram_manage_comments` | Read/reply to Instagram comments — IG comment-to-DM automation | Settings → Chat Settings → Auto-reply tab | `POST /{ig-comment-id}/replies`, `GET /{ig-media-id}/comments` | `comments` (IG) | Tester comments a keyword on IG media → event received → public reply / DM fires |
+| 5 | `pages_manage_engagement` | Public reply to a Page comment (alongside the DM) | Settings → Chat Settings → Auto-reply tab ("also reply publicly") | `POST /{comment-id}/comments` (FB) | — | Tester's keyword comment receives a public reply comment |
+| 6 | `instagram_basic` | Read the IG Business account linked to the Page; display it; gate IG webhooks | Settings → Chat Settings (IG shows under the linked Page) | `instagram_business_account{id,name,username,profile_picture_url}` nested on `GET /me/accounts` | — | The connected Page's linked IG account name + avatar render in the channel card |
+| 7 | `instagram_manage_messages` | Send/receive Instagram DMs in the same inbox | Settings → Chat Settings → Shared Inbox | `POST /me/messages` (Page token) | `messages` (IG) | Tester sends an IG DM → it appears in the inbox alongside Messenger threads |
+| 8 | `instagram_manage_comments` | Read/reply to Instagram comments — IG comment-to-DM automation | Settings → Chat Settings → Auto-reply tab | `POST /{comment-id}/replies` (IG); comment content arrives in the `comments` webhook (no GET) | `comments` (IG) | Tester comments a keyword on IG media → event received → public reply / DM fires |
 
 The reviewer screen for **every** permission is **Settings → Chat Settings** — one screen
 drives the entire connect + configure + monitor flow.
@@ -48,8 +48,8 @@ three lists in the backend; after removing `business_management`, that union is 
 
 | Source in code | File | Scopes |
 |----------------|------|--------|
-| `MetaMessengerProvider.DEFAULT_SCOPES` | `EasyMod-backend/src/modules/channel-providers/providers/MetaMessengerProvider.js` | `pages_show_list`, `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_posts` |
-| `MetaInstagramProvider.DEFAULT_SCOPES` | `EasyMod-backend/src/modules/channel-providers/providers/MetaInstagramProvider.js` | `pages_show_list`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_posts` |
+| `MetaMessengerProvider.DEFAULT_SCOPES` | `EasyMod-backend/src/modules/channel-providers/providers/MetaMessengerProvider.js` | `pages_show_list`, `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement` |
+| `MetaInstagramProvider.DEFAULT_SCOPES` | `EasyMod-backend/src/modules/channel-providers/providers/MetaInstagramProvider.js` | `pages_show_list`, `instagram_basic`, `instagram_manage_messages`, `instagram_manage_comments`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement` |
 | `unifiedScopes` (single FB+IG popup) | `EasyMod-backend/src/modules/channel-providers/meta-oauth.service.js` | all 8 (the de-duped union) |
 
 **Union = the 8-permission set.** Each scope appears in this guide, in
@@ -83,13 +83,13 @@ shot-by-shot storyboards are in
    account). Each message appears in the **Shared Inbox** within a few seconds
    (`pages_messaging`, `instagram_manage_messages`, webhook `messages`).
 8. **AI auto-reply round-trip:** the AI replies automatically to the inbound DM; the
-   reply is delivered back to the sender (`POST /{page-id}/messages` /
-   `POST /{ig-user-id}/messages`).
+   reply is delivered back to the sender (`POST /me/messages` with the Page token, for
+   both Messenger and Instagram).
 9. **Human reply:** open the thread in the inbox and send a manual reply to confirm the
    compose → send path.
 10. *(Optional — comment automation)* Comment a configured trigger keyword on a test Page
     post / IG media. The app receives the comment event (`pages_read_engagement` /
-    `instagram_manage_comments`) and posts a public reply (`pages_manage_posts` /
+    `instagram_manage_comments`) and posts a public reply (`pages_manage_engagement` /
     `instagram_manage_comments`) and/or sends a DM.
 
 ### Dev-mode webhook caveat (important — not a bug)
@@ -127,7 +127,7 @@ the storyboards in `screencast-storyboards.md`.
    (`pages_messaging`, `instagram_manage_messages`).
 6. **(2:10–2:35) Human reply.** Open a thread, type and send a manual reply.
 7. **(2:35–3:00) Comment automation.** Comment a trigger keyword on a post; show the
-   received event and the public reply (`pages_read_engagement`, `pages_manage_posts`,
+   received event and the public reply (`pages_read_engagement`, `pages_manage_engagement`,
    `instagram_manage_comments`). Close with a one-line recap.
 
 State the dev-mode caveat in narration when sending the inbound DM ("sending from a tester
@@ -141,7 +141,7 @@ account on the app roster, as required in Development mode").
 `business_management`.**
 
 **Final requested set (8):** `pages_show_list`, `pages_messaging`, `pages_read_engagement`,
-`pages_manage_metadata`, `pages_manage_posts`, `instagram_basic`,
+`pages_manage_metadata`, `pages_manage_engagement`, `instagram_basic`,
 `instagram_manage_messages`, `instagram_manage_comments`.
 
 **Removed:** `business_management`.
@@ -159,7 +159,7 @@ case. (The removal is enforced by a regression test — see §2.)
 
 ### Why the comment/post scopes were kept (Option A, not Option B)
 
-`pages_manage_posts` and `instagram_manage_comments` power the **comment-to-DM automation**
+`pages_manage_engagement` and `instagram_manage_comments` power the **comment-to-DM automation**
 — a first-class, shipped feature (a merchant comments a keyword auto-replies publicly and/or
 opens a DM). Deferring them (Option B) would have meant shipping the inbox without comment
 automation and running a second App Review later. We chose to submit the comment scopes now,

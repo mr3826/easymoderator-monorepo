@@ -28,7 +28,7 @@ jest.mock('src/utils/structured-logger', () => ({
 
 // Mock config — metaReadFromNew / metaWriteLegacy removed in Phase 5
 jest.mock('src/config/config', () => ({
-    metaWebhookAppSecret: null,  // disabled by default; override per test
+    metaWebhookAppSecret: null,  // legacy alias; override per test
     jwtAccessSecret: 'test-jwt-access-secret-32chars!!',
     metaAppId: 'test-app-id',
     metaAppSecret: 'test-app-secret',
@@ -348,6 +348,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
 
         // Set app secret so the router processes the payload instead of rejecting.
         // The signature check is exercised by sendWebhookWithSig.
+        config.metaAppSecret = POST_APP_SECRET;
         config.metaWebhookAppSecret = POST_APP_SECRET;
 
         // Default: channel found via MetaChannelService
@@ -362,6 +363,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
     });
 
     afterEach(() => {
+        config.metaAppSecret = 'test-app-secret';
         config.metaWebhookAppSecret = null;
     });
 
@@ -435,7 +437,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
 
-    it('rejects webhook with invalid signature when META_WEBHOOK_APP_SECRET is set', async () => {
+    it('rejects webhook with invalid signature when META_APP_SECRET is set', async () => {
         await request(app)
             .post('/webhooks/meta')
             .set('Content-Type', 'application/octet-stream')

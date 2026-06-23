@@ -493,8 +493,7 @@
     "tags": {
       "confirmedEvent": "অর্ডার বা ইভেন্টের আপডেট",
       "postPurchase": "কেনার পরের আপডেট",
-      "account": "অ্যাকাউন্টের আপডেট",
-      "humanAgent": "আমি নিজে উত্তর দিচ্ছি"
+      "account": "অ্যাকাউন্টের আপডেট"
     },
     "errors": {
       "loadConversations": "কথোপকথন লোড করতে ব্যর্থ",

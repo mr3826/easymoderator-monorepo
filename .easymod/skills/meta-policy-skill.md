@@ -137,7 +137,7 @@ These signals trigger Meta spam detection. Monitor and mitigate:
 
 ### Data Consent
 - Only collect PII (name, phone, address) through explicit conversation — never scrape from public posts
-- Data deletion callback must be implemented: `POST /api/webhooks/data-deletion`
+- Data deletion callback must be implemented: `POST /api/webhooks/meta/data-deletion`
 - Store only what is needed (data minimization)
 
 ---
@@ -161,7 +161,7 @@ Required before submitting any new permission to Meta for review:
 |-----------|---------|--------|
 | `pages_messaging` | Send/receive Messenger DMs | Active |
 | `pages_read_engagement` | Read comments on posts for keyword detection | Active |
-| `pages_manage_posts` | Reply to comments | Active |
+| `pages_manage_engagement` | Reply to comments | Active |
 | `instagram_basic` | Read IG profile and media for comment monitoring | Active |
 | `instagram_manage_messages` | Send/receive Instagram DMs | Active |
 

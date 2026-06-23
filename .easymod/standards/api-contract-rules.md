@@ -142,7 +142,7 @@ Processing: update Order.tracking_status, send SSE to dashboard
 
 ### Data Deletion Callback (Meta Required)
 ```
-POST /api/webhooks/data-deletion
+POST /api/webhooks/meta/data-deletion
 Body: { user_id: string, signed_request: string }
 Response: { url: string, confirmation_code: string }
 ```

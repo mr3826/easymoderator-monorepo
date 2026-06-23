@@ -175,13 +175,13 @@ Inbound message → reply, end to end:
 This product is built for **Meta App Review**. Relevant code and guarantees:
 
 - **OAuth (Business Login):** `channel-providers/meta-channel.*` — short-lived state stored in Redis for multi-instance safety; per-page/IG access tokens stored **AES-256 encrypted** at rest (`CHANNEL_ENCRYPTION_KEY`).
-- **Webhook verification:** `integration/meta-webhook.routes.js` — `GET` challenge with a constant-time verify-token compare; `POST` rejected unless the HMAC-SHA256 signature matches `META_WEBHOOK_APP_SECRET` (timing-safe).
+- **Webhook verification:** `integration/meta-webhook.routes.js` — `GET` challenge with a constant-time verify-token compare; `POST` rejected unless the HMAC-SHA256 signature matches `META_APP_SECRET` (timing-safe).
 - **Data Deletion Callback:** `integration/meta-webhook-gdpr.handler.js` — validates Meta's `signed_request`, hard-deletes all records for the affected user (idempotent), returns the confirmation code. Mounted at `POST /webhooks/meta/data-deletion`.
 - **Deauthorize callback:** same handler — disconnects the channel when a user removes the app.
 - **Consent + policy engine:** `consent/` records inbound consent; the policy engine blocks cold outreach, honours opt-outs, enforces the 24-hour messaging window, and rate-limits outbound DMs per page.
 - **Reviewer docs:** see `../.easymod/meta-app-review/` (permission justifications, compliance checklist, data-deletion flow, screencast storyboards, test-user credentials).
 
-Requested permissions: `pages_messaging`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_manage_messages`. Each is justified in `permissions-justification.md`.
+Requested permissions: `pages_messaging`, `pages_read_engagement`, `pages_manage_engagement`, `instagram_basic`, `instagram_manage_messages`. Each is justified in `permissions-justification.md`.
 
 ---
 
@@ -301,7 +301,7 @@ META_APP_ID=...
 META_APP_SECRET=...
 META_OAUTH_REDIRECT_URI=http://localhost:5173/app/channels/oauth-callback
 META_WEBHOOK_VERIFY_TOKEN=...         # App Dashboard webhook handshake
-META_WEBHOOK_APP_SECRET=...           # HMAC signature secret (= your Meta App Secret)
+META_APP_SECRET=...                   # OAuth and HMAC signature secret from Meta App Settings
 
 # AI / LLM
 GEMINI_API_KEY=...

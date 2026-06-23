@@ -174,8 +174,11 @@ class CommentToDmService {
             return;
         }
 
-        // Determine initial state: MATCHED or BLOCKED
-        let matchedState = 'MATCHED';
+        // Determine initial state: MATCHED or BLOCKED.
+        // Empty keyword lists must not become "DM every commenter"; that is a
+        // spam-prone review risk. Normal comment-to-DM requires an explicit
+        // keyword, while live-selling can still match a parsed purchase intent.
+        let matchedState = 'BLOCKED';
         let matchedKeyword = null;
         let liveOrder = null; // parsed live-selling purchase intent, if any
 
@@ -184,9 +187,6 @@ class CommentToDmService {
             ? settings.comment_to_dm_post_filter
             : [];
         const postAllowed = !(postFilter.length > 0 && !postFilter.includes(postId));
-        if (!postAllowed) {
-            matchedState = 'BLOCKED';
-        }
 
         // Keyword filter: if non-empty, comment text must contain a keyword
         if (postAllowed) {
@@ -198,11 +198,12 @@ class CommentToDmService {
                 const hit = keywords.find(kw => lowerText.includes(kw.toLowerCase()));
                 if (hit) {
                     matchedKeyword = hit;
+                    matchedState = 'MATCHED';
                 } else {
                     matchedState = 'BLOCKED';
                 }
             }
-            // empty keywords list = any comment matches
+            // Empty keywords list = no normal comment-to-DM match.
 
             // ── Live-selling capture ──────────────────────────────────────────
             // When the shop is live-selling, a purchase-intent comment ("nibo",

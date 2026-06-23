@@ -150,6 +150,18 @@ async function updateSettings(req, res) {
                 return res.status(400).json({ success: false, error: 'comment_to_dm_post_filter must be an array' });
             }
         }
+        const finalEnabled = updates.comment_to_dm_enabled !== undefined
+            ? updates.comment_to_dm_enabled
+            : settings.comment_to_dm_enabled;
+        const finalKeywords = updates.comment_to_dm_keywords !== undefined
+            ? updates.comment_to_dm_keywords
+            : (settings.comment_to_dm_keywords || []);
+        if (finalEnabled === true && finalKeywords.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'comment_to_dm_keywords must contain at least one trigger keyword when comment-to-DM is enabled'
+            });
+        }
 
         await settings.update(updates);
 

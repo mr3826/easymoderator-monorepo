@@ -17,7 +17,7 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 - Screen: Easy Moderator dashboard, Channels page (`/channels`)
 - Action: Click "Connect Facebook Page"
-- What happens: OAuth popup opens to `facebook.com/dialog/oauth`. Merchant grants `pages_messaging`, `pages_read_engagement`, `pages_manage_posts`.
+- What happens: OAuth popup opens to `facebook.com/dialog/oauth`. Merchant grants `pages_messaging`, `pages_read_engagement`, `pages_manage_engagement`.
 - What to show: OAuth consent screen listing the permissions. After approval, the page returns to Channels and the connected Page name and profile picture appear.
 
 ### Step 2 — Merchant enables auto-reply on a post

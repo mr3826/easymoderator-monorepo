@@ -14,7 +14,6 @@ const ALLOWED_TAGS = new Set([
     'CONFIRMED_EVENT_UPDATE',
     'POST_PURCHASE_UPDATE',
     'ACCOUNT_UPDATE',
-    'HUMAN_AGENT',
 ]);
 
 module.exports = {

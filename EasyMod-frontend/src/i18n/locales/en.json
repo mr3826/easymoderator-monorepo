@@ -494,8 +494,7 @@
     "tags": {
       "confirmedEvent": "Order or event update",
       "postPurchase": "Post-purchase update",
-      "account": "Account update",
-      "humanAgent": "I'm replying myself"
+      "account": "Account update"
     },
     "errors": {
       "loadConversations": "Failed to load conversations",

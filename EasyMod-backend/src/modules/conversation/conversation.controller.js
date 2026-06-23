@@ -68,7 +68,6 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
 
         const normalizedMessage = {
             text: content, attachments: [], platform, direction: 'outbound', senderRole: 'agent',
-            policy: { messageTag: 'HUMAN_AGENT' }, // human agent replies are allowed outside the 24h window
         };
         const policyCtx = {
             shopId,

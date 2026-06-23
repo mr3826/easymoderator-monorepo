@@ -37,11 +37,9 @@ const getWebhookSecret = async (req, webhookType = 'default', integrationId = nu
       const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
       const channel = await MetaChannel.findOne({ where: { webhook_verify_token: integrationId, status: 'CONNECTED' } });
       if (channel) {
-        // MetaChannel stores the per-channel verify token; the shared app secret
-        // is exposed via config.metaWebhookAppSecret (sourced from
-        // META_WEBHOOK_APP_SECRET) — return it for HMAC. Fall back to the raw
-        // env var for safety if config was not loaded.
-        const envSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
+        // MetaChannel stores the per-channel verify token; Meta signs all webhook
+        // POSTs with the shared Meta App Secret.
+        const envSecret = config.metaAppSecret || config.metaWebhookAppSecret || process.env.META_APP_SECRET;
         if (envSecret) {
           logger.debug('Using app secret via MetaChannel lookup');
           return envSecret;

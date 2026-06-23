@@ -31,7 +31,7 @@ WhatsApp is not supported. The platform is scoped to Meta messaging only.
 |-----------------------------|------------------------------------------------------|
 | `pages_messaging`           | Send/receive Messenger DMs on behalf of the Page     |
 | `pages_read_engagement`     | Read comments on posts for keyword trigger detection |
-| `pages_manage_posts`        | Reply to comments (not just DMs)                     |
+| `pages_manage_engagement`        | Reply to comments (not just DMs)                     |
 | `instagram_basic`           | Access IG Business account for comment monitoring    |
 | `instagram_manage_messages` | Send/receive Instagram Direct Messages               |
 

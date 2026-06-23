@@ -161,7 +161,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(sendButton).toBeDisabled()
 
     const tagSelect = screen.getByRole('combobox')
-    fireEvent.change(tagSelect, { target: { value: 'HUMAN_AGENT' } })
+    fireEvent.change(tagSelect, { target: { value: 'ACCOUNT_UPDATE' } })
 
     expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
   })

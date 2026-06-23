@@ -149,16 +149,16 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 
         const firstAssetId = payload.entry?.[0]?.id;
 
-        const appSecret = config.metaWebhookAppSecret;
+        const appSecret = config.metaAppSecret || config.metaWebhookAppSecret;
         if (appSecret) {
             const rawBodyBuf = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body || ''));
             const isValid = isValidSignature(rawBodyBuf, signature, appSecret);
             if (!isValid) {
-                logger.error(`Invalid signature for asset ${firstAssetId} — check META_WEBHOOK_APP_SECRET matches your Meta App Secret exactly`);
+                logger.error(`Invalid signature for asset ${firstAssetId} — check META_APP_SECRET matches your Meta App Secret exactly`);
                 return res.sendStatus(403);
             }
         } else {
-            logger.error('META_WEBHOOK_APP_SECRET not configured — rejecting webhook to prevent unauthenticated payload injection');
+            logger.error('META_APP_SECRET not configured — rejecting webhook to prevent unauthenticated payload injection');
             return res.sendStatus(403);
         }
 

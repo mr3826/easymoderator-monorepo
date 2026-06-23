@@ -18,7 +18,6 @@ describe('MetaInstagramProvider', () => {
     let provider;
 
     beforeEach(() => {
-        process.env.META_WEBHOOK_APP_SECRET = 'ig-webhook-secret';
         process.env.META_APP_SECRET = 'ig-webhook-secret';
         provider = new MetaInstagramProvider();
     });
@@ -35,12 +34,14 @@ describe('MetaInstagramProvider', () => {
         test('uses only valid PAGE subscribed_fields (no IG-object fields)', () => {
             const fields = provider.webhookFields();
             expect(fields).toContain('messages');
-            expect(fields).toContain('messaging_postbacks');
+            expect(fields).toContain('feed');
             // `comments`/`live_comments` are Instagram-OBJECT webhook fields and are
             // INVALID as page subscribed_fields — Meta rejects the whole subscribe
             // call ("... got 'comments'"). IG comment/message delivery comes via the
             // app-level `instagram` webhook object, not these page fields.
             expect(fields).not.toContain('comments');
+            expect(fields).not.toContain('messaging_postbacks');
+            expect(fields).not.toContain('message_reactions');
             expect(fields).not.toContain('live_comments');
         });
 
@@ -152,9 +153,9 @@ describe('MetaInstagramProvider', () => {
             page_access_token_ct: 'tok_page'
         };
 
-        test('returns ok:true when the parent page has a subscription including messages', async () => {
+        test('returns ok:true when the parent page has all required subscriptions', async () => {
             axios.get.mockResolvedValueOnce({
-                data: { data: [{ subscribed_fields: ['messages', 'messaging_postbacks', 'comments'] }] }
+                data: { data: [{ subscribed_fields: ['messages', 'feed'] }] }
             });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(true);
@@ -172,7 +173,13 @@ describe('MetaInstagramProvider', () => {
         });
 
         test('returns ok:false when messages field is missing', async () => {
-            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['comments'] }] } });
+            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['feed'] }] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
+        });
+
+        test('returns ok:false when comments field is missing', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['messages'] }] } });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(false);
         });

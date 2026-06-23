@@ -20,7 +20,6 @@ describe('MetaMessengerProvider', () => {
     let provider;
 
     beforeEach(() => {
-        process.env.META_WEBHOOK_APP_SECRET = 'test-webhook-secret';
         process.env.META_APP_SECRET = 'test-webhook-secret';
         provider = new MetaMessengerProvider();
     });
@@ -37,9 +36,11 @@ describe('MetaMessengerProvider', () => {
         test('includes messages and feed for comment-to-DM', () => {
             const fields = provider.webhookFields();
             expect(fields).toContain('messages');
-            expect(fields).toContain('messaging_postbacks');
-            expect(fields).toContain('messaging_optins');
             expect(fields).toContain('feed');
+            expect(fields).not.toContain('messaging_postbacks');
+            expect(fields).not.toContain('messaging_optins');
+            expect(fields).not.toContain('message_deliveries');
+            expect(fields).not.toContain('message_reads');
         });
 
         test('does NOT include whatsapp-related fields', () => {
@@ -265,9 +266,9 @@ describe('MetaMessengerProvider', () => {
 
         const channel = { meta_asset_id: 'PAGE_1', page_access_token_ct: 'tok_page' };
 
-        test('returns ok:true when the page has a subscription including messages', async () => {
+        test('returns ok:true when the page has all required subscriptions', async () => {
             axios.get.mockResolvedValueOnce({
-                data: { data: [{ subscribed_fields: ['messages', 'feed', 'messaging_postbacks'] }] }
+                data: { data: [{ subscribed_fields: ['messages', 'feed'] }] }
             });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(true);
@@ -285,6 +286,12 @@ describe('MetaMessengerProvider', () => {
 
         test('returns ok:false when messages field is missing', async () => {
             axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['feed'] }] } });
+            const res = await provider.verifyWebhookSubscription({ channel });
+            expect(res.ok).toBe(false);
+        });
+
+        test('returns ok:false when feed field is missing', async () => {
+            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['messages'] }] } });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(false);
         });

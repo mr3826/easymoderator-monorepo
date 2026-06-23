@@ -66,7 +66,6 @@ Click **Save Changes**.
 ```env
 META_APP_ID=<App ID from top of page>
 META_APP_SECRET=<App Secret from Settings → Basic → Show>
-META_WEBHOOK_APP_SECRET=<same value as META_APP_SECRET>
 META_OAUTH_REDIRECT_URI=http://localhost:5173/app/channels/oauth-callback
 META_GRAPH_API_VERSION=v22.0
 CHANNEL_ENCRYPTION_KEY=<the hex string you generated in step 0>
@@ -129,7 +128,7 @@ Click **Save Changes**.
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_manage_metadata`
-   - `pages_manage_posts`
+   - `pages_manage_engagement`
    - `pages_messaging`
    - `instagram_basic`
    - `instagram_manage_messages`
@@ -162,10 +161,6 @@ Navigate: **Webhooks** (left sidebar)
 5. Click **Verify and Save** — should return 200 instantly
 6. In the subscription field list, check:
    - `messages`
-   - `messaging_postbacks`
-   - `messaging_optins`
-   - `message_deliveries`
-   - `message_reads`
    - `feed`
 
 ### 6b. Instagram object
@@ -177,10 +172,7 @@ Navigate: **Webhooks** (left sidebar)
 5. Click **Verify and Save**
 6. In the subscription field list, check:
    - `messages`
-   - `messaging_postbacks`
-   - `message_reactions`
    - `comments`
-   - `live_comments`
 
 ---
 
@@ -276,7 +268,7 @@ For each permission below, click **Request advanced access** → fill the justif
 | `pages_messaging` | Storyboard 1 + Storyboard 2 |
 | `pages_read_engagement` | Storyboard 1 |
 | `pages_manage_metadata` | OAuth flow showing webhook subscribe |
-| `pages_manage_posts` | Storyboard 1 (public reply toggle) |
+| `pages_manage_engagement` | Storyboard 1 (public reply toggle) |
 | `instagram_basic` | OAuth flow → IG account appears in dashboard |
 | `instagram_manage_messages` | IG DM round-trip |
 | `instagram_manage_comments` | IG comment → DM trigger + public reply on IG post |
@@ -306,7 +298,7 @@ Submit for review.
 
 After App Review approval:
 
-1. Confirm production env vars (`META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_APP_SECRET`, `META_OAUTH_REDIRECT_URI=https://easymod.tech/app/channels/oauth-callback`) are set in your prod deployment secrets.
+1. Confirm production env vars (`META_APP_ID`, `META_APP_SECRET`, `META_OAUTH_REDIRECT_URI=https://easymod.tech/app/channels/oauth-callback`) are set in your prod deployment secrets.
 2. Real merchants can now complete the OAuth flow.
 3. Monitor:
    - Webhook 200 rate (target >99%)
@@ -334,7 +326,7 @@ Run this after any deploy that touches OAuth, webhooks, env vars, or `meta_chann
 - [ ] Prod env vars present on the droplet (SSH and `env | grep META`):
   - `META_APP_ID`
   - `META_APP_SECRET`
-  - `META_WEBHOOK_APP_SECRET` — **must equal `META_APP_SECRET` byte-for-byte**
+  - `META_APP_SECRET` — used for OAuth, webhook POST HMAC verification, data deletion, and deauthorize signatures
   - `META_OAUTH_REDIRECT_URI=https://easymod.tech/app/channels/oauth-callback`
   - `META_GRAPH_API_VERSION=v22.0`
   - `CHANNEL_ENCRYPTION_KEY` — same value used to encrypt existing rows (never rotate without re-OAuthing every channel; see §14.2)
@@ -357,7 +349,7 @@ Easiest path — Graph API Explorer (https://developers.facebook.com/tools/explo
 1. Top right: set Application to **Easy Moderator**.
 2. Set Access Token to the **Page Access Token** for the page you just connected (drop-down → User Token → pick the page).
 3. Run: `GET me/subscribed_apps`
-4. Expect a row for `Easy Moderator` / `saas-easymod` with `subscribed_fields` containing at least: `messages`, `messaging_postbacks`, `messaging_optins`, `message_deliveries`, `message_reads`, `feed`.
+4. Expect a row for `Easy Moderator` / `saas-easymod` with `subscribed_fields` containing at least: `messages`, `feed`.
 
 Or via curl with the page token:
 ```bash
@@ -371,7 +363,7 @@ PAGE_ID="<page id>"
 PAGE_TOKEN="<page token>"
 curl -X POST "https://graph.facebook.com/v22.0/$PAGE_ID/subscribed_apps" \
   -d "access_token=$PAGE_TOKEN" \
-  -d "subscribed_fields=messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads,feed"
+  -d "subscribed_fields=messages,feed"
 # Expected: {"success":true}
 ```
 
@@ -426,7 +418,7 @@ Use this when §12.5 doesn't behave. Match the symptom row to your evidence.
 | Symptom | Likely root cause | Confirm with | Fix |
 |---|---|---|---|
 | **No backend log entry within 30s** of send | Meta isn't delivering. Either Dev mode + sender not in App Roles, OR per-page subscription is missing. | Meta App Dashboard → Webhooks → Page → **Recent Activity / Recent Deliveries** tab. Empty = Meta-side. | Confirm tester invite accepted (§12.1). Re-subscribe page (§12.3). |
-| Log: `Invalid signature for asset <id>` | `META_WEBHOOK_APP_SECRET` env var ≠ current Meta App Secret. | On droplet: `echo "$META_WEBHOOK_APP_SECRET"` vs Meta Dashboard → Settings → Basic → Show App Secret. | Sync both prod env vars to current secret, redeploy (§14.1). |
+| Log: `Invalid signature for asset <id>` | `META_APP_SECRET` does not match the current Meta App Secret. | On droplet: confirm the deployed `META_APP_SECRET` against Meta Dashboard → Settings → Basic → Show App Secret. | Update `META_APP_SECRET`, redeploy (§14.1). |
 | Log: `No CONNECTED facebook channel for page_id=<id>` | `meta_channels` row missing or `status != CONNECTED`. | `SELECT shop_id, status, last_error FROM meta_channels WHERE meta_asset_id='<id>';` | Disconnect + reconnect via UI to recreate the row. |
 | `Stored facebook message` logged but inbox doesn't update | SSE listener not connected on FE. | DevTools → Network → look for an open `EventSource` to `/api/conversation/events` (status 200, type `eventsource`). | Hard refresh; confirm auth cookie not expired; confirm `shop_id` in URL matches current session. |
 | Meta Recent Deliveries shows **403** | Same as `Invalid signature`. | (same) | (same) |
@@ -455,7 +447,7 @@ curl -s "https://graph.facebook.com/v22.0/me/accounts?access_token=$USER_TOKEN" 
 ### 14.1 App Secret rotation (at least every 90 days)
 
 1. Meta App Dashboard → Settings → Basic → **Reset App Secret**.
-2. Immediately update prod env vars: BOTH `META_APP_SECRET` AND `META_WEBHOOK_APP_SECRET` (they must equal the new secret).
+2. Immediately update prod env var `META_APP_SECRET`.
 3. Redeploy backend so the new value loads (`gh workflow run ci-cd.yml -f environment=prod`).
 4. During the gap between rotation and redeploy, incoming webhooks fail signature → 403. Meta retries with exponential backoff (~5 attempts over ~24h). Keep the gap to seconds.
 5. After redeploy: run §12.4–12.5. `Stored facebook message` proves signature validates under the new secret.

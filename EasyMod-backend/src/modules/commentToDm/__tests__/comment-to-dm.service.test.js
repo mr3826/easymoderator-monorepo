@@ -199,7 +199,7 @@ describe('CommentToDmService.handleCommentEvent', () => {
         expect(createArgs.state).toBe('BLOCKED');
     });
 
-    test('creates MATCHED row when keywords list is empty (any comment matches)', async () => {
+    test('creates BLOCKED row when keywords list is empty', async () => {
         MetaChannelSettings.findOne.mockResolvedValue({
             comment_to_dm_enabled: true,
             comment_to_dm_keywords: [],
@@ -214,7 +214,8 @@ describe('CommentToDmService.handleCommentEvent', () => {
         });
 
         const createArgs = mockEventCreate.mock.calls[0][0];
-        expect(createArgs.state).toBe('MATCHED');
+        expect(createArgs.state).toBe('BLOCKED');
+        expect(mockQueueAdd).not.toHaveBeenCalled();
     });
 
     test('does not create row when comment_to_dm_enabled is false', async () => {

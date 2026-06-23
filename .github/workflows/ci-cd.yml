@@ -248,8 +248,6 @@ jobs:
 
           META_APP_ID=${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET=${{ secrets.META_APP_SECRET }}
-          META_WEBHOOK_APP_SECRET=${{ secrets.META_WEBHOOK_APP_SECRET }}
-          META_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
           META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
 
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}

@@ -43,8 +43,7 @@ function setupSecrets() {
       SESSION_SECRET: generateSecureSecret(64),
       CSRF_SECRET: generateSecureSecret(32),
       PAYMENT_ENCRYPTION_KEY: generateSecureSecret(32),
-      CHANNEL_ENCRYPTION_KEY: generateSecureSecret(32),
-      META_WEBHOOK_APP_SECRET: generateSecureSecret(32)
+      CHANNEL_ENCRYPTION_KEY: generateSecureSecret(32)
     };
 
     // Validate all secrets
@@ -69,7 +68,9 @@ CSRF_SECRET=${secrets.CSRF_SECRET}
 # Payment & Integration Security
 PAYMENT_ENCRYPTION_KEY=${secrets.PAYMENT_ENCRYPTION_KEY}
 CHANNEL_ENCRYPTION_KEY=${secrets.CHANNEL_ENCRYPTION_KEY}
-META_WEBHOOK_APP_SECRET=${secrets.META_WEBHOOK_APP_SECRET}
+META_APP_ID=your-meta-app-id
+META_APP_SECRET=your-meta-app-secret
+META_WEBHOOK_VERIFY_TOKEN=your-meta-webhook-verify-token
 
 # Application Configuration
 NODE_ENV=production

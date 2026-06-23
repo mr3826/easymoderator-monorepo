@@ -52,7 +52,7 @@ Frontend:
 - **Signature helper:** `signMetaWebhook(payload)` in `test/helpers/webhook.helper.js`
 - Valid signature → 200, invalid signature → 401, missing signature → 401
 - Same `messageId` twice (webhook replay) → idempotent (second enqueue skipped)
-- Test all webhook event types: `messages`, `messaging_postbacks`, `messaging_optins`
+- Test all subscribed Meta webhook event types: `messages`, `feed`, and Instagram `comments`
 
 ### Payment / BKash Feature
 - Mock `BkashMerchantService` at service boundary: `jest.mock('../bkash-merchant.service')`

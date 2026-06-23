@@ -25,7 +25,7 @@ meta-webhook-gdpr.handler.js
      |
      |-- 1. Parse signed_request
      |       Split on '.' → [encodedSig, encodedPayload]
-     |       HMAC-SHA256(encodedPayload, META_WEBHOOK_APP_SECRET)
+     |       HMAC-SHA256(encodedPayload, META_APP_SECRET)
      |       crypto.timingSafeEqual(sig, expectedSig)
      |       If mismatch → 403 "Invalid signed_request signature"
      |
@@ -66,7 +66,7 @@ User can verify deletion status at the privacy-policy URL
 
 ### Signature Verification
 
-The handler uses `crypto.timingSafeEqual` to compare the HMAC-SHA256 signature against the `META_WEBHOOK_APP_SECRET` environment variable. A missing or invalid signature returns 403 before any data is touched.
+The handler uses `crypto.timingSafeEqual` to compare the HMAC-SHA256 signature against `META_APP_SECRET`. A missing or invalid signature returns 403 before any data is touched.
 
 ### Idempotency
 

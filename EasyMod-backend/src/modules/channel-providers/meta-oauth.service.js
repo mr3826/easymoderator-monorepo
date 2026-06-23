@@ -179,7 +179,7 @@ async function initiateUnifiedOAuth(userId, shopId) {
         'pages_messaging',
         'pages_read_engagement',
         'pages_manage_metadata',
-        'pages_manage_posts',
+        'pages_manage_engagement',
         'instagram_basic',
         'instagram_manage_messages',
         'instagram_manage_comments',

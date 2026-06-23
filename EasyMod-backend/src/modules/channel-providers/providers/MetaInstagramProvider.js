@@ -31,7 +31,7 @@ const DEFAULT_SCOPES = [
     'instagram_manage_comments',
     'pages_read_engagement',
     'pages_manage_metadata',
-    'pages_manage_posts'
+    'pages_manage_engagement'
 ];
 
 // These are sent as the PARENT PAGE's `subscribed_apps` subscribed_fields (IG
@@ -48,10 +48,6 @@ const DEFAULT_SCOPES = [
 // not clobber the other's fields.
 const WEBHOOK_FIELDS = [
     'messages',
-    'messaging_postbacks',
-    'messaging_optins',
-    'message_deliveries',
-    'message_reads',
     'feed'
 ];
 
@@ -255,7 +251,11 @@ class MetaInstagramProvider extends ChannelProvider {
             });
             const apps = resp.data?.data || [];
             const fields = apps.flatMap(a => a.subscribed_fields || []);
-            return { ok: apps.length > 0 && fields.includes('messages'), fields };
+            const requiredFields = this.webhookFields();
+            return {
+                ok: apps.length > 0 && requiredFields.every(field => fields.includes(field)),
+                fields
+            };
         } catch (err) {
             logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id, targetId });
             return { ok: false, fields: [] };
@@ -267,7 +267,7 @@ class MetaInstagramProvider extends ChannelProvider {
             return false;
         }
         const expected = 'sha256=' + crypto
-            .createHmac('sha256', process.env.META_WEBHOOK_APP_SECRET || config.metaAppSecret)
+            .createHmac('sha256', process.env.META_APP_SECRET || config.metaAppSecret)
             .update(rawBody)
             .digest('hex');
         const sigBuf = Buffer.from(signature);

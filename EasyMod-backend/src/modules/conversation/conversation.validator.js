@@ -52,8 +52,7 @@ class ConversationValidator {
             message_tag: Joi.string().valid(
                 'CONFIRMED_EVENT_UPDATE',
                 'POST_PURCHASE_UPDATE',
-                'ACCOUNT_UPDATE',
-                'HUMAN_AGENT'
+                'ACCOUNT_UPDATE'
             ).optional()
         })
     };

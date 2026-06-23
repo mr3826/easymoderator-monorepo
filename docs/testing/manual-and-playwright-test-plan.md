@@ -221,7 +221,7 @@ monitor). It is the most important screen in the app for review.
 ▢ Toggle AI mode **OFF / DRAFT / AUTO**; DRAFT writes a suggestion, AUTO sends
 ▢ `isAiActive` gate respects subscription (trial/Growth active vs lapsed — see §16)
 ▢ Keyword triggers for comment-to-DM (links to §7)
-▢ "Also reply publicly to comments" option present (`pages_manage_posts`)
+▢ "Also reply publicly to comments" option present (`pages_manage_engagement`)
 ▢ Persona/tone settings save and reflect in generated replies
 
 **Disconnect (🙋):**
@@ -246,7 +246,7 @@ monitor). It is the most important screen in the app for review.
 ▢ Configure a **trigger keyword** + the public reply + the DM template
 ▢ 🙋 From the 2nd account, **comment the keyword** on a test Page post / IG media
 ▢ Event received (`pages_read_engagement` / `instagram_manage_comments`)
-▢ Public reply posted on the comment (`pages_manage_posts` / IG comment reply)
+▢ Public reply posted on the comment (`pages_manage_engagement` / IG comment reply)
 ▢ DM opened to the commenter and appears in the Inbox (§8)
 ▢ State machine doesn't double-fire on the same comment (idempotency)
 
@@ -429,11 +429,11 @@ Meta requires a working data-deletion path and clear data use.
 
 ## 24. Webhooks — verification 🔒 (mostly backend)
 ▢ **Meta webhook verify** (`GET` with `hub.challenge`) echoes the challenge using the
-  configured verify token (config reads `META_APP_SECRET` — the webhook-secret incident fix)
-▢ Signed event POSTs validate the `X-Hub-Signature-256` against the **app secret** (403 on bad signature)
-▢ `messages`, `messaging_postbacks`, `feed`/`comments`, `message_deliveries`/`reads` fields are handled
+  configured verify token (`META_WEBHOOK_VERIFY_TOKEN`)
+▢ Signed event POSTs validate the `X-Hub-Signature-256` against `META_APP_SECRET` (403 on bad signature)
+▢ `messages`, `feed`, and IG `comments` fields are handled
 ▢ Courier + payment webhooks (§14/§15) validate and update state
-> Don't confuse `META_WEBHOOK_APP_SECRET` (stale) with `META_APP_SECRET` (correct) — past 403 incident.
+> Don't confuse `META_WEBHOOK_VERIFY_TOKEN` (dashboard challenge token) with `META_APP_SECRET` (POST signature secret).
 
 ---
 
@@ -451,7 +451,7 @@ as the single most important rehearsal. Record a screenshot/clip at each beat.
 7. ▢ From a **roster** 2nd account, DM the Page **and** the IG → both land in the Shared Inbox (`pages_messaging`, `instagram_manage_messages`)
 8. ▢ AI **auto-reply** delivered back to the sender
 9. ▢ Open the thread → send a **manual** human reply (compose→send path)
-10. ▢ *(optional)* Comment a trigger keyword on a post/IG media → event received → public reply + DM (`pages_read_engagement`, `pages_manage_posts`, `instagram_manage_comments`)
+10. ▢ *(optional)* Comment a trigger keyword on a post/IG media → event received → public reply + DM (`pages_read_engagement`, `pages_manage_engagement`, `instagram_manage_comments`)
 
 **State the dev-mode caveat in narration** when sending the inbound DM ("sent from a tester
 account on the app roster, as required in Development mode"). Outbound sends (8–9) and

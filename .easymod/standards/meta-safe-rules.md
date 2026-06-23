@@ -58,7 +58,7 @@ The following must be live and verifiable before submitting any new permission t
 
 - [ ] Privacy Policy: live at `/privacy-policy` ✅
 - [ ] Terms of Service: live at `/terms` ✅
-- [ ] Data Deletion Callback: `POST /api/webhooks/data-deletion` — must be implemented
+- [ ] Data Deletion Callback: `POST /api/webhooks/meta/data-deletion` — must be implemented
 - [ ] Webhook verification (`GET /api/webhooks/meta?hub.challenge=`) ✅
 - [ ] All permissions have written justifications (stored in App Review submission notes)
 - [ ] App is in LIVE mode (not Development mode) for production pages
@@ -72,7 +72,7 @@ The following must be live and verifiable before submitting any new permission t
 |-----------|---------|--------|
 | `pages_messaging` | Send/receive Messenger DMs for comment automation | Active |
 | `pages_read_engagement` | Monitor comments on posts for keyword trigger detection | Active |
-| `pages_manage_posts` | Reply to comments (not just DMs) | Active |
+| `pages_manage_engagement` | Reply to comments (not just DMs) | Active |
 | `instagram_basic` | Read IG profile + media for comment monitoring | Active |
 | `instagram_manage_messages` | Send/receive Instagram DMs | Active |
 

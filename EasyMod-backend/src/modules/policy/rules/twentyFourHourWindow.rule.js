@@ -3,8 +3,7 @@
  *
  * Meta Platform Policy: outside the 24-hour standard messaging window, the
  * outbound message MUST carry a `messaging_type=MESSAGE_TAG` with one of the
- * approved tags (CONFIRMED_EVENT_UPDATE, POST_PURCHASE_UPDATE, ACCOUNT_UPDATE,
- * HUMAN_AGENT).
+ * approved tags (CONFIRMED_EVENT_UPDATE, POST_PURCHASE_UPDATE, ACCOUNT_UPDATE).
  *
  * This rule is INFORMATIONAL — it does NOT hard-deny by itself. It sets
  * `augment.message_tag` for the templateRequired rule to consume. If the caller

@@ -45,7 +45,7 @@ if (['production', 'staging'].includes(env)) {
         'SESSION_SECRET',
         'CORS_ORIGINS',
         'FRONTEND_URL',
-        'META_WEBHOOK_APP_SECRET',
+        'META_WEBHOOK_VERIFY_TOKEN',
         'PAYMENT_ENCRYPTION_KEY',
         'CHANNEL_ENCRYPTION_KEY',  // required: encrypts Meta System User tokens at rest
         'META_APP_ID',             // required: Meta OAuth app ID
@@ -90,7 +90,9 @@ module.exports = {
     jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1d',
     jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
     sessionSecret: process.env.SESSION_SECRET,
-    metaWebhookAppSecret: process.env.META_WEBHOOK_APP_SECRET,
+    // Meta signs webhook POST bodies and signed_request payloads with the app secret.
+    // Keep this alias for older call sites/tests, but do not require a second secret.
+    metaWebhookAppSecret: process.env.META_APP_SECRET,
     // Global verify token used by Meta App Dashboard when configuring the webhook
     // subscription (the single GET /webhooks/meta?hub.challenge handshake at
     // dashboard-config time). Per-channel webhook_verify_token rows in

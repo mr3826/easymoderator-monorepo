@@ -52,8 +52,9 @@ describe('initiateUnifiedOAuth scopes', () => {
         const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
         expect(scopes).toEqual(expect.arrayContaining([
             'pages_show_list', 'pages_messaging', 'pages_manage_metadata',
-            'instagram_basic', 'instagram_manage_messages',
+            'pages_manage_engagement', 'instagram_basic', 'instagram_manage_messages',
         ]));
+        expect(scopes).not.toContain('pages_manage_posts');
     });
 });
 

@@ -217,7 +217,7 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Receive delivery and read receipts, and read comment events on Page posts for keyword-triggered auto-reply</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_posts</td>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_engagement</td>
                     <td className="px-4 py-3 text-gray-600">Post merchant-configured public reply comments alongside the DM trigger (optional "Also reply publicly" toggle)</td>
                   </tr>
                   <tr>

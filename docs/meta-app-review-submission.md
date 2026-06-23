@@ -1,7 +1,7 @@
 # Meta App Review — Submission Sheet (copy-paste)
 
 **App:** Easy Moderator · **Graph API:** v22.0 · **Login product:** Facebook Login for Business
-**Last updated:** 2026-06-13
+**Last updated:** 2026-06-23
 
 This is the **fill-in-the-form** sheet. Every value below is copied straight into the Meta
 App Dashboard. The *why* behind each permission lives in the reviewer guide
@@ -26,10 +26,10 @@ callback, and the data-deletion/deauthorize endpoints all match.
 | **Deauthorize Callback URL** | Settings → Advanced | `https://easymod.tech/api/webhooks/meta/deauthorize` |
 | **Valid OAuth Redirect URIs** | FB Login for Business → Settings | the app's OAuth callback (confirm against `META_REDIRECT_URI` on the droplet) |
 
-**Webhook subscription fields** (subscribe the app to these on the Page + IG objects):
-`messages`, `messaging_postbacks`, `message_deliveries`, `message_reads`, `feed`,
-`comments` (IG). These are subscribed automatically per-Page on connect; the dashboard
-object-level subscription is what Meta checks during review.
+**Webhook subscription fields**:
+Page `subscribed_apps` uses `messages` and `feed` on connect. The Meta App Dashboard
+Instagram object must also be subscribed to `messages` and `comments`; that object-level
+subscription is what delivers IG DMs/comments for review.
 
 > Note: links use the apex `easymod.tech`. `www.easymod.tech` 301-redirects to apex, so both
 > resolve, but paste the apex form to avoid a redirect hop during Meta's automated check.
@@ -51,14 +51,15 @@ every permission: **Settings → Chat Settings.**
 **2. `pages_messaging`**
 > Core feature — a shared inbox for the merchant's Page. We receive Messenger DMs via the
 > `messages` webhook and send replies (human and AI auto-reply) via
-> `POST /{page-id}/messages`, and list threads via `GET /me/conversations`. Demonstrated: a
-> tester DMs the Page, the message appears in the inbox, and a reply is delivered back.
+> `POST /me/messages` with the connected Page token. Inbound messages are webhook-driven;
+> we do not poll `GET /me/conversations`. Demonstrated: a tester DMs the Page, the message
+> appears in the inbox, and a reply is delivered back.
 
 **3. `pages_read_engagement`**
-> Used to receive message delivery/read receipts and to read comment events on the Page's
-> posts (`feed` webhook + `GET /{post-id}/comments`) so a configured keyword in a comment can
-> trigger an automated DM. Demonstrated: a tester comments a trigger keyword on a Page post
-> and the event is received.
+> Used to receive comment events on the Page's posts through the `feed` webhook so a
+> configured keyword in a comment can trigger a private reply / DM handoff. We do not poll
+> historical comments during the reviewer flow. Demonstrated: a tester comments a trigger
+> keyword on a Page post and the event is received.
 
 **4. `pages_manage_metadata`**
 > Used to subscribe the connected Page to our webhooks on connect and unsubscribe on
@@ -67,29 +68,31 @@ every permission: **Settings → Chat Settings.**
 > an assumed one. No customer data is accessed through this permission. Demonstrated: the
 > channel card showing **Webhook: Active** after connect.
 
-**5. `pages_manage_posts`**
+**5. `pages_manage_engagement`**
 > Used to post a public reply to a customer's comment when the merchant enables "also reply
-> publicly" alongside the comment-to-DM automation (`POST /{comment-id}/replies`). The reply
+> publicly" alongside the comment-to-DM automation (`POST /{comment-id}/comments`). The reply
 > text is a merchant-configured template. Demonstrated: a keyword comment receiving a public
 > reply.
 
 **6. `instagram_basic`**
-> Used to read the Instagram Business account linked to the connected Page
-> (`GET /me?fields=instagram_business_account`, then name + profile picture) so we can display
-> it and gate IG webhooks. Stored only for display; access token stored encrypted.
+> Used to read the Instagram Business account linked to the connected Page through the
+> `instagram_business_account{id,name,username,profile_picture_url}` field nested on
+> `GET /me/accounts`, so we can display it and gate IG webhooks. Stored only for display;
+> access token stored encrypted.
 > Demonstrated: the linked IG account name and avatar rendering on the channel card.
 
 **7. `instagram_manage_messages`**
 > The Instagram half of the shared inbox — receive IG Direct Messages via the `messages`
-> webhook and send replies via `POST /{ig-user-id}/messages`, exactly like Messenger.
+> webhook and send replies via `POST /me/messages` with the connected Page token, exactly
+> like Messenger.
 > Demonstrated: a tester sends an IG DM and it appears in the same inbox as Messenger threads,
 > with a reply delivered back.
 
 **8. `instagram_manage_comments`**
 > The Instagram half of comment automation — read comments on the business's IG media
-> (`comments` webhook + `GET /{ig-media-id}/comments`) and post public replies
+> through the `comments` webhook and post public replies
 > (`POST /{ig-comment-id}/replies`) for keyword-triggered responses. Mirrors
-> `pages_read_engagement` + `pages_manage_posts` on the Facebook side. Demonstrated: a keyword
+> `pages_read_engagement` + `pages_manage_engagement` on the Facebook side. Demonstrated: a keyword
 > comment on IG media triggering a public reply.
 
 ---
@@ -144,7 +147,7 @@ share — **never commit passwords or tokens.**
 
 | Claim | Verified against | Result |
 |---|---|---|
-| Requested scopes = the 8 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` ∪ `MetaInstagramProvider.DEFAULT_SCOPES` = `unifiedScopes` in `meta-oauth.service.js` | ✓ exact 8, no `business_management` |
+| Requested scopes = the 8 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` ∪ `MetaInstagramProvider.DEFAULT_SCOPES` = `unifiedScopes` in `meta-oauth.service.js` | ✓ exact 8, no `business_management` or `pages_manage_posts` |
 | Webhook callback URL | `app.js` mounts `meta-webhook.routes` at `/api/webhooks/meta`; GET handles `hub.challenge` | ✓ |
 | Data-deletion + deauthorize URLs | `meta-webhook-gdpr.handler.js` → `POST /data-deletion`, `POST /deauthorize` (HMAC-verified) | ✓ |
 | Privacy / Terms URLs | FE routes `privacy-policy`, `terms-of-service` exist | ✓ |

@@ -127,9 +127,9 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
             return res.status(400).json({ error: 'Missing signed_request' });
         }
 
-        const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
+        const appSecret = config.metaAppSecret || config.metaWebhookAppSecret || process.env.META_APP_SECRET;
         if (!appSecret) {
-            logger.error('Data deletion callback: META_WEBHOOK_APP_SECRET not configured');
+            logger.error('Data deletion callback: META_APP_SECRET not configured');
             return res.status(500).json({ error: 'Server configuration error' });
         }
 
@@ -190,9 +190,9 @@ router.post('/deauthorize', express.urlencoded({ extended: false }), async (req,
             return res.status(400).json({ error: 'Missing signed_request' });
         }
 
-        const appSecret = config.metaWebhookAppSecret || process.env.META_WEBHOOK_APP_SECRET;
+        const appSecret = config.metaAppSecret || config.metaWebhookAppSecret || process.env.META_APP_SECRET;
         if (!appSecret) {
-            logger.error('Deauthorize callback: META_WEBHOOK_APP_SECRET not configured');
+            logger.error('Deauthorize callback: META_APP_SECRET not configured');
             return res.status(500).json({ error: 'Server configuration error' });
         }
 
