@@ -25,6 +25,9 @@ vi.mock('@/api', () => ({
     updateConversation: vi.fn(),
     transcribeVoice: vi.fn(),
     getResponseTemplates: vi.fn(),
+    createTemplate: vi.fn(),
+    updateTemplate: vi.fn(),
+    deleteTemplate: vi.fn(),
     createAuditLog: vi.fn(),
     // Other methods needed
     getSubscription: vi.fn(),
@@ -52,7 +55,8 @@ vi.mock('@/app/lib/useInboxSSE', () => ({
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),
-    success: vi.fn()
+    success: vi.fn(),
+    warning: vi.fn()
   }
 }))
 
@@ -105,6 +109,21 @@ describe('UnifiedInbox 24h window behavior', () => {
       transcript: 'Hello world',
       language: 'english',
     })
+    ;(apiClient.createTemplate as any).mockResolvedValue({
+      id: 'tpl-new',
+      name: 'Saved',
+      content: 'Saved reply',
+      category: 'Quick Reply',
+      is_active: true,
+    })
+    ;(apiClient.updateTemplate as any).mockResolvedValue({
+      id: 'tpl-1',
+      name: 'Greeting',
+      content: 'Updated reply',
+      category: 'Quick Reply',
+      is_active: true,
+    })
+    ;(apiClient.deleteTemplate as any).mockResolvedValue(undefined)
     ;(apiClient.getSubscription as any).mockResolvedValue({
       plan: 'PRO',
       status: 'active',
@@ -256,6 +275,146 @@ describe('UnifiedInbox 24h window behavior', () => {
     })
     expect(apiClient.createMessage).not.toHaveBeenCalled()
   })
+
+  it('keeps mic and assign controls hidden in Shared Inbox', async () => {
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      conversations: [baseConversation],
+      pagination: { page: 1, totalPages: 1 }
+    })
+
+    render(<UnifiedInbox />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('button', { name: /voice|recording|microphone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('inserts quick reply templates into the composer instead of sending immediately', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([
+      { id: 'tpl-1', name: 'Greeting', content: 'Hi {{customer_name}}', category: 'Quick Reply', is_active: true },
+    ])
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      conversations: [baseConversation],
+      pagination: { page: 1, totalPages: 1 }
+    })
+
+    render(<UnifiedInbox />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /quick reply templates/i }))
+    fireEvent.click(await screen.findByText('Greeting'))
+
+    expect(screen.getByDisplayValue('Hi Alice')).toBeInTheDocument()
+    expect(apiClient.createMessage).not.toHaveBeenCalled()
+  })
+
+  it('creates, edits, deletes, and searches templates inside the inbox manager', async () => {
+    ;(apiClient.getResponseTemplates as any).mockResolvedValue([
+      { id: 'tpl-1', name: 'Greeting', content: 'Hello there', category: 'Quick Reply', is_active: true },
+    ])
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      conversations: [baseConversation],
+      pagination: { page: 1, totalPages: 1 }
+    })
+
+    render(<UnifiedInbox />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /quick reply templates/i }))
+    fireEvent.click(await screen.findByText('Manage Templates'))
+
+    fireEvent.change(screen.getByPlaceholderText('Template name'), { target: { value: 'Payment' } })
+    fireEvent.change(screen.getByPlaceholderText('Template message'), { target: { value: 'Please pay now' } })
+    fireEvent.click(screen.getByRole('button', { name: /Create/i }))
+
+    await waitFor(() => {
+      expect(apiClient.createTemplate).toHaveBeenCalledWith(expect.objectContaining({
+        name: 'Payment',
+        content: 'Please pay now',
+        is_active: true,
+      }))
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit Greeting/i }))
+    fireEvent.change(screen.getByPlaceholderText('Template message'), { target: { value: 'Updated reply' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+
+    await waitFor(() => {
+      expect(apiClient.updateTemplate).toHaveBeenCalledWith('tpl-1', expect.objectContaining({
+        content: 'Updated reply',
+      }))
+    })
+
+    fireEvent.change(screen.getAllByPlaceholderText('Search templates')[1], { target: { value: 'missing' } })
+    expect(screen.getByText('No saved templates found.')).toBeInTheDocument()
+
+    fireEvent.change(screen.getAllByPlaceholderText('Search templates')[1], { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: /Delete Greeting/i }))
+
+    await waitFor(() => {
+      expect(apiClient.deleteTemplate).toHaveBeenCalledWith('tpl-1')
+    })
+  })
+
+  it('sends selected image attachment as upload metadata for backend delivery', async () => {
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      conversations: [baseConversation],
+      pagination: { page: 1, totalPages: 1 }
+    })
+    ;(apiClient.createMessage as any).mockResolvedValue({
+      id: 'msg-image',
+      conversation_id: 'conv-1',
+      content: 'Photo caption',
+      sender: 'agent',
+      message_type: 'image',
+      metadata: {
+        message_type: 'image',
+        image_url: 'https://cdn.example.com/photo.png',
+        file_url: 'https://cdn.example.com/photo.png',
+        delivery_status: 'pending',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    render(<UnifiedInbox />)
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    })
+
+    const file = new File(['image-bytes'], 'photo.png', { type: 'image/png' })
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [file] },
+    })
+    fireEvent.change(screen.getByPlaceholderText(/Type your reply here/i), { target: { value: 'Photo caption' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+
+    await waitFor(() => {
+      expect(apiClient.createMessage).toHaveBeenCalledWith(
+        'conv-1',
+        expect.objectContaining({
+          content: 'Photo caption',
+          sender: 'agent',
+          message_type: 'image',
+          metadata: expect.objectContaining({
+            file_name: 'photo.png',
+            mime_type: 'image/png',
+            delivery_status: 'pending',
+            file_data_url: expect.stringMatching(/^data:image\/png;base64,/),
+          }),
+        })
+      )
+    })
+  })
 })
 
 describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
@@ -291,6 +450,20 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
     ;(apiClient.getShopAgents as any).mockResolvedValue([])
     ;(apiClient.updateConversation as any).mockResolvedValue({ id: 'conv-1', status: 'active' })
+    ;(apiClient.createMessage as any).mockResolvedValue({
+      id: 'msg-retry',
+      conversation_id: 'conv-1',
+      content: 'catalog.pdf',
+      sender: 'agent',
+      message_type: 'file',
+      metadata: {
+        file_name: 'catalog.pdf',
+        file_url: 'https://cdn.example.com/catalog.pdf',
+        delivery_status: 'pending',
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
   })
 
   const renderWith = (conv: any, messages: any[]) => {
@@ -355,5 +528,53 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     // must surface the earlier HELD draft (with its low-confidence note).
     expect(await screen.findByRole('button', { name: /Send this/i })).toBeInTheDocument()
     expect(screen.getByText(/Low confidence/i)).toBeInTheDocument()
+  })
+
+  it('renders inbound/outbound attachments and retries failed outbound delivery', async () => {
+    const inboundImage = {
+      id: 'msg-image-in',
+      conversation_id: 'conv-1',
+      content: '[Attachment]',
+      sender: 'customer' as const,
+      message_type: 'image' as const,
+      metadata: { image_url: 'https://cdn.example.com/inbound.png' },
+      created_at: olderTs,
+      updated_at: olderTs,
+    }
+    const outboundFile = {
+      id: 'msg-file-out',
+      conversation_id: 'conv-1',
+      content: 'catalog.pdf',
+      sender: 'agent' as const,
+      message_type: 'file' as const,
+      metadata: {
+        file_name: 'catalog.pdf',
+        file_url: 'https://cdn.example.com/catalog.pdf',
+        delivery_status: 'failed',
+        delivery_error: 'Meta API rejected the attachment',
+      },
+      created_at: newerTs,
+      updated_at: newerTs,
+    }
+
+    renderWith(baseConversation, [inboundImage, outboundFile])
+
+    expect(await screen.findByAltText('Attachment')).toHaveAttribute('src', 'https://cdn.example.com/inbound.png')
+    expect(screen.getByText('catalog.pdf')).toBeInTheDocument()
+    expect(screen.getByText('Download file')).toHaveAttribute('href', 'https://cdn.example.com/catalog.pdf')
+    fireEvent.click(screen.getByRole('button', { name: /Retry/i }))
+
+    await waitFor(() => {
+      expect(apiClient.createMessage).toHaveBeenCalledWith('conv-1', expect.objectContaining({
+        content: 'catalog.pdf',
+        sender: 'agent',
+        message_type: 'file',
+        metadata: expect.objectContaining({
+          file_name: 'catalog.pdf',
+          file_url: 'https://cdn.example.com/catalog.pdf',
+          delivery_status: 'pending',
+        }),
+      }))
+    })
   })
 })

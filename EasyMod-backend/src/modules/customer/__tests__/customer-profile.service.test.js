@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe('isPlaceholderName', () => {
-    test.each(['Customer', 'Customer 1234', '', null, undefined])('treats "%s" as a placeholder', (n) => {
+    test.each(['Customer', 'Customer 1234', 'facebook user', 'Facebook User', 'messenger user', 'Instagram User', '', null, undefined])('treats "%s" as a placeholder', (n) => {
         expect(isPlaceholderName(n)).toBe(true);
     });
     test.each(['Evan Ahmed', 'Jia'])('treats "%s" as a real name', (n) => {
@@ -71,7 +71,10 @@ describe('enrichCustomerNameFromMeta', () => {
     });
 
     test('does not overwrite a real name', async () => {
-        const customer = makeCustomer({ name: 'Already Real' });
+        const customer = makeCustomer({
+            name: 'Already Real',
+            metadata: { first_name: 'Already', last_name: 'Real', profile_pic: 'https://pic/existing.jpg' },
+        });
         Customer.findByPk.mockResolvedValue(customer);
 
         const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'p' });
@@ -79,6 +82,24 @@ describe('enrichCustomerNameFromMeta', () => {
         expect(updated).toBe(false);
         expect(axios.get).not.toHaveBeenCalled();
         expect(customer.update).not.toHaveBeenCalled();
+    });
+
+    test('fills missing profile metadata without overwriting a real name', async () => {
+        const customer = makeCustomer({ name: 'Already Real', metadata: {} });
+        Customer.findByPk.mockResolvedValue(customer);
+        axios.get.mockResolvedValue({ data: { first_name: 'Meta', last_name: 'Person', profile_pic: 'https://pic/meta.jpg' } });
+
+        const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'p' });
+
+        expect(updated).toBe(true);
+        expect(customer.update).toHaveBeenCalledWith({
+            metadata: expect.objectContaining({
+                first_name: 'Meta',
+                last_name: 'Person',
+                profile_pic: 'https://pic/meta.jpg',
+            }),
+        });
+        expect(customer.update.mock.calls[0][0]).not.toHaveProperty('name');
     });
 
     test('is non-fatal when the Graph call fails (403/permission)', async () => {

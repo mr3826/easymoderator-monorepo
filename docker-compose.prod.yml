@@ -24,6 +24,7 @@ volumes:
   qdrant_data:
   caddy_data:
   caddy_config:
+  backend_uploads:
 
 services:
   # ── Caddy: TLS + reverse proxy ────────────────────────────────────────────
@@ -57,6 +58,8 @@ services:
       - NODE_ENV=production
       - START_EMBEDDED_WORKERS=false
       - RUN_MIGRATIONS_ON_STARTUP=false
+    volumes:
+      - backend_uploads:/app/uploads
     networks:
       - internal
     depends_on:

@@ -34,6 +34,7 @@ jobs:
 
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}.sql.gz"
+            UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}.tar.gz"
 
             echo "Starting backup: $BACKUP_FILE"
 
@@ -43,7 +44,14 @@ jobs:
 
             echo "Backup complete: $(du -sh "$BACKUP_FILE" | cut -f1)"
 
+            echo "Starting uploads volume backup: $BACKUP_DIR/$UPLOADS_BACKUP_FILE"
+            docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml run \
+              --rm --no-deps --user root -v "$BACKUP_DIR":/backup --entrypoint sh backend \
+              -c "cd /app/uploads && tar czf /backup/$UPLOADS_BACKUP_FILE ."
+            echo "Uploads backup complete: $(du -sh "$BACKUP_DIR/$UPLOADS_BACKUP_FILE" | cut -f1)"
+
             # Retain only the last 7 days
             find "$BACKUP_DIR" -name "easymod-*.sql.gz" -mtime +7 -delete
+            find "$BACKUP_DIR" -name "easymod-uploads-*.tar.gz" -mtime +7 -delete
             echo "Retention cleanup done. Current backups:"
             ls -lh "$BACKUP_DIR"

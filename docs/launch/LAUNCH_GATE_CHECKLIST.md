@@ -29,6 +29,7 @@ Exit code `0` = all hard gates pass. The script prints PASS/FAIL per gate.
 | 6 | **Canary green for 7 straight days** — no STALE / DLQ / enqueue-failure ops alerts fired in the alert channel for a week | Review Slack/Sentry ops-alert history | Eng |
 | 7 | **≥10 shops activated** — 10 real shops reached their first successful AI reply | `launch-readiness.js` gate 5 (`/api/analytics/growth` → `totals.activated`) | Auto |
 | 8 | **Alerting actually reaches a human** — `SLACK_ALERT_WEBHOOK_URL` and/or `SENTRY_DSN` set in prod and a test alert was received | Trigger a test alert; confirm receipt | Eng |
+| 9 | **Shared Inbox upload volume ready** — outbound attachments persist on the droplet and are publicly reachable for Meta Messenger | Manual upload smoke test below | Eng |
 
 ## Informational (track, not blocking)
 
@@ -57,6 +58,36 @@ Then watch for one week:
 
 ---
 
+## Shared Inbox attachment launch check
+
+Run these on every initial-launch deploy before testing with real shops:
+
+```bash
+ssh root@<droplet>
+cd /opt/easymod
+docker compose --env-file .env.prod -f docker-compose.prod.yml config --volumes
+docker volume ls | grep backend_uploads
+df -h
+docker system df
+```
+
+Expected:
+- `backend_uploads` exists as a Docker named volume.
+- Backend has `BASE_URL=https://easymod.tech` and `BODY_SIZE_LIMIT=35mb` in `/opt/easymod/.env.prod`.
+- Droplet disk has enough free space for launch testing and pilot-shop attachments.
+- Daily backup workflow archives both Postgres and `easymod-uploads-*.tar.gz`.
+
+Then verify the live Shared Inbox flow with a Facebook Page tester:
+
+1. Send an inbound Messenger DM from a roster tester account.
+2. Reply with text; confirm customer receives it.
+3. Reply with an image; confirm customer receives it and the message metadata URL opens over HTTPS.
+4. Reply with a PDF/common file; confirm customer receives it and the metadata URL opens over HTTPS.
+5. Force or observe an attachment failure; confirm failed/retry appears and retry sends a fresh outbound message.
+6. Re-check the 24-hour window/tag behavior still blocks/allows correctly.
+
+---
+
 ## Sign-off
 
 - [ ] Gate 1 — CI green on `main`
@@ -67,5 +98,6 @@ Then watch for one week:
 - [ ] Gate 6 — Canary green 7 days, no ops alerts
 - [ ] Gate 7 — ≥10 shops activated
 - [ ] Gate 8 — Alerting verified reaching a human
+- [ ] Gate 9 — Shared Inbox upload volume + attachment round-trip verified
 
 **Launch approved by:** ______________________  **Date:** ____________

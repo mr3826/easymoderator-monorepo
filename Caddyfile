@@ -1,7 +1,7 @@
 # EasyModerator Caddyfile
 # Canonical origin: https://easymod.tech (apex)
 # www → apex 301 redirect
-# /api/* and /webhooks/* → backend
+# /api/*, /uploads/*, and /webhooks/* → backend
 # Everything else → SPA (frontend served inline via file_server)
 #
 # Caddy auto-obtains and renews TLS certs via Let's Encrypt.
@@ -30,6 +30,17 @@ easymod.tech {
     # Legacy /webhooks/* paths → 301 to canonical /api/webhooks/* so any old
     # Meta dashboard registrations or external callers still resolve.
     redir /webhooks/* /api{uri} 301
+
+    # ── Backend-uploaded media ───────────────────────────────────────────────
+    # Shared Inbox outbound attachments are stored on the backend upload volume
+    # and must be publicly fetchable by Meta Messenger over HTTPS.
+    handle /uploads/* {
+        reverse_proxy backend:3000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
 
     # ── SPA: serve built static files ────────────────────────────────────────
     # The frontend image is NOT used here for Caddy deployments.

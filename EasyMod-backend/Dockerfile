@@ -17,8 +17,9 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-# Run as non-root (P1-7)
-RUN chown -R node:node /app
+# Run as non-root (P1-7). /app/uploads is mounted as a persistent Docker volume
+# in production; creating it here lets the volume inherit node-writable perms.
+RUN mkdir -p /app/uploads && chown -R node:node /app
 USER node
 
 EXPOSE 3000

@@ -27,6 +27,10 @@ export interface MessageMetadata {
   image_url?: string;
   file_url?: string;
   file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  delivery_status?: 'pending' | 'sent' | 'failed';
+  delivery_error?: string;
   /** true = delivered to the customer; false = HELD as a reviewable suggestion. */
   delivered?: boolean;
   held_reason?: HeldReason;

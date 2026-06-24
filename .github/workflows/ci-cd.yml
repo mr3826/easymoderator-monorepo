@@ -7,6 +7,8 @@ name: CI / CD
 #   VITE_API_BASE_URL    — leave empty for same-origin SPA (easymod.tech)
 #   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
 #   VITE_SENTRY_DSN      — Sentry DSN (optional)
+#   BASE_URL             — https://easymod.tech (public backend origin for uploads)
+#   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
 #
 # The droplet must have:
 #   /opt/easymod/docker-compose.prod.yml  (committed to repo, synced by deploy)
@@ -242,7 +244,7 @@ jobs:
 
           CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
           FRONTEND_URL=${{ secrets.FRONTEND_URL }}
-          BASE_URL=${{ secrets.BASE_URL }}
+          BASE_URL=${{ secrets.BASE_URL || 'https://easymod.tech' }}
           COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
           META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }}
 
@@ -276,7 +278,7 @@ jobs:
           SEED_ADMIN_PHONE=01700000000
 
           ALLOW_SELF_SIGNED_TLS=${{ secrets.ALLOW_SELF_SIGNED_TLS }}
-          BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT }}
+          BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
           WF1_WEBHOOK_URL=${{ secrets.WF1_WEBHOOK_URL }}
 
           START_EMBEDDED_WORKERS=false

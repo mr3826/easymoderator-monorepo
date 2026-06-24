@@ -387,24 +387,57 @@ class MetaMessengerProvider extends ChannelProvider {
         const token = channel.page_access_token_ct;
         if (!token) throw new Error('sendMessage: channel has no token');
 
-        const body = {
-            recipient: { id: recipientId },
-            message: { text: normalizedMessage.text }
-        };
-        if (decision.augment?.message_tag) {
-            body.messaging_type = 'MESSAGE_TAG';
-            body.tag = decision.augment.message_tag;
-        } else {
-            body.messaging_type = 'RESPONSE';
+        const attachments = Array.isArray(normalizedMessage.attachments)
+            ? normalizedMessage.attachments.filter(a => a?.url)
+            : [];
+        const bodies = [];
+        if (normalizedMessage.text?.trim()) {
+            bodies.push({
+                recipient: { id: recipientId },
+                message: { text: normalizedMessage.text.trim() }
+            });
+        }
+        for (const attachment of attachments) {
+            const type = attachment.type === 'image' ? 'image' : 'file';
+            bodies.push({
+                recipient: { id: recipientId },
+                message: {
+                    attachment: {
+                        type,
+                        payload: {
+                            url: attachment.url,
+                            is_reusable: true,
+                        }
+                    }
+                }
+            });
+        }
+        if (bodies.length === 0) {
+            throw new Error('sendMessage: text or attachment is required');
+        }
+        for (const body of bodies) {
+            if (decision.augment?.message_tag) {
+                body.messaging_type = 'MESSAGE_TAG';
+                body.tag = decision.augment.message_tag;
+            } else {
+                body.messaging_type = 'RESPONSE';
+            }
         }
 
         try {
-            const resp = await axios.post(
-                `${GRAPH_BASE}/me/messages`,
-                body,
-                { params: { access_token: token } }
-            );
-            return { providerMessageId: resp.data.message_id || null };
+            const providerMessageIds = [];
+            for (const body of bodies) {
+                const resp = await axios.post(
+                    `${GRAPH_BASE}/me/messages`,
+                    body,
+                    { params: { access_token: token } }
+                );
+                providerMessageIds.push(resp.data.message_id || null);
+            }
+            return {
+                providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,
+                providerMessageIds,
+            };
         } catch (err) {
             throw metaError(err, 'sendMessage');
         }

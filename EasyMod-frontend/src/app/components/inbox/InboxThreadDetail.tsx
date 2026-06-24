@@ -5,13 +5,12 @@
 import { memo } from "react";
 import {
   Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, AlertTriangle,
-  Clock, ArrowLeft, Lock, FileText,
+  Clock, ArrowLeft, Lock, FileText, RotateCcw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Conversation, Message, MessageMetadata, ResponseTemplate } from "@/api/types/conversation";
-import type { ShopAgent } from "@/api/types/dashboard";
 import { InboxComposer } from "./InboxComposer";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -20,7 +19,7 @@ function isValidMediaUrl(url: unknown): url is string {
   if (typeof url !== "string" || !url) return false;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "https:";
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
   } catch {
     return false;
   }
@@ -48,15 +47,18 @@ const MessageItem = memo(function MessageItem({
   message,
   customerName,
   t,
+  onRetry,
 }: {
   message: Message;
   customerName: string;
   t: (key: string) => string;
+  onRetry: (message: Message) => void;
 }) {
   const ts = new Date(message.created_at).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
   });
+  const deliveryStatus = message.sender === "agent" ? message.metadata?.delivery_status : undefined;
 
   return (
     <div className={`flex ${message.sender === "customer" ? "justify-start" : "justify-end"}`}>
@@ -134,7 +136,21 @@ const MessageItem = memo(function MessageItem({
           }`}
         >
           {ts}
+          {deliveryStatus === "pending" && <span className="ml-2">Sending...</span>}
+          {deliveryStatus === "sent" && <span className="ml-2">Sent</span>}
         </p>
+        {deliveryStatus === "failed" && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-red-50">
+            <span>Failed</span>
+            <button
+              onClick={() => onRetry(message)}
+              className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-1 text-white hover:bg-white/10"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Retry
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -150,12 +166,11 @@ interface InboxThreadDetailProps {
   loadingMoreMessages: boolean;
   togglingHITL: boolean;
   resolvingConversation: boolean;
-  assigningAgent: boolean;
-  agents: ShopAgent[];
   planFeaturesAdvancedAI: boolean;
   showResolveDialog: boolean;
   resolveNote: string;
   dismissedSuggestionId: string | null;
+  templates: ResponseTemplate[];
   quickReplyTemplates: ResponseTemplate[];
   loadingTemplates: boolean;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
@@ -165,7 +180,6 @@ interface InboxThreadDetailProps {
   onMobileBack: () => void;
   onToggleHITL: () => void;
   onResolve: () => void;
-  onAssign: (agentId: string) => void;
   onLoadOlderMessages: () => void;
   onDismissSuggestion: (msgId: string) => void;
   onUseAiSuggestion: (edit: boolean) => void;
@@ -173,6 +187,7 @@ interface InboxThreadDetailProps {
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
   onMessageSent: (message: Message) => void;
+  onTemplatesChanged: () => Promise<void>;
 }
 
 export function InboxThreadDetail({
@@ -183,12 +198,11 @@ export function InboxThreadDetail({
   loadingMoreMessages,
   togglingHITL,
   resolvingConversation,
-  assigningAgent,
-  agents,
   planFeaturesAdvancedAI,
   showResolveDialog,
   resolveNote,
   dismissedSuggestionId,
+  templates,
   quickReplyTemplates,
   loadingTemplates,
   messagesEndRef,
@@ -198,12 +212,12 @@ export function InboxThreadDetail({
   onMobileBack,
   onToggleHITL,
   onResolve,
-  onAssign,
   onLoadOlderMessages,
   onDismissSuggestion,
   onSetShowResolveDialog,
   onSetResolveNote,
   onMessageSent,
+  onTemplatesChanged,
 }: InboxThreadDetailProps) {
   const { t } = useTranslation();
 
@@ -269,6 +283,25 @@ export function InboxThreadDetail({
     }
   };
 
+  const handleRetryMessage = async (failedMessage: Message) => {
+    try {
+      const metadata = { ...(failedMessage.metadata || {}) };
+      delete metadata.delivery_error;
+      delete metadata.provider_message_id;
+      delete metadata.provider_message_ids;
+      const message = await apiClient.createMessage(selectedConversation.id, {
+        content: failedMessage.content,
+        sender: "agent",
+        message_type: failedMessage.message_type,
+        metadata: { ...metadata, delivery_status: "pending" },
+      });
+      onMessageSent(message);
+      toast.success("Retry queued");
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Retry failed");
+    }
+  };
+
   return (
     <div
       className={`flex-1 flex flex-col bg-gray-50 ${mobilePanelOpen ? "flex" : "hidden"} md:flex`}
@@ -296,22 +329,6 @@ export function InboxThreadDetail({
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
-            {agents.length > 0 && (
-              <select
-                value={selectedConversation.assignee_id || ""}
-                onChange={(e) => e.target.value && onAssign(e.target.value)}
-                disabled={assigningAgent}
-                className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-32"
-                title={t("inbox.assign")}
-              >
-                <option value="">{t("inbox.assign")}</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            )}
             {selectedConversation.status !== "closed" && (
               <button
                 onClick={() => onSetShowResolveDialog(true)}
@@ -415,6 +432,7 @@ export function InboxThreadDetail({
                 message={message}
                 customerName={selectedConversation.customer?.name || "Unknown"}
                 t={t}
+                onRetry={handleRetryMessage}
               />
             ))}
             <div ref={messagesEndRef} />
@@ -480,10 +498,12 @@ export function InboxThreadDetail({
         selectedConversation={selectedConversation}
         is24hExpired={is24hExpired}
         is24hWarning={is24hWarning}
+        templates={templates}
         quickReplyTemplates={quickReplyTemplates}
         loadingTemplates={loadingTemplates}
         planFeaturesAdvancedAI={planFeaturesAdvancedAI}
         onMessageSent={onMessageSent}
+        onTemplatesChanged={onTemplatesChanged}
       />
 
       {/* Resolve Dialog */}

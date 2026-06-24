@@ -45,6 +45,7 @@ export type SSEEventHandler<T = unknown> = (data: T) => void;
 export type KnownSSEEvent =
   | 'new_message'
   | 'hitl_changed'
+  | 'message_delivery_updated'
   | 'delivery_failed'
   | 'channel_error'
   | 'channel_status_changed'

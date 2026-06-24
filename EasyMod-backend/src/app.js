@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -212,6 +213,12 @@ initSentry(app);
 
 // Health check endpoints (no auth required, must be before other routes)
 app.use('/health', healthRoutes);
+
+// Public uploaded assets used by Meta Messenger attachment delivery. Filenames
+// are generated server-side; do not expose user-provided directory paths.
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+    maxAge: config.env === 'production' ? '1h' : 0,
+}));
 
 // Unauthenticated version probe — answers "is the fix live on prod?" in one curl.
 // Must be mounted before `/api` so it bypasses every authenticated route module.

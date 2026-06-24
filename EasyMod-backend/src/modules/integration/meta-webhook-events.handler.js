@@ -25,6 +25,99 @@ const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('MetaWebhookEvents');
 
+const displayChannelForPlatform = (platform) => {
+    if (platform === 'facebook' || platform === 'messenger') return 'Facebook';
+    if (platform === 'instagram') return 'Instagram';
+    return platform || 'Unknown';
+};
+
+const fallbackCustomerName = (platform) => `${displayChannelForPlatform(platform)} User`;
+
+const fallbackCustomerMetadata = ({ platform, sender, source = 'webhook' }) => ({
+    source,
+    platform: platform === 'messenger' ? 'facebook' : platform,
+    external_id: sender ? String(sender) : null,
+    channel: displayChannelForPlatform(platform),
+});
+
+async function applyFallbackCustomerProfile({ customer, platform, sender, isPlaceholderName }) {
+    if (!customer || typeof customer.update !== 'function' || !isPlaceholderName(customer.name)) return;
+
+    const fallbackName = fallbackCustomerName(platform);
+    const fallbackMeta = {
+        ...(customer.metadata || {}),
+        ...fallbackCustomerMetadata({ platform, sender }),
+    };
+    const currentMeta = customer.metadata || {};
+    const alreadySafe = customer.name === fallbackName
+        && currentMeta.external_id === String(sender || '')
+        && currentMeta.channel === displayChannelForPlatform(platform)
+        && currentMeta.platform === fallbackMeta.platform;
+
+    if (alreadySafe) return;
+
+    try {
+        await customer.update({ name: fallbackName, metadata: fallbackMeta });
+    } catch (err) {
+        logger.warn('Unable to persist fallback customer profile after Meta enrichment miss', {
+            customerId: customer.id,
+            platform,
+            error: err.message,
+        });
+    }
+}
+
+function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, platform, psid }) {
+    if (!customer || !psid) return;
+
+    try {
+        const { enrichCustomerNameFromMeta, isPlaceholderName } = require('../customer/customer-profile.service');
+        const metadata = customer.metadata || {};
+        const missingProfileFields = !metadata.first_name || !metadata.last_name || !metadata.profile_pic;
+        if (!isPlaceholderName(customer.name) && !missingProfileFields) return;
+
+        const logContext = {
+            customerId: customer.id,
+            shopId,
+            platform,
+            metaChannelId: metaChannelId || null,
+            hasExternalId: true,
+        };
+
+        enrichCustomerNameFromMeta({
+            customerId: customer.id,
+            metaChannelId,
+            shopId,
+            platform,
+            psid,
+        })
+            .then(async (updated) => {
+                if (updated) {
+                    logger.info('Shared inbox customer profile enriched from Meta', logContext);
+                    return;
+                }
+                await applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+                logger.warn('Shared inbox customer profile enrichment did not update customer; using fallback', logContext);
+            })
+            .catch(async (err) => {
+                await applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+                logger.warn('Shared inbox customer profile enrichment failed; using fallback', {
+                    ...logContext,
+                    error: err.message,
+                });
+            });
+    } catch (err) {
+        logger.warn('Shared inbox customer profile enrichment unavailable; using fallback', {
+            customerId: customer.id,
+            shopId,
+            platform,
+            metaChannelId: metaChannelId || null,
+            hasExternalId: true,
+            error: err.message,
+        });
+    }
+}
+
 // ─── BullMQ dispatch ──────────────────────────────────────────────────────────
 
 let _messageQueue = null;
@@ -158,10 +251,14 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
             where: { shop_id: channel.shop_id, channel_type: channelType, channel_user_id: String(senderId) },
             defaults: {
                 shop_id: channel.shop_id,
-                name: `${channel.platform} user`,
+                name: fallbackCustomerName(channel.platform),
                 channel_type: channelType,
                 channel_user_id: String(senderId),
-                metadata: { source: 'messaging_optins' },
+                metadata: fallbackCustomerMetadata({
+                    platform: channel.platform,
+                    sender: senderId,
+                    source: 'messaging_optins',
+                }),
             },
         });
 
@@ -191,6 +288,7 @@ async function storeIncomingMessage(event) {
         const { platform, shop_id, sender, message, meta_channel_id = null } = event;
         const { Op } = require('sequelize');
         const channelType = platform === 'facebook' ? 'messenger' : platform;
+        let customerForEnrichment = null;
 
         const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
         if (externalId) {
@@ -209,18 +307,19 @@ async function storeIncomingMessage(event) {
             }
         }
 
-        return await sequelize.transaction(async (t) => {
+        const storedMessage = await sequelize.transaction(async (t) => {
             const [customer] = await Customer.findOrCreate({
                 where: { shop_id, channel_type: channelType, channel_user_id: sender },
                 defaults: {
                     shop_id,
-                    name: `${platform} user`,
+                    name: fallbackCustomerName(platform),
                     channel_type: channelType,
                     channel_user_id: sender,
-                    metadata: { source: 'webhook', platform }
+                    metadata: fallbackCustomerMetadata({ platform, sender })
                 },
                 transaction: t
             });
+            customerForEnrichment = customer;
 
             // Phase 2: scope the 24h rolling-window lookup by meta_channel_id when
             // we know which page the message arrived on. Older rows without
@@ -291,6 +390,16 @@ async function storeIncomingMessage(event) {
                 shop_id
             };
         });
+
+        triggerCustomerProfileEnrichment({
+            customer: customerForEnrichment,
+            metaChannelId: meta_channel_id,
+            shopId: shop_id,
+            platform: channelType,
+            psid: sender,
+        });
+
+        return storedMessage;
     } catch (error) {
         logger.error('Failed to store incoming message', {
             error: error.message, platform: event?.platform, shop_id: event?.shop_id, sender: event?.sender, stack: error.stack

@@ -14,7 +14,6 @@ import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
 import type { Conversation, Message, ResponseTemplate } from "@/api/types/conversation";
-import type { ShopAgent } from "@/api/types/dashboard";
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
@@ -62,8 +61,6 @@ export default function UnifiedInbox() {
   const [resolvingConversation, setResolvingConversation] = useState(false);
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
-  const [agents, setAgents] = useState<ShopAgent[]>([]);
-  const [assigningAgent, setAssigningAgent] = useState(false);
   const [sseConnected, setSseConnected] = useState(true);
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
@@ -95,6 +92,18 @@ export default function UnifiedInbox() {
 
   const loadConversationsRef = useRef(loadConversations);
   useEffect(() => { loadConversationsRef.current = loadConversations; });
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      setLoadingTemplates(true);
+      const rows = await apiClient.getResponseTemplates();
+      setTemplates(rows.filter((tpl) => tpl.is_active !== false));
+    } catch {
+      setTemplates([]);
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, []);
 
   const loadMessages = async (conversationId: string, page: number) => {
     try {
@@ -129,11 +138,8 @@ export default function UnifiedInbox() {
 
   useEffect(() => {
     loadConversations();
-    apiClient.getResponseTemplates().then((rows) => {
-      setTemplates(rows.filter((tpl) => tpl.is_active !== false));
-    }).catch(() => setTemplates([]));
-    apiClient.getShopAgents().then(setAgents).catch(() => {});
-  }, []);
+    loadTemplates();
+  }, [loadConversations, loadTemplates]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -198,6 +204,17 @@ export default function UnifiedInbox() {
         prev?.id === conversation_id ? { ...prev, hitl } : prev
       );
     }, []),
+
+    onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata }) => {
+      setMessages((prev) => {
+        if (selectedConversation?.id !== conversation_id) return prev;
+        return prev.map((message) =>
+          message.id === message_id
+            ? { ...message, metadata: { ...(message.metadata || {}), ...(metadata || {}) } }
+            : message
+        );
+      });
+    }, [selectedConversation?.id]),
 
     onDeliveryFailed: useCallback(({ reason }) => {
       toast.warning(`Reply not delivered: ${reason}`, { duration: 6000 });
@@ -269,27 +286,6 @@ export default function UnifiedInbox() {
       toast.error(t("inbox.errors.resolveFailed"));
     } finally {
       setResolvingConversation(false);
-    }
-  };
-
-  const handleAssignConversation = async (agentId: string) => {
-    if (!selectedConversation) return;
-    try {
-      setAssigningAgent(true);
-      await apiClient.updateConversation(selectedConversation.id, { assignee_id: agentId });
-      const assignee = agents.find((a) => a.id === agentId);
-      const updated = {
-        ...selectedConversation,
-        assignee_id: agentId,
-        assignee: assignee ? { id: assignee.id, name: assignee.name, email: assignee.email } : undefined,
-      };
-      setSelectedConversation(updated);
-      setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      toast.success(t("inbox.assignedTo", { name: assignee?.name || agentId }));
-    } catch {
-      toast.error(t("inbox.errors.assignFailed"));
-    } finally {
-      setAssigningAgent(false);
     }
   };
 
@@ -382,12 +378,11 @@ export default function UnifiedInbox() {
             loadingMoreMessages={loadingMoreMessages}
             togglingHITL={togglingHITL}
             resolvingConversation={resolvingConversation}
-            assigningAgent={assigningAgent}
-            agents={agents}
             planFeaturesAdvancedAI={planFeatures.advanced_ai}
             showResolveDialog={showResolveDialog}
             resolveNote={resolveNote}
             dismissedSuggestionId={dismissedSuggestionId}
+            templates={templates}
             quickReplyTemplates={quickReplyTemplates}
             loadingTemplates={loadingTemplates}
             messagesEndRef={messagesEndRef}
@@ -397,7 +392,6 @@ export default function UnifiedInbox() {
             onMobileBack={() => setMobilePanelOpen(false)}
             onToggleHITL={handleToggleHITL}
             onResolve={handleResolveConversation}
-            onAssign={handleAssignConversation}
             onLoadOlderMessages={loadOlderMessages}
             onDismissSuggestion={setDismissedSuggestionId}
             onUseAiSuggestion={() => {}}
@@ -405,6 +399,7 @@ export default function UnifiedInbox() {
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
             onMessageSent={handleMessageSent}
+            onTemplatesChanged={loadTemplates}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500 md:flex hidden">

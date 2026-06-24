@@ -79,7 +79,7 @@ module.exports = {
     redisSessionDb: process.env.REDIS_SESSION_DB || '0',
     redisCacheDb: process.env.REDIS_CACHE_DB || '1',
     redisRateLimitDb: process.env.REDIS_RATELIMIT_DB || '2',
-    bodySizeLimit: process.env.BODY_SIZE_LIMIT || '1mb',
+    bodySizeLimit: process.env.BODY_SIZE_LIMIT || '35mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
     corsOrigins: process.env.CORS_ORIGINS
         ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)

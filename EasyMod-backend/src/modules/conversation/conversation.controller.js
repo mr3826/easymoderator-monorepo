@@ -1,15 +1,33 @@
+const fs = require('fs/promises');
+const path = require('path');
+const crypto = require('crypto');
 const conversationService = require('./conversation.service');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
-const { Conversation: ConvModel, Customer: CustomerModel } = require('../entities');
+const { Conversation: ConvModel, Customer: CustomerModel, Message: MessageModel } = require('../entities');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
+const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const ATTACHMENT_UPLOAD_DIR = path.join(__dirname, '../../../uploads/conversation-attachments');
+const ALLOWED_META_ATTACHMENT_TYPES = {
+    'image/jpeg': { ext: 'jpg', metaType: 'image' },
+    'image/png': { ext: 'png', metaType: 'image' },
+    'image/gif': { ext: 'gif', metaType: 'image' },
+    'image/webp': { ext: 'webp', metaType: 'image' },
+    'application/pdf': { ext: 'pdf', metaType: 'file' },
+    'text/plain': { ext: 'txt', metaType: 'file' },
+    'text/csv': { ext: 'csv', metaType: 'file' },
+    'application/msword': { ext: 'doc', metaType: 'file' },
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { ext: 'docx', metaType: 'file' },
+    'application/vnd.ms-excel': { ext: 'xls', metaType: 'file' },
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { ext: 'xlsx', metaType: 'file' },
+};
 
 // Channels that route through Meta Graph API for delivery (Facebook-only).
 // Legacy 'instagram' conversation rows resolve to undefined here and are
@@ -19,16 +37,151 @@ const META_CHANNEL_PLATFORM = {
     facebook:  'facebook',
 };
 
+function makeHttpError(statusCode, message) {
+    const err = new Error(message);
+    err.statusCode = statusCode;
+    return err;
+}
+
+function parseDataUrl(value) {
+    if (typeof value !== 'string') return null;
+    const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\r\n]+)$/);
+    if (!match) return null;
+    return {
+        mimeType: match[1].toLowerCase(),
+        buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
+    };
+}
+
+function isHttpsUrl(value) {
+    if (typeof value !== 'string') return false;
+    try {
+        return new URL(value).protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
+function safePublicBaseUrl(req) {
+    const configured = process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || process.env.BASE_URL;
+    const base = configured || `${req.protocol}://${req.get('host')}`;
+    return base.replace(/\/+$/, '');
+}
+
+function getAttachmentUrlFromMetadata(metadata = {}) {
+    return metadata.image_url || metadata.file_url || metadata.file_data_url;
+}
+
+async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
+    const metadata = { ...(messageData.metadata || {}) };
+    const incomingDataUrl = metadata.file_data_url || (parseDataUrl(metadata.image_url) ? metadata.image_url : null) || (parseDataUrl(metadata.file_url) ? metadata.file_url : null);
+    const existingUrl = metadata.image_url || metadata.file_url;
+
+    if (!incomingDataUrl && !existingUrl) {
+        return messageData;
+    }
+
+    if (!incomingDataUrl && existingUrl && !isHttpsUrl(existingUrl)) {
+        throw makeHttpError(400, 'Attachment URL must be HTTPS');
+    }
+
+    const parsed = parseDataUrl(incomingDataUrl);
+    if (!parsed) {
+        return {
+            ...messageData,
+            metadata: {
+                ...metadata,
+                delivery_status: metadata.delivery_status || 'pending',
+            },
+        };
+    }
+
+    const allowed = ALLOWED_META_ATTACHMENT_TYPES[parsed.mimeType];
+    if (!allowed) {
+        throw makeHttpError(400, 'Attachment type is not supported for Messenger');
+    }
+    if (parsed.buffer.length > META_ATTACHMENT_MAX_BYTES) {
+        throw makeHttpError(400, 'Attachment exceeds the 25MB Messenger limit');
+    }
+
+    const messageType = allowed.metaType === 'image' ? 'image' : 'file';
+    const publicBaseUrl = safePublicBaseUrl(req);
+    if (!isHttpsUrl(publicBaseUrl)) {
+        throw makeHttpError(400, 'Attachment delivery requires an HTTPS PUBLIC_BASE_URL or BASE_URL');
+    }
+    const uploadDir = path.join(ATTACHMENT_UPLOAD_DIR, shopId);
+    await fs.mkdir(uploadDir, { recursive: true });
+    const fileName = `${Date.now()}-${crypto.randomUUID()}.${allowed.ext}`;
+    const absolutePath = path.join(uploadDir, fileName);
+    await fs.writeFile(absolutePath, parsed.buffer);
+
+    const publicPath = `/uploads/conversation-attachments/${shopId}/${fileName}`;
+    const publicUrl = `${publicBaseUrl}${publicPath}`;
+    const storedMetadata = {
+        ...metadata,
+        message_type: messageType,
+        mime_type: parsed.mimeType,
+        file_size: parsed.buffer.length,
+        file_url: publicUrl,
+        delivery_status: 'pending',
+        attachment_source: 'inbox_upload',
+    };
+    delete storedMetadata.file_data_url;
+    if (messageType === 'image') {
+        storedMetadata.image_url = publicUrl;
+    } else {
+        delete storedMetadata.image_url;
+    }
+
+    return {
+        ...messageData,
+        message_type: messageType,
+        metadata: storedMetadata,
+    };
+}
+
+function buildOutboundAttachments(message) {
+    const metadata = message?.metadata || {};
+    const messageType = metadata.message_type || message?.message_type;
+    if (!['image', 'file'].includes(messageType)) return [];
+    const url = getAttachmentUrlFromMetadata(metadata);
+    if (!isHttpsUrl(url)) {
+        throw new Error('Outbound attachment URL must be HTTPS');
+    }
+    return [{
+        type: messageType === 'image' ? 'image' : 'file',
+        url,
+        name: metadata.file_name || null,
+        mime_type: metadata.mime_type || null,
+        size: metadata.file_size || null,
+    }];
+}
+
+async function updateDeliveryStatus(shopId, conversationId, message, status, updates = {}) {
+    if (!message?.id) return;
+    const metadata = { ...(message.metadata || {}), delivery_status: status, ...updates };
+    await MessageModel.update({ metadata }, { where: { id: message.id, conversation_id: conversationId } });
+    sseManager.emit(shopId, 'message_delivery_updated', {
+        conversation_id: conversationId,
+        message_id: message.id,
+        metadata,
+    });
+}
+
 /**
  * Deliver an outbound message to the customer's Meta channel.
  * Phase 5: resolves MetaChannel (single source of truth), evaluates policy,
  * and delegates to the provider registry for transport.
  * Best-effort: never throws. Emits SSE `delivery_failed` on failure.
  */
-async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
+async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage) {
     let isMetaChannel = false;
     let failureReason = null;
+    let deliveryResult = null;
+    const content = typeof outboundMessage === 'string' ? outboundMessage : outboundMessage?.content || '';
+    let attachments = [];
     try {
+        attachments = typeof outboundMessage === 'string' ? [] : buildOutboundAttachments(outboundMessage);
         const conversation = await ConvModel.findOne({
             where: { id: conversationId, shop_id: shopId },
             include: [{ model: CustomerModel, as: 'customer' }]
@@ -67,8 +220,13 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
             return;
         }
 
+        const autoFileContent = attachments.length > 0 && outboundMessage?.metadata?.file_name && content === outboundMessage.metadata.file_name;
         const normalizedMessage = {
-            text: content, attachments: [], platform, direction: 'outbound', senderRole: 'agent',
+            text: autoFileContent ? '' : content,
+            attachments,
+            platform,
+            direction: 'outbound',
+            senderRole: 'agent',
         };
         const policyCtx = {
             shopId,
@@ -85,7 +243,7 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
         }
 
         const provider = getProvider(platform);
-        await provider.sendMessage({
+        deliveryResult = await provider.sendMessage({
             channel: metaChannel,
             recipientId,
             normalizedMessage: decision.transform || normalizedMessage,
@@ -97,10 +255,19 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, content) {
         console.error(`[inbox] Meta delivery failed for conversation ${conversationId}: ${err.message}`);
     } finally {
         if (isMetaChannel && failureReason) {
+            await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'failed', {
+                delivery_error: failureReason,
+            }).catch(() => {});
             sseManager.emit(shopId, 'delivery_failed', {
                 conversation_id: conversationId,
+                message_id: outboundMessage?.id,
                 reason: failureReason
             });
+        } else if (isMetaChannel && outboundMessage?.id) {
+            await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'sent', {
+                provider_message_id: deliveryResult?.providerMessageId || null,
+                provider_message_ids: deliveryResult?.providerMessageIds || undefined,
+            }).catch(() => {});
         }
     }
 }
@@ -244,7 +411,7 @@ class ConversationController {
                     }
                 });
             }
-            const messageData = req.body; // Already validated
+            const messageData = await prepareOutboundAttachmentMetadata(req, shopId, req.body); // Already validated
 
             const message = await conversationService.createMessage(conversationId, shopId, messageData);
 
@@ -257,7 +424,7 @@ class ConversationController {
             if (sender === 'agent' || sender === 'business') {
                 cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1').catch(() => {});
                 // Deliver agent reply to customer via Meta Graph API (fire-and-forget)
-                deliverViaMetaIfApplicable(conversationId, shopId, message.content);
+                deliverViaMetaIfApplicable(conversationId, shopId, message);
             }
 
             res.status(201).json({
@@ -265,7 +432,7 @@ class ConversationController {
                 data: message
             });
         } catch (error) {
-            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
+            const statusCode = error.statusCode || (error.message === 'Conversation not found' ? 404 : 500);
             const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'MESSAGE_CREATE_FAILED';
 
             res.status(statusCode).json({

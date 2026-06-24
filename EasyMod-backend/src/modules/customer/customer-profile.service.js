@@ -39,8 +39,18 @@ const appsecretProof = (token) => {
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 };
 
-const isPlaceholderName = (name) =>
-    !name || name === 'Customer' || name.startsWith('Customer ');
+const isPlaceholderName = (name) => {
+    if (!name) return true;
+    const normalized = String(name).trim().toLowerCase();
+    return normalized === 'customer'
+        || normalized.startsWith('customer ')
+        || normalized === 'facebook user'
+        || normalized === 'messenger user'
+        || normalized === 'instagram user';
+};
+
+const hasMissingProfileFields = (metadata = {}) =>
+    !metadata.first_name || !metadata.last_name || !metadata.profile_pic;
 
 // Resolve the channel (and thus the page/IG token) for this customer's platform.
 async function resolveChannel({ metaChannelId, shopId, platform }) {
@@ -72,7 +82,10 @@ async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, p
         if (!customerId || !psid) return false;
 
         const customer = await Customer.findByPk(customerId);
-        if (!customer || !isPlaceholderName(customer.name)) return false;
+        if (!customer) return false;
+
+        const hadPlaceholderName = isPlaceholderName(customer.name);
+        if (!hadPlaceholderName && !hasMissingProfileFields(customer.metadata || {})) return false;
 
         const channel = await resolveChannel({ metaChannelId, shopId, platform });
         const token = channel?.page_access_token_ct; // entity getter decrypts
@@ -92,11 +105,11 @@ async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, p
         const d = resp.data || {};
         const fullName = (d.name && d.name.trim())
             || [d.first_name, d.last_name].filter(Boolean).join(' ').trim();
-        if (!fullName) return false;
+        if (!fullName && !d.profile_pic && !d.first_name && !d.last_name) return false;
 
         // Re-read inside the update guard: a concurrent order flow may have set a
         // real name in the meantime — don't clobber it with the profile name.
-        if (!isPlaceholderName(customer.name)) return false;
+        const shouldUpdateName = isPlaceholderName(customer.name) && fullName;
 
         const meta = { ...(customer.metadata || {}) };
         if (d.first_name) meta.first_name = d.first_name;
@@ -104,8 +117,15 @@ async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, p
         if (d.profile_pic) meta.profile_pic = d.profile_pic;
         meta.profile_synced_at = new Date().toISOString();
 
-        await customer.update({ name: fullName, metadata: meta });
-        logger.info('Enriched customer name from Meta profile', { customerId, hasPic: !!d.profile_pic });
+        const update = { metadata: meta };
+        if (shouldUpdateName) update.name = fullName;
+
+        await customer.update(update);
+        logger.info('Enriched customer profile from Meta', {
+            customerId,
+            updatedName: !!shouldUpdateName,
+            hasPic: !!d.profile_pic
+        });
         return true;
     } catch (err) {
         // The user-profile API commonly 403s without the right permission/role or

@@ -87,6 +87,12 @@ jest.mock('src/modules/consent/consent.service', () => ({
     recordOptIn: jest.fn().mockResolvedValue(undefined),
 }));
 
+const mockCustomerProfileService = {
+    enrichCustomerNameFromMeta: jest.fn(),
+    isPlaceholderName: jest.fn(),
+};
+jest.mock('src/modules/customer/customer-profile.service', () => mockCustomerProfileService);
+
 // CommentToDm webhook handler — no-op for these tests
 jest.mock('src/modules/commentToDm/comment-to-dm.webhook-handler', () => ({
     extractCommentEvents: jest.fn(() => []),
@@ -127,6 +133,17 @@ const SHOP_ID = 'shop-uuid-1';
 const PAGE_ID = 'page-111';
 const CONV_ID = 'conv-uuid-1';
 const CUSTOMER_ID = 'cust-uuid-1';
+const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
+
+const isGenericCustomerName = (name) => {
+    if (!name) return true;
+    const normalized = String(name).trim().toLowerCase();
+    return normalized === 'customer'
+        || normalized.startsWith('customer ')
+        || normalized === 'facebook user'
+        || normalized === 'messenger user'
+        || normalized === 'instagram user';
+};
 
 const buildMetaChannel = (overrides = {}) => ({
     id: 'mc-1',
@@ -163,6 +180,7 @@ describe('storeIncomingMessage', () => {
     const baseEvent = {
         platform: 'facebook',
         shop_id: SHOP_ID,
+        meta_channel_id: 'mc-1',
         sender: 'sender-fb-123',
         message: 'Hello there',
         attachments: [],
@@ -170,7 +188,12 @@ describe('storeIncomingMessage', () => {
         raw_event: { message: { mid: 'mid.ABCDE', text: 'Hello there' } }
     };
 
-    const customer = { id: CUSTOMER_ID, name: 'facebook user' };
+    const customer = {
+        id: CUSTOMER_ID,
+        name: 'Facebook User',
+        metadata: { source: 'webhook', platform: 'facebook', external_id: 'sender-fb-123', channel: 'Facebook' },
+        update: jest.fn().mockResolvedValue(undefined),
+    };
     const conversation = buildConversation();
     const msgRecord = buildMessage({ id: 'msg-new' });
 
@@ -183,6 +206,8 @@ describe('storeIncomingMessage', () => {
         mockConversation.create.mockResolvedValue(conversation);
         mockMessage.findOne.mockResolvedValue(null);
         mockMessage.create.mockResolvedValue(msgRecord);
+        mockCustomerProfileService.enrichCustomerNameFromMeta.mockResolvedValue(true);
+        mockCustomerProfileService.isPlaceholderName.mockImplementation(isGenericCustomerName);
     });
 
     it('creates customer, conversation and message on first message', async () => {
@@ -200,6 +225,75 @@ describe('storeIncomingMessage', () => {
             expect.objectContaining({ transaction: mockTransaction })
         );
         expect(result).toMatchObject({ customer_id: CUSTOMER_ID, conversation_id: CONV_ID });
+    });
+
+    it('triggers Meta profile enrichment for a new Facebook tester customer', async () => {
+        await storeIncomingMessage(baseEvent);
+
+        expect(mockCustomer.findOrCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                defaults: expect.objectContaining({
+                    name: 'Facebook User',
+                    channel_user_id: 'sender-fb-123',
+                    metadata: expect.objectContaining({
+                        platform: 'facebook',
+                        external_id: 'sender-fb-123',
+                        channel: 'Facebook',
+                    }),
+                }),
+            })
+        );
+        expect(mockCustomerProfileService.enrichCustomerNameFromMeta).toHaveBeenCalledWith({
+            customerId: CUSTOMER_ID,
+            metaChannelId: 'mc-1',
+            shopId: SHOP_ID,
+            platform: 'messenger',
+            psid: 'sender-fb-123',
+        });
+    });
+
+    it('triggers enrichment for an existing generic Facebook customer', async () => {
+        const existingGenericCustomer = {
+            id: CUSTOMER_ID,
+            name: 'facebook user',
+            metadata: { source: 'webhook', platform: 'facebook' },
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        mockCustomer.findOrCreate.mockResolvedValue([existingGenericCustomer, false]);
+
+        await storeIncomingMessage(baseEvent);
+
+        expect(mockCustomerProfileService.enrichCustomerNameFromMeta).toHaveBeenCalledWith({
+            customerId: CUSTOMER_ID,
+            metaChannelId: 'mc-1',
+            shopId: SHOP_ID,
+            platform: 'messenger',
+            psid: 'sender-fb-123',
+        });
+    });
+
+    it('keeps a safe fallback customer when enrichment fails', async () => {
+        const existingGenericCustomer = {
+            id: CUSTOMER_ID,
+            name: 'facebook user',
+            metadata: { source: 'webhook', platform: 'facebook' },
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        mockCustomer.findOrCreate.mockResolvedValue([existingGenericCustomer, false]);
+        mockCustomerProfileService.enrichCustomerNameFromMeta.mockResolvedValue(false);
+
+        await storeIncomingMessage(baseEvent);
+        await flushPromises();
+
+        expect(existingGenericCustomer.update).toHaveBeenCalledWith({
+            name: 'Facebook User',
+            metadata: expect.objectContaining({
+                source: 'webhook',
+                platform: 'facebook',
+                external_id: 'sender-fb-123',
+                channel: 'Facebook',
+            }),
+        });
     });
 
     it('maps facebook platform to messenger channel_type', async () => {
@@ -360,6 +454,8 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         mockConversation.create.mockResolvedValue(buildConversation());
         mockMessage.findOne.mockResolvedValue(null);
         mockMessage.create.mockResolvedValue(buildMessage());
+        mockCustomerProfileService.enrichCustomerNameFromMeta.mockResolvedValue(true);
+        mockCustomerProfileService.isPlaceholderName.mockImplementation(isGenericCustomerName);
     });
 
     afterEach(() => {

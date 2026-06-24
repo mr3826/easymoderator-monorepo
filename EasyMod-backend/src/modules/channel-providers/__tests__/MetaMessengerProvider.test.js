@@ -202,6 +202,74 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
+    describe('sendMessage()', () => {
+        const channel = { page_access_token_ct: 'page-token' };
+        const decision = { allow: true };
+
+        beforeEach(() => {
+            axios.post.mockResolvedValue({ data: { message_id: 'mid_sent' } });
+        });
+
+        afterEach(() => {
+            jest.resetAllMocks();
+        });
+
+        test('sends image attachment through Messenger Send API', async () => {
+            const result = await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_1',
+                normalizedMessage: {
+                    text: '',
+                    attachments: [{ type: 'image', url: 'https://cdn.example.com/photo.jpg' }],
+                },
+                decision,
+            });
+
+            expect(result.providerMessageId).toBe('mid_sent');
+            expect(axios.post).toHaveBeenCalledWith(
+                expect.stringContaining('/me/messages'),
+                expect.objectContaining({
+                    recipient: { id: 'PSID_1' },
+                    messaging_type: 'RESPONSE',
+                    message: {
+                        attachment: {
+                            type: 'image',
+                            payload: {
+                                url: 'https://cdn.example.com/photo.jpg',
+                                is_reusable: true,
+                            },
+                        },
+                    },
+                }),
+                { params: { access_token: 'page-token' } }
+            );
+        });
+
+        test('sends text then file when both are present', async () => {
+            axios.post
+                .mockResolvedValueOnce({ data: { message_id: 'mid_text' } })
+                .mockResolvedValueOnce({ data: { message_id: 'mid_file' } });
+
+            const result = await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_2',
+                normalizedMessage: {
+                    text: 'Invoice attached',
+                    attachments: [{ type: 'file', url: 'https://cdn.example.com/invoice.pdf' }],
+                },
+                decision,
+            });
+
+            expect(result.providerMessageIds).toEqual(['mid_text', 'mid_file']);
+            expect(axios.post).toHaveBeenCalledTimes(2);
+            expect(axios.post.mock.calls[0][1].message).toEqual({ text: 'Invoice attached' });
+            expect(axios.post.mock.calls[1][1].message.attachment).toMatchObject({
+                type: 'file',
+                payload: { url: 'https://cdn.example.com/invoice.pdf', is_reusable: true },
+            });
+        });
+    });
+
     describe('listManagedAssets() pagination', () => {
         beforeEach(() => {
             process.env.META_APP_SECRET = 'test-secret';
