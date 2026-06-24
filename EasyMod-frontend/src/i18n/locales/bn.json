@@ -1,4 +1,18 @@
 {
+  "nav": {
+    "home": "আজকের অবস্থা",
+    "orders": "অর্ডারসমূহ",
+    "messages": "বার্তা",
+    "products": "পণ্যসমূহ",
+    "businessInfo": "ব্যবসার তথ্য",
+    "chat": "চ্যাট",
+    "delivery": "ডেলিভারি",
+    "payment": "পেমেন্ট",
+    "settings": "সেটিংস",
+    "subscription": "সাবস্ক্রিপশন",
+    "shopSettings": "শপ সেটিংস",
+    "collapse": "ছোট করুন"
+  },
   "common": {
     "privacyPolicy": "গোপনীয়তা নীতি",
     "terms": "সেবার শর্তাবলী",

@@ -22,22 +22,22 @@ export default function DashboardLayout() {
   const { t } = useTranslation();
 
   const navigation = [
-    { name: 'আজকের অবস্থা', path: appBasePath, icon: Home },
-    { name: 'অর্ডারসমূহ', path: `${appBasePath}/orders`, icon: ShoppingBag },
-    { name: 'বার্তা', path: `${appBasePath}/inbox`, icon: MessageCircle },
-    { name: 'পণ্যসমূহ', path: `${appBasePath}/products`, icon: Grid3X3 },
+    { name: t('nav.home'), path: appBasePath, icon: Home },
+    { name: t('nav.orders'), path: `${appBasePath}/orders`, icon: ShoppingBag },
+    { name: t('nav.messages'), path: `${appBasePath}/inbox`, icon: MessageCircle },
+    { name: t('nav.products'), path: `${appBasePath}/products`, icon: Grid3X3 },
   ];
 
   const settingsNavigation = [
-    { name: 'ব্যবসার তথ্য', path: `${appBasePath}/manage-shop/business-info`, icon: Building2 },
-    { name: 'চ্যাট', path: `${appBasePath}/manage-shop/chat-settings`, icon: MessageSquare },
-    { name: 'ডেলিভারি', path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
-    { name: 'পেমেন্ট', path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
+    { name: t('nav.businessInfo'), path: `${appBasePath}/manage-shop/business-info`, icon: Building2 },
+    { name: t('nav.chat'), path: `${appBasePath}/manage-shop/chat-settings`, icon: MessageSquare },
+    { name: t('nav.delivery'), path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
+    { name: t('nav.payment'), path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
   ];
 
   const mobileNavigation = [
     ...navigation,
-    { name: 'সেটিংস', path: `${appBasePath}/manage-shop`, icon: Settings },
+    { name: t('nav.settings'), path: `${appBasePath}/manage-shop`, icon: Settings },
   ];
 
   const { user, currentShop, logout } = useAuth();
@@ -65,7 +65,7 @@ export default function DashboardLayout() {
 
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
-  const subscriptionItem = { name: 'সাবস্ক্রিপশন', path: `${appBasePath}/subscription`, icon: CreditCard };
+  const subscriptionItem = { name: t('nav.subscription'), path: `${appBasePath}/subscription`, icon: CreditCard };
 
   // Derive page title from current route (check settings group first — more specific paths)
   const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
@@ -74,7 +74,7 @@ export default function DashboardLayout() {
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
   );
   const pageTitle = activeNav?.name
-    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? 'সেটিংস' : 'Easy Moderator');
+    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? t('nav.settings') : 'Easy Moderator');
 
   const handleLogout = async () => {
     await logout();
@@ -139,7 +139,7 @@ export default function DashboardLayout() {
           <div className="mt-4 pt-3 border-t border-gray-100">
             {!collapsed && (
               <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                সেটিংস
+                {t('nav.settings')}
               </div>
             )}
             <div className="space-y-0.5">
@@ -223,7 +223,7 @@ export default function DashboardLayout() {
           className="shrink-0 mx-2 mb-2 flex items-center justify-center gap-2 py-2 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-gray-700 transition-colors text-xs"
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          {!collapsed && <span>Collapse</span>}
+          {!collapsed && <span>{t('nav.collapse')}</span>}
         </button>
       </aside>
 
@@ -266,7 +266,7 @@ export default function DashboardLayout() {
                       className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <Store className="w-4 h-4 text-gray-400" />
-                      শপ সেটিংস
+                      {t('nav.shopSettings')}
                     </button>
                   </div>
                   {/* Logout */}

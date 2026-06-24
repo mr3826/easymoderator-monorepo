@@ -1,4 +1,18 @@
 {
+  "nav": {
+    "home": "Home",
+    "orders": "Orders",
+    "messages": "Messages",
+    "products": "Products",
+    "businessInfo": "Business Info",
+    "chat": "Chat",
+    "delivery": "Delivery",
+    "payment": "Payment",
+    "settings": "Settings",
+    "subscription": "Subscription",
+    "shopSettings": "Shop Settings",
+    "collapse": "Collapse"
+  },
   "common": {
     "privacyPolicy": "Privacy Policy",
     "terms": "Terms of Service",
