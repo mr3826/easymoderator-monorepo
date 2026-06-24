@@ -73,4 +73,9 @@ export interface ShopAISettings {
     notification_channel: string;
     cooldown_minutes: number;
   };
+  // Auto-sent welcome on the first AI reply of a conversation. The fixed Meta
+  // AI-disclosure line is prepended server-side; custom_text is the editable part.
+  greeting?: { enabled: boolean; custom_text: string };
+  // Appended to the order-confirmation message (thank-you + social links).
+  closing?: { enabled: boolean; custom_text: string };
 }

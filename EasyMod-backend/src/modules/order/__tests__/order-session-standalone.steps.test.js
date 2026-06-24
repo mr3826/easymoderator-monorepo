@@ -366,6 +366,37 @@ describe('multi-item order: summary, create, invoice', () => {
         expect(optsArg.items[1]).toEqual(expect.objectContaining({ name: 'Silk Dupatta', quantity: 2, total: 1000 }));
     });
 
+    test('confirmation appends the shop closing message (thank-you + social links)', async () => {
+        productSearch.checkStock.mockResolvedValue({ available: true });
+        createOrderInternal.mockResolvedValue({
+            id: 'ord-3', order_number: '100003', total: 1650, shop_id: 'shop-1', payment_method: 'cod',
+        });
+        issueInvoiceForOrder.mockResolvedValue({ invoice: { invoice_number: 'INV-100003' }, text: '🧾 INVOICE' });
+        ShopEntity.findByPk.mockResolvedValue({
+            settings: {
+                ai: { closing: { enabled: true, custom_text: 'Thank you for shopping!' } },
+                businessInfo: { socialLinks: { facebook: 'https://fb.com/rina' } },
+            },
+        });
+        const session = makeSession({
+            current_step: 'ORDER_SUMMARY',
+            product_info: { id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 },
+            step_data: {
+                language: 'en', name: 'Evan', phone: '01886895874', address: 'Mirpur, Dhaka',
+                delivery_charge: 60, payment_method: 'cod',
+                cart: [{ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }],
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+        await drainImmediates();
+
+        expect(res.completed).toBe(true);
+        expect(res.prompt).toContain('Thank you for shopping!');
+        expect(res.prompt).toContain('Follow us:');
+        expect(res.prompt).toContain('https://fb.com/rina');
+    });
+
     test('an out-of-stock line at confirmation cancels with the real reason', async () => {
         productSearch.checkStock
             .mockResolvedValueOnce({ available: true })                                  // prod-1 ok

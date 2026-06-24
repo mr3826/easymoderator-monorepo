@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { Plus, X } from "lucide-react";
-import type { BusinessInfo } from "../lib/knowledgeTypes";
+import type { BusinessInfo, SocialLinks } from "../lib/knowledgeTypes";
 
 const emptyBusinessInfo: BusinessInfo = {
   shopName: "",
@@ -10,6 +10,7 @@ const emptyBusinessInfo: BusinessInfo = {
   openingHours: "",
   deliveryAreas: [],
   paymentMethods: [],
+  socialLinks: {},
 };
 
 const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessInfo => ({
@@ -21,7 +22,19 @@ const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessIn
   openingHours: value?.openingHours ?? "",
   deliveryAreas: Array.isArray(value?.deliveryAreas) ? value.deliveryAreas : [],
   paymentMethods: Array.isArray(value?.paymentMethods) ? value.paymentMethods : [],
+  socialLinks: (value?.socialLinks && typeof value.socialLinks === "object") ? value.socialLinks : {},
 });
+
+// Social platforms shown in the order-confirmation closing. WhatsApp accepts a
+// wa.me link or a bare phone number; the rest are profile/page URLs.
+const SOCIAL_FIELDS: { key: keyof SocialLinks; label: string; placeholder: string }[] = [
+  { key: "facebook", label: "Facebook", placeholder: "https://facebook.com/yourpage" },
+  { key: "instagram", label: "Instagram", placeholder: "https://instagram.com/yourshop" },
+  { key: "whatsapp", label: "WhatsApp", placeholder: "https://wa.me/8801XXXXXXXXX বা 01XXXXXXXXX" },
+  { key: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/@yourshop" },
+  { key: "youtube", label: "YouTube", placeholder: "https://youtube.com/@yourshop" },
+  { key: "website", label: "Website", placeholder: "https://yourshop.com" },
+];
 
 interface TagInputProps {
   label: string;
@@ -181,6 +194,29 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             onChange={(v) => setBusinessInfo({ ...businessInfo, paymentMethods: v })}
             placeholder="e.g. bKash, COD"
           />
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">সোশ্যাল মিডিয়া লিংক</label>
+          <p className="text-xs text-gray-500 mb-3">যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে "আমাদের ফলো করুন" অংশে দেখানো হবে। (ঐচ্ছিক)</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {SOCIAL_FIELDS.map(({ key, label, placeholder }) => (
+              <div key={key}>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                <input
+                  type="text"
+                  aria-label={label}
+                  value={businessInfo.socialLinks?.[key] ?? ""}
+                  onChange={(e) => setBusinessInfo({
+                    ...businessInfo,
+                    socialLinks: { ...(businessInfo.socialLinks || {}), [key]: e.target.value },
+                  })}
+                  placeholder={placeholder}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

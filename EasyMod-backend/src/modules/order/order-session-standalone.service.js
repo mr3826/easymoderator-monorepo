@@ -723,6 +723,16 @@ class OrderSessionService {
                         } catch (invErr) {
                             console.error(`[OrderSession] Invoice generation failed for order ${order.order_number}:`, invErr.message);
                         }
+
+                        // Append the shop's closing message (thank-you + "follow us"
+                        // social links) to the confirmation. Best-effort — a failure
+                        // here must never un-confirm an order that was already created.
+                        try {
+                            const closingText = await OrderSessionService.buildShopClosing(session.shop_id, lang);
+                            if (closingText) orderPrompt += `\n\n${closingText}`;
+                        } catch (closeErr) {
+                            console.error(`[OrderSession] Closing message failed for order ${order.order_number}:`, closeErr.message);
+                        }
                     } catch (orderErr) {
                         // Surface genuine business rejections (out of stock, COD limit,
                         // RTO block, product not found) to the customer with their real
@@ -1029,6 +1039,26 @@ class OrderSessionService {
         }
 
         return null;
+    }
+
+    /**
+     * Build the shop's order-confirmation closing message (owner thank-you text +
+     * the shop's social links). Returns '' when the shop has disabled the closing
+     * or has nothing to say. Falls back to the seeded default closing for shops
+     * created before this feature (so the thank-you always appears).
+     * @param {string} shopId
+     * @param {string} language - reply language ('bn' | 'en' | 'mixed')
+     * @returns {Promise<string>}
+     */
+    static async buildShopClosing(shopId, language) {
+        const Shop = require('../shop/shop.entity');
+        const { buildClosing } = require('../shop/ai-messaging');
+        const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
+        const shop = await Shop.findByPk(shopId, { attributes: ['settings'] });
+        const settings = shop?.settings || {};
+        const closing = settings.ai?.closing || DEFAULT_AI_SETTINGS.closing;
+        const socialLinks = settings.businessInfo?.socialLinks || {};
+        return buildClosing({ closing, socialLinks, language });
     }
 
     // ─── Order creation ───────────────────────────────────────────────────────

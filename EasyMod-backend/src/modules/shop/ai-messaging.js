@@ -1,0 +1,99 @@
+'use strict';
+
+/**
+ * AI customer-message builders — pure, dependency-free.
+ *
+ * Three owner-configurable touches woven into the live AI reply pipeline:
+ *   - Greeting: an auto-sent welcome on the FIRST AI reply of a conversation,
+ *     carrying a fixed Meta AI-disclosure identifier the owner writes around.
+ *   - Closing: a thank-you (+ "follow us" links) appended to the order
+ *     confirmation message.
+ *   - Social block: the rendered list of the shop's social links.
+ *
+ * Kept pure so the wiring in message-worker / order-session stays thin and the
+ * behaviour is fully unit-tested here. See
+ * docs/superpowers/specs/2026-06-25-greeting-closing-social-design.md.
+ */
+
+const GENERIC_SHOP = { en: 'our shop', bn: 'আমাদের দোকান', mixed: 'amader shop' };
+
+// Static, owner-uneditable AI-disclosure (Meta identifiability). The owner's
+// custom greeting text is appended AFTER this line. Always starts with 🤖 so the
+// worker's existing attribution regex suppresses a duplicate suffix.
+const DISCLOSURE = {
+    en: (shop) => `🤖 You're chatting with ${shop}'s AI assistant.`,
+    bn: (shop) => `🤖 আপনি ${shop}-এর AI সহকারীর সাথে কথা বলছেন।`,
+    mixed: (shop) => `🤖 Apni ${shop}-er AI assistant er sathe kotha bolchen.`,
+};
+
+// Stable render order + display labels for the social-links block.
+const SOCIAL_ORDER = [
+    ['facebook', 'Facebook'],
+    ['instagram', 'Instagram'],
+    ['whatsapp', 'WhatsApp'],
+    ['tiktok', 'TikTok'],
+    ['youtube', 'YouTube'],
+    ['website', 'Website'],
+];
+
+const SOCIAL_HEADER = { en: 'Follow us:', bn: 'আমাদের ফলো করুন:', mixed: 'আমাদের ফলো করুন:' };
+
+const resolveLang = (language) => (language === 'en' || language === 'bn' ? language : 'mixed');
+
+/**
+ * The static AI-disclosure identifier for a shop, in the reply language.
+ * @param {string} shopName
+ * @param {string} [language] - 'en' | 'bn' | 'mixed' (default mixed)
+ * @returns {string}
+ */
+const buildDisclosure = (shopName, language) => {
+    const lang = resolveLang(language);
+    const shop = (shopName || '').trim() || GENERIC_SHOP[lang];
+    return DISCLOSURE[lang](shop);
+};
+
+/**
+ * The greeting prepended to the first AI reply: disclosure + owner custom text.
+ * Returns '' when the greeting is disabled or unconfigured.
+ * @param {{shopName?:string, language?:string, greeting?:{enabled?:boolean, custom_text?:string}}} params
+ * @returns {string}
+ */
+const buildGreeting = ({ shopName, language, greeting } = {}) => {
+    if (!greeting || greeting.enabled === false) return '';
+    const disclosure = buildDisclosure(shopName, language);
+    const custom = (greeting.custom_text || '').trim();
+    return custom ? `${disclosure}\n\n${custom}` : disclosure;
+};
+
+/**
+ * Render the shop's social links (only the filled ones, stable order) under a
+ * localized "Follow us:" header. Returns '' when nothing is set.
+ * @param {Record<string,string>|null|undefined} socialLinks
+ * @param {string} [language]
+ * @returns {string}
+ */
+const renderSocialLinks = (socialLinks, language) => {
+    if (!socialLinks || typeof socialLinks !== 'object') return '';
+    const lines = [];
+    for (const [key, label] of SOCIAL_ORDER) {
+        const value = (socialLinks[key] || '').trim();
+        if (value) lines.push(`${label}: ${value}`);
+    }
+    if (lines.length === 0) return '';
+    return `${SOCIAL_HEADER[resolveLang(language)]}\n${lines.join('\n')}`;
+};
+
+/**
+ * The closing appended to the order-confirmation message: owner custom text +
+ * the social block (only if links are set). Returns '' when disabled or empty.
+ * @param {{closing?:{enabled?:boolean, custom_text?:string}, socialLinks?:object, language?:string}} params
+ * @returns {string}
+ */
+const buildClosing = ({ closing, socialLinks, language } = {}) => {
+    if (!closing || closing.enabled === false) return '';
+    const custom = (closing.custom_text || '').trim();
+    const social = renderSocialLinks(socialLinks, language);
+    return [custom, social].filter(Boolean).join('\n\n');
+};
+
+module.exports = { buildDisclosure, buildGreeting, renderSocialLinks, buildClosing };

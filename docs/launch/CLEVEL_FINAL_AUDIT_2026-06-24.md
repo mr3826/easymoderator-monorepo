@@ -220,3 +220,35 @@ that is safe and within code's control. The launch switch is now yours to flip, 
 
 I will keep doing what's best for the app within code; the four items above genuinely require your
 hands (Meta portal, bKash merchant secrets, DO account) — that's the human hand-off.
+
+---
+
+## Addendum — 2026-06-25 · Greeting, Closing & Social Links shipped
+
+**Branch:** `feat/greeting-closing-social-messages` → PR to `main` (CI gate → merge → auto-deploy).
+**Spec:** `docs/superpowers/specs/2026-06-25-greeting-closing-social-design.md`.
+
+**What shipped (owner-configurable, woven into the live AI pipeline):**
+- **Greeting** — auto-prepended to the **first** AI reply of each conversation. Carries a fixed,
+  owner-uneditable **Meta AI-disclosure** (`🤖 …AI assistant…`, language-aware) followed by the
+  owner's editable welcome text. Edited on **Chat Settings**.
+- **Closing** — appended to the **order-confirmation** message (after the invoice): owner thank-you +
+  a "Follow us:" block rendering only the social links that are set. Edited on **Chat Settings**;
+  links live on **Business Info**.
+- **Social links** — Facebook, Instagram, WhatsApp, TikTok, YouTube, Website (all optional). Persisted
+  under `settings.businessInfo.socialLinks`.
+- **Defaults seeded** for every shop (greeting + closing both on, Banglish defaults).
+
+**Compliance posture:** the existing always-on ` 🤖` per-message attribution suffix (Meta Platform
+Policy 4.2) is unchanged and remains the disclosure floor — even if an owner disables the greeting,
+every automated message is still identifiable. The greeting's 🤖 makes the worker's `alreadyMarked`
+check skip a duplicate suffix on the first turn.
+
+**Risk:** low. **No DB migration** (`Shop.settings` is JSON; `sanitizeSettings` already preserves
+`ai`/`businessInfo`). Greeting/closing injection is best-effort (failures never block a reply or
+un-confirm an order). Pre-existing dead `brandingRules.greetingStyle`/`closingStyle` left in place
+(unwired; superseded — noted, not refactored).
+
+**Tests:** backend **1044/1044** jest green (new: `ai-messaging` pure builders, validators, defaults,
+closing-on-confirm integration, socialLinks persistence). Frontend `vite build` green; touched unit
+suites **48/48**; changed files typecheck clean. **Deploy outcome (SHA + `/health/ready`) appended on merge.**

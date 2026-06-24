@@ -1,4 +1,13 @@
 // Knowledge types for AI training
+export interface SocialLinks {
+  facebook?: string;
+  instagram?: string;
+  whatsapp?: string;
+  tiktok?: string;
+  youtube?: string;
+  website?: string;
+}
+
 export interface BusinessInfo {
   shopName: string;
   address: string;
@@ -7,6 +16,8 @@ export interface BusinessInfo {
   openingHours: string;
   deliveryAreas: string[];
   paymentMethods: string[];
+  // Surfaced in the AI order-confirmation closing message.
+  socialLinks?: SocialLinks;
 }
 
 export interface FAQ {

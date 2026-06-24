@@ -23,6 +23,8 @@ const defaultAISettings: ShopAISettings = {
     notification_channel: "in_app",
     cooldown_minutes: 30,
   },
+  greeting: { enabled: true, custom_text: "আসসালামু আলাইকুম! 👋 কীভাবে সাহায্য করতে পারি?" },
+  closing: { enabled: true, custom_text: "আমাদের সাথে কেনাকাটা করার জন্য ধন্যবাদ! 🛍️" },
 };
 
 const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISettings => ({
@@ -30,6 +32,8 @@ const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISetting
   ...loaded,
   required_fields: { ...defaultAISettings.required_fields, ...(loaded?.required_fields || {}) },
   handoff_settings: { ...defaultAISettings.handoff_settings, ...(loaded?.handoff_settings || {}) },
+  greeting: { ...defaultAISettings.greeting!, ...(loaded?.greeting || {}) },
+  closing: { ...defaultAISettings.closing!, ...(loaded?.closing || {}) },
 });
 
 interface TagInputProps {
@@ -244,6 +248,59 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
               <span className="text-sm text-gray-700">{label}</span>
             </label>
           ))}
+        </div>
+
+        <div className="space-y-4 border-t border-gray-100 pt-6">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">গ্রিটিং মেসেজ <span className="text-gray-400 font-normal">(নতুন কথোপকথনের শুরুতে)</span></label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div
+                  onClick={() => setAISettings({ ...aiSettings, greeting: { ...aiSettings.greeting!, enabled: !aiSettings.greeting?.enabled } })}
+                  className={`relative w-10 h-6 rounded-full transition-colors ${aiSettings.greeting?.enabled ? "bg-blue-600" : "bg-gray-300"}`}
+                >
+                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings.greeting?.enabled ? "translate-x-4" : ""}`} />
+                </div>
+                <span className="text-xs text-gray-600">{aiSettings.greeting?.enabled ? "চালু" : "বন্ধ"}</span>
+              </label>
+            </div>
+            <div className="mb-2 flex items-start gap-2 rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600">
+              <span>🔒</span>
+              <span>স্থায়ী অংশ (Meta নিয়ম): <span className="font-medium text-gray-800">🤖 আপনি [আপনার দোকান]-এর AI সহকারীর সাথে কথা বলছেন।</span> — এর পরে আপনার নিচের লেখাটি যুক্ত হবে।</span>
+            </div>
+            <textarea
+              rows={2}
+              aria-label="গ্রিটিং মেসেজ"
+              value={aiSettings.greeting?.custom_text || ""}
+              onChange={(e) => setAISettings({ ...aiSettings, greeting: { ...aiSettings.greeting!, custom_text: e.target.value } })}
+              placeholder="যেমন: স্বাগতম! কীভাবে সাহায্য করতে পারি?"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">ক্লোজিং মেসেজ <span className="text-gray-400 font-normal">(অর্ডার নিশ্চিত হলে)</span></label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <div
+                  onClick={() => setAISettings({ ...aiSettings, closing: { ...aiSettings.closing!, enabled: !aiSettings.closing?.enabled } })}
+                  className={`relative w-10 h-6 rounded-full transition-colors ${aiSettings.closing?.enabled ? "bg-blue-600" : "bg-gray-300"}`}
+                >
+                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings.closing?.enabled ? "translate-x-4" : ""}`} />
+                </div>
+                <span className="text-xs text-gray-600">{aiSettings.closing?.enabled ? "চালু" : "বন্ধ"}</span>
+              </label>
+            </div>
+            <textarea
+              rows={2}
+              aria-label="ক্লোজিং মেসেজ"
+              value={aiSettings.closing?.custom_text || ""}
+              onChange={(e) => setAISettings({ ...aiSettings, closing: { ...aiSettings.closing!, custom_text: e.target.value } })}
+              placeholder="যেমন: কেনাকাটার জন্য ধন্যবাদ!"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">আপনার সোশ্যাল মিডিয়া লিংক (ব্যবসার তথ্য পেজে যোগ করা) স্বয়ংক্রিয়ভাবে এর নিচে যুক্ত হবে।</p>
+          </div>
         </div>
 
         <div>

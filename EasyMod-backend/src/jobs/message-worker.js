@@ -344,6 +344,31 @@ async function processMessageJob(job) {
         }
     }
 
+    // ── First-reply greeting (with Meta AI-disclosure) ──────────────────────
+    // On the FIRST AI reply of a conversation, prepend the shop's greeting. The
+    // greeting carries the static 🤖 disclosure, so the attribution block below
+    // sees the message as already-marked and won't append a duplicate suffix.
+    // Best-effort: any failure leaves the reply unchanged.
+    let repliedText = rawResponse;
+    try {
+        const greetingCfg = aiSettings.greeting;
+        if (rawResponse && greetingCfg && greetingCfg.enabled !== false) {
+            const priorAiCount = await Message.count({
+                where: { conversation_id: conversationId, sender: 'ai' },
+            });
+            if (priorAiCount === 0) {
+                const { buildGreeting } = require('../modules/shop/ai-messaging');
+                const Shop = require('../modules/shop/shop.entity');
+                const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
+                const shopName = shopRow?.settings?.businessInfo?.shopName || shopRow?.name || '';
+                const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: greetingCfg });
+                if (greetingText) repliedText = `${greetingText}\n\n${rawResponse}`;
+            }
+        }
+    } catch (greetErr) {
+        console.error(`[worker] greeting injection failed for conv ${conversationId}:`, greetErr.message);
+    }
+
     // ── Bot attribution (Meta Platform Policy 4.2) ──────────────────────────
     // Customers must be able to identify automated replies. Default-on; can be
     // disabled per-channel by setting `bot_attribution_suffix` to an empty string
@@ -352,10 +377,10 @@ async function processMessageJob(job) {
     // the customer received.
     const attributionEnabled = process.env.AI_BOT_ATTRIBUTION_ENABLED !== 'false';
     const attributionSuffix = process.env.AI_BOT_ATTRIBUTION_SUFFIX || ' 🤖';
-    const alreadyMarked = /🤖|\(ai\)|\bAI assistant\b/i.test(rawResponse || '');
-    const response = (attributionEnabled && rawResponse && !alreadyMarked)
-        ? `${rawResponse.trimEnd()}${attributionSuffix}`
-        : rawResponse;
+    const alreadyMarked = /🤖|\(ai\)|\bAI assistant\b/i.test(repliedText || '');
+    const response = (attributionEnabled && repliedText && !alreadyMarked)
+        ? `${repliedText.trimEnd()}${attributionSuffix}`
+        : repliedText;
 
     // ── Store AI response ───────────────────────────────────────────────────
     const aiStoreResult = await ConversationStateService.storeAIResponse(conversationId, response, {

@@ -9,6 +9,34 @@ const { AppError } = require('../../utils/AppError');
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const isValidPhone = (phone) => /^(?:\+?88)?01[3-9]\d{8}$/.test(phone);
 const isNonEmptyString = (val) => typeof val === 'string' && val.trim().length > 0;
+const isValidUrl = (val) => typeof val === 'string' && /^https?:\/\/\S+$/.test(val.trim());
+
+// Greeting / closing message block: { enabled?: boolean, custom_text?: string }.
+const MESSAGE_TEXT_MAX = 1000;
+const isValidMessageBlock = (val) => {
+  if (typeof val !== 'object' || val === null || Array.isArray(val)) return false;
+  if ('enabled' in val && typeof val.enabled !== 'boolean') return false;
+  if ('custom_text' in val) {
+    if (typeof val.custom_text !== 'string') return false;
+    if (val.custom_text.length > MESSAGE_TEXT_MAX) return false;
+  }
+  return true;
+};
+
+// Social links: only known platforms; each value empty OR an http(s) URL
+// (WhatsApp may also be a bare BD phone number).
+const SOCIAL_PLATFORMS = ['facebook', 'instagram', 'whatsapp', 'tiktok', 'youtube', 'website'];
+const isValidSocialLinks = (val) => {
+  if (typeof val !== 'object' || val === null || Array.isArray(val)) return false;
+  return Object.entries(val).every(([key, v]) => {
+    if (!SOCIAL_PLATFORMS.includes(key)) return false;
+    if (typeof v !== 'string') return false;
+    const trimmed = v.trim();
+    if (trimmed === '') return true; // empty is allowed (link not set)
+    if (key === 'whatsapp') return isValidUrl(trimmed) || isValidPhone(trimmed);
+    return isValidUrl(trimmed);
+  });
+};
 
 // AI Settings Schema
 const AI_SETTINGS_SCHEMA = {
@@ -32,7 +60,9 @@ const AI_SETTINGS_SCHEMA = {
       ['in_app', 'email', 'sms'].includes(val.notification_channel) &&
       typeof val.cooldown_minutes === 'number' && val.cooldown_minutes >= 0
     );
-  }
+  },
+  greeting: isValidMessageBlock,
+  closing: isValidMessageBlock
 };
 
 // BD Settings Schema
@@ -51,7 +81,8 @@ const BUSINESS_INFO_SCHEMA = {
   phone: (val) => typeof val === 'string',
   openingHours: (val) => typeof val === 'string',
   deliveryAreas: (val) => Array.isArray(val) && val.every(v => typeof v === 'string'),
-  paymentMethods: (val) => Array.isArray(val) && val.every(v => typeof v === 'string')
+  paymentMethods: (val) => Array.isArray(val) && val.every(v => typeof v === 'string'),
+  socialLinks: isValidSocialLinks
 };
 
 /**

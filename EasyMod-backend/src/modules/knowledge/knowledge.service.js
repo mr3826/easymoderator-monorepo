@@ -132,6 +132,8 @@ const updateBusinessInfo = async (userId, shopId, data) => {
         openingHours:   data.openingHours   !== undefined ? String(data.openingHours).trim()   : existing.openingHours   || '',
         deliveryAreas:  data.deliveryAreas  !== undefined ? normalizeArray(data.deliveryAreas)  : normalizeArray(existing.deliveryAreas),
         paymentMethods: data.paymentMethods !== undefined ? normalizeArray(data.paymentMethods) : normalizeArray(existing.paymentMethods),
+        // Social links surfaced in the order-confirmation closing (ai-messaging.renderSocialLinks).
+        socialLinks:    data.socialLinks    !== undefined ? normalizeObject(data.socialLinks)    : normalizeObject(existing.socialLinks),
     };
 
     const shopUpdates = { settings: { ...settings, businessInfo } };

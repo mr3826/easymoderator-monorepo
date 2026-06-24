@@ -479,6 +479,22 @@ describe('Knowledge API', () => {
             expect(saved.phone).toBe('01800');
         });
 
+        it('persists socialLinks into settings.businessInfo and preserves existing fields', async () => {
+            const knowledgeService = require('src/modules/knowledge/knowledge.service');
+            const { Shop, UserShop } = require('src/modules/entities');
+
+            UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+            Shop.findByPk.mockResolvedValue(mockShop);
+
+            await knowledgeService.updateBusinessInfo('user-1', 'shop-1', {
+                socialLinks: { facebook: 'https://fb.com/rina', whatsapp: '01711111111' },
+            });
+
+            const saved = mockShop.update.mock.calls[0][0].settings.businessInfo;
+            expect(saved.socialLinks).toEqual({ facebook: 'https://fb.com/rina', whatsapp: '01711111111' });
+            expect(saved.shopName).toBe('Existing Shop'); // untouched
+        });
+
         it('skips RAG ingest when business text has not changed (hash guard)', async () => {
             const ragService = require('src/modules/rag/rag.service');
             const knowledgeService = require('src/modules/knowledge/knowledge.service');

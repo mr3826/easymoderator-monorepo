@@ -250,6 +250,60 @@ describe('Shop Settings Validator', () => {
     });
   });
 
+  describe('validateAISettings — greeting & closing', () => {
+    it('accepts a valid greeting block', () => {
+      expect(() => validateAISettings({ greeting: { enabled: true, custom_text: 'Welcome!' } })).not.toThrow();
+    });
+
+    it('accepts a valid closing block (disabled, blank text)', () => {
+      expect(() => validateAISettings({ closing: { enabled: false, custom_text: '' } })).not.toThrow();
+    });
+
+    it('accepts a partial greeting (enabled only)', () => {
+      expect(() => validateAISettings({ greeting: { enabled: true } })).not.toThrow();
+    });
+
+    it('rejects a non-boolean greeting.enabled', () => {
+      expect(() => validateAISettings({ greeting: { enabled: 'yes' } })).toThrow(AppError);
+    });
+
+    it('rejects a non-string closing.custom_text', () => {
+      expect(() => validateAISettings({ closing: { custom_text: 123 } })).toThrow(AppError);
+    });
+
+    it('rejects greeting.custom_text over the length cap', () => {
+      expect(() => validateAISettings({ greeting: { custom_text: 'x'.repeat(1001) } })).toThrow(AppError);
+    });
+
+    it('rejects a non-object greeting', () => {
+      expect(() => validateAISettings({ greeting: 'hi' })).toThrow(AppError);
+    });
+  });
+
+  describe('validateBusinessInfo — socialLinks', () => {
+    it('accepts empty + valid links', () => {
+      expect(() => validateBusinessInfo({
+        socialLinks: { facebook: 'https://fb.com/x', instagram: '', whatsapp: '01711111111' },
+      })).not.toThrow();
+    });
+
+    it('accepts a wa.me WhatsApp link', () => {
+      expect(() => validateBusinessInfo({ socialLinks: { whatsapp: 'https://wa.me/8801711111111' } })).not.toThrow();
+    });
+
+    it('rejects a non-URL facebook value', () => {
+      expect(() => validateBusinessInfo({ socialLinks: { facebook: 'not a url' } })).toThrow(AppError);
+    });
+
+    it('rejects an unknown platform key', () => {
+      expect(() => validateBusinessInfo({ socialLinks: { snapchat: 'https://x.example' } })).toThrow(AppError);
+    });
+
+    it('rejects a non-object socialLinks', () => {
+      expect(() => validateBusinessInfo({ socialLinks: 'https://fb.com' })).toThrow(AppError);
+    });
+  });
+
   describe('validateSettings', () => {
     it('validates empty settings object', () => {
       expect(() => validateSettings({})).not.toThrow();
@@ -432,6 +486,20 @@ describe('Shop Settings Validator', () => {
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas(['Dhaka', 'Chittagong'])).toBe(true);
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas(['Dhaka', 123])).toBe(false);
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas('not array')).toBe(false);
+    });
+
+    it('AI_SETTINGS_SCHEMA validates greeting/closing blocks', () => {
+      expect(AI_SETTINGS_SCHEMA.greeting({ enabled: true, custom_text: 'hi' })).toBe(true);
+      expect(AI_SETTINGS_SCHEMA.greeting({ enabled: 'x' })).toBe(false);
+      expect(AI_SETTINGS_SCHEMA.closing({ custom_text: 'bye' })).toBe(true);
+      expect(AI_SETTINGS_SCHEMA.closing({ custom_text: 5 })).toBe(false);
+    });
+
+    it('BUSINESS_INFO_SCHEMA validates socialLinks', () => {
+      expect(BUSINESS_INFO_SCHEMA.socialLinks({ facebook: 'https://fb.com/x' })).toBe(true);
+      expect(BUSINESS_INFO_SCHEMA.socialLinks({ facebook: 'bad' })).toBe(false);
+      expect(BUSINESS_INFO_SCHEMA.socialLinks({ whatsapp: '01711111111' })).toBe(true);
+      expect(BUSINESS_INFO_SCHEMA.socialLinks({ snapchat: 'https://x.example' })).toBe(false);
     });
   });
 });

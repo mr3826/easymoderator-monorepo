@@ -26,6 +26,20 @@ const DEFAULT_AI_SETTINGS = {
     // BD market: warm, informal Banglish persona by default
     tone_persona: 'friendly_bd',        // 'formal' | 'friendly_bd' | 'shop_assistant'
 
+    // Greeting auto-sent on the FIRST AI reply of a conversation. The fixed Meta
+    // AI-disclosure line is prepended in code (see ai-messaging.buildGreeting);
+    // custom_text is the owner-editable welcome that follows it.
+    greeting: {
+        enabled: true,
+        custom_text: 'আসসালামু আলাইকুম! 👋 কীভাবে সাহায্য করতে পারি?',
+    },
+    // Closing appended to the order-confirmation message. The shop's social links
+    // (settings.businessInfo.socialLinks), if any, are rendered after this text.
+    closing: {
+        enabled: true,
+        custom_text: 'আমাদের সাথে কেনাকাটা করার জন্য ধন্যবাদ! 🛍️',
+    },
+
     // COD-only by default. bKash/Nagad must NOT be advertised until the owner
     // actually connects a method (self-MFS number under settings.bd), otherwise
     // the AI offers payment rails the shop can't accept. The live operating
