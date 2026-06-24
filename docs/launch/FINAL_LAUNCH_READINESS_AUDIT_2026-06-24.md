@@ -1,9 +1,16 @@
 # Easy Moderator — Final Launch-Readiness Audit
 
+> **⚠️ SUPERSEDED (2026-06-24, later same day):** This document predates the **bKash subscription
+> billing system** (PR #47, `e004f73`). The authoritative whole-company audit is now
+> **`docs/launch/CLEVEL_FINAL_AUDIT_2026-06-24.md`** (C-level board review: CTO/CISO/CFO/CEO/COO).
+> The billing paragraph in §5 below was corrected in place; everything else here remains accurate
+> for the IG-removal / frontend / channel-scope topics it covers.
+
 **Date:** 2026-06-24
 **Author:** Engineering (Claude Code)
 **Scope:** Whole-product readiness for the initial **Facebook-only** public launch.
-**Production HEAD:** `main` @ `1f9416d` — deployed to the DigitalOcean droplet, `/health/ready` = `200`.
+**Production HEAD:** `main` @ `e004f73` (was `1f9416d` at time of writing) — deployed to the
+DigitalOcean droplet, `/health/ready` = `200`.
 
 This is the consolidated final audit. It supersedes and references the deeper, single-topic
 audit `docs/instagram-removal-and-launch-readiness-audit-2026-06-24.md` (Instagram removal
@@ -103,9 +110,14 @@ No other components were found to clip, overflow, or break layout at 360px.
 - **Meta compliance:** HMAC-verified webhooks (timing-safe), Business-Login OAuth with
   AES-256-encrypted page tokens at rest, GDPR data-deletion + deauthorize callbacks, consent +
   24-hour-window policy engine. Reviewer docs in `.easymod/meta-app-review/`.
-- **Billing:** single **Growth** ৳999/mo (300+50 conversations) behind a card-less 14-day trial,
-  plus **Partner** per-delivered-order tiers; bKash-only top-ups. Limits enforced by
-  `conversation-limit.middleware.js`.
+- **Billing (updated by PR #47):** single **Growth** ৳999/mo all-in (VAT rate 0; 300 + 50-grace
+  conversations) behind a card-less 14-day trial, plus **Partner** per-delivered-order tiers;
+  bKash one-time-checkout renewals + bKash top-ups. **Conversations are the sole charge and are
+  now metered at the live FB webhook chokepoint** (`meta-webhook-events.handler.js` →
+  `trackUsage`, idempotent per 24h window; top-up balance drawn down before overage). It is a
+  **soft meter**, not a hard block — the dead `conversation-limit.middleware.js` is DEPRECATED.
+  Unpaid renewal invoices have a **3-day due window**, after which the failed-payment reconciler
+  suspends the subscription and the AI pauses (manual inbox unaffected); paying reactivates.
 - **Shared Inbox attachments (PR #44):** outbound images/files persist on the `backend_uploads`
   Docker volume and are served over HTTPS for Meta Messenger. Pre-launch volume/round-trip
   check is **Gate 9** in `LAUNCH_GATE_CHECKLIST.md`.
