@@ -2,7 +2,7 @@
 
 const { Op, fn, col, where: sequelizeWhere } = require('sequelize');
 const {
-  Shop, Subscription, Message, Order, MetaChannel, AuditLog, User,
+  Shop, Subscription, Message, Order, MetaChannel, AuditLog, User, Invoice,
 } = require('../entities');
 const cacheService = require('../../utils/cache.service');
 const subscriptionService = require('../subscription/subscription.service');
@@ -192,15 +192,46 @@ async function getShopChannels(shopId) {
 async function getShopBilling(shopId) {
   const sub = await Subscription.findOne({ where: { shop_id: shopId } });
   if (!sub) throw new AppError('Subscription not found', 404);
+
+  // Recent invoices + a count of what is still owed, so support can see the exact
+  // billing state that gates the AI (suspended = unpaid recurring invoice past due).
+  const invoices = await Invoice.findAll({
+    where: { shop_id: shopId },
+    order: [['created_at', 'DESC']],
+    limit: 12,
+  });
+  const outstanding = invoices
+    .filter((i) => i.status === 'pending' || i.status === 'overdue')
+    .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+
   return {
     planName: sub.plan_name,
     planCode: sub.plan_code,
+    billingCycle: sub.billing_cycle,
+    billingModel: sub.billing_model,
     status: sub.status,
     trialStart: sub.current_period_start,
     trialEndsAt: sub.trial_ends_at,
+    currentPeriodEnd: sub.current_period_end,
+    nextBillingDate: sub.next_billing_date,
     conversationsLimit: sub.conversations_limit,
     conversationsUsed: sub.conversations_used,
     topupBalance: sub.topup_balance,
+    // Accrued, not-yet-invoiced overage (cleared when the monthly invoice is cut).
+    extraConversations: sub.extra_conversations || 0,
+    extraCharge: parseFloat(sub.extra_charge || 0),
+    outstandingAmount: outstanding,
+    invoices: invoices.map((i) => ({
+      id: i.id,
+      invoiceNumber: i.invoice_number,
+      type: i.invoice_type,
+      amount: parseFloat(i.amount || 0),
+      status: i.status,
+      billingPeriod: i.billing_period,
+      dueDate: i.due_date,
+      paidAt: i.paid_at,
+      createdAt: i.created_at,
+    })),
     estimatedAiCost: null, // Phase 2
   };
 }

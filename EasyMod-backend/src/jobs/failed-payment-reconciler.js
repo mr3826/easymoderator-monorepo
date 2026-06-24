@@ -3,6 +3,7 @@ const { Invoice, Subscription, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
 const emailService = require('../utils/email.service');
+const cacheService = require('../utils/cache.service');
 
 /**
  * Failed Payment Reconciler Job
@@ -13,21 +14,28 @@ const emailService = require('../utils/email.service');
  * IDEMPOTENT: Running multiple times for same date processes same invoices
  * RE-RUNNABLE: Can be re-run for historical dates
  * 
- * Actions:
- * - Mark subscriptions as 'past_due' if invoice is 7+ days overdue
- * - Mark subscriptions as 'suspended' if invoice is 30+ days overdue
- * - Send reminder notifications (TODO: integrate with email service)
+ * Billing policy (founder spec): a recurring subscription invoice is issued on
+ * the renewal date with a 3-day "due threshold" (due_date = issue + 3 days).
+ * Once that window passes unpaid, the AI assistant must stop. So:
+ * - Recurring invoice (monthly_subscription / partner_per_order) past due
+ *     → suspend the subscription (isAiActive=false → AI auto-pauses; the manual
+ *       inbox stays usable). Paying the invoice reactivates it.
+ * - Optional one-off invoices (add-on packs, proration) NEVER suspend AI — they
+ *   are discretionary purchases; we only send a reminder.
  * 
  * Usage:
  *   const job = new FailedPaymentReconciler();
  *   await job.execute({ dryRun: true });
  *   await job.execute({ dryRun: false });
  */
+const RECURRING_INVOICE_TYPES = ['monthly_subscription', 'partner_per_order'];
+
 class FailedPaymentReconciler extends BaseJob {
     constructor() {
         super('failed_payment_reconciler');
-        this.PAST_DUE_DAYS = 7;
-        this.SUSPENSION_DAYS = 30;
+        // The 3-day grace is encoded in the invoice due_date (issue + 3 days);
+        // once a recurring invoice is past due at all, AI is paused.
+        this.GRACE_DAYS = 3;
     }
 
     /**
@@ -40,8 +48,8 @@ class FailedPaymentReconciler extends BaseJob {
         const results = {
             invoicesProcessed: 0,
             invoicesOverdue: 0,
-            subscriptionsPastDue: 0,
             subscriptionsSuspended: 0,
+            remindersSent: 0,
             details: []
         };
 
@@ -53,6 +61,7 @@ class FailedPaymentReconciler extends BaseJob {
         for (const invoice of overdueInvoices) {
             try {
                 const daysOverdue = this.calculateDaysOverdue(invoice.due_date, runDate);
+                const isRecurring = RECURRING_INVOICE_TYPES.includes(invoice.invoice_type);
 
                 const action = {
                     invoiceId: invoice.id,
@@ -62,30 +71,29 @@ class FailedPaymentReconciler extends BaseJob {
                     amount: invoice.amount,
                     dueDate: invoice.due_date,
                     daysOverdue,
+                    invoiceType: invoice.invoice_type,
                     action: 'none'
                 };
 
-                // Determine action based on days overdue
-                if (daysOverdue >= this.SUSPENSION_DAYS) {
-                    // Suspend subscription
+                // The 3-day due window has already passed (due_date < runDate). For a
+                // recurring renewal invoice that means the AI must stop now: suspend the
+                // subscription (isAiActive → false). Paying the invoice reactivates it.
+                // One-off / discretionary invoices (add-on packs, proration) never gate AI —
+                // they only get a payment reminder.
+                if (isRecurring) {
                     if (!dryRun) {
                         await this.suspendSubscription(invoice.subscription);
                     }
                     action.action = 'suspended';
                     results.subscriptionsSuspended++;
-
-                } else if (daysOverdue >= this.PAST_DUE_DAYS) {
-                    // Mark as past due
-                    if (!dryRun) {
-                        await this.markPastDue(invoice.subscription);
-                    }
-                    action.action = 'past_due';
-                    results.subscriptionsPastDue++;
+                } else {
+                    action.action = 'reminder';
                 }
 
-                // Send billing failure reminder via Nodemailer (email.service.js)
-                if (!dryRun && action.action !== 'none') {
+                // Send the dunning / reminder email (Nodemailer via email.service.js)
+                if (!dryRun) {
                     await this.sendReminderNotification(invoice, action.action);
+                    results.remindersSent++;
                 }
 
                 results.invoicesOverdue++;
@@ -111,8 +119,10 @@ class FailedPaymentReconciler extends BaseJob {
     async getOverdueInvoices(runDate) {
         const invoices = await Invoice.findAll({
             where: {
+                // Invoice.status ENUM is ('pending','paid','cancelled','overdue') —
+                // only unpaid, non-cancelled invoices are dunned.
                 status: {
-                    [Op.in]: ['pending', 'failed']
+                    [Op.in]: ['pending', 'overdue']
                 },
                 due_date: {
                     [Op.lt]: runDate
@@ -148,26 +158,6 @@ class FailedPaymentReconciler extends BaseJob {
     }
 
     /**
-     * Mark subscription as past due
-     * @param {Object} subscription 
-     */
-    async markPastDue(subscription) {
-        if (subscription.status === 'past_due') {
-            return; // Already marked
-        }
-
-        await subscription.update({
-            status: 'past_due',
-            updated_at: new Date()
-        });
-
-        this.logger.info(`Marked subscription as past_due`, {
-            subscriptionId: subscription.id,
-            shopId: subscription.shop_id
-        });
-    }
-
-    /**
      * Suspend subscription
      * @param {Object} subscription 
      */
@@ -180,6 +170,11 @@ class FailedPaymentReconciler extends BaseJob {
             status: 'suspended',
             updated_at: new Date()
         });
+
+        // Bust cached subscription/limits so the suspended status is reflected
+        // immediately (the AI worker reads status straight from the DB, but the
+        // FE billing view + trackUsage limit math read through this cache).
+        await cacheService.clearForShop(subscription.shop_id).catch(() => {});
 
         this.logger.info(`Suspended subscription`, {
             subscriptionId: subscription.id,
@@ -218,8 +213,8 @@ class FailedPaymentReconciler extends BaseJob {
             ? 'Your subscription has been <strong>suspended</strong> due to non-payment.'
             : 'This is a reminder that your invoice is overdue.';
         const footerNote = isSuspended
-            ? 'If you believe this is an error, please contact support immediately.'
-            : 'Subscriptions unpaid for 30 days will be suspended.';
+            ? 'Pay this invoice to immediately restore your AI assistant. Your inbox and data are unaffected.'
+            : 'Please clear this balance to keep your add-on conversations available.';
 
         const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${subject}</title></head>

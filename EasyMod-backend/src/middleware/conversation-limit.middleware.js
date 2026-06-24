@@ -3,6 +3,16 @@
 /**
  * Conversation Limit Middleware
  *
+ * ⚠️ DEPRECATED / NOT WIRED — do not attach this to any route.
+ * Live conversation billing is metered in `meta-webhook-events.handler.js`, which
+ * calls `subscriptionService.trackUsage(shopId, 'conversations', 1, 'conv:<id>')`
+ * exactly once per new conversation (idempotent on the conversation id). trackUsage
+ * also draws down `topup_balance` before accruing billable overage. Wiring this
+ * middleware in addition would DOUBLE-COUNT (and `recordConversation` below has an
+ * unconditional increment after its `ON CONFLICT DO NOTHING` upsert). It is retained
+ * only as the historical reference for the `conversation_usage` unique key (asserted
+ * by schema-drift-sweep.migration.test.js). Counting belongs at the webhook chokepoint.
+ *
  * Enforces subscription-based conversation limits across all channels.
  * Logic:
  *   effective_limit = conversations_limit + topup_balance + threshold_conversations

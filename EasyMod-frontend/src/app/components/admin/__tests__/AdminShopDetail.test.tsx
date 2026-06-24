@@ -77,7 +77,7 @@ describe('AdminShopDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Billing' }));
     expect(await screen.findByRole('button', { name: 'Extend trial 7d' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add 50 credits' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Suspend' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Suspend/ })).toBeDisabled();
     expect(screen.getByText('SUPER_ADMIN required for billing actions.')).toBeInTheDocument();
   });
 

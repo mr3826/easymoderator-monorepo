@@ -207,6 +207,14 @@ export const apiClient = {
   getSubscriptionInvoices: subscriptionDomain.getInvoices,
   purchaseConversationPack: subscriptionDomain.purchaseConversationPack,
 
+  // bKash invoice payment + integrated top-up
+  payInvoice: subscriptionDomain.payInvoice,
+  renewSubscription: subscriptionDomain.renewSubscription,
+  completeInvoicePayment: subscriptionDomain.completeInvoicePayment,
+  getTopupPacks: subscriptionDomain.getTopupPacks,
+  initiateTopup: subscriptionDomain.initiateTopup,
+  completeTopup: subscriptionDomain.completeTopup,
+
   // Audit methods
   getAuditLogs: auditDomain.getAuditLogs,
   getResourceAuditLogs: auditDomain.getResourceAuditLogs,

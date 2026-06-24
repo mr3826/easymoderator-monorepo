@@ -225,8 +225,10 @@ class InvoiceGenerator extends BaseJob {
         // Calculate subtotal
         invoiceData.subtotal = invoiceData.baseAmount + invoiceData.extraCharges + invoiceData.partnerCharge;
 
-        // Bangladesh VAT on digital services: 15% (NBR regulation)
-        const BD_VAT_RATE = 0.15;
+        // Pricing is VAT-inclusive / all-in (founder decision): the advertised ৳999
+        // plan invoices at exactly ৳999, no VAT line added on top. Kept as a named
+        // rate so VAT can be re-enabled centrally if NBR registration requires it.
+        const BD_VAT_RATE = 0;
         invoiceData.tax = Math.round(invoiceData.subtotal * BD_VAT_RATE);
         invoiceData.vatRate = BD_VAT_RATE;
 
@@ -259,7 +261,9 @@ class InvoiceGenerator extends BaseJob {
             status: 'pending',
             billing_period_start: invoiceData.billingPeriodStart,
             billing_period_end: invoiceData.billingPeriodEnd,
-            due_date: new Date(runDate.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+            // 3-day due threshold (founder spec): once this window lapses unpaid, the
+            // failed-payment reconciler suspends the subscription and the AI stops.
+            due_date: new Date(runDate.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
             metadata: {
                 planName: invoiceData.planName,
                 billingCycle: invoiceData.billingCycle,

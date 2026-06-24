@@ -347,17 +347,30 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         // Step 6: Increment subscription counter (ATOMIC inside transaction)
         let extraCharge = parseFloat(subscription.extra_charge || 0);
         let extraConversations = subscription.extra_conversations || 0;
+        let topupBalance = subscription.topup_balance || 0;
 
-        // Calculate extra usage charge if exceeded limit
+        // Conversations are soft-metered: never hard-blocked here (AI availability
+        // is governed by billing status, not the quota). Once the plan quota is
+        // used up, draw down any purchased top-up credit first; only accrue
+        // billable overage (charged on the next invoice) once top-up is exhausted.
+        // The drawn-down top-up balance carries over; extra_charge /
+        // extra_conversations accumulate until the invoice-generator resets them.
         if (usageType === 'conversations' && isLimitExceeded(newUsage, limit)) {
-            const extraAmount = newUsage - limit;
-            const perConversationCharge = 2.5;
-            extraCharge = extraAmount * perConversationCharge;
-            extraConversations = extraAmount;
+            // Portion of THIS increment that falls beyond the plan quota.
+            const beyondPlan = subscription[field] >= limit ? amount : (newUsage - limit);
+            const fromTopup = Math.min(topupBalance, beyondPlan);
+            topupBalance -= fromTopup;
+            const billableOverage = beyondPlan - fromTopup;
+            if (billableOverage > 0) {
+                const perConversationCharge = 2.5;
+                extraConversations += billableOverage;
+                extraCharge += billableOverage * perConversationCharge;
+            }
         }
 
         await subscription.update({
             [field]: newUsage,
+            topup_balance: topupBalance,
             extra_conversations: extraConversations,
             extra_charge: extraCharge
         }, { transaction });
@@ -725,6 +738,128 @@ const grantBonusConversations = async (shopId, amount, reason = 'bonus') => {
     return { granted, amount };
 };
 
+// Pricing is all-in / VAT-inclusive (founder decision): a ৳999 plan is billed at
+// exactly ৳999. Kept in sync with invoice-generator.js so the on-demand renewal
+// invoice matches the monthly cron's amount. Bump centrally if NBR VAT is required.
+const BD_VAT_RATE = 0;
+
+/**
+ * Activate (or reactivate) a subscription once a recurring invoice is paid.
+ *
+ * Flips a non-active subscription (suspended / past_due / trial_expired / inactive)
+ * back to `active` so the AI assistant resumes (see subscription.access.isAiActive)
+ * and anchors a fresh access window from the payment date (used for display +
+ * proration; the calendar-month cron is what actually triggers the next invoice).
+ * Safe to call on an already-active subscription — it simply refreshes the window.
+ *
+ * @param {Object} subscription - Subscription Sequelize instance
+ * @returns {Promise<Object>} the updated subscription
+ */
+const activateFromPaidInvoice = async (subscription) => {
+    const now = new Date();
+    const nextPeriod = new Date(now);
+    if (subscription.billing_cycle === 'yearly') {
+        nextPeriod.setFullYear(nextPeriod.getFullYear() + 1);
+    } else {
+        nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+    }
+
+    await subscription.update({
+        status: 'active',
+        current_period_start: now,
+        current_period_end: nextPeriod,
+        next_billing_date: nextPeriod
+    });
+
+    await cacheService.clearForShop(subscription.shop_id);
+
+    const logger = createLogger('subscription-activate', subscription.shop_id);
+    logger.info('Subscription activated after invoice payment', {
+        subscriptionId: subscription.id,
+        nextBillingDate: nextPeriod
+    });
+
+    return subscription;
+};
+
+/**
+ * Ensure the shop has an open (payable) monthly subscription invoice it can settle
+ * to (re)activate the AI. Returns an existing open `monthly_subscription` invoice if
+ * one is outstanding (never stacks duplicates), otherwise creates a fresh one priced
+ * at the plan fee + 15% VAT (identical to the monthly invoice-generator).
+ *
+ * This is the activation path for a trialing / trial_expired / suspended owner: the
+ * invoice-generator only bills `status='active'` subscriptions, so a lapsed shop would
+ * otherwise never get an invoice to pay. The "Pay / Renew with bKash" action calls this.
+ *
+ * @param {string} shopId
+ * @param {string} userId
+ * @returns {Promise<Object>} the open or newly-created Invoice instance
+ */
+const ensureRenewalInvoice = async (shopId, userId) => {
+    await verifyShopAccess(userId, shopId);
+
+    let subscription = await Subscription.findOne({ where: { shop_id: shopId } });
+    if (!subscription) {
+        subscription = await createDefaultSubscription(shopId);
+    }
+
+    // Per-order Partner shops are billed from delivered orders, not a flat renewal.
+    if (subscription.billing_model === 'per_order') {
+        throw new AppError('Partner (per-order) plans are billed per delivered order, not by renewal', 400);
+    }
+
+    // Reuse any already-open monthly invoice so the owner pays it instead of stacking a new one.
+    const existing = await Invoice.findOne({
+        where: {
+            subscription_id: subscription.id,
+            invoice_type: 'monthly_subscription',
+            status: { [Op.in]: ['pending', 'overdue'] }
+        },
+        order: [['created_at', 'DESC']]
+    });
+    if (existing) return existing;
+
+    const baseAmount = parseFloat(subscription.plan_price || 0);
+    if (!(baseAmount > 0)) {
+        throw new AppError('This plan has no payable subscription fee', 400);
+    }
+
+    const now = new Date();
+    const periodEnd = new Date(now);
+    if (subscription.billing_cycle === 'yearly') {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    } else {
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+
+    const tax = Math.round(baseAmount * BD_VAT_RATE);
+    const totalAmount = baseAmount + tax;
+
+    const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
+    const invoiceNumber = `INV-${yearMonth}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    const invoice = await Invoice.create({
+        subscription_id: subscription.id,
+        shop_id: shopId,
+        invoice_number: invoiceNumber,
+        invoice_type: 'monthly_subscription',
+        amount: totalAmount,
+        base_amount: baseAmount,
+        extra_usage_amount: 0,
+        addon_amount: 0,
+        billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
+        billing_period_start: now,
+        billing_period_end: periodEnd,
+        status: 'pending',
+        // 3-day due threshold — matches the recurring invoice-generator + reconciler.
+        due_date: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
+        notes: 'Subscription activation / renewal'
+    });
+
+    return invoice;
+};
+
 /**
  * PARTNER PLAN: Charge per delivered order.
  *
@@ -791,5 +926,7 @@ module.exports = {
     checkRateLimit,
     incrementRateLimit,
     deliverConversationPackCredit,
-    grantBonusConversations
+    grantBonusConversations,
+    activateFromPaidInvoice,
+    ensureRenewalInvoice
 };

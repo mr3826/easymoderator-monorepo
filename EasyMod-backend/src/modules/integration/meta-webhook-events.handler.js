@@ -289,6 +289,7 @@ async function storeIncomingMessage(event) {
         const { Op } = require('sequelize');
         const channelType = platform === 'facebook' ? 'messenger' : platform;
         let customerForEnrichment = null;
+        let isNewConversation = false;
 
         const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
         if (externalId) {
@@ -356,6 +357,8 @@ async function storeIncomingMessage(event) {
                     message: message,
                     metadata: { source: 'webhook', platform }
                 }, { transaction: t });
+                // Opening a fresh 24h conversation window = one billable conversation.
+                isNewConversation = true;
             }
 
             const attachments = event.attachments || [];
@@ -390,6 +393,31 @@ async function storeIncomingMessage(event) {
                 shop_id
             };
         });
+
+        // Meter the conversation against the shop's plan the first time a 24h
+        // window opens for this customer. This is the ONLY usage signal billing
+        // relies on, so it runs after the storage transaction commits (so a
+        // metering hiccup can never lose the message), is idempotent on the
+        // conversation id, and is strictly non-fatal — it must never block
+        // ingestion or the AI reply.
+        if (isNewConversation && storedMessage?.conversation_id) {
+            try {
+                const subscriptionService = require('../subscription/subscription.service');
+                await subscriptionService.trackUsage(
+                    shop_id,
+                    'conversations',
+                    1,
+                    `conv:${storedMessage.conversation_id}`,
+                    { resourceId: storedMessage.conversation_id, channel: channelType }
+                );
+            } catch (usageErr) {
+                logger.warn('Conversation usage metering failed (non-fatal)', {
+                    shopId: shop_id,
+                    conversationId: storedMessage.conversation_id,
+                    error: usageErr.message,
+                });
+            }
+        }
 
         triggerCustomerProfileEnrichment({
             customer: customerForEnrichment,

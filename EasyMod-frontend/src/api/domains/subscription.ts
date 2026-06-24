@@ -224,3 +224,105 @@ export async function purchaseConversationPack(payload: {
   return response.data;
 }
 
+// ── bKash invoice payment (monthly renewal / activation) ────────────────────
+
+export interface BkashCheckout {
+  bkash_url: string;
+  payment_id: string;
+  invoice_id: string;
+  invoice_number?: string;
+  amount?: number;
+}
+
+/**
+ * Start a bKash checkout for a specific outstanding invoice.
+ * Redirect the browser to the returned `bkash_url`; bKash returns to `callbackUrl`
+ * with `paymentID` + `status`, which you settle via {@link completeInvoicePayment}.
+ */
+export async function payInvoice(
+  invoiceId: string,
+  callbackUrl: string,
+  extra?: { phone?: string; name?: string }
+): Promise<BkashCheckout> {
+  const response: AxiosResponse<ApiResponse<BkashCheckout>> = await httpClient.post(
+    `/api/subscription/invoices/${invoiceId}/pay`,
+    { callback_url: callbackUrl, ...extra }
+  );
+  return response.data.data;
+}
+
+/**
+ * Ensure a monthly renewal invoice exists and start a bKash checkout for it.
+ * Used by the "Activate / Renew with bKash" CTA for trial/lapsed shops.
+ */
+export async function renewSubscription(
+  callbackUrl: string,
+  extra?: { phone?: string; name?: string }
+): Promise<BkashCheckout> {
+  const response: AxiosResponse<ApiResponse<BkashCheckout>> = await httpClient.post(
+    '/api/subscription/renew',
+    { callback_url: callbackUrl, ...extra }
+  );
+  return response.data.data;
+}
+
+/**
+ * Verify a returned bKash payment and settle the invoice (reactivating the AI when
+ * the invoice is a monthly/partner renewal).
+ */
+export async function completeInvoicePayment(
+  invoiceId: string,
+  paymentId: string
+): Promise<{ success: boolean; invoice_id: string; status: string; subscription_status?: string | null }> {
+  const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
+    '/api/subscription/invoices/pay/complete',
+    { invoice_id: invoiceId, payment_id: paymentId }
+  );
+  return response.data.data;
+}
+
+// ── Conversation top-up (integrated bKash) ──────────────────────────────────
+
+export interface TopupPack {
+  code: string;
+  conversations: number;
+  priceBdt: number;
+}
+
+export async function getTopupPacks(): Promise<TopupPack[]> {
+  const response: AxiosResponse<ApiResponse<TopupPack[]>> = await httpClient.get(
+    '/api/subscription/topup/packs'
+  );
+  return response.data.data;
+}
+
+/**
+ * Start a bKash checkout for a conversation top-up pack.
+ * Redirect to the returned `bkash_url`; settle the return via {@link completeTopup}.
+ */
+export async function initiateTopup(
+  packCode: string,
+  callbackUrl: string,
+  extra?: { phone?: string; name?: string }
+): Promise<{ topup_id: string; bkash_url: string; payment_id: string; invoice_number?: string }> {
+  const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
+    '/api/subscription/topup/initiate',
+    { pack_code: packCode, callback_url: callbackUrl, ...extra }
+  );
+  return response.data.data;
+}
+
+/**
+ * Verify a returned bKash top-up payment and credit conversations to the balance.
+ */
+export async function completeTopup(
+  topupId: string,
+  paymentId: string
+): Promise<{ success: boolean; conversations_added?: number; invoice_url?: string }> {
+  const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
+    '/api/subscription/topup/complete',
+    { topup_id: topupId, payment_id: paymentId }
+  );
+  return response.data.data;
+}
+

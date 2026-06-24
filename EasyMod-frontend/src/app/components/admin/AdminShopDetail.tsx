@@ -114,17 +114,50 @@ export default function AdminShopDetail() {
       )}
 
       {tab === 'Billing' && billing && (
-        <div className="space-y-3 text-sm">
-          <div>
-            Plan: <b>{billing.planName}</b> · Status: {billing.status} · Used {billing.conversationsUsed}/{billing.conversationsLimit} · Top-up {billing.topupBalance}
-          </div>
+        <div className="space-y-4 text-sm">
+          {/* Summary grid */}
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
+            <div><dt className="text-gray-500">Plan</dt><dd><b>{billing.planName}</b> ({billing.billingCycle || '—'})</dd></div>
+            <div><dt className="text-gray-500">Status</dt><dd className={billing.status === 'suspended' || billing.status === 'trial_expired' ? 'text-red-700 font-medium' : ''}>{billing.status}</dd></div>
+            <div><dt className="text-gray-500">Conversations</dt><dd>{billing.conversationsUsed ?? '—'}/{billing.conversationsLimit ?? '—'}</dd></div>
+            <div><dt className="text-gray-500">Top-up balance</dt><dd>{billing.topupBalance ?? 0}</dd></div>
+            <div><dt className="text-gray-500">Next billing</dt><dd>{billing.nextBillingDate ? new Date(billing.nextBillingDate).toLocaleDateString() : '—'}</dd></div>
+            <div><dt className="text-gray-500">Trial ends</dt><dd>{billing.trialEndsAt ? new Date(billing.trialEndsAt).toLocaleDateString() : '—'}</dd></div>
+            <div><dt className="text-gray-500">Accrued overage</dt><dd>{billing.extraConversations ?? 0} conv · ৳{(billing.extraCharge ?? 0).toLocaleString()}</dd></div>
+            <div><dt className="text-gray-500">Outstanding</dt><dd className={billing.outstandingAmount > 0 ? 'text-amber-700 font-medium' : ''}>৳{(billing.outstandingAmount ?? 0).toLocaleString()}</dd></div>
+          </dl>
+
           {!canMutate && <p className="text-xs text-gray-500">SUPER_ADMIN required for billing actions.</p>}
           <div className="flex flex-wrap gap-2">
             <button disabled={!canMutate} onClick={() => act(() => adminApi.extendTrial(shopId, 7), 'Extend trial 7d')} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Extend trial 7d</button>
             <button disabled={!canMutate} onClick={() => act(() => adminApi.addCredits(shopId, 50, 'admin_grant'), 'Add 50 credits')} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">Add 50 credits</button>
-            {billing.status === 'suspended'
-              ? <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'active'), 'Reactivate')} className="rounded border px-3 py-1.5 text-green-700 disabled:cursor-not-allowed disabled:opacity-45">Reactivate</button>
-              : <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'suspended'), 'Suspend')} className="rounded border px-3 py-1.5 text-red-700 disabled:cursor-not-allowed disabled:opacity-45">Suspend</button>}
+            {billing.status === 'suspended' || billing.status === 'trial_expired' || billing.status === 'past_due'
+              ? <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'active'), 'Reactivate')} className="rounded border px-3 py-1.5 text-green-700 disabled:cursor-not-allowed disabled:opacity-45">Reactivate (AI on)</button>
+              : <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'suspended'), 'Suspend')} className="rounded border px-3 py-1.5 text-red-700 disabled:cursor-not-allowed disabled:opacity-45">Suspend (AI off)</button>}
+          </div>
+
+          {/* Invoices */}
+          <div>
+            <h3 className="mb-1 font-medium text-gray-700">Invoices</h3>
+            {Array.isArray(billing.invoices) && billing.invoices.length > 0 ? (
+              <table className="w-full text-xs">
+                <thead><tr className="text-left text-gray-500">
+                  <th className="py-1">Invoice</th><th>Type</th><th>Amount</th><th>Status</th><th>Due</th><th>Paid</th>
+                </tr></thead>
+                <tbody>
+                  {billing.invoices.map((inv: any) => (
+                    <tr key={inv.id} className="border-t">
+                      <td className="py-1 font-mono">{inv.invoiceNumber}</td>
+                      <td>{inv.type}</td>
+                      <td>৳{(inv.amount ?? 0).toLocaleString()}</td>
+                      <td className={inv.status === 'paid' ? 'text-green-700' : inv.status === 'overdue' ? 'text-red-700' : 'text-amber-700'}>{inv.status}</td>
+                      <td>{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : '—'}</td>
+                      <td>{inv.paidAt ? new Date(inv.paidAt).toLocaleDateString() : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <p className="text-xs text-gray-400">No invoices yet.</p>}
           </div>
         </div>
       )}

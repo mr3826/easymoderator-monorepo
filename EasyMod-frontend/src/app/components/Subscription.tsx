@@ -114,23 +114,59 @@ export default function Subscription() {
     }
   }, [usage.conversations]);
 
-  // Load subscription data on mount; handle payment return from gateway
+  // Load subscription data on mount; settle any bKash payment we are returning from.
   useEffect(() => {
     loadSubscriptionData();
     loadInvoices();
-
-    const params = new URLSearchParams(window.location.search);
-    const paymentStatus = params.get('payment');
-    if (paymentStatus === 'success') {
-      setSuccess('Payment successful! Your conversation credits have been added.');
-      setTimeout(() => setSuccess(null), 8000);
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (paymentStatus === 'failed') {
-      setError('Payment was not completed. Please try again.');
-      setTimeout(() => setError(null), 8000);
-      window.history.replaceState({}, '', window.location.pathname);
-    }
+    handlePaymentReturn();
   }, []);
+
+  // bKash redirects back here with `paymentID` + `status`. We stashed what was being
+  // paid (invoice vs top-up + its id) in sessionStorage before redirecting, so we can
+  // verify + settle it server-side and refresh the page state.
+  const handlePaymentReturn = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentID = params.get('paymentID');
+    const status = params.get('status');
+    const ctxRaw = sessionStorage.getItem('easymod_pay_ctx');
+
+    if (!paymentID || !ctxRaw) return;
+    sessionStorage.removeItem('easymod_pay_ctx');
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (status && status !== 'success') {
+      setError('Payment was cancelled or not completed. Please try again.');
+      setTimeout(() => setError(null), 8000);
+      return;
+    }
+
+    try {
+      const ctx = JSON.parse(ctxRaw) as { kind: 'invoice' | 'topup'; ref: string };
+      if (ctx.kind === 'topup') {
+        const res = await apiClient.completeTopup(ctx.ref, paymentID);
+        setSuccess(`Payment successful! ${res.conversations_added ?? ''} conversations added to your balance.`);
+      } else {
+        const res = await apiClient.completeInvoicePayment(ctx.ref, paymentID);
+        setSuccess(
+          res.subscription_status === 'active'
+            ? 'Payment successful! Your subscription is active and the AI assistant is running.'
+            : 'Payment successful! Your invoice has been paid.'
+        );
+      }
+      await loadSubscriptionData();
+      await loadInvoices();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || err.message || 'Payment verification failed. Please contact support.');
+    } finally {
+      setTimeout(() => { setSuccess(null); setError(null); }, 10000);
+    }
+  };
+
+  // Build the bKash return URL and stash what we're paying so the return handler can settle it.
+  const startBkashCheckout = (kind: 'invoice' | 'topup', ref: string, bkashUrl: string) => {
+    sessionStorage.setItem('easymod_pay_ctx', JSON.stringify({ kind, ref }));
+    window.location.href = bkashUrl;
+  };
 
   const loadSubscriptionData = async () => {
     try {
@@ -243,11 +279,11 @@ export default function Subscription() {
   ];
 
   // Top-up packs — must mirror the backend TOPUP_PACKS (subscription.plans.js)
-  // so the displayed price matches what is charged.
+  // so the displayed price + pack code match what is charged.
   const conversationPacks = [
-    { amount: 100, price: 150 },
-    { amount: 250, price: 350 },
-    { amount: 500, price: 650 }
+    { code: 'TOPUP_100', amount: 100, price: 150 },
+    { code: 'TOPUP_250', amount: 250, price: 350 },
+    { code: 'TOPUP_500', amount: 500, price: 650 }
   ];
 
   const getUsagePercentage = (used: number, limit: number) => {
@@ -319,6 +355,8 @@ export default function Subscription() {
     }
   };
 
+  // Buy a conversation top-up pack — integrated bKash checkout (redirects to bKash,
+  // returns here, then credits topup_balance via completeTopup).
   const handleRequestConversationPack = async () => {
     if (!selectedConversationPack) return;
 
@@ -330,22 +368,50 @@ export default function Subscription() {
       const pack = conversationPacks.find(p => p.amount === selectedConversationPack);
       if (!pack) return;
 
-      const invoiceRes = await apiClient.purchaseConversationPack({
-        amount: selectedConversationPack,
-        price: pack.price
-      });
-
-      if (!invoiceRes.success || !invoiceRes.data?.id) {
-        throw new Error(invoiceRes.message || 'Failed to create invoice');
+      const callbackUrl = `${window.location.origin}/app/subscription`;
+      const res = await apiClient.initiateTopup(pack.code, callbackUrl);
+      if (!res?.bkash_url || !res?.topup_id) {
+        throw new Error('Failed to start bKash payment');
       }
-
-      setSuccess(`Invoice created (${invoiceRes.data.invoice_number || ''}). Please pay ৳${pack.price.toLocaleString()} via bKash/bank transfer and contact support@easymod.ai to activate your pack.`);
-      setTimeout(() => setSuccess(null), 10000);
+      startBkashCheckout('topup', res.topup_id, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to create invoice');
+      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
       setTimeout(() => setError(null), 6000);
-    } finally {
       setIsRequestingInvoice(false);
+    }
+  };
+
+  // Pay a specific outstanding invoice (monthly renewal / proration / add-on) via bKash.
+  const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
+  const handlePayInvoice = async (invoiceRawId: string) => {
+    try {
+      setPayingInvoiceId(invoiceRawId);
+      setError(null);
+      const callbackUrl = `${window.location.origin}/app/subscription`;
+      const res = await apiClient.payInvoice(invoiceRawId, callbackUrl);
+      if (!res?.bkash_url) throw new Error('Failed to start bKash payment');
+      startBkashCheckout('invoice', invoiceRawId, res.bkash_url);
+    } catch (error: any) {
+      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
+      setTimeout(() => setError(null), 6000);
+      setPayingInvoiceId(null);
+    }
+  };
+
+  // Activate / renew the monthly subscription via bKash (ensures an invoice, then pays it).
+  const [isRenewing, setIsRenewing] = useState(false);
+  const handleRenew = async () => {
+    try {
+      setIsRenewing(true);
+      setError(null);
+      const callbackUrl = `${window.location.origin}/app/subscription`;
+      const res = await apiClient.renewSubscription(callbackUrl);
+      if (!res?.bkash_url || !res?.invoice_id) throw new Error('Failed to start bKash payment');
+      startBkashCheckout('invoice', res.invoice_id, res.bkash_url);
+    } catch (error: any) {
+      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
+      setTimeout(() => setError(null), 6000);
+      setIsRenewing(false);
     }
   };
 
@@ -434,11 +500,22 @@ export default function Subscription() {
       <div className="bg-white rounded-xl p-6 border border-gray-200 mb-6 shadow-sm">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h2 className="text-2xl font-bold text-gray-900">{t('subscription.planTitle', { plan: currentPlan.name })}</h2>
-              <Badge className={`${currentPlan.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                {currentPlan.status === 'active' ? t('common.active') : t('common.inactive')}
-              </Badge>
+              {(() => {
+                const s = currentPlan.status;
+                const map: Record<string, { cls: string; label: string }> = {
+                  active:        { cls: 'bg-green-100 text-green-700',  label: t('common.active') },
+                  trialing:      { cls: 'bg-blue-100 text-blue-700',    label: 'Trial' },
+                  past_due:      { cls: 'bg-amber-100 text-amber-700',  label: 'Payment due' },
+                  trial_expired: { cls: 'bg-red-100 text-red-700',      label: 'Trial ended' },
+                  suspended:     { cls: 'bg-red-100 text-red-700',      label: 'AI paused' },
+                  cancelled:     { cls: 'bg-gray-100 text-gray-700',    label: 'Cancelled' },
+                  inactive:      { cls: 'bg-gray-100 text-gray-700',    label: t('common.inactive') },
+                };
+                const m = map[s] || map.inactive;
+                return <Badge className={m.cls}>{m.label}</Badge>;
+              })()}
               {currentPlan.features.imageUnderstanding && (
                 <Badge className="bg-blue-100 text-blue-700">{t('subscription.imageUnderstanding')}</Badge>
               )}
@@ -449,14 +526,40 @@ export default function Subscription() {
             </div>
           </div>
           <div className="flex gap-3">
-            <button className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              onClick={() => document.getElementById('topup-section')?.scrollIntoView({ behavior: 'smooth' })}
+              className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               {t('subscription.addConversations')}
             </button>
-            <button className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button
+              onClick={() => document.getElementById('plans-section')?.scrollIntoView({ behavior: 'smooth' })}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
               {t('subscription.upgradePlan')}
             </button>
           </div>
         </div>
+
+        {/* AI paused / payment-needed banner — primary bKash CTA */}
+        {['suspended', 'trial_expired', 'past_due', 'inactive'].includes(currentPlan.status) && (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-lg border border-red-200 bg-red-50">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+            <p className="flex-1 text-sm text-red-700">
+              {currentPlan.status === 'past_due'
+                ? 'আপনার মাসিক invoice বাকি আছে। ৩ দিনের মধ্যে pay না করলে AI assistant বন্ধ হয়ে যাবে।'
+                : 'AI assistant বন্ধ আছে। মাসিক subscription pay করলে আবার চালু হবে।'}
+            </p>
+            <button
+              onClick={handleRenew}
+              disabled={isRenewing}
+              className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60 whitespace-nowrap"
+            >
+              <CreditCard className="w-4 h-4" />
+              {isRenewing ? '...' : t('subscription.payActivateBkash', `bKash দিয়ে ৳${currentPlan.price.toLocaleString()} Pay করুন`)}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Section 2: Available Plans */}
@@ -714,7 +817,7 @@ export default function Subscription() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Section 4: Add More Conversations */}
-        <div className="bg-white rounded-xl p-6 border border-gray-200">
+        <div id="topup-section" className="bg-white rounded-xl p-6 border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('subscription.addConversationsTitle')}</h3>
           <div className="space-y-3 mb-6">
             {conversationPacks.map((pack) => (
@@ -750,10 +853,10 @@ export default function Subscription() {
             }`}
           >
             <CreditCard className="w-4 h-4" />
-            {isRequestingInvoice ? 'Creating invoice...' : t('subscription.requestInvoice')}
+            {isRequestingInvoice ? '...' : t('subscription.payWithBkash', 'bKash দিয়ে Pay করুন')}
           </button>
           <p className="text-xs text-gray-500 text-center mt-3">
-            {t('subscription.invoiceNote')}
+            {t('subscription.topupBkashNote', 'Payment সফল হলে conversations সাথে সাথে balance-এ যোগ হবে।')}
           </p>
         </div>
 
@@ -853,6 +956,17 @@ export default function Subscription() {
                   </td>
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-2">
+                      {invoice.status === 'pending' && (
+                        <button
+                          onClick={() => handlePayInvoice(invoice.rawId)}
+                          disabled={payingInvoiceId === invoice.rawId}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60"
+                          title="Pay this invoice with bKash"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          {payingInvoiceId === invoice.rawId ? '...' : t('subscription.payWithBkash', 'bKash দিয়ে Pay করুন')}
+                        </button>
+                      )}
                       <button
                         onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
