@@ -51,7 +51,7 @@ AI customer-service and order-automation API for Bangladeshi f-commerce sellers.
 Easy Moderator is a **modular monolith**. One codebase and one Docker image run in three process roles in production:
 
 ```
-                         Meta Graph API (FB / IG)
+                         Meta Graph API (Facebook Pages)
                                   │  webhooks (HMAC-signed)
                                   ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -124,7 +124,7 @@ All routers mount under `/api`. Source of truth: `src/modules/routes.js`.
 | `/auth` | `auth` | Signup (atomically creates one shop), signin, refresh, logout, 2FA, password reset |
 | `/shop` | `shop` | Shop profile, business info, `GET /shop/context` (plan + usage), platform-priority ordering |
 | `/shop/delivery` | `delivery` | Courier zones & mapping (Pathao, Steadfast, RedX, PaperFly, …) |
-| `/channels/meta` | `channel-providers` | Meta OAuth (Business Login), connect/disconnect FB & IG, per-channel health, token refresh |
+| `/channels/meta` | `channel-providers` | Meta OAuth (Business Login), connect/disconnect Facebook Pages, per-channel health, token refresh |
 | `/conversation` | `conversation` | Unified inbox: list, filter, assign, handoff, resolve |
 | `/ai-chatbot` | `conversation` | Manual agent send, AI draft/suggest endpoints |
 | `/customer` | `customer` | Customer records across channels |
@@ -174,7 +174,7 @@ Inbound message → reply, end to end:
 
 This product is built for **Meta App Review**. Relevant code and guarantees:
 
-- **OAuth (Business Login):** `channel-providers/meta-channel.*` — short-lived state stored in Redis for multi-instance safety; per-page/IG access tokens stored **AES-256 encrypted** at rest (`CHANNEL_ENCRYPTION_KEY`).
+- **OAuth (Business Login):** `channel-providers/meta-channel.*` — short-lived state stored in Redis for multi-instance safety; per-page access tokens stored **AES-256 encrypted** at rest (`CHANNEL_ENCRYPTION_KEY`).
 - **Webhook verification:** `integration/meta-webhook.routes.js` — `GET` challenge with a constant-time verify-token compare; `POST` rejected unless the HMAC-SHA256 signature matches `META_APP_SECRET` (timing-safe).
 - **Data Deletion Callback:** `integration/meta-webhook-gdpr.handler.js` — validates Meta's `signed_request`, hard-deletes all records for the affected user (idempotent), returns the confirmation code. Mounted at `POST /webhooks/meta/data-deletion`.
 - **Deauthorize callback:** same handler — disconnects the channel when a user removes the app.
@@ -341,7 +341,7 @@ npm run test:watch     # watch mode
 
 Tests live in `src/**/__tests__/` and `tests/`. Integration tests run against a **real SQLite in-memory database** (not mocked), so they exercise actual Sequelize queries.
 
-> **Current state:** the full backend suite is green — **836 tests / 52 suites passing**.
+> **Current state:** the full backend suite is green — **999 tests / 66 suites passing**.
 
 > **Monorepo note:** `EasyMod-backend/` may contain a stale nested `.git`. Always run git from the repository root (`git -C <repo-root>`). When running Jest from the root, wrap it in a subshell: `(cd EasyMod-backend && npm test)`.
 

@@ -154,9 +154,22 @@ The Axios instance sends credentials, attaches the CSRF token, transparently ref
 ## Internationalisation
 
 - `i18next` + `react-i18next`, with `i18next-browser-languagedetector`.
-- **Default language: Bengali (`bn`).** English (`en`) is the secondary locale.
+- **Default language: Bengali (`bn`).** English (`en`) is the secondary locale. The detector persists the choice in `localStorage` under `easymod_lang`; `fallbackLng` is `bn`, so a **missing key renders the raw key string** — keep both files in sync.
 - Strings live in `src/i18n/locales/{en,bn}.json`. **Brand/product terms are intentionally kept in English** (e.g. "Easy Moderator", "RTO Shield").
+- The global app-shell navigation (sidebar + mobile bottom-nav, in `DashboardLayout`) reads from the top-level **`nav.*`** namespace — never hardcode nav labels in a single language.
 - Add a key to **both** locale files when introducing user-facing copy.
+- **Known follow-up:** ~200 hardcoded-Bengali strings remain across onboarding/settings/pricing screens (tracked in the launch-readiness audit). They render correctly for the default Bengali audience but do not switch to English. Migrate them to i18n keys opportunistically when touching those screens.
+
+---
+
+## Responsive Design
+
+The dashboard is **mobile-first** and used primarily on phones by BD sellers. Key patterns:
+
+- **Shell swap (`DashboardLayout`):** a fixed left sidebar on desktop (`hidden md:flex`) is replaced by a 5-item fixed **bottom tab bar** on mobile (`md:hidden`), with `pb-20 md:pb-0` content padding and `env(safe-area-inset-bottom)` insets for notched devices.
+- **Inbox single-pane (`UnifiedInbox`):** desktop shows the thread list and detail side-by-side; mobile shows one pane at a time via a `mobilePanelOpen` flag (`InboxThreadList` hides when a thread is open; `InboxThreadDetail` shows with a `md:hidden` back button).
+- **Data tables:** wide tables (Products, Orders, Customers) are wrapped in `overflow-x-auto` with a `min-w-[...]` so they scroll horizontally instead of clipping under their rounded card on narrow screens.
+- **Breakpoint convention:** Tailwind's `md` (768px) is the desktop/mobile divide throughout. Test new screens at ~360px width before merging.
 
 ---
 
