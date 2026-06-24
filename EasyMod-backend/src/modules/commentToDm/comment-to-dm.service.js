@@ -426,7 +426,7 @@ class CommentToDmService {
         let conversationId = null;
         try {
             const { Customer, Conversation } = require('../entities');
-            const channelType = channel.platform === 'facebook' ? 'messenger' : 'instagram';
+            const channelType = 'messenger'; // Facebook-only launch
             const customer = await Customer.findOne({
                 where: {
                     shop_id:         channel.shop_id,

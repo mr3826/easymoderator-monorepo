@@ -88,48 +88,8 @@ const FB_WITH_PARENT_COMMENT = {
     ],
 };
 
-// ── Instagram comment payload fixtures ───────────────────────────────────────
-
-const IG_COMMENT_PAYLOAD = {
-    object: 'instagram',
-    entry: [
-        {
-            id: 'IG_ACC_111',
-            changes: [
-                {
-                    field: 'comments',
-                    value: {
-                        id: 'IG_CMT_A',
-                        text: 'ki dam?',
-                        from: { id: 'IG_USER_222', username: 'buyer1' },
-                        media: { id: 'IG_MEDIA_333' },
-                    },
-                },
-            ],
-            messaging: [],
-        },
-    ],
-};
-
-const IG_PAGE_OWN_COMMENT = {
-    object: 'instagram',
-    entry: [
-        {
-            id: 'IG_ACC_111',
-            changes: [
-                {
-                    field: 'comments',
-                    value: {
-                        id: 'IG_CMT_OWN',
-                        text: 'stock shesh',
-                        from: { id: 'IG_ACC_111', username: 'myshop' }, // same as account id → echo
-                        media: { id: 'IG_MEDIA_333' },
-                    },
-                },
-            ],
-        },
-    ],
-};
+// Instagram fixtures removed — Instagram is out of product scope (2026-06-24).
+// extractCommentEvents now only parses Facebook 'feed' comment changes.
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -229,35 +189,18 @@ describe('extractCommentEvents — Facebook', () => {
     });
 });
 
-describe('extractCommentEvents — Instagram', () => {
+describe('extractCommentEvents — Instagram removed', () => {
 
-    test('parses a well-formed IG comment change into normalized shape', () => {
-        const events = extractCommentEvents(IG_COMMENT_PAYLOAD, 'instagram');
-        expect(events).toHaveLength(1);
-        const e = events[0];
-        expect(e.commentId).toBe('IG_CMT_A');
-        expect(e.postId).toBe('IG_MEDIA_333');
-        expect(e.commenterId).toBe('IG_USER_222');
-        expect(e.commenterName).toBe('buyer1');
-        expect(e.text).toBe('ki dam?');
-        expect(e.pageOrAccountId).toBe('IG_ACC_111');
-        expect(e.parentCommentId).toBeNull();
-    });
-
-    test('filters out echo comments (commenter id === account id)', () => {
-        const events = extractCommentEvents(IG_PAGE_OWN_COMMENT, 'instagram');
-        expect(events).toHaveLength(0);
-    });
-
-    test('returns empty array for null payload', () => {
-        expect(extractCommentEvents(null, 'instagram')).toHaveLength(0);
-    });
-
-    test('returns empty array for wrong platform passed for IG payload', () => {
-        // Payload is instagram object but platform param says facebook — should return nothing
-        // because we only look at `changes.field === 'comments'` for instagram and
-        // `changes.field === 'feed'` for facebook.
-        const events = extractCommentEvents(IG_COMMENT_PAYLOAD, 'facebook');
-        expect(events).toHaveLength(0);
+    test('returns empty array when passed the removed instagram platform', () => {
+        // Instagram is out of product scope — the IG branch was removed, so an
+        // 'instagram' platform arg yields no events regardless of payload shape.
+        const igPayload = {
+            object: 'instagram',
+            entry: [{
+                id: 'IG_ACC_111',
+                changes: [{ field: 'comments', value: { id: 'X', from: { id: 'U' } } }],
+            }],
+        };
+        expect(extractCommentEvents(igPayload, 'instagram')).toHaveLength(0);
     });
 });

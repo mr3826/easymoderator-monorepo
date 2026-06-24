@@ -73,7 +73,7 @@
       "headline1": "The Order &",
       "headline2": "COD-Trust",
       "headline3": "OS for Your Shop",
-      "subheadline": "AI replies to every Facebook & Instagram buyer, captures the order, and flags risky cash-on-delivery customers using a fraud network shared across shops — so you ship with confidence.",
+      "subheadline": "AI replies to every Facebook buyer, captures the order, and flags risky cash-on-delivery customers using a fraud network shared across shops — so you ship with confidence.",
       "ctaStart": "Get Started →",
       "ctaDemo": "View Demo",
       "stat1Value": "10+",
@@ -95,7 +95,7 @@
         {
           "icon": "🔒",
           "title": "Meta-approved & ban-safe",
-          "desc": "We follow Facebook & Instagram messaging rules, so your page stays safe."
+          "desc": "We follow Facebook messaging rules, so your page stays safe."
         },
         {
           "icon": "🙋",
@@ -158,9 +158,9 @@
         },
         {
           "icon": "📱",
-          "title": "All Channels",
-          "desc": "Facebook & Instagram together",
-          "colorClass": "bg-pink-500/15 text-pink-400"
+          "title": "Facebook Inbox",
+          "desc": "All your Facebook Pages together",
+          "colorClass": "bg-blue-500/15 text-blue-400"
         }
       ]
     },
@@ -216,7 +216,7 @@
     "signin": {
       "tagline": "Bangladesh's #1 AI Chatbot",
       "heading": "Make your business smart.",
-      "subheading": "Facebook & Instagram — manage all channels together.",
+      "subheading": "Facebook — manage all your Pages together.",
       "stats": [
         { "stat": "10+", "label": "Active Businesses" },
         { "stat": "98%", "label": "Happy Customers" },
@@ -886,7 +886,7 @@
     "subtitle": "Manage and track all your customers in one place",
     "totalCustomers": "Total Customers",
     "channelCustomers": "Channel Customers",
-    "channelCustomersHelper": "Facebook, Instagram, etc.",
+    "channelCustomersHelper": "Facebook, etc.",
     "manualCustomers": "Manual Customers",
     "manualCustomersHelper": "Manually added",
     "searchPlaceholder": "Search by name, phone, or email...",
@@ -971,7 +971,7 @@
     "refreshed": "Channels refreshed",
     "connectModal": {
       "title": "Connect Channel",
-      "subtitle": "Facebook or Instagram — choose where your customers come from",
+      "subtitle": "Connect your Facebook Page to receive customer messages",
       "steps": {
         "select": "Select",
         "connect": "Connect",
@@ -984,7 +984,6 @@
         "title": "Which Page do you want to connect?",
         "hint": "We found these Pages in your Facebook account",
         "noPages": "No Pages found. Make sure you manage at least one Facebook Page.",
-        "noPagesInstagram": "No Instagram-linked Pages found. Connect your Instagram Business Account to a Facebook Page first.",
         "connectButton_one": "Connect {{count}} Page",
         "connectButton_other": "Connect {{count}} Pages",
         "connectButton": "Connect Pages"
@@ -994,17 +993,11 @@
           "name": "Facebook Messenger",
           "description": "For your Facebook Page — receive DMs and orders",
           "tagline": "For your Facebook Page"
-        },
-        "instagram": {
-          "name": "Instagram DM",
-          "description": "For your Instagram Shop — take orders from DMs",
-          "tagline": "For your Instagram Shop"
         }
       },
       "selectButton": "Select",
       "oauthButton": {
-        "facebook": "Connect with Facebook",
-        "instagram": "Connect with Instagram"
+        "facebook": "Connect with Facebook"
       },
       "oauthHowItWorks": "How this works",
       "oauthSteps": {
@@ -1012,17 +1005,11 @@
           "Facebook will ask for your Page permissions",
           "Select your Facebook Page",
           "EasyMod connects automatically"
-        ],
-        "instagram": [
-          "Instagram will ask for your account permissions",
-          "Confirm your Business account",
-          "EasyMod connects automatically"
         ]
       },
       "oauthPrivacyNote": "We never see your Facebook password",
       "waitingTitle": {
-        "facebook": "Waiting for Facebook...",
-        "instagram": "Waiting for Instagram..."
+        "facebook": "Waiting for Facebook..."
       },
       "waitingMessage": "Grant permissions on the page, then close the window",
       "cancelWaiting": "Cancel",

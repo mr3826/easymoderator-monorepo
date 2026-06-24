@@ -1,8 +1,8 @@
 # Easy Moderator — Backend
 
-AI customer-service and order-automation API for Bangladeshi f-commerce sellers. Merchants connect their **Facebook Page** and **Instagram** account; Easy Moderator answers inbound DMs and comments with a Bengali/Banglish-capable AI agent, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
+AI customer-service and order-automation API for Bangladeshi f-commerce sellers. Merchants connect one or more **Facebook Pages**; Easy Moderator answers inbound DMs and comments with a Bengali/Banglish-capable AI agent, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
 
-> **Channels:** Facebook Messenger + Instagram Direct only. WhatsApp, Telegram and other providers were removed from the product. The `telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable channels.
+> **Channels:** Facebook Messenger only (Facebook-only launch, 2026-06-24). Instagram, WhatsApp, Telegram and other providers are out of product scope. The `instagram`/`telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable channels.
 
 ---
 
@@ -179,9 +179,9 @@ This product is built for **Meta App Review**. Relevant code and guarantees:
 - **Data Deletion Callback:** `integration/meta-webhook-gdpr.handler.js` — validates Meta's `signed_request`, hard-deletes all records for the affected user (idempotent), returns the confirmation code. Mounted at `POST /webhooks/meta/data-deletion`.
 - **Deauthorize callback:** same handler — disconnects the channel when a user removes the app.
 - **Consent + policy engine:** `consent/` records inbound consent; the policy engine blocks cold outreach, honours opt-outs, enforces the 24-hour messaging window, and rate-limits outbound DMs per page.
-- **Reviewer docs:** see `../.easymod/meta-app-review/` (permission justifications, compliance checklist, data-deletion flow, screencast storyboards, test-user credentials).
+- **Reviewer docs:** see `.easymod/meta-app-review/` (permission justifications, compliance checklist, data-deletion flow, screencast storyboards, test-user credentials).
 
-Requested permissions: `pages_messaging`, `pages_read_engagement`, `pages_manage_engagement`, `instagram_basic`, `instagram_manage_messages`. Each is justified in `permissions-justification.md`.
+Requested permissions (5, Facebook-only): `pages_show_list`, `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement`. Each is justified in `permissions-justification.md`.
 
 ---
 
@@ -296,7 +296,7 @@ SESSION_SECRET=...
 PAYMENT_ENCRYPTION_KEY=...            # 32 bytes
 CHANNEL_ENCRYPTION_KEY=...            # 64-hex (32 bytes) — encrypts Meta tokens at rest
 
-# Meta (Facebook / Instagram)
+# Meta (Facebook)
 META_APP_ID=...
 META_APP_SECRET=...
 META_OAUTH_REDIRECT_URI=http://localhost:5173/app/channels/oauth-callback

@@ -67,7 +67,7 @@ export default function CommentToDmPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           {t(
             'commentToDm.pageDescription',
-            'Automatically convert Facebook and Instagram comments into private DM conversations.'
+            'Automatically convert Facebook comments into private DM conversations.'
           )}
         </p>
       </div>
@@ -100,7 +100,7 @@ export default function CommentToDmPage() {
             <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
               {t(
                 'commentToDm.settings.noChannels',
-                'No connected Facebook or Instagram channels found. Connect a channel in Settings > Channels first.'
+                'No connected Facebook channels found. Connect a channel in Settings > Channels first.'
               )}
             </div>
           ) : (

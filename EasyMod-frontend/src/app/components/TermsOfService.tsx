@@ -56,7 +56,7 @@ export default function TermsOfService() {
             <p className="mb-3 leading-relaxed">
               {APP_NAME} is a SaaS e-commerce moderation platform that allows businesses to manage customer
               conversations, automate replies using AI, process orders, and connect with messaging channels
-              including Meta platforms (Facebook Messenger, Instagram Direct Messages).
+              including Meta platforms (Facebook Messenger).
             </p>
             <p className="leading-relaxed">
               We reserve the right to modify, suspend, or discontinue any part of the service at any time
@@ -69,8 +69,8 @@ export default function TermsOfService() {
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">3. Meta Platform Compliance</h2>
             <p className="mb-3 leading-relaxed">
-              {APP_NAME} integrates with Meta platforms (Facebook, Instagram) via the Meta Graph
-              API and Webhooks. By connecting your Meta account or Facebook Page to {APP_NAME}, you agree to:
+              {APP_NAME} integrates with Meta platforms (Facebook) via the Meta Graph
+              API and Webhooks. By connecting your Facebook Page to {APP_NAME}, you agree to:
             </p>
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Your Obligations</h3>
@@ -95,7 +95,7 @@ export default function TermsOfService() {
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>You may not use {APP_NAME} to circumvent Meta's rate limits or API quotas</li>
               <li>You may not use {APP_NAME} to scrape or harvest user data from Meta platforms beyond what is delivered via webhooks for your authorised Page/account</li>
-              <li>You may not use {APP_NAME} to send automated messages that violate the 24-hour messaging window rules for Messenger and Instagram</li>
+              <li>You may not use {APP_NAME} to send automated messages that violate the 24-hour messaging window rules for Messenger</li>
               <li>Meta webhook data received through {APP_NAME} may only be used to operate your business — not re-sold, transferred to third parties, or used for advertising targeting</li>
             </ul>
           </section>

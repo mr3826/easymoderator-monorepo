@@ -28,7 +28,7 @@ export type CommentToDmState =
   | 'EXPIRED'
   | 'FAILED';
 
-export type CommentToDmPlatform = 'facebook' | 'instagram';
+export type CommentToDmPlatform = 'facebook';
 
 export interface CommentToDmEvent {
   id: string;

@@ -29,7 +29,6 @@ const getChannelIcon = (channel: string): string => {
     facebook: "👥",
     telegram: "✈️",
     messenger: "📱",
-    instagram: "📷",
     web: "🌐",
   };
   return icons[channel] || "💬";

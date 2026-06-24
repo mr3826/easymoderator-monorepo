@@ -15,15 +15,15 @@ vi.mock('@/api/domains/meta-channels', () => ({
   listMetaChannels: vi.fn().mockResolvedValue([
     {
       id: 'mc-1', shopId: 'sh', platform: 'facebook', metaAssetId: 'pg-1',
-      displayName: 'Facebook Inbox', pictureUrl: null, linkedFbPageId: null,
+      displayName: 'Facebook Inbox', pictureUrl: null,
       status: 'CONNECTED', lastError: null, tokenExpiresAt: null,
       tokenLastRefreshedAt: null, webhookSubscribedFields: [],
       webhookLastVerifiedAt: null, connectedAt: null, disconnectedAt: null,
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     },
     {
-      id: 'mc-2', shopId: 'sh', platform: 'instagram', metaAssetId: 'ig-1',
-      displayName: 'Instagram Inbox', pictureUrl: null, linkedFbPageId: null,
+      id: 'mc-2', shopId: 'sh', platform: 'facebook', metaAssetId: 'pg-2',
+      displayName: 'Second Facebook Page', pictureUrl: null,
       status: 'CONNECTED', lastError: null, tokenExpiresAt: null,
       tokenLastRefreshedAt: null, webhookSubscribedFields: [],
       webhookLastVerifiedAt: null, connectedAt: null, disconnectedAt: null,
@@ -67,6 +67,6 @@ describe('Reports', () => {
     expect(screen.getByRole('heading', { name: '7' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '6.5%' })).toBeInTheDocument()
     expect(screen.getByText('Facebook Inbox')).toBeInTheDocument()
-    expect(screen.getByText('Instagram Inbox')).toBeInTheDocument()
+    expect(screen.getByText('Second Facebook Page')).toBeInTheDocument()
   })
 })

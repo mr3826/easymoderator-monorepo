@@ -35,7 +35,6 @@ function serializeChannel(channel) {
         metaAssetId: channel.meta_asset_id,
         displayName: channel.display_name,
         pictureUrl: channel.picture_url,
-        linkedFbPageId: channel.linked_fb_page_id,
         status: channel.status,
         lastError: channel.last_error,
         tokenExpiresAt: channel.token_expires_at,

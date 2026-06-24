@@ -1,9 +1,11 @@
 /**
  * MetaChannel entity
  *
- * Single source of truth for a shop's connected Facebook Page or
- * Instagram Business Account. Replaces channel_configs + meta_integrations
- * during the Phase 1-5 dual-write transition.
+ * Single source of truth for a shop's connected Facebook Page. Replaces
+ * channel_configs + meta_integrations during the Phase 1-5 dual-write transition.
+ * Instagram was removed from product scope for the Facebook-only launch
+ * (2026-06-24); the underlying enum value and linked_fb_page_id column are left
+ * in the DB as harmless legacy artifacts (no destructive migration).
  *
  * Token encryption: uses meta-token-cipher (AES-256-GCM, versioned v2 prefix).
  * The page_access_token_ct field stores the ciphertext; the virtual getter/setter
@@ -30,14 +32,15 @@ const MetaChannel = sequelize.define('MetaChannel', {
         onDelete: 'CASCADE',
     },
     platform: {
-        type: DataTypes.ENUM('facebook', 'instagram'),
+        // DB enum still allows 'instagram' (legacy); the app only writes 'facebook'.
+        type: DataTypes.ENUM('facebook'),
         allowNull: false,
-        comment: 'WhatsApp removed from product scope (see Phase 1 plan)',
+        comment: 'WhatsApp + Instagram removed from product scope (FB-only launch)',
     },
     meta_asset_id: {
         type: DataTypes.STRING(64),
         allowNull: false,
-        comment: 'Facebook Page ID or Instagram Business Account ID',
+        comment: 'Facebook Page ID',
     },
     display_name: {
         type: DataTypes.STRING(255),
@@ -46,11 +49,6 @@ const MetaChannel = sequelize.define('MetaChannel', {
     picture_url: {
         type: DataTypes.TEXT,
         allowNull: true,
-    },
-    linked_fb_page_id: {
-        type: DataTypes.STRING(64),
-        allowNull: true,
-        comment: 'For Instagram channels: parent Facebook Page ID used for webhook subscription',
     },
 
     // ----- Token storage (encrypted at rest) -----

@@ -100,7 +100,6 @@ class MetaMessengerProvider extends ChannelProvider {
         const PAGE_FIELDS =
             'id,name,category,access_token,' +
             'picture{data{url}},' +
-            'instagram_business_account{id,name,username,profile_picture_url},' +
             'tasks';
 
         // ── Step 1: /me/accounts — REQUIRED. A failure here is fatal (nothing to show).
@@ -193,13 +192,6 @@ class MetaMessengerProvider extends ChannelProvider {
             name: p.name,
             category: p.category || null,
             pictureUrl: p.picture?.data?.url || p.picture?.url || null,
-            instagramAccount: p.instagram_business_account
-                ? {
-                    id: p.instagram_business_account.id,
-                    name: p.instagram_business_account.name,
-                    username: p.instagram_business_account.username,
-                }
-                : null,
         }));
 
         // ── Per-source discovery metrics — emitted on every call ──
@@ -211,7 +203,6 @@ class MetaMessengerProvider extends ChannelProvider {
             portfolioAttempted: includeBusinessPortfolio,
             portfolioError,
             deduped: result.length,
-            withIG: result.filter(p => p.instagramAccount !== null).length,
         });
 
         return result;

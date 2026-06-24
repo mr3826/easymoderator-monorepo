@@ -35,7 +35,7 @@ const FALLBACK_TEMPLATES: ResponseTemplate[] = [
   { id: "fallback-10", name: "Dispatch Today", content: "আপনার product টি ready। আজকেই dispatch করব। 🚚" },
 ];
 
-const META_CHANNELS = ["facebook", "messenger", "instagram"];
+const META_CHANNELS = ["facebook", "messenger"];
 
 // ─── Component ────────────────────────────────────────────────────────────────
 

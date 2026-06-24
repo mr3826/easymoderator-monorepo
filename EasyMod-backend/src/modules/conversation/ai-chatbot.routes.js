@@ -14,8 +14,8 @@ const validateProcessMessage = [
     .isLength({ max: 100 }).withMessage('customer_channel_id must not exceed 100 characters'),
   body('platform')
     .trim().notEmpty().withMessage('platform is required')
-    .isIn(['facebook', 'instagram'])
-    .withMessage('platform must be one of: facebook, instagram'),
+    .isIn(['facebook'])
+    .withMessage('platform must be: facebook'),
   body('message')
     .optional({ checkFalsy: true })
     .trim()

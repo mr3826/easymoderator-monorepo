@@ -8,7 +8,7 @@
  * - PARTNER : 0 BDT upfront; tiered per-delivered-order billing (apply → approve).
  *
  * Conversation limits apply across ALL connected channels.
- * Supported channels: Facebook Messenger and Instagram Direct (WhatsApp removed 2026-05-20).
+ * Supported channel: Facebook Messenger (Instagram + WhatsApp out of product scope).
  */
 
 const UNLIMITED = -1;
@@ -45,13 +45,13 @@ const TOPUP_PACKS = Object.freeze({
 const THRESHOLD_BUFFER = 50;
 
 const BASE_FEATURES = Object.freeze({
-    // Connectable channels are Facebook Messenger + Instagram Direct only.
-    // The webchat/telegram capability flags below are legacy taxonomy kept for
-    // historical/non-Meta conversation records — they are NOT connectable
-    // channels in the product and are not surfaced as connect options.
+    // The only connectable channel is Facebook Messenger. The
+    // instagram/webchat/telegram capability flags below are legacy taxonomy
+    // kept for historical/non-Meta conversation records — they are NOT
+    // connectable channels in the product and are not surfaced as connect options.
     ai_auto_reply: true,
     facebook_channel: true,
-    instagram_channel: true,
+    instagram_channel: false,
     webchat_channel: true,
     telegram_channel: true,
     comment_auto_reply: true,

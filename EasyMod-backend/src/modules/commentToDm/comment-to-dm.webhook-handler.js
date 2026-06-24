@@ -7,9 +7,8 @@
  * event objects. No DB access, no side effects — only parsing and filtering.
  *
  * Facebook: reads `entry[*].changes` where field === 'feed' and value.item === 'comment'
- * Instagram: reads `entry[*].changes` where field === 'comments'
  *
- * Echo filter: comments posted by the page/account itself are silently dropped.
+ * Echo filter: comments posted by the page itself are silently dropped.
  * These are the shop's own replies, not customer comments.
  *
  * Output shape (NormalizedCommentEvent):
@@ -17,7 +16,7 @@
  *   commentId:       string,
  *   parentCommentId: string|null,
  *   postId:          string,
- *   commenterId:     string,       // ASID (FB) or IGSID (IG)
+ *   commenterId:     string,       // ASID (FB)
  *   commenterName:   string|null,
  *   text:            string|null,
  *   pageOrAccountId: string,
@@ -29,7 +28,7 @@
  * Extract normalized comment events from a Meta webhook payload.
  *
  * @param {object|null} payload - Raw Meta webhook body (already JSON-parsed)
- * @param {'facebook'|'instagram'} platform
+ * @param {'facebook'} platform
  * @returns {NormalizedCommentEvent[]}
  */
 function extractCommentEvents(payload, platform) {
@@ -62,29 +61,6 @@ function extractCommentEvents(payload, platform) {
                     text:            v.message || null,
                     pageOrAccountId,
                     occurredAt:      v.created_time ? v.created_time * 1000 : Date.now(),
-                });
-            }
-        } else if (platform === 'instagram') {
-            for (const change of changes) {
-                if (change.field !== 'comments') continue;
-                const v = change.value;
-                if (!v) continue;
-
-                const commenterId = v.from?.id || null;
-                if (!commenterId) continue;
-
-                // Filter echo: account's own comment
-                if (commenterId === pageOrAccountId) continue;
-
-                events.push({
-                    commentId:       v.id || null,
-                    parentCommentId: v.parent_id || null,
-                    postId:          v.media?.id || null,
-                    commenterId,
-                    commenterName:   v.from?.username || v.from?.name || null,
-                    text:            v.text || null,
-                    pageOrAccountId,
-                    occurredAt:      Date.now(),
                 });
             }
         }

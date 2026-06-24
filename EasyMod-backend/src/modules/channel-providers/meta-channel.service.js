@@ -33,11 +33,10 @@ class MetaChannelService {
      * @param {object} params
      * @param {string} params.shopId
      * @param {string} params.userId             - User who completed OAuth
-     * @param {'facebook'|'instagram'} params.platform
-     * @param {string} params.metaAssetId        - Page ID or IG Business Account ID
+     * @param {'facebook'} params.platform
+     * @param {string} params.metaAssetId        - Facebook Page ID
      * @param {string} params.displayName
      * @param {string|null} params.pictureUrl
-     * @param {string|null} params.linkedFbPageId - Parent Page ID (IG only)
      * @param {string} params.pageAccessToken     - Plaintext token (entity setter encrypts it)
      * @param {Date|null} params.tokenExpiresAt
      * @param {string|null} params.webhookVerifyToken
@@ -51,7 +50,6 @@ class MetaChannelService {
         metaAssetId,
         displayName,
         pictureUrl = null,
-        linkedFbPageId = null,
         pageAccessToken,
         tokenExpiresAt = null,
         webhookVerifyToken = null,
@@ -89,7 +87,6 @@ class MetaChannelService {
                 channel.meta_asset_id = metaAssetId;
                 channel.display_name = displayName;
                 channel.picture_url = pictureUrl;
-                channel.linked_fb_page_id = linkedFbPageId;
                 // Trigger setter (encryption) only when token provided
                 if (pageAccessToken) {
                     channel.page_access_token_ct = pageAccessToken;
@@ -117,7 +114,6 @@ class MetaChannelService {
                     meta_asset_id: metaAssetId,
                     display_name: displayName,
                     picture_url: pictureUrl,
-                    linked_fb_page_id: linkedFbPageId,
                     page_access_token_ct: pageAccessToken,  // setter encrypts
                     token_expires_at: tokenExpiresAt,
                     token_last_refreshed_at: now,
@@ -178,7 +174,7 @@ class MetaChannelService {
      * or {@link listByShopAndPlatform} (full list) in Phase 2.
      *
      * @param {string} shopId
-     * @param {'facebook'|'instagram'} platform
+     * @param {'facebook'} platform
      * @returns {Promise<MetaChannel|null>}
      */
     async findByShopAndPlatform(shopId, platform) {
@@ -209,7 +205,7 @@ class MetaChannelService {
      * Page/IG account of a platform.
      *
      * @param {string} shopId
-     * @param {'facebook'|'instagram'} platform
+     * @param {'facebook'} platform
      * @returns {Promise<MetaChannel[]>}
      */
     async listByShopAndPlatform(shopId, platform) {
@@ -221,7 +217,7 @@ class MetaChannelService {
     }
 
     /**
-     * Find a channel by its Meta asset ID (Page ID or IG Business Account ID).
+     * Find a channel by its Meta asset ID (Facebook Page ID).
      * Used by the webhook router to identify which shop owns an incoming event.
      *
      * @param {string} metaAssetId

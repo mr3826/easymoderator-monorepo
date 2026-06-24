@@ -1,14 +1,18 @@
 # Meta App Review — Submission Sheet (copy-paste)
 
 **App:** Easy Moderator · **Graph API:** v22.0 · **Login product:** Facebook Login for Business
-**Last updated:** 2026-06-23
+**Last updated:** 2026-06-24 (Instagram removed — Facebook-only launch)
 
 This is the **fill-in-the-form** sheet. Every value below is copied straight into the Meta
 App Dashboard. The *why* behind each permission lives in the reviewer guide
 ([`docs/meta-app-review.md`](./meta-app-review.md)) and the per-permission detail in
 [`EasyMod-backend/.easymod/meta-app-review/permissions-justification.md`](../EasyMod-backend/.easymod/meta-app-review/permissions-justification.md)
-(canonical). Code was re-verified against every claim on 2026-06-13 — scopes, webhook
+(canonical). Code was re-verified against every claim on 2026-06-24 — scopes, webhook
 callback, and the data-deletion/deauthorize endpoints all match.
+
+> **Scope note (2026-06-24):** Facebook-only launch. The requested set is the **5 Facebook
+> permissions** below. Instagram scopes (`instagram_basic`, `instagram_manage_messages`,
+> `instagram_manage_comments`) are **no longer requested**.
 
 ---
 
@@ -27,9 +31,8 @@ callback, and the data-deletion/deauthorize endpoints all match.
 | **Valid OAuth Redirect URIs** | FB Login for Business → Settings | the app's OAuth callback (confirm against `META_REDIRECT_URI` on the droplet) |
 
 **Webhook subscription fields**:
-Page `subscribed_apps` uses `messages` and `feed` on connect. The Meta App Dashboard
-Instagram object must also be subscribed to `messages` and `comments`; that object-level
-subscription is what delivers IG DMs/comments for review.
+The **page** object's `subscribed_apps` uses `messages` and `feed` on connect. There is **no
+Instagram object subscription** — Instagram is out of product scope for this launch.
 
 > Note: links use the apex `easymod.tech`. `www.easymod.tech` 301-redirects to apex, so both
 > resolve, but paste the apex form to avoid a redirect hop during Meta's automated check.
@@ -38,14 +41,15 @@ subscription is what delivers IG DMs/comments for review.
 
 ## B. Permissions — paste into each "How will your app use this permission?" box
 
-All 8 are demonstrated in the screencast (storyboard refs in
+All 5 are demonstrated in the screencast (storyboard refs in
 `EasyMod-backend/.easymod/meta-app-review/screencast-storyboards.md`). Reviewer screen for
 every permission: **Settings → Chat Settings.**
 
 **1. `pages_show_list`**
 > After the merchant grants consent, we call `GET /me/accounts` to list the Facebook Pages
-> they administer and show them in a picker so they can choose which Page to connect. Only
-> the Page they explicitly select is stored; Pages shown but not chosen are never persisted.
+> they administer and show them in a picker so they can choose which Page(s) to connect. The
+> picker is multi-select — a merchant can connect one or several Pages at once. Only the Pages
+> they explicitly select are stored; Pages shown but not chosen are never persisted.
 > Demonstrated: the asset picker listing the tester's Page right after consent.
 
 **2. `pages_messaging`**
@@ -74,39 +78,17 @@ every permission: **Settings → Chat Settings.**
 > text is a merchant-configured template. Demonstrated: a keyword comment receiving a public
 > reply.
 
-**6. `instagram_basic`**
-> Used to read the Instagram Business account linked to the connected Page through the
-> `instagram_business_account{id,name,username,profile_picture_url}` field nested on
-> `GET /me/accounts`, so we can display it and gate IG webhooks. Stored only for display;
-> access token stored encrypted.
-> Demonstrated: the linked IG account name and avatar rendering on the channel card.
-
-**7. `instagram_manage_messages`**
-> The Instagram half of the shared inbox — receive IG Direct Messages via the `messages`
-> webhook and send replies via `POST /me/messages` with the connected Page token, exactly
-> like Messenger.
-> Demonstrated: a tester sends an IG DM and it appears in the same inbox as Messenger threads,
-> with a reply delivered back.
-
-**8. `instagram_manage_comments`**
-> The Instagram half of comment automation — read comments on the business's IG media
-> through the `comments` webhook and post public replies
-> (`POST /{ig-comment-id}/replies`) for keyword-triggered responses. Mirrors
-> `pages_read_engagement` + `pages_manage_engagement` on the Facebook side. Demonstrated: a keyword
-> comment on IG media triggering a public reply.
-
 ---
 
 ## C. "Notes to reviewer" box (paste verbatim)
 
-> Easy Moderator is a unified Messenger + Instagram inbox with AI auto-reply for small
-> businesses. Sign in to the live test instance with the tester credentials below, go to
-> **Settings → Chat Settings**, and click **"Connect Facebook + Instagram (one popup)"** — a
-> single Facebook Login for Business dialog requests all permissions. After consent, pick the
-> test Page (and its linked Instagram account); the channel card shows **Webhook: Active**.
-> Send a DM to the Page and to the IG account from the provided customer account — each
-> appears in the Shared Inbox and receives an AI auto-reply. Optionally comment the keyword
-> "interested" on the test post to see the comment-to-DM automation.
+> Easy Moderator is a unified Messenger inbox with AI auto-reply for small businesses. Sign in
+> to the live test instance with the tester credentials below, go to **Settings → Chat
+> Settings**, and click **"Connect Facebook Page"** — a single Facebook Login for Business
+> dialog requests the 5 permissions. After consent, pick the test Page (one or several); the
+> channel card shows **Webhook: Active**. Send a DM to the Page from the provided customer
+> account — it appears in the Shared Inbox and receives an AI auto-reply. Optionally comment
+> the keyword "interested" on the test post to see the comment-to-DM automation.
 >
 > **Important (not a bug):** while the app is in Development mode, Meta only delivers webhook
 > events for users with a role on the app. Please send the inbound test DM/comment from the
@@ -122,7 +104,6 @@ Spec (no live secrets in repo): `EasyMod-backend/.easymod/meta-app-review/` →
 share — **never commit passwords or tokens.**
 
 - [ ] Test **Facebook Page** "Easy Moderator Test Shop" — published, category Shopping & Retail, ≥1 product post with keyword **"interested"** configured in auto-reply.
-- [ ] Test **Instagram Business** account `@easymod_test_shop` linked to that Page.
 - [ ] Test **merchant** Easy Moderator login (admin of the Page), active subscription, signs in at `https://easymod.tech/signin`.
 - [ ] Test **customer** account — a *separate* personal FB account (not the Page admin), added to **App Roles → Testers** so its webhook events fire in Dev mode.
 - [ ] Tester credentials shared with reviewer via secure link (30-day expiry).
@@ -133,9 +114,9 @@ share — **never commit passwords or tokens.**
 
 1. [ ] Set the 4 callback URLs + App Domains + Privacy/Terms URLs (section A) in the App Dashboard.
 2. [ ] Click **Verify and Save** on the webhook — confirm it returns the challenge (uses `META_WEBHOOK_VERIFY_TOKEN`).
-3. [ ] Subscribe the app to the webhook fields (section A) on **page** and **instagram** objects.
-4. [ ] Provision the 4 test assets (section D) and connect the test Page + IG inside the app.
-5. [ ] Record the ~3-minute screencast per `docs/meta-app-review.md` §4 + the storyboards.
+3. [ ] Subscribe the app to the webhook fields (section A) on the **page** object (`messages`, `feed`).
+4. [ ] Provision the 3 test assets (section D) and connect the test Page inside the app.
+5. [ ] Record the ~2.5-minute screencast per `docs/meta-app-review.md` §4 + the storyboards.
 6. [ ] In the App Review request, add each permission, paste its box (section B), attach the screencast, and paste the reviewer notes (section C).
 7. [ ] Add the tester customer account under **App Roles → Testers** (Dev-mode webhook gating).
 8. [ ] Confirm the live data-deletion URL responds: open `https://easymod.tech/api/webhooks/meta/data-deletion` in a browser — it returns human-readable deletion instructions (GET), which is also what users see.
@@ -143,13 +124,13 @@ share — **never commit passwords or tokens.**
 
 ---
 
-## F. Code ↔ submission verification (done 2026-06-13)
+## F. Code ↔ submission verification (done 2026-06-24)
 
 | Claim | Verified against | Result |
 |---|---|---|
-| Requested scopes = the 8 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` ∪ `MetaInstagramProvider.DEFAULT_SCOPES` = `unifiedScopes` in `meta-oauth.service.js` | ✓ exact 8, no `business_management` or `pages_manage_posts` |
-| Webhook callback URL | `app.js` mounts `meta-webhook.routes` at `/api/webhooks/meta`; GET handles `hub.challenge` | ✓ |
+| Requested scopes = the 5 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` (the only scope source; `buildAuthUrl({scopes:[]})` falls back to it) | ✓ exact 5, no `instagram_*`, `business_management`, or `pages_manage_posts` (enforced by regression tests) |
+| Webhook callback URL | `app.js` mounts `meta-webhook.routes` at `/api/webhooks/meta`; GET handles `hub.challenge`; POST only handles `object: 'page'` | ✓ |
 | Data-deletion + deauthorize URLs | `meta-webhook-gdpr.handler.js` → `POST /data-deletion`, `POST /deauthorize` (HMAC-verified) | ✓ |
-| Privacy / Terms URLs | FE routes `privacy-policy`, `terms-of-service` exist | ✓ |
+| Privacy / Terms URLs | FE routes `privacy-policy`, `terms-of-service` exist and list exactly the 5 Facebook scopes | ✓ |
 
 Anything Meta inspects in the live app will agree with what is written in this sheet.

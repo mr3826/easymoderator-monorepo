@@ -23,13 +23,12 @@ import type { Customer, CustomerFilters } from "@/api/types/customer";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import RtoNetworkSettings from './RtoNetworkSettings';
 
-// Channel type string — facebook | instagram (MetaChannel platforms + legacy manual)
+// Channel type string — facebook (MetaChannel platform) + legacy manual/webchat/telegram
 type ChannelType = string;
 
 const channelConfig: Record<string, { icon: any; color: string; bgColor: string; labelKey: string }> = {
   facebook:  { icon: MessageSquare, color: "text-blue-600",   bgColor: "bg-blue-50",   labelKey: "customers.channels.facebook" },
   messenger: { icon: MessageSquare, color: "text-blue-500",   bgColor: "bg-blue-50",   labelKey: "customers.channels.messenger" },
-  instagram: { icon: MessageSquare, color: "text-pink-600",   bgColor: "bg-pink-50",   labelKey: "customers.channels.instagram" },
   webchat:   { icon: MessageSquare, color: "text-purple-600", bgColor: "bg-purple-50", labelKey: "customers.channels.webchat" },
   telegram:  { icon: MessageSquare, color: "text-sky-600",    bgColor: "bg-sky-50",    labelKey: "customers.channels.telegram" },
   manual:    { icon: UserPlus,      color: "text-gray-600",   bgColor: "bg-gray-50",   labelKey: "customers.channels.manual" },

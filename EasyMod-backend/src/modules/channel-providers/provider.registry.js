@@ -8,25 +8,23 @@
  *   1. Implement a ChannelProvider subclass in ./providers/
  *   2. Register it below
  *
- * WhatsApp is intentionally absent — removed from product scope.
+ * WhatsApp and Instagram are intentionally absent — out of product scope for
+ * the Facebook-only launch (Instagram removed 2026-06-24).
  */
 
 'use strict';
 
 const MetaMessengerProvider = require('./providers/MetaMessengerProvider');
-const MetaInstagramProvider = require('./providers/MetaInstagramProvider');
 
 const messenger = new MetaMessengerProvider();
-const instagram = new MetaInstagramProvider();
 
 const providers = Object.freeze({
-    facebook: messenger,
-    instagram: instagram
+    facebook: messenger
 });
 
 /**
  * Get the provider for a given platform string.
- * @param {'facebook'|'instagram'} platform
+ * @param {'facebook'} platform
  * @returns {ChannelProvider}
  * @throws {Error} If platform is not registered.
  */

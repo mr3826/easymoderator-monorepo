@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   MessageSquare,
-  Instagram,
   AlertCircle,
   ChevronDown,
   ChevronUp,
@@ -23,8 +22,6 @@ import {
   listMetaChannels,
   initiateMetaOAuth,
   handleMetaOAuthCallback,
-  initiateMetaUnifiedOAuth,
-  handleMetaUnifiedOAuthCallback,
   connectMetaAsset,
   pingMetaChannel,
   disconnectMetaChannel,
@@ -34,49 +31,19 @@ import {
   getMetaChannelSettings,
   updateMetaChannelSettings,
   type MetaChannel,
-  type MetaPlatform,
   type MetaOAuthAsset,
   type MetaChannelConsentSummary,
   type MetaConsentEventType,
   type MetaChannelSettings,
 } from "@/api/domains/meta-channels";
-
-// Picker entry covers both per-platform flow (no `platform`, falls back to
-// activeOAuth.platform) and unified flow (each asset carries its own platform).
-type PickerEntry = MetaOAuthAsset & { platform?: MetaPlatform };
 import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
 
-const PLATFORMS: Array<{
-  id: MetaPlatform;
-  name: string;
-  brandColor: string;
-  bgColor: string;
-  description: string;
-}> = [
-  {
-    id: "facebook",
-    name: "Facebook Messenger",
-    brandColor: "#1877F2",
-    bgColor: "bg-blue-50",
-    description: "Facebook Page এর জন্য — কাস্টমারের DM ও Order নিন",
-  },
-  {
-    id: "instagram",
-    name: "Instagram DM",
-    brandColor: "#E1306C",
-    bgColor: "bg-pink-50",
-    description: "Instagram Shop এর জন্য — DM থেকে Order নিন",
-  },
-];
-
+// Facebook-only launch — Instagram was removed from product scope (2026-06-24).
+const FB_BRAND = "#1877F2";
 const OAUTH_NONCE_KEY = "easymod_oauth_nonce";
 
-function PlatformIcon({ id, color, size = 22 }: { id: MetaPlatform; color: string; size?: number }) {
-  return id === "instagram" ? (
-    <Instagram style={{ color, width: size, height: size }} />
-  ) : (
-    <MessageSquare style={{ color, width: size, height: size }} />
-  );
+function FacebookIcon({ color = FB_BRAND, size = 22 }: { color?: string; size?: number }) {
+  return <MessageSquare style={{ color, width: size, height: size }} />;
 }
 
 export default function ChatSettings() {
@@ -85,8 +52,6 @@ export default function ChatSettings() {
   // Surface the *real* reason a Meta connect/callback failed. Shows a
   // merchant-friendly headline (mapped from the Meta error) plus the raw
   // backend message as a sub-line, and logs the full error for support/QA.
-  // Replaces the old generic-toast-and-swallow that made App Review failures
-  // impossible to diagnose.
   const reportConnectError = (context: string, err: unknown) => {
     const { code, message } = extractMetaApiError(err);
     const lang = i18n.language?.startsWith("en") ? "en" : "bn";
@@ -101,10 +66,9 @@ export default function ChatSettings() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeOAuth, setActiveOAuth] = useState<{
-    platform: MetaPlatform | "unified";
     step: "connecting" | "page-select";
   } | null>(null);
-  const [availablePages, setAvailablePages] = useState<PickerEntry[]>([]);
+  const [availablePages, setAvailablePages] = useState<MetaOAuthAsset[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<Set<string>>(new Set());
   const [tempToken, setTempToken] = useState("");
   const [isConnectingPage, setIsConnectingPage] = useState(false);
@@ -118,7 +82,7 @@ export default function ChatSettings() {
   const [consentByChannelId, setConsentByChannelId] = useState<Record<string, MetaChannelConsentSummary>>({});
   const [expandedConsentChannelId, setExpandedConsentChannelId] = useState<string | null>(null);
   const [loadingConsentId, setLoadingConsentId] = useState<string | null>(null);
-  const [expandedPermissions, setExpandedPermissions] = useState<MetaPlatform | null>(null);
+  const [permissionsExpanded, setPermissionsExpanded] = useState(false);
   const [savingLabelId, setSavingLabelId] = useState<string | null>(null);
 
   const handleSavePurposeLabel = async (
@@ -149,11 +113,7 @@ export default function ChatSettings() {
       setLoadError(null);
       const fetched = await listMetaChannels();
       setChannels(
-        fetched.filter(
-          (c) =>
-            (c.platform === "facebook" || c.platform === "instagram") &&
-            c.status !== "DISCONNECTED",
-        ),
+        fetched.filter((c) => c.platform === "facebook" && c.status !== "DISCONNECTED"),
       );
     } catch (error: unknown) {
       const { code, message } = extractMetaApiError(error);
@@ -193,31 +153,31 @@ export default function ChatSettings() {
     return () => clearInterval(interval);
   }, [activeOAuth?.step]);
 
-  const handleConnectClick = async (platform: MetaPlatform) => {
+  // Single Facebook connect flow — one popup, then a multi-select page picker so
+  // the merchant can connect one OR several Facebook Pages at once.
+  const handleConnect = async () => {
     if (oauthInProgressRef.current) {
       toast.error("একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।");
       return;
     }
     oauthInProgressRef.current = true;
     try {
-      const { redirectUrl } = await initiateMetaOAuth(platform);
+      const { redirectUrl } = await initiateMetaOAuth("facebook");
 
       try {
         const urlState = new URL(redirectUrl).searchParams.get("state");
-        if (urlState) {
-          sessionStorage.setItem(OAUTH_NONCE_KEY, urlState);
-        }
+        if (urlState) sessionStorage.setItem(OAUTH_NONCE_KEY, urlState);
       } catch {
         /* non-critical */
       }
-      sessionStorage.setItem("easymod_oauth_channel_type", platform);
+      sessionStorage.setItem("easymod_oauth_channel_type", "facebook");
 
       oauthPopupRef.current = window.open(
         redirectUrl,
         "meta_oauth",
         "width=600,height=700,left=200,top=100",
       );
-      setActiveOAuth({ platform, step: "connecting" });
+      setActiveOAuth({ step: "connecting" });
 
       const bc = new BroadcastChannel("easymod_oauth");
       const cleanup = () => {
@@ -243,100 +203,7 @@ export default function ChatSettings() {
               setAvailablePages(result.pages);
               setSelectedPageIds(new Set());
               setTempToken(result.tempToken);
-              setActiveOAuth({ platform, step: "page-select" });
-            })
-            .catch((err) => {
-              reportConnectError("OAuth callback", err);
-              setActiveOAuth(null);
-            });
-        } else if (data?.type === "OAUTH_ERROR") {
-          sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          toast.error(data.error || t("channels.errors.connectionFailed", "সংযোগ ব্যর্থ"));
-          setActiveOAuth(null);
-        }
-        cleanup();
-      };
-
-      const handler = (e: MessageEvent) => {
-        if (e.origin !== window.location.origin) return;
-        if (oauthPopupRef.current && e.source !== oauthPopupRef.current) return;
-        processPayload(e.data);
-      };
-      bc.onmessage = (e) => processPayload(e.data);
-      oauthListenerRef.current = handler;
-      window.addEventListener("message", handler);
-    } catch {
-      sessionStorage.removeItem(OAUTH_NONCE_KEY);
-      oauthInProgressRef.current = false;
-      toast.error(t("channels.errors.oauthInitFailed", "সংযোগ শুরু করা যায়নি"));
-    }
-  };
-
-  // Unified FB+IG consent — one popup, picker lists assets from both platforms.
-  // Each asset carries its own `platform` so connectMetaAsset routes correctly.
-  const handleConnectUnified = async () => {
-    if (oauthInProgressRef.current) {
-      toast.error("একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।");
-      return;
-    }
-    oauthInProgressRef.current = true;
-    try {
-      const { redirectUrl } = await initiateMetaUnifiedOAuth();
-
-      try {
-        const urlState = new URL(redirectUrl).searchParams.get("state");
-        if (urlState) sessionStorage.setItem(OAUTH_NONCE_KEY, urlState);
-      } catch { /* non-critical */ }
-      sessionStorage.setItem("easymod_oauth_channel_type", "unified");
-
-      oauthPopupRef.current = window.open(
-        redirectUrl,
-        "meta_oauth",
-        "width=600,height=700,left=200,top=100",
-      );
-      setActiveOAuth({ platform: "unified", step: "connecting" });
-
-      const bc = new BroadcastChannel("easymod_oauth");
-      const cleanup = () => {
-        window.removeEventListener("message", handler);
-        bc.close();
-        oauthListenerRef.current = null;
-        oauthInProgressRef.current = false;
-      };
-
-      const processPayload = (data: any) => {
-        if (data?.type === "OAUTH_SUCCESS") {
-          const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
-          sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          if (expectedNonce && data.state !== expectedNonce) {
-            toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
-            setActiveOAuth(null);
-            cleanup();
-            return;
-          }
-
-          handleMetaUnifiedOAuthCallback(data.code, data.state)
-            .then((result) => {
-              const fbEntries: PickerEntry[] = result.facebookPages.map((p) => ({
-                id: p.id,
-                name: p.name,
-                category: p.category ?? null,
-                pictureUrl: p.pictureUrl ?? null,
-                instagramAccount: null,
-                platform: "facebook",
-              }));
-              const igEntries: PickerEntry[] = result.instagramAccounts.map((a) => ({
-                id: a.id,
-                name: a.linkedPageName ? `${a.name} · IG of ${a.linkedPageName}` : a.name,
-                category: null,
-                pictureUrl: null,
-                instagramAccount: null,
-                platform: "instagram",
-              }));
-              setAvailablePages([...fbEntries, ...igEntries]);
-              setSelectedPageIds(new Set());
-              setTempToken(result.tempToken);
-              setActiveOAuth({ platform: "unified", step: "page-select" });
+              setActiveOAuth({ step: "page-select" });
             })
             .catch((err) => {
               reportConnectError("OAuth callback", err);
@@ -380,12 +247,8 @@ export default function ChatSettings() {
   };
 
   const handleRetryOAuthAssetLookup = () => {
-    const target = activeOAuth?.platform;
     handleCancelOAuth();
-    setTimeout(() => {
-      if (target === "unified") void handleConnectUnified();
-      else if (target) void handleConnectClick(target);
-    }, 0);
+    setTimeout(() => void handleConnect(), 0);
   };
 
   const togglePageSelection = (pageId: string) => {
@@ -403,16 +266,11 @@ export default function ChatSettings() {
     try {
       let webhookWarning: string | null = null;
       for (const page of availablePages.filter((p) => selectedPageIds.has(p.id))) {
-        // Unified flow: each entry carries its own platform. Per-platform flow:
-        // fall back to the active OAuth platform.
-        const assetPlatform =
-          page.platform ??
-          (activeOAuth.platform === "unified" ? "facebook" : activeOAuth.platform);
         const result = await connectMetaAsset({
           assetId: page.id,
           displayName: page.name,
           tempToken,
-          platform: assetPlatform,
+          platform: "facebook",
         });
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }
@@ -473,15 +331,17 @@ export default function ChatSettings() {
 
       try {
         if (state) sessionStorage.setItem(OAUTH_NONCE_KEY, state);
-      } catch { /* non-critical */ }
-      sessionStorage.setItem("easymod_oauth_channel_type", channel.platform);
+      } catch {
+        /* non-critical */
+      }
+      sessionStorage.setItem("easymod_oauth_channel_type", "facebook");
 
       oauthPopupRef.current = window.open(
         redirectUrl,
         "meta_oauth",
         "width=600,height=700,left=200,top=100",
       );
-      setActiveOAuth({ platform: channel.platform, step: "connecting" });
+      setActiveOAuth({ step: "connecting" });
 
       const bc = new BroadcastChannel("easymod_oauth");
       const cleanup = () => {
@@ -507,7 +367,7 @@ export default function ChatSettings() {
               setAvailablePages(result.pages);
               setSelectedPageIds(new Set());
               setTempToken(result.tempToken);
-              setActiveOAuth({ platform: channel.platform, step: "page-select" });
+              setActiveOAuth({ step: "page-select" });
             })
             .catch((err) => {
               reportConnectError("OAuth callback", err);
@@ -569,29 +429,8 @@ export default function ChatSettings() {
       ? "bg-red-50 text-red-700"
       : "bg-green-50 text-green-700";
 
-  // Group connected channels by platform. Platforms with zero channels are
-  // skipped — first-time and additional adds both go through the unified
-  // "Connect Messenger + Instagram" button at the top of the page.
-  type CardEntry = { channel: MetaChannel | null; isAddTile: boolean };
-  const platformSections = PLATFORMS.map((platform) => {
-    const platformChannels = channels.filter((c) => c.platform === platform.id);
-    const cards: CardEntry[] = platformChannels.map((c) => ({ channel: c, isAddTile: false }));
-    return { platform, platformChannels, cards };
-  }).filter(({ cards }) => cards.length > 0);
-
-  // Asset IDs already connected — used to disable those rows in the page
-  // picker. Per-platform flow filters to the active platform; unified flow
-  // considers all connected channels since both platforms can appear in the
-  // picker.
-  const alreadyConnectedAssetIds = new Set(
-    activeOAuth
-      ? (activeOAuth.platform === "unified"
-          ? channels.map((c) => c.metaAssetId)
-          : channels
-              .filter((c) => c.platform === activeOAuth.platform)
-              .map((c) => c.metaAssetId))
-      : [],
-  );
+  // Asset IDs already connected — used to disable those rows in the page picker.
+  const alreadyConnectedAssetIds = new Set(channels.map((c) => c.metaAssetId));
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -601,7 +440,7 @@ export default function ChatSettings() {
         </div>
         <div>
           <h2 className="text-xl md:text-2xl font-bold text-gray-900">চ্যানেল সেটিংস</h2>
-          <p className="text-sm text-gray-500">Facebook ও Instagram চ্যানেল সংযুক্ত ও পরিচালনা করুন</p>
+          <p className="text-sm text-gray-500">Facebook Page চ্যানেল সংযুক্ত ও পরিচালনা করুন</p>
         </div>
       </div>
 
@@ -633,18 +472,14 @@ export default function ChatSettings() {
         </div>
       )}
 
-      {!isLoading && !loadError && activeOAuth?.platform === "unified" && (
+      {/* Connect flow (first-time + add another) */}
+      {!isLoading && !loadError && activeOAuth && (
         <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <div className="flex -space-x-1">
-              <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
-                <MessageSquare className="w-3.5 h-3.5" style={{ color: "#1877F2" }} />
-              </div>
-              <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
-                <Instagram className="w-3.5 h-3.5" style={{ color: "#E1306C" }} />
-              </div>
+            <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
+              <MessageSquare className="w-3.5 h-3.5" style={{ color: FB_BRAND }} />
             </div>
-            <h3 className="font-semibold text-gray-900">Facebook + Instagram একসাথে সংযুক্ত করুন</h3>
+            <h3 className="font-semibold text-gray-900">Facebook Page সংযুক্ত করুন</h3>
           </div>
 
           {activeOAuth.step === "connecting" && (
@@ -663,44 +498,17 @@ export default function ChatSettings() {
           {activeOAuth.step === "page-select" && (
             <div>
               <p className="text-xs text-gray-700 mb-3">
-                আপনার Facebook Page এবং linked Instagram অ্যাকাউন্ট নির্বাচন করুন
+                যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন (এক বা একাধিক)
               </p>
-              {availablePages.filter((p) => p.platform === "instagram").length === 0 &&
-                availablePages.filter((p) => p.platform === "facebook").length > 0 && (
-                  <div className="mb-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                    <span>
-                      {t(
-                        "channels.picker.noInstagramLinked",
-                        "No Instagram Business account is linked to these Pages.",
-                      )}{" "}
-                      <a
-                        href="https://www.facebook.com/business/help/connect-instagram-to-page"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-blue-900"
-                      >
-                        {t("channels.picker.learnMore", "Learn more")}
-                      </a>
-                    </span>
-                  </div>
-                )}
               {availablePages.length === 0 ? (
-                <NoMetaAssetsFound
-                  platform="unified"
-                  onRetry={handleRetryOAuthAssetLookup}
-                  onCancel={handleCancelOAuth}
-                />
+                <NoMetaAssetsFound onRetry={handleRetryOAuthAssetLookup} onCancel={handleCancelOAuth} />
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {availablePages.map((page) => {
                     const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
-                    const itemPlatform: MetaPlatform = page.platform ?? "facebook";
-                    const brand = itemPlatform === "instagram" ? "#E1306C" : "#1877F2";
-                    const bg = itemPlatform === "instagram" ? "bg-pink-50" : "bg-blue-100";
                     return (
                       <label
-                        key={`${itemPlatform}-${page.id}`}
+                        key={page.id}
                         className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
                           isAlreadyConnected
                             ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
@@ -716,14 +524,20 @@ export default function ChatSettings() {
                           disabled={isAlreadyConnected}
                           onChange={() => togglePageSelection(page.id)}
                         />
-                        <div className={`w-8 h-8 rounded-full ${bg} flex items-center justify-center`}>
-                          <PlatformIcon id={itemPlatform} color={brand} size={14} />
-                        </div>
+                        {page.pictureUrl ? (
+                          <img
+                            src={page.pictureUrl}
+                            alt={page.name}
+                            className="w-8 h-8 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                            <FacebookIcon size={14} />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
-                          <p className="text-[10px] uppercase tracking-wide text-gray-500">
-                            {itemPlatform === "instagram" ? "Instagram" : "Facebook Page"}
-                          </p>
+                          <p className="text-[10px] uppercase tracking-wide text-gray-500">Facebook Page</p>
                         </div>
                         {isAlreadyConnected && (
                           <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
@@ -758,111 +572,90 @@ export default function ChatSettings() {
       )}
 
       {!isLoading && !loadError && !activeOAuth && (
-        <button
-          onClick={handleConnectUnified}
-          className="w-full rounded-xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 to-pink-50 hover:from-blue-100 hover:to-pink-100 p-4 flex items-center justify-center gap-3 transition-colors"
-        >
-          <div className="flex -space-x-1">
+        <div className="space-y-3">
+          <button
+            onClick={handleConnect}
+            className="w-full rounded-xl border-2 border-blue-400 bg-gradient-to-r from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 p-4 flex items-center justify-center gap-3 transition-colors"
+          >
             <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
-              <MessageSquare className="w-3.5 h-3.5" style={{ color: "#1877F2" }} />
+              <MessageSquare className="w-3.5 h-3.5" style={{ color: FB_BRAND }} />
             </div>
-            <div className="w-7 h-7 rounded-full bg-white border-2 border-pink-300 flex items-center justify-center">
-              <Instagram className="w-3.5 h-3.5" style={{ color: "#E1306C" }} />
+            <span className="font-semibold text-gray-900 text-sm">
+              {channels.length === 0 ? "Facebook Page সংযুক্ত করুন" : "আরেকটি Facebook Page যোগ করুন"}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setPermissionsExpanded((v) => !v)}
+            className="w-full text-xs text-gray-500 hover:text-gray-700 flex items-center justify-center gap-1"
+          >
+            <Shield className="w-3.5 h-3.5" />
+            {permissionsExpanded ? "অনুমতি লুকান" : "কোন অনুমতি লাগবে?"}
+            {permissionsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+
+          {permissionsExpanded && (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700">
+              <ul className="space-y-1 list-disc list-inside">
+                <li><strong>pages_show_list</strong> — আপনার Page list দেখা</li>
+                <li><strong>pages_messaging</strong> — Messenger বার্তা পড়া ও পাঠানো</li>
+                <li><strong>pages_read_engagement</strong> — Page comment ইভেন্ট পড়া</li>
+                <li><strong>pages_manage_metadata</strong> — Realtime webhook subscribe</li>
+                <li><strong>pages_manage_engagement</strong> — Comment-এ পাবলিক রিপ্লাই</li>
+              </ul>
+              <p className="mt-2 text-gray-500 text-[11px]">
+                EasyMod শুধু কাস্টমার বার্তার জন্য এই অনুমতি ব্যবহার করে।
+              </p>
             </div>
-          </div>
-          <span className="font-semibold text-gray-900 text-sm">
-            Facebook + Instagram একসাথে সংযুক্ত করুন (one popup)
-          </span>
-        </button>
+          )}
+        </div>
       )}
 
-      {!isLoading && !loadError && (
-        <div className="space-y-8">
-          {platformSections.map(({ platform, platformChannels, cards }) => (
-            <section key={platform.id} className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full ${platform.bgColor} flex items-center justify-center`}>
-                  <PlatformIcon id={platform.id} color={platform.brandColor} size={18} />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-gray-900">{platform.name}</h3>
-                  <p className="text-xs text-gray-500">
-                    {platformChannels.length === 0
-                      ? "Not connected"
-                      : `${platformChannels.length} connected`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-          {cards.map((entry, cardIdx) => {
-            const { channel, isAddTile } = entry;
-            const isConnected = channel?.status === "CONNECTED";
-            const isTokenExpired = channel?.status === "TOKEN_EXPIRED" || channel?.status === "REVOKED";
-            const isErrored = channel?.status === "ERROR";
+      {/* Connected channels */}
+      {!isLoading && !loadError && channels.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {channels.map((channel) => {
+            const isConnected = channel.status === "CONNECTED";
+            const isTokenExpired = channel.status === "TOKEN_EXPIRED" || channel.status === "REVOKED";
+            const isErrored = channel.status === "ERROR";
             const isActionRequired =
-              channel?.status === "ERROR" &&
-              (channel?.lastError === "webhook_subscription_unverified" ||
-                channel?.lastError === "webhook_subscription_failed");
-            // OAuth in-flight surfaces in the non-connected slot for the matching
-            // platform — that's the add-tile (when channels exist) or the
-            // first-time-connect card (when none do).
-            const isThisCardOAuth =
-              activeOAuth?.platform === platform.id && channel === null;
-            const isPermissionsExpanded = expandedPermissions === platform.id;
-            const isConsentExpanded = !!channel && expandedConsentChannelId === channel.id;
-            const consentSummary = channel ? consentByChannelId[channel.id] : undefined;
-            const isConsentLoading = !!channel && loadingConsentId === channel.id;
-            const cardKey = channel?.id ?? `${platform.id}-${isAddTile ? "add" : "new"}-${cardIdx}`;
+              channel.status === "ERROR" &&
+              (channel.lastError === "webhook_subscription_unverified" ||
+                channel.lastError === "webhook_subscription_failed");
+            const isConsentExpanded = expandedConsentChannelId === channel.id;
+            const consentSummary = consentByChannelId[channel.id];
+            const isConsentLoading = loadingConsentId === channel.id;
 
             return (
               <div
-                key={cardKey}
-                className={`bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow p-5 ${
-                  isAddTile && !isThisCardOAuth
-                    ? "border-dashed hover:border-gray-400"
-                    : "hover:shadow-md"
-                }`}
+                key={channel.id}
+                className="bg-white border border-gray-200 rounded-xl shadow-sm transition-shadow p-5 hover:shadow-md"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 rounded-full ${platform.bgColor} flex items-center justify-center`}>
-                      {channel?.pictureUrl ? (
+                    <div className="w-11 h-11 rounded-full bg-blue-50 flex items-center justify-center">
+                      {channel.pictureUrl ? (
                         <img
                           src={channel.pictureUrl}
                           alt={channel.displayName}
                           className="w-11 h-11 rounded-full object-cover"
                         />
                       ) : (
-                        <PlatformIcon id={platform.id} color={platform.brandColor} />
+                        <FacebookIcon />
                       )}
                     </div>
                     <div>
-                      {channel ? (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <h4 className="font-semibold text-gray-900 truncate max-w-[180px]">
-                              {channel.displayName}
-                            </h4>
-                            {channel.purposeLabel && (
-                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-medium uppercase tracking-wide">
-                                {channel.purposeLabel}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-gray-400">{platform.name}</p>
-                        </>
-                      ) : isAddTile ? (
-                        <>
-                          <h4 className="font-semibold text-gray-700">Add another</h4>
-                          <p className="text-xs text-gray-400">{platform.name}</p>
-                        </>
-                      ) : (
-                        <>
-                          <h4 className="font-semibold text-gray-900">{platform.name}</h4>
-                          <p className="text-xs text-gray-400">Not connected</p>
-                        </>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-semibold text-gray-900 truncate max-w-[180px]">
+                          {channel.displayName}
+                        </h4>
+                        {channel.purposeLabel && (
+                          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-medium uppercase tracking-wide">
+                            {channel.purposeLabel}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400">Facebook Messenger</p>
                     </div>
                   </div>
                   {isConnected && (
@@ -891,19 +684,8 @@ export default function ChatSettings() {
                   )}
                 </div>
 
-                {!isAddTile && !isConnected && (
-                  <p className="text-sm text-gray-600 mb-4">{platform.description}</p>
-                )}
-                {isAddTile && !isThisCardOAuth && (
-                  <p className="text-sm text-gray-500 mb-4">
-                    {platform.id === "instagram"
-                      ? "আরেকটি Instagram অ্যাকাউন্ট যোগ করুন"
-                      : "আরেকটি Facebook Page যোগ করুন"}
-                  </p>
-                )}
-
                 {isConnected &&
-                  channel?.tokenExpiresAt &&
+                  channel.tokenExpiresAt &&
                   (() => {
                     const expiresMs = new Date(channel.tokenExpiresAt).getTime() - Date.now();
                     const dayMs = 86_400_000;
@@ -920,190 +702,18 @@ export default function ChatSettings() {
                     );
                   })()}
 
-                {isThisCardOAuth && activeOAuth.step === "connecting" && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-center">
-                    <Loader2
-                      className="w-8 h-8 animate-spin mx-auto mb-2"
-                      style={{ color: platform.brandColor }}
-                    />
-                    <p className="text-sm font-medium text-gray-800">{platform.name} এর অনুমতি দিন</p>
-                    <p className="text-xs text-gray-500 mt-1">পপ-আপ উইন্ডোতে লগইন করুন...</p>
-                    <button
-                      onClick={handleCancelOAuth}
-                      className="mt-3 text-xs text-gray-500 hover:text-gray-700 underline"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-
-                {isThisCardOAuth && activeOAuth.step === "page-select" && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <h4 className="font-semibold text-gray-900 text-sm mb-1">Page নির্বাচন করুন</h4>
-                    <p className="text-xs text-gray-600 mb-3">
-                      যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন
-                    </p>
-                    {availablePages.length === 0 ? (
-                      <NoMetaAssetsFound
-                        platform={platform.id}
-                        onRetry={handleRetryOAuthAssetLookup}
-                        onCancel={handleCancelOAuth}
-                      />
-                    ) : (
-                      <div className="space-y-2 max-h-56 overflow-y-auto">
-                        {availablePages.map((page) => {
-                          const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
-                          return (
-                            <label
-                              key={page.id}
-                              className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
-                                isAlreadyConnected
-                                  ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
-                                  : selectedPageIds.has(page.id)
-                                  ? "border-blue-500 bg-white cursor-pointer"
-                                  : "border-gray-200 bg-white hover:bg-gray-50 cursor-pointer"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="w-4 h-4 accent-blue-600"
-                                checked={selectedPageIds.has(page.id)}
-                                disabled={isAlreadyConnected}
-                                onChange={() => togglePageSelection(page.id)}
-                              />
-                              {page.pictureUrl ? (
-                                <img
-                                  src={page.pictureUrl}
-                                  alt={page.name}
-                                  className="w-8 h-8 rounded-full object-cover"
-                                />
-                              ) : (
-                                <div
-                                  className={`w-8 h-8 rounded-full ${platform.bgColor} flex items-center justify-center`}
-                                >
-                                  <PlatformIcon id={platform.id} color={platform.brandColor} size={14} />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
-                                {page.instagramAccount && (
-                                  <p className="text-xs text-pink-600">@{page.instagramAccount.username}</p>
-                                )}
-                              </div>
-                              {isAlreadyConnected && (
-                                <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                                  <Check className="w-3 h-3" />
-                                  Connected
-                                </span>
-                              )}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        onClick={handleCancelOAuth}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-white"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleConnectPages}
-                        disabled={selectedPageIds.size === 0 || isConnectingPage}
-                        className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
-                      >
-                        {isConnectingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                        Connect ({selectedPageIds.size})
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {!isConnected && !isThisCardOAuth && isAddTile && (
+                {!isConnected && isTokenExpired && (
                   <button
-                    onClick={() => handleConnectClick(platform.id)}
-                    className="w-full py-2.5 border-2 border-dashed border-gray-300 text-gray-700 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:border-gray-400 hover:bg-gray-50 transition-colors"
+                    onClick={() => handleReconnect(channel)}
+                    style={{ backgroundColor: FB_BRAND }}
+                    className="w-full py-2.5 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity mb-3"
                   >
-                    <Plus className="w-4 h-4" />
-                    {platform.id === "instagram" ? "Add Instagram account" : "Add Facebook Page"}
+                    <FacebookIcon color="white" size={18} />
+                    Facebook Page আবার সংযুক্ত করুন
                   </button>
                 )}
 
-                {!isConnected && !isThisCardOAuth && !isAddTile && (
-                  <div className="space-y-3">
-                    <button
-                      onClick={() => handleConnectClick(platform.id)}
-                      style={{ backgroundColor: platform.brandColor }}
-                      className="w-full py-2.5 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-                    >
-                      <PlatformIcon id={platform.id} color="white" size={18} />
-                      {isTokenExpired
-                        ? `${platform.name} আবার সংযুক্ত করুন`
-                        : `${platform.name} সংযুক্ত করুন`}
-                    </button>
-
-                    <button
-                      onClick={() => setExpandedPermissions(isPermissionsExpanded ? null : platform.id)}
-                      className="w-full text-xs text-gray-500 hover:text-gray-700 flex items-center justify-center gap-1"
-                    >
-                      <Shield className="w-3.5 h-3.5" />
-                      {isPermissionsExpanded ? "অনুমতি লুকান" : "কোন অনুমতি লাগবে?"}
-                      {isPermissionsExpanded ? (
-                        <ChevronUp className="w-3 h-3" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3" />
-                      )}
-                    </button>
-
-                    {isPermissionsExpanded && (
-                      <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700">
-                        <ul className="space-y-1 list-disc list-inside">
-                          {platform.id === "facebook" && (
-                            <>
-                              <li>
-                                <strong>pages_show_list</strong> — আপনার Page list দেখা
-                              </li>
-                              <li>
-                                <strong>pages_messaging</strong> — Messenger বার্তা পড়া ও পাঠানো
-                              </li>
-                              <li>
-                                <strong>pages_read_engagement</strong> — Page conversation পড়া
-                              </li>
-                              <li>
-                                <strong>pages_manage_metadata</strong> — Realtime webhook subscribe
-                              </li>
-                            </>
-                          )}
-                          {platform.id === "instagram" && (
-                            <>
-                              <li>
-                                <strong>instagram_basic</strong> — IG Business অ্যাকাউন্ট অ্যাক্সেস
-                              </li>
-                              <li>
-                                <strong>instagram_manage_messages</strong> — IG DM পড়া ও পাঠানো
-                              </li>
-                              <li>
-                                <strong>pages_show_list</strong> — IG-linked Page চিহ্নিত করা
-                              </li>
-                              <li>
-                                <strong>pages_read_engagement</strong> — Delivery receipts
-                              </li>
-                              <li>
-                                <strong>pages_manage_metadata</strong> — Realtime DM webhook
-                              </li>
-                            </>
-                          )}
-                        </ul>
-                        <p className="mt-2 text-gray-500 text-[11px]">
-                          EasyMod শুধু কাস্টমার বার্তার জন্য এই অনুমতি ব্যবহার করে।
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {isConnected && channel && (
+                {isConnected && (
                   <>
                     <div className="mb-3">
                       <label
@@ -1164,24 +774,7 @@ export default function ChatSettings() {
                         badText={t("channels.health.noneYet", "None yet")}
                         neutral
                       />
-                      {channel.platform === "instagram" && (
-                        <HealthRow
-                          label={t("channels.health.instagram", "Instagram")}
-                          ok={!!channel.linkedFbPageId}
-                          okText={t("channels.health.linked", "Linked")}
-                          badText={t("channels.health.notLinked", "Not linked")}
-                        />
-                      )}
                     </div>
-
-                    {channel.platform === "instagram" && !channel.linkedFbPageId && (
-                      <p className="mb-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                        {t(
-                          "channels.health.igNotLinkedHint",
-                          "Link this IG account to its Facebook Page in Meta Business Suite, then Refresh permissions.",
-                        )}
-                      </p>
-                    )}
 
                     <div className="grid grid-cols-2 gap-2 mb-3">
                       <button
@@ -1329,9 +922,6 @@ export default function ChatSettings() {
               </div>
             );
           })}
-              </div>
-            </section>
-          ))}
         </div>
       )}
 
@@ -1393,30 +983,21 @@ export default function ChatSettings() {
 }
 
 function NoMetaAssetsFound({
-  platform,
   onRetry,
   onCancel,
 }: {
-  platform: MetaPlatform | "unified";
   onRetry: () => void;
   onCancel: () => void;
 }) {
-  const title =
-    platform === "instagram"
-      ? "No Instagram Business account found"
-      : platform === "facebook"
-      ? "No Facebook Page found"
-      : "No Facebook Page or Instagram account found";
-
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left">
       <div className="flex items-start gap-2">
         <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-900">{title}</p>
+          <p className="text-sm font-semibold text-amber-900">No Facebook Page found</p>
           <p className="mt-1 text-xs text-amber-800">
             This is usually a Meta Business access issue, not an EasyMod problem. Meta only
-            shows assets assigned to the Facebook login you just used.
+            shows Pages assigned to the Facebook login you just used.
           </p>
         </div>
       </div>
@@ -1424,8 +1005,7 @@ function NoMetaAssetsFound({
       <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-amber-900">
         <li>Open Meta Business Settings and select the correct Business Portfolio.</li>
         <li>In Users &gt; People, confirm this Facebook login has full control or assigned access.</li>
-        <li>In Accounts &gt; Pages and Instagram accounts, confirm the assets are inside that portfolio.</li>
-        <li>For Instagram, confirm it is a professional account linked to the Facebook Page.</li>
+        <li>In Accounts &gt; Pages, confirm the Page is inside that portfolio.</li>
         <li>Remove EasyMod from Business Integrations, then retry the connection.</li>
       </ol>
 
@@ -1484,8 +1064,8 @@ function HealthRow({
 
 /**
  * Per-channel AI auto-reply toggle. Loads the channel's MetaChannelSettings and
- * lets the merchant turn AI auto-reply on/off for that Page/IG account. This is
- * a per-channel control available on every plan — packages differ only by
+ * lets the merchant turn AI auto-reply on/off for that Page. This is a
+ * per-channel control available on every plan — packages differ only by
  * conversation quota, never by feature access.
  */
 function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {

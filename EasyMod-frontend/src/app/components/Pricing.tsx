@@ -332,7 +332,7 @@ export default function Pricing() {
             ))}
             <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
               <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-              Facebook + Instagram AI Inbox
+              Facebook AI Inbox
             </div>
             <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
               <Check className="w-5 h-5 text-green-600 flex-shrink-0" />

@@ -2,7 +2,7 @@
  * Customer types
  */
 
-export type ChannelType = 'facebook' | 'manual' | 'messenger' | 'instagram';
+export type ChannelType = 'facebook' | 'manual' | 'messenger';
 
 export interface Customer {
   id: string;

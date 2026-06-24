@@ -4,8 +4,15 @@
 Moderator before submitting for Meta App Review. Use it for (a) a human manual pass and
 (b) a Playwright (login-required) automated pass driven via the Playwright MCP tools.
 
-**Last updated:** 2026-06-09 · **App:** Easy Moderator (FB + IG f-commerce inbox + AI)
+**Last updated:** 2026-06-24 · **App:** Easy Moderator (Facebook f-commerce inbox + AI)
 · **Graph API:** v22.0 · **Login product:** Facebook Login for Business
+
+> **⚠️ Facebook-only launch (2026-06-24).** Instagram was removed from product scope. Every
+> Instagram step below (IG connect, IG DM, IG comment, linked-IG render) is **obsolete** — skip
+> them. The connect button is **"Facebook Page সংযুক্ত করুন"** (multi-select picker), the
+> consent dialog requests exactly the **5 Facebook scopes** (`pages_show_list`,
+> `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`,
+> `pages_manage_engagement`), and only the **page** webhook object (`messages`, `feed`) is used.
 
 > Companion docs:
 > - Reviewer permission map & 2–4 min walkthrough → [`docs/meta-app-review.md`](../meta-app-review.md)
@@ -203,14 +210,13 @@ This single screen drives **all 8 requested Meta permissions** (connect → conf
 monitor). It is the most important screen in the app for review.
 
 **Connect (🙋 human-only — real Facebook popup):**
-▢ Click **"Facebook + Instagram একসাথে সংযুক্ত করুন (one popup)"** → a single Facebook
-  Login for Business popup opens (`unifiedScopes` = the de-duped 8-permission union)
-▢ Consent dialog lists exactly the 8 scopes — **no `business_management`**
-▢ After consent, the **asset picker** lists the tester's Page(s) (`pages_show_list`); pick
-  the test Page; linked IG Business account is offered if present
-▢ Connected channel card shows the **health grid**: Connection = Connected, **Webhook =
-  Active** (hard-verified via `GET /{page-id}/subscribed_apps`, not assumed), linked IG
-  name + avatar render (`instagram_basic`)
+▢ Click **"Facebook Page সংযুক্ত করুন"** → a single Facebook Login for Business popup opens
+  (falls back to `MetaMessengerProvider.DEFAULT_SCOPES` = the 5 Facebook permissions)
+▢ Consent dialog lists exactly the 5 scopes — **no `business_management`, no `instagram_*`**
+▢ After consent, the **asset picker** lists the tester's Page(s) (`pages_show_list`); select
+  one **or several** Pages (multi-select) and Connect
+▢ Each connected channel card shows the **health grid**: Connection = Connected, **Webhook =
+  Active** (hard-verified via `GET /{page-id}/subscribed_apps`, not assumed)
 
 > ⚠️ Playwright **cannot** drive the facebook.com popup reliably (real OAuth + 2FA + bot
 > detection). Treat Connect/Disconnect as 🙋 manual. There are **3 near-identical OAuth
@@ -444,14 +450,14 @@ as the single most important rehearsal. Record a screenshot/clip at each beat.
 
 1. ▢ Log in to the live test instance (tester creds from submission notes) → `/app`
 2. ▢ Go to **Settings → Chat Settings** (`/app/manage-shop/chat-settings`)
-3. ▢ Click **"Facebook + Instagram একসাথে সংযুক্ত করুন (one popup)"** → single FB Login for Business popup
-4. ▢ Grant consent — the 8 scopes, **no `business_management`**
-5. ▢ Asset picker lists the Page (`pages_show_list`); pick Page + linked IG
-6. ▢ Channel card health grid: Connected + **Webhook: Active** (hard-verified) + IG name/avatar (`instagram_basic`)
-7. ▢ From a **roster** 2nd account, DM the Page **and** the IG → both land in the Shared Inbox (`pages_messaging`, `instagram_manage_messages`)
+3. ▢ Click **"Facebook Page সংযুক্ত করুন"** → single FB Login for Business popup
+4. ▢ Grant consent — the 5 Facebook scopes, **no `business_management`, no `instagram_*`**
+5. ▢ Asset picker lists the Page (`pages_show_list`); pick one or several Pages
+6. ▢ Channel card health grid: Connected + **Webhook: Active** (hard-verified)
+7. ▢ From a **roster** 2nd account, DM the Page → it lands in the Shared Inbox (`pages_messaging`)
 8. ▢ AI **auto-reply** delivered back to the sender
 9. ▢ Open the thread → send a **manual** human reply (compose→send path)
-10. ▢ *(optional)* Comment a trigger keyword on a post/IG media → event received → public reply + DM (`pages_read_engagement`, `pages_manage_engagement`, `instagram_manage_comments`)
+10. ▢ *(optional)* Comment a trigger keyword on a post → event received → public reply + DM (`pages_read_engagement`, `pages_manage_engagement`)
 
 **State the dev-mode caveat in narration** when sending the inbound DM ("sent from a tester
 account on the app roster, as required in Development mode"). Outbound sends (8–9) and

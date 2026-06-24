@@ -11,7 +11,7 @@ router.use(authenticate);
 // Validation middleware
 const validateStartSession = [
     body('customer_channel_id').notEmpty().withMessage('customer_channel_id is required'),
-    body('channel').optional().isIn(['messenger', 'instagram']).withMessage('Invalid channel'),
+    body('channel').optional().isIn(['messenger']).withMessage('Invalid channel'),
     body('initial_message').optional().isString(),
     body('entities').optional().isObject(),
     body('product_info').optional().isObject()

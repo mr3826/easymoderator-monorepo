@@ -13,42 +13,22 @@
 
 const Joi = require('joi');
 
-const PLATFORM = Joi.string().valid('facebook', 'instagram').required();
+const PLATFORM = Joi.string().valid('facebook').required();
 
 exports.initiate = {
     body: Joi.object({
         platform: PLATFORM.messages({
-            'any.only': 'platform must be facebook or instagram',
+            'any.only': 'platform must be facebook',
             'any.required': 'platform is required',
         }),
     }),
 };
 
-// Unified initiate carries no platform — covers FB + IG in one consent.
-exports.initiateUnified = {
-    body: Joi.object({}).unknown(false),
-};
-
 // State token format is `{platform}:{shopId}:{userId}:{32-hex-nonce}` —
-// ~115 chars for facebook, ~116 for instagram. The previous length(64) cap
-// was a leftover from a pre-Phase-5 nonce-only design and would 400 every
-// real callback. Range guard preserved against junk values.
+// ~115 chars for facebook. The previous length(64) cap was a leftover from a
+// pre-Phase-5 nonce-only design and would 400 every real callback. Range guard
+// preserved against junk values.
 exports.callback = {
-    body: Joi.object({
-        code: Joi.string().trim().min(10).required().messages({
-            'any.required': 'OAuth code is required',
-        }),
-        state: Joi.string().trim().min(40).max(128).required().messages({
-            'string.min': 'Invalid state token',
-            'string.max': 'Invalid state token',
-            'any.required': 'State token is required',
-        }),
-    }),
-};
-
-// Unified callback uses a longer state prefix ('unified:'), so the strict
-// length(64) doesn't fit. Range guard preserved.
-exports.callbackUnified = {
     body: Joi.object({
         code: Joi.string().trim().min(10).required().messages({
             'any.required': 'OAuth code is required',
@@ -63,7 +43,7 @@ exports.callbackUnified = {
 
 exports.connectAsset = {
     body: Joi.object({
-        // FB page id, IG business account id, etc.
+        // FB page id.
         assetId: Joi.string().trim().max(64).required().messages({
             'any.required': 'assetId is required',
         }),
@@ -81,7 +61,7 @@ exports.connectAsset = {
             'any.required': 'tempToken is required',
         }),
         platform: PLATFORM.messages({
-            'any.only': 'platform must be facebook or instagram',
+            'any.only': 'platform must be facebook',
             'any.required': 'platform is required',
         }),
     }),

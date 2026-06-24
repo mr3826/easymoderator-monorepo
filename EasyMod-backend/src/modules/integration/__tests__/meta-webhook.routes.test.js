@@ -410,11 +410,10 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
-    it('routes instagram events and stores the message', async () => {
-        mockMetaChannelService.findByMetaAssetId.mockResolvedValue(
-            buildMetaChannel({ platform: 'instagram', meta_asset_id: 'ig-acct-111' })
-        );
-
+    it('ignores instagram events (Facebook-only launch) — acks 200 without storing', async () => {
+        // Instagram was removed from product scope (2026-06-24). The dispatcher
+        // only handles object:'page'; an 'instagram' payload is acknowledged so
+        // Meta does not retry, but no message is stored.
         const igPayload = {
             object: 'instagram',
             entry: [{
@@ -428,7 +427,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
             }]
         };
         await sendWebhookWithSig(igPayload).expect(200);
-        expect(mockMessage.create).toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
     it('returns 200 even when message storage fails (per-message error isolation)', async () => {

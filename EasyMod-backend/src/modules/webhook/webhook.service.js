@@ -6,7 +6,7 @@
  * Multiple modules (payment-webhook.controller, invoice.service,
  * delivery-tracking.service, order-session.service,
  * owner-notification.service) require this path to send outbound
- * Messenger/Instagram messages via a channel record.
+ * Messenger messages via a channel record.
  *
  * Phase 5 cutover: the legacy meta-send.service import is removed.
  * Outbound transport lives exclusively in the provider registry.
@@ -16,7 +16,7 @@
  *
  * Where `channel` carries:
  *   channel.shop_id          — tenant scoping
- *   channel.type             — 'facebook' | 'instagram' | 'messenger'
+ *   channel.type             — 'facebook' | 'messenger'
  *   channel.meta_channel_id  — (Phase 2, optional) specific MetaChannel UUID;
  *                              when present the shim uses it directly instead
  *                              of resolving by (shop_id, platform). Callers
@@ -40,24 +40,20 @@ const logger = createLogger('WebhookService');
 
 /**
  * Normalize the legacy channel.type string to the platform key expected
- * by the provider registry: 'facebook' | 'instagram'.
+ * by the provider registry. Facebook-only launch → always 'facebook'.
  *
  * @param {string} channelType
- * @returns {'facebook'|'instagram'}
+ * @returns {'facebook'}
  */
 function normalizePlatform(channelType) {
-    if (!channelType) return 'facebook';
-    const t = channelType.toLowerCase();
-    if (t === 'facebook' || t === 'messenger') return 'facebook';
-    if (t === 'instagram') return 'instagram';
-    return 'facebook'; // safe default
+    return 'facebook';
 }
 
 /**
  * Send a text message to a customer via the shop's active Meta channel.
  *
  * @param {object} channel       - Channel-like object (shop_id, type)
- * @param {string|number} recipientId   - Customer PSID / IG-scoped ID
+ * @param {string|number} recipientId   - Customer PSID
  * @param {string} messageText   - Plain-text message content
  * @returns {Promise<void>}
  */
@@ -112,8 +108,8 @@ async function sendMessage(channel, recipientId, messageText) {
     // Without this, `messengerOptedOut` and `consentRequired` short-circuit to
     // NO_CUSTOMER_CONTEXT (allow) and transactional sends (payment confirm,
     // delivery, invoice, owner notification) reach opted-out users.
-    // channel_type stores 'messenger' for FB, 'instagram' for IG.
-    const customerChannelType = platform === 'instagram' ? 'instagram' : 'messenger';
+    // channel_type stores 'messenger' for Facebook.
+    const customerChannelType = 'messenger';
     let customer = null;
     try {
         customer = await Customer.findOne({
@@ -191,7 +187,7 @@ async function sendMessage(channel, recipientId, messageText) {
 
 /**
  * Send a transactional message to a customer identified by their internal
- * Customer record id. Resolves the customer's real channel_user_id (PSID/IGSID)
+ * Customer record id. Resolves the customer's real channel_user_id (PSID)
  * and platform, then delegates to sendMessage().
  *
  * This is the correct way for order/delivery/payment notifications to reach a
@@ -220,12 +216,12 @@ async function sendToCustomer({ shopId, customerId, message } = {}) {
 
     if (!customer || !customer.channel_user_id) {
         // No Meta-side identity for this customer (e.g. a manually-created order
-        // with only a phone) — nothing to deliver to over Messenger/Instagram.
+        // with only a phone) — nothing to deliver to over Messenger.
         return { sent: false, reason: 'no_customer_psid' };
     }
 
-    // channel_type stores 'messenger' for Facebook, 'instagram' for IG.
-    const channelType = customer.channel_type === 'instagram' ? 'instagram' : 'messenger';
+    // channel_type stores 'messenger' for Facebook.
+    const channelType = 'messenger';
 
     try {
         await sendMessage({ shop_id: shopId, type: channelType }, customer.channel_user_id, message);

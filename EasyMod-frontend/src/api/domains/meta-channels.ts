@@ -21,7 +21,7 @@ import { httpClient } from '@/shared/lib/http/client';
 import type { ApiResponse } from '../types/common';
 import type { AxiosResponse } from 'axios';
 
-export type MetaPlatform = 'facebook' | 'instagram';
+export type MetaPlatform = 'facebook';
 
 export type MetaChannelStatus =
   | 'CONNECTED'
@@ -37,7 +37,6 @@ export interface MetaChannel {
   metaAssetId: string;
   displayName: string;
   pictureUrl: string | null;
-  linkedFbPageId: string | null;
   status: MetaChannelStatus;
   lastError: string | null;
   tokenExpiresAt: string | null;
@@ -57,32 +56,10 @@ export interface MetaOAuthAsset {
   name: string;
   category: string | null;
   pictureUrl: string | null;
-  instagramAccount: {
-    id: string;
-    name: string;
-    username: string;
-  } | null;
 }
 
 export interface MetaOAuthCallbackResult {
   pages: MetaOAuthAsset[];
-  tempToken: string;
-}
-
-export interface MetaUnifiedAsset {
-  id: string;
-  name: string;
-  platform: MetaPlatform;
-  category?: string | null;
-  pictureUrl?: string | null;
-  username?: string;
-  linkedPageId?: string;
-  linkedPageName?: string;
-}
-
-export interface MetaUnifiedCallbackResult {
-  facebookPages: MetaUnifiedAsset[];
-  instagramAccounts: MetaUnifiedAsset[];
   tempToken: string;
 }
 
@@ -157,30 +134,11 @@ export async function handleMetaOAuthCallback(
   return res.data.data;
 }
 
-// Unified FB+IG consent — one popup covers both platforms. Returns the
-// merchant's FB pages and any IG business accounts linked to them.
-export async function initiateMetaUnifiedOAuth(): Promise<{ redirectUrl: string; state: string }> {
-  const res: AxiosResponse<ApiResponse<{ redirectUrl: string; state: string }>> =
-    await httpClient.post(`${BASE}/oauth/initiate-unified`, {});
-  return res.data.data;
-}
-
-export async function handleMetaUnifiedOAuthCallback(
-  code: string,
-  state: string,
-): Promise<MetaUnifiedCallbackResult> {
-  const res: AxiosResponse<ApiResponse<MetaUnifiedCallbackResult>> = await httpClient.post(
-    `${BASE}/oauth/callback-unified`,
-    { code, state },
-  );
-  return res.data.data;
-}
-
 export async function connectMetaAsset(input: {
   assetId: string;
   displayName: string;
   tempToken: string;
-  platform: 'facebook' | 'instagram';
+  platform: 'facebook';
 }): Promise<MetaConnectAssetResult> {
   const res: AxiosResponse<ApiResponse<MetaConnectAssetResult>> = await httpClient.post(
     `${BASE}/oauth/connect-asset`,

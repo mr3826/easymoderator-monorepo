@@ -16,7 +16,7 @@ const logger = createLogger('MetaOAuthController');
 
 /**
  * POST /api/channels/meta/oauth/initiate
- * body: { platform: 'facebook' | 'instagram' }
+ * body: { platform: 'facebook' }
  * returns: { redirectUrl, state }
  */
 exports.initiate = async (req, res, next) => {
@@ -53,43 +53,6 @@ exports.callback = async (req, res, next) => {
  * body: { assetId, displayName, tempToken, platform }
  * returns: connected channel record + webhook subscription state
  */
-/**
- * POST /api/channels/meta/oauth/initiate-unified
- * body: {} (no platform — covers both FB and IG)
- * returns: { redirectUrl, state }
- */
-exports.initiateUnified = async (req, res, next) => {
-    try {
-        const { userId, shopId } = req.user;
-        const result = await oauthService.initiateUnifiedOAuth(userId, shopId);
-        logger.info('Unified OAuth initiated', { shopId });
-        res.json({ success: true, data: result });
-    } catch (err) {
-        next(err);
-    }
-};
-
-/**
- * POST /api/channels/meta/oauth/callback-unified
- * body: { code, state }
- * returns: { facebookPages, instagramAccounts, tempToken }
- */
-exports.callbackUnified = async (req, res, next) => {
-    try {
-        const { code, state } = req.body;
-        const { userId, shopId } = req.user;
-        const result = await oauthService.handleUnifiedCallback(code, state, userId, shopId);
-        logger.info('Unified OAuth callback processed', {
-            shopId,
-            fbPageCount: result.facebookPages?.length ?? 0,
-            igAccountCount: result.instagramAccounts?.length ?? 0,
-        });
-        res.json({ success: true, data: result });
-    } catch (err) {
-        next(err);
-    }
-};
-
 exports.connectAsset = async (req, res, next) => {
     try {
         const { assetId, displayName, tempToken, platform } = req.body;

@@ -42,7 +42,7 @@ Exit code `0` = all hard gates pass. The script prints PASS/FAIL per gate.
 For each of the 10 pilot shops:
 
 1. Sign up → the **Onboarding Wizard** opens automatically.
-2. **Connect** the Facebook Page / Instagram account (wizard step 1).
+2. **Connect** the Facebook Page (wizard step 1).
 3. Add 3–5 products (step 2).
 4. Tap **"✨ Starter FAQ যোগ করুন (১ ট্যাপে)"** to seed the BD f-commerce FAQ pack
    (step 3) — gives the AI a working knowledge base immediately.

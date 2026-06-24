@@ -186,7 +186,7 @@ export default function CommentToDmSettings({ channelId }: Props) {
         <p className="text-xs text-muted-foreground">
           {t(
             'commentToDm.settings.postFilterDescription',
-            'Enter Facebook/Instagram post IDs to limit the flow to those posts only. Leave empty for all posts.'
+            'Enter Facebook post IDs to limit the flow to those posts only. Leave empty for all posts.'
           )}
         </p>
         <div className="flex gap-2">

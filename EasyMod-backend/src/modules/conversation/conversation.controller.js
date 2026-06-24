@@ -11,11 +11,12 @@ const policyEngine = require('../policy/policy.engine');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 
-// Channels that route through Meta Graph API for delivery
+// Channels that route through Meta Graph API for delivery (Facebook-only).
+// Legacy 'instagram' conversation rows resolve to undefined here and are
+// skipped — Instagram is no longer a deliverable channel.
 const META_CHANNEL_PLATFORM = {
     messenger: 'facebook',
     facebook:  'facebook',
-    instagram: 'instagram',
 };
 
 /**

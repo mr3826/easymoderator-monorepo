@@ -3,7 +3,14 @@
 **App:** Easy Moderator
 **Canonical origin:** `https://easymod.tech` (apex)
 **Local dev origin:** `http://localhost:5173`
-**Last updated:** 2026-05-21
+**Last updated:** 2026-06-24 (Instagram removed — Facebook-only launch)
+
+> **⚠️ Facebook-only launch (2026-06-24).** Instagram was removed from product scope. Skip
+> every Instagram step in this doc: do **not** add the IG scopes, do **not** configure the
+> Instagram webhook object, and do **not** add Instagram as a Login asset. The app requests
+> only the **5 Facebook scopes** (`pages_show_list`, `pages_messaging`, `pages_read_engagement`,
+> `pages_manage_metadata`, `pages_manage_engagement`) and subscribes only the **page** object
+> to `messages` + `feed`.
 
 This walkthrough takes you from "no app" to "fully configured Development-mode app with OAuth + webhooks working." Each section says exactly what to click in [developers.facebook.com](https://developers.facebook.com) and what value to paste.
 
@@ -58,7 +65,7 @@ Fill in:
 | Category | **Business and Pages** |
 | App Icon | Upload a 1024×1024 PNG (placeholder OK in dev; final logo before App Review) |
 
-Scroll down to **Business Use Case** → click **Add Use Case** → select **Other**. Description: *"Help BD f-commerce merchants moderate Facebook and Instagram comments and DMs to automate replies, capture orders, and respect opt-outs."*
+Scroll down to **Business Use Case** → click **Add Use Case** → select **Other**. Description: *"Help BD f-commerce merchants moderate Facebook Page comments and DMs to automate replies, capture orders, and respect opt-outs."*
 
 Click **Save Changes**.
 
@@ -96,8 +103,7 @@ Click **Set Up** on each:
 
 1. **Facebook Login for Business**
 2. **Messenger**
-3. **Instagram**
-4. **Webhooks** (auto-included with Messenger/Instagram but verify it's present)
+3. **Webhooks** (auto-included with Messenger but verify it's present)
 
 ---
 
@@ -123,16 +129,13 @@ Click **Save Changes**.
 1. Click **Configurations** → **Create configuration**
 2. **Name:** `Easy Moderator Connect`
 3. **Login type:** Business Login
-4. **Assets:** Pages, Instagram accounts
+4. **Assets:** Pages
 5. **Permissions:** check all of these
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_manage_metadata`
    - `pages_manage_engagement`
    - `pages_messaging`
-   - `instagram_basic`
-   - `instagram_manage_messages`
-   - `instagram_manage_comments`
 6. Click **Create**
 7. Note the **Configuration ID** if you use one — the current codebase uses standard OAuth scopes, so this is optional for now.
 
@@ -163,16 +166,8 @@ Navigate: **Webhooks** (left sidebar)
    - `messages`
    - `feed`
 
-### 6b. Instagram object
-
-1. From the dropdown, switch to **Instagram**
-2. Click **Subscribe to this object**
-3. **Callback URL:** same as above
-4. **Verify Token:** same token (re-use; the bootstrap row matches both)
-5. Click **Verify and Save**
-6. In the subscription field list, check:
-   - `messages`
-   - `comments`
+> **Instagram object — skipped.** Facebook-only launch: do not subscribe the Instagram
+> webhook object. Only the **page** object above is configured.
 
 ---
 
@@ -181,7 +176,7 @@ Navigate: **Webhooks** (left sidebar)
 Navigate: **Messenger → Settings**
 
 - **Access Tokens:** leave empty — tokens are generated per-Page at runtime by the OAuth flow.
-- **Webhooks:** confirm "Page" and "Instagram" appear under "Connected Webhook Subscriptions" (configured in step 6).
+- **Webhooks:** confirm "Page" appears under "Connected Webhook Subscriptions" (configured in step 6).
 - **Built-in NLP:** Off (we use our own LLM).
 - **App Review for Messenger:** comes later (step 10).
 
@@ -269,9 +264,6 @@ For each permission below, click **Request advanced access** → fill the justif
 | `pages_read_engagement` | Storyboard 1 |
 | `pages_manage_metadata` | OAuth flow showing webhook subscribe |
 | `pages_manage_engagement` | Storyboard 1 (public reply toggle) |
-| `instagram_basic` | OAuth flow → IG account appears in dashboard |
-| `instagram_manage_messages` | IG DM round-trip |
-| `instagram_manage_comments` | IG comment → DM trigger + public reply on IG post |
 
 Use the prompts in [permissions-justification.md](permissions-justification.md) and the storyboards in [screencast-storyboards.md](screencast-storyboards.md).
 
@@ -467,7 +459,7 @@ This key encrypts page tokens at rest in `meta_channels.page_access_token_ct`. *
 
 Flipping the App Mode toggle (top-right of dashboard) Development → Live:
 - OAuth dialog becomes visible to ALL Facebook users, not just App Roles roster.
-- Advanced permissions (`pages_messaging`, `instagram_manage_messages`, etc.) still gated by App Review approval — until granted, real users can complete OAuth but messaging API calls return empty/permission-denied results. Tester accounts continue to work without restriction.
+- Advanced permissions (`pages_messaging`, `pages_manage_engagement`, etc.) still gated by App Review approval — until granted, real users can complete OAuth but messaging API calls return empty/permission-denied results. Tester accounts continue to work without restriction.
 - Don't flip until §10 is complete and Business Verification is approved.
 
 ### 14.5 Disconnect / reconnect flow

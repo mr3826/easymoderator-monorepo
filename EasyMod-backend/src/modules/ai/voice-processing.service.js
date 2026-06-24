@@ -102,7 +102,7 @@ async function downloadMediaFromMeta(mediaData, shopId) {
 
     // Get media URL from Meta
     const mediaResponse = await axios.get(
-      `https://graph.instagram.com/v18.0/${mediaId}`,
+      `https://graph.facebook.com/v22.0/${mediaId}`,
       {
         params: { fields: 'media_type,media_product_type', access_token: accessToken }
       }
@@ -110,7 +110,7 @@ async function downloadMediaFromMeta(mediaData, shopId) {
 
     // Download the actual file
     const downloadResponse = await axios.get(
-      `https://graph.instagram.com/v18.0/${mediaId}`,
+      `https://graph.facebook.com/v22.0/${mediaId}`,
       {
         params: { fields: 'media_type,media_product_type', access_token: accessToken },
         responseType: 'arraybuffer'

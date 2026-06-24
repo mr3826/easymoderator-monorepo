@@ -2,15 +2,16 @@
  * ChatSettings (formerly Channels) — component integration tests.
  *
  * The Channels component was merged into ChatSettings.tsx in Phase 5.
- * The primary connect entry-point is now the unified FB+IG OAuth button
- * (handleConnectUnified), not per-platform "Connect Channel" buttons.
+ * Facebook-only launch (Instagram removed 2026-06-24): the connect entry-point
+ * is a single Facebook Page OAuth button (handleConnect), and the picker
+ * supports selecting one OR multiple Pages at once.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import ChatSettings from '@/app/components/ChatSettings'
 import { toast } from 'sonner'
-import type { MetaChannel, MetaOAuthCallbackResult, MetaUnifiedCallbackResult } from '@/api/domains/meta-channels'
+import type { MetaChannel, MetaOAuthCallbackResult } from '@/api/domains/meta-channels'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -28,29 +29,29 @@ vi.mock('react-i18next', () => ({
 // ── Hoist mocks ────────────────────────────────────────────────────────────────
 const {
   mockListMetaChannels,
-  mockInitiateMetaUnifiedOAuth,
-  mockHandleMetaUnifiedOAuthCallback,
+  mockInitiateMetaOAuth,
+  mockHandleMetaOAuthCallback,
   mockConnectMetaAsset,
 } = vi.hoisted(() => ({
-  mockListMetaChannels:               vi.fn<[], Promise<MetaChannel[]>>().mockResolvedValue([]),
-  mockInitiateMetaUnifiedOAuth:       vi.fn(),
-  mockHandleMetaUnifiedOAuthCallback: vi.fn(),
-  mockConnectMetaAsset:               vi.fn(),
+  mockListMetaChannels:        vi.fn<[], Promise<MetaChannel[]>>().mockResolvedValue([]),
+  mockInitiateMetaOAuth:       vi.fn(),
+  mockHandleMetaOAuthCallback: vi.fn(),
+  mockConnectMetaAsset:        vi.fn(),
 }))
 
 // Mock the meta-channels client — must include every named export ChatSettings imports
 vi.mock('@/api/domains/meta-channels', () => ({
   listMetaChannels:               mockListMetaChannels,
-  initiateMetaOAuth:              vi.fn(),
-  handleMetaOAuthCallback:        vi.fn(),
-  initiateMetaUnifiedOAuth:       mockInitiateMetaUnifiedOAuth,
-  handleMetaUnifiedOAuthCallback: mockHandleMetaUnifiedOAuthCallback,
+  initiateMetaOAuth:              mockInitiateMetaOAuth,
+  handleMetaOAuthCallback:        mockHandleMetaOAuthCallback,
   connectMetaAsset:               mockConnectMetaAsset,
   pingMetaChannel:                vi.fn(),
   disconnectMetaChannel:          vi.fn(),
   reconnectMetaChannel:           vi.fn(),
   getMetaChannelConsentSummary:   vi.fn(),
   updateMetaChannelPurposeLabel:  vi.fn(),
+  getMetaChannelSettings:         vi.fn().mockResolvedValue({ aiAutoReply: false }),
+  updateMetaChannelSettings:      vi.fn(),
 }))
 
 vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
@@ -68,14 +69,16 @@ vi.mock('sonner', () => ({
   },
 }))
 
-// BroadcastChannel is not available in happy-dom — provide a no-op stub so
-// ChatSettings' unified OAuth path does not throw when it calls new BroadcastChannel().
+// BroadcastChannel is not available in happy-dom — provide a no-op stub so the
+// OAuth path does not throw when it calls new BroadcastChannel().
 class FakeBroadcastChannel {
   onmessage: ((e: MessageEvent) => void) | null = null
   postMessage() {}
   close() {}
 }
 vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
+
+const CONNECT_BTN = /Facebook Page সংযুক্ত করুন/i
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,7 +91,7 @@ describe('ChatSettings (Channels)', () => {
   })
 
   // ── 1. Render ───────────────────────────────────────────────────────────────
-  it('renders the channel settings page with the unified connect button', async () => {
+  it('renders the channel settings page with the Facebook connect button', async () => {
     await act(async () => {
       render(
         <BrowserRouter>
@@ -97,31 +100,22 @@ describe('ChatSettings (Channels)', () => {
       )
     })
 
-    // The page heading is in Bengali ("চ্যানেল সেটিংস"), surfaced as an h2.
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument()
     })
 
-    // The primary CTA for first-time connect is the unified one-popup button.
-    // It is only rendered when !isLoading && !loadError && !activeOAuth.
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /Facebook.*Instagram.*একসাথে|একসাথে সংযুক্ত/i }),
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: CONNECT_BTN })).toBeInTheDocument()
     })
   })
 
   // ── 2. Origin filter — wrong-origin postMessage is ignored ─────────────────
   it('ignores OAuth postMessage events from wrong origin', async () => {
-    mockInitiateMetaUnifiedOAuth.mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth',
-      state: 's'.repeat(64),
-    })
-    mockHandleMetaUnifiedOAuthCallback.mockResolvedValue({
-      facebookPages: [],
-      instagramAccounts: [],
+    mockInitiateMetaOAuth.mockResolvedValue({ redirectUrl: 'https://facebook.com/dialog/oauth' })
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [],
       tempToken: 't'.repeat(64),
-    } as MetaUnifiedCallbackResult)
+    } as MetaOAuthCallbackResult)
 
     await act(async () => {
       render(
@@ -131,15 +125,13 @@ describe('ChatSettings (Channels)', () => {
       )
     })
 
-    // Click the unified connect button to open the OAuth popup
-    const unifiedBtn = await screen.findByRole('button', { name: /একসাথে সংযুক্ত/i })
-    fireEvent.click(unifiedBtn)
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
 
     await waitFor(() => {
-      expect(mockInitiateMetaUnifiedOAuth).toHaveBeenCalledOnce()
+      expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook')
     })
 
-    // Dispatch a message from a hostile origin — the component's handler checks
+    // Dispatch a message from a hostile origin — the handler checks
     // e.origin !== window.location.origin and returns early.
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -150,15 +142,12 @@ describe('ChatSettings (Channels)', () => {
     )
 
     await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(mockHandleMetaUnifiedOAuthCallback).not.toHaveBeenCalled()
+    expect(mockHandleMetaOAuthCallback).not.toHaveBeenCalled()
   })
 
   // ── 3. Error postMessage from same origin ──────────────────────────────────
   it('handles OAuth error postMessage from same origin', async () => {
-    mockInitiateMetaUnifiedOAuth.mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth',
-      state: 's'.repeat(64),
-    })
+    mockInitiateMetaOAuth.mockResolvedValue({ redirectUrl: 'https://facebook.com/dialog/oauth' })
 
     await act(async () => {
       render(
@@ -168,12 +157,8 @@ describe('ChatSettings (Channels)', () => {
       )
     })
 
-    const unifiedBtn = await screen.findByRole('button', { name: /একসাথে সংযুক্ত/i })
-    fireEvent.click(unifiedBtn)
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
 
-    // Wait for the "connecting" step UI (spinner + cancel link) to appear inside
-    // the unified connect card. The spinner is rendered when
-    // activeOAuth.platform === 'unified' && step === 'connecting'.
     await waitFor(() => {
       expect(screen.getByText(/পপ-আপে Meta-তে লগইন করুন/i)).toBeInTheDocument()
     })
@@ -189,23 +174,19 @@ describe('ChatSettings (Channels)', () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled()
     })
-    expect(mockHandleMetaUnifiedOAuthCallback).not.toHaveBeenCalled()
+    expect(mockHandleMetaOAuthCallback).not.toHaveBeenCalled()
   })
 
   // ── 4. Page-picker connect button disabled until selection ─────────────────
-  it('keeps the connect button disabled until at least one asset is selected', async () => {
-    mockInitiateMetaUnifiedOAuth.mockResolvedValue({
-      redirectUrl: 'https://facebook.com/dialog/oauth',
-      state: 's'.repeat(64),
-    })
-    mockHandleMetaUnifiedOAuthCallback.mockResolvedValue({
-      facebookPages: [
-        { id: 'page-1', name: 'Page One', platform: 'facebook', category: null, pictureUrl: null },
-        { id: 'page-2', name: 'Page Two', platform: 'facebook', category: null, pictureUrl: null },
+  it('keeps the connect button disabled until at least one Page is selected', async () => {
+    mockInitiateMetaOAuth.mockResolvedValue({ redirectUrl: 'https://facebook.com/dialog/oauth' })
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [
+        { id: 'page-1', name: 'Page One', category: null, pictureUrl: null },
+        { id: 'page-2', name: 'Page Two', category: null, pictureUrl: null },
       ],
-      instagramAccounts: [],
       tempToken: 't'.repeat(64),
-    } as unknown as MetaUnifiedCallbackResult)
+    } as MetaOAuthCallbackResult)
 
     await act(async () => {
       render(
@@ -215,11 +196,10 @@ describe('ChatSettings (Channels)', () => {
       )
     })
 
-    const unifiedBtn = await screen.findByRole('button', { name: /একসাথে সংযুক্ত/i })
-    fireEvent.click(unifiedBtn)
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
 
     await waitFor(() => {
-      expect(mockInitiateMetaUnifiedOAuth).toHaveBeenCalledOnce()
+      expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook')
     })
 
     // Simulate the OAuth popup replying with a success postMessage
@@ -231,17 +211,15 @@ describe('ChatSettings (Channels)', () => {
       }),
     )
 
-    // Wait for the page-select step: "Page One" should appear in the picker
     await waitFor(() => {
       expect(screen.getByText('Page One')).toBeInTheDocument()
+      expect(screen.getByText('Page Two')).toBeInTheDocument()
     })
 
-    // The "Connect (0)" button must be disabled before any selection
-    const connectBtn = screen.getByRole('button', { name: /Connect \(0\)/i })
-    expect(connectBtn).toBeDisabled()
+    // "Connect (0)" must be disabled before any selection
+    expect(screen.getByRole('button', { name: /Connect \(0\)/i })).toBeDisabled()
 
-    // Selecting a checkbox enables the button — checkboxes are associated with
-    // the page labels via the <label> wrapping pattern; use getByText + closest.
+    // Selecting a checkbox enables the button
     const pageOneLabel = screen.getByText('Page One').closest('label') as HTMLElement
     const checkbox = pageOneLabel.querySelector('input[type="checkbox"]') as HTMLInputElement
     fireEvent.click(checkbox)

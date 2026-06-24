@@ -50,7 +50,7 @@ export interface Message {
 export interface ConversationMetaChannel {
   id: string;
   displayName: string | null;
-  platform: 'facebook' | 'instagram' | null;
+  platform: 'facebook' | null;
   purposeLabel: string | null;
 }
 
@@ -63,7 +63,7 @@ export interface Conversation {
     email?: string;
     phone?: string;
   };
-  channel: 'telegram' | 'messenger' | 'facebook' | 'instagram' | 'web';
+  channel: 'telegram' | 'messenger' | 'facebook' | 'web';
   meta_channel_id?: string | null;
   metaChannel?: ConversationMetaChannel | null;
   title?: string;

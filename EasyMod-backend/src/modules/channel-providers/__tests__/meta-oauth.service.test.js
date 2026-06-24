@@ -11,7 +11,7 @@ jest.mock('../oauth-state.store', () => ({
 const mockBuildAuthUrl = jest.fn().mockResolvedValue('https://www.facebook.com/v22.0/dialog/oauth?scope=stub');
 const mockSubscribeWebhook = jest.fn().mockResolvedValue(undefined);
 const mockVerifyWebhookSubscription = jest.fn();
-const mockGetAssetAccessToken = jest.fn().mockResolvedValue({ token: 'page-tok', expiresAt: null, linkedFbPageId: null });
+const mockGetAssetAccessToken = jest.fn().mockResolvedValue({ token: 'page-tok', expiresAt: null });
 const mockExchangeCode = jest.fn().mockResolvedValue({ userToken: 'user-tok' });
 const mockListManagedAssets = jest.fn().mockResolvedValue([]);
 
@@ -38,23 +38,25 @@ jest.mock('../meta-channel.service', () => ({
 
 const oauthService = require('../meta-oauth.service');
 
-describe('initiateUnifiedOAuth scopes', () => {
+describe('initiateOAuth (facebook) scopes', () => {
     beforeEach(() => jest.clearAllMocks());
 
-    test('does NOT request business_management', async () => {
-        await oauthService.initiateUnifiedOAuth('user-1', 'shop-1');
+    test('never injects business_management or any Instagram scope', async () => {
+        await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
         const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
+        // The service delegates the concrete scope list to
+        // MetaMessengerProvider.DEFAULT_SCOPES (asserted in the provider test);
+        // it must never add Instagram or the high-sensitivity business_management.
         expect(scopes).not.toContain('business_management');
+        expect(scopes).not.toContain('instagram_basic');
+        expect(scopes).not.toContain('instagram_manage_messages');
+        expect(scopes).not.toContain('instagram_manage_comments');
     });
 
-    test('still requests the core messaging + IG scopes', async () => {
-        await oauthService.initiateUnifiedOAuth('user-1', 'shop-1');
-        const { scopes } = mockBuildAuthUrl.mock.calls[0][0];
-        expect(scopes).toEqual(expect.arrayContaining([
-            'pages_show_list', 'pages_messaging', 'pages_manage_metadata',
-            'pages_manage_engagement', 'instagram_basic', 'instagram_manage_messages',
-        ]));
-        expect(scopes).not.toContain('pages_manage_posts');
+    test('builds an OAuth redirect URL + facebook-prefixed state', async () => {
+        const result = await oauthService.initiateOAuth('user-1', 'shop-1', 'facebook');
+        expect(result.redirectUrl).toBeTruthy();
+        expect(result.state).toMatch(/^facebook:/);
     });
 });
 
@@ -73,17 +75,6 @@ describe('OAuth callback null-state guards', () => {
             status: 400,
         });
     });
-
-    test('handleUnifiedCallback rejects with status 400 when stateStore.take returns null', async () => {
-        stateStore.take.mockResolvedValueOnce(null);
-
-        await expect(
-            oauthService.handleUnifiedCallback('auth-code', 'stale-state', 'user-xyz', 'shop-abc'),
-        ).rejects.toMatchObject({
-            message: 'Invalid or expired OAuth state token',
-            status: 400,
-        });
-    });
 });
 
 describe('connectPage() webhook verify wiring', () => {
@@ -95,7 +86,7 @@ describe('connectPage() webhook verify wiring', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockUpsertFromOAuth.mockResolvedValue(CHANNEL);
-        mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null, linkedFbPageId: null });
+        mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null });
         mockSubscribeWebhook.mockResolvedValue(undefined);
     });
 

@@ -4,7 +4,7 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import ChatSettings from './ChatSettings';
 import type { MetaChannel } from '@/api/domains/meta-channels';
 
-// ── MetaChannel fixture ────────────────────────────────────────────────────
+// ── MetaChannel fixture (Facebook-only — Instagram removed 2026-06-24) ───────
 const mockMetaChannel: MetaChannel = {
   id: 'mc-1',
   shopId: 'shop-abc',
@@ -12,7 +12,6 @@ const mockMetaChannel: MetaChannel = {
   metaAssetId: 'page-123',
   displayName: 'My Facebook Page',
   pictureUrl: null,
-  linkedFbPageId: null,
   status: 'CONNECTED',
   lastError: null,
   tokenExpiresAt: null,
@@ -23,6 +22,7 @@ const mockMetaChannel: MetaChannel = {
   disconnectedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  purposeLabel: null,
 };
 
 const mockChannels: MetaChannel[] = [mockMetaChannel];
@@ -31,18 +31,16 @@ const mockChannels: MetaChannel[] = [mockMetaChannel];
 const {
   mockListMetaChannels,
   mockDisconnectMetaChannel,
-  mockInitiateMetaUnifiedOAuth,
-  mockHandleMetaUnifiedOAuthCallback,
+  mockInitiateMetaOAuth,
+  mockHandleMetaOAuthCallback,
+  mockConnectMetaAsset,
 } = vi.hoisted(() => {
   return {
-    mockListMetaChannels:     vi.fn().mockResolvedValue([]),
+    mockListMetaChannels:      vi.fn().mockResolvedValue([]),
     mockDisconnectMetaChannel: vi.fn().mockResolvedValue({ id: 'mc-1' }),
-    mockInitiateMetaUnifiedOAuth: vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' }),
-    mockHandleMetaUnifiedOAuthCallback: vi.fn().mockResolvedValue({
-      facebookPages: [],
-      instagramAccounts: [],
-      tempToken: 'tmp',
-    }),
+    mockInitiateMetaOAuth:     vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' }),
+    mockHandleMetaOAuthCallback: vi.fn().mockResolvedValue({ pages: [], tempToken: 'tmp' }),
+    mockConnectMetaAsset:      vi.fn().mockResolvedValue({ webhookWarning: null }),
   };
 });
 
@@ -56,14 +54,12 @@ vi.mock('@/api/domains/meta-channels', () => ({
   updateMetaChannelPurposeLabel: vi.fn().mockResolvedValue({}),
   getMetaChannelSettings:     vi.fn().mockResolvedValue({ aiAutoReply: false }),
   updateMetaChannelSettings:  vi.fn().mockResolvedValue({ aiAutoReply: true }),
-  initiateMetaOAuth:          vi.fn().mockResolvedValue({ redirectUrl: 'https://example.com' }),
-  initiateMetaUnifiedOAuth:   mockInitiateMetaUnifiedOAuth,
-  handleMetaOAuthCallback:    vi.fn().mockResolvedValue({ pages: [], tempToken: '' }),
-  handleMetaUnifiedOAuthCallback: mockHandleMetaUnifiedOAuthCallback,
-  connectMetaAsset:           vi.fn().mockResolvedValue({ webhookWarning: null }),
+  initiateMetaOAuth:          mockInitiateMetaOAuth,
+  handleMetaOAuthCallback:    mockHandleMetaOAuthCallback,
+  connectMetaAsset:           mockConnectMetaAsset,
 }));
 
-// ── Mock subscription hook — include advanced_ai so LLM section renders ───
+// ── Mock subscription hook ────────────────────────────────────────────────
 vi.mock('@/app/lib/useSubscriptionFeatures', () => ({
   useSubscriptionFeatures: () => ({
     canUseFeature: vi.fn().mockReturnValue(true),
@@ -84,7 +80,7 @@ vi.mock('react-router-dom', () => ({
 vi.mock('lucide-react', () => {
   const Icon = () => null;
   return {
-    MessageSquare: Icon, Instagram: Icon, CheckCircle: Icon, Clock: Icon,
+    MessageSquare: Icon, CheckCircle: Icon, Clock: Icon,
     X: Icon, AlertCircle: Icon, Info: Icon, ChevronDown: Icon, ChevronUp: Icon,
     Loader2: Icon, Shield: Icon, Cpu: Icon, Lock: Icon, Plus: Icon, Check: Icon,
     FlaskConical: Icon, Unplug: Icon, RefreshCw: Icon, ShieldCheck: Icon,
@@ -110,12 +106,9 @@ describe('ChatSettings', () => {
   beforeEach(() => {
     mockListMetaChannels.mockReset().mockResolvedValue(mockChannels);
     mockDisconnectMetaChannel.mockReset().mockResolvedValue({ id: 'mc-1' });
-    mockInitiateMetaUnifiedOAuth.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' });
-    mockHandleMetaUnifiedOAuthCallback.mockReset().mockResolvedValue({
-      facebookPages: [],
-      instagramAccounts: [],
-      tempToken: 'tmp',
-    });
+    mockInitiateMetaOAuth.mockReset().mockResolvedValue({ redirectUrl: 'https://example.com?state=state-123' });
+    mockHandleMetaOAuthCallback.mockReset().mockResolvedValue({ pages: [], tempToken: 'tmp' });
+    mockConnectMetaAsset.mockReset().mockResolvedValue({ webhookWarning: null });
     lastBroadcastChannel = null;
 
     vi.spyOn(window, 'open').mockReturnValue({ closed: false, close: vi.fn() } as unknown as Window);
@@ -168,23 +161,6 @@ describe('ChatSettings', () => {
     }, { timeout: 3000 });
   });
 
-  it('shows expired warning when token has already expired', async () => {
-    const pastExpiry = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    mockListMetaChannels.mockResolvedValueOnce([{
-      ...mockMetaChannel,
-      status: 'CONNECTED',
-      tokenExpiresAt: pastExpiry,
-    }]);
-
-    await renderComponent();
-
-    await waitFor(() => {
-      const expired = screen.queryByText(/expired/i) ||
-                      document.querySelector('[class*="red-"]');
-      expect(expired).toBeTruthy();
-    }, { timeout: 3000 });
-  });
-
   it('does not show expiry badge when tokenExpiresAt is null', async () => {
     mockListMetaChannels.mockResolvedValueOnce([{
       ...mockMetaChannel,
@@ -203,70 +179,85 @@ describe('ChatSettings', () => {
   it('renders connected channel display name in card', async () => {
     await renderComponent();
     await waitFor(() => {
-      // The connected MetaChannel's displayName is shown in the card header
       const nodes = screen.getAllByText(/My Facebook Page/i);
       expect(nodes.length).toBeGreaterThan(0);
     }, { timeout: 2000 });
   });
 
-  it('shows Instagram placeholder when no Instagram channel is connected', async () => {
-    // Only facebook channel mocked; Instagram default placeholder appears
+  it('shows the Facebook connect button when no channel is connected', async () => {
+    mockListMetaChannels.mockResolvedValueOnce([]);
     await renderComponent();
     await waitFor(() => {
-      expect(screen.getAllByText(/Instagram/i).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: /Facebook Page সংযুক্ত করুন/i })).toBeInTheDocument();
     }, { timeout: 2000 });
   });
 
-  // ── Channel content presence ────────────────────────────────────────────
-
-  it('channel cards with status labels are always rendered', async () => {
-    const { container } = render(<ChatSettings />);
-
+  it('shows the "add another Facebook Page" button when a channel is already connected', async () => {
+    await renderComponent();
     await waitFor(() => {
-      const html = container.innerHTML;
-      const hasChannelContent = html.includes('Messenger') || html.includes('Instagram') || html.includes('চ্যানেল');
-      expect(hasChannelContent).toBe(true);
+      expect(screen.getByRole('button', { name: /আরেকটি Facebook Page যোগ করুন/i })).toBeInTheDocument();
     }, { timeout: 2000 });
+  });
+
+  // ── Multi-page connect (single OR multiple Pages at once) ────────────────
+
+  it('connects multiple Facebook Pages selected in the picker', async () => {
+    mockListMetaChannels.mockResolvedValue([]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [
+        { id: 'p1', name: 'Page One', category: null, pictureUrl: null },
+        { id: 'p2', name: 'Page Two', category: null, pictureUrl: null },
+      ],
+      tempToken: 'tmp-xyz',
+    });
+
+    await renderComponent();
+
+    fireEvent.click(await screen.findByRole('button', { name: /Facebook Page সংযুক্ত করুন/i }));
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'));
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'code-123', state: 'state-123' },
+      });
+      await flushPromises();
+    });
+
+    // Both pages appear in the multi-select picker
+    expect(await screen.findByText('Page One')).toBeInTheDocument();
+    expect(await screen.findByText('Page Two')).toBeInTheDocument();
+
+    // Select both pages
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes.length).toBe(2);
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+
+    // Connect button reflects the selection count
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Connect \(2\)/i }));
+      await flushPromises();
+    });
+
+    // Each selected Page is persisted via its own connectMetaAsset call (platform=facebook)
+    await waitFor(() => expect(mockConnectMetaAsset).toHaveBeenCalledTimes(2));
+    expect(mockConnectMetaAsset).toHaveBeenCalledWith(expect.objectContaining({ assetId: 'p1', platform: 'facebook' }));
+    expect(mockConnectMetaAsset).toHaveBeenCalledWith(expect.objectContaining({ assetId: 'p2', platform: 'facebook' }));
   });
 
   // ── Disconnect ──────────────────────────────────────────────────────────
 
-  it('calls disconnectMetaChannel when disconnect button is clicked', async () => {
-    mockListMetaChannels.mockResolvedValueOnce([{ ...mockMetaChannel, status: 'CONNECTED' }]);
+  it('calls disconnectMetaChannel when disconnect is confirmed', async () => {
+    mockListMetaChannels.mockResolvedValue([{ ...mockMetaChannel, status: 'CONNECTED' }]);
 
     await renderComponent();
 
-    await waitFor(() => {
-      const disconnectBtn = screen.queryByRole('button', { name: /disconnect/i });
-      if (disconnectBtn) {
-        act(() => { fireEvent.click(disconnectBtn); });
-      }
-    }, { timeout: 2000 });
+    const disconnectBtn = await screen.findByRole('button', { name: /disconnect/i });
+    await act(async () => { fireEvent.click(disconnectBtn); });
+    // Confirm in the modal
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Yes, Disconnect/i })); });
 
-    if (mockDisconnectMetaChannel.mock.calls.length > 0) {
-      expect(mockDisconnectMetaChannel).toHaveBeenCalled();
-    } else {
-      expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
-    }
-  });
-
-  // ── MetaChannel shape — platform field ─────────────────────────────────
-
-  it('uses channel.platform to determine channel type', async () => {
-    const igChannel: MetaChannel = {
-      ...mockMetaChannel,
-      id: 'mc-ig',
-      platform: 'instagram',
-      metaAssetId: 'ig-456',
-      displayName: 'My Instagram',
-    };
-    mockListMetaChannels.mockResolvedValueOnce([igChannel]);
-
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getAllByText(/Instagram/i).length).toBeGreaterThan(0);
-    }, { timeout: 2000 });
+    await waitFor(() => expect(mockDisconnectMetaChannel).toHaveBeenCalledWith('mc-1'));
   });
 
   it('filters out DISCONNECTED channels (does not render their cards)', async () => {
@@ -278,23 +269,22 @@ describe('ChatSettings', () => {
     await renderComponent();
 
     await waitFor(() => {
-      // DISCONNECTED channels are filtered out by fetchChannels; no channel-name card is rendered
       const pageNames = screen.queryAllByText(/My Facebook Page/i);
       expect(pageNames.length).toBe(0);
-      // The settings header is still present
       expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
     }, { timeout: 2000 });
   });
 
-  it('explains Meta Business access when OAuth returns no assets', async () => {
-    mockListMetaChannels.mockResolvedValueOnce([]);
+  it('explains Meta Business access when OAuth returns no Pages', async () => {
+    mockListMetaChannels.mockResolvedValue([]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({ pages: [], tempToken: '' });
 
     await renderComponent();
 
-    fireEvent.click(screen.getByRole('button', { name: /Facebook \+ Instagram/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Facebook Page সংযুক্ত করুন/i }));
 
     await waitFor(() => {
-      expect(mockInitiateMetaUnifiedOAuth).toHaveBeenCalled();
+      expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook');
       expect(lastBroadcastChannel).not.toBeNull();
     });
 
@@ -305,25 +295,21 @@ describe('ChatSettings', () => {
       await flushPromises();
     });
 
-    expect(await screen.findByText('No Facebook Page or Instagram account found')).toBeInTheDocument();
+    expect(await screen.findByText('No Facebook Page found')).toBeInTheDocument();
     expect(screen.getByText(/usually a Meta Business access issue/i)).toBeInTheDocument();
     expect(screen.getByText('Open Meta Business Settings')).toBeInTheDocument();
   });
 
-  // ── HealthRow grid (E3/E4) ─────────────────────────────────────────────
+  // ── HealthRow grid ─────────────────────────────────────────────────────
 
   it('renders health grid with Connected and Active labels for a healthy channel', async () => {
-    // mockMetaChannel has status=CONNECTED, webhookLastVerifiedAt set, tokenExpiresAt=null
     mockListMetaChannels.mockResolvedValueOnce([{ ...mockMetaChannel }]);
 
     await renderComponent();
 
     await waitFor(() => {
-      // "Connected" okText appears in the Connection health row
       expect(screen.getAllByText('Connected').length).toBeGreaterThan(0);
-      // "Active" okText appears in the Webhook health row
       expect(screen.getAllByText('Active').length).toBeGreaterThan(0);
-      // "Valid" okText appears in the Token health row (tokenExpiresAt is null → ok=true)
       expect(screen.getAllByText('Valid').length).toBeGreaterThan(0);
     }, { timeout: 2000 });
   });

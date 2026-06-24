@@ -1,4 +1,4 @@
-export type MessagePlatform = 'facebook' | 'instagram';
+export type MessagePlatform = 'facebook';
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageSenderRole = 'customer' | 'ai' | 'agent' | 'system';
 

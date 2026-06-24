@@ -53,8 +53,8 @@ const DENY_MAPPINGS: DenyMapping[] = [
   },
   {
     match: "token",
-    en: "Channel connection expired. Please reconnect your Facebook/Instagram page.",
-    bn: "চ্যানেল সংযোগ মেয়াদ শেষ। Facebook/Instagram page পুনরায় সংযুক্ত করুন।",
+    en: "Channel connection expired. Please reconnect your Facebook page.",
+    bn: "চ্যানেল সংযোগ মেয়াদ শেষ। Facebook page পুনরায় সংযুক্ত করুন।",
   },
   {
     match: "permission",

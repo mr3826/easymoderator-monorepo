@@ -52,7 +52,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     },
     highlights: [
       "সব ফিচার আনলিমিটেড — কোনো লক নেই",
-      "Facebook + Instagram AI Inbox",
+      "Facebook AI Inbox",
       "Advanced RTO Shield + Analytics",
       "Broadcast + Campaign + ভয়েস/ছবি বোঝে",
       "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই",

@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Meta Webhook — Page and Instagram Event Handlers
+ * Meta Webhook — Page Event Handler
  *
- * Handles inbound Messenger (page) and Instagram Direct webhooks:
+ * Handles inbound Messenger (page) webhooks:
  *   - Find-or-create customer
  *   - Find-or-create conversation (rolling 24h window)
  *   - Store message with idempotency guard
@@ -299,7 +299,7 @@ async function storeIncomingMessage(event) {
     }
 }
 
-// ─── Page / Instagram event handlers ─────────────────────────────────────────
+// ─── Page event handler ──────────────────────────────────────────────────────
 
 /**
  * Handle Facebook Messenger (page object) webhooks.
@@ -385,80 +385,4 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
     }
 }
 
-/**
- * Handle Instagram Direct webhooks.
- */
-async function handleInstagramWebhook(payload, resolveConnectedChannel) {
-    for (const entry of payload.entry) {
-        const igAccountId = entry.id;
-
-        const channel = await resolveConnectedChannel(igAccountId, 'instagram');
-
-        if (!channel) {
-            logger.error(`No CONNECTED instagram channel for account ${igAccountId} — incoming messages are being dropped`);
-            try {
-                const MetaChannel = require('../channel-providers/meta-channel.entity');
-                const prev = await MetaChannel.findOne({
-                    where: { meta_asset_id: igAccountId },
-                    attributes: ['shop_id', 'display_name', 'status']
-                });
-                if (prev) {
-                    sseManager.emit(prev.shop_id, 'channel_error', {
-                        type: 'page_disconnected',
-                        page_id: igAccountId,
-                        display_name: prev.display_name || igAccountId,
-                        status: prev.status,
-                        message: `Instagram DM messages are not being delivered — the channel is ${prev.status}. Reconnect it in Settings → Channels.`
-                    });
-                }
-            } catch (_) { /* best-effort SSE */ }
-            continue;
-        }
-
-        const igCommentEvents = extractCommentEvents({ object: 'instagram', entry: [entry] }, 'instagram');
-        if (igCommentEvents.length > 0) dispatchCommentEvents(igCommentEvents, channel, 'instagram');
-
-        for (const message of (entry.messaging || [])) {
-            if (message.optin) {
-                await handleMessagingOptin({ channel, senderId: message.sender?.id, optin: message.optin });
-                continue;
-            }
-            if (message.message?.is_echo) continue;
-            const messageText = message.message?.text || null;
-            const attachments = message.message?.attachments || [];
-            if (!messageText && attachments.length === 0) continue;
-
-            const normalizedEvent = {
-                platform: 'instagram',
-                shop_id: channel.shop_id,
-                meta_channel_id: channel.id,
-                sender: message.sender.id,
-                message: messageText || '',
-                attachments,
-                timestamp: new Date(message.timestamp),
-                raw_event: message
-            };
-
-            try {
-                const storeResult = await storeIncomingMessage(normalizedEvent);
-                if (!storeResult.duplicate) {
-                    const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
-                    sseManager.emit(channel.shop_id, 'new_message', {
-                        conversation_id: storeResult.conversation_id,
-                        message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
-                    });
-                }
-                const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
-                if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
-                else cancelPendingDispatch(storeResult.conversation_id);
-                notifyDmOpened(channel, message.sender.id, messageText);
-            } catch (err) {
-                logger.error(`Failed to store Instagram message from ${message.sender.id} (account ${igAccountId})`, {
-                    error: err.message, stack: err.stack
-                });
-            }
-        }
-    }
-}
-
-module.exports = { handlePageWebhook, handleInstagramWebhook, storeIncomingMessage };
+module.exports = { handlePageWebhook, storeIncomingMessage };

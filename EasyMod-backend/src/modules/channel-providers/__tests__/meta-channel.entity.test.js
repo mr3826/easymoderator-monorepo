@@ -101,10 +101,10 @@ describe('MetaChannel entity - model structure', () => {
         expect(typeof attrs.page_access_token_ct.set).toBe('function');
     });
 
-    it('platform ENUM has facebook and instagram but NOT whatsapp', () => {
+    it('platform ENUM has facebook but NOT instagram or whatsapp', () => {
         const values = attrs.platform.type.values || [];
         expect(values).toContain('facebook');
-        expect(values).toContain('instagram');
+        expect(values).not.toContain('instagram');
         expect(values).not.toContain('whatsapp');
     });
 

@@ -32,6 +32,27 @@ describe('MetaMessengerProvider', () => {
         expect(provider.platform).toBe('facebook');
     });
 
+    describe('buildAuthUrl() default scopes (App Review surface)', () => {
+        test('requests exactly the 5 Facebook scopes when none are passed', async () => {
+            const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
+            const scope = new URL(url).searchParams.get('scope') || '';
+            expect(scope.split(',').sort()).toEqual([
+                'pages_manage_engagement',
+                'pages_manage_metadata',
+                'pages_messaging',
+                'pages_read_engagement',
+                'pages_show_list',
+            ]);
+        });
+
+        test('never requests Instagram or business_management scopes', async () => {
+            const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
+            const scope = new URL(url).searchParams.get('scope') || '';
+            expect(scope).not.toMatch(/instagram_/);
+            expect(scope).not.toContain('business_management');
+        });
+    });
+
     describe('webhookFields()', () => {
         test('includes messages and feed for comment-to-DM', () => {
             const fields = provider.webhookFields();
@@ -206,8 +227,12 @@ describe('MetaMessengerProvider', () => {
             const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
 
             expect(result).toHaveLength(2);
-            expect(result[0]).toMatchObject({ id: 'P1', name: 'Page 1', pictureUrl: 'http://img/1', instagramAccount: null });
-            expect(result[1]).toMatchObject({ id: 'P2', instagramAccount: { id: 'IG2', name: 'Shop IG', username: 'shopig' } });
+            // Facebook-only launch: the provider no longer exposes a linked IG
+            // account, even when /me/accounts includes instagram_business_account.
+            expect(result[0]).toMatchObject({ id: 'P1', name: 'Page 1', pictureUrl: 'http://img/1' });
+            expect(result[0]).not.toHaveProperty('instagramAccount');
+            expect(result[1]).toMatchObject({ id: 'P2', name: 'Page 2' });
+            expect(result[1]).not.toHaveProperty('instagramAccount');
             // Only /me/accounts is hit by default now.
             expect(axios.get).toHaveBeenCalledTimes(1);
             expect(axios.get).toHaveBeenCalledWith(
@@ -381,10 +406,7 @@ describe('MetaMessengerProvider', () => {
                 category: 'E-Commerce',
                 pictureUrl: 'http://img/bp1',
             });
-            expect(result[0].instagramAccount).toMatchObject({
-                id: 'IGBP1',
-                username: 'bizig',
-            });
+            expect(result[0]).not.toHaveProperty('instagramAccount');
         });
 
         // (c) Both /me/accounts and business-owned pages present, with an overlapping page — dedup by id
@@ -433,8 +455,8 @@ describe('MetaMessengerProvider', () => {
             expect(ids.filter(id => id === 'P_SHARED')).toHaveLength(1);
         });
 
-        // (d) IG account attached to business page vs not attached
-        test('(d) IG account attached to business-owned page is exposed; missing IG returns null', async () => {
+        // (d) Both business-owned pages are returned (IG linkage is no longer exposed)
+        test('(d) business-owned pages are returned without an instagramAccount field', async () => {
             // 1. /me/accounts → empty
             axios.get.mockResolvedValueOnce({ data: { data: [], paging: {} } });
             // 2. /me/businesses → one business
@@ -474,14 +496,15 @@ describe('MetaMessengerProvider', () => {
             const withIG = result.find(p => p.id === 'BP_WITH_IG');
             const noIG = result.find(p => p.id === 'BP_NO_IG');
 
-            expect(withIG.instagramAccount).toMatchObject({ id: 'IG_OK', username: 'fashionic' });
-            expect(noIG.instagramAccount).toBeNull();
+            // Facebook-only: instagramAccount is never exposed, regardless of linkage.
+            expect(withIG).not.toHaveProperty('instagramAccount');
+            expect(noIG).not.toHaveProperty('instagramAccount');
         });
 
         // Diagnostic log: metaAssetsListed emitted with correct counts.
         // The logger writes JSON to console.log in test env — spy on console.log
         // and find the matching log entry.
-        test('diagnostic log reports correct counts (source_me_accounts, source_owned_pages, source_client_pages, deduped, withIG)', async () => {
+        test('diagnostic log reports correct counts (source_me_accounts, source_owned_pages, source_client_pages, deduped)', async () => {
             const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
             // 1. /me/accounts → 1 page (PA, no IG)
@@ -519,8 +542,8 @@ describe('MetaMessengerProvider', () => {
                 source_client_pages: 0,
                 portfolioAttempted: true,
                 deduped: 2,   // PA appears in both; final unique count = 2
-                withIG: 1,
             });
+            expect(entry).not.toHaveProperty('withIG');
 
             consoleSpy.mockRestore();
         });

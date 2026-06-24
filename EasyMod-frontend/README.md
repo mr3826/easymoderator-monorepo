@@ -1,6 +1,6 @@
 # Easy Moderator — Frontend
 
-The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect their Facebook Page and Instagram account, then manage a unified inbox, products, orders, couriers, and billing from this single-page app.
+The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect one or more Facebook Pages, then manage a unified inbox, products, orders, couriers, and billing from this single-page app.
 
 Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and localised **Bengali-first**.
 

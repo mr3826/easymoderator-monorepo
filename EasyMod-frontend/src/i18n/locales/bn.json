@@ -94,7 +94,7 @@
         {
           "icon": "🔒",
           "title": "Meta-অনুমোদিত ও ban-নিরাপদ",
-          "desc": "আমরা Facebook ও Instagram-এর মেসেজিং নিয়ম মেনে চলি, তাই আপনার পেজ নিরাপদ থাকে।"
+          "desc": "আমরা Facebook-এর মেসেজিং নিয়ম মেনে চলি, তাই আপনার পেজ নিরাপদ থাকে।"
         },
         {
           "icon": "🙋",
@@ -157,9 +157,9 @@
         },
         {
           "icon": "📱",
-          "title": "সব চ্যানেল",
-          "desc": "Facebook ও Instagram একসাথে",
-          "colorClass": "bg-pink-500/15 text-pink-400"
+          "title": "Facebook ইনবক্স",
+          "desc": "আপনার সব Facebook Page একসাথে",
+          "colorClass": "bg-blue-500/15 text-blue-400"
         }
       ]
     },
@@ -215,7 +215,7 @@
     "signin": {
       "tagline": "বাংলাদেশের #১ AI চ্যাটবট",
       "heading": "আপনার ব্যবসাকে স্মার্ট করুন।",
-      "subheading": "Facebook ও Instagram — সব চ্যানেল একসাথে পরিচালনা করুন।",
+      "subheading": "Facebook — আপনার সব Page একসাথে পরিচালনা করুন।",
       "stats": [
         { "stat": "১০+", "label": "সক্রিয় ব্যবসায়ী" },
         { "stat": "৯৮%", "label": "সন্তুষ্ট গ্রাহক" },
@@ -881,7 +881,7 @@
     "subtitle": "সব কাস্টমার এক জায়গায় পরিচালনা ও ট্র্যাক করুন",
     "totalCustomers": "মোট কাস্টমার",
     "channelCustomers": "চ্যানেল কাস্টমার",
-    "channelCustomersHelper": "Facebook, Instagram ইত্যাদি",
+    "channelCustomersHelper": "Facebook ইত্যাদি",
     "manualCustomers": "ম্যানুয়াল কাস্টমার",
     "manualCustomersHelper": "ম্যানুয়ালি যোগ করা",
     "searchPlaceholder": "নাম, ফোন বা ইমেইল দিয়ে খুঁজুন...",
@@ -966,7 +966,7 @@
     "refreshed": "চ্যানেল রিফ্রেশ হয়েছে",
     "connectModal": {
       "title": "চ্যানেল সংযুক্ত করুন",
-      "subtitle": "Facebook বা Instagram — কোনটা দিয়ে কাস্টমার আসে সেটা বেছে নিন",
+      "subtitle": "কাস্টমারের বার্তা পেতে আপনার Facebook Page সংযুক্ত করুন",
       "steps": {
         "select": "বেছে নিন",
         "connect": "সংযুক্ত করুন",
@@ -979,7 +979,6 @@
         "title": "কোন Page সংযুক্ত করতে চান?",
         "hint": "আপনার Facebook account-এ এই Page গুলো পাওয়া গেছে",
         "noPages": "কোনো Page পাওয়া যায়নি। অন্তত একটি Facebook Page manage করছেন কিনা নিশ্চিত করুন।",
-        "noPagesInstagram": "কোনো Instagram-সংযুক্ত Page পাওয়া যায়নি। প্রথমে আপনার Instagram Business Account টি একটি Facebook Page-এর সাথে সংযুক্ত করুন।",
         "connectButton_one": "{{count}}টি Page সংযুক্ত করুন",
         "connectButton_other": "{{count}}টি Page সংযুক্ত করুন",
         "connectButton": "Page সংযুক্ত করুন"
@@ -989,17 +988,11 @@
           "name": "Facebook Messenger",
           "description": "Facebook Page এর জন্য — কাস্টমারের DM ও Order নিন",
           "tagline": "Facebook Page এর জন্য"
-        },
-        "instagram": {
-          "name": "Instagram DM",
-          "description": "Instagram Shop এর জন্য — DM থেকে Order নিন",
-          "tagline": "Instagram Shop এর জন্য"
         }
       },
       "selectButton": "বেছে নিন",
       "oauthButton": {
-        "facebook": "Facebook দিয়ে সংযুক্ত করুন",
-        "instagram": "Instagram দিয়ে সংযুক্ত করুন"
+        "facebook": "Facebook দিয়ে সংযুক্ত করুন"
       },
       "oauthHowItWorks": "এটি কীভাবে কাজ করে",
       "oauthSteps": {
@@ -1007,17 +1000,11 @@
           "Facebook আপনার Page-এর permission চাইবে",
           "আপনার Page বেছে নিন",
           "EasyMod automatically সংযুক্ত হবে"
-        ],
-        "instagram": [
-          "Instagram আপনার account-এর permission চাইবে",
-          "আপনার Business account confirm করুন",
-          "EasyMod automatically সংযুক্ত হবে"
         ]
       },
       "oauthPrivacyNote": "আপনার Facebook password আমরা কখনো দেখি না",
       "waitingTitle": {
-        "facebook": "Facebook-এ অপেক্ষা করছি...",
-        "instagram": "Instagram-এ অপেক্ষা করছি..."
+        "facebook": "Facebook-এ অপেক্ষা করছি..."
       },
       "waitingMessage": "Permission দিয়ে window বন্ধ করুন",
       "cancelWaiting": "বাতিল করুন",

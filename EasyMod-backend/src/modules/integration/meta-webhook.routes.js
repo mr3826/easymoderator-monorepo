@@ -7,7 +7,7 @@
  *   1. Redis-backed rate limiter on all webhook routes
  *   2. HMAC-SHA256 signature verification on POST /
  *   3. GET / — webhook verification challenge response
- *   4. POST / — dispatcher: routes to page/instagram event handlers
+ *   4. POST / — dispatcher: routes Facebook Page events to the page handler
  *   5. Mount GDPR sub-router (data-deletion + deauthorize)
  *
  * All business logic has been extracted to:
@@ -23,7 +23,7 @@ const { RedisStore } = require('rate-limit-redis');
 const config = require('../../config/config');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const { createLogger } = require('../../utils/structured-logger');
-const { handlePageWebhook, handleInstagramWebhook, storeIncomingMessage } = require('./meta-webhook-events.handler');
+const { handlePageWebhook, storeIncomingMessage } = require('./meta-webhook-events.handler');
 const gdprRouter = require('./meta-webhook-gdpr.handler');
 
 const logger = createLogger('MetaWebhook');
@@ -166,8 +166,6 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 
         if (payload.object === 'page') {
             await handlePageWebhook(payload, resolveConnectedChannel);
-        } else if (payload.object === 'instagram') {
-            await handleInstagramWebhook(payload, resolveConnectedChannel);
         } else {
             logger.warn(`Unhandled object type: ${payload.object}`);
         }

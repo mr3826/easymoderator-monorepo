@@ -9,7 +9,7 @@
  * Test cases preserved from the pre-Phase-5 suite:
  *   1. delegates to provider.sendMessage with correct args
  *   2. maps facebook channel type to facebook platform (provider key)
- *   3. passes instagram platform unchanged
+ *   3. maps legacy instagram channel type to facebook (FB-only launch)
  *   4. does nothing if channel is missing
  *   5. does nothing if recipientId is missing
  *   6. does nothing if message is missing
@@ -109,15 +109,15 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
         expect(mockSendMessage).toHaveBeenCalled();
     });
 
-    test('passes instagram platform unchanged', async () => {
-        // Make findOne return an IG channel for this test
-        MetaChannel.findOne.mockResolvedValueOnce({ ...mockMetaChannel, platform: 'instagram' });
+    test('maps a legacy instagram channel type to facebook (FB-only launch)', async () => {
         mockSendMessage.mockResolvedValueOnce({});
 
-        await sendMessage(buildChannel({ type: 'instagram' }), 'ig-scoped-id', 'msg');
+        await sendMessage(buildChannel({ type: 'instagram' }), 'legacy-id', 'msg');
 
+        // Instagram is removed: normalizePlatform collapses any channel type to
+        // 'facebook', so the lookup and send go through the Facebook provider.
         expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'instagram' }) })
+            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
         );
         expect(mockSendMessage).toHaveBeenCalled();
     });
@@ -211,17 +211,18 @@ describe('sendToCustomer (resolve PSID from a customer record)', () => {
         expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
     });
 
-    test('maps an instagram customer to an instagram send', async () => {
-        Customer.findOne.mockResolvedValue(buildCustomer({ channel_type: 'instagram', channel_user_id: 'igsid-7' }));
-        MetaChannel.findOne.mockResolvedValue({ ...mockMetaChannel, platform: 'instagram' });
+    test('maps a legacy instagram customer to a facebook send (FB-only launch)', async () => {
+        Customer.findOne.mockResolvedValue(buildCustomer({ channel_type: 'instagram', channel_user_id: 'legacy-7' }));
         mockSendMessage.mockResolvedValueOnce({});
 
         await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
 
+        // Instagram removed: the send resolves to the Facebook provider regardless
+        // of the customer's legacy channel_type, using their stored channel_user_id.
         expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'instagram' }) })
+            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
         );
-        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({ recipientId: 'igsid-7' }));
+        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({ recipientId: 'legacy-7' }));
     });
 
     test('returns no_customer when the customer is not found', async () => {

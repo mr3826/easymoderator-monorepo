@@ -3,7 +3,7 @@
 /**
  * CommentToDmEvent entity
  *
- * Tracks one Facebook/Instagram comment from receipt through the full
+ * Tracks one Facebook comment from receipt through the full
  * Comment-to-DM lifecycle:
  *   COMMENT_RECEIVED → MATCHED → ... → AUTOMATION_UNLOCKED (or EXPIRED/FAILED)
  *
@@ -51,7 +51,8 @@ const CommentToDmEvent = sequelize.define('CommentToDmEvent', {
     },
 
     platform: {
-        type: DataTypes.ENUM('facebook', 'instagram'),
+        // DB enum still allows 'instagram' (legacy); the app only writes 'facebook'.
+        type: DataTypes.ENUM('facebook'),
         allowNull: false,
     },
 
@@ -74,7 +75,7 @@ const CommentToDmEvent = sequelize.define('CommentToDmEvent', {
     commenter_external_id: {
         type: DataTypes.STRING(64),
         allowNull: false,
-        comment: 'Facebook ASID or Instagram IGSID',
+        comment: 'Facebook ASID',
     },
     commenter_name: {
         type: DataTypes.STRING(255),
