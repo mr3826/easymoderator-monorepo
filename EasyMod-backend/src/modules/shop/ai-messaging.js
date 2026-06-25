@@ -17,13 +17,13 @@
 
 const GENERIC_SHOP = { en: 'our shop', bn: 'আমাদের দোকান', mixed: 'amader shop' };
 
-// Static, owner-uneditable AI-disclosure (Meta identifiability). The owner's
-// custom greeting text is appended AFTER this line. Always starts with 🤖 so the
-// worker's existing attribution regex suppresses a duplicate suffix.
+// Mandatory, owner-uneditable AI-disclosure (Meta Platform Policy — customers
+// must know an automated system is replying). Clear TEXT, no icon. The owner's
+// custom greeting text, if any, is appended AFTER this line.
 const DISCLOSURE = {
-    en: (shop) => `🤖 You're chatting with ${shop}'s AI assistant.`,
-    bn: (shop) => `🤖 আপনি ${shop}-এর AI সহকারীর সাথে কথা বলছেন।`,
-    mixed: (shop) => `🤖 Apni ${shop}-er AI assistant er sathe kotha bolchen.`,
+    en: (shop) => `You're chatting with ${shop}'s automated AI assistant.`,
+    bn: (shop) => `আপনি ${shop}-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।`,
+    mixed: (shop) => `Apni ${shop}-er automated AI assistant er sathe kotha bolchen.`,
 };
 
 // Stable render order + display labels for the social-links block.
@@ -53,15 +53,16 @@ const buildDisclosure = (shopName, language) => {
 };
 
 /**
- * The greeting prepended to the first AI reply: disclosure + owner custom text.
- * Returns '' when the greeting is disabled or unconfigured.
- * @param {{shopName?:string, language?:string, greeting?:{enabled?:boolean, custom_text?:string}}} params
+ * The greeting prepended to the first AI reply: the MANDATORY AI-disclosure +
+ * the owner's optional custom welcome text. The disclaimer is always present
+ * (Meta compliance) — there is no on/off toggle for it; only the custom text is
+ * owner-controlled.
+ * @param {{shopName?:string, language?:string, greeting?:{custom_text?:string}}} params
  * @returns {string}
  */
 const buildGreeting = ({ shopName, language, greeting } = {}) => {
-    if (!greeting || greeting.enabled === false) return '';
     const disclosure = buildDisclosure(shopName, language);
-    const custom = (greeting.custom_text || '').trim();
+    const custom = (greeting?.custom_text || '').trim();
     return custom ? `${disclosure}\n\n${custom}` : disclosure;
 };
 

@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
-import { Plus, X } from "lucide-react";
 import type { BusinessInfo, SocialLinks } from "../lib/knowledgeTypes";
 
 const emptyBusinessInfo: BusinessInfo = {
@@ -8,20 +7,18 @@ const emptyBusinessInfo: BusinessInfo = {
   address: "",
   phone: "",
   openingHours: "",
-  deliveryAreas: [],
-  paymentMethods: [],
   socialLinks: {},
 };
 
+// Build only the fields edited here — deliveryAreas / paymentMethods are
+// intentionally NOT carried (they live on the Delivery / Payment Settings pages;
+// the backend preserves any stored values since this payload omits them).
 const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessInfo => ({
   ...emptyBusinessInfo,
-  ...value,
   shopName: value?.shopName ?? "",
   address: value?.address ?? "",
   phone: value?.phone ?? "",
   openingHours: value?.openingHours ?? "",
-  deliveryAreas: Array.isArray(value?.deliveryAreas) ? value.deliveryAreas : [],
-  paymentMethods: Array.isArray(value?.paymentMethods) ? value.paymentMethods : [],
   socialLinks: (value?.socialLinks && typeof value.socialLinks === "object") ? value.socialLinks : {},
 });
 
@@ -35,56 +32,6 @@ const SOCIAL_FIELDS: { key: keyof SocialLinks; label: string; placeholder: strin
   { key: "youtube", label: "YouTube", placeholder: "https://youtube.com/@yourshop" },
   { key: "website", label: "Website", placeholder: "https://yourshop.com" },
 ];
-
-interface TagInputProps {
-  label: string;
-  values: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
-}
-
-function TagInput({ label, values, onChange, placeholder }: TagInputProps) {
-  const [draft, setDraft] = useState("");
-
-  const add = () => {
-    const v = draft.trim();
-    if (v && !values.includes(v)) onChange([...values, v]);
-    setDraft("");
-  };
-
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {values.map((v) => (
-          <span key={v} className="flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-            {v}
-            <button type="button" onClick={() => onChange(values.filter((x) => x !== v))} className="hover:text-blue-600">
-              <X className="w-3 h-3" />
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          placeholder={placeholder}
-          className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          type="button"
-          onClick={add}
-          className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 interface BusinessInfoFormProps {
   initialData?: Partial<BusinessInfo> | null;
@@ -178,21 +125,6 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             onChange={(e) => setBusinessInfo({ ...businessInfo, openingHours: e.target.value })}
             placeholder="e.g. Sat–Thu 9am–9pm"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <TagInput
-            label="Delivery Areas"
-            values={businessInfo.deliveryAreas}
-            onChange={(v) => setBusinessInfo({ ...businessInfo, deliveryAreas: v })}
-            placeholder="e.g. Dhaka, Chittagong"
-          />
-          <TagInput
-            label="Payment Methods"
-            values={businessInfo.paymentMethods}
-            onChange={(v) => setBusinessInfo({ ...businessInfo, paymentMethods: v })}
-            placeholder="e.g. bKash, COD"
           />
         </div>
 

@@ -42,7 +42,9 @@ test('zero config → COD-only with explicit no-advance-payment rules', async ()
     expect(ctx).toContain('Cash on Delivery (COD) ONLY');
     expect(ctx).toMatch(/Never ask the customer to pay first/i);
     expect(ctx).toMatch(/do NOT confirm or claim a payment was received/i);
-    expect(ctx).toContain('no courier is connected yet');
+    // Delivery defaults to nationwide coverage even with no courier connected.
+    expect(ctx).toMatch(/nationwide across Bangladesh/i);
+    expect(ctx).toMatch(/courier is connected yet/i);
     // Must not invent a payment rail the shop hasn't connected.
     expect(ctx).not.toMatch(/bKash|Nagad/);
 });
@@ -67,7 +69,8 @@ test('connected courier is named', async () => {
     const ctx = await getOperatingContext('shop-1');
 
     expect(ctx).toContain('Steadfast');
-    expect(ctx).not.toContain('no courier is connected');
+    expect(ctx).toMatch(/nationwide across Bangladesh/i);
+    expect(ctx).not.toContain('No courier is connected');
 });
 
 test('missing shopId returns empty string (graceful)', async () => {

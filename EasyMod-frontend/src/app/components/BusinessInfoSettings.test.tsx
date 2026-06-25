@@ -141,24 +141,6 @@ describe('BusinessInfoSettings', () => {
     });
   });
 
-  it('renders delivery areas as tags', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText('Dhaka')).toBeInTheDocument();
-      expect(screen.getByText('Chittagong')).toBeInTheDocument();
-    });
-  });
-
-  it('renders payment methods as tags', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText('COD')).toBeInTheDocument();
-      expect(screen.getByText('bKash')).toBeInTheDocument();
-    });
-  });
-
   it('shows error message when load fails', async () => {
     mockGetShopBusinessInfo.mockRejectedValueOnce(new Error('Network error'));
     mockGetShopAISettings.mockResolvedValue(mockAISettings);
@@ -230,82 +212,6 @@ describe('BusinessInfoSettings', () => {
       const enabledSave = saveButtons.find(btn => !(btn as HTMLButtonElement).disabled);
       expect(enabledSave).toBeTruthy();
     });
-  });
-
-  // ── TagInput component ──────────────────────────────────────────────────
-
-  it('adds a tag when typing and pressing Enter', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText('Dhaka')).toBeInTheDocument();
-    });
-
-    // Find the delivery areas input (TagInput) — look for a text input near "Dhaka" tag
-    const inputs = screen.getAllByRole('textbox');
-    const tagInput = inputs.find(input => (input as HTMLInputElement).placeholder?.toLowerCase().includes('deliver') ||
-                                          input.closest('div')?.textContent?.includes('Dhaka'));
-
-    if (tagInput) {
-      await act(async () => {
-        fireEvent.change(tagInput, { target: { value: 'Sylhet' } });
-        fireEvent.keyDown(tagInput, { key: 'Enter' });
-      });
-
-      await waitFor(() => {
-        expect(screen.getByText('Sylhet')).toBeInTheDocument();
-      });
-    }
-  });
-
-  it('removes a tag when the X button is clicked', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText('Dhaka')).toBeInTheDocument();
-    });
-
-    // There should be remove buttons for each tag
-    // Find the X button next to 'Dhaka' tag
-    const tagSpans = screen.getAllByRole('button');
-    const removeButtons = tagSpans.filter(btn => btn.closest('span')?.textContent?.includes('Dhaka') ||
-                                                  btn.getAttribute('aria-label')?.includes('remove'));
-
-    if (removeButtons.length > 0) {
-      await act(async () => {
-        fireEvent.click(removeButtons[0]);
-      });
-
-      await waitFor(() => {
-        expect(screen.queryByText('Dhaka')).not.toBeInTheDocument();
-      });
-    }
-  });
-
-  it('does not add duplicate tags', async () => {
-    await renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText('Dhaka')).toBeInTheDocument();
-    });
-
-    const inputs = screen.getAllByRole('textbox');
-    const tagInput = inputs.find(input =>
-      input.closest('div')?.textContent?.includes('Dhaka') ||
-      (input as HTMLInputElement).placeholder?.toLowerCase().includes('deliver')
-    );
-
-    if (tagInput) {
-      await act(async () => {
-        fireEvent.change(tagInput, { target: { value: 'Dhaka' } }); // duplicate
-        fireEvent.keyDown(tagInput, { key: 'Enter' });
-      });
-
-      await waitFor(() => {
-        const dhakaTags = screen.getAllByText('Dhaka');
-        expect(dhakaTags).toHaveLength(1); // still only 1 Dhaka
-      });
-    }
   });
 
   // ── Save flows ──────────────────────────────────────────────────────────
@@ -424,11 +330,13 @@ describe('BusinessInfoSettings', () => {
     await waitFor(() => {
       if (mockUpdateShopBusinessInfo.mock.calls.length > 0) {
         const payload = mockUpdateShopBusinessInfo.mock.calls[0][0];
-        // Must be a businessInfo object (not wrapped)
+        // Must be a businessInfo object (not wrapped). Delivery areas / payment
+        // methods are no longer collected here — they live on the Delivery /
+        // Payment Settings pages.
         expect(typeof payload).toBe('object');
         expect(payload).toHaveProperty('shopName');
-        expect(Array.isArray(payload.deliveryAreas)).toBe(true);
-        expect(Array.isArray(payload.paymentMethods)).toBe(true);
+        expect(payload).not.toHaveProperty('deliveryAreas');
+        expect(payload).not.toHaveProperty('paymentMethods');
       }
     });
   });

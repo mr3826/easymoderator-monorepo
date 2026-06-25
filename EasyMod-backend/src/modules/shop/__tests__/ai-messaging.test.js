@@ -15,60 +15,63 @@ const { DEFAULT_AI_SETTINGS } = require('../shop-defaults');
 const { validateAISettings } = require('../shop-settings.validator');
 
 describe('ai-messaging · buildDisclosure', () => {
-    it('interpolates the shop name in English', () => {
+    it('interpolates the shop name in English (clear text, no icon)', () => {
         expect(buildDisclosure('Rina Saree', 'en')).toBe(
-            "🤖 You're chatting with Rina Saree's AI assistant."
+            "You're chatting with Rina Saree's automated AI assistant."
         );
     });
 
     it('renders the Bangla disclosure', () => {
         expect(buildDisclosure('রিনা শাড়ি', 'bn')).toBe(
-            '🤖 আপনি রিনা শাড়ি-এর AI সহকারীর সাথে কথা বলছেন।'
+            'আপনি রিনা শাড়ি-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।'
         );
     });
 
     it('falls back to mixed for unknown / missing language', () => {
         expect(buildDisclosure('Rina', 'klingon')).toBe(
-            '🤖 Apni Rina-er AI assistant er sathe kotha bolchen.'
+            'Apni Rina-er automated AI assistant er sathe kotha bolchen.'
         );
         expect(buildDisclosure('Rina')).toBe(
-            '🤖 Apni Rina-er AI assistant er sathe kotha bolchen.'
+            'Apni Rina-er automated AI assistant er sathe kotha bolchen.'
         );
     });
 
     it('uses a generic name when shopName is missing', () => {
         expect(buildDisclosure('', 'en')).toBe(
-            "🤖 You're chatting with our shop's AI assistant."
+            "You're chatting with our shop's automated AI assistant."
         );
     });
 
-    it('always begins with the 🤖 marker (Meta identifiability)', () => {
+    it('contains no bot icon and clearly discloses automation', () => {
         for (const lang of ['en', 'bn', 'mixed']) {
-            expect(buildDisclosure('Shop', lang).startsWith('🤖')).toBe(true);
+            const d = buildDisclosure('Shop', lang);
+            expect(d).not.toMatch(/🤖/);
+            expect(d.toLowerCase()).toMatch(/ai|স্বয়ংক্রিয়/);
         }
     });
 });
 
 describe('ai-messaging · buildGreeting', () => {
     const base = { shopName: 'Rina Saree', language: 'en' };
+    const DISCLAIMER = "You're chatting with Rina Saree's automated AI assistant.";
 
-    it('returns empty string when greeting is disabled', () => {
-        expect(buildGreeting({ ...base, greeting: { enabled: false, custom_text: 'hi' } })).toBe('');
+    it('always includes the mandatory disclaimer even if legacy-"disabled"', () => {
+        expect(buildGreeting({ ...base, greeting: { enabled: false, custom_text: 'hi' } })).toBe(
+            `${DISCLAIMER}\n\nhi`
+        );
     });
 
-    it('returns empty string when greeting config is missing', () => {
-        expect(buildGreeting({ ...base })).toBe('');
+    it('returns the disclaimer alone when greeting config is missing', () => {
+        expect(buildGreeting({ ...base })).toBe(DISCLAIMER);
     });
 
     it('combines the disclosure and the owner custom text', () => {
-        const out = buildGreeting({ ...base, greeting: { enabled: true, custom_text: 'Welcome! How can I help?' } });
-        expect(out).toBe("🤖 You're chatting with Rina Saree's AI assistant.\n\nWelcome! How can I help?");
+        const out = buildGreeting({ ...base, greeting: { custom_text: 'Welcome! How can I help?' } });
+        expect(out).toBe(`${DISCLAIMER}\n\nWelcome! How can I help?`);
     });
 
     it('returns the disclosure alone when custom text is blank', () => {
-        expect(buildGreeting({ ...base, greeting: { enabled: true, custom_text: '   ' } })).toBe(
-            "🤖 You're chatting with Rina Saree's AI assistant."
-        );
+        expect(buildGreeting({ ...base, greeting: { custom_text: '   ' } })).toBe(DISCLAIMER);
     });
 });
 
@@ -144,9 +147,9 @@ describe('ai-messaging · seeded defaults', () => {
         })).not.toThrow();
     });
 
-    it('builds a non-empty greeting from the defaults (disclosure + text)', () => {
+    it('builds a non-empty greeting from the defaults (disclosure + text, no icon)', () => {
         const out = buildGreeting({ shopName: 'Rina', language: 'mixed', greeting: DEFAULT_AI_SETTINGS.greeting });
-        expect(out).toContain('🤖');
+        expect(out).not.toContain('🤖');
         expect(out.length).toBeGreaterThan(buildDisclosure('Rina', 'mixed').length);
     });
 });

@@ -252,21 +252,11 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
 
         <div className="space-y-4 border-t border-gray-100 pt-6">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">গ্রিটিং মেসেজ <span className="text-gray-400 font-normal">(নতুন কথোপকথনের শুরুতে)</span></label>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <div
-                  onClick={() => setAISettings({ ...aiSettings, greeting: { ...aiSettings.greeting!, enabled: !aiSettings.greeting?.enabled } })}
-                  className={`relative w-10 h-6 rounded-full transition-colors ${aiSettings.greeting?.enabled ? "bg-blue-600" : "bg-gray-300"}`}
-                >
-                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings.greeting?.enabled ? "translate-x-4" : ""}`} />
-                </div>
-                <span className="text-xs text-gray-600">{aiSettings.greeting?.enabled ? "চালু" : "বন্ধ"}</span>
-              </label>
-            </div>
-            <div className="mb-2 flex items-start gap-2 rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600">
-              <span>🔒</span>
-              <span>স্থায়ী অংশ (Meta নিয়ম): <span className="font-medium text-gray-800">🤖 আপনি [আপনার দোকান]-এর AI সহকারীর সাথে কথা বলছেন।</span> — এর পরে আপনার নিচের লেখাটি যুক্ত হবে।</span>
+            <label className="block text-sm font-medium text-gray-700 mb-2">গ্রিটিং মেসেজ <span className="text-gray-400 font-normal">(নতুন কথোপকথনের শুরুতে)</span></label>
+            <div className="mb-2 rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600">
+              <span className="font-semibold text-gray-700">সবসময় দেখানো হয় (Meta নিয়ম): </span>
+              <span className="font-medium text-gray-800">আপনি [আপনার দোকান]-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।</span>
+              <span> — গ্রাহককে স্পষ্টভাবে জানানো হয় যে একটি স্বয়ংক্রিয় সিস্টেম উত্তর দিচ্ছে। এটি বন্ধ করা যায় না; এর পরে আপনার নিচের লেখাটি যুক্ত হবে।</span>
             </div>
             <textarea
               rows={2}

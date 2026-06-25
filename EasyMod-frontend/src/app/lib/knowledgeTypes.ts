@@ -14,8 +14,11 @@ export interface BusinessInfo {
   location?: string;
   phone: string;
   openingHours: string;
-  deliveryAreas: string[];
-  paymentMethods: string[];
+  // Collected on the Delivery Settings / Payment Settings pages (defaults:
+  // delivery = whole Bangladesh, payment = Cash on Delivery). Kept optional for
+  // back-compat with stored data; no longer edited in Business Info.
+  deliveryAreas?: string[];
+  paymentMethods?: string[];
   // Surfaced in the AI order-confirmation closing message.
   socialLinks?: SocialLinks;
 }

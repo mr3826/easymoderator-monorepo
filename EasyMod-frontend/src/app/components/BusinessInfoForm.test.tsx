@@ -61,47 +61,6 @@ describe('BusinessInfoForm', () => {
     expect(shopNameInput).toHaveValue('New Shop Name');
   });
 
-  it('renders delivery area tags from initial data', () => {
-    // React 18 state batching in jsdom makes it unreliable to test the full
-    // "type → click + → tag appears" flow. We verify the tag rendering using
-    // initialData instead, which covers the same JSX code path. The interaction
-    // flow is exercised by the 'removes delivery area tag on click' test.
-    const dataWithArea: BusinessInfo = {
-      shopName: '',
-      phone: '',
-      address: '',
-      openingHours: '',
-      deliveryAreas: ['Sylhet'],
-      paymentMethods: [],
-    };
-    render(<BusinessInfoForm {...defaultProps} initialData={dataWithArea} />);
-    expect(screen.getByText('Sylhet')).toBeInTheDocument();
-  });
-
-  it('removes delivery area tag on click', async () => {
-    const initialData: BusinessInfo = {
-      shopName: 'Test',
-      phone: '',
-      address: '',
-      openingHours: '',
-      deliveryAreas: ['Dhaka'],
-      paymentMethods: [],
-    };
-
-    render(<BusinessInfoForm {...defaultProps} initialData={initialData} />);
-
-    expect(screen.getByText('Dhaka')).toBeInTheDocument();
-
-    // With a tag present there are multiple icon-only buttons (X + two +).
-    // The X on the Dhaka tag is the first one in DOM order.
-    const emptyNameButtons = screen.getAllByRole('button', { name: '' });
-    fireEvent.click(emptyNameButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.queryByText('Dhaka')).not.toBeInTheDocument();
-    });
-  });
-
   it('disables save button when no changes made', () => {
     render(<BusinessInfoForm {...defaultProps} />);
     const saveButton = screen.getByRole('button', { name: /saveChanges/i });
@@ -134,8 +93,6 @@ describe('BusinessInfoForm', () => {
         address: '',
         phone: '',
         openingHours: '',
-        deliveryAreas: [],
-        paymentMethods: [],
       }));
     });
   });
@@ -210,6 +167,5 @@ describe('BusinessInfoForm', () => {
     expect(screen.getByDisplayValue('Updated')).toBeInTheDocument();
     expect(screen.getByDisplayValue('01712345678')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Dhaka')).toBeInTheDocument();
-    expect(screen.getByText('Zone A')).toBeInTheDocument();
   });
 });

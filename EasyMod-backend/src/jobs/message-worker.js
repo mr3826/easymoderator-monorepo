@@ -344,15 +344,15 @@ async function processMessageJob(job) {
         }
     }
 
-    // ── First-reply greeting (with Meta AI-disclosure) ──────────────────────
-    // On the FIRST AI reply of a conversation, prepend the shop's greeting. The
-    // greeting carries the static 🤖 disclosure, so the attribution block below
-    // sees the message as already-marked and won't append a duplicate suffix.
+    // ── First-reply AI-disclosure greeting ──────────────────────────────────
+    // On the FIRST AI reply of a conversation, prepend the MANDATORY clear-text
+    // AI-disclosure (Meta Platform Policy — customers must know an automated
+    // system is replying) plus the owner's optional welcome text. Always applied
+    // when the AI is replying; there is no on/off toggle for the disclosure.
     // Best-effort: any failure leaves the reply unchanged.
     let repliedText = rawResponse;
     try {
-        const greetingCfg = aiSettings.greeting;
-        if (rawResponse && greetingCfg && greetingCfg.enabled !== false) {
+        if (rawResponse) {
             const priorAiCount = await Message.count({
                 where: { conversation_id: conversationId, sender: 'ai' },
             });
@@ -361,26 +361,20 @@ async function processMessageJob(job) {
                 const Shop = require('../modules/shop/shop.entity');
                 const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
                 const shopName = shopRow?.settings?.businessInfo?.shopName || shopRow?.name || '';
-                const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: greetingCfg });
+                const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: aiSettings.greeting });
                 if (greetingText) repliedText = `${greetingText}\n\n${rawResponse}`;
             }
         }
     } catch (greetErr) {
-        console.error(`[worker] greeting injection failed for conv ${conversationId}:`, greetErr.message);
+        console.error(`[worker] AI-disclosure greeting failed for conv ${conversationId}:`, greetErr.message);
     }
 
-    // ── Bot attribution (Meta Platform Policy 4.2) ──────────────────────────
-    // Customers must be able to identify automated replies. Default-on; can be
-    // disabled per-channel by setting `bot_attribution_suffix` to an empty string
-    // in meta_channel_settings, or globally via AI_BOT_ATTRIBUTION_ENABLED=false.
-    // Suffix is applied before storage so the in-app inbox shows the same text
-    // the customer received.
-    const attributionEnabled = process.env.AI_BOT_ATTRIBUTION_ENABLED !== 'false';
-    const attributionSuffix = process.env.AI_BOT_ATTRIBUTION_SUFFIX || ' 🤖';
-    const alreadyMarked = /🤖|\(ai\)|\bAI assistant\b/i.test(repliedText || '');
-    const response = (attributionEnabled && repliedText && !alreadyMarked)
-        ? `${repliedText.trimEnd()}${attributionSuffix}`
-        : repliedText;
+    // ── AI disclosure ───────────────────────────────────────────────────────
+    // Disclosure happens once per conversation via the clear-text AI-disclaimer
+    // prepended above (Meta Platform Policy). The previous per-message 🤖 icon
+    // suffix was removed — no icon; the start-of-conversation text disclaimer is
+    // the disclosure.
+    const response = repliedText;
 
     // ── Store AI response ───────────────────────────────────────────────────
     const aiStoreResult = await ConversationStateService.storeAIResponse(conversationId, response, {

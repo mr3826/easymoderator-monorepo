@@ -83,10 +83,14 @@ const getOperatingContext = async (shopId) => {
             );
         }
 
+        // Delivery coverage defaults to ALL of Bangladesh (the shop does not
+        // maintain a per-area allow-list; specific zones/charges live in Delivery
+        // Settings). State nationwide availability so the AI never wrongly tells a
+        // customer their district is out of range.
         lines.push(
             courier
-                ? `Delivery: orders are shipped via ${courier}; a tracking number is available after dispatch.`
-                : 'Delivery: no courier is connected yet — give general delivery info only and do not promise a specific tracking number.',
+                ? `Delivery: available nationwide across Bangladesh, shipped via ${courier}; a tracking number is available after dispatch.`
+                : 'Delivery: available nationwide across Bangladesh (cash on delivery). No courier is connected yet — give general delivery info only and do not promise a specific tracking number.',
             "If any FAQ or knowledge text disagrees with the payment/delivery facts in THIS section, THIS section is correct — it reflects the shop's live settings.",
         );
 
