@@ -23,8 +23,17 @@ vi.mock('@/api', () => ({
 // `t` each render would recreate refreshPulse, re-fire the effect, and flicker
 // the component back to its loading state — which made this test flaky. Real
 // react-i18next returns a stable `t`, so we mirror that with vi.hoisted.
+// Returns the key (so tests can match translation keys), and appends any
+// interpolation values (e.g. {count}) so count-bearing labels still surface
+// their numbers — the component interpolates via t('...ordersUnit', {count}).
 const { tMock } = vi.hoisted(() => ({
-  tMock: (key: string, _opts?: Record<string, unknown>) => key,
+  tMock: (key: string, opts?: Record<string, unknown>) => {
+    if (opts && typeof opts === 'object') {
+      const vals = Object.values(opts).filter((v) => v != null).join(' ');
+      if (vals) return `${key} ${vals}`;
+    }
+    return key;
+  },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: tMock }),
@@ -80,14 +89,13 @@ describe('Dashboard — cash position section', () => {
 
     renderDashboard();
 
-    // Task 6 will add these labels — until then this test intentionally fails.
     await waitFor(() => {
-      // "courier in transit" card label (Bangla)
-      expect(screen.getByText(/কুরিয়ারে আটকে আছে/)).toBeInTheDocument();
+      // "courier in transit" card label
+      expect(screen.getByText(/cashPosition\.inTransit\b/)).toBeInTheDocument();
     });
 
-    // "at risk / returns incoming" card label (Bangla)
-    expect(screen.getByText(/ফেরত আসছে/)).toBeInTheDocument();
+    // "at risk / returns incoming" card label
+    expect(screen.getByText(/cashPosition\.atRisk\b/)).toBeInTheDocument();
 
     // Order counts visible as plain digits
     expect(screen.getByText(/\b7\b/)).toBeInTheDocument();
@@ -114,7 +122,7 @@ describe('Dashboard — cash position section', () => {
 
     // Section should still render (with zero amounts) without throwing.
     await waitFor(() => {
-      expect(screen.getByText(/কুরিয়ারে আটকে আছে/)).toBeInTheDocument();
+      expect(screen.getByText(/cashPosition\.inTransit\b/)).toBeInTheDocument();
     });
   });
 });

@@ -98,9 +98,9 @@ export default function ChatSettings() {
       setSavingLabelId(channelId);
       const updated = await updateMetaChannelPurposeLabel(channelId, normalized);
       setChannels((prev) => prev.map((c) => (c.id === channelId ? updated : c)));
-      toast.success(normalized ? `Label updated to "${normalized}"` : "Label cleared");
+      toast.success(normalized ? t("channels.label.updated", { label: normalized }) : t("channels.label.cleared"));
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || "Failed to update label";
+      const msg = error.response?.data?.error?.message || t("channels.label.updateFailed");
       toast.error(msg);
     } finally {
       setSavingLabelId(null);
@@ -157,7 +157,7 @@ export default function ChatSettings() {
   // the merchant can connect one OR several Facebook Pages at once.
   const handleConnect = async () => {
     if (oauthInProgressRef.current) {
-      toast.error("একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।");
+      toast.error(t("channels.errors.oauthInProgress"));
       return;
     }
     oauthInProgressRef.current = true;
@@ -279,7 +279,7 @@ export default function ChatSettings() {
       setAvailablePages([]);
       setSelectedPageIds(new Set());
       setTempToken("");
-      toast.success("সফলভাবে সংযুক্ত হয়েছে।");
+      toast.success(t("channels.connectSuccess"));
       if (webhookWarning) {
         setTimeout(() => toast.warning(webhookWarning!, { duration: 12000 }), 500);
       }
@@ -295,12 +295,12 @@ export default function ChatSettings() {
     try {
       const result = await pingMetaChannel(channelId);
       if (result.ping.ok) {
-        toast.success(`Webhook OK (${result.ping.latencyMs ?? "?"}ms)`, { duration: 8000 });
+        toast.success(t("channels.test.ok", { ms: result.ping.latencyMs ?? "?" }), { duration: 8000 });
       } else {
-        toast.error(`Webhook failed: ${result.ping.error}`, { duration: 15000 });
+        toast.error(t("channels.test.failed", { error: result.ping.error }), { duration: 15000 });
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? "Test failed — check backend logs");
+      toast.error(err?.response?.data?.error ?? t("channels.test.error"));
     } finally {
       setTestingId(null);
     }
@@ -310,10 +310,10 @@ export default function ChatSettings() {
     setDisconnectingId(channel.id);
     try {
       await disconnectMetaChannel(channel.id);
-      toast.success(`${channel.displayName} disconnected`);
+      toast.success(t("channels.disconnectedNamed", { name: channel.displayName }));
       await fetchChannels();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to disconnect");
+      toast.error(err?.response?.data?.message || t("channels.errors.disconnectFailed"));
     } finally {
       setDisconnectingId(null);
       setConfirmDisconnect(null);
@@ -408,7 +408,7 @@ export default function ChatSettings() {
       const summary = await getMetaChannelConsentSummary(channelId);
       setConsentByChannelId((prev) => ({ ...prev, [channelId]: summary }));
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || "Could not load consent activity");
+      toast.error(err?.response?.data?.error?.message || t("channels.consent.loadFailed"));
       setExpandedConsentChannelId(null);
     } finally {
       setLoadingConsentId(null);
@@ -417,11 +417,11 @@ export default function ChatSettings() {
 
   const consentEventLabel = (event: MetaConsentEventType): string =>
     ({
-      OPT_IN_IMPLICIT: "Opted in (implicit)",
-      OPT_IN_EXPLICIT: "Opted in",
-      OPT_OUT: "Opted out",
-      DEAUTHORIZED: "Deauthorized",
-      DATA_DELETED: "Data deleted",
+      OPT_IN_IMPLICIT: t("channels.consent.events.optInImplicit"),
+      OPT_IN_EXPLICIT: t("channels.consent.events.optInExplicit"),
+      OPT_OUT: t("channels.consent.events.optOut"),
+      DEAUTHORIZED: t("channels.consent.events.deauthorized"),
+      DATA_DELETED: t("channels.consent.events.dataDeleted"),
     }[event] || event);
 
   const consentEventBadgeClass = (event: MetaConsentEventType): string =>
@@ -439,8 +439,8 @@ export default function ChatSettings() {
           <MessageSquare className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h2 className="text-xl md:text-2xl font-bold text-gray-900">চ্যানেল সেটিংস</h2>
-          <p className="text-sm text-gray-500">Facebook Page চ্যানেল সংযুক্ত ও পরিচালনা করুন</p>
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900">{t("channels.settings.title")}</h2>
+          <p className="text-sm text-gray-500">{t("channels.settings.subtitle")}</p>
         </div>
       </div>
 
@@ -467,7 +467,7 @@ export default function ChatSettings() {
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           <p className="text-sm text-red-700 flex-1">{loadError}</p>
           <button onClick={fetchChannels} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm">
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       )}
@@ -479,18 +479,18 @@ export default function ChatSettings() {
             <div className="w-7 h-7 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center">
               <MessageSquare className="w-3.5 h-3.5" style={{ color: FB_BRAND }} />
             </div>
-            <h3 className="font-semibold text-gray-900">Facebook Page সংযুক্ত করুন</h3>
+            <h3 className="font-semibold text-gray-900">{t("channels.connectCard.title")}</h3>
           </div>
 
           {activeOAuth.step === "connecting" && (
             <div className="text-center py-4">
               <Loader2 className="w-7 h-7 animate-spin mx-auto mb-2 text-blue-600" />
-              <p className="text-sm text-gray-700">পপ-আপে Meta-তে লগইন করুন...</p>
+              <p className="text-sm text-gray-700">{t("channels.connectCard.loginPopup")}</p>
               <button
                 onClick={handleCancelOAuth}
                 className="mt-2 text-xs text-gray-600 hover:text-gray-800 underline"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
             </div>
           )}
@@ -498,7 +498,7 @@ export default function ChatSettings() {
           {activeOAuth.step === "page-select" && (
             <div>
               <p className="text-xs text-gray-700 mb-3">
-                যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন (এক বা একাধিক)
+                {t("channels.connectCard.selectPagesHint")}
               </p>
               {availablePages.length === 0 ? (
                 <NoMetaAssetsFound onRetry={handleRetryOAuthAssetLookup} onCancel={handleCancelOAuth} />
@@ -542,7 +542,7 @@ export default function ChatSettings() {
                         {isAlreadyConnected && (
                           <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
                             <Check className="w-3 h-3" />
-                            Connected
+                            {t("channels.health.connected")}
                           </span>
                         )}
                       </label>
@@ -555,7 +555,7 @@ export default function ChatSettings() {
                   onClick={handleCancelOAuth}
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-700 hover:bg-white"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={handleConnectPages}
@@ -563,7 +563,7 @@ export default function ChatSettings() {
                   className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   {isConnectingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  Connect ({selectedPageIds.size})
+                  {t("channels.connectCard.connectCount", { count: selectedPageIds.size })}
                 </button>
               </div>
             </div>
@@ -581,7 +581,7 @@ export default function ChatSettings() {
               <MessageSquare className="w-3.5 h-3.5" style={{ color: FB_BRAND }} />
             </div>
             <span className="font-semibold text-gray-900 text-sm">
-              {channels.length === 0 ? "Facebook Page সংযুক্ত করুন" : "আরেকটি Facebook Page যোগ করুন"}
+              {channels.length === 0 ? t("channels.connectCard.title") : t("channels.connectCard.addAnother")}
             </span>
           </button>
 
@@ -590,21 +590,21 @@ export default function ChatSettings() {
             className="w-full text-xs text-gray-500 hover:text-gray-700 flex items-center justify-center gap-1"
           >
             <Shield className="w-3.5 h-3.5" />
-            {permissionsExpanded ? "অনুমতি লুকান" : "কোন অনুমতি লাগবে?"}
+            {permissionsExpanded ? t("channels.permissions.hide") : t("channels.permissions.show")}
             {permissionsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
 
           {permissionsExpanded && (
             <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-700">
               <ul className="space-y-1 list-disc list-inside">
-                <li><strong>pages_show_list</strong> — আপনার Page list দেখা</li>
-                <li><strong>pages_messaging</strong> — Messenger বার্তা পড়া ও পাঠানো</li>
-                <li><strong>pages_read_engagement</strong> — Page comment ইভেন্ট পড়া</li>
-                <li><strong>pages_manage_metadata</strong> — Realtime webhook subscribe</li>
-                <li><strong>pages_manage_engagement</strong> — Comment-এ পাবলিক রিপ্লাই</li>
+                <li><strong>pages_show_list</strong> — {t("channels.permissions.pagesShowList")}</li>
+                <li><strong>pages_messaging</strong> — {t("channels.permissions.pagesMessaging")}</li>
+                <li><strong>pages_read_engagement</strong> — {t("channels.permissions.pagesReadEngagement")}</li>
+                <li><strong>pages_manage_metadata</strong> — {t("channels.permissions.pagesManageMetadata")}</li>
+                <li><strong>pages_manage_engagement</strong> — {t("channels.permissions.pagesManageEngagement")}</li>
               </ul>
               <p className="mt-2 text-gray-500 text-[11px]">
-                EasyMod শুধু কাস্টমার বার্তার জন্য এই অনুমতি ব্যবহার করে।
+                {t("channels.permissions.note")}
               </p>
             </div>
           )}
@@ -661,13 +661,13 @@ export default function ChatSettings() {
                   {isConnected && (
                     <span className="flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                      Active
+                      {t("channels.statusActive")}
                     </span>
                   )}
                   {isTokenExpired && (
                     <span className="flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">
                       <AlertCircle className="w-3 h-3" />
-                      Reconnect
+                      {t("channels.badge.reconnect")}
                     </span>
                   )}
                   {isErrored && isActionRequired && (
@@ -692,8 +692,8 @@ export default function ChatSettings() {
                     if (expiresMs > 14 * dayMs) return null;
                     const label =
                       expiresMs < 0
-                        ? "সংযোগের মেয়াদ শেষ। আবার সংযুক্ত করুন।"
-                        : `সংযোগের মেয়াদ ${Math.ceil(expiresMs / dayMs)} দিনের মধ্যে শেষ।`;
+                        ? t("channels.tokenExpired")
+                        : t("channels.tokenExpiresIn", { days: Math.ceil(expiresMs / dayMs) });
                     return (
                       <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-4 text-xs text-amber-800">
                         <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -709,7 +709,7 @@ export default function ChatSettings() {
                     className="w-full py-2.5 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity mb-3"
                   >
                     <FacebookIcon color="white" size={18} />
-                    Facebook Page আবার সংযুক্ত করুন
+                    {t("channels.reconnectPage")}
                   </button>
                 )}
 
@@ -720,14 +720,14 @@ export default function ChatSettings() {
                         htmlFor={`purpose-label-${channel.id}`}
                         className="block text-[11px] font-medium text-gray-600 mb-1"
                       >
-                        Label (optional)
+                        {t("channels.label.fieldLabel")}
                       </label>
                       <input
                         id={`purpose-label-${channel.id}`}
                         type="text"
                         maxLength={64}
                         defaultValue={channel.purposeLabel ?? ""}
-                        placeholder="e.g. Sales, Live selling, Regional"
+                        placeholder={t("channels.label.placeholder")}
                         disabled={savingLabelId === channel.id}
                         onBlur={(e) =>
                           handleSavePurposeLabel(channel.id, e.target.value, channel.purposeLabel)
@@ -780,7 +780,7 @@ export default function ChatSettings() {
                       <button
                         onClick={() => handleTestPipeline(channel.id)}
                         disabled={testingId === channel.id}
-                        title="Webhook test"
+                        title={t("channels.actions.testTitle")}
                         className="flex items-center justify-center gap-1 px-2 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-60"
                       >
                         {testingId === channel.id ? (
@@ -792,7 +792,7 @@ export default function ChatSettings() {
                       </button>
                       <button
                         onClick={fetchChannels}
-                        title="Refresh list"
+                        title={t("channels.actions.refreshList")}
                         className="flex items-center justify-center gap-1 px-2 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs hover:bg-gray-50"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
@@ -800,7 +800,7 @@ export default function ChatSettings() {
                       </button>
                       <button
                         onClick={() => handleReconnect(channel)}
-                        title="Refresh permissions"
+                        title={t("channels.actions.refreshPermissions")}
                         className="flex items-center justify-center gap-1 px-2 py-1.5 border border-blue-200 text-blue-700 rounded-lg text-xs hover:bg-blue-50"
                       >
                         <ShieldCheck className="w-3.5 h-3.5" />
@@ -832,10 +832,10 @@ export default function ChatSettings() {
                         <button className="w-full flex items-center justify-between text-xs text-gray-700 hover:text-gray-900">
                           <span className="flex items-center gap-1.5">
                             <ShieldCheck className="w-3.5 h-3.5 text-gray-500" />
-                            <span className="font-medium">Consent activity</span>
+                            <span className="font-medium">{t("channels.consent.activity")}</span>
                             {consentSummary && (
                               <span className="ml-1 text-gray-500">
-                                ({consentSummary.counts.optIns} opt-ins)
+                                {t("channels.consent.optInsCount", { count: consentSummary.counts.optIns })}
                               </span>
                             )}
                           </span>
@@ -864,30 +864,30 @@ export default function ChatSettings() {
                                     <p className="text-sm font-semibold text-green-700">
                                       {consentSummary.counts.optIns}
                                     </p>
-                                    <p className="text-[9px] uppercase text-green-700/80">Opt-ins</p>
+                                    <p className="text-[9px] uppercase text-green-700/80">{t("channels.consent.optIns")}</p>
                                   </div>
                                   <div className="rounded bg-red-50 px-1.5 py-1.5">
                                     <p className="text-sm font-semibold text-red-700">
                                       {consentSummary.counts.optOuts}
                                     </p>
-                                    <p className="text-[9px] uppercase text-red-700/80">Opt-outs</p>
+                                    <p className="text-[9px] uppercase text-red-700/80">{t("channels.consent.optOuts")}</p>
                                   </div>
                                   <div className="rounded bg-gray-100 px-1.5 py-1.5">
                                     <p className="text-sm font-semibold text-gray-600">
                                       {consentSummary.counts.deauthorized}
                                     </p>
-                                    <p className="text-[9px] uppercase text-gray-500">Deauth</p>
+                                    <p className="text-[9px] uppercase text-gray-500">{t("channels.consent.deauth")}</p>
                                   </div>
                                   <div className="rounded bg-gray-100 px-1.5 py-1.5">
                                     <p className="text-sm font-semibold text-gray-600">
                                       {consentSummary.counts.dataDeleted}
                                     </p>
-                                    <p className="text-[9px] uppercase text-gray-500">Erased</p>
+                                    <p className="text-[9px] uppercase text-gray-500">{t("channels.consent.erased")}</p>
                                   </div>
                                 </div>
                                 {consentSummary.recentEvents.length === 0 ? (
                                   <p className="text-xs text-gray-400 italic">
-                                    No consent events recorded yet.
+                                    {t("channels.consent.noEvents")}
                                   </p>
                                 ) : (
                                   <ul className="space-y-1 max-h-40 overflow-y-auto">
@@ -931,8 +931,8 @@ export default function ChatSettings() {
             <Cpu className="w-5 h-5 text-purple-600" />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-gray-900">AI Model Configuration</h3>
-            <p className="text-sm text-gray-500">AI auto-reply এর ভাষা মডেল</p>
+            <h3 className="text-base font-semibold text-gray-900">{t("channels.aiModel.title")}</h3>
+            <p className="text-sm text-gray-500">{t("channels.aiModel.subtitle")}</p>
           </div>
         </div>
         {/* AI model selection is available on every plan — packages differ only
@@ -942,10 +942,10 @@ export default function ChatSettings() {
             <Cpu className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-sm font-medium text-gray-900">
-                AI Model: Auto-Selected for Best Results
+                {t("channels.aiModel.autoSelectedTitle")}
               </p>
               <p className="text-xs text-gray-600 mt-1">
-                EasyMod আপনার সব কথোপকথনের জন্য সেরা মডেল স্বয়ংক্রিয়ভাবে বেছে নেয় — সব প্ল্যানে available।
+                {t("channels.aiModel.autoSelectedDesc")}
               </p>
             </div>
           </div>
@@ -956,23 +956,23 @@ export default function ChatSettings() {
         <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 space-y-4">
             <h3 className="font-semibold text-gray-900 text-lg">
-              Disconnect {confirmDisconnect.displayName}?
+              {t("channels.disconnectModal.title", { name: confirmDisconnect.displayName })}
             </h3>
             <p className="text-sm text-gray-600">
-              এই চ্যানেলে বার্তা পাওয়া বন্ধ হয়ে যাবে। পরে আবার সংযুক্ত করা যাবে।
+              {t("channels.disconnectModal.message")}
             </p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setConfirmDisconnect(null)}
                 className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={() => handleDisconnect(confirmDisconnect)}
                 className="px-4 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700"
               >
-                Yes, Disconnect
+                {t("channels.disconnectModal.confirm")}
               </button>
             </div>
           </div>
@@ -989,24 +989,24 @@ function NoMetaAssetsFound({
   onRetry: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-left">
       <div className="flex items-start gap-2">
         <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-900">No Facebook Page found</p>
+          <p className="text-sm font-semibold text-amber-900">{t("channels.noPages.title")}</p>
           <p className="mt-1 text-xs text-amber-800">
-            This is usually a Meta Business access issue, not an EasyMod problem. Meta only
-            shows Pages assigned to the Facebook login you just used.
+            {t("channels.noPages.desc")}
           </p>
         </div>
       </div>
 
       <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-amber-900">
-        <li>Open Meta Business Settings and select the correct Business Portfolio.</li>
-        <li>In Users &gt; People, confirm this Facebook login has full control or assigned access.</li>
-        <li>In Accounts &gt; Pages, confirm the Page is inside that portfolio.</li>
-        <li>Remove EasyMod from Business Integrations, then retry the connection.</li>
+        <li>{t("channels.noPages.step1")}</li>
+        <li>{t("channels.noPages.step2")}</li>
+        <li>{t("channels.noPages.step3")}</li>
+        <li>{t("channels.noPages.step4")}</li>
       </ol>
 
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -1016,21 +1016,21 @@ function NoMetaAssetsFound({
           rel="noopener noreferrer"
           className="inline-flex flex-1 items-center justify-center rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
         >
-          Open Meta Business Settings
+          {t("channels.noPages.openSettings")}
         </a>
         <button
           type="button"
           onClick={onRetry}
           className="flex-1 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800"
         >
-          Try again
+          {t("channels.noPages.tryAgain")}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="flex-1 rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>
@@ -1069,6 +1069,7 @@ function HealthRow({
  * conversation quota, never by feature access.
  */
 function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<MetaChannelSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1092,9 +1093,9 @@ function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
     try {
       const updated = await updateMetaChannelSettings(channelId, { aiAutoReply: next });
       setSettings(updated);
-      toast.success(next ? "AI auto-reply চালু হয়েছে" : "AI auto-reply বন্ধ হয়েছে");
+      toast.success(next ? t("channels.autoReply.enabledToast") : t("channels.autoReply.disabledToast"));
     } catch {
-      toast.error("সেটিং সেভ করা যায়নি");
+      toast.error(t("channels.autoReply.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -1103,7 +1104,7 @@ function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
   if (loading) {
     return (
       <div className="mb-3 flex items-center gap-2 text-xs text-gray-400">
-        <Loader2 className="w-3.5 h-3.5 animate-spin" /> AI সেটিং লোড হচ্ছে…
+        <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("channels.autoReply.loading")}
       </div>
     );
   }
@@ -1114,11 +1115,11 @@ function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
       <div className="flex items-center gap-2">
         <Cpu className="w-4 h-4 text-purple-600 flex-shrink-0" />
         <div>
-          <p className="text-xs font-medium text-gray-800">AI auto-reply</p>
+          <p className="text-xs font-medium text-gray-800">{t("channels.autoReply.title")}</p>
           <p className="text-[11px] text-gray-500">
             {settings.aiAutoReply
-              ? "নতুন বার্তায় AI স্বয়ংক্রিয়ভাবে উত্তর দেবে"
-              : "AI উত্তর বন্ধ — শুধু খসড়া তৈরি হবে"}
+              ? t("channels.autoReply.onDesc")
+              : t("channels.autoReply.offDesc")}
           </p>
         </div>
       </div>
@@ -1128,7 +1129,7 @@ function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
         aria-checked={settings.aiAutoReply}
         onClick={toggle}
         disabled={saving}
-        title="AI auto-reply toggle"
+        title={t("channels.autoReply.toggleTitle")}
         className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
           settings.aiAutoReply ? "bg-purple-600" : "bg-gray-300"
         }`}

@@ -13,7 +13,7 @@ i18n
       bn: { translation: bn },
       en: { translation: en },
     },
-    fallbackLng: 'bn',
+    fallbackLng: 'en',
     interpolation: {
       escapeValue: false, // React handles XSS
     },

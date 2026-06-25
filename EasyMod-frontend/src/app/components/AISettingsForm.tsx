@@ -113,9 +113,9 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
       setIsSaving(true);
       await onSave(aiSettings);
       setSavedAISettings(aiSettings);
-      showNotice("success", "AI settings saved.");
+      showNotice("success", t('manageShop.aiSettings.saveSuccess'));
     } catch (error: any) {
-      showNotice("error", error.response?.data?.error?.message || "Failed to save AI settings.");
+      showNotice("error", error.response?.data?.error?.message || t('manageShop.aiSettings.saveError'));
     } finally {
       setIsSaving(false);
     }
@@ -128,32 +128,32 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
 
   return (
     <section>
-      <h3 className="text-base font-semibold text-gray-900 mb-1">AI Behaviour Settings</h3>
+      <h3 className="text-base font-semibold text-gray-900 mb-1">{t('manageShop.aiSettings.title')}</h3>
       <p className="text-sm text-gray-500 mb-4">
-        Control how the AI chatbot operates across all connected channels.
+        {t('manageShop.aiSettings.subtitle')}
       </p>
 
       {notice && <div className={`mb-4 ${noticeClass(notice.type)}`}>{notice.message}</div>}
 
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">বট কিভাবে কাজ করবে?</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.automationModeLabel')}</label>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {([
               {
                 mode: 'AUTO' as const,
-                title: '🤖 সম্পূর্ণ অটো',
-                desc: 'বট নিজেই রিপ্লাই পাঠাবে',
+                title: t('manageShop.aiSettings.mode.autoTitle'),
+                desc: t('manageShop.aiSettings.mode.autoDesc'),
               },
               {
                 mode: 'DRAFT' as const,
-                title: '👁️ দেখে পাঠান (Draft)',
-                desc: 'পাঠানোর আগে আপনাকে দেখাবে',
+                title: t('manageShop.aiSettings.mode.draftTitle'),
+                desc: t('manageShop.aiSettings.mode.draftDesc'),
               },
               {
                 mode: 'MANUAL' as const,
-                title: '✋ আমিই পাঠাব',
-                desc: 'বট নিজে থেকে কিছু পাঠাবে না',
+                title: t('manageShop.aiSettings.mode.manualTitle'),
+                desc: t('manageShop.aiSettings.mode.manualDesc'),
               },
             ]).map((option) => {
               const active = aiSettings.automation_mode === option.mode;
@@ -176,12 +176,12 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">বট কিভাবে কথা বলবে?</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.languageLabel')}</label>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {([
-              { value: 'mixed' as const, label: 'বন্ধুত্বপূর্ণ বাংলিশ (ডিফল্ট)' },
-              { value: 'bn' as const, label: 'সাধারণ বাংলা' },
-              { value: 'en' as const, label: 'ইংরেজি' },
+              { value: 'mixed' as const, label: t('manageShop.aiSettings.language.mixed') },
+              { value: 'bn' as const, label: t('manageShop.aiSettings.language.bn') },
+              { value: 'en' as const, label: t('manageShop.aiSettings.language.en') },
             ]).map((lang) => (
               <button
                 key={lang.value}
@@ -202,9 +202,9 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
         <div className="grid grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              বট কতটা নিশ্চিত হলে নিজে উত্তর পাঠাবে? <span className="font-semibold text-blue-700">{aiSettings.confidence_threshold}%</span>
+              {t('manageShop.aiSettings.confidenceLabel')} <span className="font-semibold text-blue-700">{aiSettings.confidence_threshold}%</span>
             </label>
-            <p className="text-xs text-gray-500 mb-2">আরও সতর্ক ◀━━━●━━━▶ আরও স্বাধীন</p>
+            <p className="text-xs text-gray-500 mb-2">{t('manageShop.aiSettings.confidenceHint')}</p>
             <input
               type="range"
               min={0}
@@ -215,12 +215,12 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
               className="w-full accent-blue-600"
             />
             <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>সতর্ক</span><span>মাঝামাঝি</span><span>স্বাধীন</span>
+              <span>{t('manageShop.aiSettings.confidenceCautious')}</span><span>{t('manageShop.aiSettings.confidenceBalanced')}</span><span>{t('manageShop.aiSettings.confidenceIndependent')}</span>
             </div>
           </div>
           <div>
-            <label htmlFor="max-auto-order-value" className="block text-sm font-medium text-gray-700 mb-1">Max Auto-Order Value (৳)</label>
-            <p className="text-xs text-gray-500 mb-2">Orders above this amount require manual approval.</p>
+            <label htmlFor="max-auto-order-value" className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.aiSettings.maxAutoOrderLabel')}</label>
+            <p className="text-xs text-gray-500 mb-2">{t('manageShop.aiSettings.maxAutoOrderHint')}</p>
             <input
               id="max-auto-order-value"
               type="number"
@@ -235,8 +235,8 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
 
         <div className="flex flex-wrap gap-6">
           {([
-            { key: "auto_reply_enabled", label: "Auto-reply enabled" },
-            { key: "ask_email", label: "Ask customer for email" },
+            { key: "auto_reply_enabled", label: t('manageShop.aiSettings.autoReplyEnabled') },
+            { key: "ask_email", label: t('manageShop.aiSettings.askEmail') },
           ] as const).map(({ key, label }) => (
             <label key={key} className="flex items-center gap-3 cursor-pointer select-none">
               <div
@@ -252,25 +252,25 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
 
         <div className="space-y-4 border-t border-gray-100 pt-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">গ্রিটিং মেসেজ <span className="text-gray-400 font-normal">(নতুন কথোপকথনের শুরুতে)</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.greetingLabel')} <span className="text-gray-400 font-normal">{t('manageShop.aiSettings.greetingHint')}</span></label>
             <div className="mb-2 rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-600">
-              <span className="font-semibold text-gray-700">সবসময় দেখানো হয় (Meta নিয়ম): </span>
-              <span className="font-medium text-gray-800">আপনি [আপনার দোকান]-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।</span>
-              <span> — গ্রাহককে স্পষ্টভাবে জানানো হয় যে একটি স্বয়ংক্রিয় সিস্টেম উত্তর দিচ্ছে। এটি বন্ধ করা যায় না; এর পরে আপনার নিচের লেখাটি যুক্ত হবে।</span>
+              <span className="font-semibold text-gray-700">{t('manageShop.aiSettings.disclosurePrefix')} </span>
+              <span className="font-medium text-gray-800">{t('manageShop.aiSettings.disclosureText')}</span>
+              <span> {t('manageShop.aiSettings.disclosureSuffix')}</span>
             </div>
             <textarea
               rows={2}
-              aria-label="গ্রিটিং মেসেজ"
+              aria-label={t('manageShop.aiSettings.greetingLabel')}
               value={aiSettings.greeting?.custom_text || ""}
               onChange={(e) => setAISettings({ ...aiSettings, greeting: { ...aiSettings.greeting!, custom_text: e.target.value } })}
-              placeholder="যেমন: স্বাগতম! কীভাবে সাহায্য করতে পারি?"
+              placeholder={t('manageShop.aiSettings.greetingPlaceholder')}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">ক্লোজিং মেসেজ <span className="text-gray-400 font-normal">(অর্ডার নিশ্চিত হলে)</span></label>
+              <label className="block text-sm font-medium text-gray-700">{t('manageShop.aiSettings.closingLabel')} <span className="text-gray-400 font-normal">{t('manageShop.aiSettings.closingHint')}</span></label>
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <div
                   onClick={() => setAISettings({ ...aiSettings, closing: { ...aiSettings.closing!, enabled: !aiSettings.closing?.enabled } })}
@@ -278,24 +278,24 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                 >
                   <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings.closing?.enabled ? "translate-x-4" : ""}`} />
                 </div>
-                <span className="text-xs text-gray-600">{aiSettings.closing?.enabled ? "চালু" : "বন্ধ"}</span>
+                <span className="text-xs text-gray-600">{aiSettings.closing?.enabled ? t('manageShop.aiSettings.toggleOn') : t('manageShop.aiSettings.toggleOff')}</span>
               </label>
             </div>
             <textarea
               rows={2}
-              aria-label="ক্লোজিং মেসেজ"
+              aria-label={t('manageShop.aiSettings.closingLabel')}
               value={aiSettings.closing?.custom_text || ""}
               onChange={(e) => setAISettings({ ...aiSettings, closing: { ...aiSettings.closing!, custom_text: e.target.value } })}
-              placeholder="যেমন: কেনাকাটার জন্য ধন্যবাদ!"
+              placeholder={t('manageShop.aiSettings.closingPlaceholder')}
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <p className="mt-1 text-xs text-gray-500">আপনার সোশ্যাল মিডিয়া লিংক (ব্যবসার তথ্য পেজে যোগ করা) স্বয়ংক্রিয়ভাবে এর নিচে যুক্ত হবে।</p>
+            <p className="mt-1 text-xs text-gray-500">{t('manageShop.aiSettings.closingSocialNote')}</p>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Required Order Fields</label>
-          <p className="text-xs text-gray-500 mb-3">The AI will ask for these fields before confirming an order.</p>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.requiredFieldsLabel')}</label>
+          <p className="text-xs text-gray-500 mb-3">{t('manageShop.aiSettings.requiredFieldsHint')}</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(Object.keys(aiSettings.required_fields) as Array<keyof ShopAISettings['required_fields']>).map((field) => (
               <label key={field} className="flex items-center gap-2 cursor-pointer">
@@ -308,7 +308,7 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                   })}
                   className="w-4 h-4 accent-blue-600"
                 />
-                <span className="text-sm text-gray-700 capitalize">{field.replace(/_/g, " ")}</span>
+                <span className="text-sm text-gray-700 capitalize">{t(`manageShop.aiSettings.fields.${field}`)}</span>
               </label>
             ))}
           </div>
@@ -320,14 +320,14 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
             onClick={() => setShowHandoffSection(!showHandoffSection)}
             className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            <span>Human Handoff Settings</span>
+            <span>{t('manageShop.aiSettings.handoffTitle')}</span>
             {showHandoffSection ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showHandoffSection && (
             <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="notification-channel" className="block text-sm font-medium text-gray-700 mb-1">Notification Channel</label>
+                  <label htmlFor="notification-channel" className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.aiSettings.notificationChannel')}</label>
                   <select
                     id="notification-channel"
                     value={aiSettings.handoff_settings.notification_channel}
@@ -337,13 +337,13 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                     })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="in_app">In-app notification</option>
-                    <option value="email">Email</option>
-                    <option value="sms">SMS</option>
+                    <option value="in_app">{t('manageShop.aiSettings.notifInApp')}</option>
+                    <option value="email">{t('manageShop.aiSettings.notifEmail')}</option>
+                    <option value="sms">{t('manageShop.aiSettings.notifSms')}</option>
                   </select>
                 </div>
                 <div>
-                  <label htmlFor="cooldown-minutes" className="block text-sm font-medium text-gray-700 mb-1">Cooldown (minutes)</label>
+                  <label htmlFor="cooldown-minutes" className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.aiSettings.cooldownLabel')}</label>
                   <input
                     id="cooldown-minutes"
                     type="number"
@@ -359,10 +359,10 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                 </div>
               </div>
               <TagInput
-                label="Trigger Keywords"
+                label={t('manageShop.aiSettings.triggerKeywordsLabel')}
                 values={aiSettings.handoff_settings.trigger_keywords}
                 onChange={(v) => setAISettings({ ...aiSettings, handoff_settings: { ...aiSettings.handoff_settings, trigger_keywords: v } })}
-                placeholder="e.g. complain, refund"
+                placeholder={t('manageShop.aiSettings.triggerKeywordsPlaceholder')}
               />
             </div>
           )}
@@ -378,7 +378,7 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
             : "bg-blue-600 hover:bg-blue-700"
         }`}
       >
-        {isSaving ? "Saving…" : "Save AI Settings"}
+        {isSaving ? t('common.saving') : t('manageShop.aiSettings.saveButton')}
       </button>
     </section>
   );

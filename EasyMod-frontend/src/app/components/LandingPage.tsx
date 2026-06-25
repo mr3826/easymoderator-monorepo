@@ -438,7 +438,7 @@ export default function LandingPage() {
                 {plan.id === "partner" && (
                   <div className="absolute -top-4 left-0 right-0 flex justify-center">
                     <span className="rounded-full bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white shadow-md">
-                      ৩০০+ অর্ডার/মাস
+                      {t("landing.pricing.partnerBadge")}
                     </span>
                   </div>
                 )}
@@ -448,8 +448,8 @@ export default function LandingPage() {
                   <div className="mt-2 flex items-end gap-1">
                     {plan.id === "partner" ? (
                       <>
-                        <span className="text-4xl font-bold text-gray-900">৳10–15</span>
-                        <span className="mb-1 text-sm text-gray-400">/ডেলিভার্ড অর্ডার</span>
+                        <span className="text-4xl font-bold text-gray-900">{t("landing.pricing.partnerPrice")}</span>
+                        <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.partnerPriceUnit")}</span>
                       </>
                     ) : (
                       <>
@@ -477,7 +477,7 @@ export default function LandingPage() {
                     to="/pricing"
                     className="block rounded-xl bg-purple-600 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-purple-600/25 transition-all hover:bg-purple-700"
                   >
-                    পার্টনার হোন →
+                    {t("landing.pricing.becomePartner")}
                   </Link>
                 ) : (
                   <Link

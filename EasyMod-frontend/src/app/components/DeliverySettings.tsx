@@ -190,9 +190,9 @@ export default function DeliverySettings() {
       await apiClient.put('/shop/platform-priority', nextPriority);
       setPriority(nextPriority);
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
-      setSuccessMessage(`${config?.display_name} now used as default courier`);
+      setSuccessMessage(t('manageShop.deliverySettings.setDefaultSuccess', { provider: config?.display_name }));
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update default');
+      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.updateDefaultFailed'));
     } finally {
       setSettingDefaultProvider(null);
     }
@@ -573,7 +573,7 @@ export default function DeliverySettings() {
                   <button
                     onClick={() => removeAreaPricing(index)}
                     className="text-gray-400 hover:text-red-500"
-                    aria-label="Remove area"
+                    aria-label={t('manageShop.deliverySettings.removeArea')}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -589,7 +589,7 @@ export default function DeliverySettings() {
               <h2 className="text-lg font-semibold text-gray-900">{t('manageShop.deliverySettings.weightCharges')}</h2>
               <span
                 className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 text-xs font-semibold text-gray-600"
-                title="Weight tier guide: Add extra charges by weight range. Example: 0-1 kg = 0, 1-3 kg = 20. Extra charge adds to base delivery charge."
+                title={t('manageShop.deliverySettings.weightTierTooltip')}
               >
                 ?
               </span>
@@ -603,8 +603,7 @@ export default function DeliverySettings() {
           </div>
 
           <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            Add extra charges for weight ranges. Example: 0-1 kg = 0, 1-3 kg = 20, 3-5 kg = 40.
-            The extra charge is added on top of the base delivery charge.
+            {t('manageShop.deliverySettings.weightTierInfo')}
           </div>
 
           <div className="space-y-3">
@@ -641,7 +640,7 @@ export default function DeliverySettings() {
                   <button
                     onClick={() => removeWeightTier(index)}
                     className="text-gray-400 hover:text-red-500"
-                    aria-label="Remove tier"
+                    aria-label={t('manageShop.deliverySettings.removeTier')}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -683,7 +682,7 @@ export default function DeliverySettings() {
                         {defaultProvider === config.provider && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                             <Star className="w-3 h-3 fill-current" />
-                            Default
+                            {t('manageShop.deliverySettings.defaultBadge')}
                           </span>
                         )}
                       </div>
@@ -746,7 +745,7 @@ export default function DeliverySettings() {
                       {settingDefaultProvider === config.provider
                         ? <Loader2 className="w-4 h-4 animate-spin" />
                         : <Star className="w-4 h-4" />}
-                      Set as Default
+                      {t('manageShop.deliverySettings.setAsDefault')}
                     </button>
                   )}
 
@@ -794,7 +793,7 @@ export default function DeliverySettings() {
               {showingForm && (
                 <div className="border-t border-gray-200 bg-gray-50 p-6">
                   <h4 className="text-sm font-semibold text-gray-900 mb-4">
-                    Enter {config.display_name} Credentials
+                    {t('manageShop.deliverySettings.enterCredentials', { provider: config.display_name })}
                   </h4>
 
                   <div className="space-y-4">

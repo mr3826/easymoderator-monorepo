@@ -6,7 +6,7 @@ interface LanguageToggleProps {
 }
 
 export default function LanguageToggle({ variant = 'dark' }: LanguageToggleProps) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isBn = i18n.language === 'bn';
 
   const toggle = () => {
@@ -29,8 +29,8 @@ export default function LanguageToggle({ variant = 'dark' }: LanguageToggleProps
       type="button"
       onClick={toggle}
       className={`${base} ${styles}`}
-      aria-label={isBn ? 'Switch to English' : 'বাংলায় পরিবর্তন করুন'}
-      title={isBn ? 'Switch to English' : 'Switch to Bengali'}
+      aria-label={isBn ? t('common.language.switchToEnglish') : t('common.language.switchToBengali')}
+      title={isBn ? t('common.language.switchToEnglish') : t('common.language.switchToBengali')}
     >
       <span className={`px-2.5 py-0.5 rounded-full transition-all ${isBn ? activeSegment : inactiveSegment}`}>
         বাং

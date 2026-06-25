@@ -34,6 +34,7 @@ function pct(used: number, limit: number): number {
 }
 
 function MeterBar({ item, label }: { item: UsageItem; label: string }) {
+  const { t } = useTranslation();
   const percentage = pct(item.used, item.limit);
   return (
     <div className="space-y-1.5">
@@ -52,12 +53,12 @@ function MeterBar({ item, label }: { item: UsageItem; label: string }) {
         />
       </div>
       <div className="flex justify-between items-center">
-        <span className="text-xs text-muted-foreground">{Math.round(percentage)}% used</span>
+        <span className="text-xs text-muted-foreground">{t("subscription.percentUsedShort", { percent: Math.round(percentage) })}</span>
         {item.status === "exceeded" && (
-          <span className="text-xs font-semibold text-destructive font-bn">সীমা পেরিয়েছে</span>
+          <span className="text-xs font-semibold text-destructive font-bn">{t("subscription.limitExceeded")}</span>
         )}
         {item.status === "warning" && (
-          <span className="text-xs font-semibold text-yellow-600 font-bn">সতর্কতা</span>
+          <span className="text-xs font-semibold text-yellow-600 font-bn">{t("subscription.warning")}</span>
         )}
       </div>
     </div>
@@ -76,13 +77,13 @@ export function UsageMeter({ conversations, orders, products }: UsageMeterProps)
     if (p >= 100 && !warnedRef.current.has(100)) {
       warnedRef.current.add(100);
       toast.error(
-        `Conversation limit পূর্ণ হয়েছে (${used}/${limit})। Upgrade করুন।`,
+        t("subscription.toastLimitFull", { used, limit }),
         { duration: 10000, id: "conv-limit-100" }
       );
     } else if (p >= 80 && !warnedRef.current.has(80)) {
       warnedRef.current.add(80);
       toast.warning(
-        `Conversation limit-এর ৮০% ব্যবহার হয়েছে (${used}/${limit})।`,
+        t("subscription.toastLimit80", { used, limit }),
         { duration: 8000, id: "conv-limit-80" }
       );
     }

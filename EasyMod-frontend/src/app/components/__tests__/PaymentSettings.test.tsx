@@ -65,6 +65,9 @@ vi.mock('react-i18next', () => ({
                 'manageShop.paymentSettings.aamarName': 'AamarPay',
                 'manageShop.paymentSettings.aamarDesc': 'Payment gateway',
                 'manageShop.paymentSettings.defaultPaymentMessage': 'Please complete payment',
+                'manageShop.paymentSettings.saveGateway': 'Save bKash',
+                'manageShop.paymentSettings.savedSuccess': 'bKash credentials verified and saved!',
+                'manageShop.paymentSettings.settingsSavedSuccess': 'Payment settings saved successfully!',
             };
             return map[key] ?? key;
         },

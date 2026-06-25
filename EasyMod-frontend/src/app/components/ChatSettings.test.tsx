@@ -130,7 +130,7 @@ describe('ChatSettings', () => {
 
   it('renders the Chat Channel Settings header', async () => {
     await renderComponent();
-    expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
+    expect(screen.getByText('Channel Settings')).toBeInTheDocument();
   });
 
   it('makes API call to load channels on mount', async () => {
@@ -188,14 +188,14 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockResolvedValueOnce([]);
     await renderComponent();
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Facebook Page সংযুক্ত করুন/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Connect Facebook Page/i })).toBeInTheDocument();
     }, { timeout: 2000 });
   });
 
   it('shows the "add another Facebook Page" button when a channel is already connected', async () => {
     await renderComponent();
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /আরেকটি Facebook Page যোগ করুন/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Add another Facebook Page/i })).toBeInTheDocument();
     }, { timeout: 2000 });
   });
 
@@ -213,7 +213,7 @@ describe('ChatSettings', () => {
 
     await renderComponent();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Facebook Page সংযুক্ত করুন/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Connect Facebook Page/i }));
     await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'));
 
     await act(async () => {
@@ -271,7 +271,7 @@ describe('ChatSettings', () => {
     await waitFor(() => {
       const pageNames = screen.queryAllByText(/My Facebook Page/i);
       expect(pageNames.length).toBe(0);
-      expect(screen.getByText('চ্যানেল সেটিংস')).toBeInTheDocument();
+      expect(screen.getByText('Channel Settings')).toBeInTheDocument();
     }, { timeout: 2000 });
   });
 
@@ -281,7 +281,7 @@ describe('ChatSettings', () => {
 
     await renderComponent();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Facebook Page সংযুক্ত করুন/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Connect Facebook Page/i }));
 
     await waitFor(() => {
       expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook');

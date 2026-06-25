@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 
 // Same-origin signalling between the popup and the opener tab.
@@ -10,6 +11,7 @@ const OAUTH_CHANNEL_NAME = 'easymod_oauth';
 
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const code = searchParams.get('code');
@@ -69,8 +71,8 @@ export default function OAuthCallbackPage() {
         <div className="w-14 h-14 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
           <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
         </div>
-        <p className="text-gray-600 text-sm">সংযুক্ত হচ্ছে...</p>
-        <p className="text-gray-400 text-xs mt-1">Connecting to your account</p>
+        <p className="text-gray-600 text-sm">{t('oauthCallback.connecting')}</p>
+        <p className="text-gray-400 text-xs mt-1">{t('oauthCallback.connectingToAccount')}</p>
       </div>
     </div>
   );

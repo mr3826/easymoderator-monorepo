@@ -73,7 +73,12 @@
     "reject": "Reject",
     "dismiss": "Dismiss",
     "send": "Send",
-    "sending": "Sending..."
+    "sending": "Sending...",
+    "language": {
+      "switchToEnglish": "Switch to English",
+      "switchToBengali": "Switch to Bengali"
+    },
+    "bdPhoneInvalid": "Enter a valid Bangladeshi mobile number (01X-XXXX-XXXX)"
   },
   "landing": {
     "nav": {
@@ -184,7 +189,11 @@
       "subheading": "৳999/month — start with a 14-day free trial, no card needed.",
       "perMonth": "/mo",
       "mostPopular": "Most Popular",
-      "getStarted": "Start 14-day free trial"
+      "getStarted": "Start 14-day free trial",
+      "partnerBadge": "300+ orders/month",
+      "partnerPrice": "৳10–15",
+      "partnerPriceUnit": "/delivered order",
+      "becomePartner": "Become a Partner →"
     },
     "testimonials": {
       "label": "Testimonials",
@@ -232,10 +241,22 @@
       "heading": "Make your business smart.",
       "subheading": "Facebook — manage all your Pages together.",
       "stats": [
-        { "stat": "10+", "label": "Active Businesses" },
-        { "stat": "98%", "label": "Happy Customers" },
-        { "stat": "5 min", "label": "Setup Time" },
-        { "stat": "24/7", "label": "AI Support" }
+        {
+          "stat": "10+",
+          "label": "Active Businesses"
+        },
+        {
+          "stat": "98%",
+          "label": "Happy Customers"
+        },
+        {
+          "stat": "5 min",
+          "label": "Setup Time"
+        },
+        {
+          "stat": "24/7",
+          "label": "AI Support"
+        }
       ],
       "testimonialQuote": "Using Easy Moderator, I reduced my order response time from 3 hours to 5 minutes.",
       "testimonialName": "Rahela Begum",
@@ -324,7 +345,9 @@
         "createPassword": "Please create a password.",
         "acceptTerms": "Please accept the terms to continue.",
         "unableToCreate": "Unable to create account."
-      }
+      },
+      "toggleAnnualBilling": "Toggle annual billing",
+      "subscriptionPaymentMethod": "Subscription payment method"
     },
     "forgotPassword": {
       "title": "Forgot Password",
@@ -395,7 +418,16 @@
         "noProduct": "No product specified"
       },
       "liveUpdate": "Live update every 60 seconds",
-      "lastUpdated": "· Last updated {{time}}"
+      "lastUpdated": "· Last updated {{time}}",
+      "cashPosition": {
+        "title": "Cash Position",
+        "subtitle": "Cash Position",
+        "inTransit": "Stuck with courier",
+        "inTransitSub": "Cash in Transit",
+        "atRisk": "Coming back",
+        "atRiskSub": "At Risk · {{days}} days",
+        "ordersUnit": "{{count}} orders"
+      }
     },
     "nav": {
       "dashboard": "Dashboard",
@@ -522,6 +554,23 @@
       "updateMode": "Failed to update conversation mode",
       "resolveFailed": "Failed to resolve conversation",
       "assignFailed": "Failed to assign conversation"
+    },
+    "unknownCustomer": "Unknown",
+    "noTitle": "No title",
+    "needsReplyBadge": "Needs reply",
+    "deliveryFailed": "Reply not delivered: {{reason}}",
+    "channelIssue": "Channel issue — {{name}}: {{message}}",
+    "templates": {
+      "orderConfirmed": "Order Confirmed",
+      "needAddress": "Need Address",
+      "advancePayment": "Advance Payment",
+      "courierUpdate": "Courier Update",
+      "thankYou": "Thank You",
+      "outOfStock": "Out of Stock",
+      "deliveryCharge": "Delivery Charge",
+      "returnWindow": "Return Window",
+      "cashOnDelivery": "Cash on Delivery",
+      "dispatchToday": "Dispatch Today"
     }
   },
   "products": {
@@ -570,17 +619,28 @@
       "chooseFile": "Choose File",
       "supported": "Supported: CSV, TSV, TXT",
       "processing": "Processing with AI...",
-      "aiExtracting": "AI is extracting product information..."
+      "aiExtracting": "AI is extracting product information...",
+      "description": "Upload CSV, TSV, or text files for AI processing",
+      "extracting": "AI is extracting product information..."
     },
     "reviewModal": {
       "title": "Review AI-Generated Products",
       "subtitle": "Review and approve products extracted by AI",
       "confidence": "Confidence: {{percent}}%",
-      "approveAll": "Approve All"
+      "approveAll": "Approve All",
+      "description": "Review and approve products extracted by AI",
+      "skuLabel": "SKU:",
+      "priceLabel": "Price:",
+      "categoryLabel": "Category:",
+      "variantsLabel": "Variants:",
+      "aliasesLabel": "Aliases:"
     },
     "deleteModal": {
       "title": "Delete Product",
-      "message": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone."
+      "message": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+      "description": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+      "success": "Product deleted successfully",
+      "failed": "Failed to delete product"
     },
     "form": {
       "addTitle": "Add New Product",
@@ -683,12 +743,32 @@
       "copySuccess": "Product link copied to clipboard",
       "copyFailed": "Failed to copy link",
       "loading": "Loading product...",
-      "deleteConfirm": "Are you sure you want to delete this product?"
+      "deleteConfirm": "Are you sure you want to delete this product?",
+      "idNotFound": "Product ID not found",
+      "noShopSelected": "No shop selected",
+      "loadFailed": "Failed to load product",
+      "imageAlt": "Product {{index}}"
     },
     "pagination": {
       "previous": "Previous",
       "next": "Next",
       "pageOf": "Page {{current}} of {{total}}"
+    },
+    "editAria": "Edit {{name}}",
+    "deleteAria": "Delete {{name}}",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "pending": "Pending"
+    },
+    "errors": {
+      "unsupportedFileType": "Unsupported file type. Please upload CSV, TSV, or TXT files.",
+      "noProductsExtracted": "No products could be extracted from the file.",
+      "uploadFailed": "Failed to process upload.",
+      "invalidPrice": "Please set a valid price for {{name}} before approving.",
+      "approveFailed": "Failed to approve product.",
+      "someInvalidPrices": "Some products have invalid prices and were skipped.",
+      "approveNamedFailed": "Failed to approve {{name}}."
     }
   },
   "categories": {
@@ -842,7 +922,9 @@
       "notes": "Order Notes",
       "notesPlaceholder": "Optional notes",
       "rtoWarning": "COD/unpaid orders carry higher return-to-origin (RTO) risk.",
-      "createButton": "Create Order"
+      "createButton": "Create Order",
+      "searchProducts": "Search and add products…",
+      "noProductsFound": "No products found"
     },
     "detailModal": {
       "title": "Order Details",
@@ -864,7 +946,23 @@
       "updateStatus": "Update Status",
       "confirmOrder": "Confirm Order",
       "cancelOrder": "Cancel Order",
-      "close": "Close"
+      "close": "Close",
+      "noteSaved": "Note saved successfully",
+      "call": "Call",
+      "noPhone": "Customer number not available",
+      "deliveryAddress": "Delivery Address",
+      "zoneLabel": "Zone",
+      "noAddress": "No address added yet",
+      "viewOnMap": "View on Map",
+      "paymentStatusLabel": "Payment Status",
+      "codPending": "COD pending",
+      "customerChat": "Customer Chat (last 3 messages)",
+      "noChatSnippet": "No chat snippet found.",
+      "note": "Note",
+      "notePlaceholder": "Write an order note here",
+      "saveNote": "Save Note",
+      "bookCourier": "Book Courier",
+      "cancelOrderBtn": "Cancel"
     },
     "labels": {
       "sku": "SKU"
@@ -893,6 +991,21 @@
       "csvFallback": "Excel export is not available yet. Downloaded CSV instead.",
       "itemRequired": "At least one item is required",
       "createFailed": "Failed to create order"
+    },
+    "emptyState": "No orders found.",
+    "status": {
+      "draft": "Draft",
+      "confirmed": "Confirmed",
+      "processing": "Processing",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "row": {
+      "noProduct": "No product specified",
+      "viewDetail": "View Details",
+      "track": "Track",
+      "dispatch": "Dispatch",
+      "viewStatus": "View Status"
     }
   },
   "customers": {
@@ -1038,10 +1151,121 @@
       "oauthInitFailed": "Could not start connection. Please try again.",
       "refreshFailed": "Failed to refresh channels",
       "oauthStateMismatch": "OAuth validation failed — please try again",
-      "disconnectFailed": "Failed to disconnect channel"
+      "disconnectFailed": "Failed to disconnect channel",
+      "oauthInProgress": "A connection is already in progress. Finish the previous one first."
     },
     "disconnected": "Channel disconnected",
-    "successToast": "{{channel}} connected successfully!"
+    "successToast": "{{channel}} connected successfully!",
+    "settings": {
+      "title": "Channel Settings",
+      "subtitle": "Connect and manage your Facebook Page channels"
+    },
+    "health": {
+      "connection": "Connection",
+      "connected": "Connected",
+      "webhook": "Webhook",
+      "active": "Active",
+      "token": "Token",
+      "valid": "Valid",
+      "expired": "Expired",
+      "lastWebhook": "Last webhook",
+      "notVerified": "Not verified",
+      "noneYet": "None yet"
+    },
+    "actions": {
+      "test": "Test",
+      "refreshList": "Refresh list",
+      "refreshPermissions": "Refresh permissions",
+      "disconnect": "Disconnect",
+      "testTitle": "Webhook test"
+    },
+    "badge": {
+      "actionRequired": "Action Required",
+      "error": "Error",
+      "reconnect": "Reconnect"
+    },
+    "label": {
+      "updated": "Label updated to \"{{label}}\"",
+      "cleared": "Label cleared",
+      "updateFailed": "Failed to update label",
+      "fieldLabel": "Label (optional)",
+      "placeholder": "e.g. Sales, Live selling, Regional"
+    },
+    "connectSuccess": "Connected successfully.",
+    "connectCard": {
+      "title": "Connect Facebook Page",
+      "addAnother": "Add another Facebook Page",
+      "loginPopup": "Log in to Meta in the pop-up...",
+      "selectPagesHint": "Select the Pages you want to connect (one or more)",
+      "connectCount": "Connect ({{count}})"
+    },
+    "test": {
+      "ok": "Webhook OK ({{ms}}ms)",
+      "failed": "Webhook failed: {{error}}",
+      "error": "Test failed — check backend logs"
+    },
+    "disconnectedNamed": "{{name}} disconnected",
+    "consent": {
+      "loadFailed": "Could not load consent activity",
+      "events": {
+        "optInImplicit": "Opted in (implicit)",
+        "optInExplicit": "Opted in",
+        "optOut": "Opted out",
+        "deauthorized": "Deauthorized",
+        "dataDeleted": "Data deleted"
+      },
+      "activity": "Consent activity",
+      "optInsCount": "({{count}} opt-ins)",
+      "optIns": "Opt-ins",
+      "optOuts": "Opt-outs",
+      "deauth": "Deauth",
+      "erased": "Erased",
+      "noEvents": "No consent events recorded yet."
+    },
+    "tokenExpired": "Connection has expired. Please reconnect.",
+    "tokenExpiresIn": "Connection expires in {{days}} days.",
+    "reconnectPage": "Reconnect Facebook Page",
+    "permissions": {
+      "hide": "Hide permissions",
+      "show": "What permissions are needed?",
+      "pagesShowList": "see your Page list",
+      "pagesMessaging": "read and send Messenger messages",
+      "pagesReadEngagement": "read Page comment events",
+      "pagesManageMetadata": "subscribe to realtime webhooks",
+      "pagesManageEngagement": "public replies on comments",
+      "note": "EasyMod uses these permissions only for customer messages."
+    },
+    "aiModel": {
+      "title": "AI Model Configuration",
+      "subtitle": "The language model for AI auto-reply",
+      "autoSelectedTitle": "AI Model: Auto-Selected for Best Results",
+      "autoSelectedDesc": "EasyMod automatically picks the best model for every conversation — available on all plans."
+    },
+    "disconnectModal": {
+      "title": "Disconnect {{name}}?",
+      "message": "You will stop receiving messages on this channel. You can reconnect later.",
+      "confirm": "Yes, Disconnect"
+    },
+    "noPages": {
+      "title": "No Facebook Page found",
+      "desc": "This is usually a Meta Business access issue, not an EasyMod problem. Meta only shows Pages assigned to the Facebook login you just used.",
+      "step1": "Open Meta Business Settings and select the correct Business Portfolio.",
+      "step2": "In Users > People, confirm this Facebook login has full control or assigned access.",
+      "step3": "In Accounts > Pages, confirm the Page is inside that portfolio.",
+      "step4": "Remove EasyMod from Business Integrations, then retry the connection.",
+      "openSettings": "Open Meta Business Settings",
+      "tryAgain": "Try again"
+    },
+    "autoReply": {
+      "enabledToast": "AI auto-reply turned on",
+      "disabledToast": "AI auto-reply turned off",
+      "saveFailed": "Could not save setting",
+      "loading": "Loading AI setting…",
+      "title": "AI auto-reply",
+      "onDesc": "AI will automatically reply to new messages",
+      "offDesc": "AI replies off — only drafts are created",
+      "toggleTitle": "AI auto-reply toggle"
+    }
   },
   "knowledge": {
     "title": "AI Knowledge Training",
@@ -1054,13 +1278,16 @@
       "overview": "Overview",
       "faqs": "FAQs",
       "branding": "Branding",
-      "gaps": "Knowledge Gaps"
+      "gaps": "Knowledge Gaps",
+      "businessInfo": "Business Info",
+      "knowledgeGaps": "Knowledge Gaps"
     },
     "metrics": {
       "activeKnowledge": "Active Knowledge",
       "activeFAQs": "Active FAQs",
       "totalAnswers": "Total Answers Used",
-      "knowledgeGaps": "Knowledge Gaps"
+      "knowledgeGaps": "Knowledge Gaps",
+      "totalAnswersUsed": "Total Answers Used"
     },
     "howItWorks": "How AI Knowledge Training Works",
     "howItWorksDesc": "Upload documents about your business, and our AI will extract FAQs, business information, and branding guidelines. You review and approve before anything goes live.",
@@ -1098,7 +1325,18 @@
       "escalationPlaceholder": "human, agent, help",
       "escalationHint": "When a customer sends any of these keywords, AI auto-reply is automatically paused and the conversation is flagged for human review.",
       "preview": "Preview",
-      "saveChanges": "Save Changes"
+      "saveChanges": "Save Changes",
+      "toneOfVoice": "Tone of Voice",
+      "emojiUsage": "Emoji Usage",
+      "greetingStyle": "Greeting Style",
+      "closingStyle": "Closing Style",
+      "forbiddenPhrases": "Forbidden Phrases (comma separated)",
+      "escalationKeywords": "Escalation Keywords (comma separated)",
+      "previewGreetingFallback": "(greeting)",
+      "previewBody": "We're at {{address}}. Hours: {{hours}}.",
+      "previewClosingFallback": "(closing)",
+      "updateSuccess": "Branding rules updated and indexed.",
+      "updateFailed": "Failed to update branding rules."
     },
     "gaps": {
       "title": "Unanswered Questions",
@@ -1107,7 +1345,11 @@
       "aiSuggested": "AI Suggested Answer:",
       "confidence": "Confidence: {{percent}}%",
       "createFAQ": "Create FAQ",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "description": "These questions were asked by customers but don't have answers in your knowledge base.",
+      "empty": "No unanswered questions — your AI is handling everything!",
+      "firstAsked": "First asked: {{date}}",
+      "lastAsked": "Last asked: {{date}}"
     },
     "uploadModal": {
       "title": "Upload Knowledge Document",
@@ -1118,7 +1360,14 @@
       "chooseFile": "Choose File",
       "supported": "Supported: DOC, DOCX, TXT",
       "extracting": "AI Extracting Knowledge...",
-      "extractingMsg": "Analyzing FAQs, business info, and branding..."
+      "extractingMsg": "Analyzing FAQs, business info, and branding...",
+      "privacyNoticeLabel": "Privacy notice:",
+      "privacyNotice": "Content uploaded here is processed by our AI to generate automated responses. Uploaded data is stored encrypted and isolated to your shop only.",
+      "supportedFormats": "Supported: DOC, DOCX, TXT",
+      "readingFile": "Reading file…",
+      "uploading": "Uploading…",
+      "done": "Done!",
+      "analyzing": "Analyzing FAQs, business info, and branding..."
     },
     "reviewModal": {
       "title": "Review Extracted Knowledge",
@@ -1131,8 +1380,45 @@
       "answerLabel": "Answer",
       "categoryLabel": "Category",
       "categoryPlaceholder": "e.g., Delivery, Payment, Policy",
-      "saveFAQ": "Save FAQ"
-    }
+      "saveFAQ": "Save FAQ",
+      "editFAQ": "Edit FAQ",
+      "addNewFAQ": "Add New FAQ",
+      "questionPlaceholder": "What is your question?",
+      "answerPlaceholder": "Your answer here…"
+    },
+    "errors": {
+      "loadFailed": "Failed to load knowledge data",
+      "loadGapsFailed": "Failed to load knowledge gaps.",
+      "unsupportedFile": "Only .txt, .doc, or .docx files are supported.",
+      "uploadFailed": "Failed to upload document.",
+      "updateFaqFailed": "Failed to update FAQ.",
+      "deleteFaqFailed": "Failed to delete FAQ.",
+      "saveFaqFailed": "Failed to save FAQ."
+    },
+    "uploadQueued": "Document uploaded and queued for indexing.",
+    "faqActivated": "FAQ activated.",
+    "faqDeactivated": "FAQ deactivated.",
+    "faqDeleted": "FAQ deleted.",
+    "faqSaved": "FAQ saved.",
+    "noActiveFAQs": "No active FAQs yet.",
+    "notSet": "Not set",
+    "businessInfoTab": {
+      "shopName": "Shop Name",
+      "shopNamePlaceholder": "My Boutique",
+      "address": "Address",
+      "addressPlaceholder": "Dhaka, Bangladesh",
+      "phone": "Phone",
+      "phonePlaceholder": "+880 1XXX-XXXXXX",
+      "openingHours": "Opening Hours",
+      "openingHoursPlaceholder": "Sat–Thu 10am–9pm",
+      "save": "Save Business Info",
+      "updateSuccess": "Business info updated and indexed.",
+      "updateFailed": "Failed to update business info."
+    },
+    "confidenceBadge": "{{percent}}% confidence",
+    "faqSource": "Source: {{source}}",
+    "faqUsedTimes": "Used {{count}} times",
+    "noFAQs": "No FAQs yet. Add one or upload a document to get started."
   },
   "reports": {
     "title": "Reports & Analytics",
@@ -1141,7 +1427,8 @@
       "totalMessages": "Total Messages",
       "activeProducts": "Active Products",
       "ordersToday": "Orders Today",
-      "conversionRate": "Conversion Rate"
+      "conversionRate": "Conversion Rate",
+      "ordersInPeriod": "Orders (last {{period}}d)"
     },
     "knowledgePerformance": "Knowledge Base Performance",
     "knowledgeNotConnected": "Backend knowledge analytics not connected.",
@@ -1158,8 +1445,28 @@
     },
     "errors": {
       "channelData": "Failed to load channel data",
-      "reportData": "Failed to load report data"
-    }
+      "reportData": "Failed to load report data",
+      "loadChannelData": "Failed to load channel data",
+      "loadReportData": "Failed to load report data",
+      "noMetrics": "No dashboard metrics available from the backend."
+    },
+    "aiPerformance": "AI Performance (today)",
+    "ai": {
+      "messagesHandled": "Messages handled",
+      "llmCalls": "LLM calls",
+      "cacheHits": "Cache hits",
+      "estCost": "Est. AI cost"
+    },
+    "knowledgeGapsSubtitle": "Questions your AI couldn't answer.",
+    "exportCsv": "Export CSV",
+    "noKnowledgeGaps": "No unanswered questions yet — your AI is handling everything!",
+    "gapColumns": {
+      "question": "Question",
+      "platform": "Platform",
+      "language": "Language",
+      "date": "Date"
+    },
+    "connectFirstChannel": "Connect your first channel →"
   },
   "manageShop": {
     "title": "Manage Shop",
@@ -1179,7 +1486,19 @@
       "saveChanges": "Save Changes",
       "successMsg": "Business info updated and indexed.",
       "errorLoad": "Failed to load business info.",
-      "errorUpdate": "Failed to update business info."
+      "errorUpdate": "Failed to update business info.",
+      "sectionTitle": "Business Information",
+      "openingHoursPlaceholder": "e.g. Sat–Thu 9am–9pm",
+      "social": {
+        "title": "Social Media Links",
+        "help": "Any links you add will be shown in the \"Follow us\" section of the order-confirmation message. (optional)",
+        "facebookPlaceholder": "https://facebook.com/yourpage",
+        "instagramPlaceholder": "https://instagram.com/yourshop",
+        "whatsappPlaceholder": "https://wa.me/8801XXXXXXXXX or 01XXXXXXXXX",
+        "tiktokPlaceholder": "https://tiktok.com/@yourshop",
+        "youtubePlaceholder": "https://youtube.com/@yourshop",
+        "websitePlaceholder": "https://yourshop.com"
+      }
     },
     "deliverySettings": {
       "title": "Delivery Settings",
@@ -1229,8 +1548,17 @@
         "connectFailed": "Failed to connect provider",
         "disconnectFailed": "Failed to disconnect provider",
         "toggleFailed": "Failed to toggle provider",
-        "testFailed": "Connection test failed"
-      }
+        "testFailed": "Connection test failed",
+        "updateDefaultFailed": "Failed to update default"
+      },
+      "setDefaultSuccess": "{{provider}} now used as default courier",
+      "defaultBadge": "Default",
+      "setAsDefault": "Set as Default",
+      "removeArea": "Remove area",
+      "removeTier": "Remove tier",
+      "weightTierTooltip": "Weight tier guide: Add extra charges by weight range. Example: 0-1 kg = 0, 1-3 kg = 20. Extra charge adds to base delivery charge.",
+      "weightTierInfo": "Add extra charges for weight ranges. Example: 0-1 kg = 0, 1-3 kg = 20, 3-5 kg = 40. The extra charge is added on top of the base delivery charge.",
+      "enterCredentials": "Enter {{provider}} Credentials"
     },
     "paymentSettings": {
       "title": "Payment Settings",
@@ -1312,8 +1640,123 @@
         "credentialsSaveFirst": "Please save your credentials first before activating this payment method",
         "toggleFailed": "Failed to toggle payment method",
         "shopNotFound": "Shop not found. Please refresh the page.",
-        "saveSettingsFailed": "Failed to save payment settings"
+        "saveSettingsFailed": "Failed to save payment settings",
+        "updateDefaultFailed": "Failed to update default",
+        "contactRequired": "This payment method requires contacting us to set up.",
+        "phoneRequired": "MFS phone number is required",
+        "merchantCredentialsRequired": "Merchant API credentials (App Key & App Secret) are required",
+        "credentialsRequiredBkash": "Please provide bKash Merchant ID, API Key, Secret Key, Username and Password"
+      },
+      "setDefaultSuccess": "{{name}} set as default payment method",
+      "savedSuccess": "{{name}} credentials verified and saved! Now use the toggle to activate this payment method.",
+      "disconnectSuccess": "{{name}} disconnected successfully!",
+      "activatedSuccess": "{{name}} activated for payments!",
+      "deactivatedSuccess": "{{name}} deactivated for payments!",
+      "settingsSavedSuccess": "Payment settings saved successfully!",
+      "defaultBadge": "Default",
+      "setDefault": "Set Default",
+      "setDefaultTitle": "Set as default payment method",
+      "contactUs": "Contact us",
+      "saveConfigFirst": "Save configuration first",
+      "toggleActivateTitle": "Click to activate/deactivate",
+      "paymentMode": "Payment Mode",
+      "modeSelf": "Self MFS (Personal)",
+      "modeMerchant": "Merchant API",
+      "modeSelfHint": "Customer sends screenshot → AI verifies via OCR → you approve/reject",
+      "modeMerchantHint": "Automated checkout via official merchant API (requires business account)",
+      "mfsPhoneNumber": "{{name}} Phone Number",
+      "appKey": "App Key",
+      "appKeyPlaceholder": "Merchant App Key",
+      "appSecret": "App Secret",
+      "appSecretPlaceholder": "Merchant App Secret",
+      "merchantUsernamePlaceholder": "Merchant username",
+      "merchantPasswordPlaceholder": "Merchant password",
+      "saveGateway": "Save {{name}}"
+    },
+    "hub": {
+      "title": "Settings",
+      "subtitle": "Manage your shop configuration",
+      "businessInfo": {
+        "name": "Business Info",
+        "desc": "Name, address, logo and operating details"
+      },
+      "chatSettings": {
+        "name": "Chat Settings",
+        "desc": "Customize AI reply behaviour and greeting"
+      },
+      "deliverySettings": {
+        "name": "Delivery Settings",
+        "desc": "Configure couriers, delivery charges and zones"
+      },
+      "paymentSettings": {
+        "name": "Payment Settings",
+        "desc": "Payment gateways and advance payment rules"
+      },
+      "subscription": {
+        "name": "Subscription",
+        "desc": "Manage your plan, usage and invoices"
       }
+    },
+    "aiSettings": {
+      "title": "AI Behaviour Settings",
+      "subtitle": "Control how the AI chatbot operates across all connected channels.",
+      "saveSuccess": "AI settings saved.",
+      "saveError": "Failed to save AI settings.",
+      "saveButton": "Save AI Settings",
+      "automationModeLabel": "How should the bot work?",
+      "mode": {
+        "autoTitle": "🤖 Fully Automatic",
+        "autoDesc": "The bot sends replies on its own",
+        "draftTitle": "👁️ Review then send (Draft)",
+        "draftDesc": "Shows you the reply before sending",
+        "manualTitle": "✋ I'll send myself",
+        "manualDesc": "The bot won't send anything on its own"
+      },
+      "languageLabel": "How should the bot talk?",
+      "language": {
+        "mixed": "Friendly Banglish (default)",
+        "bn": "Plain Bengali",
+        "en": "English"
+      },
+      "confidenceLabel": "How confident must the bot be before replying on its own?",
+      "confidenceHint": "More cautious ◀━━━●━━━▶ More independent",
+      "confidenceCautious": "Cautious",
+      "confidenceBalanced": "Balanced",
+      "confidenceIndependent": "Independent",
+      "maxAutoOrderLabel": "Max Auto-Order Value (৳)",
+      "maxAutoOrderHint": "Orders above this amount require manual approval.",
+      "autoReplyEnabled": "Auto-reply enabled",
+      "askEmail": "Ask customer for email",
+      "greetingLabel": "Greeting message",
+      "greetingHint": "(at the start of a new conversation)",
+      "greetingPlaceholder": "e.g. Welcome! How can I help you?",
+      "disclosurePrefix": "Always shown (Meta rule):",
+      "disclosureText": "You are chatting with the automated AI assistant of [your shop].",
+      "disclosureSuffix": "— this clearly tells the customer that an automated system is replying. It cannot be turned off; your text below is added after it.",
+      "closingLabel": "Closing message",
+      "closingHint": "(when an order is confirmed)",
+      "closingPlaceholder": "e.g. Thank you for shopping with us!",
+      "closingSocialNote": "Your social media links (added on the Business Info page) are automatically appended below this.",
+      "toggleOn": "On",
+      "toggleOff": "Off",
+      "requiredFieldsLabel": "Required Order Fields",
+      "requiredFieldsHint": "The AI will ask for these fields before confirming an order.",
+      "fields": {
+        "customer_name": "Customer name",
+        "mobile_number": "Mobile number",
+        "delivery_address": "Delivery address",
+        "payment_method": "Payment method",
+        "email_address": "Email address",
+        "special_instructions": "Special instructions"
+      },
+      "handoffTitle": "Human Handoff Settings",
+      "notificationChannel": "Notification Channel",
+      "notifInApp": "In-app notification",
+      "notifEmail": "Email",
+      "notifSms": "SMS",
+      "cooldownLabel": "Cooldown (minutes)",
+      "triggerKeywordsLabel": "Trigger Keywords",
+      "triggerKeywordsPlaceholder": "e.g. complain, refund"
     }
   },
   "subscription": {
@@ -1382,7 +1825,114 @@
       "action": "Action"
     },
     "paid": "Paid",
-    "pending": "Pending"
+    "pending": "Pending",
+    "toastThreshold": "You have used {{threshold}}% of your monthly conversation limit ({{used}}/{{limit}}).",
+    "toastUpgradeHint": "Upgrade or buy an extra pack.",
+    "paymentCancelled": "Payment was cancelled or not completed. Please try again.",
+    "topupPaymentSuccess": "Payment successful! {{count}} conversations added to your balance.",
+    "invoicePaymentSuccessActive": "Payment successful! Your subscription is active and the AI assistant is running.",
+    "invoicePaymentSuccess": "Payment successful! Your invoice has been paid.",
+    "paymentVerifyFailed": "Payment verification failed. Please contact support.",
+    "loadFailed": "Failed to load subscription data",
+    "invoicesLoadFailed": "Failed to load invoices",
+    "planUpdateSuccess": "Subscription plan updated successfully",
+    "planUpdateFailed": "Failed to update plan",
+    "bkashStartFailed": "Failed to start bKash payment",
+    "trialEndsUrgent": "⚠️ Trial ends in {{count}} day!",
+    "trialEndsUrgent_other": "⚠️ Trial ends in {{count}} days!",
+    "trialRemaining": "Trial: {{count}} day remaining",
+    "trialRemaining_other": "Trial: {{count}} days remaining",
+    "trialUrgentMsg": "Upgrade now to keep your conversations and data.",
+    "trialMsg": "Enjoying Easy Moderator? Pick a plan before your trial ends.",
+    "viewPlans": "View plans",
+    "statusTrial": "Trial",
+    "statusPaymentDue": "Payment due",
+    "statusTrialEnded": "Trial ended",
+    "statusAiPaused": "AI paused",
+    "statusCancelled": "Cancelled",
+    "invoiceDueWarning": "Your monthly invoice is due. If not paid within 3 days, the AI assistant will be turned off.",
+    "aiPausedNote": "The AI assistant is off. Pay your monthly subscription to turn it back on.",
+    "payActivateBkash": "Pay ৳{{price}} with bKash",
+    "popular": "Popular",
+    "perMonthShort": "/mo",
+    "unlimited": "Unlimited",
+    "perMonthCount": "{{count}}/mo",
+    "applyNow": "Apply now →",
+    "slashUnlimited": "/ Unlimited",
+    "slashPerMonth": "/ {{limit}}/mo",
+    "percentUsed": "{{percent}}% used",
+    "forecastReached": "You have reached your limit!",
+    "forecastDays": "At this rate your limit will run out in {{count}} day.",
+    "forecastDays_other": "At this rate your limit will run out in {{count}} days.",
+    "buyExtraPack": "Buy an extra pack",
+    "conversationsCount": "{{count}} conversations",
+    "plusConversations": "+{{count}} conversations",
+    "addedToMonthlyLimit": "Added to your monthly limit",
+    "imageUnderstandingTitle": "Image Understanding",
+    "imageUnderstandingDesc": "AI reads product images to answer customer questions",
+    "advancedAiTitle": "Advanced AI",
+    "advancedAiDesc": "Higher accuracy responses + 30 req/min rate limit",
+    "toggleAnnualBilling": "Toggle annual billing",
+    "payInvoiceTitle": "Pay this invoice with bKash",
+    "viewInvoiceTitle": "View / Print invoice",
+    "downloadInvoiceTitle": "Download invoice (print to PDF)",
+    "payWithBkash": "Pay with bKash",
+    "topupBkashNote": "Once payment succeeds, the conversations are added to your balance instantly.",
+    "percentUsedShort": "{{percent}}% used",
+    "limitExceeded": "Limit exceeded",
+    "warning": "Warning",
+    "toastLimitFull": "Conversation limit is full ({{used}}/{{limit}}). Please upgrade.",
+    "toastLimit80": "You have used 80% of your conversation limit ({{used}}/{{limit}}).",
+    "usageTitle": "This month's usage",
+    "conversations": "Conversations",
+    "orders": "Orders",
+    "products": "Products",
+    "buyConvPack": "Buy a Conversation Pack",
+    "convPackHint": "Buy a pack for extra conversations. An invoice is created and it activates once paid.",
+    "conversationsLabel": "conversations",
+    "testMode": "Test mode",
+    "testModeNote": "Test mode: no real payment will be made.",
+    "invoiceCreateFailed": "Failed to create invoice",
+    "invoiceCreatedMsg": "Invoice created ({{number}}). Please pay {{price}} BDT via bKash and contact support@easymod.ai to activate your pack.",
+    "yearly": "Yearly",
+    "free": "Free",
+    "perOrder": "/order",
+    "perMonth": "/month",
+    "perMonthBilledYearly": "/month (billed yearly)",
+    "confirmPlan": "Change plan",
+    "upgradeToUnlock": "Upgrade to unlock",
+    "featureAvailablePrefix": "is available on the",
+    "featureAvailableSuffix": "plan and above.",
+    "planNameLabel": "{{plan}} Plan",
+    "pricePerMonth": "৳{{price}}/mo",
+    "notNow": "Not now",
+    "upgradeNow": "Upgrade now",
+    "upgradeUnlockTitle": "Upgrade to {{plan}} to unlock {{feature}}",
+    "upgradeToPlan": "Upgrade to {{plan}}",
+    "plans": {
+      "growth": {
+        "name": "Growth",
+        "description": "Your complete AI sales team — one simple price. 14-day free trial, no card needed.",
+        "highlights": {
+          "0": "All features unlimited — no locks",
+          "1": "Facebook AI Inbox",
+          "2": "Advanced RTO Shield + Analytics",
+          "3": "Broadcast + Campaign + understands voice/images",
+          "4": "14-day free trial — no card required"
+        }
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "Have 300+ orders a month? Become our partner.",
+        "highlights": {
+          "0": "Only ৳10–15 per delivered order",
+          "1": "No monthly fee",
+          "2": "Unlimited conversations",
+          "3": "All channels unlimited",
+          "4": "Dedicated support manager"
+        }
+      }
+    }
   },
   "bd_lite": {
     "todayQueue": "Today's Queue",
@@ -1442,5 +1992,241 @@
     "installSubtitle": "Add to your home screen for faster, app-like access.",
     "install": "Install",
     "dismiss": "Dismiss"
+  },
+  "oauthCallback": {
+    "connecting": "Connecting...",
+    "connectingToAccount": "Connecting to your account"
+  },
+  "onboarding": {
+    "quickSetup": "Quick Setup",
+    "skipSetup": "Skip setup",
+    "closeWizard": "Close wizard",
+    "stepCounter": "{{current}} of {{total}} steps",
+    "tipLabel": "Tip:",
+    "back": "Go back",
+    "seedingFaqs": "Adding…",
+    "seedStarterFaqs": "✨ Add Starter FAQs (1 tap)",
+    "toast": {
+      "faqSkipped": "You already have FAQs — Starter FAQs were not added.",
+      "faqSeeded": "{{count}} Starter FAQs added! The AI can now answer common questions.",
+      "faqError": "Could not add FAQs. Please try again."
+    },
+    "steps": {
+      "facebook": {
+        "title": "Connect your Facebook Page",
+        "subtitle": "Step 1 of 5 — Channel",
+        "description": "Connect your Facebook Business Page. Without this, AI replies won't work.",
+        "tip": "Add Easy Moderator under Facebook Page > Settings > Advanced Messaging > Handover Protocol.",
+        "actionLabel": "Connect Facebook →",
+        "skipLabel": "I'll do it later",
+        "completedLabel": "Facebook"
+      },
+      "products": {
+        "title": "Add 3–5 Products",
+        "subtitle": "Step 2 of 5 — Products",
+        "description": "The AI needs to know about your products. Provide a name, price, and description.",
+        "tip": "Add photos to your products so the AI can recognise products from images too.",
+        "actionLabel": "Add Products →",
+        "skipLabel": "I'll do it later",
+        "completedLabel": "Products"
+      },
+      "faqs": {
+        "title": "Add 5 Common FAQs",
+        "subtitle": "Step 3 of 5 — Knowledge Base",
+        "description": "Answer common questions like delivery charge, payment method, and return policy. The AI will learn them.",
+        "tip": "The more FAQs you add, the more accurate the AI becomes.",
+        "actionLabel": "Add FAQs →",
+        "skipLabel": "I'll do it later",
+        "completedLabel": "FAQs"
+      },
+      "aiMode": {
+        "title": "Keep AI Mode: DRAFT",
+        "subtitle": "Step 4 of 5 — AI Settings",
+        "description": "In DRAFT mode the AI writes replies, but they're only sent after you approve them. This is the safest option for new sellers.",
+        "tip": "Keep it on DRAFT for 7–14 days. Once the AI replies well, you can switch to AUTO.",
+        "actionLabel": "View AI Settings →",
+        "skipLabel": "Keep DRAFT (Recommended)",
+        "completedLabel": "AI Mode"
+      },
+      "preview": {
+        "title": "All ready! View your Inbox",
+        "subtitle": "Step 5 of 5 — You're set!",
+        "description": "Your setup is complete. Now when a customer messages, the AI will create a DRAFT reply — it's sent only once you approve.",
+        "tip": "Go to the Inbox and watch how the AI replies. You don't need to approve everything at first — just learn.",
+        "actionLabel": "View Inbox →",
+        "completedLabel": "Preview"
+      }
+    }
+  },
+  "pricing": {
+    "mostPopular": "Most Popular",
+    "perMonth": "/mo",
+    "yearlyNote": "or ৳{{price}}/yr · save 2 months",
+    "partnerApplyNote": "Apply · activated after eligibility check",
+    "partnerEligibleBadge": "300+ orders/month eligible",
+    "applyNow": "Apply now",
+    "startFreeTrial": "Start 14-day free trial",
+    "limits": {
+      "unlimitedConversations": "Unlimited conversations",
+      "conversationsFairUse": "AI conversations — fair use",
+      "unlimitedOrders": "Unlimited orders",
+      "ordersPerMonth": "{{count}} orders/mo",
+      "unlimitedProducts": "Unlimited products",
+      "products": "{{count}} products"
+    },
+    "features": {
+      "imageUnderstanding": "Image Understanding",
+      "advancedAi": "Advanced AI",
+      "prioritySupport": "Priority Support",
+      "customBranding": "Custom Branding (White-label)",
+      "facebookInbox": "Facebook AI Inbox",
+      "extraConversationPack": "Extra conversation pack — top up whenever you need"
+    },
+    "hero": {
+      "heading": "Smooth and honest pricing",
+      "subheading": "Choose a plan that fits your business size. No hidden fees."
+    },
+    "partnerTeaser": {
+      "question": "Have 300+ orders a month?",
+      "link": "Learn about the Partner Plan →"
+    },
+    "included": {
+      "heading": "Everything is in Growth",
+      "subheading": "No feature locks — one price, ৳999/month."
+    },
+    "faq": {
+      "heading": "Frequently asked questions",
+      "q1": "Is there a free trial?",
+      "a1": "Yes — new shops get a 14-day free trial, no card required. All Growth features stay active during the trial.",
+      "q2": "What happens when the trial ends?",
+      "a2": "After the trial, upgrade to ৳999/month to keep the AI running. If you don't, AI auto-reply pauses, but you can still reply yourself from the inbox — no data is lost.",
+      "q3": "How many AI conversations do I get per month?",
+      "a3": "Enough for a typical growing shop (fair-use). If you need more, you can buy a conversation top-up anytime from the Subscription page.",
+      "q4": "What happens when the conversation limit runs out?",
+      "a4": "You get a free buffer; after that, AI auto-reply pauses. Buy a top-up pack from the Subscription page to resume instantly.",
+      "q5": "How do I apply for the Partner plan?",
+      "a5": "Apply via 'Learn about the Partner Plan' at the bottom of the Pricing page. We verify 300+ orders/month and activate it — charged per delivered order, with no monthly fee."
+    },
+    "cta": {
+      "heading": "Ready to automate your shop?",
+      "subheading": "Pick a plan and start today. No hidden fees.",
+      "button": "Get started now"
+    },
+    "partnerModal": {
+      "title": "Apply to become a Partner",
+      "subtitle": "Have 300+ orders a month? Charged per delivered order — no monthly fee.",
+      "businessNameLabel": "Business Name",
+      "businessNamePlaceholder": "Your shop's name",
+      "phoneLabel": "Phone Number",
+      "pageLinkLabel": "Facebook Page Link",
+      "submit": "Send application",
+      "submitting": "Sending...",
+      "successTitle": "Application sent!",
+      "successMessage": "We'll review your application and get in touch soon.",
+      "successMessageEn": "Your application has been received. We'll be in touch soon.",
+      "ok": "OK",
+      "errors": {
+        "businessNameRequired": "Business name is required",
+        "phoneRequired": "Phone number is required",
+        "pageLinkRequired": "Page link is required"
+      }
+    }
+  },
+  "admin": {
+    "shopDetail": {
+      "shopFallback": "Shop",
+      "actionSuccess": "{{label}} ✓",
+      "actionFailed": "{{label}} failed: {{error}}",
+      "superAdminRequired": "SUPER_ADMIN required",
+      "phase2": "Phase 2",
+      "tabs": {
+        "overview": "Overview",
+        "channels": "Channels",
+        "billing": "Billing",
+        "aiInbox": "AI & Inbox",
+        "ordersCourier": "Orders & Courier"
+      },
+      "overview": {
+        "owner": "Owner",
+        "plan": "Plan",
+        "status": "Status",
+        "trialEnds": "Trial ends",
+        "conversations": "Conversations",
+        "onboarding": "Onboarding",
+        "complete": "Complete",
+        "incomplete": "Incomplete"
+      },
+      "channels": {
+        "emergencyTitle": "Stop all AI automation for this shop",
+        "emergencyConfirm": "EMERGENCY: stop ALL AI automation for this shop? Inbound messages still arrive; only automated replies stop.",
+        "emergencyAction": "Emergency AI off",
+        "emergencyButton": "Emergency: stop AI",
+        "superAdminNote": "SUPER_ADMIN required for channel actions.",
+        "colChannel": "Channel",
+        "colPlatform": "Platform",
+        "colToken": "Token",
+        "colWebhook": "Webhook",
+        "colError": "Error",
+        "verified": "verified",
+        "markReconnectTitle": "Mark this channel as needing reconnect",
+        "markReconnectAction": "Mark reconnect",
+        "markReconnect": "Mark reconnect",
+        "noChannels": "No channels"
+      },
+      "billing": {
+        "plan": "Plan",
+        "status": "Status",
+        "conversations": "Conversations",
+        "topupBalance": "Top-up balance",
+        "nextBilling": "Next billing",
+        "trialEnds": "Trial ends",
+        "accruedOverage": "Accrued overage",
+        "overageValue": "{{count}} conv · ৳{{charge}}",
+        "outstanding": "Outstanding",
+        "superAdminNote": "SUPER_ADMIN required for billing actions.",
+        "extendTrial": "Extend trial 7d",
+        "addCredits": "Add 50 credits",
+        "reactivate": "Reactivate",
+        "reactivateAiOn": "Reactivate (AI on)",
+        "suspend": "Suspend",
+        "suspendAiOff": "Suspend (AI off)",
+        "invoices": "Invoices",
+        "invInvoice": "Invoice",
+        "invType": "Type",
+        "invAmount": "Amount",
+        "invStatus": "Status",
+        "invDue": "Due",
+        "invPaid": "Paid",
+        "noInvoices": "No invoices yet."
+      }
+    }
+  },
+  "errors": {
+    "meta": {
+      "tokenExpired": "Reconnect your page (security token expired)",
+      "needsMessageAccess": "Easy Moderator needs message access — please re-authorize",
+      "sessionInvalid": "Session token invalid. Please reconnect your Facebook page.",
+      "pageNotFound": "We couldn't find that page. Did you switch business managers?",
+      "tooManyRequests": "Too many requests to Meta. Wait a few minutes and try again.",
+      "dailyLimitReached": "Daily message limit reached. Try again after midnight.",
+      "accessRevoked": "Page access revoked. Please reconnect.",
+      "channelDisconnected": "Channel disconnected. Use the Reconnect button to restore.",
+      "webhookFailed": "Webhook verification failed. Check your app settings in Meta App Dashboard.",
+      "fallback": "Something went wrong. Try reconnecting, or contact support."
+    }
+  },
+  "policy": {
+    "deny": {
+      "customerFirst24h": "Customer must message first within 24 hours (Meta policy)",
+      "windowExpired": "Messaging window expired. Use a message tag (e.g. Post-Purchase Update) to continue.",
+      "dailyLimitReached": "Daily message limit reached. Try again after midnight.",
+      "optedOut": "Customer has opted out of messages. Respect their choice.",
+      "noConsent": "Customer consent not found. They must message you first.",
+      "blockedByPolicy": "Message blocked by platform policy. Check Meta's messaging guidelines.",
+      "connectionExpired": "Channel connection expired. Please reconnect your Facebook page.",
+      "missingPermission": "Missing permission to send messages. Re-authorize Easy Moderator.",
+      "pageBlocked": "Customer may have blocked the page. You cannot send messages to them.",
+      "fallback": "Message could not be sent. Check your connection or contact support."
+    }
   }
 }

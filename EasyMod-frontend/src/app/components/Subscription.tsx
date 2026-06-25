@@ -104,9 +104,8 @@ export default function Subscription() {
       if (pct >= threshold && !shownThresholds.has(threshold)) {
         const isOver90 = threshold === 90;
         toast[isOver90 ? 'error' : 'warning'](
-          `আপনি মাসিক conversation limit-এর ${threshold}% ব্যবহার করেছেন (${used}/${limit})।${
-            isOver90 ? ' Upgrade করুন বা extra pack কিনুন।' : ''
-          }`,
+          t('subscription.toastThreshold', { threshold, used, limit }) +
+            (isOver90 ? ' ' + t('subscription.toastUpgradeHint') : ''),
           { duration: 8000, id: `conv-limit-${threshold}` }
         );
         setShownThresholds((prev) => new Set([...prev, threshold]));
@@ -135,7 +134,7 @@ export default function Subscription() {
     window.history.replaceState({}, '', window.location.pathname);
 
     if (status && status !== 'success') {
-      setError('Payment was cancelled or not completed. Please try again.');
+      setError(t('subscription.paymentCancelled'));
       setTimeout(() => setError(null), 8000);
       return;
     }
@@ -144,19 +143,19 @@ export default function Subscription() {
       const ctx = JSON.parse(ctxRaw) as { kind: 'invoice' | 'topup'; ref: string };
       if (ctx.kind === 'topup') {
         const res = await apiClient.completeTopup(ctx.ref, paymentID);
-        setSuccess(`Payment successful! ${res.conversations_added ?? ''} conversations added to your balance.`);
+        setSuccess(t('subscription.topupPaymentSuccess', { count: res.conversations_added ?? '' }));
       } else {
         const res = await apiClient.completeInvoicePayment(ctx.ref, paymentID);
         setSuccess(
           res.subscription_status === 'active'
-            ? 'Payment successful! Your subscription is active and the AI assistant is running.'
-            : 'Payment successful! Your invoice has been paid.'
+            ? t('subscription.invoicePaymentSuccessActive')
+            : t('subscription.invoicePaymentSuccess')
         );
       }
       await loadSubscriptionData();
       await loadInvoices();
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || err.message || 'Payment verification failed. Please contact support.');
+      setError(err.response?.data?.error?.message || err.message || t('subscription.paymentVerifyFailed'));
     } finally {
       setTimeout(() => { setSuccess(null); setError(null); }, 10000);
     }
@@ -234,7 +233,7 @@ export default function Subscription() {
       }
     } catch (error: any) {
       console.error('Failed to load subscription data:', error);
-      setError('Failed to load subscription data');
+      setError(t('subscription.loadFailed'));
       setHasSubscriptionData(false);
     } finally {
       setLoading(false);
@@ -265,7 +264,7 @@ export default function Subscription() {
       }
     } catch (error: any) {
       console.error('Failed to load invoices:', error);
-      toast.error('Failed to load invoices');
+      toast.error(t('subscription.invoicesLoadFailed'));
       setInvoices([]);
     }
   };
@@ -343,12 +342,12 @@ export default function Subscription() {
       const response = await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
 
       if (response?.success) {
-        setSuccess(response.message || 'Subscription plan updated successfully');
+        setSuccess(response.message || t('subscription.planUpdateSuccess'));
         loadSubscriptionData();
         setTimeout(() => setSuccess(null), 5000);
       }
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || 'Failed to update plan');
+      setError(error.response?.data?.error?.message || t('subscription.planUpdateFailed'));
       setTimeout(() => setError(null), 5000);
     } finally {
       setIsUpdatingPlan(false);
@@ -371,11 +370,11 @@ export default function Subscription() {
       const callbackUrl = `${window.location.origin}/app/subscription`;
       const res = await apiClient.initiateTopup(pack.code, callbackUrl);
       if (!res?.bkash_url || !res?.topup_id) {
-        throw new Error('Failed to start bKash payment');
+        throw new Error(t('subscription.bkashStartFailed'));
       }
       startBkashCheckout('topup', res.topup_id, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
+      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
       setTimeout(() => setError(null), 6000);
       setIsRequestingInvoice(false);
     }
@@ -389,10 +388,10 @@ export default function Subscription() {
       setError(null);
       const callbackUrl = `${window.location.origin}/app/subscription`;
       const res = await apiClient.payInvoice(invoiceRawId, callbackUrl);
-      if (!res?.bkash_url) throw new Error('Failed to start bKash payment');
+      if (!res?.bkash_url) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', invoiceRawId, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
+      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
       setTimeout(() => setError(null), 6000);
       setPayingInvoiceId(null);
     }
@@ -406,10 +405,10 @@ export default function Subscription() {
       setError(null);
       const callbackUrl = `${window.location.origin}/app/subscription`;
       const res = await apiClient.renewSubscription(callbackUrl);
-      if (!res?.bkash_url || !res?.invoice_id) throw new Error('Failed to start bKash payment');
+      if (!res?.bkash_url || !res?.invoice_id) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', res.invoice_id, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to start bKash payment');
+      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
       setTimeout(() => setError(null), 6000);
       setIsRenewing(false);
     }
@@ -466,19 +465,21 @@ export default function Subscription() {
             <Clock className="w-5 h-5 flex-shrink-0" />
             <div className="flex-1">
               <span className="font-semibold">
-                {urgent ? `⚠️ Trial ends in ${days} day${days === 1 ? '' : 's'}!` : `Trial: ${days} days remaining`}
+                {urgent
+                  ? t('subscription.trialEndsUrgent', { count: days })
+                  : t('subscription.trialRemaining', { count: days })}
               </span>
               <span className="ml-2 text-sm">
                 {urgent
-                  ? 'Upgrade now to keep your conversations and data.'
-                  : 'Enjoying Easy Moderator? Pick a plan before your trial ends.'}
+                  ? t('subscription.trialUrgentMsg')
+                  : t('subscription.trialMsg')}
               </span>
             </div>
             <button
               onClick={() => document.getElementById('plans-section')?.scrollIntoView({ behavior: 'smooth' })}
               className={`text-sm font-medium underline whitespace-nowrap ${urgent ? 'text-red-700' : 'text-amber-700'}`}
             >
-              View plans
+              {t('subscription.viewPlans')}
             </button>
           </div>
         );
@@ -506,11 +507,11 @@ export default function Subscription() {
                 const s = currentPlan.status;
                 const map: Record<string, { cls: string; label: string }> = {
                   active:        { cls: 'bg-green-100 text-green-700',  label: t('common.active') },
-                  trialing:      { cls: 'bg-blue-100 text-blue-700',    label: 'Trial' },
-                  past_due:      { cls: 'bg-amber-100 text-amber-700',  label: 'Payment due' },
-                  trial_expired: { cls: 'bg-red-100 text-red-700',      label: 'Trial ended' },
-                  suspended:     { cls: 'bg-red-100 text-red-700',      label: 'AI paused' },
-                  cancelled:     { cls: 'bg-gray-100 text-gray-700',    label: 'Cancelled' },
+                  trialing:      { cls: 'bg-blue-100 text-blue-700',    label: t('subscription.statusTrial') },
+                  past_due:      { cls: 'bg-amber-100 text-amber-700',  label: t('subscription.statusPaymentDue') },
+                  trial_expired: { cls: 'bg-red-100 text-red-700',      label: t('subscription.statusTrialEnded') },
+                  suspended:     { cls: 'bg-red-100 text-red-700',      label: t('subscription.statusAiPaused') },
+                  cancelled:     { cls: 'bg-gray-100 text-gray-700',    label: t('subscription.statusCancelled') },
                   inactive:      { cls: 'bg-gray-100 text-gray-700',    label: t('common.inactive') },
                 };
                 const m = map[s] || map.inactive;
@@ -547,8 +548,8 @@ export default function Subscription() {
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
             <p className="flex-1 text-sm text-red-700">
               {currentPlan.status === 'past_due'
-                ? 'আপনার মাসিক invoice বাকি আছে। ৩ দিনের মধ্যে pay না করলে AI assistant বন্ধ হয়ে যাবে।'
-                : 'AI assistant বন্ধ আছে। মাসিক subscription pay করলে আবার চালু হবে।'}
+                ? t('subscription.invoiceDueWarning')
+                : t('subscription.aiPausedNote')}
             </p>
             <button
               onClick={handleRenew}
@@ -556,7 +557,7 @@ export default function Subscription() {
               className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60 whitespace-nowrap"
             >
               <CreditCard className="w-4 h-4" />
-              {isRenewing ? '...' : t('subscription.payActivateBkash', `bKash দিয়ে ৳${currentPlan.price.toLocaleString()} Pay করুন`)}
+              {isRenewing ? '...' : t('subscription.payActivateBkash', { price: currentPlan.price.toLocaleString() })}
             </button>
           </div>
         )}
@@ -576,7 +577,7 @@ export default function Subscription() {
             <Switch
               checked={billingCycle === 'yearly'}
               onCheckedChange={(value) => setBillingCycle(value ? 'yearly' : 'monthly')}
-              aria-label="Toggle annual billing"
+              aria-label={t('subscription.toggleAnnualBilling')}
             />
             <span className={billingCycle === 'yearly' ? 'font-semibold text-gray-900' : ''}>
               {t('subscription.annual')}
@@ -601,32 +602,32 @@ export default function Subscription() {
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-lg font-semibold text-gray-900">{plan.name}</p>
-                    <p className="text-sm text-gray-500">{plan.description}</p>
+                    <p className="text-lg font-semibold text-gray-900">{t(`subscription.plans.${plan.id}.name`, plan.name)}</p>
+                    <p className="text-sm text-gray-500">{t(`subscription.plans.${plan.id}.description`, plan.description)}</p>
                   </div>
                   {plan.popular && (
-                    <Badge className="bg-purple-100 text-purple-700">Popular</Badge>
+                    <Badge className="bg-purple-100 text-purple-700">{t('subscription.popular')}</Badge>
                   )}
                 </div>
                 <div className="mt-4 flex items-end gap-2">
                   <span className="text-3xl font-bold text-gray-900">৳{price.toLocaleString()}</span>
-                  <span className="text-sm text-gray-500">/mo</span>
+                  <span className="text-sm text-gray-500">{t('subscription.perMonthShort')}</span>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
                   {billingCycle === 'yearly' ? t('subscription.billedAnnually') : t('subscription.billedMonthly')}
                 </p>
                 <ul className="mt-4 space-y-2 text-sm text-gray-600">
-                  {plan.highlights.map((feature) => (
+                  {plan.highlights.map((feature, hi) => (
                     <li key={feature} className="flex items-start gap-2">
                       <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-600" />
-                      <span>{feature}</span>
+                      <span>{t(`subscription.plans.${plan.id}.highlights.${hi}`, feature)}</span>
                     </li>
                   ))}
                 </ul>
                 <div className="mt-4 space-y-1 text-xs text-gray-500">
-                  <div>Conversations: {plan.limits.conversations < 0 ? 'Unlimited' : `${plan.limits.conversations.toLocaleString()}/mo`}</div>
-                  <div>Orders: {plan.limits.orders < 0 ? 'Unlimited' : `${plan.limits.orders.toLocaleString()}/mo`}</div>
-                  <div>Products: {plan.limits.products < 0 ? 'Unlimited' : plan.limits.products.toLocaleString()}</div>
+                  <div>{t('subscription.conversationsLimit')} {plan.limits.conversations < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.conversations.toLocaleString() })}</div>
+                  <div>{t('subscription.ordersLimit')} {plan.limits.orders < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.orders.toLocaleString() })}</div>
+                  <div>{t('subscription.productsLimit')} {plan.limits.products < 0 ? t('subscription.unlimited') : plan.limits.products.toLocaleString()}</div>
                 </div>
                 <div className="mt-auto pt-5">
                   {isActive ? (
@@ -638,7 +639,7 @@ export default function Subscription() {
                       href="/pricing"
                       className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 text-center block"
                     >
-                      আবেদন করুন →
+                      {t('subscription.applyNow')}
                     </a>
                   ) : (
                     <button
@@ -674,13 +675,13 @@ export default function Subscription() {
               <span className="text-3xl font-bold text-gray-900">{usage.conversations.used.toLocaleString()}</span>
               <span className="text-gray-500">
                 {usage.conversations.limit < 0
-                  ? '/ Unlimited'
-                  : `/ ${usage.conversations.limit.toLocaleString()}/mo`}
+                  ? t('subscription.slashUnlimited')
+                  : t('subscription.slashPerMonth', { limit: usage.conversations.limit.toLocaleString() })}
               </span>
             </div>
             {usage.conversations.limit > 0 && (
               <p className="text-xs text-gray-400 mt-0.5">
-                {Math.round((usage.conversations.used / usage.conversations.limit) * 100)}% ব্যবহার হয়েছে
+                {t('subscription.percentUsed', { percent: Math.round((usage.conversations.used / usage.conversations.limit) * 100) })}
               </p>
             )}
           </div>
@@ -725,10 +726,10 @@ export default function Subscription() {
               <TrendingUp className="w-4 h-4 text-amber-600 flex-shrink-0" />
               <p className="text-xs text-amber-800 font-medium">
                 {conversationForecastDays === 0
-                  ? 'আপনি limit এ পৌঁছে গেছেন!'
-                  : `এই হারে চললে ${conversationForecastDays} দিনের মধ্যে limit শেষ হবে।`}
+                  ? t('subscription.forecastReached')
+                  : t('subscription.forecastDays', { count: conversationForecastDays })}
                 {' '}
-                <span className="underline cursor-pointer">Extra pack কিনুন</span>
+                <span className="underline cursor-pointer">{t('subscription.buyExtraPack')}</span>
               </p>
             </div>
           )}
@@ -800,7 +801,7 @@ export default function Subscription() {
               <div className="bg-white rounded-lg p-4 border border-yellow-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm text-gray-600">{t('subscription.extraCount')}</span>
-                  <span className="font-semibold text-gray-900">{extraUsage.conversations} conversations</span>
+                  <span className="font-semibold text-gray-900">{t('subscription.conversationsCount', { count: extraUsage.conversations })}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">{t('subscription.extraCharge')}</span>
@@ -832,8 +833,8 @@ export default function Subscription() {
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-semibold text-gray-900">+{pack.amount} conversations</p>
-                    <p className="text-xs text-gray-500 mt-1">মাসিক limit-এ যোগ হবে</p>
+                    <p className="font-semibold text-gray-900">{t('subscription.plusConversations', { count: pack.amount })}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('subscription.addedToMonthlyLimit')}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-gray-900">৳{pack.price.toLocaleString()}</p>
@@ -877,8 +878,8 @@ export default function Subscription() {
               <TrendingUp className="w-4 h-4 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">Image Understanding</p>
-              <p className="text-xs text-gray-500">AI reads product images to answer customer questions</p>
+              <p className="text-sm font-medium text-gray-900">{t('subscription.imageUnderstandingTitle')}</p>
+              <p className="text-xs text-gray-500">{t('subscription.imageUnderstandingDesc')}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mt-2">
@@ -886,8 +887,8 @@ export default function Subscription() {
               <MessageSquare className="w-4 h-4 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">Advanced AI</p>
-              <p className="text-xs text-gray-500">Higher accuracy responses + 30 req/min rate limit</p>
+              <p className="text-sm font-medium text-gray-900">{t('subscription.advancedAiTitle')}</p>
+              <p className="text-xs text-gray-500">{t('subscription.advancedAiDesc')}</p>
             </div>
           </div>
         </div>
@@ -961,7 +962,7 @@ export default function Subscription() {
                           onClick={() => handlePayInvoice(invoice.rawId)}
                           disabled={payingInvoiceId === invoice.rawId}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60"
-                          title="Pay this invoice with bKash"
+                          title={t('subscription.payInvoiceTitle')}
                         >
                           <CreditCard className="w-3.5 h-3.5" />
                           {payingInvoiceId === invoice.rawId ? '...' : t('subscription.payWithBkash', 'bKash দিয়ে Pay করুন')}
@@ -970,14 +971,14 @@ export default function Subscription() {
                       <button
                         onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="View / Print invoice"
+                        title={t('subscription.viewInvoiceTitle')}
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Download invoice (print to PDF)"
+                        title={t('subscription.downloadInvoiceTitle')}
                       >
                         <Download className="w-4 h-4" />
                       </button>

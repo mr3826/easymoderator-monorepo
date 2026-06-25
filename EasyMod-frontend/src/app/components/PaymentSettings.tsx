@@ -75,9 +75,9 @@ export default function PaymentSettings() {
       await apiClient.put('/shop/platform-priority', nextPriority);
       setPriority(nextPriority);
       const gw = gateways.find((g) => g.id === gatewayId);
-      setSuccess(`✓ ${gw?.name || gatewayId} set as default payment method`);
+      setSuccess(`✓ ${t('manageShop.paymentSettings.setDefaultSuccess', { name: gw?.name || gatewayId })}`);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update default');
+      setError(err.response?.data?.message || t('manageShop.paymentSettings.errors.updateDefaultFailed'));
     } finally {
       setSettingDefaultGateway(null);
     }
@@ -158,7 +158,7 @@ export default function PaymentSettings() {
         const isMerchant = gateway.config.accountType === 'merchant';
         if (isMerchant) {
           if (!gateway.config.app_key || !gateway.config.app_secret) {
-            setError('Merchant API credentials (App Key & App Secret) are required');
+            setError(t('manageShop.paymentSettings.errors.merchantCredentialsRequired'));
             return;
           }
           credentials = {
@@ -216,8 +216,8 @@ export default function PaymentSettings() {
       const response = await apiClient.updatePaymentConfig(payload);
 
       if (response.success) {
-        setSuccess(`✓ ${gateway.name} credentials verified and saved! Now use the toggle to activate this payment method.`);
-        
+        setSuccess(`✓ ${t('manageShop.paymentSettings.savedSuccess', { name: gateway.name })}`);
+
         // Mark gateway as saved
         setSavedGateways(prev => new Set(prev).add(gatewayId));
         
@@ -245,8 +245,8 @@ export default function PaymentSettings() {
       const response = await apiClient.deletePaymentConfig(canonicalGateway);
 
       if (response.success) {
-        setSuccess(`✓ ${gateway.name} disconnected successfully!`);
-        
+        setSuccess(`✓ ${t('manageShop.paymentSettings.disconnectSuccess', { name: gateway.name })}`);
+
         // Remove from saved gateways
         setSavedGateways(prev => {
           const newSet = new Set(prev);
@@ -298,8 +298,9 @@ export default function PaymentSettings() {
           gw.id === id ? { ...gw, enabled: !gw.enabled } : gw
         ));
         
-        const newStatus = !gateway.enabled ? 'activated' : 'deactivated';
-        setSuccess(`✓ ${gateway.name} ${newStatus} for payments!`);
+        setSuccess(`✓ ${!gateway.enabled
+          ? t('manageShop.paymentSettings.activatedSuccess', { name: gateway.name })
+          : t('manageShop.paymentSettings.deactivatedSuccess', { name: gateway.name })}`);
         setTimeout(() => setSuccess(null), 2500);
       }
     } catch (error: any) {
@@ -347,7 +348,7 @@ export default function PaymentSettings() {
         payment_methods: JSON.stringify(paymentSettings)
       });
 
-      setSuccess('✓ Payment settings saved successfully!');
+      setSuccess(`✓ ${t('manageShop.paymentSettings.settingsSavedSuccess')}`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (error: any) {
       console.error('Failed to save payment settings:', error);
@@ -397,7 +398,7 @@ export default function PaymentSettings() {
                       {defaultGateway === gateway.id && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                           <Star className="w-3 h-3 fill-current" />
-                          Default
+                          {t('manageShop.paymentSettings.defaultBadge')}
                         </span>
                       )}
                     </div>
@@ -408,30 +409,30 @@ export default function PaymentSettings() {
                       <button
                         onClick={() => handleSetDefault(gateway.id)}
                         disabled={settingDefaultGateway === gateway.id}
-                        title="Set as default payment method"
+                        title={t('manageShop.paymentSettings.setDefaultTitle')}
                         className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-medium rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 border border-emerald-200"
                       >
                         {settingDefaultGateway === gateway.id
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : <Star className="w-3.5 h-3.5" />}
-                        <span className="hidden md:inline">Set Default</span>
+                        <span className="hidden md:inline">{t('manageShop.paymentSettings.setDefault')}</span>
                       </button>
                     )}
                     {gateway.requiresContact ? (
                       <a
                         href="mailto:support@easymod.ai?subject=Integrate AamarPay or SSLCommerz"
                         className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                        title="Contact us for enterprise integration"
+                        title={t('manageShop.paymentSettings.contactUsTitle')}
                       >
                         <Mail className="w-4 h-4" />
-                        <span className="text-sm font-medium">Contact us</span>
+                        <span className="text-sm font-medium">{t('manageShop.paymentSettings.contactUs')}</span>
                       </a>
                     ) : (
                       <>
                         <button
                           onClick={() => toggleGateway(gateway.id)}
                           disabled={(gateway.id !== 'cod' && !savedGateways.has(gateway.id)) || savingGateway === gateway.id}
-                          title={gateway.id !== 'cod' && !savedGateways.has(gateway.id) ? 'Save configuration first' : 'Click to activate/deactivate'}
+                          title={gateway.id !== 'cod' && !savedGateways.has(gateway.id) ? t('manageShop.paymentSettings.saveConfigFirst') : t('manageShop.paymentSettings.toggleActivateTitle')}
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${
                             gateway.enabled ? 'bg-blue-600' : 'bg-gray-300'
                           } ${(gateway.id !== 'cod' && !savedGateways.has(gateway.id)) ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -468,7 +469,7 @@ export default function PaymentSettings() {
                         {/* Mode selector */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Payment Mode
+                            {t('manageShop.paymentSettings.paymentMode')}
                           </label>
                           <div className="flex gap-2">
                             {(['self', 'merchant'] as const).map((mode) => (
@@ -482,14 +483,14 @@ export default function PaymentSettings() {
                                     : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
                                 }`}
                               >
-                                {mode === 'self' ? 'Self MFS (Personal)' : 'Merchant API'}
+                                {mode === 'self' ? t('manageShop.paymentSettings.modeSelf') : t('manageShop.paymentSettings.modeMerchant')}
                               </button>
                             ))}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">
                             {(gateway.config.accountType || 'self') === 'self'
-                              ? 'Customer sends screenshot → AI verifies via OCR → you approve/reject'
-                              : 'Automated checkout via official merchant API (requires business account)'}
+                              ? t('manageShop.paymentSettings.modeSelfHint')
+                              : t('manageShop.paymentSettings.modeMerchantHint')}
                           </p>
                         </div>
 
@@ -497,7 +498,7 @@ export default function PaymentSettings() {
                         {(gateway.config.accountType || 'self') === 'self' && (
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {gateway.name} Phone Number
+                              {t('manageShop.paymentSettings.mfsPhoneNumber', { name: gateway.name })}
                             </label>
                             <input
                               type="tel"
@@ -513,43 +514,43 @@ export default function PaymentSettings() {
                         {gateway.config.accountType === 'merchant' && (
                           <div className="space-y-3">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">App Key</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.paymentSettings.appKey')}</label>
                               <input
                                 type="text"
                                 value={gateway.config.app_key || ''}
                                 onChange={(e) => updateGatewayConfig(gateway.id, 'app_key', e.target.value)}
-                                placeholder="Merchant App Key"
+                                placeholder={t('manageShop.paymentSettings.appKeyPlaceholder')}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">App Secret</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.paymentSettings.appSecret')}</label>
                               <input
                                 type="password"
                                 value={gateway.config.app_secret || ''}
                                 onChange={(e) => updateGatewayConfig(gateway.id, 'app_secret', e.target.value)}
-                                placeholder="Merchant App Secret"
+                                placeholder={t('manageShop.paymentSettings.appSecretPlaceholder')}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.paymentSettings.username')}</label>
                                 <input
                                   type="text"
                                   value={gateway.config.username || ''}
                                   onChange={(e) => updateGatewayConfig(gateway.id, 'username', e.target.value)}
-                                  placeholder="Merchant username"
+                                  placeholder={t('manageShop.paymentSettings.merchantUsernamePlaceholder')}
                                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.paymentSettings.password')}</label>
                                 <input
                                   type="password"
                                   value={gateway.config.password || ''}
                                   onChange={(e) => updateGatewayConfig(gateway.id, 'password', e.target.value)}
-                                  placeholder="Merchant password"
+                                  placeholder={t('manageShop.paymentSettings.merchantPasswordPlaceholder')}
                                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                               </div>
@@ -562,7 +563,7 @@ export default function PaymentSettings() {
                           disabled={savingGateway === gateway.id}
                           className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                          {savingGateway === gateway.id ? 'Saving…' : `Save ${gateway.name}`}
+                          {savingGateway === gateway.id ? t('common.saving') : t('manageShop.paymentSettings.saveGateway', { name: gateway.name })}
                         </button>
                       </div>
                     )}

@@ -50,12 +50,12 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
             STATUS_CLASSES[order.status] ?? "bg-muted text-muted-foreground"
           }`}
         >
-          {order.status}
+          {t(`orders.status.${order.status}`)}
         </span>
       </div>
 
       <p className="text-sm text-foreground">
-        {order.items[0]?.productName || "পণ্য উল্লেখ নেই"} ×{" "}
+        {order.items[0]?.productName || t("orders.row.noProduct")} ×{" "}
         {order.items[0]?.quantity || 1} ·{" "}
         <span className="font-bold">{formatCurrency(order.total)}</span>
       </p>
@@ -75,7 +75,7 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
           onClick={() => onViewDetail(order)}
           className="min-h-12 rounded-xl border border-border bg-white px-3 text-sm font-semibold text-foreground hover:bg-muted transition-colors font-bn"
         >
-          বিস্তারিত দেখুন
+          {t("orders.row.viewDetail")}
         </button>
         {order.delivery_tracking_code ? (
           <a
@@ -84,7 +84,7 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
             rel="noreferrer"
             className="min-h-12 rounded-xl bg-green-600 px-3 text-sm font-semibold text-white flex items-center justify-center hover:bg-green-700 transition-colors font-bn"
           >
-            ট্র্যাক করুন
+            {t("orders.row.track")}
           </a>
         ) : canDispatch ? (
           <motion.button
@@ -93,14 +93,14 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
             whileTap={{ scale: 0.96 }}
             className="min-h-12 rounded-xl bg-primary px-3 text-sm font-bold text-primary-foreground shadow-sm font-bn"
           >
-            Dispatch
+            {t("orders.row.dispatch")}
           </motion.button>
         ) : (
           <button
             onClick={() => onViewDetail(order)}
             className="min-h-12 rounded-xl bg-muted px-3 text-sm font-semibold text-muted-foreground font-bn"
           >
-            স্ট্যাটাস দেখুন
+            {t("orders.row.viewStatus")}
           </button>
         )}
       </div>

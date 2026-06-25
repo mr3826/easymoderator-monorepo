@@ -168,7 +168,7 @@ export default function Signup() {
                   <Switch
                     checked={billingAnnual}
                     onCheckedChange={(value: boolean) => setBillingAnnual(value)}
-                    aria-label="Toggle annual billing"
+                    aria-label={t('auth.signup.toggleAnnualBilling')}
                     className="data-[state=checked]:bg-emerald-600"
                   />
                   <span className={`font-medium ${billingAnnual ? 'text-gray-900' : 'text-gray-400'}`}>
@@ -382,7 +382,7 @@ export default function Signup() {
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-4">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">সাবস্ক্রিপশন পেমেন্ট পদ্ধতি</p>
+                    <p className="text-xs font-semibold text-gray-700 mb-2">{t('auth.signup.subscriptionPaymentMethod')}</p>
                     <div className="flex flex-wrap gap-2">
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-pink-100 text-pink-700 border-pink-200">
                         bKash

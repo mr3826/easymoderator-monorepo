@@ -24,18 +24,18 @@ export default function ProductDetails() {
         setIsLoading(true);
         setError(null);
         if (!productId) {
-          setError('Product ID not found');
+          setError(t('products.detail.idNotFound'));
           return;
         }
         const shopId = authService.getCurrentShopId();
         if (!shopId) {
-          setError('No shop selected');
+          setError(t('products.detail.noShopSelected'));
           return;
         }
         const fetchedProduct = await apiClient.getProduct(productId);
         setProduct(fetchedProduct);
       } catch (error: any) {
-        setError(error.response?.data?.message || 'Failed to load product');
+        setError(error.response?.data?.message || t('products.detail.loadFailed'));
       } finally {
         setIsLoading(false);
       }
@@ -154,7 +154,7 @@ export default function ProductDetails() {
                   <img
                     key={index}
                     src={image}
-                    alt={`Product ${index + 1}`}
+                    alt={t('products.detail.imageAlt', { index: index + 1 })}
                     className="w-full h-40 object-cover rounded-lg"
                   />
                 ))}

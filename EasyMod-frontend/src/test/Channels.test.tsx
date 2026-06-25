@@ -20,8 +20,15 @@ vi.mock('react-i18next', () => ({
         'channels.errors.oauthStateMismatch': 'OAuth validation failed — please try again',
         'channels.errors.connectionFailed': 'Connection failed — please try again',
         'channels.errors.oauthInitFailed': 'Could not start connection',
+        'channels.connectCard.connectCount': 'Connect ({{count}})',
       }
-      return map[key] ?? key
+      let s = map[key] ?? key
+      if (_options && typeof _options === 'object') {
+        for (const [k, v] of Object.entries(_options)) {
+          s = s.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
+        }
+      }
+      return s
     },
   }),
 }))
@@ -78,7 +85,7 @@ class FakeBroadcastChannel {
 }
 vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel)
 
-const CONNECT_BTN = /Facebook Page সংযুক্ত করুন/i
+const CONNECT_BTN = /channels\.connectCard\.title/i
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -160,7 +167,7 @@ describe('ChatSettings (Channels)', () => {
     fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
 
     await waitFor(() => {
-      expect(screen.getByText(/পপ-আপে Meta-তে লগইন করুন/i)).toBeInTheDocument()
+      expect(screen.getByText(/channels\.connectCard\.loginPopup/i)).toBeInTheDocument()
     })
 
     window.dispatchEvent(

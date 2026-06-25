@@ -57,7 +57,7 @@ export default function Knowledge() {
         if (data.businessInfo?.shopName !== undefined) setBusinessInfo(data.businessInfo);
         if (data.brandingRules?.tone !== undefined) setBrandingRules(data.brandingRules);
       } catch (error: any) {
-        setLoadError(error.response?.data?.error?.message || 'Failed to load knowledge data');
+        setLoadError(error.response?.data?.error?.message || t('knowledge.errors.loadFailed'));
       } finally {
         setIsLoading(false);
       }
@@ -72,7 +72,7 @@ export default function Knowledge() {
     apiClient.listKnowledgeGaps().then(gaps => {
       if (!cancelled) setKnowledgeGaps(gaps || []);
     }).catch((error: any) => {
-      if (!cancelled) showNotice(error.response?.data?.error?.message || 'Failed to load knowledge gaps.', 'error');
+      if (!cancelled) showNotice(error.response?.data?.error?.message || t('knowledge.errors.loadGapsFailed'), 'error');
     });
     return () => { cancelled = true; };
   }, [activeTab, showNotice]);
@@ -98,7 +98,7 @@ export default function Knowledge() {
           console.warn('[mammoth] conversion warnings:', result.messages);
         }
       } else {
-        throw new Error('Only .txt, .doc, or .docx files are supported.');
+        throw new Error(t('knowledge.errors.unsupportedFile'));
       }
 
       setUploadProgress(50);
@@ -106,9 +106,9 @@ export default function Knowledge() {
         name: file.name, contentType: file.type, size: file.size, text, source: 'upload'
       });
       setUploadProgress(100);
-      showNotice('Document uploaded and queued for indexing.');
+      showNotice(t('knowledge.uploadQueued'));
     } catch (error: any) {
-      showNotice(error.response?.data?.error?.message || error.message || 'Failed to upload document.', 'error');
+      showNotice(error.response?.data?.error?.message || error.message || t('knowledge.errors.uploadFailed'), 'error');
     } finally {
       setIsUploading(false);
       setShowUploadModal(false);
@@ -123,9 +123,9 @@ export default function Knowledge() {
     try {
       const updated = await apiClient.updateKnowledgeFaq(faqId, { active: !faq.active });
       setFaqs(faqs.map(f => f.id === faqId ? updated : f));
-      showNotice(`FAQ ${updated.active ? 'activated' : 'deactivated'}.`);
+      showNotice(updated.active ? t('knowledge.faqActivated') : t('knowledge.faqDeactivated'));
     } catch (error: any) {
-      showNotice(error.response?.data?.error?.message || 'Failed to update FAQ.', 'error');
+      showNotice(error.response?.data?.error?.message || t('knowledge.errors.updateFaqFailed'), 'error');
     }
   };
 
@@ -133,9 +133,9 @@ export default function Knowledge() {
     try {
       await apiClient.deleteKnowledgeFaq(faqId);
       setFaqs(faqs.filter(f => f.id !== faqId));
-      showNotice('FAQ deleted.');
+      showNotice(t('knowledge.faqDeleted'));
     } catch (error: any) {
-      showNotice(error.response?.data?.error?.message || 'Failed to delete FAQ.', 'error');
+      showNotice(error.response?.data?.error?.message || t('knowledge.errors.deleteFaqFailed'), 'error');
     }
   };
 
@@ -159,9 +159,9 @@ export default function Knowledge() {
       }
       setShowFAQModal(false);
       setEditingFAQ(null);
-      showNotice('FAQ saved.');
+      showNotice(t('knowledge.faqSaved'));
     } catch (error: any) {
-      showNotice(error.response?.data?.error?.message || 'Failed to save FAQ.', 'error');
+      showNotice(error.response?.data?.error?.message || t('knowledge.errors.saveFaqFailed'), 'error');
     }
   };
 
@@ -297,7 +297,7 @@ export default function Knowledge() {
                       </div>
                     ))}
                     {faqs.filter(f => f.active).length === 0 && (
-                      <p className="text-sm text-gray-400">No active FAQs yet.</p>
+                      <p className="text-sm text-gray-400">{t('knowledge.noActiveFAQs')}</p>
                     )}
                   </div>
                 </div>
@@ -309,7 +309,7 @@ export default function Knowledge() {
                       <span className="text-gray-600">{t('knowledge.statusItems.businessInfo')}</span>
                       {businessInfo.shopName
                         ? <CheckCircle className="w-5 h-5 text-green-600" />
-                        : <span className="text-xs text-gray-400">Not set</span>}
+                        : <span className="text-xs text-gray-400">{t('knowledge.notSet')}</span>}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">{t('knowledge.statusItems.brandingRules')}</span>
@@ -332,21 +332,21 @@ export default function Knowledge() {
           {/* Business Info Tab — Fix #7 */}
           {activeTab === 'businessInfo' && (
             <div className="space-y-6 max-w-2xl">
-              <h3 className="font-semibold text-gray-900">{t('knowledge.tabs.businessInfo') || 'Business Info'}</h3>
+              <h3 className="font-semibold text-gray-900">{t('knowledge.tabs.businessInfo')}</h3>
 
               {([
-                { field: 'shopName',     label: 'Shop Name',     placeholder: 'My Boutique' },
-                { field: 'address',      label: 'Address',       placeholder: 'Dhaka, Bangladesh' },
-                { field: 'phone',        label: 'Phone', placeholder: '+880 1XXX-XXXXXX' },
-                { field: 'openingHours', label: 'Opening Hours', placeholder: 'Sat–Thu 10am–9pm' },
-              ] as { field: keyof BusinessInfo; label: string; placeholder: string }[]).map(({ field, label, placeholder }) => (
+                { field: 'shopName',     labelKey: 'knowledge.businessInfoTab.shopName',     placeholderKey: 'knowledge.businessInfoTab.shopNamePlaceholder' },
+                { field: 'address',      labelKey: 'knowledge.businessInfoTab.address',       placeholderKey: 'knowledge.businessInfoTab.addressPlaceholder' },
+                { field: 'phone',        labelKey: 'knowledge.businessInfoTab.phone', placeholderKey: 'knowledge.businessInfoTab.phonePlaceholder' },
+                { field: 'openingHours', labelKey: 'knowledge.businessInfoTab.openingHours', placeholderKey: 'knowledge.businessInfoTab.openingHoursPlaceholder' },
+              ] as { field: keyof BusinessInfo; labelKey: string; placeholderKey: string }[]).map(({ field, labelKey, placeholderKey }) => (
                 <div key={field}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t(labelKey)}</label>
                   <input
                     type="text"
                     value={(businessInfo[field] as string) || ''}
                     onChange={(e) => setBusinessInfo({ ...businessInfo, [field]: e.target.value })}
-                    placeholder={placeholder}
+                    placeholder={t(placeholderKey)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -357,14 +357,14 @@ export default function Knowledge() {
                   try {
                     const updated = await apiClient.updateKnowledgeBusinessInfo(businessInfo);
                     if (updated?.businessInfo) setBusinessInfo(updated.businessInfo);
-                    showNotice('Business info updated and indexed.');
+                    showNotice(t('knowledge.businessInfoTab.updateSuccess'));
                   } catch (error: any) {
-                    showNotice(error.response?.data?.error?.message || 'Failed to update business info.', 'error');
+                    showNotice(error.response?.data?.error?.message || t('knowledge.businessInfoTab.updateFailed'), 'error');
                   }
                 }}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                Save Business Info
+                {t('knowledge.businessInfoTab.save')}
               </button>
             </div>
           )}
@@ -396,14 +396,14 @@ export default function Knowledge() {
                               : (faq.confidence || 0) >= 0.8 ? 'bg-yellow-100 text-yellow-700'
                               : 'bg-orange-100 text-orange-700'
                           }`}>
-                            {Math.round((faq.confidence || 0.9) * 100)}% confidence
+                            {t('knowledge.confidenceBadge', { percent: Math.round((faq.confidence || 0.9) * 100) })}
                           </span>
                           <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded">{faq.category}</span>
                         </div>
                         <p className="text-sm text-gray-700 mb-2">{faq.answer}</p>
                         <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>Source: {faq.source}</span>
-                          <span>Used {faq.usageCount || 0} times</span>
+                          <span>{t('knowledge.faqSource', { source: faq.source })}</span>
+                          <span>{t('knowledge.faqUsedTimes', { count: faq.usageCount || 0 })}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 ml-4">
@@ -434,7 +434,7 @@ export default function Knowledge() {
                 {faqs.length === 0 && (
                   <div className="py-12 text-center text-gray-400">
                     <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>No FAQs yet. Add one or upload a document to get started.</p>
+                    <p>{t('knowledge.noFAQs')}</p>
                   </div>
                 )}
               </div>
@@ -451,9 +451,9 @@ export default function Knowledge() {
                   onChange={(e) => setBrandingRules({ ...brandingRules, tone: e.target.value as any })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="formal">Formal</option>
-                  <option value="friendly">Friendly</option>
-                  <option value="casual">Casual</option>
+                  <option value="formal">{t('knowledge.branding.toneFormal')}</option>
+                  <option value="friendly">{t('knowledge.branding.toneFriendly')}</option>
+                  <option value="casual">{t('knowledge.branding.toneCasual')}</option>
                 </select>
               </div>
 
@@ -464,10 +464,10 @@ export default function Knowledge() {
                   onChange={(e) => setBrandingRules({ ...brandingRules, emojiUsage: e.target.value as any })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="none">None</option>
-                  <option value="light">Light (1–2 per message)</option>
-                  <option value="moderate">Moderate (3–4 per message)</option>
-                  <option value="heavy">Heavy (5+ per message)</option>
+                  <option value="none">{t('knowledge.branding.emojiNone')}</option>
+                  <option value="light">{t('knowledge.branding.emojiLight')}</option>
+                  <option value="moderate">{t('knowledge.branding.emojiModerate')}</option>
+                  <option value="heavy">{t('knowledge.branding.emojiHeavy')}</option>
                 </select>
               </div>
 
@@ -476,7 +476,7 @@ export default function Knowledge() {
                 <input type="text" value={brandingRules.greetingStyle}
                   onChange={(e) => setBrandingRules({ ...brandingRules, greetingStyle: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Hi! How can I help you?" />
+                  placeholder={t('knowledge.branding.greetingPlaceholder')} />
               </div>
 
               <div>
@@ -484,7 +484,7 @@ export default function Knowledge() {
                 <input type="text" value={brandingRules.closingStyle}
                   onChange={(e) => setBrandingRules({ ...brandingRules, closingStyle: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Thank you!" />
+                  placeholder={t('knowledge.branding.closingPlaceholder')} />
               </div>
 
               <div>
@@ -492,7 +492,7 @@ export default function Knowledge() {
                 <input type="text"
                   value={(brandingRules.forbiddenPhrases ?? []).join(', ')}
                   onChange={(e) => setBrandingRules({ ...brandingRules, forbiddenPhrases: e.target.value.split(',').map(s => s.trim()) })}
-                  placeholder="maybe, I think, not sure"
+                  placeholder={t('knowledge.branding.forbiddenPlaceholder')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
 
@@ -501,19 +501,19 @@ export default function Knowledge() {
                 <input type="text"
                   value={(brandingRules.escalationKeywords ?? []).join(', ')}
                   onChange={(e) => setBrandingRules({ ...brandingRules, escalationKeywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                  placeholder="human, agent, help, মানুষ"
+                  placeholder={t('knowledge.branding.escalationPlaceholder')}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <p className="text-xs text-gray-500 mt-1">
-                  When a customer sends any of these keywords, AI auto-reply is paused and flagged for human review.
+                  {t('knowledge.branding.escalationHint')}
                 </p>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-blue-900 mb-2">Preview</h4>
+                <h4 className="font-semibold text-blue-900 mb-2">{t('knowledge.branding.preview')}</h4>
                 <div className="bg-white rounded-lg p-4 space-y-2">
-                  <p className="text-gray-900">{brandingRules.greetingStyle || '(greeting)'}</p>
-                  <p className="text-gray-700">We're at {businessInfo.address || '…'}. Hours: {businessInfo.openingHours || '…'}.</p>
-                  <p className="text-gray-900">{brandingRules.closingStyle || '(closing)'}</p>
+                  <p className="text-gray-900">{brandingRules.greetingStyle || t('knowledge.branding.previewGreetingFallback')}</p>
+                  <p className="text-gray-700">{t('knowledge.branding.previewBody', { address: businessInfo.address || '…', hours: businessInfo.openingHours || '…' })}</p>
+                  <p className="text-gray-900">{brandingRules.closingStyle || t('knowledge.branding.previewClosingFallback')}</p>
                 </div>
               </div>
 
@@ -522,9 +522,9 @@ export default function Knowledge() {
                   try {
                     const updated = await apiClient.updateKnowledgeBrandingRules(brandingRules);
                     if (updated?.brandingRules) setBrandingRules(updated.brandingRules);
-                    showNotice('Branding rules updated and indexed.');
+                    showNotice(t('knowledge.branding.updateSuccess'));
                   } catch (error: any) {
-                    showNotice(error.response?.data?.error?.message || 'Failed to update branding rules.', 'error');
+                    showNotice(error.response?.data?.error?.message || t('knowledge.branding.updateFailed'), 'error');
                   }
                 }}
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -545,7 +545,7 @@ export default function Knowledge() {
               {knowledgeGaps.length === 0 ? (
                 <div className="py-12 text-center text-gray-400">
                   <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No unanswered questions — your AI is handling everything!</p>
+                  <p>{t('knowledge.gaps.empty')}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -565,8 +565,8 @@ export default function Knowledge() {
                             )}
                           </div>
                           <p className="text-xs text-gray-500">
-                            First asked: {new Date(gap.firstAsked).toLocaleDateString()} •{' '}
-                            Last asked: {new Date(gap.lastAsked).toLocaleDateString()}
+                            {t('knowledge.gaps.firstAsked', { date: new Date(gap.firstAsked).toLocaleDateString() })} •{' '}
+                            {t('knowledge.gaps.lastAsked', { date: new Date(gap.lastAsked).toLocaleDateString() })}
                           </p>
                         </div>
                       </div>
@@ -617,7 +617,7 @@ export default function Knowledge() {
               <div>
                 <div className="mb-4">
                   <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                    <span>{uploadProgress < 50 ? 'Reading file…' : uploadProgress < 100 ? 'Uploading…' : 'Done!'}</span>
+                    <span>{uploadProgress < 50 ? t('knowledge.uploadModal.readingFile') : uploadProgress < 100 ? t('knowledge.uploadModal.uploading') : t('knowledge.uploadModal.done')}</span>
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
@@ -657,26 +657,26 @@ export default function Knowledge() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Question</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('knowledge.reviewModal.questionLabel')}</label>
                 <input type="text" value={editingFAQ.question}
                   onChange={(e) => setEditingFAQ({ ...editingFAQ, question: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="What is your question?" />
+                  placeholder={t('knowledge.reviewModal.questionPlaceholder')} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Answer</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('knowledge.reviewModal.answerLabel')}</label>
                 <textarea value={editingFAQ.answer}
                   onChange={(e) => setEditingFAQ({ ...editingFAQ, answer: e.target.value })}
                   rows={4}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Your answer here…" />
+                  placeholder={t('knowledge.reviewModal.answerPlaceholder')} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('knowledge.reviewModal.categoryLabel')}</label>
                 <input type="text" value={editingFAQ.category}
                   onChange={(e) => setEditingFAQ({ ...editingFAQ, category: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Delivery, Payment, Policy" />
+                  placeholder={t('knowledge.reviewModal.categoryPlaceholder')} />
               </div>
             </div>
 

@@ -24,6 +24,7 @@ type PulseData = {
 type CashPositionCardProps = {
   label: string;
   subLabel: string;
+  countLabel: string;
   amount: number;
   count: number;
   icon: typeof Truck;
@@ -32,7 +33,7 @@ type CashPositionCardProps = {
   formatCurrency: (v: number) => string;
 };
 
-function CashPositionCard({ label, subLabel, amount, count, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
+function CashPositionCard({ label, subLabel, countLabel, amount, count, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
   const accentClass = accent === "warning"
     ? "bg-red-50 border-red-200"
     : "bg-card border-border";
@@ -48,7 +49,7 @@ function CashPositionCard({ label, subLabel, amount, count, icon: Icon, accent, 
       </div>
       <p className="text-2xl font-black text-foreground md:text-3xl">{formatCurrency(amount)}</p>
       <p className="mt-1 text-sm font-semibold text-muted-foreground">
-        {label} · {count} অর্ডার
+        {label} · {countLabel}
       </p>
     </button>
   );
@@ -143,7 +144,7 @@ export default function Dashboard() {
       setLastUpdatedAt(new Date());
     } catch (loadError: unknown) {
       const e = loadError as { response?: { data?: { error?: { message?: string } } } };
-      setError(e?.response?.data?.error?.message ?? "Dashboard load failed.");
+      setError(e?.response?.data?.error?.message ?? t("dashboard.pulse.errorMsg"));
     } finally {
       if (isInitialLoad) {
         setIsLoading(false);
@@ -268,13 +269,14 @@ export default function Dashboard() {
 
       <section className="mb-4">
         <div className="mb-2 flex items-end justify-between">
-          <h2 className="text-base font-bold text-foreground">ক্যাশ পজিশন</h2>
-          <span className="text-xs font-medium text-muted-foreground">Cash Position</span>
+          <h2 className="text-base font-bold text-foreground">{t("dashboard.pulse.cashPosition.title")}</h2>
+          <span className="text-xs font-medium text-muted-foreground">{t("dashboard.pulse.cashPosition.subtitle")}</span>
         </div>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <CashPositionCard
-            label="কুরিয়ারে আটকে আছে"
-            subLabel="Cash in Transit"
+            label={t("dashboard.pulse.cashPosition.inTransit")}
+            subLabel={t("dashboard.pulse.cashPosition.inTransitSub")}
+            countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.inTransit.count ?? 0 })}
             amount={pulseData.cashPosition?.inTransit.amount ?? 0}
             count={pulseData.cashPosition?.inTransit.count ?? 0}
             icon={Truck}
@@ -283,8 +285,9 @@ export default function Dashboard() {
             formatCurrency={formatCurrency}
           />
           <CashPositionCard
-            label="ফেরত আসছে"
-            subLabel={`At Risk · ${pulseData.cashPosition?.atRisk.windowDays ?? 30} days`}
+            label={t("dashboard.pulse.cashPosition.atRisk")}
+            subLabel={t("dashboard.pulse.cashPosition.atRiskSub", { days: pulseData.cashPosition?.atRisk.windowDays ?? 30 })}
+            countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.atRisk.count ?? 0 })}
             amount={pulseData.cashPosition?.atRisk.amount ?? 0}
             count={pulseData.cashPosition?.atRisk.count ?? 0}
             icon={AlertTriangle}

@@ -1,38 +1,39 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Building2, MessageSquare, Truck, CreditCard, ChevronRight } from "lucide-react";
 
 const items = [
   {
-    name: 'ব্যবসার তথ্য',
-    description: 'নাম, ঠিকানা, লোগো ও অপারেটিং বিবরণ',
+    nameKey: 'manageShop.hub.businessInfo.name',
+    descKey: 'manageShop.hub.businessInfo.desc',
     path: '/app/manage-shop/business-info',
     icon: Building2,
     color: 'text-blue-600 bg-blue-50',
   },
   {
-    name: 'চ্যাট সেটিংস',
-    description: 'AI উত্তরের আচরণ ও গ্রিটিং কাস্টমাইজ করুন',
+    nameKey: 'manageShop.hub.chatSettings.name',
+    descKey: 'manageShop.hub.chatSettings.desc',
     path: '/app/manage-shop/chat-settings',
     icon: MessageSquare,
     color: 'text-purple-600 bg-purple-50',
   },
   {
-    name: 'ডেলিভারি সেটিংস',
-    description: 'কুরিয়ার, ডেলিভারি চার্জ ও জোন কনফিগার করুন',
+    nameKey: 'manageShop.hub.deliverySettings.name',
+    descKey: 'manageShop.hub.deliverySettings.desc',
     path: '/app/manage-shop/delivery-settings',
     icon: Truck,
     color: 'text-emerald-600 bg-emerald-50',
   },
   {
-    name: 'পেমেন্ট সেটিংস',
-    description: 'পেমেন্ট গেটওয়ে ও অগ্রিম পেমেন্ট নিয়ম',
+    nameKey: 'manageShop.hub.paymentSettings.name',
+    descKey: 'manageShop.hub.paymentSettings.desc',
     path: '/app/manage-shop/payment-settings',
     icon: CreditCard,
     color: 'text-amber-600 bg-amber-50',
   },
   {
-    name: 'সাবস্ক্রিপশন',
-    description: 'প্ল্যান, ব্যবহার ও ইনভয়েস ম্যানেজ করুন',
+    nameKey: 'manageShop.hub.subscription.name',
+    descKey: 'manageShop.hub.subscription.desc',
     path: '/app/subscription',
     icon: CreditCard,
     color: 'text-rose-600 bg-rose-50',
@@ -40,11 +41,12 @@ const items = [
 ];
 
 export default function SettingsHub() {
+  const { t } = useTranslation();
   return (
     <div className="p-4 md:p-8 max-w-3xl">
       <div className="mb-6">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-900">সেটিংস</h1>
-        <p className="text-sm text-gray-500 mt-1">দোকানের কনফিগারেশন ম্যানেজ করুন</p>
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('manageShop.hub.title')}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t('manageShop.hub.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -60,8 +62,8 @@ export default function SettingsHub() {
                 <Icon className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900">{item.name}</div>
-                <div className="text-xs text-gray-500 mt-0.5 truncate">{item.description}</div>
+                <div className="text-sm font-semibold text-gray-900">{t(item.nameKey)}</div>
+                <div className="text-xs text-gray-500 mt-0.5 truncate">{t(item.descKey)}</div>
               </div>
               <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 shrink-0" />
             </Link>

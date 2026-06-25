@@ -2,70 +2,31 @@
  * Maps policy-engine deny reason strings/codes to merchant-friendly messages.
  * Keeps stack traces and internal codes out of the UI.
  *
- * Keys are substring-matched (case-insensitive) against the raw error message
- * from the backend. First match wins.
+ * Keys are substring/regex-matched (case-insensitive) against the raw error
+ * message from the backend. First match wins. The user-facing copy is resolved
+ * at CALL TIME via the i18n singleton so the language always tracks the user's
+ * current selection (never frozen).
  */
+import i18n from "@/i18n";
 
 interface DenyMapping {
-  /** Substring that must appear in the raw error (case-insensitive) */
+  /** Substring/regex that must appear in the raw error (case-insensitive) */
   match: string;
-  /** English merchant-friendly message */
-  en: string;
-  /** Bengali merchant-friendly message */
-  bn: string;
+  /** i18n key (under the `policy.deny.*` namespace) resolved at call time */
+  key: string;
 }
 
 const DENY_MAPPINGS: DenyMapping[] = [
-  {
-    match: "24h",
-    en: "Customer must message first within 24 hours (Meta policy)",
-    bn: "কাস্টমার আগে মেসেজ করতে হবে — ২৪ ঘন্টার মধ্যে (Meta নীতি)",
-  },
-  {
-    match: "24 hour",
-    en: "Customer must message first within 24 hours (Meta policy)",
-    bn: "কাস্টমার আগে মেসেজ করতে হবে — ২৪ ঘন্টার মধ্যে (Meta নীতি)",
-  },
-  {
-    match: "outside.*window",
-    en: "Messaging window expired. Use a message tag (e.g. Post-Purchase Update) to continue.",
-    bn: "মেসেজিং উইন্ডো শেষ। Message tag ব্যবহার করুন (যেমন: Post-Purchase Update)।",
-  },
-  {
-    match: "rate limit",
-    en: "Daily message limit reached. Try again after midnight.",
-    bn: "দৈনিক মেসেজ সীমা শেষ। মধ্যরাতের পরে আবার চেষ্টা করুন।",
-  },
-  {
-    match: "opt.?out",
-    en: "Customer has opted out of messages. Respect their choice.",
-    bn: "কাস্টমার মেসেজ বন্ধ করেছেন। তাদের সিদ্ধান্ত মানতে হবে।",
-  },
-  {
-    match: "consent",
-    en: "Customer consent not found. They must message you first.",
-    bn: "কাস্টমারের সম্মতি পাওয়া যায়নি। তাদের আগে মেসেজ করতে হবে।",
-  },
-  {
-    match: "policy",
-    en: "Message blocked by platform policy. Check Meta's messaging guidelines.",
-    bn: "Meta নীতি অনুযায়ী মেসেজ ব্লক হয়েছে।",
-  },
-  {
-    match: "token",
-    en: "Channel connection expired. Please reconnect your Facebook page.",
-    bn: "চ্যানেল সংযোগ মেয়াদ শেষ। Facebook page পুনরায় সংযুক্ত করুন।",
-  },
-  {
-    match: "permission",
-    en: "Missing permission to send messages. Re-authorize Easy Moderator.",
-    bn: "মেসেজ পাঠানোর অনুমতি নেই। Easy Moderator পুনরায় অনুমোদন করুন।",
-  },
-  {
-    match: "block",
-    en: "Customer may have blocked the page. You cannot send messages to them.",
-    bn: "কাস্টমার হয়তো পেজ ব্লক করেছেন। তাদের মেসেজ পাঠানো সম্ভব নয়।",
-  },
+  { match: "24h", key: "policy.deny.customerFirst24h" },
+  { match: "24 hour", key: "policy.deny.customerFirst24h" },
+  { match: "outside.*window", key: "policy.deny.windowExpired" },
+  { match: "rate limit", key: "policy.deny.dailyLimitReached" },
+  { match: "opt.?out", key: "policy.deny.optedOut" },
+  { match: "consent", key: "policy.deny.noConsent" },
+  { match: "policy", key: "policy.deny.blockedByPolicy" },
+  { match: "token", key: "policy.deny.connectionExpired" },
+  { match: "permission", key: "policy.deny.missingPermission" },
+  { match: "block", key: "policy.deny.pageBlocked" },
 ];
 
 /**
@@ -78,11 +39,9 @@ export function getDenyMessage(rawError: string, lang: "bn" | "en" = "bn"): stri
   for (const mapping of DENY_MAPPINGS) {
     const pattern = new RegExp(mapping.match, "i");
     if (pattern.test(lower)) {
-      return mapping[lang];
+      return i18n.t(mapping.key, { lng: lang });
     }
   }
   // Default fallback
-  return lang === "bn"
-    ? "মেসেজ পাঠানো যায়নি। সংযোগ চেক করুন অথবা Support এ যোগাযোগ করুন।"
-    : "Message could not be sent. Check your connection or contact support.";
+  return i18n.t("policy.deny.fallback", { lng: lang });
 }

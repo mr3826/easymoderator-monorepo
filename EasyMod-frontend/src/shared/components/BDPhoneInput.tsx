@@ -10,6 +10,7 @@
  * Uses only shadcn/ui Input + Label primitives — no new UI library.
  */
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Input } from '@/app/components/ui/input';
 import { Label } from '@/app/components/ui/label';
 import { cn } from '@/app/components/ui/utils';
@@ -43,6 +44,7 @@ const BDPhoneInput = React.forwardRef<HTMLInputElement, BDPhoneInputProps>(
     { value, onChange, error, label, required, disabled, id, placeholder = '01XXX-XXX-XXX', className },
     ref
   ) {
+    const { t } = useTranslation();
     const inputId = id ?? 'bd-phone-input';
     const isValid = !value || BD_PHONE_REGEX.test(value);
     const showError = error || (!isValid && value.length > 0);
@@ -84,7 +86,7 @@ const BDPhoneInput = React.forwardRef<HTMLInputElement, BDPhoneInputProps>(
         </div>
         {showError && (
           <p id={`${inputId}-error`} className="text-xs text-destructive mt-0.5">
-            {error ?? 'সঠিক বাংলাদেশি মোবাইল নম্বর দিন (01X-XXXX-XXXX)'}
+            {error ?? t('common.bdPhoneInvalid')}
           </p>
         )}
       </div>

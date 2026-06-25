@@ -4,11 +4,23 @@ import userEvent from '@testing-library/user-event';
 import AISettingsForm from './AISettingsForm';
 import type { ShopAISettings } from '@/api/types/dashboard';
 
-const mockT = (key: string) => key;
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: mockT }),
-}));
+// Resolve real English from en.json so assertions verify the actual (en-default)
+// UI copy after i18n-ization, with {{var}} interpolation support.
+vi.mock('react-i18next', async () => {
+  const en = (await import('@/i18n/locales/en.json')).default as Record<string, any>;
+  const t = (key: string, opts?: any) => {
+    const v = key.split('.').reduce((o: any, k) => (o == null ? undefined : o[k]), en);
+    if (typeof v !== 'string') return typeof opts === 'string' ? opts : key;
+    if (opts && typeof opts === 'object') {
+      return Object.entries(opts).reduce(
+        (s, [k, val]) => s.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(val)),
+        v,
+      );
+    }
+    return v;
+  };
+  return { useTranslation: () => ({ t, i18n: { language: 'en', changeLanguage: () => Promise.resolve() } }) };
+});
 
 describe('AISettingsForm', () => {
   const mockOnSave = vi.fn();
@@ -79,7 +91,7 @@ describe('AISettingsForm', () => {
   it('selects primary language on click', async () => {
     render(<AISettingsForm {...defaultProps} />);
     
-    const enButton = screen.getByRole('button', { name: /en/i });
+    const enButton = screen.getByRole('button', { name: /^en\b/i });
     fireEvent.click(enButton);
     
     expect(enButton.className).toContain('border-blue-500');

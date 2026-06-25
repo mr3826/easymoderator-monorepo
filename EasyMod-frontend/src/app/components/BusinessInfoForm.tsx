@@ -24,13 +24,15 @@ const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessIn
 
 // Social platforms shown in the order-confirmation closing. WhatsApp accepts a
 // wa.me link or a bare phone number; the rest are profile/page URLs.
-const SOCIAL_FIELDS: { key: keyof SocialLinks; label: string; placeholder: string }[] = [
-  { key: "facebook", label: "Facebook", placeholder: "https://facebook.com/yourpage" },
-  { key: "instagram", label: "Instagram", placeholder: "https://instagram.com/yourshop" },
-  { key: "whatsapp", label: "WhatsApp", placeholder: "https://wa.me/8801XXXXXXXXX বা 01XXXXXXXXX" },
-  { key: "tiktok", label: "TikTok", placeholder: "https://tiktok.com/@yourshop" },
-  { key: "youtube", label: "YouTube", placeholder: "https://youtube.com/@yourshop" },
-  { key: "website", label: "Website", placeholder: "https://yourshop.com" },
+// `label` is a brand/proper noun (kept as-is); `placeholderKey` is i18n-ized
+// because the WhatsApp hint contains translatable text.
+const SOCIAL_FIELDS: { key: keyof SocialLinks; label: string; placeholderKey: string }[] = [
+  { key: "facebook", label: "Facebook", placeholderKey: "manageShop.businessInfo.social.facebookPlaceholder" },
+  { key: "instagram", label: "Instagram", placeholderKey: "manageShop.businessInfo.social.instagramPlaceholder" },
+  { key: "whatsapp", label: "WhatsApp", placeholderKey: "manageShop.businessInfo.social.whatsappPlaceholder" },
+  { key: "tiktok", label: "TikTok", placeholderKey: "manageShop.businessInfo.social.tiktokPlaceholder" },
+  { key: "youtube", label: "YouTube", placeholderKey: "manageShop.businessInfo.social.youtubePlaceholder" },
+  { key: "website", label: "Website", placeholderKey: "manageShop.businessInfo.social.websitePlaceholder" },
 ];
 
 interface BusinessInfoFormProps {
@@ -77,7 +79,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
 
   return (
     <section>
-      <h3 className="text-base font-semibold text-gray-900 mb-4">Business Information</h3>
+      <h3 className="text-base font-semibold text-gray-900 mb-4">{t('manageShop.businessInfo.sectionTitle')}</h3>
 
       {notice && <div className={noticeClass(notice.type)}>{notice.message}</div>}
 
@@ -123,16 +125,16 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             aria-label={t('manageShop.businessInfo.openingHours')}
             value={businessInfo.openingHours}
             onChange={(e) => setBusinessInfo({ ...businessInfo, openingHours: e.target.value })}
-            placeholder="e.g. Sat–Thu 9am–9pm"
+            placeholder={t('manageShop.businessInfo.openingHoursPlaceholder')}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
         <div className="border-t border-gray-100 pt-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">সোশ্যাল মিডিয়া লিংক</label>
-          <p className="text-xs text-gray-500 mb-3">যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে "আমাদের ফলো করুন" অংশে দেখানো হবে। (ঐচ্ছিক)</p>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.businessInfo.social.title')}</label>
+          <p className="text-xs text-gray-500 mb-3">{t('manageShop.businessInfo.social.help')}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {SOCIAL_FIELDS.map(({ key, label, placeholder }) => (
+            {SOCIAL_FIELDS.map(({ key, label, placeholderKey }) => (
               <div key={key}>
                 <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
                 <input
@@ -143,7 +145,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
                     ...businessInfo,
                     socialLinks: { ...(businessInfo.socialLinks || {}), [key]: e.target.value },
                   })}
-                  placeholder={placeholder}
+                  placeholder={t(placeholderKey)}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

@@ -72,7 +72,13 @@
     "dismiss": "বাতিল",
     "send": "পাঠান",
     "sending": "পাঠানো হচ্ছে...",
-    "showing": "দেখাচ্ছে"
+    "showing": "দেখাচ্ছে",
+    "language": {
+      "switchToEnglish": "ইংরেজিতে পরিবর্তন করুন",
+      "switchToBengali": "বাংলায় পরিবর্তন করুন"
+    },
+    "bdPhoneInvalid": "সঠিক বাংলাদেশি মোবাইল নম্বর দিন (01X-XXXX-XXXX)",
+    "to": "পর্যন্ত"
   },
   "landing": {
     "nav": {
@@ -183,7 +189,11 @@
       "subheading": "৳৯৯৯/মাস — ১৪ দিনের ফ্রি ট্রায়াল দিয়ে শুরু করুন, কার্ড লাগবে না।",
       "perMonth": "/মাস",
       "mostPopular": "সবচেয়ে জনপ্রিয়",
-      "getStarted": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন"
+      "getStarted": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন",
+      "partnerBadge": "৩০০+ অর্ডার/মাস",
+      "partnerPrice": "৳10–15",
+      "partnerPriceUnit": "/ডেলিভার্ড অর্ডার",
+      "becomePartner": "পার্টনার হোন →"
     },
     "testimonials": {
       "label": "গ্রাহক মতামত",
@@ -231,10 +241,22 @@
       "heading": "আপনার ব্যবসাকে স্মার্ট করুন।",
       "subheading": "Facebook — আপনার সব Page একসাথে পরিচালনা করুন।",
       "stats": [
-        { "stat": "১০+", "label": "সক্রিয় ব্যবসায়ী" },
-        { "stat": "৯৮%", "label": "সন্তুষ্ট গ্রাহক" },
-        { "stat": "৫ মিনিট", "label": "সেটআপ সময়" },
-        { "stat": "২৪/৭", "label": "AI সাপোর্ট" }
+        {
+          "stat": "১০+",
+          "label": "সক্রিয় ব্যবসায়ী"
+        },
+        {
+          "stat": "৯৮%",
+          "label": "সন্তুষ্ট গ্রাহক"
+        },
+        {
+          "stat": "৫ মিনিট",
+          "label": "সেটআপ সময়"
+        },
+        {
+          "stat": "২৪/৭",
+          "label": "AI সাপোর্ট"
+        }
       ],
       "testimonialQuote": "Easy Moderator ব্যবহার করে আমার অর্ডার রেসপন্স টাইম ৩ ঘণ্টা থেকে ৫ মিনিটে নামিয়ে এনেছি।",
       "testimonialName": "রাহেলা বেগম",
@@ -323,7 +345,9 @@
         "createPassword": "একটি পাসওয়ার্ড তৈরি করুন।",
         "acceptTerms": "চালিয়ে যেতে শর্তাবলীতে সম্মত হন।",
         "unableToCreate": "অ্যাকাউন্ট তৈরি করা যায়নি।"
-      }
+      },
+      "toggleAnnualBilling": "বার্ষিক বিলিং চালু/বন্ধ করুন",
+      "subscriptionPaymentMethod": "সাবস্ক্রিপশন পেমেন্ট পদ্ধতি"
     },
     "forgotPassword": {
       "title": "পাসওয়ার্ড ভুলে গেছেন",
@@ -394,7 +418,16 @@
         "noProduct": "পণ্য উল্লেখ নেই"
       },
       "liveUpdate": "Live update প্রতি 60 সেকেন্ডে",
-      "lastUpdated": "· শেষ আপডেট {{time}}"
+      "lastUpdated": "· শেষ আপডেট {{time}}",
+      "cashPosition": {
+        "title": "ক্যাশ পজিশন",
+        "subtitle": "ক্যাশ পজিশন",
+        "inTransit": "কুরিয়ারে আটকে আছে",
+        "inTransitSub": "কুরিয়ারে নগদ",
+        "atRisk": "ফেরত আসছে",
+        "atRiskSub": "ঝুঁকিতে · {{days}} দিন",
+        "ordersUnit": "{{count}} অর্ডার"
+      }
     },
     "nav": {
       "dashboard": "ড্যাশবোর্ড",
@@ -521,6 +554,23 @@
       "updateMode": "কথোপকথনের মোড আপডেট করতে ব্যর্থ",
       "resolveFailed": "কথোপকথন সমাধান করতে ব্যর্থ",
       "assignFailed": "কথোপকথন অ্যাসাইন করতে ব্যর্থ"
+    },
+    "unknownCustomer": "অজানা",
+    "noTitle": "কোনো শিরোনাম নেই",
+    "needsReplyBadge": "উত্তর প্রয়োজন",
+    "deliveryFailed": "উত্তর পৌঁছায়নি: {{reason}}",
+    "channelIssue": "চ্যানেল সমস্যা — {{name}}: {{message}}",
+    "templates": {
+      "orderConfirmed": "অর্ডার নিশ্চিত",
+      "needAddress": "ঠিকানা প্রয়োজন",
+      "advancePayment": "অগ্রিম পেমেন্ট",
+      "courierUpdate": "কুরিয়ার আপডেট",
+      "thankYou": "ধন্যবাদ",
+      "outOfStock": "স্টক নেই",
+      "deliveryCharge": "ডেলিভারি চার্জ",
+      "returnWindow": "রিটার্ন সময়সীমা",
+      "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
+      "dispatchToday": "আজ পাঠানো হবে"
     }
   },
   "products": {
@@ -569,17 +619,28 @@
       "chooseFile": "ফাইল বেছে নিন",
       "supported": "সমর্থিত: CSV, TSV, TXT",
       "processing": "AI দিয়ে প্রক্রিয়াকরণ হচ্ছে...",
-      "aiExtracting": "AI পণ্যের তথ্য বের করছে..."
+      "aiExtracting": "AI পণ্যের তথ্য বের করছে...",
+      "description": "AI প্রসেসিংয়ের জন্য CSV, TSV বা টেক্সট ফাইল আপলোড করুন",
+      "extracting": "AI পণ্যের তথ্য বের করছে..."
     },
     "reviewModal": {
       "title": "AI-জেনারেটেড পণ্য পর্যালোচনা করুন",
       "subtitle": "AI দ্বারা বের করা পণ্য পর্যালোচনা ও অনুমোদন করুন",
       "confidence": "নির্ভরযোগ্যতা: {{percent}}%",
-      "approveAll": "সব অনুমোদন করুন"
+      "approveAll": "সব অনুমোদন করুন",
+      "description": "AI দিয়ে বের করা পণ্যগুলো পর্যালোচনা ও অনুমোদন করুন",
+      "skuLabel": "SKU:",
+      "priceLabel": "দাম:",
+      "categoryLabel": "ক্যাটাগরি:",
+      "variantsLabel": "ভ্যারিয়েন্ট:",
+      "aliasesLabel": "অন্য নাম:"
     },
     "deleteModal": {
       "title": "পণ্য মুছুন",
-      "message": "আপনি কি \"{{name}}\" মুছতে চান? এই কাজ পূর্বাবস্থায় ফেরানো যাবে না।"
+      "message": "আপনি কি \"{{name}}\" মুছতে চান? এই কাজ পূর্বাবস্থায় ফেরানো যাবে না।",
+      "description": "আপনি কি নিশ্চিত \"{{name}}\" মুছে ফেলতে চান? এই কাজটি ফিরিয়ে আনা যাবে না।",
+      "success": "পণ্য সফলভাবে মুছে ফেলা হয়েছে",
+      "failed": "পণ্য মুছতে ব্যর্থ হয়েছে"
     },
     "form": {
       "addTitle": "নতুন পণ্য যোগ করুন",
@@ -682,12 +743,32 @@
       "copySuccess": "পণ্যের লিংক ক্লিপবোর্ডে কপি হয়েছে",
       "copyFailed": "লিংক কপি করতে ব্যর্থ",
       "loading": "পণ্য লোড হচ্ছে...",
-      "deleteConfirm": "আপনি কি এই পণ্যটি মুছতে চান?"
+      "deleteConfirm": "আপনি কি এই পণ্যটি মুছতে চান?",
+      "idNotFound": "পণ্য আইডি পাওয়া যায়নি",
+      "noShopSelected": "কোনো শপ নির্বাচন করা হয়নি",
+      "loadFailed": "পণ্য লোড করতে ব্যর্থ হয়েছে",
+      "imageAlt": "পণ্য {{index}}"
     },
     "pagination": {
       "previous": "পূর্ববর্তী",
       "next": "পরবর্তী",
       "pageOf": "পৃষ্ঠা {{current}} এর মধ্যে {{total}}"
+    },
+    "editAria": "{{name}} সম্পাদনা করুন",
+    "deleteAria": "{{name}} মুছুন",
+    "status": {
+      "active": "সক্রিয়",
+      "inactive": "নিষ্ক্রিয়",
+      "pending": "অপেক্ষমাণ"
+    },
+    "errors": {
+      "unsupportedFileType": "অসমর্থিত ফাইল টাইপ। দয়া করে CSV, TSV বা TXT ফাইল আপলোড করুন।",
+      "noProductsExtracted": "ফাইল থেকে কোনো পণ্য বের করা যায়নি।",
+      "uploadFailed": "আপলোড প্রসেস করতে ব্যর্থ হয়েছে।",
+      "invalidPrice": "অনুমোদনের আগে {{name}}-এর জন্য একটি সঠিক দাম দিন।",
+      "approveFailed": "পণ্য অনুমোদন করতে ব্যর্থ হয়েছে।",
+      "someInvalidPrices": "কিছু পণ্যের দাম সঠিক নয় এবং বাদ দেওয়া হয়েছে।",
+      "approveNamedFailed": "{{name}} অনুমোদন করতে ব্যর্থ হয়েছে।"
     }
   },
   "categories": {
@@ -837,7 +918,13 @@
       "notes": "অর্ডার নোট",
       "notesPlaceholder": "ঐচ্ছিক নোট",
       "rtoWarning": "COD/অপরিশোধিত অর্ডারে RTO ঝুঁকি বেশি।",
-      "createButton": "অর্ডার তৈরি করুন"
+      "createButton": "অর্ডার তৈরি করুন",
+      "searchProducts": "পণ্য খুঁজে যোগ করুন…",
+      "noProductsFound": "কোনো পণ্য পাওয়া যায়নি",
+      "division": "বিভাগ",
+      "district": "জেলা",
+      "upazila": "উপজেলা / থানা",
+      "streetAddress": "বাসা / রোড / এলাকা"
     },
     "detailModal": {
       "title": "অর্ডারের বিবরণ",
@@ -859,7 +946,23 @@
       "updateStatus": "অবস্থা আপডেট করুন",
       "confirmOrder": "অর্ডার নিশ্চিত করুন",
       "cancelOrder": "অর্ডার বাতিল করুন",
-      "close": "বন্ধ করুন"
+      "close": "বন্ধ করুন",
+      "noteSaved": "নোট সফলভাবে সংরক্ষণ হয়েছে",
+      "call": "কল করুন",
+      "noPhone": "গ্রাহকের নম্বর পাওয়া যায়নি",
+      "deliveryAddress": "ডেলিভারি ঠিকানা",
+      "zoneLabel": "জোন",
+      "noAddress": "ঠিকানা এখনো যোগ করা হয়নি",
+      "viewOnMap": "ম্যাপে দেখুন",
+      "paymentStatusLabel": "পেমেন্ট অবস্থা",
+      "codPending": "ক্যাশ অন ডেলিভারি বাকি",
+      "customerChat": "কাস্টমার চ্যাট (শেষ ৩ বার্তা)",
+      "noChatSnippet": "কোনো চ্যাট পাওয়া যায়নি।",
+      "note": "নোট",
+      "notePlaceholder": "এখানে অর্ডার নোট লিখুন",
+      "saveNote": "নোট সংরক্ষণ",
+      "bookCourier": "কুরিয়ার বুক",
+      "cancelOrderBtn": "বাতিল করুন"
     },
     "labels": {
       "sku": "এসকেইউ"
@@ -888,6 +991,21 @@
       "csvFallback": "Excel রপ্তানি এখনো পাওয়া যাচ্ছে না। CSV ডাউনলোড হয়েছে।",
       "itemRequired": "কমপক্ষে একটি আইটেম আবশ্যিক",
       "createFailed": "অর্ডার তৈরি করতে ব্যর্থ"
+    },
+    "emptyState": "কোনো অর্ডার পাওয়া যায়নি।",
+    "status": {
+      "draft": "খসড়া",
+      "confirmed": "নিশ্চিত",
+      "processing": "প্রক্রিয়াধীন",
+      "completed": "সম্পন্ন",
+      "cancelled": "বাতিল"
+    },
+    "row": {
+      "noProduct": "পণ্য উল্লেখ নেই",
+      "viewDetail": "বিস্তারিত দেখুন",
+      "track": "ট্র্যাক করুন",
+      "dispatch": "পাঠান",
+      "viewStatus": "স্ট্যাটাস দেখুন"
     }
   },
   "customers": {
@@ -1033,10 +1151,121 @@
       "oauthInitFailed": "সংযোগ শুরু করা যায়নি। আবার চেষ্টা করুন।",
       "refreshFailed": "চ্যানেল রিফ্রেশ করতে ব্যর্থ",
       "oauthStateMismatch": "OAuth যাচাইকরণ ব্যর্থ হয়েছে — আবার চেষ্টা করুন",
-      "disconnectFailed": "চ্যানেল সংযোগ বিচ্ছিন্ন করতে ব্যর্থ"
+      "disconnectFailed": "চ্যানেল সংযোগ বিচ্ছিন্ন করতে ব্যর্থ",
+      "oauthInProgress": "একটি সংযোগ ইতিমধ্যে চলছে। আগের সংযোগ শেষ করুন।"
     },
     "disconnected": "চ্যানেল সংযোগ বিচ্ছিন্ন হয়েছে",
-    "successToast": "{{channel}} সফলভাবে সংযুক্ত হয়েছে!"
+    "successToast": "{{channel}} সফলভাবে সংযুক্ত হয়েছে!",
+    "settings": {
+      "title": "চ্যানেল সেটিংস",
+      "subtitle": "Facebook Page চ্যানেল সংযুক্ত ও পরিচালনা করুন"
+    },
+    "health": {
+      "connection": "সংযোগ",
+      "connected": "সংযুক্ত",
+      "webhook": "Webhook",
+      "active": "সক্রিয়",
+      "token": "টোকেন",
+      "valid": "বৈধ",
+      "expired": "মেয়াদোত্তীর্ণ",
+      "lastWebhook": "শেষ webhook",
+      "notVerified": "যাচাই হয়নি",
+      "noneYet": "এখনও নেই"
+    },
+    "actions": {
+      "test": "টেস্ট",
+      "refreshList": "তালিকা রিফ্রেশ",
+      "refreshPermissions": "অনুমতি রিফ্রেশ",
+      "disconnect": "সংযোগ বিচ্ছিন্ন",
+      "testTitle": "Webhook টেস্ট"
+    },
+    "badge": {
+      "actionRequired": "ব্যবস্থা প্রয়োজন",
+      "error": "ত্রুটি",
+      "reconnect": "পুনঃসংযোগ"
+    },
+    "label": {
+      "updated": "লেবেল \"{{label}}\"-এ পরিবর্তন হয়েছে",
+      "cleared": "লেবেল মুছে ফেলা হয়েছে",
+      "updateFailed": "লেবেল আপডেট করা যায়নি",
+      "fieldLabel": "লেবেল (ঐচ্ছিক)",
+      "placeholder": "যেমন: Sales, Live selling, Regional"
+    },
+    "connectSuccess": "সফলভাবে সংযুক্ত হয়েছে।",
+    "connectCard": {
+      "title": "Facebook Page সংযুক্ত করুন",
+      "addAnother": "আরেকটি Facebook Page যোগ করুন",
+      "loginPopup": "পপ-আপে Meta-তে লগইন করুন...",
+      "selectPagesHint": "যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন (এক বা একাধিক)",
+      "connectCount": "সংযুক্ত করুন ({{count}})"
+    },
+    "test": {
+      "ok": "Webhook ঠিক আছে ({{ms}}ms)",
+      "failed": "Webhook ব্যর্থ: {{error}}",
+      "error": "টেস্ট ব্যর্থ — ব্যাকএন্ড লগ দেখুন"
+    },
+    "disconnectedNamed": "{{name}} সংযোগ বিচ্ছিন্ন হয়েছে",
+    "consent": {
+      "loadFailed": "সম্মতির কার্যকলাপ লোড করা যায়নি",
+      "events": {
+        "optInImplicit": "সম্মতি দিয়েছেন (অনুমিত)",
+        "optInExplicit": "সম্মতি দিয়েছেন",
+        "optOut": "সম্মতি প্রত্যাহার করেছেন",
+        "deauthorized": "অনুমোদন বাতিল",
+        "dataDeleted": "ডেটা মুছে ফেলা হয়েছে"
+      },
+      "activity": "সম্মতির কার্যকলাপ",
+      "optInsCount": "({{count}} সম্মতি)",
+      "optIns": "সম্মতি",
+      "optOuts": "প্রত্যাহার",
+      "deauth": "বাতিল",
+      "erased": "মুছে ফেলা",
+      "noEvents": "এখনও কোনো সম্মতির ইভেন্ট রেকর্ড হয়নি।"
+    },
+    "tokenExpired": "সংযোগের মেয়াদ শেষ। আবার সংযুক্ত করুন।",
+    "tokenExpiresIn": "সংযোগের মেয়াদ {{days}} দিনের মধ্যে শেষ।",
+    "reconnectPage": "Facebook Page আবার সংযুক্ত করুন",
+    "permissions": {
+      "hide": "অনুমতি লুকান",
+      "show": "কোন অনুমতি লাগবে?",
+      "pagesShowList": "আপনার Page list দেখা",
+      "pagesMessaging": "Messenger বার্তা পড়া ও পাঠানো",
+      "pagesReadEngagement": "Page comment ইভেন্ট পড়া",
+      "pagesManageMetadata": "Realtime webhook subscribe",
+      "pagesManageEngagement": "Comment-এ পাবলিক রিপ্লাই",
+      "note": "EasyMod শুধু কাস্টমার বার্তার জন্য এই অনুমতি ব্যবহার করে।"
+    },
+    "aiModel": {
+      "title": "AI Model Configuration",
+      "subtitle": "AI auto-reply এর ভাষা মডেল",
+      "autoSelectedTitle": "AI মডেল: সেরা ফলাফলের জন্য স্বয়ংক্রিয়ভাবে নির্বাচিত",
+      "autoSelectedDesc": "EasyMod আপনার সব কথোপকথনের জন্য সেরা মডেল স্বয়ংক্রিয়ভাবে বেছে নেয় — সব প্ল্যানে available।"
+    },
+    "disconnectModal": {
+      "title": "{{name}} সংযোগ বিচ্ছিন্ন করবেন?",
+      "message": "এই চ্যানেলে বার্তা পাওয়া বন্ধ হয়ে যাবে। পরে আবার সংযুক্ত করা যাবে।",
+      "confirm": "হ্যাঁ, সংযোগ বিচ্ছিন্ন করুন"
+    },
+    "noPages": {
+      "title": "কোনো Facebook Page পাওয়া যায়নি",
+      "desc": "এটি সাধারণত Meta Business অ্যাক্সেসের সমস্যা, EasyMod-এর সমস্যা নয়। Meta শুধু সেই Page-গুলো দেখায় যা আপনার ব্যবহৃত Facebook লগইনে অ্যাসাইন করা আছে।",
+      "step1": "Meta Business Settings খুলুন এবং সঠিক Business Portfolio নির্বাচন করুন।",
+      "step2": "Users > People-এ গিয়ে নিশ্চিত করুন এই Facebook লগইনের ফুল কন্ট্রোল বা অ্যাসাইনড অ্যাক্সেস আছে।",
+      "step3": "Accounts > Pages-এ নিশ্চিত করুন Page-টি সেই portfolio-র ভেতরে আছে।",
+      "step4": "Business Integrations থেকে EasyMod সরিয়ে দিন, তারপর আবার সংযোগের চেষ্টা করুন।",
+      "openSettings": "Meta Business Settings খুলুন",
+      "tryAgain": "আবার চেষ্টা করুন"
+    },
+    "autoReply": {
+      "enabledToast": "AI auto-reply চালু হয়েছে",
+      "disabledToast": "AI auto-reply বন্ধ হয়েছে",
+      "saveFailed": "সেটিং সেভ করা যায়নি",
+      "loading": "AI সেটিং লোড হচ্ছে…",
+      "title": "AI auto-reply",
+      "onDesc": "নতুন বার্তায় AI স্বয়ংক্রিয়ভাবে উত্তর দেবে",
+      "offDesc": "AI উত্তর বন্ধ — শুধু খসড়া তৈরি হবে",
+      "toggleTitle": "AI auto-reply টগল"
+    }
   },
   "knowledge": {
     "title": "AI নলেজ ট্রেনিং",
@@ -1049,13 +1278,16 @@
       "overview": "সারসংক্ষেপ",
       "faqs": "FAQ",
       "branding": "ব্র্যান্ডিং",
-      "gaps": "নলেজ গ্যাপ"
+      "gaps": "নলেজ গ্যাপ",
+      "businessInfo": "ব্যবসার তথ্য",
+      "knowledgeGaps": "নলেজ গ্যাপ"
     },
     "metrics": {
       "activeKnowledge": "সক্রিয় নলেজ",
       "activeFAQs": "সক্রিয় FAQ",
       "totalAnswers": "মোট উত্তর ব্যবহৃত",
-      "knowledgeGaps": "নলেজ গ্যাপ"
+      "knowledgeGaps": "নলেজ গ্যাপ",
+      "totalAnswersUsed": "মোট ব্যবহৃত উত্তর"
     },
     "howItWorks": "AI নলেজ ট্রেনিং কীভাবে কাজ করে",
     "howItWorksDesc": "আপনার ব্যবসার ডকুমেন্ট আপলোড করুন, AI FAQ, ব্যবসার তথ্য ও ব্র্যান্ডিং গাইডলাইন বের করবে। লাইভ হওয়ার আগে আপনি পর্যালোচনা ও অনুমোদন করবেন।",
@@ -1093,7 +1325,18 @@
       "escalationPlaceholder": "মানুষ, এজেন্ট, সাহায্য",
       "escalationHint": "কাস্টমার এই কীওয়ার্ড পাঠালে AI অটো-রিপ্লাই স্বয়ংক্রিয়ভাবে বিরতি নেবে এবং কথোপকথনটি মানব পর্যালোচনার জন্য চিহ্নিত হবে।",
       "preview": "প্রিভিউ",
-      "saveChanges": "পরিবর্তন সংরক্ষণ করুন"
+      "saveChanges": "পরিবর্তন সংরক্ষণ করুন",
+      "toneOfVoice": "কথার ধরন",
+      "emojiUsage": "ইমোজি ব্যবহার",
+      "greetingStyle": "অভিবাদনের ধরন",
+      "closingStyle": "সমাপ্তির ধরন",
+      "forbiddenPhrases": "নিষিদ্ধ বাক্যাংশ (কমা দিয়ে আলাদা)",
+      "escalationKeywords": "এসকেলেশন কীওয়ার্ড (কমা দিয়ে আলাদা)",
+      "previewGreetingFallback": "(অভিবাদন)",
+      "previewBody": "আমরা {{address}}-এ আছি। সময়: {{hours}}।",
+      "previewClosingFallback": "(সমাপ্তি)",
+      "updateSuccess": "ব্র্যান্ডিং নিয়ম আপডেট ও ইনডেক্স হয়েছে।",
+      "updateFailed": "ব্র্যান্ডিং নিয়ম আপডেট করা যায়নি।"
     },
     "gaps": {
       "title": "অনুত্তরিত প্রশ্ন",
@@ -1102,7 +1345,11 @@
       "aiSuggested": "AI পরামর্শকৃত উত্তর:",
       "confidence": "নির্ভরযোগ্যতা: {{percent}}%",
       "createFAQ": "FAQ তৈরি করুন",
-      "dismiss": "বাতিল"
+      "dismiss": "বাতিল",
+      "description": "এই প্রশ্নগুলো গ্রাহকরা জিজ্ঞাসা করেছেন কিন্তু আপনার নলেজ বেসে এর উত্তর নেই।",
+      "empty": "কোনো অনুত্তরিত প্রশ্ন নেই — আপনার AI সবকিছু সামলাচ্ছে!",
+      "firstAsked": "প্রথম জিজ্ঞাসা: {{date}}",
+      "lastAsked": "শেষ জিজ্ঞাসা: {{date}}"
     },
     "uploadModal": {
       "title": "নলেজ ডকুমেন্ট আপলোড করুন",
@@ -1113,7 +1360,14 @@
       "chooseFile": "ফাইল বেছে নিন",
       "supported": "সমর্থিত: DOC, DOCX, TXT",
       "extracting": "AI নলেজ বের করছে...",
-      "extractingMsg": "FAQ, ব্যবসার তথ্য ও ব্র্যান্ডিং বিশ্লেষণ করা হচ্ছে..."
+      "extractingMsg": "FAQ, ব্যবসার তথ্য ও ব্র্যান্ডিং বিশ্লেষণ করা হচ্ছে...",
+      "privacyNoticeLabel": "গোপনীয়তা নোটিশ:",
+      "privacyNotice": "এখানে আপলোড করা কন্টেন্ট আমাদের AI স্বয়ংক্রিয় উত্তর তৈরির জন্য প্রক্রিয়া করে। আপলোড করা ডেটা এনক্রিপ্ট করে শুধু আপনার দোকানের জন্য আলাদাভাবে সংরক্ষণ করা হয়।",
+      "supportedFormats": "সমর্থিত: DOC, DOCX, TXT",
+      "readingFile": "ফাইল পড়া হচ্ছে…",
+      "uploading": "আপলোড হচ্ছে…",
+      "done": "সম্পন্ন!",
+      "analyzing": "FAQ, ব্যবসার তথ্য ও ব্র্যান্ডিং বিশ্লেষণ করা হচ্ছে..."
     },
     "reviewModal": {
       "title": "বের করা নলেজ পর্যালোচনা করুন",
@@ -1126,8 +1380,45 @@
       "answerLabel": "উত্তর",
       "categoryLabel": "ক্যাটাগরি",
       "categoryPlaceholder": "যেমন: ডেলিভারি, পেমেন্ট, নীতি",
-      "saveFAQ": "FAQ সংরক্ষণ করুন"
-    }
+      "saveFAQ": "FAQ সংরক্ষণ করুন",
+      "editFAQ": "FAQ সম্পাদনা করুন",
+      "addNewFAQ": "নতুন FAQ যোগ করুন",
+      "questionPlaceholder": "আপনার প্রশ্ন কী?",
+      "answerPlaceholder": "আপনার উত্তর এখানে লিখুন…"
+    },
+    "errors": {
+      "loadFailed": "নলেজ ডেটা লোড করা যায়নি",
+      "loadGapsFailed": "নলেজ গ্যাপ লোড করা যায়নি।",
+      "unsupportedFile": "শুধু .txt, .doc, বা .docx ফাইল সমর্থিত।",
+      "uploadFailed": "ডকুমেন্ট আপলোড করা যায়নি।",
+      "updateFaqFailed": "FAQ আপডেট করা যায়নি।",
+      "deleteFaqFailed": "FAQ মুছে ফেলা যায়নি।",
+      "saveFaqFailed": "FAQ সেভ করা যায়নি।"
+    },
+    "uploadQueued": "ডকুমেন্ট আপলোড হয়েছে এবং ইনডেক্সিংয়ের জন্য সারিবদ্ধ হয়েছে।",
+    "faqActivated": "FAQ চালু হয়েছে।",
+    "faqDeactivated": "FAQ বন্ধ হয়েছে।",
+    "faqDeleted": "FAQ মুছে ফেলা হয়েছে।",
+    "faqSaved": "FAQ সেভ হয়েছে।",
+    "noActiveFAQs": "এখনও কোনো সক্রিয় FAQ নেই।",
+    "notSet": "সেট করা হয়নি",
+    "businessInfoTab": {
+      "shopName": "দোকানের নাম",
+      "shopNamePlaceholder": "আমার বুটিক",
+      "address": "ঠিকানা",
+      "addressPlaceholder": "ঢাকা, বাংলাদেশ",
+      "phone": "ফোন",
+      "phonePlaceholder": "+880 1XXX-XXXXXX",
+      "openingHours": "খোলার সময়",
+      "openingHoursPlaceholder": "শনি–বৃহঃ সকাল ১০টা–রাত ৯টা",
+      "save": "ব্যবসার তথ্য সেভ করুন",
+      "updateSuccess": "ব্যবসার তথ্য আপডেট ও ইনডেক্স হয়েছে।",
+      "updateFailed": "ব্যবসার তথ্য আপডেট করা যায়নি।"
+    },
+    "confidenceBadge": "{{percent}}% আত্মবিশ্বাস",
+    "faqSource": "উৎস: {{source}}",
+    "faqUsedTimes": "{{count}} বার ব্যবহৃত",
+    "noFAQs": "এখনও কোনো FAQ নেই। শুরু করতে একটি যোগ করুন বা একটি ডকুমেন্ট আপলোড করুন।"
   },
   "reports": {
     "title": "রিপোর্ট ও Analytics",
@@ -1136,7 +1427,8 @@
       "totalMessages": "মোট বার্তা",
       "activeProducts": "সক্রিয় পণ্য",
       "ordersToday": "আজকের অর্ডার",
-      "conversionRate": "রূপান্তর হার"
+      "conversionRate": "রূপান্তর হার",
+      "ordersInPeriod": "অর্ডার (শেষ {{period}} দিন)"
     },
     "knowledgePerformance": "নলেজ বেস পারফরম্যান্স",
     "knowledgeNotConnected": "ব্যাকএন্ড নলেজ Analytics সংযুক্ত নেই।",
@@ -1153,8 +1445,28 @@
     },
     "errors": {
       "channelData": "চ্যানেল ডেটা লোড করতে ব্যর্থ",
-      "reportData": "রিপোর্ট ডেটা লোড করতে ব্যর্থ"
-    }
+      "reportData": "রিপোর্ট ডেটা লোড করতে ব্যর্থ",
+      "loadChannelData": "চ্যানেল ডেটা লোড করতে ব্যর্থ হয়েছে",
+      "loadReportData": "রিপোর্ট ডেটা লোড করতে ব্যর্থ হয়েছে",
+      "noMetrics": "ব্যাকএন্ড থেকে কোনো ড্যাশবোর্ড মেট্রিক পাওয়া যায়নি।"
+    },
+    "aiPerformance": "AI পারফরম্যান্স (আজ)",
+    "ai": {
+      "messagesHandled": "হ্যান্ডেল করা বার্তা",
+      "llmCalls": "LLM কল",
+      "cacheHits": "ক্যাশ হিট",
+      "estCost": "আনুমানিক AI খরচ"
+    },
+    "knowledgeGapsSubtitle": "যেসব প্রশ্নের উত্তর আপনার AI দিতে পারেনি।",
+    "exportCsv": "CSV এক্সপোর্ট",
+    "noKnowledgeGaps": "এখনো কোনো অনুত্তরিত প্রশ্ন নেই — আপনার AI সবকিছু সামলাচ্ছে!",
+    "gapColumns": {
+      "question": "প্রশ্ন",
+      "platform": "প্ল্যাটফর্ম",
+      "language": "ভাষা",
+      "date": "তারিখ"
+    },
+    "connectFirstChannel": "আপনার প্রথম চ্যানেল সংযোগ করুন →"
   },
   "manageShop": {
     "title": "শপ পরিচালনা",
@@ -1174,7 +1486,19 @@
       "saveChanges": "পরিবর্তন সংরক্ষণ করুন",
       "successMsg": "ব্যবসার তথ্য আপডেট ও ইন্ডেক্স হয়েছে।",
       "errorLoad": "ব্যবসার তথ্য লোড করতে ব্যর্থ।",
-      "errorUpdate": "ব্যবসার তথ্য আপডেট করতে ব্যর্থ।"
+      "errorUpdate": "ব্যবসার তথ্য আপডেট করতে ব্যর্থ।",
+      "sectionTitle": "ব্যবসার তথ্য",
+      "openingHoursPlaceholder": "যেমন: শনি–বৃহঃ সকাল ৯টা–রাত ৯টা",
+      "social": {
+        "title": "সোশ্যাল মিডিয়া লিংক",
+        "help": "যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে \"আমাদের ফলো করুন\" অংশে দেখানো হবে। (ঐচ্ছিক)",
+        "facebookPlaceholder": "https://facebook.com/yourpage",
+        "instagramPlaceholder": "https://instagram.com/yourshop",
+        "whatsappPlaceholder": "https://wa.me/8801XXXXXXXXX বা 01XXXXXXXXX",
+        "tiktokPlaceholder": "https://tiktok.com/@yourshop",
+        "youtubePlaceholder": "https://youtube.com/@yourshop",
+        "websitePlaceholder": "https://yourshop.com"
+      }
     },
     "deliverySettings": {
       "title": "ডেলিভারি সেটিংস",
@@ -1224,8 +1548,17 @@
         "connectFailed": "প্রদানকারী সংযুক্ত করতে ব্যর্থ",
         "disconnectFailed": "প্রদানকারী বিচ্ছিন্ন করতে ব্যর্থ",
         "toggleFailed": "প্রদানকারী টগল করতে ব্যর্থ",
-        "testFailed": "সংযোগ পরীক্ষা ব্যর্থ"
-      }
+        "testFailed": "সংযোগ পরীক্ষা ব্যর্থ",
+        "updateDefaultFailed": "ডিফল্ট আপডেট করা যায়নি"
+      },
+      "setDefaultSuccess": "{{provider}} এখন ডিফল্ট কুরিয়ার হিসেবে ব্যবহৃত হচ্ছে",
+      "defaultBadge": "ডিফল্ট",
+      "setAsDefault": "ডিফল্ট হিসেবে সেট করুন",
+      "removeArea": "এলাকা সরান",
+      "removeTier": "টিয়ার সরান",
+      "weightTierTooltip": "ওজন টিয়ার গাইড: ওজন অনুযায়ী অতিরিক্ত চার্জ যোগ করুন। যেমন: ০-১ কেজি = ০, ১-৩ কেজি = ২০। অতিরিক্ত চার্জ বেস ডেলিভারি চার্জের সাথে যোগ হয়।",
+      "weightTierInfo": "ওজন রেঞ্জ অনুযায়ী অতিরিক্ত চার্জ যোগ করুন। যেমন: ০-১ কেজি = ০, ১-৩ কেজি = ২০, ৩-৫ কেজি = ৪০। অতিরিক্ত চার্জ বেস ডেলিভারি চার্জের ওপরে যোগ হয়।",
+      "enterCredentials": "{{provider}} ক্রেডেনশিয়াল লিখুন"
     },
     "paymentSettings": {
       "title": "পেমেন্ট সেটিংস",
@@ -1306,8 +1639,124 @@
         "credentialsSaveFirst": "এই পেমেন্ট পদ্ধতি সক্রিয় করার আগে আগে ক্রেডেনশিয়াল সংরক্ষণ করুন",
         "toggleFailed": "পেমেন্ট পদ্ধতি টগল করতে ব্যর্থ",
         "shopNotFound": "শপ পাওয়া যায়নি। অনুগ্রহ করে পেজ রিফ্রেশ করুন।",
-        "saveSettingsFailed": "পেমেন্ট সেটিংস সংরক্ষণ করতে ব্যর্থ"
+        "saveSettingsFailed": "পেমেন্ট সেটিংস সংরক্ষণ করতে ব্যর্থ",
+        "updateDefaultFailed": "ডিফল্ট আপডেট করা যায়নি",
+        "contactRequired": "এই পেমেন্ট পদ্ধতি সেট আপ করতে আমাদের সাথে যোগাযোগ করুন।",
+        "phoneRequired": "MFS ফোন নম্বর প্রয়োজন",
+        "merchantCredentialsRequired": "মার্চেন্ট API ক্রেডেনশিয়াল (App Key ও App Secret) প্রয়োজন"
+      },
+      "setDefaultSuccess": "{{name}} ডিফল্ট পেমেন্ট পদ্ধতি হিসেবে সেট হয়েছে",
+      "savedSuccess": "{{name}} ক্রেডেনশিয়াল যাচাই ও সেভ হয়েছে! এখন এই পেমেন্ট পদ্ধতি চালু করতে টগল ব্যবহার করুন।",
+      "disconnectSuccess": "{{name}} সফলভাবে সংযোগ বিচ্ছিন্ন হয়েছে!",
+      "activatedSuccess": "{{name}} পেমেন্টের জন্য চালু হয়েছে!",
+      "deactivatedSuccess": "{{name}} পেমেন্টের জন্য বন্ধ হয়েছে!",
+      "settingsSavedSuccess": "পেমেন্ট সেটিংস সফলভাবে সেভ হয়েছে!",
+      "defaultBadge": "ডিফল্ট",
+      "setDefault": "ডিফল্ট সেট করুন",
+      "setDefaultTitle": "ডিফল্ট পেমেন্ট পদ্ধতি হিসেবে সেট করুন",
+      "contactUs": "যোগাযোগ করুন",
+      "saveConfigFirst": "প্রথমে কনফিগারেশন সেভ করুন",
+      "toggleActivateTitle": "চালু/বন্ধ করতে ক্লিক করুন",
+      "paymentMode": "পেমেন্ট মোড",
+      "modeSelf": "Self MFS (পার্সোনাল)",
+      "modeMerchant": "Merchant API",
+      "modeSelfHint": "গ্রাহক স্ক্রিনশট পাঠায় → AI OCR দিয়ে যাচাই করে → আপনি অনুমোদন/বাতিল করেন",
+      "modeMerchantHint": "অফিসিয়াল মার্চেন্ট API দিয়ে স্বয়ংক্রিয় চেকআউট (বিজনেস অ্যাকাউন্ট প্রয়োজন)",
+      "mfsPhoneNumber": "{{name}} ফোন নম্বর",
+      "appKey": "App Key",
+      "appKeyPlaceholder": "Merchant App Key",
+      "appSecret": "App Secret",
+      "appSecretPlaceholder": "Merchant App Secret",
+      "merchantUsernamePlaceholder": "মার্চেন্ট ইউজারনেম",
+      "merchantPasswordPlaceholder": "মার্চেন্ট পাসওয়ার্ড",
+      "saveGateway": "{{name}} সেভ করুন",
+      "contactUsTitle": "ইন্টিগ্রেশনের জন্য যোগাযোগ করুন",
+      "contactUsMessage": "এই পেমেন্ট মেথডটি এন্টারপ্রাইজ ইন্টিগ্রেশন হিসেবে পাওয়া যায়। আপনার দোকানের জন্য {{gatewayName}} সেটআপ করতে আমাদের সাপোর্ট টিমের সাথে যোগাযোগ করুন।"
+    },
+    "hub": {
+      "title": "সেটিংস",
+      "subtitle": "দোকানের কনফিগারেশন ম্যানেজ করুন",
+      "businessInfo": {
+        "name": "ব্যবসার তথ্য",
+        "desc": "নাম, ঠিকানা, লোগো ও অপারেটিং বিবরণ"
+      },
+      "chatSettings": {
+        "name": "চ্যাট সেটিংস",
+        "desc": "AI উত্তরের আচরণ ও গ্রিটিং কাস্টমাইজ করুন"
+      },
+      "deliverySettings": {
+        "name": "ডেলিভারি সেটিংস",
+        "desc": "কুরিয়ার, ডেলিভারি চার্জ ও জোন কনফিগার করুন"
+      },
+      "paymentSettings": {
+        "name": "পেমেন্ট সেটিংস",
+        "desc": "পেমেন্ট গেটওয়ে ও অগ্রিম পেমেন্ট নিয়ম"
+      },
+      "subscription": {
+        "name": "সাবস্ক্রিপশন",
+        "desc": "প্ল্যান, ব্যবহার ও ইনভয়েস ম্যানেজ করুন"
       }
+    },
+    "aiSettings": {
+      "title": "AI আচরণ সেটিংস",
+      "subtitle": "সব সংযুক্ত চ্যানেলে AI চ্যাটবট কিভাবে কাজ করবে তা নিয়ন্ত্রণ করুন।",
+      "saveSuccess": "AI সেটিংস সেভ হয়েছে।",
+      "saveError": "AI সেটিংস সেভ করা যায়নি।",
+      "saveButton": "AI সেটিংস সেভ করুন",
+      "automationModeLabel": "বট কিভাবে কাজ করবে?",
+      "mode": {
+        "autoTitle": "🤖 সম্পূর্ণ অটো",
+        "autoDesc": "বট নিজেই রিপ্লাই পাঠাবে",
+        "draftTitle": "👁️ দেখে পাঠান (Draft)",
+        "draftDesc": "পাঠানোর আগে আপনাকে দেখাবে",
+        "manualTitle": "✋ আমিই পাঠাব",
+        "manualDesc": "বট নিজে থেকে কিছু পাঠাবে না"
+      },
+      "languageLabel": "বট কিভাবে কথা বলবে?",
+      "language": {
+        "mixed": "বন্ধুত্বপূর্ণ বাংলিশ (ডিফল্ট)",
+        "bn": "সাধারণ বাংলা",
+        "en": "ইংরেজি"
+      },
+      "confidenceLabel": "বট কতটা নিশ্চিত হলে নিজে উত্তর পাঠাবে?",
+      "confidenceHint": "আরও সতর্ক ◀━━━●━━━▶ আরও স্বাধীন",
+      "confidenceCautious": "সতর্ক",
+      "confidenceBalanced": "মাঝামাঝি",
+      "confidenceIndependent": "স্বাধীন",
+      "maxAutoOrderLabel": "সর্বোচ্চ অটো-অর্ডার মূল্য (৳)",
+      "maxAutoOrderHint": "এই পরিমাণের বেশি অর্ডারের জন্য ম্যানুয়াল অনুমোদন লাগবে।",
+      "autoReplyEnabled": "অটো-রিপ্লাই চালু",
+      "askEmail": "গ্রাহকের ইমেইল জিজ্ঞাসা করুন",
+      "greetingLabel": "গ্রিটিং মেসেজ",
+      "greetingHint": "(নতুন কথোপকথনের শুরুতে)",
+      "greetingPlaceholder": "যেমন: স্বাগতম! কীভাবে সাহায্য করতে পারি?",
+      "disclosurePrefix": "সবসময় দেখানো হয় (Meta নিয়ম):",
+      "disclosureText": "আপনি [আপনার দোকান]-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।",
+      "disclosureSuffix": "— গ্রাহককে স্পষ্টভাবে জানানো হয় যে একটি স্বয়ংক্রিয় সিস্টেম উত্তর দিচ্ছে। এটি বন্ধ করা যায় না; এর পরে আপনার নিচের লেখাটি যুক্ত হবে।",
+      "closingLabel": "ক্লোজিং মেসেজ",
+      "closingHint": "(অর্ডার নিশ্চিত হলে)",
+      "closingPlaceholder": "যেমন: কেনাকাটার জন্য ধন্যবাদ!",
+      "closingSocialNote": "আপনার সোশ্যাল মিডিয়া লিংক (ব্যবসার তথ্য পেজে যোগ করা) স্বয়ংক্রিয়ভাবে এর নিচে যুক্ত হবে।",
+      "toggleOn": "চালু",
+      "toggleOff": "বন্ধ",
+      "requiredFieldsLabel": "প্রয়োজনীয় অর্ডার ফিল্ড",
+      "requiredFieldsHint": "অর্ডার নিশ্চিত করার আগে AI এই তথ্যগুলো জিজ্ঞাসা করবে।",
+      "fields": {
+        "customer_name": "গ্রাহকের নাম",
+        "mobile_number": "মোবাইল নম্বর",
+        "delivery_address": "ডেলিভারি ঠিকানা",
+        "payment_method": "পেমেন্ট পদ্ধতি",
+        "email_address": "ইমেইল ঠিকানা",
+        "special_instructions": "বিশেষ নির্দেশনা"
+      },
+      "handoffTitle": "হিউম্যান হ্যান্ডঅফ সেটিংস",
+      "notificationChannel": "নোটিফিকেশন চ্যানেল",
+      "notifInApp": "অ্যাপের ভেতরে নোটিফিকেশন",
+      "notifEmail": "ইমেইল",
+      "notifSms": "SMS",
+      "cooldownLabel": "কুলডাউন (মিনিট)",
+      "triggerKeywordsLabel": "ট্রিগার কীওয়ার্ড",
+      "triggerKeywordsPlaceholder": "যেমন: complain, refund"
     }
   },
   "subscription": {
@@ -1376,7 +1825,114 @@
       "action": "কার্যক্রম"
     },
     "paid": "পরিশোধিত",
-    "pending": "অপেক্ষমান"
+    "pending": "অপেক্ষমান",
+    "toastThreshold": "আপনি মাসিক conversation limit-এর {{threshold}}% ব্যবহার করেছেন ({{used}}/{{limit}})।",
+    "toastUpgradeHint": "Upgrade করুন বা extra pack কিনুন।",
+    "paymentCancelled": "Payment বাতিল হয়েছে বা সম্পন্ন হয়নি। আবার চেষ্টা করুন।",
+    "topupPaymentSuccess": "Payment সফল হয়েছে! আপনার balance-এ {{count}} conversation যোগ হয়েছে।",
+    "invoicePaymentSuccessActive": "Payment সফল হয়েছে! আপনার subscription চালু আছে এবং AI assistant চলছে।",
+    "invoicePaymentSuccess": "Payment সফল হয়েছে! আপনার invoice pay করা হয়েছে।",
+    "paymentVerifyFailed": "Payment যাচাই ব্যর্থ হয়েছে। অনুগ্রহ করে support-এ যোগাযোগ করুন।",
+    "loadFailed": "Subscription data লোড করা যায়নি",
+    "invoicesLoadFailed": "Invoice লোড করা যায়নি",
+    "planUpdateSuccess": "Subscription plan সফলভাবে আপডেট হয়েছে",
+    "planUpdateFailed": "Plan আপডেট করা যায়নি",
+    "bkashStartFailed": "bKash payment শুরু করা যায়নি",
+    "trialEndsUrgent": "⚠️ Trial আর {{count}} দিনে শেষ হবে!",
+    "trialEndsUrgent_other": "⚠️ Trial আর {{count}} দিনে শেষ হবে!",
+    "trialRemaining": "Trial: আর {{count}} দিন বাকি",
+    "trialRemaining_other": "Trial: আর {{count}} দিন বাকি",
+    "trialUrgentMsg": "আপনার conversation ও data ধরে রাখতে এখনই upgrade করুন।",
+    "trialMsg": "Easy Moderator ভালো লাগছে? Trial শেষ হওয়ার আগে একটি plan বেছে নিন।",
+    "viewPlans": "Plan দেখুন",
+    "statusTrial": "Trial",
+    "statusPaymentDue": "Payment বাকি",
+    "statusTrialEnded": "Trial শেষ",
+    "statusAiPaused": "AI বন্ধ",
+    "statusCancelled": "বাতিল",
+    "invoiceDueWarning": "আপনার মাসিক invoice বাকি আছে। ৩ দিনের মধ্যে pay না করলে AI assistant বন্ধ হয়ে যাবে।",
+    "aiPausedNote": "AI assistant বন্ধ আছে। মাসিক subscription pay করলে আবার চালু হবে।",
+    "payActivateBkash": "bKash দিয়ে ৳{{price}} Pay করুন",
+    "popular": "জনপ্রিয়",
+    "perMonthShort": "/মাস",
+    "unlimited": "আনলিমিটেড",
+    "perMonthCount": "{{count}}/মাস",
+    "applyNow": "আবেদন করুন →",
+    "slashUnlimited": "/ আনলিমিটেড",
+    "slashPerMonth": "/ {{limit}}/মাস",
+    "percentUsed": "{{percent}}% ব্যবহার হয়েছে",
+    "forecastReached": "আপনি limit এ পৌঁছে গেছেন!",
+    "forecastDays": "এই হারে চললে {{count}} দিনের মধ্যে limit শেষ হবে।",
+    "forecastDays_other": "এই হারে চললে {{count}} দিনের মধ্যে limit শেষ হবে।",
+    "buyExtraPack": "Extra pack কিনুন",
+    "conversationsCount": "{{count}} conversations",
+    "plusConversations": "+{{count}} conversations",
+    "addedToMonthlyLimit": "মাসিক limit-এ যোগ হবে",
+    "imageUnderstandingTitle": "Image Understanding",
+    "imageUnderstandingDesc": "AI পণ্যের ছবি পড়ে ক্রেতার প্রশ্নের উত্তর দেয়",
+    "advancedAiTitle": "Advanced AI",
+    "advancedAiDesc": "আরও সঠিক উত্তর + প্রতি মিনিটে ৩০ req rate limit",
+    "toggleAnnualBilling": "বার্ষিক billing চালু/বন্ধ করুন",
+    "payInvoiceTitle": "bKash দিয়ে এই invoice pay করুন",
+    "viewInvoiceTitle": "Invoice দেখুন / প্রিন্ট করুন",
+    "downloadInvoiceTitle": "Invoice ডাউনলোড করুন (PDF হিসেবে প্রিন্ট)",
+    "payWithBkash": "bKash দিয়ে Pay করুন",
+    "topupBkashNote": "Payment সফল হলে conversations সাথে সাথে balance-এ যোগ হবে।",
+    "percentUsedShort": "{{percent}}% ব্যবহার হয়েছে",
+    "limitExceeded": "সীমা পেরিয়েছে",
+    "warning": "সতর্কতা",
+    "toastLimitFull": "Conversation limit পূর্ণ হয়েছে ({{used}}/{{limit}})। Upgrade করুন।",
+    "toastLimit80": "Conversation limit-এর ৮০% ব্যবহার হয়েছে ({{used}}/{{limit}})।",
+    "usageTitle": "এই মাসের ব্যবহার",
+    "conversations": "Conversations",
+    "orders": "Orders",
+    "products": "Products",
+    "buyConvPack": "Conversation Pack কিনুন",
+    "convPackHint": "Extra conversation এর জন্য pack কিনুন। Invoice তৈরি হবে, payment দিলে activate হবে।",
+    "conversationsLabel": "conversations",
+    "testMode": "Test mode",
+    "testModeNote": "Test mode: কোনো real payment হবে না।",
+    "invoiceCreateFailed": "Invoice তৈরি করা যায়নি",
+    "invoiceCreatedMsg": "Invoice তৈরি হয়েছে ({{number}})। অনুগ্রহ করে bKash দিয়ে {{price}} BDT pay করুন এবং pack activate করতে support@easymod.ai-এ যোগাযোগ করুন।",
+    "yearly": "বার্ষিক",
+    "free": "ফ্রি",
+    "perOrder": "/অর্ডার",
+    "perMonth": "/মাস",
+    "perMonthBilledYearly": "/মাস (বার্ষিক বিল)",
+    "confirmPlan": "Plan পরিবর্তন করুন",
+    "upgradeToUnlock": "আনলক করতে upgrade করুন",
+    "featureAvailablePrefix": "ফিচারটি পাওয়া যাবে",
+    "featureAvailableSuffix": "plan ও তার উপরে।",
+    "planNameLabel": "{{plan}} Plan",
+    "pricePerMonth": "৳{{price}}/মাস",
+    "notNow": "এখন নয়",
+    "upgradeNow": "এখনই upgrade করুন",
+    "upgradeUnlockTitle": "{{feature}} আনলক করতে {{plan}}-এ upgrade করুন",
+    "upgradeToPlan": "{{plan}}-এ upgrade করুন",
+    "plans": {
+      "growth": {
+        "name": "Growth",
+        "description": "আপনার সম্পূর্ণ AI সেলস টিম — একটাই সহজ দাম। ১৪ দিন ফ্রি ট্রায়াল, কার্ড লাগবে না।",
+        "highlights": {
+          "0": "সব ফিচার আনলিমিটেড — কোনো লক নেই",
+          "1": "Facebook AI Inbox",
+          "2": "Advanced RTO Shield + Analytics",
+          "3": "Broadcast + Campaign + ভয়েস/ছবি বোঝে",
+          "4": "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই"
+        }
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "মাসে ৩০০+ অর্ডার আছে? আমাদের পার্টনার হোন।",
+        "highlights": {
+          "0": "মাত্র ৳10–15/ডেলিভার্ড অর্ডার",
+          "1": "কোনো মাসিক ফি নেই",
+          "2": "Unlimited কথোপকথন",
+          "3": "সব চ্যানেল আনলিমিটেড",
+          "4": "ডেডিকেটেড সাপোর্ট ম্যানেজার"
+        }
+      }
+    }
   },
   "bd_lite": {
     "todayQueue": "আজকের কাজ",
@@ -1436,5 +1992,241 @@
     "installSubtitle": "দ্রুত, অ্যাপের মতো অ্যাক্সেসের জন্য হোম স্ক্রিনে যোগ করুন।",
     "install": "ইনস্টল",
     "dismiss": "বন্ধ করুন"
+  },
+  "oauthCallback": {
+    "connecting": "সংযুক্ত হচ্ছে...",
+    "connectingToAccount": "আপনার অ্যাকাউন্টে সংযুক্ত হচ্ছে"
+  },
+  "onboarding": {
+    "quickSetup": "Quick Setup",
+    "skipSetup": "Setup skip করুন",
+    "closeWizard": "উইজার্ড বন্ধ করুন",
+    "stepCounter": "{{total}}-এর মধ্যে {{current}}টি ধাপ",
+    "tipLabel": "টিপস:",
+    "back": "পেছনে যান",
+    "seedingFaqs": "যোগ করা হচ্ছে…",
+    "seedStarterFaqs": "✨ Starter FAQ যোগ করুন (১ ট্যাপে)",
+    "toast": {
+      "faqSkipped": "আপনার আগে থেকেই FAQ আছে — Starter FAQ যোগ করা হয়নি।",
+      "faqSeeded": "{{count}}টি Starter FAQ যোগ হয়েছে! AI এখন common প্রশ্নের উত্তর দিতে পারবে।",
+      "faqError": "FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।"
+    },
+    "steps": {
+      "facebook": {
+        "title": "Facebook Page Connect করুন",
+        "subtitle": "Step 1 of 5 — Channel",
+        "description": "আপনার Facebook Business Page connect করুন। এটা না করলে AI reply কাজ করবে না।",
+        "tip": "Facebook Page > Settings > Advanced Messaging > Handover Protocol এ Easy Moderator add করুন।",
+        "actionLabel": "Facebook Connect করুন →",
+        "skipLabel": "পরে করব",
+        "completedLabel": "Facebook"
+      },
+      "products": {
+        "title": "৩-৫টি Product যোগ করুন",
+        "subtitle": "Step 2 of 5 — Products",
+        "description": "AI কে আপনার product সম্পর্কে জানতে হবে। Name, price, এবং description দিন।",
+        "tip": "Product এ ছবি যোগ করলে AI image থেকেও product চিনতে পারবে।",
+        "actionLabel": "Product যোগ করুন →",
+        "skipLabel": "পরে করব",
+        "completedLabel": "Products"
+      },
+      "faqs": {
+        "title": "৫টি Common FAQ দিন",
+        "subtitle": "Step 3 of 5 — Knowledge Base",
+        "description": "Delivery charge, payment method, return policy — এই ধরনের common প্রশ্নের উত্তর দিন। AI এগুলো শিখে নেবে।",
+        "tip": "যত বেশি FAQ দেবেন, AI তত accurate হবে।",
+        "actionLabel": "FAQ যোগ করুন →",
+        "skipLabel": "পরে করব",
+        "completedLabel": "FAQs"
+      },
+      "aiMode": {
+        "title": "AI Mode: DRAFT রাখুন",
+        "subtitle": "Step 4 of 5 — AI Settings",
+        "description": "DRAFT mode এ AI reply লিখবে, কিন্তু আপনি approve করার পরেই send হবে। নতুন seller দের জন্য এটাই সবচেয়ে safe।",
+        "tip": "৭-১৪ দিন DRAFT এ রাখুন। AI ভালো reply দিলে তখন AUTO করতে পারবেন।",
+        "actionLabel": "AI Settings দেখুন →",
+        "skipLabel": "DRAFT রাখব (Recommended)",
+        "completedLabel": "AI Mode"
+      },
+      "preview": {
+        "title": "সব ready! Inbox দেখুন",
+        "subtitle": "Step 5 of 5 — You're set!",
+        "description": "আপনার setup complete। এখন customer message করলে AI DRAFT reply তৈরি করবে — আপনি approve করলেই send হবে।",
+        "tip": "Inbox এ গিয়ে দেখুন AI কেমন reply করছে। প্রথম দিকে সব approve করার দরকার নেই — just শিখুন।",
+        "actionLabel": "Inbox দেখুন →",
+        "completedLabel": "Preview"
+      }
+    }
+  },
+  "pricing": {
+    "mostPopular": "সবচেয়ে জনপ্রিয়",
+    "perMonth": "/মাস",
+    "yearlyNote": "বা ৳{{price}}/বছর · ২ মাস সাশ্রয়",
+    "partnerApplyNote": "আবেদন করুন · যোগ্যতা যাচাই পর সক্রিয় হবে",
+    "partnerEligibleBadge": "৩০০+ অর্ডার/মাস যোগ্য",
+    "applyNow": "আবেদন করুন",
+    "startFreeTrial": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন",
+    "limits": {
+      "unlimitedConversations": "আনলিমিটেড কথোপকথন",
+      "conversationsFairUse": "AI কথোপকথন — fair use",
+      "unlimitedOrders": "আনলিমিটেড অর্ডার",
+      "ordersPerMonth": "{{count}}টি অর্ডার/মাস",
+      "unlimitedProducts": "আনলিমিটেড প্রোডাক্ট",
+      "products": "{{count}}টি প্রোডাক্ট"
+    },
+    "features": {
+      "imageUnderstanding": "Image Understanding",
+      "advancedAi": "Advanced AI",
+      "prioritySupport": "Priority Support",
+      "customBranding": "Custom Branding (White-label)",
+      "facebookInbox": "Facebook AI Inbox",
+      "extraConversationPack": "Extra conversation pack — যখন দরকার, টপ-আপ করুন"
+    },
+    "hero": {
+      "heading": "মসৃণ ও সৎ মূল্য নির্ধারণ",
+      "subheading": "আপনার ব্যবসার আকার অনুযায়ী পরিকল্পনা বেছে নিন। কোনো লুকানো ফি নেই।"
+    },
+    "partnerTeaser": {
+      "question": "মাসে ৩০০+ অর্ডার আছে?",
+      "link": "Partner Plan সম্পর্কে জানুন →"
+    },
+    "included": {
+      "heading": "Growth-এ সবকিছু আছে",
+      "subheading": "কোনো ফিচার লক নেই — একটাই দাম, ৳৯৯৯/মাস।"
+    },
+    "faq": {
+      "heading": "সাধারণ জিজ্ঞাসা",
+      "q1": "কি বিনামূল্যে ট্রায়াল আছে?",
+      "a1": "হ্যাঁ — নতুন শপ ১৪ দিনের ফ্রি ট্রায়াল পায়, কোনো কার্ড লাগে না। ট্রায়াল চলাকালীন Growth-এর সব ফিচার চালু থাকে।",
+      "q2": "ট্রায়াল শেষ হলে কী হবে?",
+      "a2": "ট্রায়াল শেষে ৳৯৯৯/মাস-এ আপগ্রেড করলে AI চালু থাকবে। না করলে AI অটো-রিপ্লাই বিরতি নেবে, তবে আপনি নিজে ইনবক্স থেকে রিপ্লাই দিতে পারবেন — কোনো ডেটা হারাবে না।",
+      "q3": "মাসে কতগুলো AI কথোপকথন পাব?",
+      "a3": "একটি সাধারণ ক্রমবর্ধমান শপের জন্য যথেষ্ট পরিমাণ (fair-use)। বেশি দরকার হলে Subscription পেজ থেকে যেকোনো সময় conversation top-up কিনে নিতে পারবেন।",
+      "q4": "Conversation limit শেষ হলে কী হবে?",
+      "a4": "একটি ফ্রি বাফার দেওয়া হয়; এরপর AI auto-reply বিরতি নেবে। Subscription পেজ থেকে top-up pack কিনে সাথে সাথে আবার চালু করতে পারবেন।",
+      "q5": "Partner প্লানে কীভাবে আবেদন করব?",
+      "a5": "Pricing পেজের নিচে 'Partner Plan সম্পর্কে জানুন'-এ আবেদন করুন। আমরা ৩০০+ অর্ডার/মাস যাচাই করে অ্যাক্টিভ করি — প্রতি ডেলিভার্ড অর্ডারে চার্জ, কোনো মাসিক ফি নেই।"
+    },
+    "cta": {
+      "heading": "আপনার শপ অটোমেট করতে প্রস্তুত?",
+      "subheading": "একটি প্ল্যান বেছে নিন এবং আজই শুরু করুন। কোনো লুকানো ফি নেই।",
+      "button": "এখনই শুরু করুন"
+    },
+    "partnerModal": {
+      "title": "Partner হতে আবেদন করুন",
+      "subtitle": "মাসে ৩০০+ অর্ডার আছে? প্রতি ডেলিভার্ড অর্ডারে চার্জ — কোনো মাসিক ফি নেই।",
+      "businessNameLabel": "Business Name",
+      "businessNamePlaceholder": "আপনার শপের নাম",
+      "phoneLabel": "Phone Number",
+      "pageLinkLabel": "Facebook Page Link",
+      "submit": "আবেদন পাঠান",
+      "submitting": "পাঠানো হচ্ছে...",
+      "successTitle": "আবেদন পাঠানো হয়েছে!",
+      "successMessage": "আমরা আপনার আবেদন পর্যালোচনা করব এবং শীঘ্রই যোগাযোগ করব।",
+      "successMessageEn": "আপনার আবেদন পাওয়া গেছে। আমরা শীঘ্রই যোগাযোগ করব।",
+      "ok": "ঠিক আছে",
+      "errors": {
+        "businessNameRequired": "ব্যবসার নাম আবশ্যক",
+        "phoneRequired": "ফোন নম্বর আবশ্যক",
+        "pageLinkRequired": "পেজ লিঙ্ক আবশ্যক"
+      }
+    }
+  },
+  "admin": {
+    "shopDetail": {
+      "shopFallback": "শপ",
+      "actionSuccess": "{{label}} ✓",
+      "actionFailed": "{{label}} ব্যর্থ: {{error}}",
+      "superAdminRequired": "SUPER_ADMIN প্রয়োজন",
+      "phase2": "ফেজ ২",
+      "tabs": {
+        "overview": "ওভারভিউ",
+        "channels": "চ্যানেল",
+        "billing": "বিলিং",
+        "aiInbox": "AI ও ইনবক্স",
+        "ordersCourier": "অর্ডার ও কুরিয়ার"
+      },
+      "overview": {
+        "owner": "মালিক",
+        "plan": "প্ল্যান",
+        "status": "স্ট্যাটাস",
+        "trialEnds": "ট্রায়াল শেষ",
+        "conversations": "কথোপকথন",
+        "onboarding": "অনবোর্ডিং",
+        "complete": "সম্পন্ন",
+        "incomplete": "অসম্পূর্ণ"
+      },
+      "channels": {
+        "emergencyTitle": "এই শপের সব AI অটোমেশন বন্ধ করুন",
+        "emergencyConfirm": "জরুরি: এই শপের সব AI অটোমেশন বন্ধ করবেন? ইনবাউন্ড মেসেজ আসতে থাকবে; শুধু স্বয়ংক্রিয় রিপ্লাই বন্ধ হবে।",
+        "emergencyAction": "জরুরি AI বন্ধ",
+        "emergencyButton": "জরুরি: AI বন্ধ করুন",
+        "superAdminNote": "চ্যানেল অ্যাকশনের জন্য SUPER_ADMIN প্রয়োজন।",
+        "colChannel": "চ্যানেল",
+        "colPlatform": "প্ল্যাটফর্ম",
+        "colToken": "টোকেন",
+        "colWebhook": "ওয়েবহুক",
+        "colError": "ত্রুটি",
+        "verified": "যাচাইকৃত",
+        "markReconnectTitle": "এই চ্যানেলটি পুনরায় সংযোগ প্রয়োজন হিসেবে চিহ্নিত করুন",
+        "markReconnectAction": "পুনঃসংযোগ চিহ্নিত করুন",
+        "markReconnect": "পুনঃসংযোগ চিহ্নিত করুন",
+        "noChannels": "কোনো চ্যানেল নেই"
+      },
+      "billing": {
+        "plan": "প্ল্যান",
+        "status": "স্ট্যাটাস",
+        "conversations": "কথোপকথন",
+        "topupBalance": "টপ-আপ ব্যালেন্স",
+        "nextBilling": "পরবর্তী বিলিং",
+        "trialEnds": "ট্রায়াল শেষ",
+        "accruedOverage": "জমা হওয়া অতিরিক্ত ব্যবহার",
+        "overageValue": "{{count}} কথোপকথন · ৳{{charge}}",
+        "outstanding": "বকেয়া",
+        "superAdminNote": "বিলিং অ্যাকশনের জন্য SUPER_ADMIN প্রয়োজন।",
+        "extendTrial": "ট্রায়াল ৭ দিন বাড়ান",
+        "addCredits": "৫০ ক্রেডিট যোগ করুন",
+        "reactivate": "পুনরায় সক্রিয় করুন",
+        "reactivateAiOn": "পুনরায় সক্রিয় করুন (AI চালু)",
+        "suspend": "স্থগিত করুন",
+        "suspendAiOff": "স্থগিত করুন (AI বন্ধ)",
+        "invoices": "ইনভয়েস",
+        "invInvoice": "ইনভয়েস",
+        "invType": "ধরন",
+        "invAmount": "পরিমাণ",
+        "invStatus": "স্ট্যাটাস",
+        "invDue": "বকেয়া",
+        "invPaid": "পরিশোধিত",
+        "noInvoices": "এখনো কোনো ইনভয়েস নেই।"
+      }
+    }
+  },
+  "errors": {
+    "meta": {
+      "tokenExpired": "পেজ পুনরায় সংযুক্ত করুন (সিকিউরিটি টোকেন মেয়াদ শেষ)",
+      "needsMessageAccess": "Easy Moderator-এর মেসেজ অ্যাক্সেস দরকার — পুনরায় অনুমোদন করুন",
+      "sessionInvalid": "সেশন টোকেন অকার্যকর। Facebook পেজ পুনরায় সংযুক্ত করুন।",
+      "pageNotFound": "পেজটি খুঁজে পাওয়া যায়নি। Business Manager পরিবর্তন করেছেন?",
+      "tooManyRequests": "Meta-তে অনেক বেশি request হয়েছে। কিছুক্ষণ অপেক্ষা করুন।",
+      "dailyLimitReached": "দৈনিক মেসেজ সীমা শেষ। মধ্যরাতের পরে আবার চেষ্টা করুন।",
+      "accessRevoked": "পেজ অ্যাক্সেস বাতিল হয়েছে। পুনরায় সংযুক্ত করুন।",
+      "channelDisconnected": "চ্যানেল বিচ্ছিন্ন হয়েছে। Reconnect বাটন ব্যবহার করুন।",
+      "webhookFailed": "Webhook যাচাই ব্যর্থ হয়েছে। Meta App Dashboard-এ সেটিংস চেক করুন।",
+      "fallback": "কিছু একটা ভুল হয়েছে। পুনরায় সংযুক্ত করুন অথবা Support-এ যোগাযোগ করুন।"
+    }
+  },
+  "policy": {
+    "deny": {
+      "customerFirst24h": "কাস্টমার আগে মেসেজ করতে হবে — ২৪ ঘন্টার মধ্যে (Meta নীতি)",
+      "windowExpired": "মেসেজিং উইন্ডো শেষ। Message tag ব্যবহার করুন (যেমন: Post-Purchase Update)।",
+      "dailyLimitReached": "দৈনিক মেসেজ সীমা শেষ। মধ্যরাতের পরে আবার চেষ্টা করুন।",
+      "optedOut": "কাস্টমার মেসেজ বন্ধ করেছেন। তাদের সিদ্ধান্ত মানতে হবে।",
+      "noConsent": "কাস্টমারের সম্মতি পাওয়া যায়নি। তাদের আগে মেসেজ করতে হবে।",
+      "blockedByPolicy": "Meta নীতি অনুযায়ী মেসেজ ব্লক হয়েছে।",
+      "connectionExpired": "চ্যানেল সংযোগ মেয়াদ শেষ। Facebook page পুনরায় সংযুক্ত করুন।",
+      "missingPermission": "মেসেজ পাঠানোর অনুমতি নেই। Easy Moderator পুনরায় অনুমোদন করুন।",
+      "pageBlocked": "কাস্টমার হয়তো পেজ ব্লক করেছেন। তাদের মেসেজ পাঠানো সম্ভব নয়।",
+      "fallback": "মেসেজ পাঠানো যায়নি। সংযোগ চেক করুন অথবা Support এ যোগাযোগ করুন।"
+    }
   }
 }

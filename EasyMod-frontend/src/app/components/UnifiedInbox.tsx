@@ -21,17 +21,21 @@ import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const FALLBACK_TEMPLATES: ResponseTemplate[] = [
-  { id: "fallback-1", name: "Order Confirmed", content: "আপনার অর্ডার confirm হয়েছে ✅ Delivery: 2-3 দিন" },
-  { id: "fallback-2", name: "Need Address", content: "Stock আছে। Address & mobile নম্বর দিন please 🙏" },
-  { id: "fallback-3", name: "Advance Payment", content: "Advance ৳[Amount] bKash করুন: 01XXXXXXXXX" },
-  { id: "fallback-4", name: "Courier Update", content: "আপনার পার্সেল courier এ দেওয়া হয়েছে ✈️" },
-  { id: "fallback-5", name: "Thank You", content: "ধন্যবাদ আপনার order এর জন্য! 😊" },
-  { id: "fallback-6", name: "Out of Stock", content: "এই product টা এখন stock এ নেই। 2-3 দিনের মধ্যে available হবে।" },
-  { id: "fallback-7", name: "Delivery Charge", content: "Dhaka তে delivery charge ৳60, Dhaka এর বাইরে ৳120।" },
-  { id: "fallback-8", name: "Return Window", content: "Return/exchange এর জন্য 3 দিনের মধ্যে জানাবেন please।" },
-  { id: "fallback-9", name: "Cash on Delivery", content: "COD available আছে। Delivery তে টাকা দিতে পারবেন।" },
-  { id: "fallback-10", name: "Dispatch Today", content: "আপনার product টি ready। আজকেই dispatch করব। 🚚" },
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+
+// Quick-reply fallback templates. Labels (`name`) are translatable; `content`
+// is intentionally informal Banglish reply text shown to the agent as-is.
+const buildFallbackTemplates = (t: TFunc): ResponseTemplate[] => [
+  { id: "fallback-1", name: t("inbox.templates.orderConfirmed"), content: "আপনার অর্ডার confirm হয়েছে ✅ Delivery: 2-3 দিন" },
+  { id: "fallback-2", name: t("inbox.templates.needAddress"), content: "Stock আছে। Address & mobile নম্বর দিন please 🙏" },
+  { id: "fallback-3", name: t("inbox.templates.advancePayment"), content: "Advance ৳[Amount] bKash করুন: 01XXXXXXXXX" },
+  { id: "fallback-4", name: t("inbox.templates.courierUpdate"), content: "আপনার পার্সেল courier এ দেওয়া হয়েছে ✈️" },
+  { id: "fallback-5", name: t("inbox.templates.thankYou"), content: "ধন্যবাদ আপনার order এর জন্য! 😊" },
+  { id: "fallback-6", name: t("inbox.templates.outOfStock"), content: "এই product টা এখন stock এ নেই। 2-3 দিনের মধ্যে available হবে।" },
+  { id: "fallback-7", name: t("inbox.templates.deliveryCharge"), content: "Dhaka তে delivery charge ৳60, Dhaka এর বাইরে ৳120।" },
+  { id: "fallback-8", name: t("inbox.templates.returnWindow"), content: "Return/exchange এর জন্য 3 দিনের মধ্যে জানাবেন please।" },
+  { id: "fallback-9", name: t("inbox.templates.cashOnDelivery"), content: "COD available আছে। Delivery তে টাকা দিতে পারবেন।" },
+  { id: "fallback-10", name: t("inbox.templates.dispatchToday"), content: "আপনার product টি ready। আজকেই dispatch করব। 🚚" },
 ];
 
 const META_CHANNELS = ["facebook", "messenger"];
@@ -69,7 +73,7 @@ export default function UnifiedInbox() {
   const { features: planFeatures } = useSubscriptionFeatures();
   const PAGE_SIZE = 30;
 
-  const quickReplyTemplates = templates.length > 0 ? templates : FALLBACK_TEMPLATES;
+  const quickReplyTemplates = templates.length > 0 ? templates : buildFallbackTemplates(t);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -217,12 +221,12 @@ export default function UnifiedInbox() {
     }, [selectedConversation?.id]),
 
     onDeliveryFailed: useCallback(({ reason }) => {
-      toast.warning(`Reply not delivered: ${reason}`, { duration: 6000 });
-    }, []),
+      toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
+    }, []), // eslint-disable-line react-hooks/exhaustive-deps
 
     onChannelError: useCallback(({ display_name, message: errMsg }) => {
-      toast.error(`Channel issue — ${display_name}: ${errMsg}`, { duration: 12000 });
-    }, []),
+      toast.error(t("inbox.channelIssue", { name: display_name, message: errMsg }), { duration: 12000 });
+    }, []), // eslint-disable-line react-hooks/exhaustive-deps
 
     onSSEOffline: useCallback(() => {
       setSseConnected(false);

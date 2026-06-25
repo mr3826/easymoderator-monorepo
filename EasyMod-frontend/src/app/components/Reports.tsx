@@ -191,7 +191,7 @@ export default function Reports() {
               <h3 className="text-2xl font-bold text-gray-900">
                 {(dashboardMetrics.metrics.ordersInPeriod ?? dashboardMetrics.metrics.ordersToday).toLocaleString()}
               </h3>
-              <p className="text-gray-600 text-sm mt-1">Orders (last {period}d)</p>
+              <p className="text-gray-600 text-sm mt-1">{t('reports.metrics.ordersInPeriod', { period })}</p>
             </div>
 
             {/* Conversion Rate */}
@@ -217,7 +217,7 @@ export default function Reports() {
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100 mb-8">
           <div className="flex items-center gap-2 mb-5">
             <Zap className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">AI Performance (today)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('reports.aiPerformance')}</h2>
           </div>
           {loading ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -231,10 +231,10 @@ export default function Reports() {
           ) : ai ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'Messages handled',  value: ai.total_messages.toLocaleString() },
-                { label: 'LLM calls',          value: ai.llm_calls.toLocaleString() },
-                { label: 'Cache hits',         value: ai.cache_hits.toLocaleString() },
-                { label: 'Est. AI cost',       value: `৳${Number(ai.cost_estimate).toFixed(2)}` },
+                { label: t('reports.ai.messagesHandled'), value: ai.total_messages.toLocaleString() },
+                { label: t('reports.ai.llmCalls'),         value: ai.llm_calls.toLocaleString() },
+                { label: t('reports.ai.cacheHits'),        value: ai.cache_hits.toLocaleString() },
+                { label: t('reports.ai.estCost'),          value: `৳${Number(ai.cost_estimate).toFixed(2)}` },
               ].map(({ label, value }) => (
                 <div key={label} className="bg-white rounded-lg p-4 border border-blue-100">
                   <p className="text-xl font-bold text-gray-900">{value}</p>
@@ -253,7 +253,7 @@ export default function Reports() {
             <Brain className="w-6 h-6 text-purple-600" />
             <div>
               <h2 className="text-lg font-semibold text-gray-900">{t('reports.knowledgePerformance')}</h2>
-              <p className="text-sm text-gray-500">Questions your AI couldn't answer.</p>
+              <p className="text-sm text-gray-500">{t('reports.knowledgeGapsSubtitle')}</p>
             </div>
           </div>
           {knowledgeGaps.length > 0 && (
@@ -262,7 +262,7 @@ export default function Reports() {
               className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-300 px-3 py-1.5 rounded-lg hover:bg-gray-50"
             >
               <Download className="w-3.5 h-3.5" />
-              Export CSV
+              {t('reports.exportCsv')}
             </button>
           )}
         </div>
@@ -275,17 +275,17 @@ export default function Reports() {
           </div>
         ) : knowledgeGaps.length === 0 ? (
           <div className="py-10 text-center">
-            <p className="text-gray-400 text-sm mb-3">No unanswered questions yet — your AI is handling everything!</p>
+            <p className="text-gray-400 text-sm mb-3">{t('reports.noKnowledgeGaps')}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Question</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Platform</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">Language</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('reports.gapColumns.question')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">{t('reports.gapColumns.platform')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-28">{t('reports.gapColumns.language')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">{t('reports.gapColumns.date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -334,7 +334,7 @@ export default function Reports() {
               onClick={() => navigate('/app/manage-shop/chat-settings')}
               className="inline-flex items-center gap-2 text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
             >
-              Connect your first channel →
+              {t('reports.connectFirstChannel')}
             </button>
           </div>
         ) : (

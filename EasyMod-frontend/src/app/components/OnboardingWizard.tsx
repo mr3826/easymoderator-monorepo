@@ -10,6 +10,7 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
   X, Facebook, Package, Brain, Bot, Eye,
@@ -59,56 +60,56 @@ const STEPS = [
     icon: Facebook,
     iconColor: "text-blue-600",
     iconBg: "bg-blue-50",
-    title: "Facebook Page Connect করুন",
-    subtitle: "Step 1 of 5 — Channel",
-    description:
-      "আপনার Facebook Business Page connect করুন। এটা না করলে AI reply কাজ করবে না।",
-    tip: "Facebook Page > Settings > Advanced Messaging > Handover Protocol এ Easy Moderator add করুন।",
+    titleKey: "onboarding.steps.facebook.title",
+    subtitleKey: "onboarding.steps.facebook.subtitle",
+    descriptionKey: "onboarding.steps.facebook.description",
+    tipKey: "onboarding.steps.facebook.tip",
     action: "channels",
-    actionLabel: "Facebook Connect করুন →",
-    skipLabel: "পরে করব",
+    actionLabelKey: "onboarding.steps.facebook.actionLabel",
+    skipLabelKey: "onboarding.steps.facebook.skipLabel",
+    completedLabelKey: "onboarding.steps.facebook.completedLabel",
   },
   {
     id: "products",
     icon: Package,
     iconColor: "text-purple-600",
     iconBg: "bg-purple-50",
-    title: "৩-৫টি Product যোগ করুন",
-    subtitle: "Step 2 of 5 — Products",
-    description:
-      "AI কে আপনার product সম্পর্কে জানতে হবে। Name, price, এবং description দিন।",
-    tip: "Product এ ছবি যোগ করলে AI image থেকেও product চিনতে পারবে।",
+    titleKey: "onboarding.steps.products.title",
+    subtitleKey: "onboarding.steps.products.subtitle",
+    descriptionKey: "onboarding.steps.products.description",
+    tipKey: "onboarding.steps.products.tip",
     action: "products/add",
-    actionLabel: "Product যোগ করুন →",
-    skipLabel: "পরে করব",
+    actionLabelKey: "onboarding.steps.products.actionLabel",
+    skipLabelKey: "onboarding.steps.products.skipLabel",
+    completedLabelKey: "onboarding.steps.products.completedLabel",
   },
   {
     id: "faqs",
     icon: Brain,
     iconColor: "text-amber-600",
     iconBg: "bg-amber-50",
-    title: "৫টি Common FAQ দিন",
-    subtitle: "Step 3 of 5 — Knowledge Base",
-    description:
-      "Delivery charge, payment method, return policy — এই ধরনের common প্রশ্নের উত্তর দিন। AI এগুলো শিখে নেবে।",
-    tip: "যত বেশি FAQ দেবেন, AI তত accurate হবে।",
+    titleKey: "onboarding.steps.faqs.title",
+    subtitleKey: "onboarding.steps.faqs.subtitle",
+    descriptionKey: "onboarding.steps.faqs.description",
+    tipKey: "onboarding.steps.faqs.tip",
     action: "knowledge",
-    actionLabel: "FAQ যোগ করুন →",
-    skipLabel: "পরে করব",
+    actionLabelKey: "onboarding.steps.faqs.actionLabel",
+    skipLabelKey: "onboarding.steps.faqs.skipLabel",
+    completedLabelKey: "onboarding.steps.faqs.completedLabel",
   },
   {
     id: "ai_mode",
     icon: Bot,
     iconColor: "text-green-600",
     iconBg: "bg-green-50",
-    title: "AI Mode: DRAFT রাখুন",
-    subtitle: "Step 4 of 5 — AI Settings",
-    description:
-      "DRAFT mode এ AI reply লিখবে, কিন্তু আপনি approve করার পরেই send হবে। নতুন seller দের জন্য এটাই সবচেয়ে safe।",
-    tip: "৭-১৪ দিন DRAFT এ রাখুন। AI ভালো reply দিলে তখন AUTO করতে পারবেন।",
+    titleKey: "onboarding.steps.aiMode.title",
+    subtitleKey: "onboarding.steps.aiMode.subtitle",
+    descriptionKey: "onboarding.steps.aiMode.description",
+    tipKey: "onboarding.steps.aiMode.tip",
     action: "manage-shop/chat-settings",
-    actionLabel: "AI Settings দেখুন →",
-    skipLabel: "DRAFT রাখব (Recommended)",
+    actionLabelKey: "onboarding.steps.aiMode.actionLabel",
+    skipLabelKey: "onboarding.steps.aiMode.skipLabel",
+    completedLabelKey: "onboarding.steps.aiMode.completedLabel",
     isRecommended: true,
   },
   {
@@ -116,18 +117,19 @@ const STEPS = [
     icon: Eye,
     iconColor: "text-indigo-600",
     iconBg: "bg-indigo-50",
-    title: "সব ready! Inbox দেখুন",
-    subtitle: "Step 5 of 5 — You're set!",
-    description:
-      "আপনার setup complete। এখন customer message করলে AI DRAFT reply তৈরি করবে — আপনি approve করলেই send হবে।",
-    tip: "Inbox এ গিয়ে দেখুন AI কেমন reply করছে। প্রথম দিকে সব approve করার দরকার নেই — just শিখুন।",
+    titleKey: "onboarding.steps.preview.title",
+    subtitleKey: "onboarding.steps.preview.subtitle",
+    descriptionKey: "onboarding.steps.preview.description",
+    tipKey: "onboarding.steps.preview.tip",
     action: "inbox",
-    actionLabel: "Inbox দেখুন →",
-    skipLabel: null,
+    actionLabelKey: "onboarding.steps.preview.actionLabel",
+    skipLabelKey: null,
+    completedLabelKey: "onboarding.steps.preview.completedLabel",
   },
 ];
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<number>(() => loadPersistedStep());
   const [completing, setCompleting] = useState(false);
   const [seedingFaqs, setSeedingFaqs] = useState(false);
@@ -142,13 +144,13 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       setSeedingFaqs(true);
       const result = await apiClient.seedStarterFaqs();
       if (result.skipped) {
-        toast.info("আপনার আগে থেকেই FAQ আছে — Starter FAQ যোগ করা হয়নি।");
+        toast.info(t("onboarding.toast.faqSkipped"));
       } else {
-        toast.success(`${result.seeded}টি Starter FAQ যোগ হয়েছে! AI এখন common প্রশ্নের উত্তর দিতে পারবে।`);
+        toast.success(t("onboarding.toast.faqSeeded", { count: result.seeded }));
       }
       setStep((s) => Math.min(s + 1, STEPS.length - 1));
     } catch (_) {
-      toast.error("FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
+      toast.error(t("onboarding.toast.faqError"));
     } finally {
       setSeedingFaqs(false);
     }
@@ -210,14 +212,14 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-500" />
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide font-bn">
-                Quick Setup
+                {t("onboarding.quickSetup")}
               </span>
             </div>
             <button
               onClick={markComplete}
               className="text-gray-400 hover:text-gray-600 transition-colors"
-              title="Setup skip করুন"
-              aria-label="উইজার্ড বন্ধ করুন"
+              title={t("onboarding.skipSetup")}
+              aria-label={t("onboarding.closeWizard")}
             >
               <X className="w-5 h-5" />
             </button>
@@ -266,7 +268,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               />
             </div>
           </motion.div>
-          <p className="text-xs text-gray-400 mt-1 font-bn">{step + 1} of {STEPS.length} steps</p>
+          <p className="text-xs text-gray-400 mt-1 font-bn">{t("onboarding.stepCounter", { current: step + 1, total: STEPS.length })}</p>
         </div>
 
         {/* Step content — animated on step change */}
@@ -284,16 +286,16 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             </div>
 
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 font-bn">
-              {current.subtitle}
+              {t(current.subtitleKey)}
             </p>
-            <h2 className="text-xl font-bold text-gray-900 mb-2 font-bn">{current.title}</h2>
-            <p className="text-sm text-gray-600 leading-relaxed mb-4 font-bn">{current.description}</p>
+            <h2 className="text-xl font-bold text-gray-900 mb-2 font-bn">{t(current.titleKey)}</h2>
+            <p className="text-sm text-gray-600 leading-relaxed mb-4 font-bn">{t(current.descriptionKey)}</p>
 
             {/* Tip box */}
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6">
               <p className="text-xs text-amber-700 leading-relaxed font-bn">
-                <span className="font-semibold">টিপস: </span>
-                {current.tip}
+                <span className="font-semibold">{t("onboarding.tipLabel")} </span>
+                {t(current.tipKey)}
               </p>
             </div>
 
@@ -306,10 +308,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                     className="flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-100 rounded-full px-2 py-0.5 font-bn"
                   >
                     <CheckCircle2 className="w-3 h-3" />
-                    {s.id === "facebook" ? "Facebook" :
-                     s.id === "products" ? "Products" :
-                     s.id === "faqs" ? "FAQs" :
-                     s.id === "ai_mode" ? "AI Mode" : "Preview"}
+                    {t(s.completedLabelKey)}
                   </span>
                 ))}
               </div>
@@ -329,11 +328,11 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             {isLast ? (
               <>
                 <Eye className="w-4 h-4" />
-                {current.actionLabel}
+                {t(current.actionLabelKey)}
               </>
             ) : (
               <>
-                {current.actionLabel}
+                {t(current.actionLabelKey)}
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
@@ -345,11 +344,11 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               disabled={seedingFaqs}
               className="w-full py-2.5 rounded-xl text-sm font-semibold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-60 font-bn"
             >
-              {seedingFaqs ? "যোগ করা হচ্ছে…" : "✨ Starter FAQ যোগ করুন (১ ট্যাপে)"}
+              {seedingFaqs ? t("onboarding.seedingFaqs") : t("onboarding.seedStarterFaqs")}
             </button>
           )}
 
-          {current.skipLabel && (
+          {current.skipLabelKey && (
             <button
               onClick={handleSkip}
               className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors font-bn ${
@@ -358,7 +357,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                   : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
               }`}
             >
-              {current.skipLabel}
+              {t(current.skipLabelKey)}
             </button>
           )}
 
@@ -368,7 +367,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               className="flex items-center justify-center gap-1 text-xs text-gray-400 hover:text-gray-600 py-1 font-bn"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
-              পেছনে যান
+              {t("onboarding.back")}
             </button>
           )}
         </div>

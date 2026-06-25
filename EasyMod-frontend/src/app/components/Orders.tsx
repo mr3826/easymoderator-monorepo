@@ -241,7 +241,7 @@ export default function Orders() {
     try {
       await apiClient.updateOrder(selectedOrder.id, { note: detailNote });
       setDetailNote('');
-      toast.success('নোট সফলভাবে সংরক্ষণ হয়েছে');
+      toast.success(t('orders.detailModal.noteSaved'));
     } catch (err: unknown) {
       console.error('Failed to save note:', err);
       toast.error(t('orders.errors.updateStatus'));
@@ -583,7 +583,7 @@ export default function Orders() {
         {filteredOrders.length === 0 ? (
           <div className="rounded-xl border border-border bg-card p-10 text-center">
             <PackageIcon className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-            <p className="mt-2 text-sm font-medium text-muted-foreground">কোনো অর্ডার পাওয়া যায়নি।</p>
+            <p className="mt-2 text-sm font-medium text-muted-foreground">{t('orders.emptyState')}</p>
           </div>
         ) : (
           <AnimatePresence>
@@ -735,7 +735,7 @@ export default function Orders() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search and add products…"
+                    placeholder={t('orders.createModal.searchProducts')}
                     value={productSearchQuery}
                     onChange={(e) => setProductSearchQuery(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
@@ -768,7 +768,7 @@ export default function Orders() {
                         p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
                         (p.sku || '').toLowerCase().includes(productSearchQuery.toLowerCase())
                       ).length === 0 && (
-                        <p className="px-4 py-3 text-sm text-gray-500">No products found</p>
+                        <p className="px-4 py-3 text-sm text-gray-500">{t('orders.createModal.noProductsFound')}</p>
                       )}
                     </div>
                   )}
@@ -1033,11 +1033,11 @@ export default function Orders() {
                         href={`tel:${selectedOrder.customerPhone}`}
                         className="min-h-12 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700"
                       >
-                        কল করুন
+                        {t('orders.detailModal.call')}
                       </a>
                     </>
                   ) : (
-                    <span className="text-xs text-gray-500">গ্রাহকের নম্বর পাওয়া যায়নি</span>
+                    <span className="text-xs text-gray-500">{t('orders.detailModal.noPhone')}</span>
                   )}
                 </div>
                 <div className="flex justify-between">
@@ -1054,7 +1054,7 @@ export default function Orders() {
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">ডেলিভারি ঠিকানা</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.deliveryAddress')}</h3>
               {selectedOrder.delivery_address ? (
                 <div className="space-y-1 text-sm text-gray-700 mb-3">
                   {selectedOrder.delivery_address.street_address && (
@@ -1068,12 +1068,12 @@ export default function Orders() {
                   )}
                   {selectedOrder.delivery_address.zone && (
                     <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full mt-1">
-                      Zone: {selectedOrder.delivery_address.zone.replace(/_/g, ' ')}
+                      {t('orders.detailModal.zoneLabel')}: {selectedOrder.delivery_address.zone.replace(/_/g, ' ')}
                     </span>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-gray-700 mb-3">{selectedOrder.deliveryAddress || 'ঠিকানা এখনো যোগ করা হয়নি'}</p>
+                <p className="text-sm text-gray-700 mb-3">{selectedOrder.deliveryAddress || t('orders.detailModal.noAddress')}</p>
               )}
               {selectedOrder.deliveryAddress && (
                 <a
@@ -1082,20 +1082,20 @@ export default function Orders() {
                   rel="noreferrer"
                   className="block rounded-lg border border-gray-200 bg-white p-3 text-sm font-semibold text-blue-700"
                 >
-                  ম্যাপে দেখুন
+                  {t('orders.detailModal.viewOnMap')}
                 </a>
               )}
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">পেমেন্ট অবস্থা</h3>
-              <p className="text-sm font-medium text-gray-700">{selectedOrder.payment_status || 'COD pending'}</p>
+              <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.paymentStatusLabel')}</h3>
+              <p className="text-sm font-medium text-gray-700">{selectedOrder.payment_status || t('orders.detailModal.codPending')}</p>
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">কাস্টমার চ্যাট (শেষ ৩ বার্তা)</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.customerChat')}</h3>
               {conversationSnippets.length === 0 ? (
-                <p className="text-sm text-gray-500">কোনো চ্যাট snippet পাওয়া যায়নি।</p>
+                <p className="text-sm text-gray-500">{t('orders.detailModal.noChatSnippet')}</p>
               ) : (
                 <div className="space-y-2">
                   {conversationSnippets.map((line, idx) => (
@@ -1180,12 +1180,12 @@ export default function Orders() {
             </div>
 
             <div className="mb-6">
-              <h3 className="font-semibold text-gray-900 mb-3">নোট</h3>
+              <h3 className="font-semibold text-gray-900 mb-3">{t('orders.detailModal.note')}</h3>
               <textarea
                 value={detailNote}
                 onChange={(e) => setDetailNote(e.target.value)}
                 rows={3}
-                placeholder="এখানে অর্ডার নোট লিখুন"
+                placeholder={t('orders.detailModal.notePlaceholder')}
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm"
               />
             </div>
@@ -1195,14 +1195,14 @@ export default function Orders() {
                 onClick={handleSaveNote}
                 className="flex-1 min-w-[120px] px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-black text-sm"
               >
-                নোট সংরক্ষণ
+                {t('orders.detailModal.saveNote')}
               </button>
               <button
                 onClick={() => setShowCourierModal(true)}
                 disabled={!!selectedOrder.delivery_tracking_code}
                 className="flex-1 min-w-[120px] px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
-                {selectedOrder.delivery_tracking_code ? `ID: ${selectedOrder.delivery_tracking_code}` : 'কুরিয়ার বুক'}
+                {selectedOrder.delivery_tracking_code ? `ID: ${selectedOrder.delivery_tracking_code}` : t('orders.detailModal.bookCourier')}
               </button>
               {selectedOrder.status === 'draft' && (
                 <button
@@ -1217,7 +1217,7 @@ export default function Orders() {
                   onClick={() => handleUpdateStatus(selectedOrder.id, 'cancelled')}
                   className="flex-1 min-w-[120px] px-4 py-2.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm"
                 >
-                  বাতিল করুন
+                  {t('orders.detailModal.cancelOrderBtn')}
                 </button>
               )}
               <button

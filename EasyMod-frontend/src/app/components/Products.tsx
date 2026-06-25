@@ -186,7 +186,7 @@ export default function Products() {
     if (extension === 'csv' || extension === 'txt' || extension === 'tsv') {
       return file.text();
     }
-    throw new Error('Unsupported file type. Please upload CSV, TSV, or TXT files.');
+    throw new Error(t('products.errors.unsupportedFileType'));
   };
 
   const mapExtractedProduct = (product: any): Product => {
@@ -219,14 +219,14 @@ export default function Products() {
 
       const extracted = result.products.map(mapExtractedProduct);
       if (extracted.length === 0) {
-        throw new Error('No products could be extracted from the file.');
+        throw new Error(t('products.errors.noProductsExtracted'));
       }
 
       setAiGeneratedProducts(extracted);
       setShowReviewModal(true);
       setShowUploadModal(false);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to process upload.');
+      setError(error.response?.data?.error?.message || error.message || t('products.errors.uploadFailed'));
     } finally {
       setUploadProgress(0);
       if (e.target) {
@@ -260,7 +260,7 @@ export default function Products() {
 
   const handleApproveProduct = async (product: Product) => {
     if (!product.price || product.price <= 0) {
-      setError(`Please set a valid price for ${product.name} before approving.`);
+      setError(t('products.errors.invalidPrice', { name: product.name }));
       return;
     }
 
@@ -270,7 +270,7 @@ export default function Products() {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setAiGeneratedProducts(prev => prev.filter(p => p.id !== product.id));
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || 'Failed to approve product.');
+      setError(error.response?.data?.error?.message || error.message || t('products.errors.approveFailed'));
     } finally {
       setApprovingIds(prev => prev.filter(id => id !== product.id));
     }
@@ -284,7 +284,7 @@ export default function Products() {
     const validProducts = aiGeneratedProducts.filter(product => product.price && product.price > 0);
     const invalidProducts = aiGeneratedProducts.filter(product => !product.price || product.price <= 0);
     if (invalidProducts.length > 0) {
-      setError(`Some products have invalid prices and were skipped.`);
+      setError(t('products.errors.someInvalidPrices'));
     }
 
     const results = await Promise.allSettled(
@@ -295,7 +295,7 @@ export default function Products() {
             setAiGeneratedProducts(prev => prev.filter(p => p.id !== product.id));
           })
           .catch(error => {
-            setError(error.response?.data?.error?.message || error.message || `Failed to approve ${product.name}.`);
+            setError(error.response?.data?.error?.message || error.message || t('products.errors.approveNamedFailed', { name: product.name }));
           })
       )
     );
@@ -658,7 +658,7 @@ export default function Products() {
                           ? 'bg-gray-100 text-gray-700'
                           : 'bg-yellow-100 text-yellow-700'
                         }`}>
-                        {product.status}
+                        {t(`products.status.${product.status}`, product.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -675,14 +675,14 @@ export default function Products() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleEditProduct(product)}
-                          aria-label={`Edit ${product.name}`}
+                          aria-label={t('products.editAria', { name: product.name })}
                           className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteProduct(product.id)}
-                          aria-label={`Delete ${product.name}`}
+                          aria-label={t('products.deleteAria', { name: product.name })}
                           className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -784,30 +784,30 @@ export default function Products() {
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-semibold text-gray-900">{product.name}</h3>
                             <span className="px-2 py-1 bg-purple-200 text-purple-700 text-xs rounded">
-                              Confidence: {Math.round((product.confidence || 0) * 100)}%
+                              {t('products.reviewModal.confidence', { percent: Math.round((product.confidence || 0) * 100) })}
                             </span>
                           </div>
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
-                              <span className="text-gray-600">SKU:</span>
+                              <span className="text-gray-600">{t('products.reviewModal.skuLabel')}</span>
                               <span className="ml-2 text-gray-900">{product.sku}</span>
                             </div>
                             <div>
-                              <span className="text-gray-600">Price:</span>
+                              <span className="text-gray-600">{t('products.reviewModal.priceLabel')}</span>
                               <span className="ml-2 text-gray-900">৳{product.price}</span>
                             </div>
                             <div>
-                              <span className="text-gray-600">Category:</span>
+                              <span className="text-gray-600">{t('products.reviewModal.categoryLabel')}</span>
                               <span className="ml-2 text-gray-900">{product.category}</span>
                             </div>
                             <div>
-                              <span className="text-gray-600">Variants:</span>
+                              <span className="text-gray-600">{t('products.reviewModal.variantsLabel')}</span>
                               <span className="ml-2 text-gray-900">{product.variants?.join(', ')}</span>
                             </div>
                           </div>
                           {product.aliases && (
                             <div className="mt-2 text-sm">
-                              <span className="text-gray-600">Aliases:</span>
+                              <span className="text-gray-600">{t('products.reviewModal.aliasesLabel')}</span>
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {product.aliases.map((alias, i) => (
                                   <span key={i} className="px-2 py-1 bg-white text-gray-700 text-xs rounded border border-purple-200">

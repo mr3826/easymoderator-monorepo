@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Lock, Zap, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useSubscriptionFeatures, type SubscriptionFeatures } from "@/app/lib/useSubscriptionFeatures";
 import { subscriptionPlans } from "@/app/lib/subscriptionPlans";
 import { useNavigate } from "react-router-dom";
@@ -12,6 +13,7 @@ interface UpgradeModalProps {
 
 function UpgradeModal({ featureLabel, requiredPlan, onClose }: UpgradeModalProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const plan = subscriptionPlans.find((p) => p.name === requiredPlan);
 
   return (
@@ -29,24 +31,26 @@ function UpgradeModal({ featureLabel, requiredPlan, onClose }: UpgradeModalProps
         </div>
 
         <h2 className="text-xl font-bold text-gray-900 text-center mb-1">
-          Upgrade to unlock
+          {t("subscription.upgradeToUnlock")}
         </h2>
         <p className="text-gray-500 text-center text-sm mb-5">
-          <strong className="text-gray-700">{featureLabel}</strong> is available on the{" "}
-          <span className="font-semibold text-blue-600">{requiredPlan}</span> plan and above.
+          <strong className="text-gray-700">{featureLabel}</strong>{" "}
+          {t("subscription.featureAvailablePrefix")}{" "}
+          <span className="font-semibold text-blue-600">{requiredPlan}</span>{" "}
+          {t("subscription.featureAvailableSuffix")}
         </p>
 
         {plan && (
           <div className="bg-blue-50 rounded-xl p-4 mb-5 border border-blue-100">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-gray-900">{plan.name} Plan</span>
-              <span className="font-bold text-blue-700">৳{plan.monthlyPrice.toLocaleString()}/mo</span>
+              <span className="font-semibold text-gray-900">{t("subscription.planNameLabel", { plan: plan.name })}</span>
+              <span className="font-bold text-blue-700">{t("subscription.pricePerMonth", { price: plan.monthlyPrice.toLocaleString() })}</span>
             </div>
             <ul className="space-y-1">
-              {plan.highlights.slice(0, 3).map((h) => (
+              {plan.highlights.slice(0, 3).map((h, hi) => (
                 <li key={h} className="flex items-start gap-2 text-sm text-gray-600">
                   <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-blue-500 flex-shrink-0" />
-                  {h}
+                  {t(`subscription.plans.${plan.id}.highlights.${hi}`, h)}
                 </li>
               ))}
             </ul>
@@ -58,14 +62,14 @@ function UpgradeModal({ featureLabel, requiredPlan, onClose }: UpgradeModalProps
             onClick={onClose}
             className="flex-1 px-4 py-2.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
           >
-            Not now
+            {t("subscription.notNow")}
           </button>
           <button
             onClick={() => { onClose(); navigate("/app/subscription"); }}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             <Zap className="w-4 h-4" />
-            Upgrade now
+            {t("subscription.upgradeNow")}
           </button>
         </div>
       </div>
@@ -93,6 +97,7 @@ interface FeatureGateProps {
  *   </FeatureGate>
  */
 export function FeatureGate({ feature, featureLabel, requiredPlan, children }: FeatureGateProps) {
+  const { t } = useTranslation();
   const { features, loading } = useSubscriptionFeatures();
   const [showModal, setShowModal] = useState(false);
 
@@ -106,13 +111,13 @@ export function FeatureGate({ feature, featureLabel, requiredPlan, children }: F
       <div
         className="relative cursor-pointer select-none"
         onClick={() => setShowModal(true)}
-        title={`Upgrade to ${requiredPlan} to unlock ${featureLabel}`}
+        title={t("subscription.upgradeUnlockTitle", { plan: requiredPlan, feature: featureLabel })}
       >
         {/* Blur overlay */}
         <div className="absolute inset-0 z-10 rounded-lg bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
           <div className="flex items-center gap-1.5 bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-sm font-medium shadow-sm">
             <Lock className="w-3.5 h-3.5" />
-            <span>Upgrade to {requiredPlan}</span>
+            <span>{t("subscription.upgradeToPlan", { plan: requiredPlan })}</span>
           </div>
         </div>
         {/* Render children behind the overlay for layout */}

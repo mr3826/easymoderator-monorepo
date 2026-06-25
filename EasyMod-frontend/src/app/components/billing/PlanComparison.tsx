@@ -44,14 +44,14 @@ export function PlanComparison({
         <Switch
           checked={billingCycle === "yearly"}
           onCheckedChange={(checked) => onBillingCycleChange(checked ? "yearly" : "monthly")}
-          aria-label="Toggle annual billing"
+          aria-label={t("subscription.toggleAnnualBilling")}
         />
         <span className={`font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}>
           {t("subscription.yearly", "Yearly")}
         </span>
         {billingCycle === "yearly" && (
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-            2 months free
+            {t("subscription.twoMonthsFree")}
           </span>
         )}
       </div>
@@ -89,7 +89,7 @@ export function PlanComparison({
               )}
 
               <div className="mb-3">
-                <p className="text-base font-bold text-foreground">{plan.name}</p>
+                <p className="text-base font-bold text-foreground">{t(`subscription.plans.${plan.id}.name`, plan.name)}</p>
                 {isCurrent && (
                   <span className="text-xs font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded-md mt-0.5 inline-block font-bn">
                     {t("subscription.currentPlan", "Current plan")}
@@ -100,13 +100,13 @@ export function PlanComparison({
               {/* Price — plain BDT text, no ৳ glyph */}
               <div className="mb-4">
                 {price === 0 ? (
-                  <p className="text-2xl font-extrabold text-foreground font-bn">Free</p>
+                  <p className="text-2xl font-extrabold text-foreground font-bn">{t("subscription.free")}</p>
                 ) : plan.perOrderChargeBdt ? (
                   <>
                     <p className="text-2xl font-extrabold text-foreground">
                       {plan.perOrderChargeBdt} BDT
                     </p>
-                    <p className="text-xs text-muted-foreground font-bn">/order</p>
+                    <p className="text-xs text-muted-foreground font-bn">{t("subscription.perOrder")}</p>
                   </>
                 ) : (
                   <>
@@ -114,17 +114,17 @@ export function PlanComparison({
                       {price.toLocaleString()} BDT
                     </p>
                     <p className="text-xs text-muted-foreground font-bn">
-                      /month{billingCycle === "yearly" ? " (billed yearly)" : ""}
+                      {billingCycle === "yearly" ? t("subscription.perMonthBilledYearly") : t("subscription.perMonth")}
                     </p>
                   </>
                 )}
               </div>
 
               <ul className="space-y-1.5 text-xs text-muted-foreground">
-                {plan.highlights.map((feature) => (
+                {plan.highlights.map((feature, hi) => (
                   <li key={feature} className="flex items-start gap-2">
                     <span className="text-primary font-bold mt-0.5">✓</span>
-                    <span className="font-bn">{feature}</span>
+                    <span className="font-bn">{t(`subscription.plans.${plan.id}.highlights.${hi}`, feature)}</span>
                   </li>
                 ))}
               </ul>

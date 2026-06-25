@@ -171,7 +171,7 @@ export function InboxThreadList({
                               : "text-gray-900"
                           }`}
                         >
-                          {conversation.customer?.name || "Unknown"}
+                          {conversation.customer?.name || t("inbox.unknownCustomer")}
                         </h3>
                         {isHITL && (
                           <UserCheck
@@ -207,12 +207,12 @@ export function InboxThreadList({
                   {/* HITL badge */}
                   {isHITL && (
                     <Badge variant="destructive" className="text-xs shrink-0 font-bn">
-                      উত্তর প্রয়োজন
+                      {t("inbox.needsReplyBadge")}
                     </Badge>
                   )}
                 </div>
                 <p className="text-sm text-gray-600 truncate">
-                  {conversation.title || "No title"}
+                  {conversation.title || t("inbox.noTitle")}
                 </p>
                 {/* AI-handled: muted + relative timestamp */}
                 {isAIHandled && lastAIReply ? (

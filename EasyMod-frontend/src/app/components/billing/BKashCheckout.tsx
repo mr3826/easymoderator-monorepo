@@ -50,10 +50,13 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
       });
 
       if (!invoiceRes.success || !invoiceRes.data?.id) {
-        throw new Error(invoiceRes.message || "Failed to create invoice");
+        throw new Error(invoiceRes.message || t("subscription.invoiceCreateFailed"));
       }
 
-      const msg = `Invoice created (${invoiceRes.data.invoice_number || ""}). Please pay ${pack.price.toLocaleString()} BDT via bKash and contact support@easymod.ai to activate your pack.`;
+      const msg = t("subscription.invoiceCreatedMsg", {
+        number: invoiceRes.data.invoice_number || "",
+        price: pack.price.toLocaleString(),
+      });
       onSuccess?.(msg);
       toast.success(msg, { duration: 10000 });
       setSelectedPack(null);
@@ -62,7 +65,7 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
         (err as { response?: { data?: { error?: { message?: string } } }; message?: string })
           ?.response?.data?.error?.message ||
         (err as { message?: string })?.message ||
-        "Failed to create invoice";
+        t("subscription.invoiceCreateFailed");
       onError?.(errMsg);
       toast.error(errMsg);
     } finally {
@@ -80,7 +83,7 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
         {IS_SANDBOX && (
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
             <AlertTriangle className="w-3 h-3" />
-            Test mode
+            {t("subscription.testMode")}
           </span>
         )}
       </div>
@@ -102,7 +105,7 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
             ].join(" ")}
           >
             <p className="text-lg font-bold text-foreground">{pack.amount}</p>
-            <p className="text-xs text-muted-foreground mb-2 font-bn">conversations</p>
+            <p className="text-xs text-muted-foreground mb-2 font-bn">{t("subscription.conversationsLabel")}</p>
             <p className="text-sm font-semibold text-primary">
               {pack.price.toLocaleString()} BDT
             </p>
@@ -121,7 +124,7 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
 
       {IS_SANDBOX && (
         <p className="text-xs text-center text-amber-700 font-bn">
-          Test mode: কোনো real payment হবে না।
+          {t("subscription.testModeNote")}
         </p>
       )}
     </div>
