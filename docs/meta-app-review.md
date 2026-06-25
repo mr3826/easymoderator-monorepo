@@ -72,7 +72,8 @@ shot-by-shot storyboards are in
 
 1. **Log in** to the live test instance with the supplied tester credentials.
 2. Go to **Settings → Chat Settings**.
-3. Click **"Facebook Page সংযুক্ত করুন"** (English: "Connect Facebook Page"). A single
+3. Click **"Connect Facebook Page"** (the UI defaults to **English**; a top-bar toggle
+   switches to Bengali, where the button reads "Facebook Page সংযুক্ত করুন"). A single
    Facebook Login for Business popup opens.
 4. **Grant consent** for the 5 requested permissions in the popup.
 5. Back in the app, the **asset picker** lists the tester's Page(s) (`pages_show_list`).
@@ -82,7 +83,10 @@ shot-by-shot storyboards are in
 7. **Inbound DM:** from a second account, send a DM to the test Page. The message appears in
    the **Shared Inbox** within a few seconds (`pages_messaging`, webhook `messages`).
 8. **AI auto-reply round-trip:** the AI replies automatically to the inbound DM; the reply is
-   delivered back to the sender (`POST /me/messages` with the Page token).
+   delivered back to the sender (`POST /me/messages` with the Page token). The **first** AI
+   reply of the conversation opens with a mandatory clear-text **automated-experience
+   disclosure** — "You're chatting with {shop}'s automated AI assistant." — so the customer
+   always knows a system is replying (Meta Messenger Platform policy; not owner-removable).
 9. **Human reply:** open the thread in the inbox and send a manual reply to confirm the
    compose → send path.
 10. *(Optional — comment automation)* Comment a configured trigger keyword on a test Page
@@ -113,7 +117,7 @@ the storyboards in `screencast-storyboards.md`.
 1. **(0:00–0:20) Intro.** "This is Easy Moderator, a unified Messenger inbox for small
    businesses. I'll connect a Facebook Page, then show each permission in use." Show the
    logged-in dashboard.
-2. **(0:20–0:45) Connect.** Settings → Chat Settings → click "Facebook Page সংযুক্ত করুন".
+2. **(0:20–0:45) Connect.** Settings → Chat Settings → click "Connect Facebook Page".
    Show the consent dialog and the 5 permissions on screen.
 3. **(0:45–1:05) Pick assets.** Grant consent; show the asset picker listing the Page(s)
    (`pages_show_list`); select one or more Pages and Connect.
@@ -121,7 +125,9 @@ the storyboards in `screencast-storyboards.md`.
    Active** (`pages_manage_metadata`).
 5. **(1:30–2:05) Inbound + auto-reply.** Send a DM from a roster test account to the Page;
    show it landing in the Shared Inbox; show the AI auto-reply being delivered
-   (`pages_messaging`).
+   (`pages_messaging`). Pause on the **automated-experience disclosure** at the top of the
+   first AI reply ("You're chatting with {shop}'s automated AI assistant.") and say it is
+   shown on every conversation, per Meta policy.
 6. **(2:05–2:20) Human reply.** Open a thread, type and send a manual reply.
 7. **(2:20–2:30) Comment automation.** Comment a trigger keyword on a post; show the received
    event and the public reply (`pages_read_engagement`, `pages_manage_engagement`). Close with

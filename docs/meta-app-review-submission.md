@@ -22,7 +22,7 @@ callback, and the data-deletion/deauthorize endpoints all match.
 |---|---|---|
 | **App Domains** | Settings → Basic | `easymod.tech` |
 | **Privacy Policy URL** | Settings → Basic | `https://easymod.tech/privacy-policy` |
-| **Terms of Service URL** | Settings → Basic | `https://easymod.tech/terms-of-service` |
+| **Terms of Service URL** | Settings → Basic | `https://easymod.tech/terms` |
 | **Category** | Settings → Basic | Business / Messaging |
 | **Webhook Callback URL** | Webhooks (or product → Webhooks) | `https://easymod.tech/api/webhooks/meta` |
 | **Webhook Verify Token** | same row → "Verify and Save" | the value of env `META_WEBHOOK_VERIFY_TOKEN` on the droplet (do **not** paste a guess — read it from the server `.env`) |
@@ -131,6 +131,6 @@ share — **never commit passwords or tokens.**
 | Requested scopes = the 5 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` (the only scope source; `buildAuthUrl({scopes:[]})` falls back to it) | ✓ exact 5, no `instagram_*`, `business_management`, or `pages_manage_posts` (enforced by regression tests) |
 | Webhook callback URL | `app.js` mounts `meta-webhook.routes` at `/api/webhooks/meta`; GET handles `hub.challenge`; POST only handles `object: 'page'` | ✓ |
 | Data-deletion + deauthorize URLs | `meta-webhook-gdpr.handler.js` → `POST /data-deletion`, `POST /deauthorize` (HMAC-verified) | ✓ |
-| Privacy / Terms URLs | FE routes `privacy-policy`, `terms-of-service` exist and list exactly the 5 Facebook scopes | ✓ |
+| Privacy / Terms URLs | FE routes `/privacy-policy` and `/terms` exist (`EasyMod-frontend/src/app/routes.ts`) and list exactly the 5 Facebook scopes | ✓ |
 
 Anything Meta inspects in the live app will agree with what is written in this sheet.

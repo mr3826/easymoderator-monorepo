@@ -1,9 +1,17 @@
 # Screencast Storyboards
 
 **App:** Easy Moderator
-**Last updated:** 2026-05-20
+**Last updated:** 2026-06-26 (5 Facebook scopes; Settings → Chat Settings; English default UI; AI-disclosure beat)
 
 These are text scripts for two required Meta App Review screencasts. The founder records the actual video using these as a shot-by-shot guide. Each step maps to a visible UI action.
+
+> **Canonical beat list:** the ~2.5-minute master script (with timings) lives in
+> [`docs/meta-app-review.md`](../../../docs/meta-app-review.md) §4. These storyboards are the
+> shot-by-shot expansion of that script — keep the two in sync.
+>
+> **UI language:** the app now defaults to **English** (a Bengali/English toggle is in the top
+> bar). Record in English so the reviewer reads every label natively. The connect button reads
+> **"Connect Facebook Page"** in English (it shows "Facebook Page সংযুক্ত করুন" when toggled to Bengali).
 
 ---
 
@@ -15,10 +23,10 @@ These are text scripts for two required Meta App Review screencasts. The founder
 
 ### Step 1 — Merchant connects Facebook Page
 
-- Screen: Easy Moderator dashboard, Channels page (`/channels`)
-- Action: Click "Connect Facebook Page"
-- What happens: OAuth popup opens to `facebook.com/dialog/oauth`. Merchant grants `pages_messaging`, `pages_read_engagement`, `pages_manage_engagement`.
-- What to show: OAuth consent screen listing the permissions. After approval, the page returns to Channels and the connected Page name and profile picture appear.
+- Screen: Easy Moderator → **Settings → Chat Settings**
+- Action: Click **"Connect Facebook Page"**
+- What happens: a single Facebook Login for Business popup opens to `facebook.com/dialog/oauth`. Merchant grants the **5 requested permissions**: `pages_show_list`, `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement`.
+- What to show: the OAuth consent screen listing the permissions, then the **asset picker** (multi-select — `pages_show_list`); select one or more Pages and Connect. The connected Page card then appears with the **health grid** showing **Webhook: Active** (`pages_manage_metadata`, hard-verified via `GET subscribed_apps`).
 
 ### Step 2 — Merchant enables auto-reply on a post
 
@@ -35,7 +43,8 @@ These are text scripts for two required Meta App Review screencasts. The founder
 ### Step 4 — Easy Moderator detects the keyword and sends a DM
 
 - Screen: Back to Easy Moderator — Shared Inbox (`/app/inbox`)
-- What to show: Within a few seconds, a new conversation thread appears in the inbox from the test customer. The AI-generated Messenger DM is visible as a sent message (e.g. "Hi! Thanks for your interest. Here are the details for the blue dress...").
+- What to show: Within a few seconds, a new conversation thread appears in the inbox from the test customer. The AI-generated Messenger DM is visible as a sent message.
+- **Show the automated-experience disclosure (Meta policy):** the **first** AI reply of the conversation opens with the mandatory clear-text line — *"You're chatting with {shop}'s automated AI assistant."* — before any other content. Pause on it so the reviewer sees the app clearly discloses that an automated system is replying (`EasyMod-backend/src/modules/shop/ai-messaging.js`, `buildGreeting`). The order details follow (e.g. "Here are the details for the blue dress…").
 
 ### Step 5 — Customer replies in Messenger
 
