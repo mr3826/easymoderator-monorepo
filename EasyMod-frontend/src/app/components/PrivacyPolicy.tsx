@@ -264,8 +264,8 @@ export default function PrivacyPolicy() {
             <h3 className="text-base font-semibold text-gray-800 mb-2">Cross-Border Data Transfers</h3>
             <p className="mb-3 text-sm leading-relaxed">
               To provide the {APP_NAME} service, your data is processed on servers and systems located outside
-              Bangladesh, including in the United States (Amazon Web Services, Google, OpenAI) and other
-              countries where our service providers operate. By creating an account and using {APP_NAME}, you
+              Bangladesh — including DigitalOcean (cloud hosting), and Google and OpenAI in the United States —
+              and other countries where our service providers operate. By creating an account and using {APP_NAME}, you
               explicitly acknowledge and consent to the transfer and processing of your data in these
               jurisdictions. We ensure that all third-party providers maintain appropriate data protection
               standards equivalent to those required under applicable Bangladesh law.
@@ -316,10 +316,10 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Fallback AI responses + knowledge base indexing (embeddings)</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">Pinecone</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">Qdrant (self-hosted)</td>
                     <td className="px-4 py-3 text-gray-600">Vector Database</td>
                     <td className="px-4 py-3 text-gray-600">Text embeddings (numerical vectors)</td>
-                    <td className="px-4 py-3 text-gray-600">Knowledge base semantic search</td>
+                    <td className="px-4 py-3 text-gray-600">Knowledge base semantic search — runs on our own infrastructure</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">bKash</td>
@@ -346,10 +346,10 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Business workflow automation (opt-in)</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">Amazon Web Services</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">DigitalOcean</td>
                     <td className="px-4 py-3 text-gray-600">Cloud Infrastructure</td>
                     <td className="px-4 py-3 text-gray-600">All application data</td>
-                    <td className="px-4 py-3 text-gray-600">Hosting, storage, secrets management</td>
+                    <td className="px-4 py-3 text-gray-600">Hosting and storage</td>
                   </tr>
                 </tbody>
               </table>
@@ -420,7 +420,7 @@ export default function PrivacyPolicy() {
               <li>Authentication uses short-lived JWT tokens stored as httpOnly cookies, inaccessible to JavaScript</li>
               <li>Passwords are hashed using bcrypt and never stored in plain text</li>
               <li>Tenant isolation ensures each business's data is logically separated from others</li>
-              <li>Production secrets are stored in AWS Secrets Manager, not in source code or configuration files</li>
+              <li>Production secrets are stored in the server's protected environment configuration and the deployment CI secret store, and are never committed to source control</li>
               <li>Rate limiting and CSRF protection are enforced on all state-mutating endpoints</li>
               <li>Security audit logs record all significant actions with IP address and user agent</li>
             </ul>

@@ -131,6 +131,6 @@ share — **never commit passwords or tokens.**
 | Requested scopes = the 5 boxes in §B | `MetaMessengerProvider.DEFAULT_SCOPES` (the only scope source; `buildAuthUrl({scopes:[]})` falls back to it) | ✓ exact 5, no `instagram_*`, `business_management`, or `pages_manage_posts` (enforced by regression tests) |
 | Webhook callback URL | `app.js` mounts `meta-webhook.routes` at `/api/webhooks/meta`; GET handles `hub.challenge`; POST only handles `object: 'page'` | ✓ |
 | Data-deletion + deauthorize URLs | `meta-webhook-gdpr.handler.js` → `POST /data-deletion`, `POST /deauthorize` (HMAC-verified) | ✓ |
-| Privacy / Terms URLs | FE routes `/privacy-policy` and `/terms` exist (`EasyMod-frontend/src/app/routes.ts`) and list exactly the 5 Facebook scopes | ✓ |
+| Privacy / Terms URLs | FE routes `/privacy-policy` and `/terms` exist (`EasyMod-frontend/src/app/routes.ts`). The **Privacy Policy** lists exactly the 5 Facebook scopes in its "Meta Permissions Used" table plus the data-deletion callback URL; **Terms** covers Meta Platform compliance + Acceptable Use (no scope table needed there) | ✓ |
 
 Anything Meta inspects in the live app will agree with what is written in this sheet.

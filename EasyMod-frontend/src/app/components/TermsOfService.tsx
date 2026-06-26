@@ -147,8 +147,8 @@ export default function TermsOfService() {
             <h3 className="text-base font-semibold text-gray-800 mb-2">Cross-Border Data Transfers</h3>
             <p className="text-sm leading-relaxed">
               To provide the {APP_NAME} service, your data may be processed on servers located outside
-              Bangladesh (including the United States via Amazon Web Services and AI providers such as
-              Google (Gemini) and OpenAI). By using {APP_NAME}, you acknowledge and consent to this transfer.
+              Bangladesh (including DigitalOcean cloud hosting, and AI providers such as Google (Gemini)
+              and OpenAI in the United States). By using {APP_NAME}, you acknowledge and consent to this transfer.
               We ensure all third-party providers maintain appropriate data protection standards.
             </p>
           </section>
