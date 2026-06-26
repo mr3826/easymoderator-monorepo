@@ -340,6 +340,12 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Courier delivery</td>
                   </tr>
                   <tr>
+                    <td className="px-4 py-3 font-medium text-gray-900">RedX</td>
+                    <td className="px-4 py-3 text-gray-600">Delivery Provider</td>
+                    <td className="px-4 py-3 text-gray-600">Customer name, phone, delivery address, COD amount</td>
+                    <td className="px-4 py-3 text-gray-600">Courier delivery</td>
+                  </tr>
+                  <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Make.com / n8n (optional)</td>
                     <td className="px-4 py-3 text-gray-600">Workflow Automation</td>
                     <td className="px-4 py-3 text-gray-600">Event data (configured by business)</td>
