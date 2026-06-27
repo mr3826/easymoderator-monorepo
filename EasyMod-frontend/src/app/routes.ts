@@ -39,9 +39,6 @@ const LandingPage = lazy(() => import("./components/LandingPage"));
 const Pricing = lazy(() => import("./components/Pricing"));
 const UsersPage = lazy(() => import("./features/users/components/UsersPage"));
 
-// Phase 4 — Comment-to-DM page
-const CommentToDmPage = lazy(() => import("./components/CommentToDm"));
-
 // Phase 1 — EasyModerator operations admin panel (platform-admin only)
 const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
@@ -139,7 +136,6 @@ export const router = createBrowserRouter([
 			{ index: true, Component: withSuspense(Dashboard) },
 			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
 			{ path: "channels", loader: () => redirect("/app/manage-shop/chat-settings") },
-			{ path: "channels/comment-to-dm", Component: withSuspense(CommentToDmPage) },
 			{
 				path: "manage-shop",
 				Component: withSuspense(ManageShop),

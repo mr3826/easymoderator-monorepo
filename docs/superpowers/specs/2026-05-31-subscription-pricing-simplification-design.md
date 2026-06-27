@@ -50,7 +50,7 @@ Changes:
 ## 4. Trial lifecycle (new)
 
 - **Status states:** `trialing` → (pay) `active`; (no pay by `trial_ends_at`) `trial_expired`. Add `trialing` + `trial_expired` to the `subscriptions.status` enum via migration.
-- **AI gate helper** `isAiActive(sub)` = `status ∈ {active, trialing}` AND within conversation limit. Wire into the auto-reply path (comment-to-dm service + meta-webhook handler / ai-chatbot). On `trial_expired` or `suspended`: AI stops; manual inbox fully works; data retained.
+- **AI gate helper** `isAiActive(sub)` = `status ∈ {active, trialing}` AND within conversation limit. Wire into the Messenger auto-reply path (meta-webhook handler / ai-chatbot). On `trial_expired` or `suspended`: AI stops; manual inbox fully works; data retained.
 - **Trial-expiry job (daily):** flip overdue `trialing` → `trial_expired`, fire "trial ended — upgrade ৳999" push. Add day-11 / day-13 "trial ending" nudges (reuse notifier).
 - **Subscription page:** trial banner (days left) + "Activate ৳999" bKash CTA.
 

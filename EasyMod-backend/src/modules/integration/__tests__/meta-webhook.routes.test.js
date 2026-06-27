@@ -93,11 +93,6 @@ const mockCustomerProfileService = {
 };
 jest.mock('src/modules/customer/customer-profile.service', () => mockCustomerProfileService);
 
-// CommentToDm webhook handler — no-op for these tests
-jest.mock('src/modules/commentToDm/comment-to-dm.webhook-handler', () => ({
-    extractCommentEvents: jest.fn(() => []),
-}));
-
 // SSE manager — no-op
 jest.mock('src/utils/sse-manager', () => ({
     emit: jest.fn(),
@@ -503,6 +498,28 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
             }]
         };
         await sendWebhookWithSig(noMsgPayload).expect(200);
+        expect(mockMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('ignores page feed/comment changes (Messenger-only launch)', async () => {
+        const feedPayload = {
+            object: 'page',
+            entry: [{
+                id: PAGE_ID,
+                changes: [{
+                    field: 'feed',
+                    value: {
+                        item: 'comment',
+                        comment_id: 'cmt-1',
+                        post_id: 'post-1',
+                        from: { id: 'fb-user-789' },
+                        message: 'price?',
+                    },
+                }],
+            }],
+        };
+
+        await sendWebhookWithSig(feedPayload).expect(200);
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 

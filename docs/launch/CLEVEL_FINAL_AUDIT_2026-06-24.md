@@ -4,7 +4,7 @@
 **Prepared by:** Claude Code, acting as the virtual executive board (CEO · CTO · CISO · CFO · COO · CPO)
 **Audience:** Founder / PM (Hexabyte)
 **Production HEAD:** `main` @ `e004f73` (PR #47, bKash subscription billing) — live, `/health` & `/health/ready` = **200**
-**Scope:** Whole-company readiness for the initial **Facebook-Pages-only** public launch in Bangladesh.
+**Scope:** Whole-company readiness for the initial **Facebook Page Messenger DM-only** public launch in Bangladesh.
 
 This is the authoritative, board-level audit. It supersedes
 `docs/launch/FINAL_LAUNCH_READINESS_AUDIT_2026-06-24.md` (which predated the billing system) and
@@ -19,7 +19,7 @@ operationally hardened.** Everything within code's control is shipped, green, an
 The remaining gates are **founder-owned and non-code**, and two of them are money/data risks that
 must be closed *before* the first real seller pays:
 
-1. **Meta App Review submission** (5-scope Facebook-only) — the hard external gate. Nothing reaches
+1. **Meta App Review submission** (3-scope Messenger-only) — the hard external gate. Nothing reaches
    real sellers until Meta approves. *(founder action)*
 2. **Live bKash money test on PRODUCTION merchant credentials** — the entire business charges on a
    single new code path (PR #47) that has **never processed a real taka**. *(founder action — do not
@@ -146,10 +146,10 @@ No code work is required to pass any of these — they are verification and pilo
 
 **Bottom line:** A deliberately narrow, defensible v1. Right call.
 
-- **Facebook Pages only** (Messenger DMs + comment-to-DM). Instagram was removed end-to-end to shrink
-  the Meta review surface to **5 honest scopes** (`business_management` not requested). Multi-page
-  connect is preserved. Re-enabling IG later = re-add provider/UI **and a second Meta App Review** —
-  budget that as a known future cost, not a regression.
+- **Facebook Pages only for direct Messenger DMs.** Instagram and Comment-to-DM were removed
+  end-to-end to shrink the Meta review surface to **3 honest scopes** (`business_management`,
+  `pages_read_engagement`, and `pages_manage_engagement` not requested). Multi-page connect is
+  preserved. Re-enabling comments or IG later requires code plus a separate Meta App Review.
 - **Bengali-first** UX for the target audience. English mode is incomplete outside the app shell
   (~200 hardcoded BN strings) — correctly deferred; it does not affect the default Bengali seller.
 - The product story ("one business, multiple communication channels") still holds with a single
@@ -207,7 +207,7 @@ collection and conversation volume grow.
 **Engineering's verdict: GO for launch, conditional on the founder gates.** I have taken every action
 that is safe and within code's control. The launch switch is now yours to flip, gated on:
 
-- [ ] **Meta App Review** submitted & approved (5-scope FB-only screencast + test roster)
+- [ ] **Meta App Review** submitted & approved (3-scope Messenger-only screencast + test roster)
 - [ ] **bKash production** merchant creds confirmed + one **live ৳999 + top-up** money test passed
 - [ ] **Off-site backup** wired and a restore tested
 - [ ] **Operational gates 4–9** passed (`npm run launch:check`, alert test, attachment round-trip, 10-shop smoke test, 7-day canary)

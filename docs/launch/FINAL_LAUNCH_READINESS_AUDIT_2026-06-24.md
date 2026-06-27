@@ -8,7 +8,7 @@
 
 **Date:** 2026-06-24
 **Author:** Engineering (Claude Code)
-**Scope:** Whole-product readiness for the initial **Facebook-only** public launch.
+**Scope:** Whole-product readiness for the initial **Facebook Messenger DM-only** public launch.
 **Production HEAD:** `main` @ `e004f73` (was `1f9416d` at time of writing) — deployed to the
 DigitalOcean droplet, `/health/ready` = `200`.
 
@@ -20,12 +20,12 @@ detail) — read that for the file-by-file IG removal evidence.
 
 ## 1. Executive summary
 
-Easy Moderator is **code-ready to launch as a Facebook-Pages-only** AI customer-service and
+Easy Moderator is **code-ready to launch as a Facebook Page Messenger DM-only** AI customer-service and
 order-automation SaaS for Bangladeshi f-commerce sellers. In the run-up to launch the team:
 
 1. **Removed Instagram end-to-end** (PR #43) — narrowed the Meta App Review surface from
-   **8 scopes → 5** (Facebook only), deleted the IG provider/flows/tests/UI, kept multi-page
-   Facebook connect intact, applied a non-destructive data-safety guard migration.
+   **8 scopes -> 3** (Messenger only), deleted the IG provider/flows/tests/UI, kept multi-page
+   Facebook Page connect intact, applied a non-destructive data-safety guard migration.
 2. **Shipped the Shared Inbox outbound-attachment** path (PR #44) — agents can now reply with
    images and files that persist on the droplet and are publicly reachable for Meta Messenger,
    plus customer-profile enrichment and template CRUD.
@@ -44,7 +44,7 @@ frontend `tsc` build gate passing. CI `Test & Build Gate` green on every merge t
 
 | PR | Title | Effect | State |
 |----|-------|--------|-------|
-| #43 | Remove Instagram — Facebook-only launch + Meta review trim | 8→5 scopes; IG code/UI/tests removed; multi-page FB preserved; guard migration | Merged `d9d2674`, deployed, verified |
+| #43 | Remove Instagram — Facebook-only launch + Meta review trim | IG code/UI/tests removed; multi-page FB preserved; guard migration | Merged `d9d2674`, deployed, verified |
 | #44 | Shared Inbox outbound attachments + profile enrichment + template CRUD | Image/file replies persisted + public; profile enrichment; templates | Merged `0708682`, deployed, verified |
 | #45 | Mobile-responsive Products table + i18n sidebar nav | Table no longer clips on mobile; global nav now i18n-driven | Merged `1f9416d`, deployed, verified |
 
@@ -52,10 +52,11 @@ frontend `tsc` build gate passing. CI `Test & Build Gate` green on every merge t
 
 ## 3. Channel scope — Facebook only (locked)
 
-- **Connectable channel:** Facebook Pages (Messenger DMs + comment-to-DM). Nothing else.
-- **Meta App Review surface — 5 scopes:** `pages_show_list`, `pages_messaging`,
-  `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement`.
-  Webhook fields: `messages` + `feed`. `business_management` is **not** requested.
+- **Connectable channel:** Facebook Pages for direct Messenger DMs only. Nothing else.
+- **Meta App Review surface — 3 scopes:** `pages_show_list`, `pages_messaging`,
+  `pages_manage_metadata`.
+  Webhook field: `messages`. `business_management`, `pages_read_engagement`, and
+  `pages_manage_engagement` are **not** requested.
 - **Multi-page connect preserved:** uniqueness is on `(shop_id, meta_asset_id)`; the picker
   loops `selectedPageIds`, so a seller can connect one **or several** Pages. Verified by the
   multi-page connect test added in PR #43.
@@ -154,8 +155,8 @@ No other components were found to clip, overflow, or break layout at 360px.
 **Code gates (1–3) are green. Gates 4–9 are operational/founder tasks**, not code work.
 
 ### Meta App Review — founder action items (non-code)
-1. Submit the **5-scope Facebook-only** review with the trimmed permission justifications and
-   FB-only screencast (button label "Facebook Page সংযুক্ত করুন", multi-page select shown).
+1. Submit the **3-scope Messenger-only** review with the trimmed permission justifications and
+   FB-only DM screencast (button label "Facebook Page সংযুক্ত করুন", multi-page select shown).
 2. Provide a Facebook Page test user / roster for the reviewer.
 3. Record the screencast following `.easymod/meta-app-review/screencast-storyboards.md`.
 4. Run the live attachment round-trip (Gate 9) with a Page tester.

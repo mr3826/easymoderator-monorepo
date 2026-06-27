@@ -1189,7 +1189,7 @@
       "cleared": "লেবেল মুছে ফেলা হয়েছে",
       "updateFailed": "লেবেল আপডেট করা যায়নি",
       "fieldLabel": "লেবেল (ঐচ্ছিক)",
-      "placeholder": "যেমন: Sales, Live selling, Regional"
+      "placeholder": "যেমন: Sales, Support, Regional"
     },
     "connectSuccess": "সফলভাবে সংযুক্ত হয়েছে।",
     "connectCard": {
@@ -1230,9 +1230,7 @@
       "show": "কোন অনুমতি লাগবে?",
       "pagesShowList": "আপনার Page list দেখা",
       "pagesMessaging": "Messenger বার্তা পড়া ও পাঠানো",
-      "pagesReadEngagement": "Page comment ইভেন্ট পড়া",
       "pagesManageMetadata": "Realtime webhook subscribe",
-      "pagesManageEngagement": "Comment-এ পাবলিক রিপ্লাই",
       "note": "EasyMod শুধু কাস্টমার বার্তার জন্য এই অনুমতি ব্যবহার করে।"
     },
     "aiModel": {

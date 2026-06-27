@@ -1,108 +1,58 @@
-# Screencast Storyboards
+# Meta App Review Screencast Storyboards
 
 **App:** Easy Moderator
-**Last updated:** 2026-06-26 (5 Facebook scopes; Settings → Chat Settings; English default UI; AI-disclosure beat)
+**Last updated:** 2026-06-27 (Messenger-only launch; Comment-to-DM removed)
 
-These are text scripts for two required Meta App Review screencasts. The founder records the actual video using these as a shot-by-shot guide. Each step maps to a visible UI action.
+## Storyboard 1: Messenger DM Inbox And AI Reply
 
-> **Canonical beat list:** the ~2.5-minute master script (with timings) lives in
-> [`docs/meta-app-review.md`](../../../docs/meta-app-review.md) §4. These storyboards are the
-> shot-by-shot expansion of that script — keep the two in sync.
->
-> **UI language:** the app now defaults to **English** (a Bengali/English toggle is in the top
-> bar). Record in English so the reviewer reads every label natively. The connect button reads
-> **"Connect Facebook Page"** in English (it shows "Facebook Page সংযুক্ত করুন" when toggled to Bengali).
+**Goal:** Demonstrate the initial launch flow: connect a Facebook Page, receive a direct Messenger DM, send an AI reply, and send a manual reply.
 
----
+**Duration:** 2-3 minutes.
 
-## Storyboard 1: Comment-to-DM Auto-Reply
+### Step 1 - Connect Facebook Page
 
-**Goal:** Demonstrate that Easy Moderator only sends a DM when a user comments with the configured keyword on the merchant's own post. Shows the full end-to-end flow from connection through inbox logging.
+- Screen: Easy Moderator -> **Settings -> Chat Settings**
+- Action: Click **Connect Facebook Page**.
+- Show: Facebook Login for Business requests only `pages_show_list`, `pages_messaging`, and `pages_manage_metadata`.
+- Show: Page picker after consent.
+- Show: Connected channel card with webhook active status.
 
-**Duration estimate:** 2–3 minutes
+### Step 2 - Customer Sends Direct DM
 
-### Step 1 — Merchant connects Facebook Page
+- Screen: Facebook Messenger using the tester customer account.
+- Action: Send a direct message to the connected test Page.
+- Show: The message is a private Messenger DM, not a Page post comment.
 
-- Screen: Easy Moderator → **Settings → Chat Settings**
-- Action: Click **"Connect Facebook Page"**
-- What happens: a single Facebook Login for Business popup opens to `facebook.com/dialog/oauth`. Merchant grants the **5 requested permissions**: `pages_show_list`, `pages_messaging`, `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement`.
-- What to show: the OAuth consent screen listing the permissions, then the **asset picker** (multi-select — `pages_show_list`); select one or more Pages and Connect. The connected Page card then appears with the **health grid** showing **Webhook: Active** (`pages_manage_metadata`, hard-verified via `GET subscribed_apps`).
+### Step 3 - Shared Inbox Receives Message
 
-### Step 2 — Merchant enables auto-reply on a post
+- Screen: Easy Moderator -> **Shared Inbox**.
+- Show: The direct DM appears in the thread list and message view.
 
-- Screen: Channels page, "Comment Auto-Reply" tab
-- Action: Toggle "Enable comment auto-reply" ON. Set trigger keyword to "interested". Optionally enable "Reply publicly to comment".
-- What to show: The keyword field, the toggle state, the save confirmation toast.
+### Step 4 - AI Reply
 
-### Step 3 — Customer comments on a Facebook post
+- Screen: Same inbox thread.
+- Show: AI reply is delivered through Messenger.
+- Show: The required automated-assistant disclosure in the first AI reply.
 
-- Screen: Switch to Facebook (test Page visible in the browser)
-- Action: As the test customer account, comment "I'm interested in the blue dress" on a product post on the merchant's Page.
-- What to show: The comment appearing on the post.
+### Step 5 - Manual Reply
 
-### Step 4 — Easy Moderator detects the keyword and sends a DM
+- Screen: Same inbox thread.
+- Action: Type and send a manual reply.
+- Show: Reply is delivered to the customer in Messenger.
 
-- Screen: Back to Easy Moderator — Shared Inbox (`/app/inbox`)
-- What to show: Within a few seconds, a new conversation thread appears in the inbox from the test customer. The AI-generated Messenger DM is visible as a sent message.
-- **Show the automated-experience disclosure (Meta policy):** the **first** AI reply of the conversation opens with the mandatory clear-text line — *"You're chatting with {shop}'s automated AI assistant."* — before any other content. Pause on it so the reviewer sees the app clearly discloses that an automated system is replying (`EasyMod-backend/src/modules/shop/ai-messaging.js`, `buildGreeting`). The order details follow (e.g. "Here are the details for the blue dress…").
+## Do Not Show
 
-### Step 5 — Customer replies in Messenger
+Do not show or narrate:
 
-- Screen: Facebook Messenger (test customer account)
-- Action: The test customer sends a reply: "What sizes are available?"
-- What to show: The reply arriving in the Easy Moderator inbox in real time.
+- Comment-to-DM
+- Page post comment triggers
+- `feed` webhook events
+- Public replies to comments
+- Private replies to comments
+- Live selling from comments
 
-### Step 6 — Conversation is logged in inbox
+Those features are removed from the initial launch and are not part of Meta App Review.
 
-- Screen: Easy Moderator Shared Inbox
-- What to show: The full conversation thread — the outbound DM (sent by Easy Moderator) and the customer's inbound reply. The conversation metadata panel shows the customer name, platform (Messenger), and timestamp.
+## Development Mode Note
 
----
-
-## Storyboard 2: Opt-Out Respected End-to-End
-
-**Goal:** Demonstrate that when a customer sends "STOP", Easy Moderator records the opt-out and the policy engine prevents any further outbound messages to that customer — even if a merchant manually tries to send.
-
-**Duration estimate:** 2–3 minutes
-
-### Step 1 — Customer sends opt-out keyword
-
-- Screen: Facebook Messenger (test customer account)
-- Action: Test customer sends the message "STOP" to the merchant's Page.
-- What to show: The message appearing in Messenger.
-
-### Step 2 — Opt-out is logged in the inbox
-
-- Screen: Easy Moderator Shared Inbox
-- What to show: The "STOP" message appears in the conversation thread. The conversation is flagged — a badge or label shows "Opted out" or the thread is marked with a status change (e.g. "Messaging paused").
-
-### Step 3 — Opt-out is recorded in the customer profile
-
-- Screen: Easy Moderator customer detail panel (click the customer's name in the inbox thread)
-- What to show: The customer profile shows `messaging_consent.facebook.opted_out_at` populated (or an equivalent "Opted out" status indicator). This confirms the consent event was written.
-
-### Step 4 — Merchant attempts to send a follow-up message
-
-- Screen: Easy Moderator Shared Inbox, same conversation thread
-- Action: Merchant types a message in the composer and clicks Send.
-- What happens: The send is blocked. The composer shows an inline error: "Cannot send — this customer has opted out of messages." (the policy engine deny with a user-readable reason, not a stack trace).
-- What to show: The error state in the composer. The message is NOT sent to Messenger.
-
-### Step 5 — Policy decision is visible in admin view
-
-- Screen: Easy Moderator — navigate to the customer's conversation audit trail or policy decisions log (accessible via the conversation detail panel's "Audit" tab or equivalent admin view).
-- What to show: A policy_decision row showing `outcome: BLOCKED`, `reason: messenger_opted_out`, `customer_id`, and `created_at`. This confirms the policy engine wrote an audit row.
-
-### Step 6 — Opt-out persists across sessions
-
-- Screen: Reload Easy Moderator and navigate back to the same conversation.
-- What to show: The opt-out status is still present. The composer is still disabled for this customer. The opt-out survives a page refresh (it is persisted in the database, not browser state).
-
----
-
-## Notes for Recording
-
-- Use a test Facebook Page and a second personal account as the test customer — do not use real customer data in the review video.
-- Credentials for the test accounts are in 1Password under "Meta App Review Test Accounts" — see [test-user-credentials.md](test-user-credentials.md).
-- Record at 1080p minimum. Show the full browser including the URL bar so the reviewer can see the domain.
-- Narrate each step out loud or add text captions.
+If the app is still in Development mode, send the inbound DM from the supplied customer account that is listed under App Roles -> Testers.

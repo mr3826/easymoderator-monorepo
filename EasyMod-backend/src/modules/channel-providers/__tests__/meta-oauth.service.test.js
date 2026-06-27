@@ -102,7 +102,7 @@ describe('connectPage() webhook verify wiring', () => {
     });
 
     test('calls confirmWebhookActive and NOT updateStatus(ERROR) when verify returns ok:true', async () => {
-        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages', 'feed'] });
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 

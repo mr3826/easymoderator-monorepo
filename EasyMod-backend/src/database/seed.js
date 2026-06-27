@@ -118,8 +118,7 @@ async function main() {
                     ai_replies: true,
                     order_management: true,
                     delivery_tracking: true,
-                    bd_lite: true,
-                    comment_to_dm: true
+                    bd_lite: true
                 },
                 current_period_start: new Date(),
                 current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),

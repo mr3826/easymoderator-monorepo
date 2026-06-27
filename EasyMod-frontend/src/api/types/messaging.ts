@@ -29,12 +29,6 @@ export interface NormalizedMessage {
   language?: 'bn' | 'en' | 'banglish' | null;
 
   inReplyToExternalId?: string | null;
-  threadContext?: {
-    isCommentToDm?: boolean;
-    commentId?: string;
-    postId?: string;
-    privateReplyEligible?: boolean;
-  };
 
   ai?: {
     intent?: string;

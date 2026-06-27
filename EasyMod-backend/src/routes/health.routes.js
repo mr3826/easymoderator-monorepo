@@ -126,8 +126,8 @@ router.get('/detailed', authenticate, async (req, res) => {
             const stats = await queueManager.getQueueStats(name);
             checks.queues[name] = stats || { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
         }
-        // Customer-facing reply pipeline (message-processing + comment-to-dm +
-        // notifications + the message-dlq sink). A non-zero dlq means real
+        // Customer-facing reply pipeline (message-processing + notifications +
+        // the message-dlq sink). A non-zero dlq means real
         // customers got no reply — this is the path that must never fail silently.
         checks.criticalQueues = await queueManager.getCriticalQueueStats();
         const dlqDepth = checks.criticalQueues?.messageDlq?.waiting || 0;

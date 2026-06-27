@@ -66,12 +66,12 @@
 
 ## Phase 5 — AI gate wiring (auto-reply respects status)
 
-**Files:** Modify `EasyMod-backend/src/modules/commentToDm/comment-to-dm.service.js`, `EasyMod-backend/src/modules/integration/meta-webhook-events.handler.js` (and/or `ai-chatbot.controller.js`); read each first.
+**Files:** Modify `EasyMod-backend/src/modules/integration/meta-webhook-events.handler.js` (and/or `ai-chatbot.controller.js`); read each first.
 
 - [ ] Before generating/sending an AI reply, load the shop subscription and skip AI when `!isAiActive(sub)` (trial_expired/suspended/cancelled/inactive). Inbound message + manual replies still persist (no block on the inbox).
 - [ ] Log a structured event when AI is skipped for billing status.
 - [ ] Test: a focused unit test asserting AI send is skipped when status is `trial_expired`/`suspended` but the conversation/message is still recorded.
-- [ ] Run: `npm test --prefix EasyMod-backend -- comment-to-dm` (and webhook handler test if present).
+- [ ] Run the relevant webhook handler and AI reply tests.
 - [ ] Commit: `feat(ai-gate): pause AI auto-reply for inactive/expired subscriptions`.
 
 ## Phase 6 — Partner program (persist → approve → bill → collect → suspend)

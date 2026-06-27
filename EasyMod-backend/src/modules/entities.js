@@ -49,9 +49,6 @@ const MetaChannelConsentEvent = require('./channel-providers/meta-channel-consen
 // Phase 3 — Policy Engine audit log
 const PolicyDecision = require('./policy/policy-decision.entity');
 
-// Phase 4 — Comment-to-DM state machine
-const CommentToDmEvent = require('./commentToDm/comment-to-dm.entity');
-
 // Define many-to-many relationships
 User.belongsToMany(Shop, {
     through: UserShop,
@@ -365,51 +362,6 @@ Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking
 PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
 
-// ── Phase 4: CommentToDmEvent associations ─────────────────────────────────
-// Shop <-> CommentToDmEvent (one shop, many events)
-Shop.hasMany(CommentToDmEvent, {
-    foreignKey: 'shop_id',
-    as: 'commentToDmEvents',
-    onDelete: 'CASCADE'
-});
-CommentToDmEvent.belongsTo(Shop, {
-    foreignKey: 'shop_id',
-    as: 'shop'
-});
-
-// MetaChannel <-> CommentToDmEvent (one channel, many events)
-MetaChannel.hasMany(CommentToDmEvent, {
-    foreignKey: 'channel_id',
-    as: 'commentToDmEvents',
-    onDelete: 'CASCADE'
-});
-CommentToDmEvent.belongsTo(MetaChannel, {
-    foreignKey: 'channel_id',
-    as: 'channel'
-});
-
-// Customer <-> CommentToDmEvent (nullable — linked after DM opens)
-Customer.hasMany(CommentToDmEvent, {
-    foreignKey: 'customer_id',
-    as: 'commentToDmEvents',
-    onDelete: 'SET NULL'
-});
-CommentToDmEvent.belongsTo(Customer, {
-    foreignKey: 'customer_id',
-    as: 'customer'
-});
-
-// Conversation <-> CommentToDmEvent (nullable — linked after DM opens)
-Conversation.hasMany(CommentToDmEvent, {
-    foreignKey: 'conversation_id',
-    as: 'commentToDmEvents',
-    onDelete: 'SET NULL'
-});
-CommentToDmEvent.belongsTo(Conversation, {
-    foreignKey: 'conversation_id',
-    as: 'conversation'
-});
-
 // ── Phase 1: MetaChannel associations ──────────────────────────────────────
 // Shop <-> MetaChannel (one shop, many channels — one per platform)
 Shop.hasMany(MetaChannel, {
@@ -516,6 +468,4 @@ module.exports = {
     MetaChannelSettings,
     MetaChannelConsentEvent,
     PolicyDecision,
-    // Phase 4 — Comment-to-DM
-    CommentToDmEvent,
 };

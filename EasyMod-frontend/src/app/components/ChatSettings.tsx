@@ -599,9 +599,7 @@ export default function ChatSettings() {
               <ul className="space-y-1 list-disc list-inside">
                 <li><strong>pages_show_list</strong> — {t("channels.permissions.pagesShowList")}</li>
                 <li><strong>pages_messaging</strong> — {t("channels.permissions.pagesMessaging")}</li>
-                <li><strong>pages_read_engagement</strong> — {t("channels.permissions.pagesReadEngagement")}</li>
                 <li><strong>pages_manage_metadata</strong> — {t("channels.permissions.pagesManageMetadata")}</li>
-                <li><strong>pages_manage_engagement</strong> — {t("channels.permissions.pagesManageEngagement")}</li>
               </ul>
               <p className="mt-2 text-gray-500 text-[11px]">
                 {t("channels.permissions.note")}

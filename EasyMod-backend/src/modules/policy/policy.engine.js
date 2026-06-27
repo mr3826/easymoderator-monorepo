@@ -2,7 +2,7 @@
  * PolicyEngine — mandatory outbound gate.
  *
  * Every Meta outbound message (AI reply, payment confirmation, delivery update,
- * comment-to-DM, owner notification echo) MUST pass through evaluateOutbound()
+ * owner notification echo) MUST pass through evaluateOutbound()
  * before the actual Graph API call. Defense-in-depth: meta-send.service ALSO
  * calls evaluatePreFlight() so an upstream bug bypassing the worker still
  * cannot send to opted-out users.

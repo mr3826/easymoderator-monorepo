@@ -33,14 +33,12 @@ describe('MetaMessengerProvider', () => {
     });
 
     describe('buildAuthUrl() default scopes (App Review surface)', () => {
-        test('requests exactly the 5 Facebook scopes when none are passed', async () => {
+        test('requests exactly the Messenger-only Facebook scopes when none are passed', async () => {
             const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
             const scope = new URL(url).searchParams.get('scope') || '';
             expect(scope.split(',').sort()).toEqual([
-                'pages_manage_engagement',
                 'pages_manage_metadata',
                 'pages_messaging',
-                'pages_read_engagement',
                 'pages_show_list',
             ]);
         });
@@ -54,14 +52,14 @@ describe('MetaMessengerProvider', () => {
     });
 
     describe('webhookFields()', () => {
-        test('includes messages and feed for comment-to-DM', () => {
+        test('includes only Messenger messages', () => {
             const fields = provider.webhookFields();
-            expect(fields).toContain('messages');
-            expect(fields).toContain('feed');
+            expect(fields).toEqual(['messages']);
             expect(fields).not.toContain('messaging_postbacks');
             expect(fields).not.toContain('messaging_optins');
             expect(fields).not.toContain('message_deliveries');
             expect(fields).not.toContain('message_reads');
+            expect(fields).not.toContain('feed');
         });
 
         test('does NOT include whatsapp-related fields', () => {
@@ -161,7 +159,7 @@ describe('MetaMessengerProvider', () => {
             expect(events).toEqual([]);
         });
 
-        test('emits comment events from feed changes', () => {
+        test('ignores comment events from feed changes', () => {
             const events = provider.parseWebhookEnvelope({
                 object: 'page',
                 entry: [{
@@ -179,15 +177,7 @@ describe('MetaMessengerProvider', () => {
                     }]
                 }]
             });
-            expect(events).toHaveLength(1);
-            expect(events[0]).toMatchObject({
-                externalId: 'C_456',
-                senderExternalId: 'USER_AAA',
-                pageOrAccountId: 'PAGE_123',
-                text: 'Send me details',
-                commentId: 'C_456',
-                postId: 'P_789'
-            });
+            expect(events).toEqual([]);
         });
 
         test('ignores non-comment feed events', () => {
@@ -361,7 +351,7 @@ describe('MetaMessengerProvider', () => {
 
         test('returns ok:true when the page has all required subscriptions', async () => {
             axios.get.mockResolvedValueOnce({
-                data: { data: [{ subscribed_fields: ['messages', 'feed'] }] }
+                data: { data: [{ subscribed_fields: ['messages'] }] }
             });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(true);
@@ -379,12 +369,6 @@ describe('MetaMessengerProvider', () => {
 
         test('returns ok:false when messages field is missing', async () => {
             axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['feed'] }] } });
-            const res = await provider.verifyWebhookSubscription({ channel });
-            expect(res.ok).toBe(false);
-        });
-
-        test('returns ok:false when feed field is missing', async () => {
-            axios.get.mockResolvedValueOnce({ data: { data: [{ subscribed_fields: ['messages'] }] } });
             const res = await provider.verifyWebhookSubscription({ channel });
             expect(res.ok).toBe(false);
         });

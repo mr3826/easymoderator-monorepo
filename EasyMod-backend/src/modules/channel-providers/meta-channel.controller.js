@@ -206,7 +206,6 @@ const SETTINGS_WHITELIST = [
     'ai_auto_reply', 'automation_mode',
     'confidence_threshold_send', 'confidence_threshold_suggest',
     'allow_order_creation',
-    'comment_to_dm_enabled', 'comment_to_dm_keywords',
     'purpose_label',
 ];
 
@@ -218,8 +217,6 @@ function serializeSettings(s) {
         confidenceThresholdSend:    parseFloat(s.confidence_threshold_send),
         confidenceThresholdSuggest: parseFloat(s.confidence_threshold_suggest),
         allowOrderCreation:         s.allow_order_creation,
-        commentToDmEnabled:         s.comment_to_dm_enabled,
-        commentToDmKeywords:        s.comment_to_dm_keywords ?? [],
         purposeLabel:               s.purpose_label ?? null,
     };
 }
@@ -255,8 +252,6 @@ exports.updateChannelSettings = async (req, res, next) => {
             confidenceThresholdSend: 'confidence_threshold_send',
             confidenceThresholdSuggest: 'confidence_threshold_suggest',
             allowOrderCreation: 'allow_order_creation',
-            commentToDmEnabled: 'comment_to_dm_enabled',
-            commentToDmKeywords: 'comment_to_dm_keywords',
             purposeLabel: 'purpose_label',
         };
 

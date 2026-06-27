@@ -1189,7 +1189,7 @@
       "cleared": "Label cleared",
       "updateFailed": "Failed to update label",
       "fieldLabel": "Label (optional)",
-      "placeholder": "e.g. Sales, Live selling, Regional"
+      "placeholder": "e.g. Sales, Support, Regional"
     },
     "connectSuccess": "Connected successfully.",
     "connectCard": {
@@ -1230,9 +1230,7 @@
       "show": "What permissions are needed?",
       "pagesShowList": "see your Page list",
       "pagesMessaging": "read and send Messenger messages",
-      "pagesReadEngagement": "read Page comment events",
       "pagesManageMetadata": "subscribe to realtime webhooks",
-      "pagesManageEngagement": "public replies on comments",
       "note": "EasyMod uses these permissions only for customer messages."
     },
     "aiModel": {

@@ -2,7 +2,7 @@
  * MetaChannelSettings entity
  *
  * 1:1 with MetaChannel. Replaces the JSON blob in channel_configs.settings.
- * Stores per-channel AI, automation, and Comment-to-DM configuration.
+ * Stores per-channel AI and automation configuration.
  */
 
 'use strict';
@@ -68,24 +68,6 @@ const MetaChannelSettings = sequelize.define('MetaChannelSettings', {
         comment: 'Cosmetic per-channel tag (e.g. "Sales", "Live selling", "Regional"). Display only.',
     },
 
-    // ----- Comment-to-DM -----
-    comment_to_dm_enabled: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-    },
-    comment_to_dm_post_filter: {
-        type: DataTypes.JSONB,
-        allowNull: false,
-        defaultValue: [],
-        comment: 'Array of post IDs to restrict comment-to-DM to. Empty = all posts.',
-    },
-    comment_to_dm_keywords: {
-        type: DataTypes.JSONB,
-        allowNull: false,
-        defaultValue: [],
-        comment: 'Keywords that trigger the comment-to-DM flow. Empty = any comment.',
-    },
 }, {
     tableName: 'meta_channel_settings',
     timestamps: true,

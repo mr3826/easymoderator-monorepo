@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 const EFFECTIVE_DATE = "March 18, 2026";
-const LAST_UPDATED = "May 20, 2026";
+const LAST_UPDATED = "June 27, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
 const APP_NAME = "Easy Moderator";
 const COMPANY_NAME = "Hexabyte Limited";
@@ -96,7 +96,6 @@ export default function PrivacyPolicy() {
               <li>Name, phone number, and email address</li>
               <li>Messages sent and received through Facebook Messenger or web chat</li>
               <li>Platform-specific user identifiers (e.g., Facebook Page-scoped user ID)</li>
-              <li>Message delivery and read receipts</li>
               <li>Order details: items, quantities, prices, delivery address, and payment method</li>
               <li>Language preference and last active timestamp</li>
               <li>Delivery tracking information</li>
@@ -152,9 +151,6 @@ export default function PrivacyPolicy() {
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>Inbound and outbound message content (text, media references)</li>
               <li>Platform user identifiers (Facebook page-scoped IDs)</li>
-              <li>Message delivery status and read receipts</li>
-              <li>Messaging opt-in events</li>
-              <li>Post-back payloads from interactive message buttons</li>
               <li>Message echo events (copies of messages sent by the Page itself, for conversation sync)</li>
             </ul>
 
@@ -205,16 +201,8 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Send and receive Facebook Messenger messages on behalf of the connected Page</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_read_engagement</td>
-                    <td className="px-4 py-3 text-gray-600">Receive delivery and read receipts, and read comment events on Page posts for keyword-triggered auto-reply</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_engagement</td>
-                    <td className="px-4 py-3 text-gray-600">Post merchant-configured public reply comments alongside the DM trigger (optional "Also reply publicly" toggle)</td>
-                  </tr>
-                  <tr>
                     <td className="px-4 py-3 font-mono text-xs text-blue-700">pages_manage_metadata</td>
-                    <td className="px-4 py-3 text-gray-600">Subscribe to webhooks so incoming messages are delivered in real time</td>
+                    <td className="px-4 py-3 text-gray-600">Subscribe the connected Page to Messenger message webhooks so direct customer DMs are delivered in real time</td>
                   </tr>
                 </tbody>
               </table>

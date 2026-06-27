@@ -13,7 +13,6 @@
  * All business logic has been extracted to:
  *   - meta-webhook-events.handler.js  (message storage, SSE, AI dispatch)
  *   - meta-webhook-gdpr.handler.js    (data-deletion, deauthorize)
- *   - meta-webhook-comments.handler.js (comment-to-DM dispatch helpers)
  */
 
 const express = require('express');

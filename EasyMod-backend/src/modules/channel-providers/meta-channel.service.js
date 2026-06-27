@@ -392,9 +392,6 @@ class MetaChannelService {
             'confidence_threshold_suggest',
             'business_hours',
             'allow_order_creation',
-            'comment_to_dm_enabled',
-            'comment_to_dm_post_filter',
-            'comment_to_dm_keywords',
             'purpose_label'
         ];
 

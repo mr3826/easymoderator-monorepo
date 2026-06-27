@@ -47,7 +47,7 @@ export interface MetaChannel {
   disconnectedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Cosmetic merchant-facing tag (e.g. "Sales", "Live selling"). Display only. */
+  /** Cosmetic merchant-facing tag (e.g. "Sales", "Support"). Display only. */
   purposeLabel: string | null;
 }
 
@@ -202,8 +202,6 @@ export interface MetaChannelSettings {
   confidenceThresholdSend: number;
   confidenceThresholdSuggest: number;
   allowOrderCreation: boolean;
-  commentToDmEnabled: boolean;
-  commentToDmKeywords: string[];
   purposeLabel: string | null;
 }
 

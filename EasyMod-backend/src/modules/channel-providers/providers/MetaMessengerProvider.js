@@ -25,14 +25,11 @@ const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const DEFAULT_SCOPES = [
     'pages_show_list',
     'pages_messaging',
-    'pages_read_engagement',
-    'pages_manage_metadata',
-    'pages_manage_engagement'  // required for Page comment replies
+    'pages_manage_metadata'
 ];
 
 const WEBHOOK_FIELDS = [
-    'messages',
-    'feed'  // 'feed' carries comment events for Comment-to-DM (Phase 4)
+    'messages'
 ];
 
 function appsecretProof(token) {
@@ -358,24 +355,8 @@ class MetaMessengerProvider extends ChannelProvider {
                 });
             }
 
-            // Comment events (feed changes) — emitted as a separate event type for Phase 4
-            for (const change of entry.changes || []) {
-                if (change.field === 'feed' && change.value?.item === 'comment') {
-                    const v = change.value;
-                    events.push({
-                        externalId: v.comment_id || null,
-                        senderExternalId: v.from?.id || null,
-                        pageOrAccountId: pageId,
-                        text: v.message || null,
-                        attachments: [],
-                        isEcho: false,
-                        commentId: v.comment_id || null,
-                        postId: v.post_id || null,
-                        occurredAt: (v.created_time ? v.created_time * 1000 : Date.now()),
-                        raw: change
-                    });
-                }
-            }
+            // Page feed/comment changes are intentionally ignored for launch.
+            // EasyModerator only handles customer-initiated Messenger DMs.
         }
         return events;
     }
@@ -440,36 +421,6 @@ class MetaMessengerProvider extends ChannelProvider {
             };
         } catch (err) {
             throw metaError(err, 'sendMessage');
-        }
-    }
-
-    async sendPrivateReplyToComment({ channel, commentId, normalizedMessage }) {
-        const token = channel.page_access_token_ct;
-        if (!token) throw new Error('sendPrivateReplyToComment: channel has no token');
-        try {
-            const resp = await axios.post(
-                `${GRAPH_BASE}/${commentId}/private_replies`,
-                { message: normalizedMessage.text },
-                { params: { access_token: token } }
-            );
-            return { providerMessageId: resp.data.id || null };
-        } catch (err) {
-            throw metaError(err, 'sendPrivateReplyToComment');
-        }
-    }
-
-    async sendPublicCommentReply({ channel, commentId, text }) {
-        const token = channel.page_access_token_ct;
-        if (!token) throw new Error('sendPublicCommentReply: channel has no token');
-        try {
-            const resp = await axios.post(
-                `${GRAPH_BASE}/${commentId}/comments`,
-                { message: text },
-                { params: { access_token: token } }
-            );
-            return { commentId: resp.data.id || null };
-        } catch (err) {
-            throw metaError(err, 'sendPublicCommentReply');
         }
     }
 

@@ -33,8 +33,6 @@
  * @property {string|null} text         - Message text (null for attachment-only)
  * @property {NormalizedAttachment[]} attachments
  * @property {boolean} isEcho           - True for echo events (bot's own messages)
- * @property {string|null} commentId    - Set for comment events
- * @property {string|null} postId       - Set for comment events
  * @property {number} occurredAt        - Unix timestamp ms
  * @property {object} raw               - Full original payload for traceability
  */
@@ -224,33 +222,6 @@ class ChannelProvider {
      * @returns {Promise<{ providerMessageId: string }>}
      */
     async sendMessage({ channel, recipientId, normalizedMessage, decision }) {
-        throw new Error('not_implemented');
-    }
-
-    /**
-     * Send a private reply to a public comment via Meta's Private Replies API.
-     * This opens a DM thread attached to the comment.
-     *
-     * @param {object} params
-     * @param {object} params.channel
-     * @param {string} params.commentId
-     * @param {object} params.normalizedMessage
-     * @returns {Promise<{ providerMessageId: string }>}
-     */
-    async sendPrivateReplyToComment({ channel, commentId, normalizedMessage }) {
-        throw new Error('not_implemented');
-    }
-
-    /**
-     * Post a public reply to a comment on a Page post.
-     *
-     * @param {object} params
-     * @param {object} params.channel
-     * @param {string} params.commentId
-     * @param {string} params.text
-     * @returns {Promise<{ commentId: string }>}
-     */
-    async sendPublicCommentReply({ channel, commentId, text }) {
         throw new Error('not_implemented');
     }
 

@@ -72,15 +72,6 @@
  */
 
 /**
- * Thread context for comment-to-DM flows (Phase 4+).
- * @typedef {Object} NormalizedThreadContext
- * @property {boolean} [isCommentToDm]
- * @property {string}  [commentId]
- * @property {string}  [postId]
- * @property {boolean} [privateReplyEligible]
- */
-
-/**
  * The canonical message envelope shared between all channel providers,
  * the AI pipeline, the policy engine, the database layer, and the frontend.
  *
@@ -112,7 +103,6 @@
  *
  * --- Threading / context ---
  * @property {string|null}            [inReplyToExternalId]
- * @property {NormalizedThreadContext} [threadContext]
  *
  * --- AI / policy metadata ---
  * @property {NormalizedAiMeta}     [ai]

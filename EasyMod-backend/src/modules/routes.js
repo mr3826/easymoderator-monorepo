@@ -25,8 +25,6 @@ const analyticsRoutes = require('./analytics/analytics.routes');
 const banglishRoutes = require('./language/banglish.routes');
 const voiceProcessingRoutes = require('./ai/voice-processing.routes');
 const sentimentRoutes = require('./ai/sentiment.routes');
-// Phase 4 — Comment-to-DM state machine
-const commentToDmRoutes = require('./commentToDm/comment-to-dm.routes');
 
 const router = express.Router();
 
@@ -65,7 +63,5 @@ router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
 // Phase 1 — EasyModerator operations admin panel (platform-admin guarded inside the router).
 // Mounted AFTER /admin/partner and /admin/failed-jobs so those specific routers win first.
 router.use('/admin', require('./admin/admin.routes'));
-// Phase 4 — Comment-to-DM state machine
-router.use('/comment-to-dm', commentToDmRoutes);
 
 module.exports = router;

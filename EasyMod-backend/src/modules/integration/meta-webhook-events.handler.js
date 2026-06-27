@@ -10,7 +10,6 @@
  *   - Emit SSE event to connected dashboard clients
  *   - Process consent (STOP keyword → opt-out, else OPT_IN_IMPLICIT)
  *   - Dispatch BullMQ job for AI processing (unless STOP or duplicate)
- *   - Notify Comment-to-DM service that DM was opened
  */
 
 const { Customer } = require('../entities');
@@ -19,8 +18,6 @@ const { sequelize } = require('../../utils/database/database-setup');
 const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
-const { dispatchCommentEvents, notifyDmOpened } = require('./meta-webhook-comments.handler');
-const { extractCommentEvents } = require('../commentToDm/comment-to-dm.webhook-handler');
 const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('MetaWebhookEvents');
@@ -469,9 +466,6 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             continue;
         }
 
-        const fbCommentEvents = extractCommentEvents({ object: 'page', entry: [entry] }, 'facebook');
-        if (fbCommentEvents.length > 0) dispatchCommentEvents(fbCommentEvents, channel, 'facebook');
-
         for (const messaging of (entry.messaging || [])) {
             if (messaging.optin) {
                 await handleMessagingOptin({ channel, senderId: messaging.sender?.id, optin: messaging.optin });
@@ -512,7 +506,6 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                 const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
                 if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
                 else cancelPendingDispatch(storeResult.conversation_id);
-                notifyDmOpened(channel, messaging.sender.id, messageText);
             } catch (err) {
                 logger.error(`Failed to store message from ${messaging.sender.id} (page ${pageId})`, {
                     error: err.message, stack: err.stack

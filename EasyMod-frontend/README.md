@@ -114,7 +114,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 **Dashboard (`/app/*`)**
 
 - Dashboard (KPIs / cash position)
-- Unified Inbox + Comment-to-DM automation
+- Unified Inbox for Facebook Messenger DMs
 - Products, Add/Edit Product, Categories & subcategories
 - Orders
 - Customers
@@ -134,8 +134,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 
 ```
 auth · shop · conversation · customer · order · product · knowledge
-dashboard · payment · subscription · meta-channels · comment-to-dm
-audit · rto-shield
+dashboard · payment · subscription · meta-channels · audit · rto-shield
 ```
 
 The Axios instance sends credentials, attaches the CSRF token, transparently refreshes the access token on `401`, and normalises error shapes. Prefer adding new calls to the matching domain module rather than calling Axios directly from components.
