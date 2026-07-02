@@ -48,6 +48,11 @@ beforeEach(() => {
     jest.clearAllMocks();
     // Parcel dispatch is fire-and-forget via setImmediate — keep it out of tests.
     jest.spyOn(OrderSessionService, 'dispatchParcelWithRetry').mockResolvedValue(undefined);
+    jest.spyOn(console, 'info').mockImplementation(() => {});
+});
+
+afterEach(() => {
+    jest.restoreAllMocks();
 });
 
 describe('COLLECTING_NAME', () => {
@@ -251,6 +256,47 @@ describe('ADD_MORE (multi-product cart)', () => {
         expect(res.current_step).toBe('COLLECTING_NAME');
     });
 
+    test.each([
+        'no',
+        'না',
+        'আর লাগবে না',
+        'no, confirm this',
+        'না, অর্ডার করুন',
+        'confirm kore den',
+        'order ta confirm koren',
+        'এইটাই দেন',
+    ])('treats "%s" as done adding products and proceeds to name collection', async (answer) => {
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'bn', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.current_step).toBe('COLLECTING_NAME');
+        expect(res.prompt).toMatch(/নাম|name/i);
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+        expect(console.info).toHaveBeenCalledWith(
+            '[OrderSession] add_more_reply_proceed_to_confirm_order',
+            expect.objectContaining({
+                normalized_intent: 'proceed_to_confirm_order',
+                original_message: answer,
+            })
+        );
+    });
+
+    test('a vague Bengali no outside ADD_MORE does not confirm the product', async () => {
+        const session = makeSession({
+            current_step: 'PRODUCT_CONFIRMATION',
+            step_data: { language: 'bn' },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'না', null);
+
+        expect(res.current_step).toBe('PRODUCT_CONFIRMATION');
+        expect(res.prompt).toMatch(/নিশ্চিত|confirm/i);
+    });
+
     test('naming a second product identifies it and asks its quantity', async () => {
         productSearch.searchForOrder.mockResolvedValue({
             products: [{ id: 'prod-2', name: 'Silk Dupatta', price: 500, in_stock: true }],
@@ -267,6 +313,65 @@ describe('ADD_MORE (multi-product cart)', () => {
         expect(session.update).toHaveBeenCalledWith(
             expect.objectContaining({ product_info: expect.objectContaining({ id: 'prod-2', name: 'Silk Dupatta' }) })
         );
+    });
+
+    test('explicit add-another language remains a product-add intent', async () => {
+        productSearch.searchForOrder.mockResolvedValue({
+            products: [{ id: 'prod-4', name: 'Blue Shirt', price: 800, in_stock: true }],
+            wasFallback: false,
+        });
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'bn', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'আরেকটা নীল শার্ট দেন', null);
+
+        expect(res.current_step).toBe('COLLECTING_QUANTITY');
+        expect(productSearch.searchForOrder).toHaveBeenCalledWith({
+            shopId: 'shop-1',
+            query: 'আরেকটা নীল শার্ট দেন',
+            limit: 5,
+        });
+        expect(session.update).toHaveBeenCalledWith(
+            expect.objectContaining({ product_info: expect.objectContaining({ id: 'prod-4', name: 'Blue Shirt' }) })
+        );
+    });
+
+    test('cart removal language at ADD_MORE removes only the referenced product', async () => {
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: {
+                language: 'en',
+                cart: cartWith(
+                    { product_id: 'prod-1', name: 'Blue Shirt', price: 800, quantity: 1 },
+                    { product_id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 1 }
+                ),
+            },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'remove the shirt', null);
+
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.step_data.cart).toEqual([
+            expect.objectContaining({ product_id: 'prod-2', name: 'Silk Dupatta' }),
+        ]);
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+    });
+
+    test('single-line quantity edit at ADD_MORE updates that cart item', async () => {
+        const session = makeSession({
+            current_step: 'ADD_MORE',
+            step_data: { language: 'bn', cart: cartWith({ product_id: 'prod-1', name: 'Azal Lawn', price: 1650, quantity: 1 }) },
+        });
+
+        const res = await OrderSessionService.handleCurrentStep(session, 'quantity 2 করেন', null);
+
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.step_data.cart).toEqual([
+            expect.objectContaining({ product_id: 'prod-1', quantity: 2 }),
+        ]);
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
     });
 
     test('the second product quantity appends a second cart line and loops back to add-more', async () => {

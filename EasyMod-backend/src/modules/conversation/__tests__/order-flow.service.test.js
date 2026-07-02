@@ -90,6 +90,25 @@ describe('handleOrderFlow — continue an active session', () => {
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
         expect(res.response).toMatch(/cancel/i);
     });
+
+    test('a negative add-more reply continues the active session instead of cancelling it', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE', current_step: 'ADD_MORE' });
+        OrderSessionService.processStep.mockResolvedValue({
+            prompt: 'অনুগ্রহ করে আপনার নাম দিন।',
+            current_step: 'COLLECTING_NAME',
+            completed: false,
+        });
+
+        const res = await handleOrderFlow(base({ message: 'আর লাগবে না', language: 'bn' }));
+
+        expect(res.handled).toBe(true);
+        expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, 'আর লাগবে না', null);
+        expect(res.meta).toEqual(expect.objectContaining({
+            order_session: 'continue',
+            step: 'COLLECTING_NAME',
+        }));
+    });
 });
 
 describe('handleOrderFlow — start a session on purchase intent', () => {
@@ -312,12 +331,25 @@ describe('hasPurchaseIntent', () => {
 });
 
 describe('isOrderCancel', () => {
-    test.each(['cancel', 'cancel korbo', 'order cancel', 'লাগবে না', 'lagbe na'])(
+    test.each(['cancel', 'cancel korbo', 'order cancel', 'অর্ডার বাতিল', 'বাতিল', "don't want this order"])(
         'detects cancel in: %s', (msg) => {
             expect(isOrderCancel(msg)).toBe(true);
         });
 
-    test.each(['হ্যাঁ', 'yes', 'John Doe', 'Mirpur 10'])('does NOT fire on: %s', (msg) => {
+    test.each([
+        'লাগবে না',
+        'lagbe na',
+        'আর লাগবে না',
+        'ar lagbe na',
+        'no',
+        'না',
+        'no, confirm this',
+        'cancel blue shirt',
+        'হ্যাঁ',
+        'yes',
+        'John Doe',
+        'Mirpur 10',
+    ])('does NOT fire on: %s', (msg) => {
         expect(isOrderCancel(msg)).toBe(false);
     });
 });

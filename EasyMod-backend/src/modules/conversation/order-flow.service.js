@@ -53,10 +53,39 @@ const normalizeForIntent = (t) => t.replace(/\b(?:oder|odar|ordar)\b/g, 'order')
 // as a new purchase. (Order-number queries are handled separately below.)
 const STATUS_HINTS = ['where is', 'status', 'track', 'tracking', 'kothay', 'কোথায়', 'koi ', 'kobe pabo', 'kobe debe'];
 
+const normalizeForCancel = (message) => String(message || '')
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”"]/g, ' ')
+    .replace(/[,.!?;:।]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const EXACT_CANCEL_PHRASES = new Set([
+    'cancel',
+    'cancel order',
+    'order cancel',
+    'cancel korbo',
+    'cancel koren',
+    'cancel korun',
+    'cancel koro',
+    'cancel kor',
+    'cancel kore din',
+    'cancel chai',
+    'order batil',
+    'order baatil',
+    'batil',
+    'baatil',
+    'বাতিল',
+    'অর্ডার বাতিল',
+]);
+
 const CANCEL_PATTERNS = [
-    'cancel', 'order cancel', 'cancel korbo', 'cancel kor', 'cancel chai',
-    'বাতিল', 'baatil', 'lagbe na', 'lagbena', 'লাগবে না', 'na lagbe',
-    "don't want", 'dont want', 'do not want',
+    /\border(?:\s+ta|\s+টা)?\s+(?:cancel|batil|baatil)\b/i,
+    /\bcancel\s+(?:order|korbo|koren|korun|koro|kor|kore\s+din|chai)\b/i,
+    /\b(?:don't|dont|do\s+not)\s+(?:want\s+)?(?:this\s+)?order\b/i,
+    /অর্ডার(?:\s+টা)?\s+বাতিল/i,
+    /^বাতিল(?:\s+(?:করুন|করেন|করে দিন|করবো))?$/i,
 ];
 
 function hasPurchaseIntent(message) {
@@ -70,8 +99,9 @@ function hasPurchaseIntent(message) {
 
 function isOrderCancel(message) {
     if (!message || typeof message !== 'string') return false;
-    const t = message.toLowerCase().trim();
-    return CANCEL_PATTERNS.some(p => t.includes(p));
+    const t = normalizeForCancel(message);
+    if (EXACT_CANCEL_PHRASES.has(t)) return true;
+    return CANCEL_PATTERNS.some(p => p.test(t));
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────-

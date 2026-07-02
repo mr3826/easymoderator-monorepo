@@ -53,3 +53,12 @@ test('default persona no longer hardcodes an advance-bKash payment example', () 
 
     expect(prompt).not.toContain('Advance ta bKash korte hobe');
 });
+
+test('default persona treats negative add-more replies as checkout intent, not cancellation', () => {
+    const prompt = buildSystemPrompt(KNOWLEDGE, 'mixed', false, 'friendly_bd', null, '');
+
+    expect(prompt).toContain('asked whether they want to add more products');
+    expect(prompt).toContain('want to continue checkout');
+    expect(prompt).toContain('Do not cancel the order unless');
+    expect(prompt).toContain('cancel order');
+});

@@ -204,6 +204,15 @@ const extractQuantity = (text) => {
     return null;
 };
 
+const normalizeAddMoreDecisionText = (text) => String(text || '')
+    .replace(/[\u09E6-\u09EF]/g, (d) => BN_DIGITS[d] || d)
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”"]/g, ' ')
+    .replace(/[,.!?;:।]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 class OrderSessionService {
     /**
      * Start a new order session
@@ -468,9 +477,17 @@ class OrderSessionService {
             // affirmation → ask which product; anything else is treated as the next
             // product to identify (name or photo).
             case 'ADD_MORE': {
+                const addMoreCart = OrderSessionService.getCartItems(session, step_data);
+                const addMoreEdit = OrderSessionService.detectCartEdit(answer, addMoreCart);
+                if (addMoreEdit.action) {
+                    ({ nextStep, prompt, completed } =
+                        await OrderSessionService.applyCartEdit(session, step_data, addMoreEdit, addMoreCart, lang));
+                    break;
+                }
                 if (OrderSessionService.isCheckoutWord(answer)) {
+                    OrderSessionService.logAddMoreCheckoutDecision(session, answer, addMoreCart);
                     nextStep = 'COLLECTING_NAME';
-                    prompt = pickLang(lang, 'আপনার নাম কী?', "What's your name?");
+                    prompt = OrderSessionService.buildProceedToCheckoutPrompt(lang);
                     break;
                 }
                 if (OrderSessionService.isBareAddWord(answer)) {
@@ -1320,14 +1337,58 @@ class OrderSessionService {
 
     /** Whole-message "finish / no more items" intent at the add-more step. */
     static isCheckoutWord(text) {
-        const t = String(text || '').toLowerCase().trim();
+        const t = normalizeAddMoreDecisionText(text);
         const DONE = new Set([
             'no', 'na', 'nah', 'nope', 'no more', 'done', 'finish', 'finished',
-            'checkout', 'check out', 'complete', 'enough', 'bas',
+            'checkout', 'check out', 'complete', 'enough', 'bas', 'bus',
             "that's all", 'thats all', 'shesh', 'sesh', 'sesh koro',
-            'শেষ', 'না', 'আর না', 'ar na', 'arna', 'ar lagbe na', 'aro lagbe na', 'বাস', 'হয়ে গেছে',
+            'no thanks', 'no thank you', 'no need', 'nothing else', 'not needed',
+            'confirm', 'confirm this', 'confirmed', 'proceed', 'order confirm',
+            'order korun', 'order koren', 'order koro', 'order ta confirm koren',
+            'confirm kore den', 'confirm kore din', 'confirm koren', 'confirm korun',
+            'শেষ', 'না', 'না ভাই', 'আর না', 'ar na', 'arna', 'ar lagbe na',
+            'aro lagbe na', 'r lagbe na', 'lagbe na', 'lagbena', 'বাস',
+            'হয়ে গেছে', 'হয়ে গেছে', 'এটুকুই', 'এইটাই', 'এইটাই দেন', 'ঠিক আছে',
         ]);
-        return DONE.has(t);
+        if (DONE.has(t)) return true;
+
+        const CHECKOUT_PATTERNS = [
+            /\bno\b(?:\s+(?:thanks?|thank\s+you|need|more))?\b/i,
+            /\bno\b.*\b(?:confirm|checkout|order|proceed)\b/i,
+            /\b(?:confirm|confirmed|checkout|proceed)\b/i,
+            /\border\s+(?:ta\s+)?confirm(?:\s+(?:koren|korun|koro|kore\s+din))?\b/i,
+            /\border\s+(?:korun|koren|koro)\b/i,
+            /\bconfirm\s*(?:this|kore\s+(?:den|din)|koren|korun|koro)?\b/i,
+            /\b(?:that'?s\s+all|thats\s+all|nothing\s+else|no\s+need|not\s+needed|enough)\b/i,
+            /\b(?:bas|bus|shesh|sesh)(?:\s+(?:koro|koren|korun))?\b/i,
+            /\b(?:ar|r|aro)\s+(?:kichu\s+)?lagbe\s+na\b/i,
+            /\blagbe\s*na\b|\blagbena\b/i,
+            /\b(?:dorkar|darkar|dorcar)\s+(?:nai|nei|na)\b/i,
+            /^না(?:\s+ভাই)?$/i,
+            /না\s+.*(?:অর্ডার|কনফার্ম|এটুকুই)/i,
+            /আর\s+(?:কিছু\s+)?লাগবে\s+না/i,
+            /লাগবে\s+না/i,
+            /দরকার\s+(?:নেই|নাই)/i,
+            /^(?:শেষ|বাস|হয়ে গেছে|হয়ে গেছে|এটুকুই|এইটাই|এইটাই দেন|ঠিক আছে)$/i,
+            /(?:কনফার্ম|অর্ডার\s+(?:করুন|করেন|কনফার্ম))/i,
+        ];
+        return CHECKOUT_PATTERNS.some(pattern => pattern.test(t));
+    }
+
+    static buildProceedToCheckoutPrompt(lang = 'bn') {
+        return pickLang(lang,
+            'ঠিক আছে, বর্তমান কার্টের পণ্যগুলো দিয়েই চেকআউট এগিয়ে নিচ্ছি। অনুগ্রহ করে আপনার নাম দিন।',
+            "Okay, I'll continue checkout with the items currently in your cart. What's your name?");
+    }
+
+    static logAddMoreCheckoutDecision(session, originalMessage, cart = []) {
+        console.info('[OrderSession] add_more_reply_proceed_to_confirm_order', {
+            session_id: session?.id || null,
+            shop_id: session?.shop_id || null,
+            normalized_intent: 'proceed_to_confirm_order',
+            original_message: String(originalMessage || '').slice(0, 300),
+            cart_count: Array.isArray(cart) ? cart.length : 0,
+        });
     }
 
     /** Whole-message "yes, add another (but I haven't named it yet)" intent. */
@@ -1547,13 +1608,19 @@ class OrderSessionService {
         if (!text || !Array.isArray(cart) || !cart.length) return NONE;
         const t = String(text).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).toLowerCase().trim();
 
+        const qty = extractQuantity(t);
+        const QUANTITY_EDIT = /\b(quantity|qty|set|make|update|change|koro|koren|korun|kor|piece|pcs?)\b|পরিমাণ|সংখ্যা|করেন|করুন|করো|করে দিন|করে দেন/i;
         const idx = OrderSessionService._matchCartLine(t, cart);
-        if (idx < 0) return NONE;
+        if (idx < 0) {
+            if (cart.length === 1 && qty && QUANTITY_EDIT.test(t)) {
+                return { action: 'setqty', index: 0, quantity: qty };
+            }
+            return NONE;
+        }
 
         const REMOVE = /\b(remove|delete|cancel|drop|baad|hatao|chai na|lagbe na|lagbena)\b|বাদ|চাই না|লাগবে না|সরাও/i;
         if (REMOVE.test(t)) return { action: 'remove', index: idx };
 
-        const qty = extractQuantity(t);
         if (qty) return { action: 'setqty', index: idx, quantity: qty };
         return NONE;
     }
