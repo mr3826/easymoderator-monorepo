@@ -1099,6 +1099,7 @@ class OrderSessionService {
             delivery_address: stepData.address,
             delivery_zone: stepData.delivery_zone || null,
             channel: session.channel || 'chatbot',
+            order_status: 'confirmed',
             // One entry per cart line. price omitted intentionally — the server
             // computes totals from the live catalog price.
             items: cart.map(c => ({

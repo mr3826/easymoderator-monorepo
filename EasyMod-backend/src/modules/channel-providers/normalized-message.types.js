@@ -67,7 +67,7 @@
  * @property {string}  [decisionId]   - UUID of the policy_decisions row
  * @property {boolean} allowed
  * @property {string}  [reason]       - e.g. 'OK', 'OPTED_OUT', 'OUTSIDE_24H'
- * @property {string}  [messageTag]   - e.g. 'POST_PURCHASE_UPDATE' if injected
+ * @property {string}  [messageTag]   - Reserved for future approved template/tag paths; legacy tags disabled
  * @property {boolean} withinWindow   - true if within 24-hour messaging window
  */
 

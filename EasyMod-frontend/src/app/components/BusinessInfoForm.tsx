@@ -22,16 +22,11 @@ const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessIn
   socialLinks: (value?.socialLinks && typeof value.socialLinks === "object") ? value.socialLinks : {},
 });
 
-// Social platforms shown in the order-confirmation closing. WhatsApp accepts a
-// wa.me link or a bare phone number; the rest are profile/page URLs.
-// `label` is a brand/proper noun (kept as-is); `placeholderKey` is i18n-ized
-// because the WhatsApp hint contains translatable text.
+// Keep the launch-visible business profile aligned with the Messenger-only
+// Meta review scope. Stored legacy links are preserved, but only Facebook and
+// website are editable during the BD private launch.
 const SOCIAL_FIELDS: { key: keyof SocialLinks; label: string; placeholderKey: string }[] = [
   { key: "facebook", label: "Facebook", placeholderKey: "manageShop.businessInfo.social.facebookPlaceholder" },
-  { key: "instagram", label: "Instagram", placeholderKey: "manageShop.businessInfo.social.instagramPlaceholder" },
-  { key: "whatsapp", label: "WhatsApp", placeholderKey: "manageShop.businessInfo.social.whatsappPlaceholder" },
-  { key: "tiktok", label: "TikTok", placeholderKey: "manageShop.businessInfo.social.tiktokPlaceholder" },
-  { key: "youtube", label: "YouTube", placeholderKey: "manageShop.businessInfo.social.youtubePlaceholder" },
   { key: "website", label: "Website", placeholderKey: "manageShop.businessInfo.social.websitePlaceholder" },
 ];
 

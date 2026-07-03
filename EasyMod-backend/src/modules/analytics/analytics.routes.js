@@ -18,6 +18,9 @@ const validateKnowledgeGap = [
 
 // Routes
 
+// POST /api/analytics/funnel — first-party launch funnel instrumentation.
+router.post('/funnel', AnalyticsController.logFunnelEvent);
+
 /**
  * GET /api/analytics — summary payload (total_messages, llm_calls, cache_hits, keyword_matches, cost_estimate)
  * Consumed by the frontend dashboard (api/domains/dashboard.ts getAnalytics).

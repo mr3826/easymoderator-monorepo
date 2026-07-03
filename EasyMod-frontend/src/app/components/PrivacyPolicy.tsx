@@ -62,8 +62,8 @@ export default function PrivacyPolicy() {
                 Meta accounts and enabling AI-assisted responses on your behalf.
               </li>
               <li>
-                <strong>Legal obligation:</strong> Retaining records as required by applicable Bangladesh law,
-                including the Digital Security Act, 2018 and financial compliance requirements.
+                <strong>Legal obligation:</strong> Retaining records as required by applicable Bangladesh
+                law, financial compliance requirements, and lawful requests from competent authorities.
               </li>
             </ul>
           </section>
@@ -228,26 +228,42 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">5. Bangladesh Data Privacy Compliance</h2>
             <p className="mb-3 leading-relaxed">
               {COMPANY_NAME} is incorporated and operating in Bangladesh. We handle personal data in
-              compliance with applicable Bangladesh laws and regulations, including:
+              compliance with applicable Bangladesh laws and regulations. Bangladesh's data, cyber,
+              electronic communications, consumer protection, and financial rules continue to evolve, so
+              this policy is reviewed before public launch and after material regulatory changes.
             </p>
             <ul className="list-disc list-inside space-y-2 text-sm leading-relaxed ml-2 mb-4">
               <li>
-                <strong>Digital Security Act, 2018 (DSA 2018):</strong> We comply with the DSA 2018's
-                provisions on digital data security, unauthorised access, and data misuse. We implement
-                technical and organisational measures to protect personal data from unauthorised collection,
-                processing, storage, and disclosure.
+                <strong>Personal data and data management rules:</strong> We apply data minimisation,
+                purpose limitation, access control, correction, deletion, and retention controls to business
+                and end-customer data.
               </li>
               <li>
-                <strong>Information and Communication Technology (ICT) Act, 2006:</strong> We comply with
-                applicable provisions of the ICT Act governing electronic records, digital transactions,
-                and data security obligations.
+                <strong>Cyber security and electronic communications rules:</strong> We protect against
+                unauthorised access, data misuse, and abusive messaging, and we preserve audit evidence
+                where required for security review.
               </li>
               <li>
-                <strong>Bangladesh Telecommunication Regulatory Commission (BTRC):</strong> Where applicable,
-                we comply with BTRC guidelines governing digital communications services and data handling
-                within Bangladesh.
+                <strong>Platform and sector rules:</strong> Where applicable, we follow Meta Platform rules,
+                Bangladesh communications guidance, consumer-protection expectations, and payment or
+                financial-record requirements.
               </li>
             </ul>
+
+            <h3 className="text-base font-semibold text-gray-800 mb-2">RTO Shield and Shared Risk Signals</h3>
+            <p className="mb-3 text-sm leading-relaxed">
+              RTO Shield may use limited delivery-risk signals such as phone number, courier outcome,
+              order value bands, delivery area, and return/cancellation history. It is used only to help
+              merchants review COD fulfilment risk. Merchants remain responsible for giving their customers
+              appropriate notice and for using any risk signal fairly before refusing or changing an order.
+              Customers may request correction, review, or deletion of their related risk data by contacting
+              the merchant or emailing {CONTACT_EMAIL}.
+            </p>
+            <p className="mb-4 text-sm leading-relaxed">
+              RTO Shield does not use private message content as a shared risk signal and does not sell risk
+              data to advertisers or brokers. Shared risk signals are retained only while needed for fraud
+              prevention, dispute handling, and service integrity, then deleted or anonymised.
+            </p>
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Cross-Border Data Transfers</h3>
             <p className="mb-3 text-sm leading-relaxed">
@@ -263,7 +279,7 @@ export default function PrivacyPolicy() {
             <p className="text-sm leading-relaxed">
               In the event of a data breach that is likely to result in significant harm to your rights and
               interests, we will notify affected business users as promptly as practicable, and will cooperate
-              with the relevant Bangladesh regulatory authorities as required by the Digital Security Act, 2018.
+              with relevant Bangladesh regulatory authorities where legally required.
             </p>
           </section>
 
@@ -380,6 +396,10 @@ export default function PrivacyPolicy() {
                   <tr>
                     <td className="px-4 py-3 text-gray-800">Order records</td>
                     <td className="px-4 py-3 text-gray-600">Until the business deletes them or closes their account</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 text-gray-800">RTO Shield shared risk signals</td>
+                    <td className="px-4 py-3 text-gray-600">Retained while needed for fraud prevention and dispute handling, then deleted or anonymised</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 text-gray-800">Authentication cookies</td>
@@ -543,8 +563,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">13. Governing Law and Jurisdiction</h2>
             <p className="leading-relaxed">
               This Privacy Policy and any disputes arising from it are governed by the laws of the{" "}
-              <strong>People's Republic of Bangladesh</strong>, including the Digital Security Act, 2018 and
-              the Information and Communication Technology Act, 2006. Any disputes shall be subject to the
+              <strong>People's Republic of Bangladesh</strong>. Any disputes shall be subject to the
               exclusive jurisdiction of the competent courts of Dhaka, Bangladesh.
             </p>
           </section>

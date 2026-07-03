@@ -35,9 +35,15 @@ const logger = createLogger('ConsentService');
 
 const STOP_KEYWORDS = [
     'stop',           // EN
+    'stop koro',      // Banglish
     'unsubscribe',    // EN
+    'ar na',          // Banglish — "no more"
+    'bondo koro',     // Banglish — "stop it"
+    'band koro',      // Banglish spelling variant
     'বন্ধ',          // BN — bondho ("stop")
     'বন্ধ করো',      // BN — bondho koro ("stop it")
+    'আর না',         // BN — ar na ("no more")
+    'থামুন',         // BN — thamun ("stop")
     'স্টপ',          // BN transliteration
 ];
 
@@ -196,6 +202,16 @@ class ConsentService {
                 shopId, channelId, customerId,
                 event: 'OPT_IN_IMPLICIT', source: 'message', metadata,
             });
+            try {
+                require('../analytics/funnel-events.service')
+                    .recordFunnelEvent({
+                        event: 'first_inbound_message',
+                        shopId,
+                        onceKey: shopId,
+                        metadata: { channel_id: channelId, customer_id: customerId, platform },
+                    })
+                    .catch(() => {});
+            } catch (_) { /* funnel logging must never block inbound */ }
         }
         return customer;
     }

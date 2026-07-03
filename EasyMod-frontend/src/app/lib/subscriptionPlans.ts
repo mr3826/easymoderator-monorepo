@@ -18,7 +18,7 @@ export interface SubscriptionPlanDefinition {
     advanced_ai: boolean;
     priority_support: boolean;
     custom_branding: boolean;
-    comment_auto_reply: boolean;
+    messenger_dm_only: boolean;
   };
   highlights: string[];
   popular?: boolean;
@@ -48,13 +48,13 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       advanced_ai: true,
       priority_support: true,
       custom_branding: true,
-      comment_auto_reply: true,
+      messenger_dm_only: true,
     },
     highlights: [
       "সব ফিচার আনলিমিটেড — কোনো লক নেই",
       "Facebook AI Inbox",
       "Advanced RTO Shield + Analytics",
-      "Broadcast + Campaign + ভয়েস/ছবি বোঝে",
+      "Messenger DM-only launch scope + ছবি বোঝে",
       "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই",
     ],
     popular: true,
@@ -79,13 +79,13 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       advanced_ai: true,
       priority_support: true,
       custom_branding: true,
-      comment_auto_reply: true,
+      messenger_dm_only: true,
     },
     highlights: [
       "মাত্র ৳10–15/ডেলিভার্ড অর্ডার",
       "কোনো মাসিক ফি নেই",
       "Unlimited কথোপকথন",
-      "সব চ্যানেল আনলিমিটেড",
+      "Facebook Messenger আনলিমিটেড",
       "ডেডিকেটেড সাপোর্ট ম্যানেজার",
     ],
   },

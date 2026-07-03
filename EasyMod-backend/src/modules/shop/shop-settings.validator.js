@@ -40,7 +40,7 @@ const isValidSocialLinks = (val) => {
 
 // AI Settings Schema
 const AI_SETTINGS_SCHEMA = {
-  automation_mode: (val) => ['AUTO', 'DRAFT', 'MANUAL'].includes(val),
+  automation_mode: (val) => ['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'AUTO', 'DRAFT', 'MANUAL'].includes(val),
   confidence_threshold: (val) => typeof val === 'number' && val >= 0 && val <= 100,
   auto_reply_enabled: (val) => typeof val === 'boolean',
   max_auto_order_value: (val) => typeof val === 'number' && val >= 0,

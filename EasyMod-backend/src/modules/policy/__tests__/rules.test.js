@@ -68,13 +68,13 @@ describe('messengerOptedOut.rule', () => {
 
 describe('twentyFourHourWindow.rule', () => {
     const rule = require('src/modules/policy/rules/twentyFourHourWindow.rule');
-    test('passes through caller-provided messageTag', async () => {
+    test('ignores caller-provided legacy messageTag for BD launch', async () => {
         const r = await rule.evaluate(
             { policy: { messageTag: 'POST_PURCHASE_UPDATE' } },
             { customer: { id: 'c1' }, platform: 'facebook' },
         );
         expect(r.allow).toBe(true);
-        expect(r.augment.message_tag).toBe('POST_PURCHASE_UPDATE');
+        expect(r.augment.message_tag).toBeUndefined();
         expect(r.augment.within_window).toBe(false);
     });
     test('within_window=true when last inbound was <24h ago', async () => {
@@ -98,19 +98,21 @@ describe('templateRequired.rule', () => {
     test('denies when outside window and no tag', async () => {
         const r = await rule.evaluate({}, { runningAugment: { within_window: false } });
         expect(r.allow).toBe(false);
-        expect(r.reason).toBe('OUTSIDE_24H');
+        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
-    test('allows when outside window with approved tag', async () => {
+    test('denies when outside window with legacy tag', async () => {
         const r = await rule.evaluate({}, {
             runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
         });
-        expect(r.allow).toBe(true);
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
     test('denies with un-approved tag', async () => {
         const r = await rule.evaluate({}, {
             runningAugment: { within_window: false, message_tag: 'NOT_A_REAL_TAG' },
         });
         expect(r.allow).toBe(false);
+        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
 });
 

@@ -194,6 +194,18 @@ describe('Order Domain API', () => {
       expect(result.status).toBe('cancelled');
       expect(result.customerName).toBe('Karim');
     });
+
+    it('accepts the legacy top-level cancel response during deploy rollouts', async () => {
+      const mockResponse = {
+        data: { id: '1', order_status: 'cancelled', customer_name: 'Karim' },
+      };
+      (httpClient.post as any).mockResolvedValue(mockResponse);
+
+      const result = await order.cancelOrder('1', 'Out of stock');
+
+      expect(result.status).toBe('cancelled');
+      expect(result.customerName).toBe('Karim');
+    });
   });
 
   describe('bookCourier', () => {

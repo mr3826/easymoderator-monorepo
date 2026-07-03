@@ -82,13 +82,13 @@ describe('ai-messaging · renderSocialLinks', () => {
         expect(renderSocialLinks(null, 'en')).toBe('');
     });
 
-    it('renders only the filled links, in a stable order, under a header', () => {
+    it('renders only launch-approved filled links, in a stable order, under a header', () => {
         const out = renderSocialLinks(
             { facebook: 'https://fb.com/rina', whatsapp: '01711111111', website: 'https://rina.example' },
             'en'
         );
         expect(out).toBe(
-            'Follow us:\nFacebook: https://fb.com/rina\nWhatsApp: 01711111111\nWebsite: https://rina.example'
+            'Follow us:\nFacebook: https://fb.com/rina\nWebsite: https://rina.example'
         );
     });
 

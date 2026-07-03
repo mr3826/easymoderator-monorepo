@@ -1,5 +1,5 @@
 const shopService = require('./shop.service');
-const { Shop } = require('../entities');
+const { Shop, MetaChannel, Product, FaqResponse, Conversation, Message } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
@@ -80,6 +80,111 @@ const getBusinessInfo = async (req, res, next) => {
             success: true,
             data
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+async function buildOnboardingStatus(shopId, userId) {
+    const shop = await shopService.getShopById(shopId, userId);
+    const settings = shop.settings || {};
+    const businessInfo = settings.businessInfo || {};
+
+    const [
+        facebookConnected,
+        activeProducts,
+        activeFaqs,
+        aiMessages,
+    ] = await Promise.all([
+        MetaChannel.count({
+            where: { shop_id: shopId, platform: 'facebook', status: 'CONNECTED' },
+        }),
+        Product.count({
+            where: { shop_id: shopId, is_active: true },
+        }),
+        FaqResponse.count({
+            where: { shop_id: shopId, is_active: true },
+        }),
+        Message.count({
+            where: { sender: 'ai' },
+            include: [{
+                model: Conversation,
+                as: 'conversation',
+                attributes: [],
+                where: { shop_id: shopId },
+            }],
+        }).catch(() => 0),
+    ]);
+
+    const checks = {
+        facebook_connected: facebookConnected > 0,
+        business_info_added: Boolean(
+            businessInfo.shopName &&
+            (businessInfo.phone || businessInfo.address || businessInfo.openingHours)
+        ),
+        knowledge_added: activeProducts > 0 || activeFaqs > 0,
+        assistant_test_completed: Boolean(settings.onboarding_assistant_test_completed || aiMessages > 0),
+    };
+    const missing = Object.entries(checks)
+        .filter(([, passed]) => !passed)
+        .map(([key]) => key);
+
+    return {
+        completed: Boolean(settings.onboarding_completed),
+        can_complete: missing.length === 0,
+        checks,
+        missing,
+        counts: {
+            connected_facebook_pages: facebookConnected,
+            active_products: activeProducts,
+            active_faqs: activeFaqs,
+            ai_messages: aiMessages,
+        },
+    };
+}
+
+const getOnboardingStatus = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+        const status = await buildOnboardingStatus(shopId, userId);
+        res.status(200).json({ success: true, data: status });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const completeOnboarding = async (req, res, next) => {
+    try {
+        const { shopId, userId } = req.user;
+        if (!shopId) throw new AppError('No shop selected', 400);
+
+        const status = await buildOnboardingStatus(shopId, userId);
+        if (!status.can_complete) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'ONBOARDING_INCOMPLETE',
+                    message: 'Complete the required launch setup before finishing onboarding.',
+                    missing: status.missing,
+                    checks: status.checks,
+                },
+            });
+        }
+
+        const shop = await Shop.findByPk(shopId);
+        if (!shop) throw new AppError('Shop not found', 404);
+        await shop.update({
+            settings: {
+                ...(shop.settings || {}),
+                onboarding_completed: true,
+                onboarding_completed_at: new Date().toISOString(),
+                onboarding_status_snapshot: status,
+            },
+        });
+
+        const nextStatus = await buildOnboardingStatus(shopId, userId);
+        res.status(200).json({ success: true, data: nextStatus });
     } catch (error) {
         next(error);
     }
@@ -646,6 +751,8 @@ module.exports = {
     updateUserRole,
     getBusinessInfo,
     updateBusinessInfo,
+    getOnboardingStatus,
+    completeOnboarding,
     getLLMConfig,
     updateLLMConfig,
     getAISettings,

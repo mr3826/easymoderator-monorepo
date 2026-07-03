@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+import type { OnboardingStatus } from "@/api/domains/shop";
+import { trackFunnelEvent } from "@/app/lib/funnel";
 import { useAuth } from "../../features/auth/AuthProvider";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
@@ -128,13 +130,42 @@ const STEPS = [
   },
 ];
 
+const REQUIRED_CHECKS: Array<{
+  key: keyof OnboardingStatus["checks"];
+  labelKey: string;
+}> = [
+  { key: "facebook_connected", labelKey: "onboarding.requirements.facebook" },
+  { key: "business_info_added", labelKey: "onboarding.requirements.businessInfo" },
+  { key: "knowledge_added", labelKey: "onboarding.requirements.knowledge" },
+  { key: "assistant_test_completed", labelKey: "onboarding.requirements.assistantTest" },
+];
+
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<number>(() => loadPersistedStep());
   const [completing, setCompleting] = useState(false);
   const [seedingFaqs, setSeedingFaqs] = useState(false);
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
   const navigate = useNavigate();
   const { currentShop } = useAuth();
+
+  const refreshStatus = async () => {
+    try {
+      setStatusLoading(true);
+      const next = await apiClient.getOnboardingStatus();
+      setStatus(next);
+      return next;
+    } catch (_) {
+      return null;
+    } finally {
+      setStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshStatus();
+  }, [currentShop?.id]);
 
   // One-tap starter FAQ seed — gives the AI a working knowledge base on day one
   // without the seller having to hand-write FAQs. Idempotent on the backend.
@@ -148,6 +179,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       } else {
         toast.success(t("onboarding.toast.faqSeeded", { count: result.seeded }));
       }
+      refreshStatus();
       setStep((s) => Math.min(s + 1, STEPS.length - 1));
     } catch (_) {
       toast.error(t("onboarding.toast.faqError"));
@@ -169,17 +201,25 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     if (completing) return;
     try {
       setCompleting(true);
-      if (currentShop?.id) {
-        await apiClient.updateShop(currentShop.id, {
-          settings: { onboarding_completed: true },
-        });
+      const next = await apiClient.completeOnboarding();
+      setStatus(next);
+      if (!next.can_complete) {
+        toast.error(t("onboarding.toast.incomplete"));
+        return;
       }
-    } catch (_) {
-      // Non-blocking — wizard completes even if API call fails
-    } finally {
+      toast.success(t("onboarding.toast.completed"));
+      trackFunnelEvent("assistant_test_passed", { source: "onboarding_complete" }, { onceKey: "assistant_test_passed" });
       clearPersistedStep();
-      setCompleting(false);
       onComplete();
+    } catch (_) {
+      const next = await refreshStatus();
+      if (next?.missing?.length) {
+        toast.error(t("onboarding.toast.incomplete"));
+      } else {
+        toast.error(t("onboarding.toast.completeError"));
+      }
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -216,7 +256,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
               </span>
             </div>
             <button
-              onClick={markComplete}
+              onClick={() => toast.info(t("onboarding.toast.closeBlocked"))}
               className="text-gray-400 hover:text-gray-600 transition-colors"
               title={t("onboarding.skipSetup")}
               aria-label={t("onboarding.closeWizard")}
@@ -297,6 +337,24 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                 <span className="font-semibold">{t("onboarding.tipLabel")} </span>
                 {t(current.tipKey)}
               </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 mb-5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-gray-700 font-bn">{t("onboarding.requirements.title")}</p>
+                {statusLoading && <span className="text-[11px] text-gray-400">{t("onboarding.requirements.checking")}</span>}
+              </div>
+              <div className="space-y-1.5">
+                {REQUIRED_CHECKS.map((item) => {
+                  const passed = status?.checks?.[item.key] === true;
+                  return (
+                    <div key={item.key} className="flex items-center gap-2 text-xs font-bn">
+                      <CheckCircle2 className={`h-3.5 w-3.5 ${passed ? "text-green-600" : "text-gray-300"}`} />
+                      <span className={passed ? "text-gray-700" : "text-gray-500"}>{t(item.labelKey)}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Completed steps */}

@@ -8,7 +8,7 @@
  *   3. On pass: writes TrxIDLog record, returns verified payment data
  *   4. On fail: returns descriptive rejection reason for the bot to relay
  *
- * Called from order-session.service.js when step = AWAITING_MFS_SCREENSHOT
+ * Called from order-session-standalone.service.js when step = AWAITING_MFS_SCREENSHOT
  * and a new message with an image arrives.
  */
 

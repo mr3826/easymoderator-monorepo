@@ -49,6 +49,21 @@ const applyForPartner = async ({ businessName, phone, pageLink, shopId = null })
     }).catch((err) => logger.warn('Partner application admin email failed (non-fatal)', { err: err.message }));
 
     logger.info('Partner application received', { applicationId: application.id, businessName, shopId });
+    try {
+        require('../analytics/crm-leads.service')
+            .recordCrmLead({
+                source: 'partner_form',
+                shopId,
+                resourceId: application.id,
+                leadSource: 'partner_form',
+                facebookPage: pageLink,
+                status: 'new',
+                nextAction: 'Day 1/3/7/12 founder follow-up sequence',
+                activationStage: 'lead_captured',
+                metadata: { business_name: businessName },
+            })
+            .catch(() => {});
+    } catch (_) { /* CRM logging must never block the public lead form */ }
     return application;
 };
 

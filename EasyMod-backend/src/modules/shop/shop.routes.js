@@ -46,6 +46,12 @@ router.get('/business-info', shopController.getBusinessInfo);
 // PUT /shop/business-info - Update business info for current shop
 router.put('/business-info', shopBusinessInfoValidator, shopController.updateBusinessInfo);
 
+// GET /shop/onboarding/status - Server-computed first-launch checklist
+router.get('/onboarding/status', shopController.getOnboardingStatus);
+
+// POST /shop/onboarding/complete - Complete only after required checklist passes
+router.post('/onboarding/complete', shopController.completeOnboarding);
+
 // GET /shop/llm-config - Get LLM model configuration for this shop
 router.get('/llm-config', shopController.getLLMConfig);
 
@@ -64,7 +70,7 @@ router.get('/ai-settings/intent-thresholds', shopController.getIntentThresholds)
 // PUT /shop/ai-settings/intent-thresholds - Update per-intent confidence thresholds
 router.put('/ai-settings/intent-thresholds', shopController.updateIntentThresholds);
 
-// GET /shop/settings/ai-defaults - Return canonical AI defaults (DRAFT mode deprecated)
+// GET /shop/settings/ai-defaults - Return canonical AI defaults for the current launch scope.
 router.get('/settings/ai-defaults', shopController.getAiDefaults);
 
 // POST /shop/branding-preset - Apply a named branding preset (FRIENDLY | PROFESSIONAL | FUN)

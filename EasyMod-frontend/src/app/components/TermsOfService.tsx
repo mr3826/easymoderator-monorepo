@@ -105,8 +105,9 @@ export default function TermsOfService() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">4. Bangladesh Data Privacy Compliance</h2>
             <p className="mb-3 leading-relaxed">
               {COMPANY_NAME} is incorporated in Bangladesh. We handle data in accordance with applicable
-              Bangladesh laws and regulations, including guidelines issued by the Bangladesh
-              Telecommunication Regulatory Commission (BTRC) and the Digital Security Act, 2018.
+              Bangladesh data, cyber, communications, consumer-protection, and financial-record rules.
+              Bangladesh regulation continues to evolve, and the public-launch legal copy must be reviewed
+              by counsel before broad market release.
             </p>
 
             <h3 className="text-base font-semibold text-gray-800 mb-2">Data Collection and Processing</h3>

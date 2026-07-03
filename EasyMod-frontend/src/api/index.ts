@@ -196,6 +196,8 @@ export const apiClient = {
   updateShopAISettings: shopDomain.updateShopAISettings,
   getShop: shopDomain.getShop,
   updateShop: shopDomain.updateShop,
+  getOnboardingStatus: shopDomain.getOnboardingStatus,
+  completeOnboarding: shopDomain.completeOnboarding,
 
   // Payment config methods
   getPaymentConfig: paymentDomain.getPaymentConfig,

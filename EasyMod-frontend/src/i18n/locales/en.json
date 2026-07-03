@@ -92,13 +92,13 @@
       "headline1": "The Order &",
       "headline2": "COD-Trust",
       "headline3": "OS for Your Shop",
-      "subheadline": "AI replies to every Facebook buyer, captures the order, and flags risky cash-on-delivery customers using a fraud network shared across shops — so you ship with confidence.",
+      "subheadline": "A Bangla-first Facebook Messenger AI sales assistant for BD f-commerce sellers. It drafts buyer replies, helps capture orders, and supports COD/RTO risk checks — so you ship with more confidence.",
       "ctaStart": "Get Started →",
       "ctaDemo": "View Demo",
-      "stat1Value": "10+",
-      "stat1Label": "Active shops",
-      "stat2Value": "24/7",
-      "stat2Label": "AI auto-reply",
+      "stat1Value": "Pilot",
+      "stat1Label": "Private launch",
+      "stat2Value": "Draft",
+      "stat2Label": "AI replies first",
       "stat3Value": "3",
       "stat3Label": "BD couriers built-in"
     },
@@ -113,8 +113,8 @@
         },
         {
           "icon": "🔒",
-          "title": "Meta-approved & ban-safe",
-          "desc": "We follow Facebook messaging rules, so your page stays safe."
+          "title": "Meta review-ready and policy-safe",
+          "desc": "The first launch uses only Facebook Messenger DMs and blocks out-of-window replies until a current reviewed messaging path is available."
         },
         {
           "icon": "🙋",
@@ -196,31 +196,31 @@
       "becomePartner": "Become a Partner →"
     },
     "testimonials": {
-      "label": "Testimonials",
-      "heading": "What Shop Owners Say",
+      "label": "Pilot scorecard",
+      "heading": "What we will prove with launch shops",
       "items": [
         {
-          "quote": "Since using EasyModerator, orders at my shop have increased by 40%. Customers get answers even at night!",
-          "name": "Rahela Begum",
+          "quote": "Reduce buyer response time while keeping the merchant in control with Draft-first AI replies.",
+          "name": "Activation metric",
           "location": "Dhaka",
-          "shop": "Rahela Fashion House",
-          "avatar": "R",
+          "shop": "10-shop private pilot",
+          "avatar": "A",
           "avatarColor": "bg-pink-500"
         },
         {
-          "quote": "RTO Shield solved the biggest problem in my business. Fake orders are basically a thing of the past.",
-          "name": "Karim Bhai",
+          "quote": "Capture cleaner COD order details and flag risky delivery patterns before fulfilment.",
+          "name": "COD metric",
           "location": "Chittagong",
-          "shop": "Karim Electronics BD",
-          "avatar": "K",
+          "shop": "RTO Shield review",
+          "avatar": "C",
           "avatarColor": "bg-blue-500"
         },
         {
-          "quote": "Delivery booking with Pathao integration is so easy now. It used to take 1 hour, now it takes 5 minutes.",
-          "name": "Sumaiya Akter",
+          "quote": "Keep Meta compliance simple: Messenger DM-only, opt-out aware, and no comment or cold-DM automation.",
+          "name": "Trust metric",
           "location": "Sylhet",
-          "shop": "Sumaiya Lifestyle",
-          "avatar": "S",
+          "shop": "Meta review scope",
+          "avatar": "T",
           "avatarColor": "bg-emerald-500"
         }
       ]
@@ -228,7 +228,7 @@
     "cta": {
       "heading1": "Start Today —",
       "heading2": "Protect Your COD Revenue",
-      "subheading": "Free to start. AI auto-reply + RTO Shield in 5 minutes.",
+      "subheading": "Free to start. Messenger AI drafts + COD/RTO support in a guided setup.",
       "button": "Get Started Now →"
     },
     "footer": {
@@ -237,13 +237,13 @@
   },
   "auth": {
     "signin": {
-      "tagline": "Bangladesh's #1 AI Chatbot",
+      "tagline": "Messenger AI assistant for BD shops",
       "heading": "Make your business smart.",
       "subheading": "Facebook — manage all your Pages together.",
       "stats": [
         {
-          "stat": "10+",
-          "label": "Active Businesses"
+          "stat": "Pilot",
+          "label": "Private Launch"
         },
         {
           "stat": "98%",
@@ -258,9 +258,9 @@
           "label": "AI Support"
         }
       ],
-      "testimonialQuote": "Using Easy Moderator, I reduced my order response time from 3 hours to 5 minutes.",
-      "testimonialName": "Rahela Begum",
-      "testimonialShop": "Fashion Shop, Dhaka",
+      "testimonialQuote": "Draft-first Messenger AI keeps the seller in control while we prove launch metrics.",
+      "testimonialName": "Easy Moderator",
+      "testimonialShop": "BD pilot launch",
       "welcomeBack": "Welcome back! 👋",
       "loginPrompt": "Sign in to your Easy Moderator account",
       "emailLabel": "Email or Mobile Number",
@@ -273,7 +273,7 @@
       "signInButton": "Sign in →",
       "noAccount": "Don't have an account?",
       "createAccount": "Create new account",
-      "trustBadge": "10+ Bangladeshi businesses use Easy Moderator",
+      "trustBadge": "Private BD seller pilot",
       "errors": {
         "emailRequired": "Please enter your email",
         "passwordRequired": "Please enter your password",
@@ -283,7 +283,7 @@
     "signup": {
       "alreadyHaveAccount": "Already have an account?",
       "signIn": "Sign in",
-      "badge": "🇧🇩 10+ Bangladeshi businesses use us",
+      "badge": "🇧🇩 Private BD seller pilot",
       "heading": "Start Today",
       "subheading": "Grow your Bangladeshi business with AI — set up in just 5 minutes.",
       "choosePlan": "Choose your plan",
@@ -496,7 +496,7 @@
     "upgradeForAI": "Upgrade for AI",
     "agentBanner": "You're replying yourself — AI is paused for this conversation.",
     "windowClosingSoon": "⚠ Time to reply directly to this customer is almost up — reply now.",
-    "windowExpired": "This customer messaged over 24h ago. Pick a reason below to send your reply.",
+    "windowExpired": "This customer messaged over 24h ago. Direct Messenger replies are blocked until the customer messages again.",
     "noMessages": "No messages in this conversation",
     "aiSuggestion": "AI's reply",
     "confidence": "Confidence: {{percent}}%",
@@ -505,12 +505,11 @@
     "editAndUse": "Edit & send",
     "ignore": "Dismiss",
     "messagePlaceholder": "Type your reply here...",
-    "messageTagPlaceholder": "Pick a reason above to continue...",
+    "outsideWindowPlaceholder": "Wait for the customer to message again...",
     "send": "Send",
     "sending": "Sending...",
-    "messageTag": "Reason",
-    "messageTagRequired": "Pick a reason to reply",
-    "messageTagOptional": "Reason (optional)",
+    "outsideWindowDisabled": "Meta's 24-hour messaging window has expired. Easy Moderator will not send out-of-window Messenger messages in this launch version.",
+    "windowWarning": "The Messenger reply window is closing soon. Reply only if this is part of the active customer conversation.",
     "selectConversation": "Select a conversation to view messages",
     "imageProcessed": "Image processed ✓",
     "imageSkipped": "Image skipped (limit reached)",
@@ -536,19 +535,12 @@
     "timeMinutes": "{{count}}m ago",
     "timeHours": "{{count}}h ago",
     "timeDays": "{{count}}d ago",
-    "tagSelectReason": "Pick a reason...",
-    "tags": {
-      "confirmedEvent": "Order or event update",
-      "postPurchase": "Post-purchase update",
-      "account": "Account update"
-    },
     "errors": {
       "loadConversations": "Failed to load conversations",
       "loadMessages": "Failed to load messages",
       "aiSuggestion": "Please reply manually or wait 30s.",
       "aiBusy": "AI is busy — please reply manually or wait 30s.",
-      "messageTag": "Pick a reason to reply to this customer now.",
-      "selectTag": "Pick a reason first to send your reply.",
+      "outsideWindowDisabled": "This Messenger conversation is outside the 24-hour reply window.",
       "rateLimited": "Too many requests — please wait a moment and try again.",
       "sendMessage": "Failed to send message. Please try again.",
       "updateMode": "Failed to update conversation mode",
@@ -1491,10 +1483,6 @@
         "title": "Social Media Links",
         "help": "Any links you add will be shown in the \"Follow us\" section of the order-confirmation message. (optional)",
         "facebookPlaceholder": "https://facebook.com/yourpage",
-        "instagramPlaceholder": "https://instagram.com/yourshop",
-        "whatsappPlaceholder": "https://wa.me/8801XXXXXXXXX or 01XXXXXXXXX",
-        "tiktokPlaceholder": "https://tiktok.com/@yourshop",
-        "youtubePlaceholder": "https://youtube.com/@yourshop",
         "websitePlaceholder": "https://yourshop.com"
       }
     },
@@ -1926,7 +1914,7 @@
           "0": "Only ৳10–15 per delivered order",
           "1": "No monthly fee",
           "2": "Unlimited conversations",
-          "3": "All channels unlimited",
+          "3": "Facebook Messenger focused",
           "4": "Dedicated support manager"
         }
       }
@@ -1993,7 +1981,11 @@
   },
   "oauthCallback": {
     "connecting": "Connecting...",
-    "connectingToAccount": "Connecting to your account"
+    "connectingToAccount": "Connecting to your account",
+    "errorTitle": "Facebook connection could not continue",
+    "missingParams": "Meta did not return the required login details. Please retry from Chat Settings.",
+    "providerError": "Meta returned an error: {{error}}",
+    "retry": "Back to Chat Settings"
   },
   "onboarding": {
     "quickSetup": "Quick Setup",
@@ -2007,7 +1999,19 @@
     "toast": {
       "faqSkipped": "You already have FAQs — Starter FAQs were not added.",
       "faqSeeded": "{{count}} Starter FAQs added! The AI can now answer common questions.",
-      "faqError": "Could not add FAQs. Please try again."
+      "faqError": "Could not add FAQs. Please try again.",
+      "completed": "Setup completed. Keep AI in Draft while you test live conversations.",
+      "incomplete": "Finish the required setup checklist before completing onboarding.",
+      "completeError": "Could not complete onboarding. Please try again.",
+      "closeBlocked": "Complete the required setup checklist before closing onboarding."
+    },
+    "requirements": {
+      "title": "Required before launch",
+      "facebook": "Facebook Page connected",
+      "businessInfo": "Business info saved",
+      "knowledge": "At least one product or Starter FAQ added",
+      "assistantTest": "Assistant test reply created",
+      "checking": "Checking..."
     },
     "steps": {
       "facebook": {
@@ -2126,7 +2130,8 @@
       "errors": {
         "businessNameRequired": "Business name is required",
         "phoneRequired": "Phone number is required",
-        "pageLinkRequired": "Page link is required"
+        "pageLinkRequired": "Page link is required",
+        "submitFailed": "Could not send the application. Please try again."
       }
     }
   },
@@ -2216,7 +2221,7 @@
   "policy": {
     "deny": {
       "customerFirst24h": "Customer must message first within 24 hours (Meta policy)",
-      "windowExpired": "Messaging window expired. Use a message tag (e.g. Post-Purchase Update) to continue.",
+      "windowExpired": "Messaging window expired. Wait for the customer to message again before replying.",
       "dailyLimitReached": "Daily message limit reached. Try again after midnight.",
       "optedOut": "Customer has opted out of messages. Respect their choice.",
       "noConsent": "Customer consent not found. They must message you first.",

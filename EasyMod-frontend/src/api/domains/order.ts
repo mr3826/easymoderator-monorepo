@@ -92,7 +92,7 @@ export async function getOrders(params?: Record<string, unknown>): Promise<Order
  */
 export async function getOrder(orderId: string): Promise<Order> {
   const response: AxiosResponse<ApiResponse<Order>> = await httpClient.get(`/api/order/${orderId}`);
-  return normalizeOrder(response.data.data);
+  return normalizeOrder(response.data.data ?? response.data);
 }
 
 /**
@@ -183,7 +183,7 @@ export async function cancelOrder(orderId: string, reason?: string): Promise<Ord
   // Normalise like every other order fn — without this the cancelled order comes
   // back in raw snake_case, leaving the status pill blank and the courier check
   // broken until a manual refresh.
-  return normalizeOrder(response.data.data);
+  return normalizeOrder(response.data.data ?? response.data);
 }
 
 /**

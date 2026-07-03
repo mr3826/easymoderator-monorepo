@@ -6,6 +6,7 @@ import type { ShopAISettings } from "@/api/types/dashboard";
 import { authService } from "../lib/auth";
 import BusinessInfoForm from "./BusinessInfoForm";
 import AISettingsForm from "./AISettingsForm";
+import { trackFunnelEvent } from "@/app/lib/funnel";
 
 export default function BusinessInfoSettings() {
   const { t } = useTranslation();
@@ -47,6 +48,10 @@ export default function BusinessInfoSettings() {
 
   const handleSaveBusinessInfo = async (data: BusinessInfo) => {
     const updated = await apiClient.updateShopBusinessInfo(data);
+    trackFunnelEvent("shop_profile_completed", {
+      has_phone: Boolean(data.phone),
+      has_address: Boolean(data.address),
+    }, { onceKey: "shop_profile_completed" });
     await authService.refreshShops();
     return updated;
   };

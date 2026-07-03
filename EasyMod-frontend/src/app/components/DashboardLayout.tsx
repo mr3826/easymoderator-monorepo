@@ -48,8 +48,7 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (!currentShop?.id) return;
-    const done = localStorage.getItem(`onboarding_done_${currentShop.id}`);
-    if (!done && !currentShop.settings?.onboarding_completed) {
+    if (!currentShop.settings?.onboarding_completed) {
       setShowOnboarding(true);
     } else {
       setShowOnboarding(false);
@@ -57,9 +56,6 @@ export default function DashboardLayout() {
   }, [currentShop?.id, currentShop?.settings?.onboarding_completed]);
 
   const handleOnboardingComplete = () => {
-    if (currentShop?.id) {
-      localStorage.setItem(`onboarding_done_${currentShop.id}`, '1');
-    }
     setShowOnboarding(false);
   };
 

@@ -1,8 +1,37 @@
 const { validationResult } = require('express-validator');
 const KnowledgeGap = require('./knowledge-gap.entity');
 const enhancedAnalyticsService = require('./analytics-enhanced.service');
+const { recordFunnelEvent, ALLOWED_FUNNEL_EVENTS } = require('./funnel-events.service');
 
 class AnalyticsController {
+    static async logFunnelEvent(req, res) {
+        try {
+            const { event, metadata = {} } = req.body || {};
+            if (!ALLOWED_FUNNEL_EVENTS.has(event)) {
+                return res.status(400).json({
+                    success: false,
+                    error: { code: 'INVALID_FUNNEL_EVENT', message: 'Unsupported funnel event.' }
+                });
+            }
+
+            const row = await recordFunnelEvent({
+                event,
+                userId: req.user?.userId || null,
+                shopId: req.user?.shopId || null,
+                metadata,
+                req,
+            });
+
+            res.status(200).json({ success: true, data: { id: row.id } });
+        } catch (error) {
+            console.error('Log funnel event error:', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                error: { code: 'FUNNEL_EVENT_ERROR', message: 'Failed to log funnel event' }
+            });
+        }
+    }
+
     /**
      * Log knowledge gaps for FAQ improvement
      */

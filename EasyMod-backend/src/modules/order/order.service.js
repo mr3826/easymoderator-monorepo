@@ -365,7 +365,7 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
             customer_phone: orderData.customer_phone || null,
             order_number: orderNumber,
             channel: orderData.channel || 'manual',
-            order_status: 'draft',
+            order_status: orderData.order_status || 'draft',
             payment_status: orderData.payment_status || 'pending',
             fulfillment_status: orderData.fulfillment_status || 'unfulfilled',
             items: itemsSnapshot,
@@ -392,26 +392,42 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
 
         // 8. Track usage after successful commit
         await trackOrderUsage(order, shopId, requestId, logger);
+        try {
+            require('../analytics/funnel-events.service')
+                .recordFunnelEvent({
+                    event: 'first_order_captured',
+                    shopId,
+                    onceKey: shopId,
+                    metadata: {
+                        order_id: order.id,
+                        channel: order.channel || null,
+                        order_status: order.order_status,
+                    },
+                })
+                .catch(() => {});
+        } catch (_) { /* funnel logging must never affect committed orders */ }
 
         // 9. Enforce state consistency
         await enforceStateConsistency(order);
 
         // 10. Push notification to shop owner (fire-and-forget — never blocks order creation)
-        setImmediate(() => {
-            try {
-                const queueManager = require('../../jobs/queue-manager');
-                if (queueManager.queues.notifications) {
-                    queueManager.queues.notifications.add({
-                        shopId,
-                        payload: {
-                            title: 'নতুন অর্ডার',
-                            body: `অর্ডার #${order.order_number} এসেছে`,
-                            data: { orderId: order.id, type: 'new_order' }
-                        }
-                    }).catch(() => {});
-                }
-            } catch (_) { /* notification failure must never affect order */ }
-        });
+        if (process.env.NODE_ENV !== 'test') {
+            setImmediate(() => {
+                try {
+                    const queueManager = require('../../jobs/queue-manager');
+                    if (queueManager.queues.notifications) {
+                        queueManager.queues.notifications.add({
+                            shopId,
+                            payload: {
+                                title: 'নতুন অর্ডার',
+                                body: `অর্ডার #${order.order_number} এসেছে`,
+                                data: { orderId: order.id, type: 'new_order' }
+                            }
+                        }).catch(() => {});
+                    }
+                } catch (_) { /* notification failure must never affect order */ }
+            });
+        }
 
         return order;
     } catch (err) {

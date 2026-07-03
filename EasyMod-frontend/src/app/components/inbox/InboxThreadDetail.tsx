@@ -263,9 +263,10 @@ export function InboxThreadDetail({
       // Surface to parent — the composer is self-contained; use toast to communicate
       toast.info("Copy the suggestion and paste into the message box.");
     } else {
-      // Guard: 24h window expired with no tag selected means we cannot send outbound
+      // Guard: legacy Messenger tags are disabled for the BD launch, so any
+      // out-of-window AI draft stays blocked until an approved template path exists.
       if (is24hExpired) {
-        toast.error(t("inbox.errors.selectTag"));
+        toast.error(t("inbox.errors.outsideWindowDisabled"));
         return;
       }
       // Send directly

@@ -1,13 +1,13 @@
 /**
  * twentyFourHourWindow rule
  *
- * Meta Platform Policy: outside the 24-hour standard messaging window, the
- * outbound message MUST carry a `messaging_type=MESSAGE_TAG` with one of the
- * approved tags (CONFIRMED_EVENT_UPDATE, POST_PURCHASE_UPDATE, ACCOUNT_UPDATE).
+ * Meta Platform Policy: outside the 24-hour standard messaging window, do not
+ * send customer messages until a Meta-compliant template/messaging path is
+ * implemented and approved for production use. Legacy Messenger message tags
+ * are deprecated and must not be passed through to the provider.
  *
  * This rule is INFORMATIONAL — it does NOT hard-deny by itself. It sets
- * `augment.message_tag` for the templateRequired rule to consume. If the caller
- * already provided a tag on the message, we pass it through unchanged.
+ * `augment.within_window` for the templateRequired rule to consume.
  */
 
 'use strict';
@@ -21,14 +21,6 @@ module.exports = {
 
     async evaluate(message, ctx) {
         const { customer, platform } = ctx;
-
-        if (message?.policy?.messageTag) {
-            return {
-                allow: true,
-                reason: 'TAG_PRESENT',
-                augment: { message_tag: message.policy.messageTag, within_window: false },
-            };
-        }
 
         const lastInbound = consentService.getLastInboundAt({ customer, platform });
         if (!lastInbound) {

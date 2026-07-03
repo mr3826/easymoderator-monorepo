@@ -6,7 +6,7 @@
  * Three owner-configurable touches woven into the live AI reply pipeline:
  *   - Greeting: an auto-sent welcome on the FIRST AI reply of a conversation,
  *     carrying a fixed Meta AI-disclosure identifier the owner writes around.
- *   - Closing: a thank-you (+ "follow us" links) appended to the order
+ *   - Closing: a thank-you (+ launch-approved "follow us" links) appended to the order
  *     confirmation message.
  *   - Social block: the rendered list of the shop's social links.
  *
@@ -26,13 +26,11 @@ const DISCLOSURE = {
     mixed: (shop) => `Apni ${shop}-er automated AI assistant er sathe kotha bolchen.`,
 };
 
-// Stable render order + display labels for the social-links block.
+// Stable launch render order + display labels for the social-links block.
+// Stored legacy links are ignored here to keep customer-facing messages aligned
+// with the Messenger-only BD private-launch scope.
 const SOCIAL_ORDER = [
     ['facebook', 'Facebook'],
-    ['instagram', 'Instagram'],
-    ['whatsapp', 'WhatsApp'],
-    ['tiktok', 'TikTok'],
-    ['youtube', 'YouTube'],
     ['website', 'Website'],
 ];
 

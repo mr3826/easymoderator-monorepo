@@ -12,14 +12,33 @@ jest.mock('src/modules/channel-providers/provider.registry', () => ({ getProvide
 jest.mock('src/modules/conversation/escalation-auto-reply.service', () => ({
     sendEscalationAutoReply: jest.fn(),
 }));
+jest.mock('src/modules/policy/policy.engine', () => ({
+    evaluateOutbound: jest.fn(),
+}));
+jest.mock('src/modules/entities', () => ({
+    Customer: { findOne: jest.fn() },
+    MetaChannelSettings: { findOne: jest.fn() },
+}));
 
 const sseManager = require('src/utils/sse-manager');
 const { getProvider } = require('src/modules/channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('src/modules/conversation/escalation-auto-reply.service');
+const policyEngine = require('src/modules/policy/policy.engine');
+const { Customer, MetaChannelSettings } = require('src/modules/entities');
 const { escalateToHuman } = require('src/modules/conversation/human-handoff.service');
 
 describe('escalateToHuman', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        Customer.findOne.mockResolvedValue({ id: 'cust-1' });
+        MetaChannelSettings.findOne.mockResolvedValue({ channel_id: 'ch1' });
+        policyEngine.evaluateOutbound.mockResolvedValue({
+            allow: true,
+            reason: 'OK',
+            augment: {},
+            transform: null,
+        });
+    });
 
     test('sets hitl=true, emits hitl_changed, and delivers a holding message to the customer', async () => {
         const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
@@ -40,6 +59,17 @@ describe('escalateToHuman', () => {
         expect(arg.normalizedMessage.text).toBe('hold on');
         expect(arg.normalizedMessage.platform).toBe('facebook'); // messenger normalizes to facebook
         expect(arg.recipientId).toBe('123');
+        expect(policyEngine.evaluateOutbound).toHaveBeenCalledWith(
+            expect.objectContaining({ text: 'hold on', platform: 'facebook', senderRole: 'ai' }),
+            expect.objectContaining({
+                shopId: 's1',
+                channelId: 'ch1',
+                conversationId: 'c1',
+                recipientId: '123',
+                platform: 'facebook',
+            }),
+        );
+        expect(arg.decision.reason).toBe('OK');
     });
 
     test('does not flip hitl again when already true (idempotent), still reassures', async () => {
@@ -65,6 +95,26 @@ describe('escalateToHuman', () => {
             conversation, shopId: 's1', conversationId: 'c1',
             platform: 'instagram', recipientId: 1, channel: { id: 'ch1' },
         })).resolves.not.toThrow();
+    });
+
+    test('does not deliver the holding message when policy blocks it', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+        policyEngine.evaluateOutbound.mockResolvedValue({
+            allow: false,
+            reason: 'OPTED_OUT',
+            augment: {},
+        });
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(policyEngine.evaluateOutbound).toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
     });
 
     test('skips provider delivery when no channel could be resolved', async () => {

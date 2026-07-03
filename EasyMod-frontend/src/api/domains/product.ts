@@ -11,6 +11,7 @@ import type {
   ProductUploadPayload,
 } from '../types/product';
 import type { AxiosResponse } from 'axios';
+import { trackFunnelEvent } from '@/app/lib/funnel';
 
 /**
  * Get all products with optional filtering
@@ -65,6 +66,7 @@ export async function createProduct(
   product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Product> {
   const response: AxiosResponse<ApiResponse<Product>> = await httpClient.post('/api/product', product);
+  trackFunnelEvent('first_product_added', { source: 'product_create' }, { onceKey: 'first_product_added' });
   return response.data.data;
 }
 

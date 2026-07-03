@@ -251,6 +251,20 @@ class RtoShieldService {
 
     // Cross-shop network promotion — only RTO outcomes can strengthen the shared signal.
     if (isRto) {
+      try {
+        require('../analytics/funnel-events.service')
+          .recordFunnelEvent({
+            event: 'first_rto_flag',
+            shopId,
+            onceKey: shopId,
+            metadata: {
+              delivery_attempts: newAttempts,
+              rto_count: newRtoCount,
+              risk_score: Math.min(100, Math.round(rtoRate * 100)),
+            },
+          })
+          .catch(() => {});
+      } catch (_) { /* funnel logging must never block RTO tracking */ }
       await RtoShieldService.evaluateNetworkPromotion(normalized).catch(() => {});
     }
   }

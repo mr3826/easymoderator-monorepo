@@ -32,10 +32,13 @@ router.get('/', validate(orderValidator.getOrders), orderController.getOrders);
 router.get('/by-customer/:customerId', orderController.getOrdersByCustomer);
 router.get('/:id', validate(orderValidator.getOrderById), orderController.getOrderById);
 router.post('/', validate(orderValidator.createOrder), orderController.createOrderRest);
+router.post('/:orderId/confirm', orderController.confirmOrder);
 router.patch('/:id', validate(orderValidator.updateOrder), orderController.updateOrderById);
+router.post('/:orderId/cancel', orderController.cancelOrder);
 router.patch('/:orderId/cancel', orderController.cancelOrder);
 router.post('/:orderId/return-request', orderController.createReturnRequest);
 // Courier booking
+router.post('/:orderId/courier', orderController.bookCourier);
 router.post('/:orderId/book-courier', orderController.bookCourier);
 // D3: Return automation endpoints
 router.post('/:orderId/return', orderController.initiateReturn);

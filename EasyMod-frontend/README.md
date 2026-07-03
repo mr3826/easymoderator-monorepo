@@ -1,8 +1,8 @@
 # Easy Moderator — Frontend
 
-The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect one or more Facebook Pages, then manage a unified inbox, products, orders, couriers, and billing from this single-page app.
+The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect Facebook Pages, then manage a Messenger inbox, products, orders, couriers, and billing from this single-page app.
 
-Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and localised **Bengali-first**.
+Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and localised for English and Bengali/Banglish seller workflows.
 
 ---
 
@@ -39,7 +39,7 @@ Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and loc
 | Forms / validation | React Hook Form + Zod |
 | Charts | Recharts |
 | Animation | Framer Motion / Motion |
-| i18n | i18next + react-i18next (Bengali default) |
+| i18n | i18next + react-i18next (English fallback, persisted language toggle) |
 | Errors | Sentry (`@sentry/react`) |
 | Docs parsing | Mammoth (DOCX → text for knowledge upload) |
 | Tests | Vitest + Testing Library (unit, happy-dom), Playwright (e2e) |
@@ -92,7 +92,7 @@ src/
 │   └── users/              # admin user management
 ├── shared/                 # components, context, lib, types shared app-wide
 ├── i18n/
-│   ├── index.ts            # i18next config (Bengali default)
+│   ├── index.ts            # i18next config (English fallback + localStorage language detection)
 │   └── locales/{en,bn}.json
 ├── assets/ · data/ · styles/
 └── test/ · __tests__/      # Vitest specs + setup

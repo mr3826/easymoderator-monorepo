@@ -503,9 +503,23 @@ async function processMessageJob(job) {
 
     // Activation tracking: the first successful AI reply activates the shop.
     // Fire-and-forget + Redis NX-gated, so it runs once and never blocks the reply.
-    require('../modules/analytics/growth-metrics.service')
-        .recordActivation(shopId, conversationId)
-        .catch(() => {});
+    try {
+        require('../modules/analytics/growth-metrics.service')
+            .recordActivation(shopId, conversationId)
+            .catch(() => {});
+        require('../modules/analytics/funnel-events.service')
+            .recordFunnelEvent({
+                event: 'first_ai_reply_sent',
+                shopId,
+                onceKey: shopId,
+                metadata: {
+                    conversation_id: conversationId,
+                    channel_id: channel?.id || null,
+                    platform: policyChannelTypeForSend,
+                },
+            })
+            .catch(() => {});
+    } catch (_) { /* analytics must never fail a sent reply */ }
 
     return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
 }

@@ -123,7 +123,7 @@ describe('Shop Domain API', () => {
       const result = await shop.updateShop('shop1', { shop_name: 'Renamed Shop' });
 
       expect(httpClient.post).toHaveBeenCalledWith('/api/shop/update', {
-        id: 'shop1',
+        shopId: 'shop1',
         shop_name: 'Renamed Shop',
       });
       expect(result.shop_name).toBe('Renamed Shop');
@@ -135,7 +135,7 @@ describe('Shop Domain API', () => {
       await shop.updateShop('shop99', { logo_url: 'https://cdn.example.com/logo.png' });
 
       expect(httpClient.post).toHaveBeenCalledWith('/api/shop/update', {
-        id: 'shop99',
+        shopId: 'shop99',
         logo_url: 'https://cdn.example.com/logo.png',
       });
     });

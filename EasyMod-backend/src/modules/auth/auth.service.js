@@ -227,6 +227,31 @@ const createUserWithShop = async (userData) => {
             role: 'owner'
         };
 
+        try {
+            require('../analytics/funnel-events.service')
+                .recordFunnelEvent({
+                    event: 'signup_completed',
+                    userId: user.id,
+                    shopId: shop.id,
+                    onceKey: user.id,
+                    metadata: { source: 'backend_signup' },
+                })
+                .catch(() => {});
+            require('../analytics/crm-leads.service')
+                .recordCrmLead({
+                    source: 'signup',
+                    userId: user.id,
+                    shopId: shop.id,
+                    resourceId: user.id,
+                    leadSource: 'self_signup',
+                    status: 'signup_completed',
+                    nextAction: 'Day 1/3/7/12 founder activation follow-up sequence',
+                    activationStage: 'signup_completed',
+                    metadata: { shop_name: resolvedShopName },
+                })
+                .catch(() => {});
+        } catch (_) { /* lead/funnel logging must never block signup */ }
+
         return {
             user: userResponse,
             currentShop,

@@ -4,7 +4,7 @@
 import { useRef, useState, ChangeEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Send, Loader2, Tag, X, Paperclip, Zap, AlertTriangle, Search, Pencil,
+  Send, Loader2, X, Paperclip, Zap, AlertTriangle, Search, Pencil,
   Trash2, Plus, Save, FileText, Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -69,7 +69,6 @@ export function InboxComposer({
   const [isSending, setIsSending] = useState(false);
   const [sendPhase, setSendPhase] = useState<"idle" | "uploading" | "sending">("idle");
   const [sendError, setSendError] = useState<string | null>(null);
-  const [selectedMessageTag, setSelectedMessageTag] = useState("");
   const [selectedAttachment, setSelectedAttachment] = useState<File | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [quickSearch, setQuickSearch] = useState("");
@@ -125,8 +124,8 @@ export function InboxComposer({
     const hasAttachment = !!selectedAttachment;
     if (!selectedConversation || (!trimmed && !hasAttachment) || isSendingRef.current) return;
     isSendingRef.current = true;
-    if (is24hExpired && !selectedMessageTag) {
-      toast.error(t("inbox.errors.selectTag"));
+    if (is24hExpired) {
+      toast.error(t("inbox.errors.outsideWindowDisabled"));
       isSendingRef.current = false;
       return;
     }
@@ -159,11 +158,9 @@ export function InboxComposer({
         sender: "agent",
         message_type: messageType,
         ...(metadata ? { metadata } : {}),
-        ...(selectedMessageTag ? { message_tag: selectedMessageTag } : {}),
       });
       onMessageSent(message);
       setEditingMessage("");
-      setSelectedMessageTag("");
       handleAttachmentClear();
       setSendState("pulse");
       setTimeout(() => setSendState("idle"), 600);
@@ -267,20 +264,13 @@ export function InboxComposer({
   return (
     <div className="bg-white border-t border-gray-200 p-4 shrink-0">
       {(is24hWarning || is24hExpired) && (
-        <div className="mb-3 flex items-center gap-2">
-          <Tag className="w-4 h-4 text-gray-400 flex-shrink-0" />
-          <select
-            value={selectedMessageTag}
-            onChange={(e) => setSelectedMessageTag(e.target.value)}
-            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">
-              {is24hExpired ? t("inbox.messageTagRequired") : t("inbox.messageTagOptional")}
-            </option>
-            <option value="CONFIRMED_EVENT_UPDATE">{t("inbox.tags.confirmedEvent")}</option>
-            <option value="POST_PURCHASE_UPDATE">{t("inbox.tags.postPurchase")}</option>
-            <option value="ACCOUNT_UPDATE">{t("inbox.tags.account")}</option>
-          </select>
+        <div className={`mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${
+          is24hExpired
+            ? "border-red-200 bg-red-50 text-red-700"
+            : "border-amber-200 bg-amber-50 text-amber-700"
+        }`}>
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{is24hExpired ? t("inbox.outsideWindowDisabled") : t("inbox.windowWarning")}</span>
         </div>
       )}
       {selectedAttachment && (
@@ -389,8 +379,8 @@ export function InboxComposer({
           type="text"
           value={editingMessage}
           onChange={(e) => setEditingMessage(e.target.value)}
-          placeholder={is24hExpired && !selectedMessageTag ? t("inbox.messageTagPlaceholder") : t("inbox.messagePlaceholder")}
-          disabled={is24hExpired && !selectedMessageTag}
+          placeholder={is24hExpired ? t("inbox.outsideWindowPlaceholder") : t("inbox.messagePlaceholder")}
+          disabled={is24hExpired}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -398,7 +388,7 @@ export function InboxComposer({
             }
           }}
           className={`flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-            is24hExpired && !selectedMessageTag ? "bg-gray-100 cursor-not-allowed" : ""
+            is24hExpired ? "bg-gray-100 cursor-not-allowed" : ""
           }`}
         />
         <motion.button
@@ -407,12 +397,12 @@ export function InboxComposer({
           disabled={
             isSending ||
             (!editingMessage.trim() && !selectedAttachment) ||
-            (is24hExpired && !selectedMessageTag)
+            is24hExpired
           }
           variants={successPulse}
           animate={sendState}
           className={`px-4 md:px-6 py-3 bg-blue-600 text-white rounded-lg flex items-center gap-2 min-h-[44px] flex-shrink-0 ${
-            isSending || (!editingMessage.trim() && !selectedAttachment) || (is24hExpired && !selectedMessageTag)
+            isSending || (!editingMessage.trim() && !selectedAttachment) || is24hExpired
               ? "opacity-60 cursor-not-allowed"
               : "hover:bg-blue-700"
           }`}

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
 import { subscriptionPlans } from "@/app/lib/subscriptionPlans";
+import { trackFunnelEvent } from "@/app/lib/funnel";
 
 const gradientText: React.CSSProperties = {
   background: "linear-gradient(135deg, #34D399 0%, #00A651 100%)",
@@ -69,6 +70,7 @@ export default function LandingPage() {
     messages_handled: number; orders_captured: number; fake_orders_blocked: number;
   } | null>(null);
   useEffect(() => {
+    trackFunnelEvent("landing_view", { surface: "landing" });
     fetch("/api/public/live-stats")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j?.success && j?.data) setLiveStats(j.data); })

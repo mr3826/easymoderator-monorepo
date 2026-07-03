@@ -201,7 +201,11 @@ const confirmOrder = async (req, res, next) => {
             });
         }
 
-        const { orderId } = req.body; // Already validated
+        const orderId = req.params.orderId || req.params.id || req.body.orderId;
+        if (!orderId) {
+            throw new AppError('Order ID is required', 400);
+        }
+
         const order = await orderService.confirmOrder(
             orderId,
             req.user.userId,
@@ -339,6 +343,8 @@ const cancelOrder = async (req, res, next) => {
         );
 
         res.status(200).json({
+            success: true,
+            data: order,
             order_id: order.id,
             status: order.order_status,
             refund_status: 'pending',

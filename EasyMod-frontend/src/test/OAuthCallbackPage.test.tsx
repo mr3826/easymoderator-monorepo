@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import OAuthCallbackPage from '@/app/components/OAuthCallbackPage'
 
 const mockUseSearchParams = vi.fn()
@@ -29,7 +30,11 @@ describe('OAuthCallbackPage', () => {
       new URLSearchParams({ code: 'code-123', state: 'state-456' })
     ])
 
-    render(<OAuthCallbackPage />)
+    render(
+      <MemoryRouter>
+        <OAuthCallbackPage />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(window.opener.postMessage).toHaveBeenCalledWith(
@@ -45,7 +50,11 @@ describe('OAuthCallbackPage', () => {
       new URLSearchParams({ error: 'access_denied' })
     ])
 
-    render(<OAuthCallbackPage />)
+    render(
+      <MemoryRouter>
+        <OAuthCallbackPage />
+      </MemoryRouter>
+    )
 
     await waitFor(() => {
       expect(window.opener.postMessage).toHaveBeenCalledWith(

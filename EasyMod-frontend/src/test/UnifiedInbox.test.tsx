@@ -155,7 +155,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     })
   })
 
-  it('disables send for expired Facebook window until message tag is selected', async () => {
+  it('disables send for expired Facebook window because legacy tags are unavailable', async () => {
     const expiredConversation = {
       ...baseConversation,
       updated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
@@ -173,19 +173,15 @@ describe('UnifiedInbox 24h window behavior', () => {
       expect(screen.getByText(/messaged over 24h ago/i)).toBeInTheDocument()
     })
 
-    const input = screen.getByPlaceholderText(/Pick a reason above to continue/i)
+    const input = screen.getByPlaceholderText(/Wait for the customer to message again/i)
     expect(input).toBeDisabled()
 
     const sendButton = screen.getByRole('button', { name: /^Send$/i })
     expect(sendButton).toBeDisabled()
-
-    const tagSelect = screen.getByRole('combobox')
-    fireEvent.change(tagSelect, { target: { value: 'ACCOUNT_UPDATE' } })
-
-    expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('sends message with message_tag after selecting tag in expired Meta window', async () => {
+  it('does not send manual message with deprecated tag after expired Meta window', async () => {
     const expiredConversation = {
       ...baseConversation,
       updated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
@@ -203,28 +199,15 @@ describe('UnifiedInbox 24h window behavior', () => {
       expect(screen.getByText(/messaged over 24h ago/i)).toBeInTheDocument()
     })
 
-    const tagSelect = screen.getByRole('combobox')
-    fireEvent.change(tagSelect, { target: { value: 'ACCOUNT_UPDATE' } })
-
-    const input = screen.getByPlaceholderText(/Type your reply here/i)
-    fireEvent.change(input, { target: { value: 'Order update from agent' } })
+    const input = screen.getByPlaceholderText(/Wait for the customer to message again/i)
+    expect(input).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
 
-    await waitFor(() => {
-      expect(apiClient.createMessage).toHaveBeenCalledWith(
-        'conv-1',
-        expect.objectContaining({
-          content: 'Order update from agent',
-          sender: 'agent',
-          message_type: 'text',
-          message_tag: 'ACCOUNT_UPDATE',
-        })
-      )
-    })
+    expect(apiClient.createMessage).not.toHaveBeenCalled()
   })
 
-  it('blocks AI suggestion send when expired window has no selected message tag', async () => {
+  it('blocks AI suggestion send when expired window has no approved template path', async () => {
     const expiredConversation = {
       ...baseConversation,
       updated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
@@ -271,7 +254,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: /Send this/i }))
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Pick a reason first to send your reply.')
+      expect(toast.error).toHaveBeenCalledWith('This Messenger conversation is outside the 24-hour reply window.')
     })
     expect(apiClient.createMessage).not.toHaveBeenCalled()
   })

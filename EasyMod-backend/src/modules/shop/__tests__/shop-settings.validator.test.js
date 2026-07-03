@@ -469,6 +469,8 @@ describe('Shop Settings Validator', () => {
 
     it('AI_SETTINGS_SCHEMA validators return correct types', () => {
       expect(AI_SETTINGS_SCHEMA.automation_mode('AUTO')).toBe(true);
+      expect(AI_SETTINGS_SCHEMA.automation_mode('AI_ACTIVE')).toBe(true);
+      expect(AI_SETTINGS_SCHEMA.automation_mode('AI_SUGGEST_ONLY')).toBe(true);
       expect(AI_SETTINGS_SCHEMA.automation_mode('INVALID')).toBe(false);
       expect(AI_SETTINGS_SCHEMA.confidence_threshold(60)).toBe(true);
       expect(AI_SETTINGS_SCHEMA.confidence_threshold(150)).toBe(false);

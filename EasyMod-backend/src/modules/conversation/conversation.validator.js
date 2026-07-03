@@ -49,11 +49,9 @@ class ConversationValidator {
             metadata: Joi.object(),
             ai_suggestion: Joi.string(),
             ai_confidence: Joi.number().min(0).max(1),
-            message_tag: Joi.string().valid(
-                'CONFIRMED_EVENT_UPDATE',
-                'POST_PURCHASE_UPDATE',
-                'ACCOUNT_UPDATE'
-            ).optional()
+            message_tag: Joi.any().forbidden().messages({
+                'any.unknown': 'Legacy Messenger message tags are disabled for the BD launch'
+            })
         })
     };
 

@@ -88,7 +88,6 @@ export async function createMessage(
     sender: 'customer' | 'agent' | 'ai';
     message_type: 'text' | 'image' | 'file' | 'location';
     metadata?: unknown;
-    message_tag?: string;
   }
 ): Promise<Message> {
   const response: AxiosResponse<ApiResponse<Message>> = await httpClient.post(

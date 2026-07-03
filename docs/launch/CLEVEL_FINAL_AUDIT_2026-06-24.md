@@ -144,6 +144,10 @@ No code work is required to pass any of these — they are verification and pilo
 
 ## 6. CPO / CMO — Product scope & positioning
 
+**Superseded launch-scope note (2026-07-01):** use
+`docs/launch/BD_LAUNCH_EXECUTION_TODOS.md` as the active BD private-launch scope.
+The active public/review positioning is Facebook Messenger DM-only.
+
 **Bottom line:** A deliberately narrow, defensible v1. Right call.
 
 - **Facebook Pages only for direct Messenger DMs.** Instagram and Comment-to-DM were removed
@@ -152,8 +156,8 @@ No code work is required to pass any of these — they are verification and pilo
   preserved. Re-enabling comments or IG later requires code plus a separate Meta App Review.
 - **Bengali-first** UX for the target audience. English mode is incomplete outside the app shell
   (~200 hardcoded BN strings) — correctly deferred; it does not affect the default Bengali seller.
-- The product story ("one business, multiple communication channels") still holds with a single
-  channel live; the architecture is channel-agnostic so WhatsApp/IG are additive later.
+- The active launch story is no longer multi-channel. Position the product as a Bangla-first
+  Facebook Messenger AI sales assistant for BD f-commerce sellers.
 
 ---
 
@@ -235,8 +239,8 @@ hands (Meta portal, bKash merchant secrets, DO account) — that's the human han
 - **Closing** — appended to the **order-confirmation** message (after the invoice): owner thank-you +
   a "Follow us:" block rendering only the social links that are set. Edited on **Chat Settings**;
   links live on **Business Info**.
-- **Social links** — Facebook, Instagram, WhatsApp, TikTok, YouTube, Website (all optional). Persisted
-  under `settings.businessInfo.socialLinks`.
+- **Social links** — active launch UI and AI message rendering expose only Facebook and website.
+  Older stored keys under `settings.businessInfo.socialLinks` are treated as legacy data.
 - **Defaults seeded** for every shop (greeting + closing both on, Banglish defaults).
 
 **Compliance posture:** the existing always-on ` 🤖` per-message attribution suffix (Meta Platform

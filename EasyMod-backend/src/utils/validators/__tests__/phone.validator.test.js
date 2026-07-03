@@ -213,7 +213,7 @@ describe('compatibility with legacy inline regexes', () => {
     expect(validatePhone('01912345678')).toBe(true);
   });
 
-  // Extraction regex used in order-session.service.js: /(?:\+?88)?0(1[3-9]\d{8})/
+  // Extraction regex used by the chatbot order session flow: /(?:\+?88)?0(1[3-9]\d{8})/
   test('normalizePhone strips prefix identically to legacy extraction', () => {
     expect(normalizePhone('+8801712345678')).toBe('01712345678');
     expect(normalizePhone('8801712345678')).toBe('01712345678');

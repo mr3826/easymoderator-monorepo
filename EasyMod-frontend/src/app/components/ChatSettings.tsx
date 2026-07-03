@@ -37,6 +37,7 @@ import {
   type MetaChannelSettings,
 } from "@/api/domains/meta-channels";
 import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
+import { trackFunnelEvent } from "@/app/lib/funnel";
 
 // Facebook-only launch — Instagram was removed from product scope (2026-06-24).
 const FB_BRAND = "#1877F2";
@@ -162,6 +163,7 @@ export default function ChatSettings() {
     }
     oauthInProgressRef.current = true;
     try {
+      trackFunnelEvent("facebook_connect_started", { surface: "chat_settings" });
       const { redirectUrl } = await initiateMetaOAuth("facebook");
 
       try {
@@ -275,6 +277,9 @@ export default function ChatSettings() {
         if (result.webhookWarning) webhookWarning = result.webhookWarning;
       }
       await fetchChannels();
+      trackFunnelEvent("facebook_connect_succeeded", {
+        pages_connected: selectedPageIds.size,
+      }, { onceKey: "facebook_connect_succeeded" });
       setActiveOAuth(null);
       setAvailablePages([]);
       setSelectedPageIds(new Set());

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller } from 'react-hook-form';
@@ -16,6 +16,7 @@ import BrandLogo from "./BrandLogo";
 import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
 import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
+import { trackFunnelEvent } from "@/app/lib/funnel";
 
 const heroVariants = {
   hidden: {},
@@ -58,6 +59,10 @@ export default function Signup() {
 
   const passwordValue = watch('password');
 
+  useEffect(() => {
+    trackFunnelEvent("signup_started", { surface: "signup" }, { onceKey: "signup_started" });
+  }, []);
+
   const selectedPlan = useMemo(
     () => subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0],
     [selectedPlanId]
@@ -77,6 +82,7 @@ export default function Signup() {
         full_name: data.fullName,
         phone: data.phone.trim(),
       });
+      trackFunnelEvent("signup_completed", { selected_plan: selectedPlan.id }, { onceKey: "signup_completed" });
 
       // Materialize the card-less 14-day GROWTH trial (the backend creates it on
       // first read). Do NOT convert to a paid plan here — that would end the trial.
@@ -154,7 +160,7 @@ export default function Signup() {
 
         <div className="flex flex-col lg:flex-row gap-8 items-start">
           {/* Left — plan selection */}
-          <div className="flex-1 min-w-0">
+          <div className="order-2 flex-1 min-w-0 lg:order-1">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                 <div>
@@ -274,7 +280,7 @@ export default function Signup() {
 
           {/* Right — account form */}
           <motion.div
-            className="w-full lg:w-[400px] shrink-0"
+            className="order-1 w-full shrink-0 lg:order-2 lg:w-[400px]"
             initial={{ opacity: 0, x: 32 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.55, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}

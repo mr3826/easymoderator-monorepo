@@ -3,6 +3,7 @@ import { Check, Zap, ArrowRight, MessageSquare, ShoppingCart, Package, X } from 
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { subscriptionPlans, type SubscriptionPlanDefinition } from "@/app/lib/subscriptionPlans";
+import { httpClient } from "@/shared/lib/http/client";
 
 const FEATURE_ROWS: { labelKey: string; key: keyof SubscriptionPlanDefinition["features"] }[] = [
   { labelKey: "pricing.features.imageUnderstanding", key: "image_understanding" },
@@ -23,6 +24,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Partial<PartnerFormData>>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const validate = () => {
     const e: Partial<PartnerFormData> = {};
@@ -37,17 +39,14 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     if (!validate()) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      await fetch("/api/partner/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-    } catch {
-      // submission best-effort; show success regardless so user isn't blocked
+      await httpClient.post("/api/partner/apply", form);
+      setSubmitted(true);
+    } catch (err: any) {
+      setSubmitError(err?.message || t("pricing.partnerModal.errors.submitFailed"));
     } finally {
       setSubmitting(false);
-      setSubmitted(true);
     }
   };
 
@@ -128,6 +127,11 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                 />
                 {errors.pageLink && <p className="text-xs text-red-500 mt-1">{errors.pageLink}</p>}
               </div>
+              {submitError && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {submitError}
+                </p>
+              )}
               <button
                 type="submit"
                 disabled={submitting}

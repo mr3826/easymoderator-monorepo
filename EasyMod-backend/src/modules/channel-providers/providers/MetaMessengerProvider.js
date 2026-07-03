@@ -5,7 +5,9 @@
  * Talks to the Meta Graph API on behalf of a connected Page.
  *
  * All outbound sends MUST receive a PolicyDecision with allow=true.
- * The provider honours decision.augment.message_tag for outside-24h sends.
+ * The provider can attach decision.augment.message_tag only if a future
+ * policy-approved template/tag path supplies it. Legacy Messenger tags are
+ * blocked by policy for the BD launch.
  */
 
 'use strict';

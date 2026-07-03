@@ -36,7 +36,10 @@ function makeCustomer(overrides = {}) {
 beforeEach(() => jest.clearAllMocks());
 
 describe('isStopKeyword', () => {
-    test.each(['stop', 'STOP', '  Stop  ', 'বন্ধ', 'unsubscribe', 'বন্ধ করো'])(
+    test.each([
+        'stop', 'STOP', '  Stop  ', 'বন্ধ', 'unsubscribe', 'বন্ধ করো',
+        'আর না', 'থামুন', 'bondo koro', 'ar na', 'stop koro', 'band koro',
+    ])(
         'matches "%s"',
         (text) => expect(consentService.isStopKeyword(text)).toBe(true)
     );

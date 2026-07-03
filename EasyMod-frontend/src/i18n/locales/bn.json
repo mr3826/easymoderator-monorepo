@@ -92,13 +92,13 @@
       "headline1": "অর্ডার ও",
       "headline2": "COD-ট্রাস্ট",
       "headline3": "OS — আপনার শপের জন্য",
-      "subheadline": "প্রতিটি ফেসবুক ও ইনস্টাগ্রাম কাস্টমারকে AI উত্তর দেয়, অর্ডার নেয়, আর ঝুঁকিপূর্ণ ক্যাশ-অন-ডেলিভারি কাস্টমারদের শপগুলোর মধ্যে শেয়ার করা ফ্রড নেটওয়ার্ক দিয়ে চিহ্নিত করে — যাতে আপনি নিশ্চিন্তে পণ্য পাঠাতে পারেন।",
+      "subheadline": "BD f-commerce seller-দের জন্য Bangla-first Facebook Messenger AI sales assistant। এটি buyer reply draft করে, order capture-এ সাহায্য করে, আর COD/RTO risk check সাপোর্ট দেয় — যাতে আপনি বেশি confidence নিয়ে ship করতে পারেন।",
       "ctaStart": "শুরু করুন →",
       "ctaDemo": "ডেমো দেখুন",
-      "stat1Value": "১০+",
-      "stat1Label": "সক্রিয় শপ",
-      "stat2Value": "২৪/৭",
-      "stat2Label": "AI অটো-রিপ্লাই",
+      "stat1Value": "Pilot",
+      "stat1Label": "Private launch",
+      "stat2Value": "Draft",
+      "stat2Label": "AI reply first",
       "stat3Value": "৩",
       "stat3Label": "BD কুরিয়ার যুক্ত"
     },
@@ -113,8 +113,8 @@
         },
         {
           "icon": "🔒",
-          "title": "Meta-অনুমোদিত ও ban-নিরাপদ",
-          "desc": "আমরা Facebook-এর মেসেজিং নিয়ম মেনে চলি, তাই আপনার পেজ নিরাপদ থাকে।"
+          "title": "Meta review-ready ও policy-safe",
+          "desc": "প্রথম launch শুধু Facebook Messenger DM ব্যবহার করে এবং current reviewed messaging path না আসা পর্যন্ত out-of-window reply ব্লক রাখে।"
         },
         {
           "icon": "🙋",
@@ -196,31 +196,31 @@
       "becomePartner": "পার্টনার হোন →"
     },
     "testimonials": {
-      "label": "গ্রাহক মতামত",
-      "heading": "শপ অওনাররা কী বলেন",
+      "label": "Pilot scorecard",
+      "heading": "Launch shop দিয়ে যা প্রমাণ করব",
       "items": [
         {
-          "quote": "EasyModerator ব্যবহার করার পর থেকে আমার শপের অর্ডার ৪০% বেড়েছে। কাস্টমাররা রাতেও উত্তর পায়!",
-          "name": "রাহেলা বেগম",
+          "quote": "Draft-first AI reply দিয়ে seller-এর control রেখে buyer response time কমানো।",
+          "name": "Activation metric",
           "location": "ঢাকা",
-          "shop": "Rahela Fashion House",
-          "avatar": "র",
+          "shop": "১০-shop private pilot",
+          "avatar": "A",
           "avatarColor": "bg-pink-500"
         },
         {
-          "quote": "RTO Shield আমার ব্যবসার সবচেয়ে বড় সমস্যা সমাধান করেছে। নকল অর্ডার এখন আর নেই বললেই চলে।",
-          "name": "করিম ভাই",
+          "quote": "পরিষ্কার COD order detail capture করা এবং fulfilment-এর আগে risky delivery pattern flag করা।",
+          "name": "COD metric",
           "location": "চট্টগ্রাম",
-          "shop": "Karim Electronics BD",
-          "avatar": "ক",
+          "shop": "RTO Shield review",
+          "avatar": "C",
           "avatarColor": "bg-blue-500"
         },
         {
-          "quote": "Pathao ইন্টিগ্রেশন দিয়ে ডেলিভারি বুকিং এখন অনেক সহজ। আগে ১ ঘন্টা লাগত, এখন ৫ মিনিট।",
-          "name": "সুমাইয়া আক্তার",
+          "quote": "Meta compliance সহজ রাখা: Messenger DM-only, opt-out aware, comment বা cold-DM automation নয়।",
+          "name": "Trust metric",
           "location": "সিলেট",
-          "shop": "Sumaiya Lifestyle",
-          "avatar": "স",
+          "shop": "Meta review scope",
+          "avatar": "T",
           "avatarColor": "bg-emerald-500"
         }
       ]
@@ -228,7 +228,7 @@
     "cta": {
       "heading1": "আজই শুরু করুন —",
       "heading2": "আপনার COD রেভিনিউ রক্ষা করুন",
-      "subheading": "ফ্রি-তে শুরু। ৫ মিনিটে AI অটো-রিপ্লাই + RTO Shield।",
+      "subheading": "ফ্রি-তে শুরু। Guided setup-এ Messenger AI draft + COD/RTO support।",
       "button": "এখনই শুরু করুন →"
     },
     "footer": {
@@ -237,13 +237,13 @@
   },
   "auth": {
     "signin": {
-      "tagline": "বাংলাদেশের #১ AI চ্যাটবট",
+      "tagline": "BD shop-এর জন্য Messenger AI assistant",
       "heading": "আপনার ব্যবসাকে স্মার্ট করুন।",
       "subheading": "Facebook — আপনার সব Page একসাথে পরিচালনা করুন।",
       "stats": [
         {
-          "stat": "১০+",
-          "label": "সক্রিয় ব্যবসায়ী"
+          "stat": "Pilot",
+          "label": "Private Launch"
         },
         {
           "stat": "৯৮%",
@@ -258,9 +258,9 @@
           "label": "AI সাপোর্ট"
         }
       ],
-      "testimonialQuote": "Easy Moderator ব্যবহার করে আমার অর্ডার রেসপন্স টাইম ৩ ঘণ্টা থেকে ৫ মিনিটে নামিয়ে এনেছি।",
-      "testimonialName": "রাহেলা বেগম",
-      "testimonialShop": "ফ্যাশন শপ, ঢাকা",
+      "testimonialQuote": "Draft-first Messenger AI seller-এর control রেখে launch metrics prove করতে সাহায্য করে।",
+      "testimonialName": "Easy Moderator",
+      "testimonialShop": "BD pilot launch",
       "welcomeBack": "আবার স্বাগতম! 👋",
       "loginPrompt": "আপনার Easy Moderator অ্যাকাউন্টে লগইন করুন",
       "emailLabel": "ইমেইল বা মোবাইল নম্বর",
@@ -273,7 +273,7 @@
       "signInButton": "লগইন করুন →",
       "noAccount": "অ্যাকাউন্ট নেই?",
       "createAccount": "নতুন অ্যাকাউন্ট তৈরি করুন",
-      "trustBadge": "১০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
+      "trustBadge": "Private BD seller pilot",
       "errors": {
         "emailRequired": "আপনার ইমেইল লিখুন",
         "passwordRequired": "আপনার পাসওয়ার্ড লিখুন",
@@ -283,7 +283,7 @@
     "signup": {
       "alreadyHaveAccount": "ইতিমধ্যে অ্যাকাউন্ট আছে?",
       "signIn": "লগইন করুন",
-      "badge": "🇧🇩 ১০+ বাংলাদেশী ব্যবসায়ী ব্যবহার করছেন",
+      "badge": "🇧🇩 Private BD seller pilot",
       "heading": "শুরু করুন আজই",
       "subheading": "আপনার বাংলাদেশী ব্যবসাকে AI দিয়ে এগিয়ে নিন — মাত্র ৫ মিনিটে সেটআপ করুন।",
       "choosePlan": "আপনার প্ল্যান বেছে নিন",
@@ -496,7 +496,7 @@
     "upgradeForAI": "AI-এর জন্য আপগ্রেড করুন",
     "agentBanner": "আপনি নিজে উত্তর দিচ্ছেন — এই কথোপকথনে AI বন্ধ আছে।",
     "windowClosingSoon": "⚠ এই কাস্টমারকে সরাসরি উত্তর দেওয়ার সময় প্রায় শেষ — এখনই উত্তর দিন।",
-    "windowExpired": "এই কাস্টমার ২৪ ঘণ্টার বেশি আগে মেসেজ করেছেন। উত্তর পাঠাতে নিচে কারণ বেছে নিন।",
+    "windowExpired": "এই কাস্টমার ২৪ ঘণ্টার বেশি আগে মেসেজ করেছেন। কাস্টমার আবার মেসেজ না করা পর্যন্ত সরাসরি Messenger reply বন্ধ থাকবে।",
     "noMessages": "এই কথোপকথনে কোনো বার্তা নেই",
     "aiSuggestion": "AI এর উত্তর",
     "confidence": "নির্ভরযোগ্যতা: {{percent}}%",
@@ -505,12 +505,11 @@
     "editAndUse": "ঠিক করে পাঠান",
     "ignore": "বাদ দিন",
     "messagePlaceholder": "এখানে উত্তর লিখুন...",
-    "messageTagPlaceholder": "উপরে কারণ বেছে নিন...",
+    "outsideWindowPlaceholder": "কাস্টমার আবার মেসেজ করা পর্যন্ত অপেক্ষা করুন...",
     "send": "পাঠান",
     "sending": "পাঠানো হচ্ছে...",
-    "messageTag": "কারণ",
-    "messageTagRequired": "উত্তর পাঠাতে কারণ বেছে নিন",
-    "messageTagOptional": "কারণ (ঐচ্ছিক)",
+    "outsideWindowDisabled": "Meta-এর ২৪ ঘণ্টার messaging window শেষ। এই launch version-এ Easy Moderator out-of-window Messenger message পাঠাবে না।",
+    "windowWarning": "Messenger reply window প্রায় শেষ। শুধু active customer conversation হলে উত্তর দিন।",
     "selectConversation": "বার্তা দেখতে একটি কথোপকথন বেছে নিন",
     "imageProcessed": "ছবি প্রক্রিয়াকৃত ✓",
     "imageSkipped": "ছবি বাদ দেওয়া হয়েছে (সীমা পৌঁছেছে)",
@@ -536,19 +535,12 @@
     "timeMinutes": "{{count}} মিনিট আগে",
     "timeHours": "{{count}} ঘণ্টা আগে",
     "timeDays": "{{count}} দিন আগে",
-    "tagSelectReason": "কারণ বেছে নিন...",
-    "tags": {
-      "confirmedEvent": "অর্ডার বা ইভেন্টের আপডেট",
-      "postPurchase": "কেনার পরের আপডেট",
-      "account": "অ্যাকাউন্টের আপডেট"
-    },
     "errors": {
       "loadConversations": "কথোপকথন লোড করতে ব্যর্থ",
       "loadMessages": "বার্তা লোড করতে ব্যর্থ",
       "aiSuggestion": "ম্যানুয়ালি উত্তর দিন বা ৩০ সেকেন্ড অপেক্ষা করুন।",
       "aiBusy": "AI ব্যস্ত — ম্যানুয়ালি উত্তর দিন বা ৩০ সেকেন্ড অপেক্ষা করুন।",
-      "messageTag": "এই কাস্টমারকে এখন উত্তর দিতে একটি কারণ বেছে নিন।",
-      "selectTag": "উত্তর পাঠাতে আগে একটি কারণ বেছে নিন।",
+      "outsideWindowDisabled": "এই Messenger conversation ২৪ ঘণ্টার reply window-এর বাইরে।",
       "rateLimited": "অনেক বেশি অনুরোধ — একটু অপেক্ষা করে আবার চেষ্টা করুন।",
       "sendMessage": "বার্তা পাঠাতে ব্যর্থ। আবার চেষ্টা করুন।",
       "updateMode": "কথোপকথনের মোড আপডেট করতে ব্যর্থ",
@@ -1491,10 +1483,6 @@
         "title": "সোশ্যাল মিডিয়া লিংক",
         "help": "যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে \"আমাদের ফলো করুন\" অংশে দেখানো হবে। (ঐচ্ছিক)",
         "facebookPlaceholder": "https://facebook.com/yourpage",
-        "instagramPlaceholder": "https://instagram.com/yourshop",
-        "whatsappPlaceholder": "https://wa.me/8801XXXXXXXXX বা 01XXXXXXXXX",
-        "tiktokPlaceholder": "https://tiktok.com/@yourshop",
-        "youtubePlaceholder": "https://youtube.com/@yourshop",
         "websitePlaceholder": "https://yourshop.com"
       }
     },
@@ -1926,7 +1914,7 @@
           "0": "মাত্র ৳10–15/ডেলিভার্ড অর্ডার",
           "1": "কোনো মাসিক ফি নেই",
           "2": "Unlimited কথোপকথন",
-          "3": "সব চ্যানেল আনলিমিটেড",
+          "3": "Facebook Messenger focused",
           "4": "ডেডিকেটেড সাপোর্ট ম্যানেজার"
         }
       }
@@ -1993,7 +1981,11 @@
   },
   "oauthCallback": {
     "connecting": "সংযুক্ত হচ্ছে...",
-    "connectingToAccount": "আপনার অ্যাকাউন্টে সংযুক্ত হচ্ছে"
+    "connectingToAccount": "আপনার অ্যাকাউন্টে সংযুক্ত হচ্ছে",
+    "errorTitle": "Facebook সংযোগ চালিয়ে যাওয়া যায়নি",
+    "missingParams": "Meta প্রয়োজনীয় login তথ্য পাঠায়নি। Chat Settings থেকে আবার চেষ্টা করুন।",
+    "providerError": "Meta error দিয়েছে: {{error}}",
+    "retry": "Chat Settings এ ফিরে যান"
   },
   "onboarding": {
     "quickSetup": "Quick Setup",
@@ -2007,7 +1999,19 @@
     "toast": {
       "faqSkipped": "আপনার আগে থেকেই FAQ আছে — Starter FAQ যোগ করা হয়নি।",
       "faqSeeded": "{{count}}টি Starter FAQ যোগ হয়েছে! AI এখন common প্রশ্নের উত্তর দিতে পারবে।",
-      "faqError": "FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।"
+      "faqError": "FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।",
+      "completed": "Setup complete হয়েছে। Live conversation test করার সময় AI Draft mode এ রাখুন।",
+      "incomplete": "Onboarding শেষ করার আগে required setup checklist complete করুন।",
+      "completeError": "Onboarding complete করা যায়নি। আবার চেষ্টা করুন।",
+      "closeBlocked": "Onboarding বন্ধ করার আগে required setup checklist complete করুন।"
+    },
+    "requirements": {
+      "title": "Launch এর আগে required",
+      "facebook": "Facebook Page connected",
+      "businessInfo": "Business info save করা",
+      "knowledge": "কমপক্ষে একটি product বা Starter FAQ যোগ করা",
+      "assistantTest": "Assistant test reply তৈরি হয়েছে",
+      "checking": "চেক করা হচ্ছে..."
     },
     "steps": {
       "facebook": {
@@ -2126,7 +2130,8 @@
       "errors": {
         "businessNameRequired": "ব্যবসার নাম আবশ্যক",
         "phoneRequired": "ফোন নম্বর আবশ্যক",
-        "pageLinkRequired": "পেজ লিঙ্ক আবশ্যক"
+        "pageLinkRequired": "পেজ লিঙ্ক আবশ্যক",
+        "submitFailed": "আবেদন পাঠানো যায়নি। আবার চেষ্টা করুন।"
       }
     }
   },
@@ -2216,7 +2221,7 @@
   "policy": {
     "deny": {
       "customerFirst24h": "কাস্টমার আগে মেসেজ করতে হবে — ২৪ ঘন্টার মধ্যে (Meta নীতি)",
-      "windowExpired": "মেসেজিং উইন্ডো শেষ। Message tag ব্যবহার করুন (যেমন: Post-Purchase Update)।",
+      "windowExpired": "মেসেজিং উইন্ডো শেষ। কাস্টমার আবার মেসেজ করার পর reply দিন।",
       "dailyLimitReached": "দৈনিক মেসেজ সীমা শেষ। মধ্যরাতের পরে আবার চেষ্টা করুন।",
       "optedOut": "কাস্টমার মেসেজ বন্ধ করেছেন। তাদের সিদ্ধান্ত মানতে হবে।",
       "noConsent": "কাস্টমারের সম্মতি পাওয়া যায়নি। তাদের আগে মেসেজ করতে হবে।",

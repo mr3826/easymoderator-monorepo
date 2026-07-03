@@ -4,7 +4,7 @@
  * Webhook Send Compatibility Shim
  *
  * Multiple modules (payment-webhook.controller, invoice.service,
- * delivery-tracking.service, order-session.service,
+ * delivery-tracking.service, order-session-standalone.service,
  * owner-notification.service) require this path to send outbound
  * Messenger messages via a channel record.
  *

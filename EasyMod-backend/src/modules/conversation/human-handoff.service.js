@@ -18,6 +18,8 @@
 const sseManager = require('../../utils/sse-manager');
 const { getProvider } = require('../channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
+const policyEngine = require('../policy/policy.engine');
+const { Customer, MetaChannelSettings } = require('../entities');
 
 /**
  * @param {object}   params
@@ -61,18 +63,46 @@ async function escalateToHuman({
     if (channel) {
         const pf = platform === 'messenger' ? 'facebook' : platform;
         try {
+            const customerChannelType = pf === 'facebook' ? 'messenger' : pf;
+            const [customer, settings] = await Promise.all([
+                Customer.findOne({
+                    where: {
+                        shop_id: shopId,
+                        channel_type: customerChannelType,
+                        channel_user_id: String(recipientId),
+                    },
+                }).catch(() => null),
+                MetaChannelSettings.findOne({ where: { channel_id: channel.id } }).catch(() => null),
+            ]);
+
+            const normalizedMessage = {
+                text: holdingMsg.content,
+                attachments: [],
+                platform: pf,
+                direction: 'outbound',
+                senderRole: 'ai',
+            };
+            const decision = await policyEngine.evaluateOutbound(normalizedMessage, {
+                shopId,
+                channelId: channel.id,
+                conversationId: convId,
+                recipientId: String(recipientId),
+                channel,
+                customer,
+                settings,
+                platform: pf,
+            });
+            if (!decision.allow) {
+                console.warn(`[handoff] Holding message blocked by policy for conv ${convId}: ${decision.reason}`);
+                return holdingMsg;
+            }
+
             const provider = getProvider(pf);
             await provider.sendMessage({
                 channel,
                 recipientId: String(recipientId),
-                normalizedMessage: {
-                    text: holdingMsg.content,
-                    attachments: [],
-                    platform: pf,
-                    direction: 'outbound',
-                    senderRole: 'ai',
-                },
-                decision: { allow: true, reason: 'OK', augment: {} },
+                normalizedMessage: decision.transform || normalizedMessage,
+                decision,
             });
         } catch (err) {
             console.warn(`[handoff] Holding message delivery failed for conv ${convId}: ${err.message}`);

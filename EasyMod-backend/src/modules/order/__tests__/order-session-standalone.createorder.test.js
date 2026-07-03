@@ -54,6 +54,7 @@ describe('createOrderFromSession', () => {
             customer_phone: '01711111111',
             delivery_address: 'Mirpur 10, Dhaka',
             delivery_fee: 60,
+            order_status: 'confirmed',
             payment_status: 'unpaid', // COD → unpaid
             payment_method: 'cod',
             idempotency_key: 'sess-1',

@@ -26,6 +26,7 @@
 
 import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { normalizeApiError } from './errors';
+import config from '@/app/lib/config';
 
 // Extend axios config to track retry count, CSRF init, and shopId injection
 export interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -49,7 +50,7 @@ class HttpClient {
 
   constructor() {
     this.client = axios.create({
-      baseURL: (import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_API_BASE_URL || '',
+      baseURL: config.apiBaseUrl === '/api' ? '' : config.apiBaseUrl,
       timeout: 10000,
       withCredentials: true,
       headers: {

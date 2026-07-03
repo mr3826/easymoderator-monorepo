@@ -22,12 +22,12 @@ const MetaChannelSettings = sequelize.define('MetaChannelSettings', {
     ai_auto_reply: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
-        defaultValue: true,
+        defaultValue: false,
     },
     automation_mode: {
         type: DataTypes.ENUM('AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT'),
         allowNull: false,
-        defaultValue: 'AI_ACTIVE',
+        defaultValue: 'DRAFT',
     },
     confidence_threshold_send: {
         type: DataTypes.DECIMAL(3, 2),
