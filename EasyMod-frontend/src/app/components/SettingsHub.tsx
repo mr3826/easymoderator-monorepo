@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Building2, MessageSquare, Truck, CreditCard, ChevronRight, Bell } from "lucide-react";
+import { Building2, MessageSquare, Truck, CreditCard, ChevronRight, Bell, BookOpen } from "lucide-react";
 
 const items = [
   {
@@ -37,6 +37,13 @@ const items = [
     path: '/app/manage-shop/notifications',
     icon: Bell,
     color: 'text-cyan-700 bg-cyan-50',
+  },
+  {
+    nameKey: 'manageShop.hub.faqs.name',
+    descKey: 'manageShop.hub.faqs.desc',
+    path: '/app/manage-shop/faqs',
+    icon: BookOpen,
+    color: 'text-green-700 bg-green-50',
   },
   {
     nameKey: 'manageShop.hub.subscription.name',

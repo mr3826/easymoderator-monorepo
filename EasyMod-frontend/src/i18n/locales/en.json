@@ -9,6 +9,7 @@
     "delivery": "Delivery",
     "payment": "Payment",
     "notifications": "Notifications",
+    "faqs": "FAQs",
     "settings": "Settings",
     "subscription": "Subscription",
     "shopSettings": "Shop Settings",
@@ -465,9 +466,9 @@
           "cta": "Review AI settings"
         },
         "starter_knowledge": {
-          "title": "Add starter FAQ or knowledge",
-          "description": "Add at least one FAQ or knowledge item so AI replies have shop-specific answers.",
-          "cta": "Add knowledge"
+          "title": "Add starter FAQ",
+          "description": "Add at least one FAQ so AI replies have shop-specific answers.",
+          "cta": "Add FAQ"
         }
       },
       "missing": {
@@ -1520,7 +1521,8 @@
       "chatSettings": "Chat Settings",
       "deliverySettings": "Delivery Settings",
       "paymentSettings": "Payment Settings",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "faqs": "FAQs"
     },
     "businessInfo": {
       "loading": "Loading business info...",
@@ -1540,6 +1542,62 @@
         "help": "Any links you add will be shown in the \"Follow us\" section of the order-confirmation message. (optional)",
         "facebookPlaceholder": "https://facebook.com/yourpage",
         "websitePlaceholder": "https://yourshop.com"
+      }
+    },
+    "faqs": {
+      "title": "FAQs",
+      "subtitle": "Manage the answers the AI can use for customer questions.",
+      "addFaq": "Add FAQ",
+      "seedStarter": "Add starter FAQs",
+      "seeding": "Adding...",
+      "refresh": "Refresh",
+      "loading": "Loading FAQs...",
+      "manageTitle": "FAQ answers",
+      "faqCount": "{{active}} active / {{total}} total",
+      "emptyTitle": "No FAQs yet",
+      "emptyDescription": "Add common delivery, payment, return, and ordering answers so AI replies have shop-specific context.",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "edit": "Edit FAQ",
+      "delete": "Delete FAQ",
+      "source": "Source: {{source}}",
+      "usedTimes": "Used {{count}} times",
+      "confidence": "{{percent}}% confidence",
+      "confirmDelete": "Delete this FAQ?",
+      "validationError": "Question and answer are required.",
+      "saved": "FAQ saved.",
+      "deleted": "FAQ deleted.",
+      "activated": "FAQ activated.",
+      "deactivated": "FAQ deactivated.",
+      "seedSkipped": "Starter FAQs were not added because this shop already has FAQs.",
+      "seedSuccess": "{{count}} starter FAQs added.",
+      "saving": "Saving...",
+      "save": "Save FAQ",
+      "metrics": {
+        "active": "Active FAQs",
+        "total": "Total FAQs",
+        "used": "Answers used"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "modal": {
+        "addTitle": "Add FAQ",
+        "editTitle": "Edit FAQ",
+        "questionLabel": "Question",
+        "questionPlaceholder": "e.g. What is the delivery charge?",
+        "answerLabel": "Answer",
+        "answerPlaceholder": "Write the exact answer customers should receive.",
+        "categoryLabel": "Category",
+        "categoryPlaceholder": "Delivery, Payment, Returns"
+      },
+      "errors": {
+        "load": "Failed to load FAQs.",
+        "seed": "Failed to add starter FAQs.",
+        "update": "Failed to update FAQ.",
+        "delete": "Failed to delete FAQ.",
+        "save": "Failed to save FAQ."
       }
     },
     "deliverySettings": {
@@ -1737,6 +1795,10 @@
       "notifications": {
         "name": "Notifications",
         "desc": "Browser, in-app and Telegram alerts"
+      },
+      "faqs": {
+        "name": "FAQs",
+        "desc": "Answers used by AI replies"
       },
       "subscription": {
         "name": "Subscription",

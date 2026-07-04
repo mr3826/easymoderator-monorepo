@@ -153,16 +153,10 @@ export const apiClient = {
   getAnalytics: dashboardDomain.getAnalytics,
 
   // Knowledge methods
-  getKnowledgeSummary: knowledgeDomain.getKnowledgeSummary,
-  updateBusinessInfo: knowledgeDomain.updateBusinessInfo,
-  updateBrandingRules: knowledgeDomain.updateBrandingRules,
   listKnowledgeFaqs: knowledgeDomain.listFaqs,
   createKnowledgeFaq: knowledgeDomain.createFaq,
   updateKnowledgeFaq: knowledgeDomain.updateFaq,
   deleteKnowledgeFaq: knowledgeDomain.deleteFaq,
-  listKnowledgeGaps: knowledgeDomain.listKnowledgeGaps,
-  listKnowledgeDocuments: knowledgeDomain.listDocuments,
-  createKnowledgeDocument: knowledgeDomain.createDocument,
   seedStarterFaqs: knowledgeDomain.seedStarterFaqs,
 
   // Subscription methods

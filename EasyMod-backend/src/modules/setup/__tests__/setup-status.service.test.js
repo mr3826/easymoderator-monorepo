@@ -58,7 +58,12 @@ describe('setup-status.service', () => {
             expect.objectContaining({ key: 'shop_profile', status: 'incomplete', missing: ['support_contact', 'delivery_info'] }),
             expect.objectContaining({ key: 'first_product', status: 'incomplete' }),
             expect.objectContaining({ key: 'ai_settings', status: 'complete' }),
-            expect.objectContaining({ key: 'starter_knowledge', status: 'incomplete' }),
+            expect.objectContaining({
+                key: 'starter_knowledge',
+                status: 'incomplete',
+                ctaLabel: 'Add FAQ',
+                href: '/app/manage-shop/faqs',
+            }),
         ]));
         expect(status.counts).toMatchObject({
             connectedFacebookPages: 0,

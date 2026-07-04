@@ -98,6 +98,7 @@ jest.mock('src/modules/analytics/knowledge-gap.entity', () => ({
 jest.mock('src/modules/rag/rag.service', () => ({
     ingestData:   jest.fn(() => Promise.resolve({ success: true })),
     deletePoint:  jest.fn(() => Promise.resolve()),
+    queryData:    jest.fn(() => Promise.resolve({ success: true, data: [{ score: 0.91, text: 'Delivery is 2-3 days' }] })),
 }));
 
 // ── Mock cache service ────────────────────────────────────────────────────
@@ -336,6 +337,27 @@ describe('Knowledge API', () => {
             expect(res.status).toBe(200);
             expect(res.body.total).toBe(0);
             expect(res.body.data).toEqual([]);
+        });
+    });
+
+    // ── POST /knowledge/query ─────────────────────────────────────────────
+
+    describe('POST /knowledge/query', () => {
+        it('queries RAG with the authenticated shop id and returns the answer payload', async () => {
+            const ragService = require('src/modules/rag/rag.service');
+
+            const res = await request(app)
+                .post('/api/knowledge/query')
+                .send({ shopId: 'attacker-shop', query: 'What is delivery time?', limit: 3 });
+
+            expect(res.status).toBe(200);
+            expect(res.body.success).toBe(true);
+            expect(res.body.data[0].text).toBe('Delivery is 2-3 days');
+            expect(ragService.queryData).toHaveBeenCalledWith({
+                query: 'What is delivery time?',
+                limit: 3,
+                shopId: 'shop-1',
+            });
         });
     });
 

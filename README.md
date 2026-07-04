@@ -27,6 +27,7 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
+- FAQ management lives under `Manage Shop -> FAQs` (`/app/manage-shop/faqs`). The retired `/app/knowledge` page redirects there for old bookmarks.
 - Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
 
 ---
@@ -41,7 +42,7 @@ Required completion rules:
 - Minimal shop profile: shop name, support contact, delivery info, and payment methods.
 - At least one active product; three or more active products are recommended.
 - AI reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
-- At least one active FAQ or usable knowledge document.
+- At least one active FAQ, or an existing usable indexed knowledge document already on the shop.
 
 The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete, and the normal dashboard appears automatically when all required items pass. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 

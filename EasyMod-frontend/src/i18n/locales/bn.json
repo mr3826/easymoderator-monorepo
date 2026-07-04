@@ -9,6 +9,7 @@
     "delivery": "ডেলিভারি",
     "payment": "পেমেন্ট",
     "notifications": "নোটিফিকেশন",
+    "faqs": "FAQ",
     "settings": "সেটিংস",
     "subscription": "সাবস্ক্রিপশন",
     "shopSettings": "শপ সেটিংস",
@@ -465,9 +466,9 @@
           "cta": "AI সেটিংস দেখুন"
         },
         "starter_knowledge": {
-          "title": "স্টার্টার FAQ বা নলেজ যোগ করুন",
-          "description": "কমপক্ষে একটি FAQ বা নলেজ আইটেম যোগ করুন যাতে AI শপ অনুযায়ী উত্তর দিতে পারে।",
-          "cta": "নলেজ যোগ করুন"
+          "title": "স্টার্টার FAQ যোগ করুন",
+          "description": "কমপক্ষে একটি FAQ যোগ করুন যাতে AI শপ অনুযায়ী উত্তর দিতে পারে।",
+          "cta": "FAQ যোগ করুন"
         }
       },
       "missing": {
@@ -1520,7 +1521,8 @@
       "chatSettings": "চ্যাট সেটিংস",
       "deliverySettings": "ডেলিভারি সেটিংস",
       "paymentSettings": "পেমেন্ট সেটিংস",
-      "notifications": "নোটিফিকেশন"
+      "notifications": "নোটিফিকেশন",
+      "faqs": "FAQ"
     },
     "businessInfo": {
       "loading": "ব্যবসার তথ্য লোড হচ্ছে...",
@@ -1540,6 +1542,62 @@
         "help": "যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে \"আমাদের ফলো করুন\" অংশে দেখানো হবে। (ঐচ্ছিক)",
         "facebookPlaceholder": "https://facebook.com/yourpage",
         "websitePlaceholder": "https://yourshop.com"
+      }
+    },
+    "faqs": {
+      "title": "FAQ",
+      "subtitle": "কাস্টমারের প্রশ্নে AI যে উত্তর ব্যবহার করবে সেগুলো ম্যানেজ করুন।",
+      "addFaq": "FAQ যোগ করুন",
+      "seedStarter": "স্টার্টার FAQ যোগ করুন",
+      "seeding": "যোগ হচ্ছে...",
+      "refresh": "রিফ্রেশ",
+      "loading": "FAQ লোড হচ্ছে...",
+      "manageTitle": "FAQ উত্তর",
+      "faqCount": "{{active}} সক্রিয় / মোট {{total}}",
+      "emptyTitle": "এখনো কোনো FAQ নেই",
+      "emptyDescription": "ডেলিভারি, পেমেন্ট, রিটার্ন ও অর্ডার সংক্রান্ত সাধারণ উত্তর যোগ করুন, যাতে AI দোকানভিত্তিক উত্তর দিতে পারে।",
+      "activate": "সক্রিয় করুন",
+      "deactivate": "নিষ্ক্রিয় করুন",
+      "edit": "FAQ সম্পাদনা",
+      "delete": "FAQ মুছুন",
+      "source": "সোর্স: {{source}}",
+      "usedTimes": "{{count}} বার ব্যবহৃত",
+      "confidence": "{{percent}}% কনফিডেন্স",
+      "confirmDelete": "এই FAQ মুছে ফেলবেন?",
+      "validationError": "প্রশ্ন ও উত্তর আবশ্যিক।",
+      "saved": "FAQ সংরক্ষণ হয়েছে।",
+      "deleted": "FAQ মুছে ফেলা হয়েছে।",
+      "activated": "FAQ সক্রিয় হয়েছে।",
+      "deactivated": "FAQ নিষ্ক্রিয় হয়েছে।",
+      "seedSkipped": "এই শপে আগে থেকেই FAQ আছে, তাই স্টার্টার FAQ যোগ করা হয়নি।",
+      "seedSuccess": "{{count}}টি স্টার্টার FAQ যোগ হয়েছে।",
+      "saving": "সংরক্ষণ হচ্ছে...",
+      "save": "FAQ সংরক্ষণ",
+      "metrics": {
+        "active": "সক্রিয় FAQ",
+        "total": "মোট FAQ",
+        "used": "ব্যবহৃত উত্তর"
+      },
+      "status": {
+        "active": "সক্রিয়",
+        "inactive": "নিষ্ক্রিয়"
+      },
+      "modal": {
+        "addTitle": "FAQ যোগ করুন",
+        "editTitle": "FAQ সম্পাদনা",
+        "questionLabel": "প্রশ্ন",
+        "questionPlaceholder": "যেমন: ডেলিভারি চার্জ কত?",
+        "answerLabel": "উত্তর",
+        "answerPlaceholder": "কাস্টমার যে সঠিক উত্তর পাবে সেটি লিখুন।",
+        "categoryLabel": "ক্যাটাগরি",
+        "categoryPlaceholder": "ডেলিভারি, পেমেন্ট, রিটার্ন"
+      },
+      "errors": {
+        "load": "FAQ লোড করা যায়নি।",
+        "seed": "স্টার্টার FAQ যোগ করা যায়নি।",
+        "update": "FAQ আপডেট করা যায়নি।",
+        "delete": "FAQ মুছতে ব্যর্থ।",
+        "save": "FAQ সংরক্ষণ করা যায়নি।"
       }
     },
     "deliverySettings": {
@@ -1737,6 +1795,10 @@
       "notifications": {
         "name": "নোটিফিকেশন",
         "desc": "ব্রাউজার, ইন-অ্যাপ ও Telegram alert"
+      },
+      "faqs": {
+        "name": "FAQ",
+        "desc": "AI উত্তরের জন্য ব্যবহৃত উত্তর"
       },
       "subscription": {
         "name": "সাবস্ক্রিপশন",

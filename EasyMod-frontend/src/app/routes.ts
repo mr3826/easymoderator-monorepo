@@ -13,7 +13,6 @@ const Products = lazy(() => import("./components/Products"));
 const Orders = lazy(() => import("./components/Orders"));
 const Reports = lazy(() => import("./components/Reports"));
 const AuditLogs = lazy(() => import("./components/AuditLogs"));
-const Knowledge = lazy(() => import("./components/Knowledge"));
 const AddProduct = lazy(() => import("./components/AddProduct"));
 const ProductDetails = lazy(() => import("./components/ProductDetails"));
 const Customers = lazy(() => import("./components/Customers"));
@@ -27,6 +26,7 @@ const DeliverySettings = lazy(() => import("./components/DeliverySettings"));
 const PaymentSettings = lazy(() => import("./components/PaymentSettings"));
 const NotificationSettings = lazy(() => import("./components/NotificationSettings"));
 const BusinessInfoSettings = lazy(() => import("./components/BusinessInfoSettings"));
+const FaqSettings = lazy(() => import("./components/FaqSettings"));
 const SignIn = lazy(() => import("./components/SignIn"));
 const Signup = lazy(() => import("./components/Signup"));
 const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
@@ -147,6 +147,7 @@ export const router = createBrowserRouter([
 					{ path: "delivery-settings", Component: withSuspense(DeliverySettings) },
 					{ path: "payment-settings", Component: withSuspense(PaymentSettings) },
 					{ path: "notifications", Component: withSuspense(NotificationSettings) },
+					{ path: "faqs", Component: withSuspense(FaqSettings) },
 				],
 			},
 			{ path: "products", Component: withSuspense(Products) },
@@ -160,7 +161,7 @@ export const router = createBrowserRouter([
 			{ path: "categories/:categoryId/:subcategoryId", Component: withSuspense(SubcategoryDetails) },
 			{ path: "orders", Component: withSuspense(Orders) },
 			{ path: "customers", Component: withSuspense(Customers) },
-			{ path: "knowledge", Component: withSuspense(Knowledge) },
+			{ path: "knowledge", loader: () => redirect("/app/manage-shop/faqs") },
 			{ path: "reports", Component: withSuspense(Reports) },
 			{ path: "audit-logs", Component: withSuspense(AuditLogs) },
 			{ path: "subscription", Component: withSuspense(Subscription) },

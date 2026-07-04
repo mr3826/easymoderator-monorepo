@@ -41,7 +41,6 @@ Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and loc
 | Animation | Framer Motion / Motion |
 | i18n | i18next + react-i18next (English fallback, persisted language toggle) |
 | Errors | Sentry (`@sentry/react`) |
-| Docs parsing | Mammoth (DOCX → text for knowledge upload) |
 | Tests | Vitest + Testing Library (unit, happy-dom), Playwright (e2e) |
 
 ---
@@ -118,10 +117,9 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Products, Add/Edit Product, Categories & subcategories
 - Orders
 - Customers
-- Knowledge base (FAQ/policy upload)
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info
+- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info, FAQs
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)
@@ -239,7 +237,7 @@ npm run build        # vite build → dist/
 
 CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the production `VITE_*` values, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the Digital Ocean droplet. The SPA is served same-origin with the API behind Caddy/nginx (`www → apex` 301; canonical origin `https://easymod.tech`).
 
-> The build emits a large-chunk warning for `react-vendor` / `mammoth-vendor`. These are intentionally split vendor chunks; tighten `manualChunks` if bundle size becomes a concern.
+> The build can emit large-chunk warnings for vendor bundles such as `react-vendor`. Tighten `manualChunks` if bundle size becomes a concern.
 
 ---
 

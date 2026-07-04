@@ -38,10 +38,10 @@ const TASK_DEFINITIONS = Object.freeze({
         href: '/app/manage-shop/business-info',
     },
     [TASK_KEYS.STARTER_KNOWLEDGE]: {
-        title: 'Add starter FAQ or knowledge',
-        description: 'Add at least one FAQ or knowledge item so AI replies have shop-specific answers.',
-        ctaLabel: 'Add knowledge',
-        href: '/app/knowledge',
+        title: 'Add starter FAQ',
+        description: 'Add at least one FAQ so AI replies have shop-specific answers.',
+        ctaLabel: 'Add FAQ',
+        href: '/app/manage-shop/faqs',
     },
 });
 

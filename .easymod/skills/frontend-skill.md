@@ -1,6 +1,6 @@
 ---
 name: em-frontend-skill
-description: "EasyModerator frontend skill. Use when building React components for /app/inbox, /app/orders, /app/channels, /app/manage-shop, /app/knowledge, /bd-lite. Covers TanStack Query, Radix UI/Tailwind, BD-first UX for f-commerce sellers."
+description: "EasyModerator frontend skill. Use when building React components for /app/inbox, /app/orders, /app/channels, /app/manage-shop, /app/manage-shop/faqs, /bd-lite. Covers TanStack Query, Radix UI/Tailwind, BD-first UX for f-commerce sellers."
 ---
 
 # Frontend Skill — EasyModerator Senior Frontend Engineer
@@ -40,7 +40,8 @@ All routes defined in `src/app/routes.ts`:
 | `/app/categories` | Categories | Yes | |
 | `/app/orders` | Orders | Yes | |
 | `/app/customers` | Customers | Yes | RTO Shield flags |
-| `/app/knowledge` | Knowledge | Yes | RAG knowledge base |
+| `/app/manage-shop/faqs` | FaqSettings | Yes | FAQ answers used by AI replies |
+| `/app/knowledge` | Redirect | Yes | Retired route; redirects to `/app/manage-shop/faqs` |
 | `/app/reports` | Reports | Yes | |
 | `/app/audit-logs` | AuditLogs | Yes | |
 | `/app/subscription` | Subscription | Yes | Plan + top-up packs |

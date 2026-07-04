@@ -4,7 +4,7 @@ import {
   Home, MessageCircle, Grid3X3, ShoppingBag,
   Store, LogOut,
   CreditCard, Bell, ChevronLeft, ChevronRight,
-  ChevronDown, Building2, MessageSquare, Truck, Settings,
+  ChevronDown, Building2, MessageSquare, Truck, Settings, BookOpen,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -34,6 +34,7 @@ export default function DashboardLayout() {
     { name: t('nav.delivery'), path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
     { name: t('nav.payment'), path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
     { name: t('nav.notifications'), path: `${appBasePath}/manage-shop/notifications`, icon: Bell },
+    { name: t('nav.faqs'), path: `${appBasePath}/manage-shop/faqs`, icon: BookOpen },
   ];
 
   const mobileNavigation = [

@@ -150,7 +150,8 @@
 | `/app/categories` | Categories | Yes | |
 | `/app/orders` | Orders | Yes | |
 | `/app/customers` | Customers | Yes | RTO flags |
-| `/app/knowledge` | Knowledge | Yes | RAG knowledge base |
+| `/app/manage-shop/faqs` | FaqSettings | Yes | FAQ answers used by AI replies |
+| `/app/knowledge` | Redirect | Yes | Retired route; redirects to `/app/manage-shop/faqs` |
 | `/app/reports` | Reports | Yes | |
 | `/app/audit-logs` | AuditLogs | Yes | |
 | `/app/subscription` | Subscription | Yes | Plan + top-up |
