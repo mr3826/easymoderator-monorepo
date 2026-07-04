@@ -7,6 +7,9 @@ name: CI / CD
 #   VITE_API_BASE_URL    — leave empty for same-origin SPA (easymod.tech)
 #   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
 #   VITE_SENTRY_DSN      — Sentry DSN (optional)
+#   TELEGRAM_BOT_TOKEN   — global EasyModerator merchant-alert bot token
+#   TELEGRAM_BOT_USERNAME — bot username without @ (shown in connect command)
+#   TELEGRAM_WEBHOOK_SECRET — Telegram setWebhook secret_token
 #   BASE_URL             — https://easymod.tech (public backend origin for uploads)
 #   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
 #
@@ -251,6 +254,11 @@ jobs:
           META_APP_ID=${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET=${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME=${{ secrets.TELEGRAM_BOT_USERNAME }}
+          TELEGRAM_WEBHOOK_SECRET=${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          CUSTOMER_WAITING_ALERT_MINUTES=${{ vars.CUSTOMER_WAITING_ALERT_MINUTES || '30' }}
+          CUSTOMER_WAITING_ALERT_SCAN_LIMIT=${{ vars.CUSTOMER_WAITING_ALERT_SCAN_LIMIT || '200' }}
 
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           GOOGLE_GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
