@@ -39,6 +39,14 @@ const getShopAISettings = async (shopId) => {
     return shopService.getShopAiSettings(shopId).catch(() => ({}));
 };
 
+function captureKnowledgeGap(params) {
+    return Promise.resolve()
+        .then(() => require('../modules/knowledge/knowledge-gap-capture.service').recordKnowledgeGap(params))
+        .catch((err) => {
+            console.warn(`[worker] Knowledge gap capture skipped: ${err.message}`);
+        });
+}
+
 /**
  * Resolve the MetaChannel row for this job. Prefers `metaChannelId` from the
  * job payload (set by the webhook dispatcher, unambiguous when a shop owns
@@ -300,6 +308,8 @@ async function processMessageJob(job) {
     // an order — see order-flow.service.js.)
     let rawResponse, confidence, sourceReferences;
     let orderFlow = { handled: false };
+    let knowledgeGapCaptured = false;
+    let fallbackKnowledgeGapSource = null;
     try {
         const { handleOrderFlow } = require('../modules/conversation/order-flow.service');
         orderFlow = await handleOrderFlow({
@@ -341,6 +351,7 @@ async function processMessageJob(job) {
                 : 'Thank you for your message! We will respond shortly.';
             confidence = 0;
             sourceReferences = null;
+            fallbackKnowledgeGapSource = 'ai_pipeline_error';
         }
     }
 
@@ -402,6 +413,16 @@ async function processMessageJob(job) {
             confidenceThreshold: aiSettings.confidence_threshold,
             orderFlowHandled: orderFlow.handled,
         })) {
+            if (!knowledgeGapCaptured) {
+                knowledgeGapCaptured = true;
+                void captureKnowledgeGap({
+                    shopId,
+                    question: effMessage,
+                    platform,
+                    language: detectedLanguage,
+                    source: fallbackKnowledgeGapSource || 'low_confidence_handoff',
+                });
+            }
             await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'low_confidence' });
             const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
             await escalateToHuman({
@@ -411,6 +432,21 @@ async function processMessageJob(job) {
             console.log(`[worker] Low-confidence handoff conv ${conversationId} (confidence=${confidence})`);
             return { success: true, conversationId, confidence, sent: false, reason: 'low_confidence_handoff', handoff: true };
         }
+    }
+
+    if (
+        !knowledgeGapCaptured
+        && !orderFlow.handled
+        && (fallbackKnowledgeGapSource || Number(confidence) <= 0.3)
+    ) {
+        knowledgeGapCaptured = true;
+        void captureKnowledgeGap({
+            shopId,
+            question: effMessage,
+            platform,
+            language: detectedLanguage,
+            source: fallbackKnowledgeGapSource || 'ai_unknown_response',
+        });
     }
 
     // ── Policy Engine: mandatory outbound gate ─────────────────────────────

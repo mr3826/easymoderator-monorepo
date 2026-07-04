@@ -2,8 +2,7 @@ export type SetupTaskKey =
   | 'connect_channel'
   | 'shop_profile'
   | 'first_product'
-  | 'ai_settings'
-  | 'starter_knowledge';
+  | 'ai_settings';
 
 export type SetupTaskStatus = 'complete' | 'incomplete';
 
@@ -35,8 +34,8 @@ export interface SetupStatus {
     connectedFacebookPages: number;
     webhookVerifiedFacebookPages: number;
     activeProducts: number;
-    activeFaqs: number;
-    knowledgeDocuments: number;
+    activeFaqs?: number;
+    knowledgeDocuments?: number;
   };
   generatedAt: string;
 }

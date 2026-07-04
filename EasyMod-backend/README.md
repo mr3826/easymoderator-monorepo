@@ -130,7 +130,7 @@ All routers mount under `/api`. Source of truth: `src/modules/routes.js`.
 | `/customer` | `customer` | Customer records across channels |
 | `/order`, `/order-session` | `order` | Order lifecycle + in-conversation order capture |
 | `/product`, `/category` | `product`, `category` | Catalog (indexed into RAG) |
-| `/knowledge` | `knowledge` | Merchant FAQ/policy docs → vector index |
+| `/knowledge` | `knowledge` | Manual merchant FAQs, knowledge gaps, and policy docs → vector index |
 | `/rag`, `/delivery/rag` | `rag`, `delivery` | Retrieval-augmented context for replies |
 | `/payment`, `/payment/bangladesh`, `/payment-methods` | `payment` | bKash tokenized checkout + payment config |
 | `/subscription` | `subscription` | Plan, usage, top-ups, invoices |
@@ -162,7 +162,7 @@ Inbound message → reply, end to end:
    2. `gemini-3.1-pro-preview` — fallback / high-stakes
    3. `gpt-4.1-mini` — final fallback
    A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
-7. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff.
+7. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
 8. **Attribution** — AI replies carry a configurable marker (default ` 🤖`) so customers know the message was automated (**Meta Platform Policy 4.2**). Toggle with `AI_BOT_ATTRIBUTION_ENABLED`.
 9. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 

@@ -22,6 +22,14 @@ async function getShopAISettings(shopId) {
     return settings;
 }
 
+function captureKnowledgeGap(params) {
+    return Promise.resolve()
+        .then(() => require('../knowledge/knowledge-gap-capture.service').recordKnowledgeGap(params))
+        .catch((err) => {
+            console.warn(`[ai-chatbot] Knowledge gap capture skipped: ${err.message}`);
+        });
+}
+
 class AIChatbotController {
     /**
      * Process incoming message and generate AI response
@@ -172,6 +180,16 @@ class AIChatbotController {
 
             if (gateFailed) {
                 response = AIChatbotController.buildVerificationRequest(detectedLanguage, message);
+            }
+
+            if (gateFailed || (!shouldContinueOrderSession && Number(confidence) <= 0.3)) {
+                void captureKnowledgeGap({
+                    shopId: shop_id,
+                    question: message,
+                    platform,
+                    language: detectedLanguage,
+                    source: gateFailed ? 'confidence_gate' : 'ai_unknown_response',
+                });
             }
 
             // Onboarding window: first 48h after shop creation → force DRAFT so merchant

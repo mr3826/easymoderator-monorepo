@@ -16,8 +16,8 @@ vi.mock('@/api', () => ({
   apiClient: {
     getSetupStatus: vi.fn().mockResolvedValue({
       isComplete: true,
-      completedCount: 5,
-      totalCount: 5,
+      completedCount: 4,
+      totalCount: 4,
       progressPercent: 100,
       tasks: [],
       counts: {

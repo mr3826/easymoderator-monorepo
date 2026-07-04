@@ -19,8 +19,8 @@ describe('Setup Domain API', () => {
         data: {
           isComplete: false,
           completedCount: 2,
-          totalCount: 5,
-          progressPercent: 40,
+          totalCount: 4,
+          progressPercent: 50,
           tasks: [],
           counts: {
             connectedFacebookPages: 1,

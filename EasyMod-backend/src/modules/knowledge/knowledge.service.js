@@ -223,86 +223,6 @@ const createFaq = async (userId, shopId, faq) => {
     return formatFaq(newFaq);
 };
 
-/**
- * Starter FAQ pack for a brand-new BD f-commerce shop. Seeded on demand during
- * onboarding so the AI can answer the most common buyer questions from day one
- * instead of cold-starting with an empty knowledge base (the #1 activation
- * killer). Answers are intentionally generic with a "(update for your shop)"
- * nudge — the seller edits them like any other FAQ.
- */
-const STARTER_FAQS = Object.freeze([
-    {
-        category: 'ডেলিভারি চার্জ কত? / What is the delivery charge?',
-        template_bn: 'ঢাকার ভিতরে ডেলিভারি চার্জ ৳60–৳80, ঢাকার বাইরে ৳120–৳150। (আপনার শপ অনুযায়ী আপডেট করুন)',
-        template_en: 'Inside Dhaka delivery is ৳60–৳80, outside Dhaka ৳120–৳150. (Please update for your shop.)',
-    },
-    {
-        category: 'ক্যাশ অন ডেলিভারি আছে? / Is cash on delivery available?',
-        template_bn: 'হ্যাঁ, ক্যাশ অন ডেলিভারি (COD) available। পণ্য হাতে পেয়ে টাকা দিতে পারবেন।',
-        template_en: 'Yes, Cash on Delivery (COD) is available — you pay when you receive the product.',
-    },
-    {
-        // COD-only by default — do NOT seed bKash/Nagad here. The seller adds
-        // those after connecting a payment method; advertising rails the shop
-        // hasn't connected is a direct cause of the bot asking for advance
-        // payment it can't accept. (Update for your shop once configured.)
-        category: 'পেমেন্ট কিভাবে করব? / How can I pay?',
-        template_bn: 'ক্যাশ অন ডেলিভারিতে পেমেন্ট করতে পারেন — পণ্য হাতে পেয়ে টাকা দিবেন। (আপনার শপ অনুযায়ী আপডেট করুন)',
-        template_en: 'You can pay by Cash on Delivery — pay when you receive the product. (Please update for your shop.)',
-    },
-    {
-        category: 'ডেলিভারিতে কত দিন লাগে? / How long does delivery take?',
-        template_bn: 'ঢাকার ভিতরে ১–২ দিন, ঢাকার বাইরে ৩–৫ দিন লাগে।',
-        template_en: 'Inside Dhaka 1–2 days, outside Dhaka 3–5 days.',
-    },
-    {
-        category: 'রিটার্ন বা এক্সচেঞ্জ করা যাবে? / Can I return or exchange?',
-        template_bn: 'পণ্যে সমস্যা থাকলে ডেলিভারির ৩ দিনের মধ্যে এক্সচেঞ্জ করা যাবে।',
-        template_en: 'If there is an issue with the product, exchange is possible within 3 days of delivery.',
-    },
-    {
-        category: 'কিভাবে অর্ডার করব? / How do I place an order?',
-        template_bn: 'অর্ডার করতে আপনার নাম, ঠিকানা, ফোন নম্বর এবং পণ্যের নাম দিন।',
-        template_en: 'To order, please share your name, address, phone number, and the product you want.',
-    },
-    {
-        category: 'অর্ডার কনফার্ম কিভাবে হবে? / How is my order confirmed?',
-        template_bn: 'অর্ডার দেওয়ার পর আমরা ফোন বা মেসেজে কনফার্ম করব।',
-        template_en: 'After you order, we will confirm by phone or message.',
-    },
-]);
-
-/**
- * Seed the starter FAQ pack for a shop. Idempotent and non-destructive: it only
- * seeds when the shop has ZERO FAQs, so it can never duplicate the pack or
- * clobber FAQs a seller has already written.
- * @returns {{ seeded: number, skipped: boolean, reason?: string, faqs?: object[] }}
- */
-const seedStarterFaqs = async (userId, shopId) => {
-    await verifyShopAccess(userId, shopId);
-
-    const existing = await FaqResponse.count({ where: { shop_id: shopId } });
-    if (existing > 0) {
-        return { seeded: 0, skipped: true, reason: 'faqs_already_exist' };
-    }
-
-    const rows = await FaqResponse.bulkCreate(
-        STARTER_FAQS.map((f, i) => ({
-            shop_id: shopId,
-            category: f.category,
-            template_bn: f.template_bn,
-            template_en: f.template_en,
-            variables: ['starter'],
-            priority: STARTER_FAQS.length - i, // preserve listed order (higher = first)
-            is_active: true,
-        }))
-    );
-
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
-
-    return { seeded: rows.length, skipped: false, faqs: rows.map(formatFaq) };
-};
-
 const updateFaq = async (userId, shopId, faqId, updates) => {
     await verifyShopAccess(userId, shopId);
     const faq = await FaqResponse.findOne({ where: { id: faqId, shop_id: shopId } });
@@ -670,7 +590,6 @@ module.exports = {
     updateBrandingRules,
     listFaqs,
     createFaq,
-    seedStarterFaqs,
     updateFaq,
     deleteFaq,
     listGaps,

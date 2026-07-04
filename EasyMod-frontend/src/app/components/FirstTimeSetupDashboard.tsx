@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowRight,
-  BookOpen,
   Bot,
   CheckCircle2,
   Circle,
@@ -26,7 +25,6 @@ const iconByTask: Record<SetupTaskKey, LucideIcon> = {
   shop_profile: Store,
   first_product: Package,
   ai_settings: Bot,
-  starter_knowledge: BookOpen,
 };
 
 function getTaskTone(task: SetupTask) {

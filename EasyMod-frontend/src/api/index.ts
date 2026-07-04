@@ -157,7 +157,6 @@ export const apiClient = {
   createKnowledgeFaq: knowledgeDomain.createFaq,
   updateKnowledgeFaq: knowledgeDomain.updateFaq,
   deleteKnowledgeFaq: knowledgeDomain.deleteFaq,
-  seedStarterFaqs: knowledgeDomain.seedStarterFaqs,
 
   // Subscription methods
   getSubscription: subscriptionDomain.getSubscription,

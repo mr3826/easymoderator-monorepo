@@ -1,7 +1,7 @@
 'use strict';
 
 const { Op } = require('sequelize');
-const { MetaChannel, Product, FaqResponse } = require('../entities');
+const { MetaChannel, Product } = require('../entities');
 const shopService = require('../shop/shop.service');
 
 const TASK_KEYS = Object.freeze({
@@ -9,7 +9,6 @@ const TASK_KEYS = Object.freeze({
     SHOP_PROFILE: 'shop_profile',
     FIRST_PRODUCT: 'first_product',
     AI_SETTINGS: 'ai_settings',
-    STARTER_KNOWLEDGE: 'starter_knowledge',
 });
 
 const TASK_DEFINITIONS = Object.freeze({
@@ -36,12 +35,6 @@ const TASK_DEFINITIONS = Object.freeze({
         description: 'Keep AI replies in draft mode with a confidence threshold until the shop is ready for automation.',
         ctaLabel: 'Review AI settings',
         href: '/app/manage-shop/business-info',
-    },
-    [TASK_KEYS.STARTER_KNOWLEDGE]: {
-        title: 'Add starter FAQ',
-        description: 'Add at least one FAQ so AI replies have shop-specific answers.',
-        ctaLabel: 'Add FAQ',
-        href: '/app/manage-shop/faqs',
     },
 });
 
@@ -75,13 +68,6 @@ function buildTask(key, complete, details = {}) {
         warnings: details.warnings || [],
         meta: details.meta || {},
     };
-}
-
-function getUsableKnowledgeDocuments(settings) {
-    return normalizeArray(settings.documents).filter((document) => {
-        if (!document || typeof document !== 'object') return false;
-        return document.status !== 'failed';
-    });
 }
 
 function assessShopProfile(shop, businessInfo, aiSettings) {
@@ -149,7 +135,6 @@ async function getSetupStatus({ shopId, userId }) {
         connectedFacebookPages,
         webhookVerifiedFacebookPages,
         activeProducts,
-        activeFaqs,
     ] = await Promise.all([
         shopService.getShopAiSettings(shopId),
         MetaChannel.count({
@@ -166,13 +151,9 @@ async function getSetupStatus({ shopId, userId }) {
         Product.count({
             where: { shop_id: shopId, is_active: true },
         }),
-        FaqResponse.count({
-            where: { shop_id: shopId, is_active: true },
-        }),
     ]);
 
     const normalizedAiSettings = normalizeObject(aiSettings);
-    const usableKnowledgeDocuments = getUsableKnowledgeDocuments(settings);
     const shopProfile = assessShopProfile(shop, businessInfo, normalizedAiSettings);
     const aiSettingsStatus = assessAiSettings(normalizedAiSettings);
     const connectedChannelWarnings = connectedFacebookPages > 0 && webhookVerifiedFacebookPages === 0
@@ -210,12 +191,6 @@ async function getSetupStatus({ shopId, userId }) {
                 confidenceThreshold: normalizedAiSettings.confidence_threshold ?? null,
             },
         }),
-        buildTask(TASK_KEYS.STARTER_KNOWLEDGE, activeFaqs > 0 || usableKnowledgeDocuments.length > 0, {
-            meta: {
-                activeFaqs,
-                knowledgeDocuments: usableKnowledgeDocuments.length,
-            },
-        }),
     ];
 
     const completedCount = tasks.filter((task) => task.status === 'complete').length;
@@ -231,8 +206,6 @@ async function getSetupStatus({ shopId, userId }) {
             connectedFacebookPages,
             webhookVerifiedFacebookPages,
             activeProducts,
-            activeFaqs,
-            knowledgeDocuments: usableKnowledgeDocuments.length,
         },
         generatedAt: new Date().toISOString(),
     };
@@ -252,14 +225,14 @@ function toLegacyOnboardingStatus(setupStatus) {
         checks: {
             facebook_connected: Boolean(taskStatus[TASK_KEYS.CONNECT_CHANNEL]),
             business_info_added: Boolean(taskStatus[TASK_KEYS.SHOP_PROFILE]),
-            knowledge_added: Boolean(taskStatus[TASK_KEYS.FIRST_PRODUCT] && taskStatus[TASK_KEYS.STARTER_KNOWLEDGE]),
+            knowledge_added: Boolean(taskStatus[TASK_KEYS.FIRST_PRODUCT]),
             assistant_test_completed: Boolean(taskStatus[TASK_KEYS.AI_SETTINGS]),
         },
         missing,
         counts: {
             connected_facebook_pages: setupStatus.counts.connectedFacebookPages,
             active_products: setupStatus.counts.activeProducts,
-            active_faqs: setupStatus.counts.activeFaqs,
+            active_faqs: setupStatus.counts.activeFaqs || 0,
             ai_messages: 0,
         },
         setup_status: setupStatus,

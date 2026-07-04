@@ -146,38 +146,6 @@ export async function deleteFaq(faqId: string): Promise<{ message: string }> {
 }
 
 /**
- * Result of seeding the BD f-commerce starter FAQ pack.
- */
-export interface SeedStarterFaqsResult {
-  seeded: number;
-  skipped: boolean;
-  reason?: string;
-  faqs?: FAQ[];
-}
-
-/**
- * Seed the starter FAQ pack (delivery, COD, payment, returns, ordering) for a
- * brand-new shop in one tap. Idempotent on the backend — it only seeds when the
- * shop has no FAQs yet, so calling it twice never duplicates the pack.
- * @returns Promise resolving to { seeded, skipped, faqs }
- * @example
- * ```typescript
- * const { seeded, skipped } = await seedStarterFaqs();
- * ```
- */
-export async function seedStarterFaqs(): Promise<SeedStarterFaqsResult> {
-  const response: AxiosResponse<ApiResponse<{ seeded?: number; skipped?: boolean; reason?: string; faqs?: unknown[] }>> =
-    await httpClient.post('/api/knowledge/faqs/seed-starter');
-  const data = response.data.data;
-  return {
-    seeded: data?.seeded ?? 0,
-    skipped: Boolean(data?.skipped),
-    reason: data?.reason,
-    faqs: (data?.faqs ?? []).map(mapFaqFromBackend),
-  };
-}
-
-/**
  * Get knowledge gaps analysis
  * @returns Promise resolving to array of knowledge gaps
  * @throws {Error} When knowledge gaps retrieval fails

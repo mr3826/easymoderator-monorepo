@@ -464,11 +464,6 @@
           "title": "AI রিপ্লাই সেটিংস ঠিক করুন",
           "description": "শপ অটোমেশনের জন্য প্রস্তুত না হওয়া পর্যন্ত AI উত্তর ড্রাফট মোড ও কনফিডেন্স থ্রেশহোল্ডসহ রাখুন।",
           "cta": "AI সেটিংস দেখুন"
-        },
-        "starter_knowledge": {
-          "title": "স্টার্টার FAQ যোগ করুন",
-          "description": "কমপক্ষে একটি FAQ যোগ করুন যাতে AI শপ অনুযায়ী উত্তর দিতে পারে।",
-          "cta": "FAQ যোগ করুন"
         }
       },
       "missing": {
@@ -1548,8 +1543,6 @@
       "title": "FAQ",
       "subtitle": "কাস্টমারের প্রশ্নে AI যে উত্তর ব্যবহার করবে সেগুলো ম্যানেজ করুন।",
       "addFaq": "FAQ যোগ করুন",
-      "seedStarter": "স্টার্টার FAQ যোগ করুন",
-      "seeding": "যোগ হচ্ছে...",
       "refresh": "রিফ্রেশ",
       "loading": "FAQ লোড হচ্ছে...",
       "manageTitle": "FAQ উত্তর",
@@ -1569,8 +1562,6 @@
       "deleted": "FAQ মুছে ফেলা হয়েছে।",
       "activated": "FAQ সক্রিয় হয়েছে।",
       "deactivated": "FAQ নিষ্ক্রিয় হয়েছে।",
-      "seedSkipped": "এই শপে আগে থেকেই FAQ আছে, তাই স্টার্টার FAQ যোগ করা হয়নি।",
-      "seedSuccess": "{{count}}টি স্টার্টার FAQ যোগ হয়েছে।",
       "saving": "সংরক্ষণ হচ্ছে...",
       "save": "FAQ সংরক্ষণ",
       "metrics": {
@@ -1594,7 +1585,6 @@
       },
       "errors": {
         "load": "FAQ লোড করা যায়নি।",
-        "seed": "স্টার্টার FAQ যোগ করা যায়নি।",
         "update": "FAQ আপডেট করা যায়নি।",
         "delete": "FAQ মুছতে ব্যর্থ।",
         "save": "FAQ সংরক্ষণ করা যায়নি।"
@@ -2157,12 +2147,7 @@
     "stepCounter": "{{total}}-এর মধ্যে {{current}}টি ধাপ",
     "tipLabel": "টিপস:",
     "back": "পেছনে যান",
-    "seedingFaqs": "যোগ করা হচ্ছে…",
-    "seedStarterFaqs": "✨ Starter FAQ যোগ করুন (১ ট্যাপে)",
     "toast": {
-      "faqSkipped": "আপনার আগে থেকেই FAQ আছে — Starter FAQ যোগ করা হয়নি।",
-      "faqSeeded": "{{count}}টি Starter FAQ যোগ হয়েছে! AI এখন common প্রশ্নের উত্তর দিতে পারবে।",
-      "faqError": "FAQ যোগ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।",
       "completed": "Setup complete হয়েছে। Live conversation test করার সময় AI Draft mode এ রাখুন।",
       "incomplete": "Onboarding শেষ করার আগে required setup checklist complete করুন।",
       "completeError": "Onboarding complete করা যায়নি। আবার চেষ্টা করুন।",
@@ -2172,7 +2157,7 @@
       "title": "Launch এর আগে required",
       "facebook": "Facebook Page connected",
       "businessInfo": "Business info save করা",
-      "knowledge": "কমপক্ষে একটি product বা Starter FAQ যোগ করা",
+      "knowledge": "কমপক্ষে একটি active product যোগ করা",
       "assistantTest": "Assistant test reply তৈরি হয়েছে",
       "checking": "চেক করা হচ্ছে..."
     },

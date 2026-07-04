@@ -25,9 +25,6 @@ router.post('/query', knowledgeController.queryKnowledge);
 
 router.get('/faqs', knowledgeController.listFaqs);
 router.post('/faqs', validate(knowledgeValidator.createFaq), knowledgeController.createFaq);
-// One-tap onboarding: seed the BD f-commerce starter FAQ pack (idempotent — only
-// seeds when the shop has no FAQs yet). Lets a new seller skip cold-start typing.
-router.post('/faqs/seed-starter', knowledgeController.seedStarterFaqs);
 router.patch('/faqs/:id', validate(knowledgeValidator.updateFaq), knowledgeController.updateFaq);
 router.delete('/faqs/:id', validate(knowledgeValidator.deleteFaq), knowledgeController.deleteFaq);
 

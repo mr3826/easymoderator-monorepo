@@ -7,7 +7,6 @@ import { apiClient } from "@/api";
 vi.mock("@/api", () => ({
   apiClient: {
     listKnowledgeFaqs: vi.fn(),
-    seedStarterFaqs: vi.fn(),
     updateKnowledgeFaq: vi.fn(),
     createKnowledgeFaq: vi.fn(),
     deleteKnowledgeFaq: vi.fn(),

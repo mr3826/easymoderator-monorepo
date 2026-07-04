@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Edit2, Loader2, MessageCircle, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Edit2, Loader2, MessageCircle, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
@@ -23,7 +23,6 @@ export default function FaqSettings() {
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
   const [busyFaqId, setBusyFaqId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null);
@@ -52,28 +51,6 @@ export default function FaqSettings() {
 
   const isExistingFaq = Boolean(editingFaq && faqs.some((faq) => faq.id === editingFaq.id));
   const canSave = Boolean(editingFaq?.question.trim() && editingFaq?.answer.trim());
-
-  const handleSeedStarterFaqs = async () => {
-    try {
-      setIsSeeding(true);
-      const result = await apiClient.seedStarterFaqs();
-      if (result.faqs?.length) {
-        setFaqs(result.faqs);
-      } else {
-        await loadFaqs();
-      }
-
-      if (result.skipped) {
-        toast.info(t("manageShop.faqs.seedSkipped"));
-      } else {
-        toast.success(t("manageShop.faqs.seedSuccess", { count: result.seeded ?? result.faqs?.length ?? 0 }));
-      }
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || t("manageShop.faqs.errors.seed"));
-    } finally {
-      setIsSeeding(false);
-    }
-  };
 
   const handleToggleFaq = async (faq: FAQ) => {
     try {
@@ -151,15 +128,6 @@ export default function FaqSettings() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={handleSeedStarterFaqs}
-            disabled={isSeeding}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 text-sm font-semibold text-green-700 hover:bg-green-100 disabled:opacity-60"
-          >
-            {isSeeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {isSeeding ? t("manageShop.faqs.seeding") : t("manageShop.faqs.seedStarter")}
-          </button>
           <button
             type="button"
             onClick={() => setEditingFaq(createDraftFaq())}

@@ -45,10 +45,8 @@ For each of the 10 pilot shops:
 1. Sign up → the **Onboarding Wizard** opens automatically.
 2. **Connect** the Facebook Page (wizard step 1).
 3. Add 3–5 products (step 2).
-4. Tap **"✨ Starter FAQ যোগ করুন (১ ট্যাপে)"** to seed the BD f-commerce FAQ pack
-   (step 3) — gives the AI a working knowledge base immediately.
-5. Leave AI mode on **DRAFT** for the first 7–14 days (step 4).
-6. Send a test customer message and confirm an AI reply is produced.
+4. Review shop profile delivery/payment defaults and keep AI mode on **DRAFT** for the first 7–14 days.
+5. Send a test customer message and confirm an AI reply is produced.
    - This is what flips the shop to **Activated** (gate 7).
 
 Then watch for one week:

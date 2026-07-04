@@ -9,8 +9,8 @@
  *
  * Why this exists: the auto-index job (src/modules/knowledge/auto-index.job.js)
  * had no entry point, so after standardizing on Qdrant (Pinecone removed
- * 2026-05-31) and seeding starter FAQs there was no way to (re)populate the
- * collection. This gives ops a single idempotent command.
+ * 2026-05-31) there was no way to (re)populate the collection. This gives ops
+ * a single idempotent command.
  *
  * Idempotent: every document is upserted under a deterministic id
  * (faq-<id>, product-<id>, kdoc-<id>, biz-<shopId>), so re-running overwrites

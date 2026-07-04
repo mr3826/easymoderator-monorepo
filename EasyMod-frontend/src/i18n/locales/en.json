@@ -464,11 +464,6 @@
           "title": "Configure AI reply settings",
           "description": "Keep AI replies in draft mode with a confidence threshold until the shop is ready for automation.",
           "cta": "Review AI settings"
-        },
-        "starter_knowledge": {
-          "title": "Add starter FAQ",
-          "description": "Add at least one FAQ so AI replies have shop-specific answers.",
-          "cta": "Add FAQ"
         }
       },
       "missing": {
@@ -1548,8 +1543,6 @@
       "title": "FAQs",
       "subtitle": "Manage the answers the AI can use for customer questions.",
       "addFaq": "Add FAQ",
-      "seedStarter": "Add starter FAQs",
-      "seeding": "Adding...",
       "refresh": "Refresh",
       "loading": "Loading FAQs...",
       "manageTitle": "FAQ answers",
@@ -1569,8 +1562,6 @@
       "deleted": "FAQ deleted.",
       "activated": "FAQ activated.",
       "deactivated": "FAQ deactivated.",
-      "seedSkipped": "Starter FAQs were not added because this shop already has FAQs.",
-      "seedSuccess": "{{count}} starter FAQs added.",
       "saving": "Saving...",
       "save": "Save FAQ",
       "metrics": {
@@ -1594,7 +1585,6 @@
       },
       "errors": {
         "load": "Failed to load FAQs.",
-        "seed": "Failed to add starter FAQs.",
         "update": "Failed to update FAQ.",
         "delete": "Failed to delete FAQ.",
         "save": "Failed to save FAQ."
@@ -2157,12 +2147,7 @@
     "stepCounter": "{{current}} of {{total}} steps",
     "tipLabel": "Tip:",
     "back": "Go back",
-    "seedingFaqs": "Adding…",
-    "seedStarterFaqs": "✨ Add Starter FAQs (1 tap)",
     "toast": {
-      "faqSkipped": "You already have FAQs — Starter FAQs were not added.",
-      "faqSeeded": "{{count}} Starter FAQs added! The AI can now answer common questions.",
-      "faqError": "Could not add FAQs. Please try again.",
       "completed": "Setup completed. Keep AI in Draft while you test live conversations.",
       "incomplete": "Finish the required setup checklist before completing onboarding.",
       "completeError": "Could not complete onboarding. Please try again.",
@@ -2172,7 +2157,7 @@
       "title": "Required before launch",
       "facebook": "Facebook Page connected",
       "businessInfo": "Business info saved",
-      "knowledge": "At least one product or Starter FAQ added",
+      "knowledge": "At least one active product added",
       "assistantTest": "Assistant test reply created",
       "checking": "Checking..."
     },
