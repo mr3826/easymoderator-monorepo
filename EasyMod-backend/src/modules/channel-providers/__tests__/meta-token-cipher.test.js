@@ -160,7 +160,9 @@ describe('meta-token-cipher — tamper detection', () => {
     it('throws if the auth tag is tampered', () => {
         const ct = cipher.encrypt('sensitive-token');
         const parts = ct.split(':'); // [v2, iv, authTag, ciphertext]
-        const tamperedAuthTag = parts[2].slice(0, -2) + 'ff';
+        const lastByte = parts[2].slice(-2);
+        const replacementByte = lastByte === 'ff' ? '00' : 'ff';
+        const tamperedAuthTag = parts[2].slice(0, -2) + replacementByte;
         const tampered = [parts[0], parts[1], tamperedAuthTag, parts[3]].join(':');
         expect(() => cipher.decrypt(tampered)).toThrow();
     });
