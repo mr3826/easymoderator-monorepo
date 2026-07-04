@@ -11,6 +11,7 @@
 const path = require('path');
 
 const DeliveryIntegration = require('../delivery-integration.entity');
+const { deliveryValidators } = require('../delivery.validator');
 const { PROVIDER_NAMES } = require('../providers/provider.registry');
 
 const MIGRATION_NAME = '20260611_002_delivery_integrations_credentials_text';
@@ -43,6 +44,37 @@ describe('DeliveryIntegration entity schema contracts', () => {
         expect(() => JSON.parse(stored)).toThrow();
         // and the getter round-trips it
         expect(instance.credentials).toEqual({ api_key: 'k', secret_key: 's' });
+    });
+});
+
+describe('delivery toggle request contract', () => {
+    test('accepts frontend camelCase isActive and normalizes to is_active', () => {
+        const { error, value } = deliveryValidators.toggleProvider.validate(
+            { provider: 'pathao', isActive: true },
+            { abortEarly: false, stripUnknown: true }
+        );
+
+        expect(error).toBeUndefined();
+        expect(value).toEqual({ provider: 'pathao', is_active: true });
+    });
+
+    test('accepts canonical snake_case is_active', () => {
+        const { error, value } = deliveryValidators.toggleProvider.validate(
+            { provider: 'steadfast', is_active: false },
+            { abortEarly: false, stripUnknown: true }
+        );
+
+        expect(error).toBeUndefined();
+        expect(value).toEqual({ provider: 'steadfast', is_active: false });
+    });
+
+    test('still requires an explicit active state', () => {
+        const { error } = deliveryValidators.toggleProvider.validate(
+            { provider: 'redx' },
+            { abortEarly: false, stripUnknown: true }
+        );
+
+        expect(error?.details.map((detail) => detail.message)).toContain('is_active is required');
     });
 });
 

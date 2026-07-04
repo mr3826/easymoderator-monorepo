@@ -274,7 +274,7 @@ export async function disconnectDeliveryProvider(provider: DeliveryProvider): Pr
  * ```
  */
 export async function toggleDeliveryProvider(provider: DeliveryProvider, isActive: boolean): Promise<void> {
-  await httpClient.post('/api/shop/delivery/toggle', { provider, isActive });
+  await httpClient.post('/api/shop/delivery/toggle', { provider, is_active: isActive });
 }
 
 /**

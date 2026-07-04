@@ -293,7 +293,8 @@ class DeliveryController {
     async toggleProvider(req, res, next) {
         try {
             const shopId = req.user.shopId;
-            const { provider, is_active } = req.body;
+            const { provider } = req.body;
+            const isActive = req.body.is_active ?? req.body.isActive;
 
             const integration = await DeliveryIntegration.findOne({
                 where: {
@@ -310,12 +311,12 @@ class DeliveryController {
                 throw new AppError('Provider must be connected before activation', 400);
             }
 
-            integration.is_active = is_active;
+            integration.is_active = isActive;
             await integration.save();
 
             res.json({
                 success: true,
-                message: `Provider ${is_active ? 'activated' : 'deactivated'} successfully`,
+                message: `Provider ${isActive ? 'activated' : 'deactivated'} successfully`,
                 data: {
                     provider: integration.provider,
                     is_active: integration.is_active

@@ -97,12 +97,28 @@ const deliveryValidators = {
                 'any.required': 'Provider is required'
             }),
         is_active: Joi.boolean()
-            .required()
+            .optional()
             .messages({
-                'boolean.base': 'is_active must be a boolean',
-                'any.required': 'is_active is required'
+                'boolean.base': 'is_active must be a boolean'
+            }),
+        isActive: Joi.boolean()
+            .optional()
+            .messages({
+                'boolean.base': 'isActive must be a boolean'
             })
-    }),
+    })
+        .or('is_active', 'isActive')
+        .custom((value) => {
+            const normalized = {
+                ...value,
+                is_active: value.is_active ?? value.isActive
+            };
+            delete normalized.isActive;
+            return normalized;
+        })
+        .messages({
+            'object.missing': 'is_active is required'
+        }),
 
     /**
      * Validate metadata update request

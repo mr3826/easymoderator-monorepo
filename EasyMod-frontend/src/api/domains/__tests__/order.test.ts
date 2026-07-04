@@ -273,7 +273,7 @@ describe('Order Domain API', () => {
 
       await order.toggleDeliveryProvider('pathao' as any, true);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'pathao', isActive: true });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'pathao', is_active: true });
     });
 
     it('should toggle provider off', async () => {
@@ -281,7 +281,7 @@ describe('Order Domain API', () => {
 
       await order.toggleDeliveryProvider('steadfast' as any, false);
 
-      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'steadfast', isActive: false });
+      expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/toggle', { provider: 'steadfast', is_active: false });
     });
   });
 

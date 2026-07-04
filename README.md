@@ -26,6 +26,7 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
+- Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
 
 ---
 
