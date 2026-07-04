@@ -6,7 +6,21 @@ const { AppError } = require('../../utils/AppError');
  */
 const ingestData = async (req, res, next) => {
     try {
-        const result = await ragService.ingestData(req.body);
+        const {
+            data,
+            content_type: contentType,
+            collection_id: collectionId,
+            metadata = {}
+        } = req.body;
+
+        const result = await ragService.ingestData({
+            text: data,
+            metadata: {
+                ...metadata,
+                ...(contentType ? { contentType } : {}),
+                ...(collectionId ? { collectionId } : {})
+            }
+        });
 
         res.status(200).json({
             success: true,

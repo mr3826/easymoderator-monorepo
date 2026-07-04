@@ -64,7 +64,7 @@ const syncFaqRagIndex = async (shopId, faq) => {
     const text = buildFaqIndexText(faq);
     if (!text) return;
 
-    await ragService.ingestData({
+    const result = await ragService.ingestData({
         text,
         metadata: {
             documentId,
@@ -72,7 +72,11 @@ const syncFaqRagIndex = async (shopId, faq) => {
             type: 'faq',
             faq_id: faq.id
         }
-    }).catch(() => {});
+    }).catch((error) => ({ success: false, message: error.message }));
+
+    if (!result?.success) {
+        console.warn('FAQ RAG sync skipped:', result?.message || 'unknown error');
+    }
 };
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
