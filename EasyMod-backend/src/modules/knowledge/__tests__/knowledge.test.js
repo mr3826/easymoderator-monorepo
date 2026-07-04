@@ -405,6 +405,7 @@ describe('Knowledge API', () => {
 
     describe('POST /knowledge/faqs', () => {
         it('creates a FAQ and returns 201', async () => {
+            const ragService = require('src/modules/rag/rag.service');
             const newFaq = { id: 1, category: 'Delivery', template_en: '2-3 days', template_bn: null, is_active: true, use_count: 0, priority: 5, created_at: new Date(), updated_at: null };
             FaqResponse.create.mockResolvedValueOnce(newFaq);
 
@@ -414,6 +415,15 @@ describe('Knowledge API', () => {
 
             expect(res.status).toBe(201);
             expect(res.body.success).toBe(true);
+            const ingestPayload = ragService.ingestData.mock.calls.at(-1)[0];
+            expect(ingestPayload.text).toContain('Q: Delivery');
+            expect(ingestPayload.text).toContain('A (EN): 2-3 days');
+            expect(ingestPayload.metadata).toEqual(expect.objectContaining({
+                documentId: 'faq-1',
+                shopId: 'shop-1',
+                type: 'faq',
+                faq_id: 1,
+            }));
         });
 
         it('accepts template_bn and template_en fields', async () => {
@@ -456,6 +466,7 @@ describe('Knowledge API', () => {
 
     describe('PATCH /knowledge/faqs/:id', () => {
         it('updates a FAQ and returns 200', async () => {
+            const ragService = require('src/modules/rag/rag.service');
             const existing = { id: 1, category: 'Old', template_en: 'Old answer', template_bn: null, is_active: true, use_count: 0, priority: 0, created_at: new Date(), updated_at: new Date(), update: jest.fn(() => Promise.resolve()) };
             FaqResponse.findOne.mockResolvedValueOnce(existing);
 
@@ -464,6 +475,9 @@ describe('Knowledge API', () => {
                 .send({ answer: 'Updated answer' });
 
             expect(res.status).toBe(200);
+            const ingestPayload = ragService.ingestData.mock.calls.at(-1)[0];
+            expect(ingestPayload.text).toContain('A (EN): Updated answer');
+            expect(ingestPayload.metadata.documentId).toBe('faq-1');
         });
 
         it('returns 404 for non-existent FAQ', async () => {
@@ -479,12 +493,14 @@ describe('Knowledge API', () => {
 
     describe('DELETE /knowledge/faqs/:id', () => {
         it('deletes a FAQ and returns 200', async () => {
+            const ragService = require('src/modules/rag/rag.service');
             // deleteFaq uses FaqResponse.destroy({ where }) directly
             FaqResponse.destroy.mockResolvedValueOnce(1);
 
             const res = await request(app).delete('/api/knowledge/faqs/1');
             expect(res.status).toBe(200);
             expect(FaqResponse.destroy).toHaveBeenCalled();
+            expect(ragService.deletePoint).toHaveBeenCalledWith('faq-1', 'shop-1');
         });
     });
 

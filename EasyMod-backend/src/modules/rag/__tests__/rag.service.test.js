@@ -19,11 +19,12 @@ jest.mock('src/config/config', () => ({ env: 'test' }));
 const { validate: uuidValidate } = require('uuid');
 
 const calls = [];
-global.fetch = jest.fn(async (url, init) => {
+const defaultFetch = async (url, init) => {
     calls.push({ url: String(url), init });
     // All Qdrant calls "succeed": GET collection (exists), PUT upsert, POST delete.
     return { ok: true, status: 200, text: async () => '', json: async () => ({ result: [] }) };
-});
+};
+global.fetch = jest.fn(defaultFetch);
 
 const rag = require('src/modules/rag/rag.service');
 
@@ -32,7 +33,10 @@ const upsertBody = () => {
     return c ? JSON.parse(c.init.body) : null;
 };
 
-beforeEach(() => { calls.length = 0; });
+beforeEach(() => {
+    calls.length = 0;
+    global.fetch.mockImplementation(defaultFetch);
+});
 
 describe('Qdrant point-id normalization', () => {
     test('a non-UUID documentId is upserted under a valid UUID', async () => {
@@ -67,5 +71,34 @@ describe('Qdrant point-id normalization', () => {
         const uuid = '11111111-2222-4333-8444-555555555555';
         await rag.ingestData({ text: 'x', metadata: { documentId: uuid, shopId: 's1' } });
         expect(upsertBody().points[0].id).toBe(uuid);
+    });
+
+    test('queryData removes corrupt blank-payload hits from RAG answers', async () => {
+        global.fetch.mockImplementation(async (url, init) => {
+            calls.push({ url: String(url), init });
+            if (String(url).includes('/points/search')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => '',
+                    json: async () => ({
+                        result: [
+                            { score: 0.95, payload: { text: 'Delivery takes 2 days', type: 'faq' } },
+                            { score: 0.90, payload: {} },
+                            { score: 0.85, payload: { content: 'Legacy content payload', type: 'legacy' } },
+                        ],
+                    }),
+                };
+            }
+            return { ok: true, status: 200, text: async () => '', json: async () => ({ result: [] }) };
+        });
+
+        const res = await rag.queryData({ query: 'delivery', shopId: 's1', limit: 3 });
+
+        expect(res.success).toBe(true);
+        expect(res.results.map((item) => item.content)).toEqual([
+            'Delivery takes 2 days',
+            'Legacy content payload',
+        ]);
     });
 });

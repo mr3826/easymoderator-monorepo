@@ -19,7 +19,7 @@
 | `integration` | meta.controller.js | — | Meta webhook ingestion controller |
 | `invoice` | invoice.service.js | Invoice | Monthly invoice generation for PARTNER plan |
 | `keyword` | keyword.service.js | Keyword | Comment trigger keywords per shop |
-| `knowledge` | knowledge.service.js | Knowledge | FAQ/document knowledge base for RAG |
+| `knowledge` | knowledge.service.js | Knowledge | FAQ/document knowledge base for RAG; FAQ writes sync `faq-<id>` vectors immediately |
 | `language` | language.service.js | — | i18n support (en + bn) |
 | `notification` | owner-notification.service.js | Notification | SSE + push notifications to seller |
 | `order` | order.service.js, order-session.service.js | Order | Order lifecycle: PENDING → DISPATCHED → DELIVERED/RETURNED |
@@ -53,7 +53,7 @@
 | Language detection (bn/banglish/en) | `language-switcher.service.js` | Active |
 | Product RAG retrieval | `rag.service.js` | Active |
 | Delivery RAG | `delivery-rag.service.js` | Active |
-| Knowledge auto-indexing | `auto-index.job.js` | Active |
+| Knowledge auto-indexing | `auto-index.job.js` | Active backup reindex; FAQ CRUD also syncs vectors immediately |
 | Image product matching | `image-product-matcher.service.js` | Active |
 | Voice note processing | `voice-processing.service.js` | Active |
 | BERT embeddings | `bert-client.service.js` | Active |

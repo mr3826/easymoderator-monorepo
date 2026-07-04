@@ -119,7 +119,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Customers
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info, FAQs
+- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)

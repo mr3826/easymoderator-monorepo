@@ -219,14 +219,18 @@ const queryData = async ({ query, limit = 5, filters, shopId }) => {
         shopId
     });
 
-    return {
-        success: true,
-        provider: 'qdrant',
-        results: results.map((item) => ({
-            content: item.payload?.text || '',
+    const mappedResults = results
+        .map((item) => ({
+            content: normalizeText(item.payload?.text || item.payload?.content || ''),
             score: item.score,
             metadata: item.payload || {}
         }))
+        .filter((item) => item.content);
+
+    return {
+        success: true,
+        provider: 'qdrant',
+        results: mappedResults
     };
 };
 

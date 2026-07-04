@@ -46,6 +46,35 @@ const formatFaq = (faq) => ({
     updatedAt: faq.updated_at || faq.created_at,
 });
 
+const buildFaqIndexText = (faq) => [
+    faq.category && `Q: ${faq.category}`,
+    faq.template_bn && `A (BN): ${faq.template_bn}`,
+    faq.template_en && `A (EN): ${faq.template_en}`,
+].filter(Boolean).join('\n');
+
+const syncFaqRagIndex = async (shopId, faq) => {
+    if (!faq?.id) return;
+
+    const documentId = `faq-${faq.id}`;
+    if (faq.is_active === false) {
+        await ragService.deletePoint(documentId, shopId).catch(() => {});
+        return;
+    }
+
+    const text = buildFaqIndexText(faq);
+    if (!text) return;
+
+    await ragService.ingestData({
+        text,
+        metadata: {
+            documentId,
+            shopId,
+            type: 'faq',
+            faq_id: faq.id
+        }
+    }).catch(() => {});
+};
+
 // ── JSON helpers ──────────────────────────────────────────────────────────────
 
 const normalizeArray = (value) => {
@@ -184,6 +213,7 @@ const createFaq = async (userId, shopId, faq) => {
         is_active: faq.is_active !== undefined ? faq.is_active : (faq.active !== undefined ? faq.active : true)
     });
 
+    await syncFaqRagIndex(shopId, newFaq);
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
 
     return formatFaq(newFaq);
@@ -274,7 +304,7 @@ const updateFaq = async (userId, shopId, faqId, updates) => {
     const faq = await FaqResponse.findOne({ where: { id: faqId, shop_id: shopId } });
     if (!faq) throw new AppError('FAQ not found', 404);
 
-    await faq.update({
+    const nextValues = {
         category: updates.category || updates.question || faq.category,
         template_bn: updates.template_bn !== undefined ? updates.template_bn : faq.template_bn,
         template_en: updates.template_en !== undefined
@@ -285,16 +315,22 @@ const updateFaq = async (userId, shopId, faqId, updates) => {
         is_active: updates.is_active !== undefined
             ? updates.is_active
             : (updates.active !== undefined ? updates.active : faq.is_active)
-    });
+    };
 
+    await faq.update(nextValues);
+    const indexedFaq = typeof faq.get === 'function' ? faq.get({ plain: true }) : { ...faq };
+    Object.assign(indexedFaq, nextValues);
+
+    await syncFaqRagIndex(shopId, indexedFaq);
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
 
-    return formatFaq(faq);
+    return formatFaq(indexedFaq);
 };
 
 const deleteFaq = async (userId, shopId, faqId) => {
     await verifyShopAccess(userId, shopId);
     await FaqResponse.destroy({ where: { id: faqId, shop_id: shopId } });
+    await ragService.deletePoint(`faq-${faqId}`, shopId).catch(() => {});
     await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
     return { message: 'FAQ deleted successfully' };
 };
