@@ -130,7 +130,8 @@ describe('Shop AI Settings API', () => {
 
             expect(res.status).toBe(200);
             const data = res.body.data;
-            expect(data.automation_mode).toBe('AUTO');
+            expect(data.automation_mode).toBe('DRAFT');
+            expect(data.auto_reply_enabled).toBe(false);
             expect(data.confidence_threshold).toBe(75);
             expect(data.required_fields).toHaveProperty('customer_name');
         });
@@ -141,7 +142,7 @@ describe('Shop AI Settings API', () => {
 
             const res = await request(app).get('/api/shop/ai-settings');
 
-            expect(res.body.data.automation_mode).toBe('AUTO');
+            expect(res.body.data.automation_mode).toBe('AI_ACTIVE');
             expect(res.body.data.confidence_threshold).toBe(85);
         });
     });
@@ -209,15 +210,42 @@ describe('Shop AI Settings API', () => {
         it('rejects invalid notification_channel in handoff_settings', async () => {
             const res = await request(app)
                 .put('/api/shop/ai-settings')
-                .send({ handoff_settings: { notification_channel: 'telegram' } });
+                .send({ handoff_settings: { notification_channel: 'webhook' } });
             expect(res.status).toBe(400);
         });
 
         it('accepts valid notification_channel', async () => {
             const res = await request(app)
                 .put('/api/shop/ai-settings')
-                .send({ handoff_settings: { notification_channel: 'in_app', cooldown_minutes: 30 } });
+                .send({ handoff_settings: { notification_channel: 'telegram', cooldown_minutes: 30 } });
             expect(res.status).toBe(200);
+        });
+
+        it('derives auto_reply_enabled from automation_mode', async () => {
+            const draftRes = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({ automation_mode: 'DRAFT', auto_reply_enabled: true });
+            expect(draftRes.status).toBe(200);
+            expect(mockShop.settings.ai.auto_reply_enabled).toBe(false);
+
+            const autoRes = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({ automation_mode: 'AUTO', auto_reply_enabled: false });
+            expect(autoRes.status).toBe(200);
+            expect(mockShop.settings.ai.auto_reply_enabled).toBe(true);
+        });
+
+        it('persists greeting and closing settings', async () => {
+            const res = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({
+                    greeting: { enabled: true, custom_text: 'Welcome to Test Shop' },
+                    closing: { enabled: false, custom_text: 'Thanks' },
+                });
+
+            expect(res.status).toBe(200);
+            expect(mockShop.settings.ai.greeting).toEqual({ enabled: true, custom_text: 'Welcome to Test Shop' });
+            expect(mockShop.settings.ai.closing).toEqual({ enabled: false, custom_text: 'Thanks' });
         });
 
         it('converts auto_reply_enabled to boolean', async () => {

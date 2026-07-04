@@ -163,10 +163,12 @@ Inbound message → reply, end to end:
    3. `gpt-4.1-mini` — final fallback
    A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
 7. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
-8. **Attribution** — AI replies carry a configurable marker (default ` 🤖`) so customers know the message was automated (**Meta Platform Policy 4.2**). Toggle with `AI_BOT_ATTRIBUTION_ENABLED`.
+8. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. Draft/Manual modes store the reply as an inbox suggestion; Auto mode can send only after policy and confidence gates pass.
 9. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
 **Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.
+
+Business Info updates are part of the AI knowledge path. The owner-written `settings.businessInfo.additionalInfo` field is stored with the shop profile, injected into the system prompt immediately, and included by the scheduled business-info RAG reindex job together with shop name, address, phone, and opening hours.
 
 ---
 
@@ -211,6 +213,8 @@ Day-one merchant alert channels:
 - Telegram alerts: `/api/notifications/telegram/*`, backed by `telegram_notification_bindings`.
 
 Telegram is a **one-way alert channel**. It sends only merchant operational alerts and deep links back to Easy Moderator. It does not receive customer messages, does not show AI logs, and does not let merchants reply to customers from Telegram.
+
+Human-handoff settings can select `telegram` as the alert channel after the shop connects the EasyModerator bot in Settings -> Notifications. Handoff still creates an in-app notification first; Telegram is an additional group alert, not a customer communication channel.
 
 Supported Telegram event preferences:
 
@@ -359,7 +363,6 @@ CUSTOMER_WAITING_ALERT_MINUTES=30
 CUSTOMER_WAITING_ALERT_SCAN_LIMIT=200
 
 # AI behaviour
-AI_BOT_ATTRIBUTION_ENABLED=true
 AI_BURST_WINDOW_MS=8000
 ```
 

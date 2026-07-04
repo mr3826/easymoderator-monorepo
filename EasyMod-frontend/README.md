@@ -120,6 +120,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
 - Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
+  Business Info contains the owner-editable additional info field used to ground AI replies. AI Behaviour defaults to Draft, derives auto-reply from automation mode, and shows Telegram group alerts as a handoff option when notification status is loaded.
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)

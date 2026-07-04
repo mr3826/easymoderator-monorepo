@@ -7,6 +7,7 @@ const emptyBusinessInfo: BusinessInfo = {
   address: "",
   phone: "",
   openingHours: "",
+  additionalInfo: "",
   socialLinks: {},
 };
 
@@ -19,6 +20,7 @@ const normalizeBusinessInfo = (value?: Partial<BusinessInfo> | null): BusinessIn
   address: value?.address ?? "",
   phone: value?.phone ?? "",
   openingHours: value?.openingHours ?? "",
+  additionalInfo: value?.additionalInfo ?? "",
   socialLinks: (value?.socialLinks && typeof value.socialLinks === "object") ? value.socialLinks : {},
 });
 
@@ -123,6 +125,20 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
             placeholder={t('manageShop.businessInfo.openingHoursPlaceholder')}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.businessInfo.additionalInfo')}</label>
+          <textarea
+            rows={4}
+            maxLength={3000}
+            aria-label={t('manageShop.businessInfo.additionalInfo')}
+            value={businessInfo.additionalInfo || ""}
+            onChange={(e) => setBusinessInfo({ ...businessInfo, additionalInfo: e.target.value })}
+            placeholder={t('manageShop.businessInfo.additionalInfoPlaceholder')}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">{t('manageShop.businessInfo.additionalInfoHelp')}</p>
         </div>
 
         <div className="border-t border-gray-100 pt-4">

@@ -76,4 +76,25 @@ describe('auto-index.job — indexShop', () => {
         expect(res.indexed).toBe(0);
         expect(res.errors).toBe(1);
     });
+
+    it('indexes additional owner business info and openingHours', async () => {
+        mockShopFindByPk.mockResolvedValue({
+            settings: {
+                businessInfo: {
+                    shopName: 'Rina Fashion',
+                    openingHours: '10am-8pm',
+                    additionalInfo: 'Exchange requires an unboxing video.',
+                },
+            },
+        });
+
+        const res = await indexShop('shop-1');
+
+        expect(res.errors).toBe(0);
+        expect(res.indexed).toBe(1);
+        const { text, metadata } = mockIngest.mock.calls[0][0];
+        expect(text).toContain('Business hours: 10am-8pm');
+        expect(text).toContain('Additional shop owner info: Exchange requires an unboxing video.');
+        expect(metadata.type).toBe('business_info');
+    });
 });

@@ -1532,6 +1532,9 @@
       "errorUpdate": "ব্যবসার তথ্য আপডেট করতে ব্যর্থ।",
       "sectionTitle": "ব্যবসার তথ্য",
       "openingHoursPlaceholder": "যেমন: শনি–বৃহঃ সকাল ৯টা–রাত ৯টা",
+      "additionalInfo": "মালিকের অতিরিক্ত তথ্য",
+      "additionalInfoPlaceholder": "AI যেন জানে এমন দোকান-সংক্রান্ত তথ্য, পলিসি, সাইজিং নোট, ওয়ারেন্টি নিয়ম বা টোন গাইড লিখুন।",
+      "additionalInfoHelp": "এখানে সেভ করা তথ্য AI রিপ্লাইয়ের শপ নলেজ হিসেবে ব্যবহার হবে।",
       "social": {
         "title": "সোশ্যাল মিডিয়া লিংক",
         "help": "যেগুলো যোগ করবেন সেগুলো অর্ডার নিশ্চিত হওয়ার মেসেজে \"আমাদের ফলো করুন\" অংশে দেখানো হবে। (ঐচ্ছিক)",
@@ -1867,7 +1870,7 @@
       "autoReplyEnabled": "অটো-রিপ্লাই চালু",
       "askEmail": "গ্রাহকের ইমেইল জিজ্ঞাসা করুন",
       "greetingLabel": "গ্রিটিং মেসেজ",
-      "greetingHint": "(নতুন কথোপকথনের শুরুতে)",
+      "greetingHint": "(নতুন কথোপকথনে গ্রাহকের প্রথম মেসেজের পরে)",
       "greetingPlaceholder": "যেমন: স্বাগতম! কীভাবে সাহায্য করতে পারি?",
       "disclosurePrefix": "সবসময় দেখানো হয় (Meta নিয়ম):",
       "disclosureText": "আপনি [আপনার দোকান]-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।",
@@ -1879,7 +1882,7 @@
       "toggleOn": "চালু",
       "toggleOff": "বন্ধ",
       "requiredFieldsLabel": "প্রয়োজনীয় অর্ডার ফিল্ড",
-      "requiredFieldsHint": "অর্ডার নিশ্চিত করার আগে AI এই তথ্যগুলো জিজ্ঞাসা করবে।",
+      "requiredFieldsHint": "শুধু অর্ডার চেকআউটের সময় ব্যবহার হবে। সাধারণ পণ্য বা FAQ উত্তরে গ্রাহকের নাম চাওয়া উচিত নয়।",
       "fields": {
         "customer_name": "গ্রাহকের নাম",
         "mobile_number": "মোবাইল নম্বর",
@@ -1893,6 +1896,9 @@
       "notifInApp": "অ্যাপের ভেতরে নোটিফিকেশন",
       "notifEmail": "ইমেইল",
       "notifSms": "SMS",
+      "notifTelegram": "Telegram গ্রুপ অ্যালার্ট",
+      "telegramConnected": "এই শপের জন্য Telegram অ্যালার্ট সংযুক্ত আছে।",
+      "telegramDisconnected": "এই চ্যানেল থেকে গ্রুপ অ্যালার্ট পাঠাতে আগে Notifications থেকে Telegram অ্যালার্ট কানেক্ট করুন।",
       "cooldownLabel": "কুলডাউন (মিনিট)",
       "triggerKeywordsLabel": "ট্রিগার কীওয়ার্ড",
       "triggerKeywordsPlaceholder": "যেমন: complain, refund"

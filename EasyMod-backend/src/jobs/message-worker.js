@@ -32,6 +32,7 @@ const policyEngine = require('../modules/policy/policy.engine');
 const metaChannelService = require('../modules/channel-providers/meta-channel.service');
 const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
 const Customer = require('../modules/customer/customer.entity');
+const { Op } = require('sequelize');
 
 // Lazy imports to avoid circular dependency issues at module load
 const getShopAISettings = async (shopId) => {
@@ -97,6 +98,21 @@ async function loadConversationHistory(conversationId, excludeIds) {
             content: m.content,
             message: m.content,
         }));
+}
+
+/**
+ * The owner greeting is tied to the customer's first turn, not the first AI row.
+ * That covers plain "hi" and first-turn image/product messages, while avoiding
+ * a late greeting if earlier customer turns were held in Draft/HITL.
+ */
+async function isFirstCustomerTurn(conversationId, currentTurnMessageIds) {
+    const excludeIds = (Array.isArray(currentTurnMessageIds) ? currentTurnMessageIds : [currentTurnMessageIds]).filter(Boolean);
+    const where = { conversation_id: conversationId, sender: 'customer' };
+    if (excludeIds.length > 0) {
+        where.id = { [Op.notIn]: excludeIds };
+    }
+    const customerCount = await Message.count({ where });
+    return excludeIds.length > 0 ? customerCount === 0 : customerCount <= 1;
 }
 
 /**
@@ -364,10 +380,7 @@ async function processMessageJob(job) {
     let repliedText = rawResponse;
     try {
         if (rawResponse) {
-            const priorAiCount = await Message.count({
-                where: { conversation_id: conversationId, sender: 'ai' },
-            });
-            if (priorAiCount === 0) {
+            if (await isFirstCustomerTurn(conversationId, historyExcludeIds)) {
                 const { buildGreeting } = require('../modules/shop/ai-messaging');
                 const Shop = require('../modules/shop/shop.entity');
                 const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
@@ -620,4 +633,9 @@ if (require.main === module || process.env.RUN_WORKER === 'true') {
     startWorker();
 }
 
-module.exports = { processMessageJob, startWorker, getWorker: () => worker };
+module.exports = {
+    processMessageJob,
+    startWorker,
+    getWorker: () => worker,
+    _private: { loadConversationHistory, isFirstCustomerTurn },
+};

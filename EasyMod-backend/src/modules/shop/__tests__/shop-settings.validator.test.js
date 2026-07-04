@@ -93,15 +93,14 @@ describe('Shop Settings Validator', () => {
       expect(() => validateAISettings(invalidSettings)).toThrow(AppError);
     });
 
-    it('throws error for missing handoff_settings fields', () => {
-      const invalidSettings = {
+    it('accepts partial handoff_settings updates for service deep-merge', () => {
+      const partialSettings = {
         handoff_settings: {
           trigger_keywords: ['complain'],
-          // missing notification_channel and cooldown_minutes
         },
       };
 
-      expect(() => validateAISettings(invalidSettings)).toThrow(AppError);
+      expect(() => validateAISettings(partialSettings)).not.toThrow();
     });
 
     it('throws error for invalid notification_channel', () => {
@@ -114,6 +113,12 @@ describe('Shop Settings Validator', () => {
       };
 
       expect(() => validateAISettings(invalidSettings)).toThrow(AppError);
+    });
+
+    it('accepts telegram notification_channel', () => {
+      expect(() => validateAISettings({
+        handoff_settings: { notification_channel: 'telegram' },
+      })).not.toThrow();
     });
 
     it('throws error for negative cooldown_minutes', () => {
@@ -205,6 +210,7 @@ describe('Shop Settings Validator', () => {
         address: 'Dhaka, Bangladesh',
         phone: '01712345678',
         openingHours: '9am-9pm',
+        additionalInfo: 'Owner says warranty is 7 days.',
         deliveryAreas: ['Dhaka', 'Chittagong'],
         paymentMethods: ['bKash', 'COD'],
       };
@@ -227,6 +233,10 @@ describe('Shop Settings Validator', () => {
       };
 
       expect(() => validateBusinessInfo(invalidInfo)).toThrow(AppError);
+    });
+
+    it('rejects additionalInfo over the length cap', () => {
+      expect(() => validateBusinessInfo({ additionalInfo: 'x'.repeat(3001) })).toThrow(AppError);
     });
 
     it('throws error for non-string array items in deliveryAreas', () => {
@@ -375,6 +385,7 @@ describe('Shop Settings Validator', () => {
           address: 'Dhaka',
           phone: '01712345678',
           openingHours: '9am-9pm',
+          additionalInfo: 'Exchange within 3 days.',
           deliveryAreas: ['Dhaka'],
           paymentMethods: ['bKash'],
         },
@@ -476,6 +487,7 @@ describe('Shop Settings Validator', () => {
       expect(AI_SETTINGS_SCHEMA.confidence_threshold(150)).toBe(false);
       expect(AI_SETTINGS_SCHEMA.auto_reply_enabled(true)).toBe(true);
       expect(AI_SETTINGS_SCHEMA.auto_reply_enabled('yes')).toBe(false);
+      expect(AI_SETTINGS_SCHEMA.handoff_settings({ notification_channel: 'telegram' })).toBe(true);
     });
 
     it('BD_SETTINGS_SCHEMA validators handle null values', () => {
@@ -488,6 +500,8 @@ describe('Shop Settings Validator', () => {
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas(['Dhaka', 'Chittagong'])).toBe(true);
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas(['Dhaka', 123])).toBe(false);
       expect(BUSINESS_INFO_SCHEMA.deliveryAreas('not array')).toBe(false);
+      expect(BUSINESS_INFO_SCHEMA.additionalInfo('x'.repeat(3000))).toBe(true);
+      expect(BUSINESS_INFO_SCHEMA.additionalInfo('x'.repeat(3001))).toBe(false);
     });
 
     it('AI_SETTINGS_SCHEMA validates greeting/closing blocks', () => {

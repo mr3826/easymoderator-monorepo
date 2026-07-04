@@ -34,6 +34,7 @@ describe('BusinessInfoForm', () => {
     expect(screen.getByLabelText(/phone/i)).toHaveValue('');
     expect(screen.getByLabelText(/address/i)).toHaveValue('');
     expect(screen.getByLabelText(/openingHours/i)).toHaveValue('');
+    expect(screen.getByLabelText(/additionalInfo/i)).toHaveValue('');
   });
 
   it('renders form fields with initial data', () => {
@@ -42,6 +43,7 @@ describe('BusinessInfoForm', () => {
       phone: '01712345678',
       address: 'Dhaka, Bangladesh',
       openingHours: '9am-9pm',
+      additionalInfo: 'Owner says exchange is allowed within 3 days.',
       deliveryAreas: ['Dhaka', 'Chittagong'],
       paymentMethods: ['bKash', 'COD'],
     };
@@ -51,6 +53,7 @@ describe('BusinessInfoForm', () => {
     expect(screen.getByDisplayValue('Test Shop')).toBeInTheDocument();
     expect(screen.getByDisplayValue('01712345678')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Dhaka, Bangladesh')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Owner says exchange is allowed within 3 days.')).toBeInTheDocument();
   });
 
   it('updates shop name on input change', async () => {
@@ -93,6 +96,25 @@ describe('BusinessInfoForm', () => {
         address: '',
         phone: '',
         openingHours: '',
+        additionalInfo: '',
+      }));
+    });
+  });
+
+  it('sends additional owner info when edited', async () => {
+    mockOnSave.mockResolvedValue({ businessInfo: {} });
+
+    render(<BusinessInfoForm {...defaultProps} />);
+
+    const additionalInfoInput = screen.getByLabelText(/additionalInfo/i);
+    await userEvent.type(additionalInfoInput, 'Exchange only with unboxing video.');
+
+    const saveButton = screen.getByRole('button', { name: /saveChanges/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mockOnSave).toHaveBeenCalledWith(expect.objectContaining({
+        additionalInfo: 'Exchange only with unboxing video.',
       }));
     });
   });
@@ -153,6 +175,7 @@ describe('BusinessInfoForm', () => {
       phone: '01712345678',
       address: 'Dhaka',
       openingHours: '9-5',
+      additionalInfo: 'Existing owner note',
       deliveryAreas: ['Zone A'],
       paymentMethods: ['COD'],
     };

@@ -62,7 +62,8 @@ const indexShop = async (shopId) => {
                 info.description && `Description: ${info.description}`,
                 info.address && `Address: ${info.address}`,
                 info.phone && `Phone: ${info.phone}`,
-                info.businessHours && `Business hours: ${info.businessHours}`,
+                (info.openingHours || info.businessHours) && `Business hours: ${info.openingHours || info.businessHours}`,
+                info.additionalInfo && `Additional shop owner info: ${info.additionalInfo}`,
                 info.returnPolicy && `Return policy: ${info.returnPolicy}`,
                 info.deliveryPolicy && `Delivery policy: ${info.deliveryPolicy}`
             ].filter(Boolean).join('\n');

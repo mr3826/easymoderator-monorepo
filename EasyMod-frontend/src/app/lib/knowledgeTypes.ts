@@ -14,6 +14,8 @@ export interface BusinessInfo {
   location?: string;
   phone: string;
   openingHours: string;
+  // Freeform owner-provided shop facts that should ground AI replies.
+  additionalInfo?: string;
   // Collected on the Delivery Settings / Payment Settings pages (defaults:
   // delivery = whole Bangladesh, payment = Cash on Delivery). Kept optional for
   // back-compat with stored data; no longer edited in Business Info.

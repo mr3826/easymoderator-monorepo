@@ -56,7 +56,7 @@ jest.mock('src/utils/database/database-setup', () => ({
 
 // ── Shop fixture ──────────────────────────────────────────────────────────
 const mockShopSettings = {
-    businessInfo: { shopName: 'Existing Shop', address: '123 Main St', phone: '01700', openingHours: '9-5', deliveryAreas: ['Dhaka'], paymentMethods: ['COD'] },
+    businessInfo: { shopName: 'Existing Shop', address: '123 Main St', phone: '01700', openingHours: '9-5', additionalInfo: 'Existing owner note', deliveryAreas: ['Dhaka'], paymentMethods: ['COD'] },
     brandingRules: { tone: 'friendly' },
     documents: [],
     ai: { automation_mode: 'AUTO', confidence_threshold: 75 }
@@ -480,8 +480,25 @@ describe('Knowledge API', () => {
             expect(saved.shopName).toBe('Existing Shop');
             expect(saved.address).toBe('123 Main St');
             expect(saved.deliveryAreas).toEqual(['Dhaka']);
+            expect(saved.additionalInfo).toBe('Existing owner note');
             // Updated field must be new value
             expect(saved.phone).toBe('01800');
+        });
+
+        it('persists additionalInfo into settings.businessInfo', async () => {
+            const knowledgeService = require('src/modules/knowledge/knowledge.service');
+            const { Shop, UserShop } = require('src/modules/entities');
+
+            UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+            Shop.findByPk.mockResolvedValue(mockShop);
+
+            await knowledgeService.updateBusinessInfo('user-1', 'shop-1', {
+                additionalInfo: 'Exchange requires an unboxing video.',
+            });
+
+            const saved = mockShop.update.mock.calls[0][0].settings.businessInfo;
+            expect(saved.additionalInfo).toBe('Exchange requires an unboxing video.');
+            expect(saved.shopName).toBe('Existing Shop');
         });
 
         it('persists socialLinks into settings.businessInfo and preserves existing fields', async () => {

@@ -163,6 +163,7 @@ const updateBusinessInfo = async (userId, shopId, data) => {
         address:        data.address        !== undefined ? String(data.address).trim()        : existing.address        || '',
         phone:          data.phone          !== undefined ? String(data.phone).trim()          : existing.phone          || '',
         openingHours:   data.openingHours   !== undefined ? String(data.openingHours).trim()   : existing.openingHours   || '',
+        additionalInfo: data.additionalInfo !== undefined ? String(data.additionalInfo).trim() : existing.additionalInfo || '',
         deliveryAreas:  data.deliveryAreas  !== undefined ? normalizeArray(data.deliveryAreas)  : normalizeArray(existing.deliveryAreas),
         paymentMethods: data.paymentMethods !== undefined ? normalizeArray(data.paymentMethods) : normalizeArray(existing.paymentMethods),
         // Social links surfaced in the order-confirmation closing (ai-messaging.renderSocialLinks).

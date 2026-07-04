@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { BusinessInfo } from "../lib/knowledgeTypes";
 import { apiClient } from "@/api";
 import type { ShopAISettings } from "@/api/types/dashboard";
+import type { TelegramNotificationStatus } from "@/api/types/notification";
 import { authService } from "../lib/auth";
 import BusinessInfoForm from "./BusinessInfoForm";
 import AISettingsForm from "./AISettingsForm";
@@ -14,6 +15,7 @@ export default function BusinessInfoSettings() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
   const [aiSettings, setAiSettings] = useState<ShopAISettings | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramNotificationStatus | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -22,13 +24,15 @@ export default function BusinessInfoSettings() {
       try {
         setIsLoading(true);
         setLoadError(null);
-        const [infoData, aiData] = await Promise.all([
+        const [infoData, aiData, telegramData] = await Promise.all([
           apiClient.getShopBusinessInfo(),
           apiClient.getShopAISettings(),
+          apiClient.getTelegramNotificationStatus().catch(() => null),
         ]);
         if (!abortControllerRef.current?.signal.aborted) {
           setBusinessInfo(infoData.businessInfo);
           setAiSettings(aiData);
+          setTelegramStatus(telegramData);
         }
       } catch (error: any) {
         if (!abortControllerRef.current?.signal.aborted) {
@@ -76,6 +80,7 @@ export default function BusinessInfoSettings() {
       <AISettingsForm
         initialData={aiSettings}
         onSave={handleSaveAISettings}
+        telegramStatus={telegramStatus}
       />
     </div>
   );

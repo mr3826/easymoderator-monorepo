@@ -12,7 +12,7 @@ process.env.NODE_ENV = 'test';
 const { buildSystemPrompt } = require('src/modules/ai/intent-router.service');
 
 const KNOWLEDGE = {
-    businessInfo: { shopName: 'Test Shop', address: 'Dhaka' },
+    businessInfo: { shopName: 'Test Shop', address: 'Dhaka', additionalInfo: 'Exchange requires an unboxing video.' },
     brandingRules: {},
     faqs: [{ category: 'How can I pay?', template_en: 'You can pay via bKash, Nagad, or COD.' }],
 };
@@ -61,4 +61,20 @@ test('default persona treats negative add-more replies as checkout intent, not c
     expect(prompt).toContain('want to continue checkout');
     expect(prompt).toContain('Do not cancel the order unless');
     expect(prompt).toContain('cancel order');
+});
+
+test('owner additional business info is included as AI grounding context', () => {
+    const prompt = buildSystemPrompt(KNOWLEDGE, 'mixed', false, 'friendly_bd', null, '');
+
+    expect(prompt).toContain('Additional shop owner info');
+    expect(prompt).toContain('Exchange requires an unboxing video.');
+});
+
+test('friendly persona does not infer customer gender from product context', () => {
+    const prompt = buildSystemPrompt(KNOWLEDGE, 'mixed', false, 'friendly_bd', null, '');
+
+    expect(prompt).toContain("Never infer the customer's gender from product category");
+    expect(prompt).not.toContain('best seller apu');
+    expect(prompt).not.toContain('Sorry apu');
+    expect(prompt).not.toContain('Dhonnobad apu');
 });

@@ -8,6 +8,7 @@ import BusinessInfoSettings from './BusinessInfoSettings';
 const {
   mockGetShopBusinessInfo,
   mockGetShopAISettings,
+  mockGetTelegramNotificationStatus,
   mockUpdateShopBusinessInfo,
   mockUpdateShopAISettings,
 } = vi.hoisted(() => {
@@ -17,6 +18,7 @@ const {
       address: '123 Main St',
       phone: '01700000000',
       openingHours: '9am-6pm',
+      additionalInfo: 'Exchange within 3 days.',
       deliveryAreas: ['Dhaka', 'Chittagong'],
       paymentMethods: ['COD', 'bKash'],
     },
@@ -28,7 +30,7 @@ const {
   const mockAISettings = {
     automation_mode: 'DRAFT',
     confidence_threshold: 60,
-    auto_reply_enabled: true,
+    auto_reply_enabled: false,
     max_auto_order_value: 5000,
     ask_email: false,
     primary_language: 'mixed',
@@ -38,6 +40,7 @@ const {
   return {
     mockGetShopBusinessInfo:    vi.fn().mockResolvedValue(mockBusinessInfo),
     mockGetShopAISettings:      vi.fn().mockResolvedValue(mockAISettings),
+    mockGetTelegramNotificationStatus: vi.fn().mockResolvedValue({ status: 'connected', connected: true }),
     mockUpdateShopBusinessInfo: vi.fn().mockResolvedValue(mockBusinessInfo),
     mockUpdateShopAISettings:   vi.fn().mockResolvedValue(mockAISettings),
   };
@@ -45,11 +48,11 @@ const {
 
 // ── Re-export mock data for test assertions ────────────────────────────────
 const mockBusinessInfo = {
-  businessInfo: { shopName: 'Test Shop', address: '123 Main St', phone: '01700000000', openingHours: '9am-6pm', deliveryAreas: ['Dhaka', 'Chittagong'], paymentMethods: ['COD', 'bKash'] },
+  businessInfo: { shopName: 'Test Shop', address: '123 Main St', phone: '01700000000', openingHours: '9am-6pm', additionalInfo: 'Exchange within 3 days.', deliveryAreas: ['Dhaka', 'Chittagong'], paymentMethods: ['COD', 'bKash'] },
   brandingRules: {}, faqs: [], documents: [], ai_settings: {},
 };
 const mockAISettings = {
-  automation_mode: 'DRAFT', confidence_threshold: 60, auto_reply_enabled: true,
+  automation_mode: 'DRAFT', confidence_threshold: 60, auto_reply_enabled: false,
   max_auto_order_value: 5000, ask_email: false, primary_language: 'mixed',
   required_fields: { customer_name: true, mobile_number: true, delivery_address: true, payment_method: true, email_address: false, special_instructions: false },
   handoff_settings: { trigger_keywords: ['complain', 'problem'], notification_channel: 'in_app', cooldown_minutes: 30 },
@@ -65,6 +68,7 @@ vi.mock('@/api', () => ({
   apiClient: {
     getShopBusinessInfo:    mockGetShopBusinessInfo,
     getShopAISettings:      mockGetShopAISettings,
+    getTelegramNotificationStatus: mockGetTelegramNotificationStatus,
     updateShopBusinessInfo: mockUpdateShopBusinessInfo,
     updateShopAISettings:   mockUpdateShopAISettings,
   },
@@ -102,6 +106,7 @@ describe('BusinessInfoSettings', () => {
   beforeEach(() => {
     mockGetShopBusinessInfo.mockReset().mockResolvedValue(mockBusinessInfo);
     mockGetShopAISettings.mockReset().mockResolvedValue(mockAISettings);
+    mockGetTelegramNotificationStatus.mockReset().mockResolvedValue({ status: 'connected', connected: true });
     mockUpdateShopBusinessInfo.mockReset().mockResolvedValue(mockBusinessInfo);
     mockUpdateShopAISettings.mockReset().mockResolvedValue(mockAISettings);
   });
@@ -138,6 +143,7 @@ describe('BusinessInfoSettings', () => {
       expect(screen.getByDisplayValue('123 Main St')).toBeInTheDocument();
       expect(screen.getByDisplayValue('01700000000')).toBeInTheDocument();
       expect(screen.getByDisplayValue('9am-6pm')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Exchange within 3 days.')).toBeInTheDocument();
     });
   });
 
@@ -304,6 +310,7 @@ describe('BusinessInfoSettings', () => {
     await waitFor(() => {
       expect(mockGetShopBusinessInfo).toHaveBeenCalledTimes(1);
       expect(mockGetShopAISettings).toHaveBeenCalledTimes(1);
+      expect(mockGetTelegramNotificationStatus).toHaveBeenCalledTimes(1);
     });
   });
 

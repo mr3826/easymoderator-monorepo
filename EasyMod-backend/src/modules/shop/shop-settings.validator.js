@@ -10,6 +10,8 @@ const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const isValidPhone = (phone) => /^(?:\+?88)?01[3-9]\d{8}$/.test(phone);
 const isNonEmptyString = (val) => typeof val === 'string' && val.trim().length > 0;
 const isValidUrl = (val) => typeof val === 'string' && /^https?:\/\/\S+$/.test(val.trim());
+const BUSINESS_INFO_TEXT_MAX = 3000;
+const NOTIFICATION_CHANNELS = ['in_app', 'email', 'sms', 'telegram'];
 
 // Greeting / closing message block: { enabled?: boolean, custom_text?: string }.
 const MESSAGE_TEXT_MAX = 1000;
@@ -52,13 +54,13 @@ const AI_SETTINGS_SCHEMA = {
     return Object.keys(val).every(k => validFields.includes(k) && typeof val[k] === 'boolean');
   },
   handoff_settings: (val) => {
-    if (typeof val !== 'object' || val === null) return false;
-    const required = ['trigger_keywords', 'notification_channel', 'cooldown_minutes'];
-    if (!required.every(k => k in val)) return false;
+    if (typeof val !== 'object' || val === null || Array.isArray(val)) return false;
+    const validFields = ['trigger_keywords', 'notification_channel', 'cooldown_minutes'];
+    if (!Object.keys(val).every(k => validFields.includes(k))) return false;
     return (
-      Array.isArray(val.trigger_keywords) &&
-      ['in_app', 'email', 'sms'].includes(val.notification_channel) &&
-      typeof val.cooldown_minutes === 'number' && val.cooldown_minutes >= 0
+      (!('trigger_keywords' in val) || (Array.isArray(val.trigger_keywords) && val.trigger_keywords.every(v => typeof v === 'string'))) &&
+      (!('notification_channel' in val) || NOTIFICATION_CHANNELS.includes(val.notification_channel)) &&
+      (!('cooldown_minutes' in val) || (typeof val.cooldown_minutes === 'number' && val.cooldown_minutes >= 0))
     );
   },
   greeting: isValidMessageBlock,
@@ -80,6 +82,7 @@ const BUSINESS_INFO_SCHEMA = {
   address: (val) => typeof val === 'string',
   phone: (val) => typeof val === 'string',
   openingHours: (val) => typeof val === 'string',
+  additionalInfo: (val) => typeof val === 'string' && val.length <= BUSINESS_INFO_TEXT_MAX,
   deliveryAreas: (val) => Array.isArray(val) && val.every(v => typeof v === 'string'),
   paymentMethods: (val) => Array.isArray(val) && val.every(v => typeof v === 'string'),
   socialLinks: isValidSocialLinks

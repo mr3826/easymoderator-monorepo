@@ -120,6 +120,11 @@ const shopBusinessInfoValidator = [
     body('openingHours')
         .optional()
         .trim(),
+    body('additionalInfo')
+        .optional()
+        .trim()
+        .isLength({ max: 3000 })
+        .withMessage('Additional info must not exceed 3000 characters'),
     body('deliveryAreas')
         .optional()
         .isArray()

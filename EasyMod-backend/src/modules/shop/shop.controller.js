@@ -371,7 +371,8 @@ const ALLOWED_AUTOMATION_MODES = new Set([
     'AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT', 'AUTO',
 ]);
 const ALLOWED_LANGUAGES        = new Set(['mixed', 'en', 'bn']);
-const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms']);
+const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms', 'telegram']);
+const isAutoSendMode = (mode) => mode === 'AUTO' || mode === 'AI_ACTIVE';
 
 /**
  * GET /shop/ai-settings
@@ -414,7 +415,8 @@ const updateAISettings = async (req, res, next) => {
         const {
             automation_mode, confidence_threshold, auto_reply_enabled,
             max_auto_order_value, ask_email, primary_language,
-            required_fields, handoff_settings, payment_methods
+            required_fields, handoff_settings, payment_methods,
+            greeting, closing
         } = req.body;
 
         // Automation mode — format validation
@@ -443,15 +445,20 @@ const updateAISettings = async (req, res, next) => {
         }
 
         const updates = {};
-        if (automation_mode      !== undefined) updates.automation_mode      = automation_mode;
+        if (automation_mode      !== undefined) {
+            updates.automation_mode = automation_mode;
+            updates.auto_reply_enabled = isAutoSendMode(automation_mode);
+        }
         if (confidence_threshold !== undefined) updates.confidence_threshold = confidence_threshold;
-        if (auto_reply_enabled   !== undefined) updates.auto_reply_enabled   = Boolean(auto_reply_enabled);
+        if (automation_mode === undefined && auto_reply_enabled !== undefined) updates.auto_reply_enabled = Boolean(auto_reply_enabled);
         if (max_auto_order_value !== undefined) updates.max_auto_order_value = max_auto_order_value;
         if (ask_email            !== undefined) updates.ask_email            = Boolean(ask_email);
         if (primary_language     !== undefined) updates.primary_language     = primary_language;
         if (required_fields      !== undefined) updates.required_fields      = required_fields;
         if (handoff_settings     !== undefined) updates.handoff_settings     = handoff_settings;
         if (payment_methods      !== undefined) updates.payment_methods      = payment_methods;
+        if (greeting             !== undefined) updates.greeting             = greeting;
+        if (closing              !== undefined) updates.closing              = closing;
 
         const data = await shopService.updateShopAiSettings(shopId, userId, updates);
         res.status(200).json({ success: true, data });

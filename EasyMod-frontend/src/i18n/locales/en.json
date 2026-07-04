@@ -1532,6 +1532,9 @@
       "errorUpdate": "Failed to update business info.",
       "sectionTitle": "Business Information",
       "openingHoursPlaceholder": "e.g. Sat–Thu 9am–9pm",
+      "additionalInfo": "Additional owner info",
+      "additionalInfoPlaceholder": "Any shop-specific facts, policies, sizing notes, warranty rules, or tone guidance the AI should know.",
+      "additionalInfoHelp": "Saved here is used as shop knowledge for AI replies.",
       "social": {
         "title": "Social Media Links",
         "help": "Any links you add will be shown in the \"Follow us\" section of the order-confirmation message. (optional)",
@@ -1867,7 +1870,7 @@
       "autoReplyEnabled": "Auto-reply enabled",
       "askEmail": "Ask customer for email",
       "greetingLabel": "Greeting message",
-      "greetingHint": "(at the start of a new conversation)",
+      "greetingHint": "(after the customer's first message in a new conversation)",
       "greetingPlaceholder": "e.g. Welcome! How can I help you?",
       "disclosurePrefix": "Always shown (Meta rule):",
       "disclosureText": "You are chatting with the automated AI assistant of [your shop].",
@@ -1879,7 +1882,7 @@
       "toggleOn": "On",
       "toggleOff": "Off",
       "requiredFieldsLabel": "Required Order Fields",
-      "requiredFieldsHint": "The AI will ask for these fields before confirming an order.",
+      "requiredFieldsHint": "Used only during order checkout. Normal product or FAQ replies should not ask for the customer's name.",
       "fields": {
         "customer_name": "Customer name",
         "mobile_number": "Mobile number",
@@ -1893,6 +1896,9 @@
       "notifInApp": "In-app notification",
       "notifEmail": "Email",
       "notifSms": "SMS",
+      "notifTelegram": "Telegram group alert",
+      "telegramConnected": "Telegram alerts are connected for this shop.",
+      "telegramDisconnected": "Connect Telegram alerts from Notifications before this channel can send group alerts.",
       "cooldownLabel": "Cooldown (minutes)",
       "triggerKeywordsLabel": "Trigger Keywords",
       "triggerKeywordsPlaceholder": "e.g. complain, refund"

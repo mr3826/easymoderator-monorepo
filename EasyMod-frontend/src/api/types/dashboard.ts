@@ -70,7 +70,7 @@ export interface ShopAISettings {
   };
   handoff_settings: {
     trigger_keywords: string[];
-    notification_channel: string;
+    notification_channel: 'in_app' | 'telegram' | 'email' | 'sms';
     cooldown_minutes: number;
   };
   // Auto-sent welcome on the first AI reply of a conversation. The fixed Meta

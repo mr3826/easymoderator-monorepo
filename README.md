@@ -27,6 +27,7 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
+- Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, injected into the AI prompt immediately, and included in the scheduled business-info RAG index.
 - Payment and delivery defaults come from the live shop operating context; FAQs are optional shop-specific knowledge, not required starter setup.
 - FAQ management lives under `Manage Shop -> FAQs` (`/app/manage-shop/faqs`). The retired `/app/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` vector immediately so AI/RAG answers do not wait for the scheduled auto-index job. Low-confidence and unknown AI turns are captured as knowledge gaps for FAQ improvement.
 - Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
@@ -43,6 +44,7 @@ Required completion rules:
 - Minimal shop profile: shop name, support contact, delivery info, and payment methods.
 - At least one active product; three or more active products are recommended.
 - AI reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
+- AI auto-reply is derived from automation mode: Draft/Manual hold replies as merchant-visible suggestions, while Auto mode can send after policy and confidence gates pass.
 
 The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete, and the normal dashboard appears automatically when all required items pass. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 

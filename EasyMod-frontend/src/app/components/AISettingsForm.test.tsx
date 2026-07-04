@@ -32,7 +32,7 @@ describe('AISettingsForm', () => {
   const defaultSettings: ShopAISettings = {
     automation_mode: 'DRAFT',
     confidence_threshold: 60,
-    auto_reply_enabled: true,
+    auto_reply_enabled: false,
     max_auto_order_value: 5000,
     ask_email: false,
     primary_language: 'mixed',
@@ -68,6 +68,13 @@ describe('AISettingsForm', () => {
     expect(screen.getByText('AUTO')).toBeInTheDocument();
     expect(screen.getByText('DRAFT')).toBeInTheDocument();
     expect(screen.getByText('MANUAL')).toBeInTheDocument();
+  });
+
+  it('marks Draft as the default active automation mode', () => {
+    render(<AISettingsForm {...defaultProps} />);
+
+    const draftButton = screen.getByRole('button', { name: /DRAFT/i });
+    expect(draftButton.className).toContain('border-green-500');
   });
 
   it('selects automation mode on click', async () => {
@@ -116,13 +123,10 @@ describe('AISettingsForm', () => {
     expect(maxOrderInput).toHaveValue(10000);
   });
 
-  it('toggles auto-reply enabled', async () => {
+  it('does not render a redundant auto-reply toggle', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
-    
-    const toggle = screen.getByText('Auto-reply enabled').closest('label')?.querySelector('div');
-    if (toggle) {
-      fireEvent.click(toggle);
-    }
+
+    expect(screen.queryByText('Auto-reply enabled')).not.toBeInTheDocument();
   });
 
   it('toggles required fields checkboxes', async () => {
@@ -145,16 +149,16 @@ describe('AISettingsForm', () => {
     expect(screen.getByLabelText(/Cooldown/i)).toBeInTheDocument();
   });
 
-  it('changes notification channel in handoff settings', async () => {
+  it('changes notification channel in handoff settings to Telegram', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
     const handoffButton = screen.getByRole('button', { name: /Human Handoff Settings/i });
     fireEvent.click(handoffButton);
     
     const channelSelect = screen.getByLabelText(/Notification Channel/i);
-    fireEvent.change(channelSelect, { target: { value: 'email' } });
+    fireEvent.change(channelSelect, { target: { value: 'telegram' } });
     
-    expect(channelSelect).toHaveValue('email');
+    expect(channelSelect).toHaveValue('telegram');
   });
 
   it('adds trigger keywords in handoff settings', async () => {
@@ -211,6 +215,26 @@ describe('AISettingsForm', () => {
       expect(mockOnSave).toHaveBeenCalledWith(expect.objectContaining({
         max_auto_order_value: 10000,
         automation_mode: 'DRAFT',
+        auto_reply_enabled: false,
+      }));
+    });
+  });
+
+  it('derives auto_reply_enabled from automation mode when saving', async () => {
+    mockOnSave.mockResolvedValue({});
+
+    render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
+
+    const autoButton = screen.getByRole('button', { name: /AUTO/i });
+    fireEvent.click(autoButton);
+
+    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(mockOnSave).toHaveBeenCalledWith(expect.objectContaining({
+        automation_mode: 'AUTO',
+        auto_reply_enabled: true,
       }));
     });
   });
@@ -253,7 +277,7 @@ describe('AISettingsForm', () => {
 
   it('merges initial data with defaults correctly', () => {
     const partialData: Partial<ShopAISettings> = {
-      automation_mode: 'AUTO',
+      automation_mode: 'AI_ACTIVE',
       confidence_threshold: 80,
     };
 
@@ -265,6 +289,9 @@ describe('AISettingsForm', () => {
     // Check that defaults are merged for missing values
     const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
     expect(maxOrderInput).toHaveValue(5000);
+
+    const autoButton = screen.getByRole('button', { name: /AUTO/i });
+    expect(autoButton.className).toContain('border-green-500');
   });
 
   it('deep merges required_fields correctly', async () => {

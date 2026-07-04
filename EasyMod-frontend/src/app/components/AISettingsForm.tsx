@@ -2,11 +2,12 @@ import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { Plus, X, ChevronDown, ChevronUp } from "lucide-react";
 import type { ShopAISettings } from "@/api/types/dashboard";
+import type { TelegramNotificationStatus } from "@/api/types/notification";
 
 const defaultAISettings: ShopAISettings = {
   automation_mode: "DRAFT",
   confidence_threshold: 60,
-  auto_reply_enabled: true,
+  auto_reply_enabled: false,
   max_auto_order_value: 5000,
   ask_email: false,
   primary_language: "mixed",
@@ -27,14 +28,40 @@ const defaultAISettings: ShopAISettings = {
   closing: { enabled: true, custom_text: "আমাদের সাথে কেনাকাটা করার জন্য ধন্যবাদ! 🛍️" },
 };
 
-const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISettings => ({
-  ...defaultAISettings,
-  ...loaded,
-  required_fields: { ...defaultAISettings.required_fields, ...(loaded?.required_fields || {}) },
-  handoff_settings: { ...defaultAISettings.handoff_settings, ...(loaded?.handoff_settings || {}) },
-  greeting: { ...defaultAISettings.greeting!, ...(loaded?.greeting || {}) },
-  closing: { ...defaultAISettings.closing!, ...(loaded?.closing || {}) },
-});
+type UIAutomationMode = 'AUTO' | 'DRAFT' | 'MANUAL';
+type HandoffNotificationChannel = 'in_app' | 'telegram';
+
+const normalizeAutomationMode = (mode?: string | null): UIAutomationMode => {
+  if (mode === 'AUTO' || mode === 'AI_ACTIVE') return 'AUTO';
+  if (mode === 'MANUAL' || mode === 'HUMAN_ACTIVE') return 'MANUAL';
+  return 'DRAFT';
+};
+
+const autoReplyForMode = (mode: string) => mode === 'AUTO' || mode === 'AI_ACTIVE';
+
+const normalizeNotificationChannel = (channel?: string | null): HandoffNotificationChannel =>
+  channel === 'telegram' ? 'telegram' : 'in_app';
+
+const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISettings => {
+  const merged = {
+    ...defaultAISettings,
+    ...loaded,
+    required_fields: { ...defaultAISettings.required_fields, ...(loaded?.required_fields || {}) },
+    handoff_settings: { ...defaultAISettings.handoff_settings, ...(loaded?.handoff_settings || {}) },
+    greeting: { ...defaultAISettings.greeting!, ...(loaded?.greeting || {}) },
+    closing: { ...defaultAISettings.closing!, ...(loaded?.closing || {}) },
+  };
+  const automationMode = normalizeAutomationMode(merged.automation_mode);
+  return {
+    ...merged,
+    automation_mode: automationMode,
+    auto_reply_enabled: autoReplyForMode(automationMode),
+    handoff_settings: {
+      ...merged.handoff_settings,
+      notification_channel: normalizeNotificationChannel(merged.handoff_settings.notification_channel),
+    },
+  };
+};
 
 interface TagInputProps {
   label: string;
@@ -89,9 +116,10 @@ function TagInput({ label, values, onChange, placeholder }: TagInputProps) {
 interface AISettingsFormProps {
   initialData?: Partial<ShopAISettings> | null;
   onSave: (data: ShopAISettings) => Promise<void>;
+  telegramStatus?: TelegramNotificationStatus | null;
 }
 
-export default function AISettingsForm({ initialData, onSave }: AISettingsFormProps) {
+export default function AISettingsForm({ initialData, onSave, telegramStatus = null }: AISettingsFormProps) {
   const { t } = useTranslation();
   const [aiSettings, setAISettings] = useState<ShopAISettings>(() => mergeAISettings(initialData));
   const [savedAISettings, setSavedAISettings] = useState<ShopAISettings>(() => mergeAISettings(initialData));
@@ -107,12 +135,18 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
   };
 
   const isDirty = JSON.stringify(aiSettings) !== JSON.stringify(savedAISettings);
+  const telegramConnected = Boolean(telegramStatus?.connected || telegramStatus?.status === 'connected');
 
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      await onSave(aiSettings);
-      setSavedAISettings(aiSettings);
+      const settingsForSave = {
+        ...aiSettings,
+        auto_reply_enabled: autoReplyForMode(aiSettings.automation_mode),
+      };
+      await onSave(settingsForSave);
+      setAISettings(settingsForSave);
+      setSavedAISettings(settingsForSave);
       showNotice("success", t('manageShop.aiSettings.saveSuccess'));
     } catch (error: any) {
       showNotice("error", error.response?.data?.error?.message || t('manageShop.aiSettings.saveError'));
@@ -161,7 +195,11 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                 <button
                   key={option.mode}
                   type="button"
-                  onClick={() => setAISettings({ ...aiSettings, automation_mode: option.mode })}
+                  onClick={() => setAISettings({
+                    ...aiSettings,
+                    automation_mode: option.mode,
+                    auto_reply_enabled: autoReplyForMode(option.mode),
+                  })}
                   className={`min-h-24 rounded-xl border p-4 text-left transition-colors ${
                     active ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
@@ -234,20 +272,15 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
         </div>
 
         <div className="flex flex-wrap gap-6">
-          {([
-            { key: "auto_reply_enabled", label: t('manageShop.aiSettings.autoReplyEnabled') },
-            { key: "ask_email", label: t('manageShop.aiSettings.askEmail') },
-          ] as const).map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-3 cursor-pointer select-none">
-              <div
-                onClick={() => setAISettings({ ...aiSettings, [key]: !aiSettings[key] })}
-                className={`relative w-10 h-6 rounded-full transition-colors ${aiSettings[key] ? "bg-blue-600" : "bg-gray-300"}`}
-              >
-                <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings[key] ? "translate-x-4" : ""}`} />
-              </div>
-              <span className="text-sm text-gray-700">{label}</span>
-            </label>
-          ))}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <div
+              onClick={() => setAISettings({ ...aiSettings, ask_email: !aiSettings.ask_email })}
+              className={`relative w-10 h-6 rounded-full transition-colors ${aiSettings.ask_email ? "bg-blue-600" : "bg-gray-300"}`}
+            >
+              <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${aiSettings.ask_email ? "translate-x-4" : ""}`} />
+            </div>
+            <span className="text-sm text-gray-700">{t('manageShop.aiSettings.askEmail')}</span>
+          </label>
         </div>
 
         <div className="space-y-4 border-t border-gray-100 pt-6">
@@ -333,14 +366,20 @@ export default function AISettingsForm({ initialData, onSave }: AISettingsFormPr
                     value={aiSettings.handoff_settings.notification_channel}
                     onChange={(e) => setAISettings({
                       ...aiSettings,
-                      handoff_settings: { ...aiSettings.handoff_settings, notification_channel: e.target.value as 'in_app' | 'email' | 'sms' }
+                      handoff_settings: { ...aiSettings.handoff_settings, notification_channel: e.target.value as HandoffNotificationChannel }
                     })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="in_app">{t('manageShop.aiSettings.notifInApp')}</option>
-                    <option value="email">{t('manageShop.aiSettings.notifEmail')}</option>
-                    <option value="sms">{t('manageShop.aiSettings.notifSms')}</option>
+                    <option value="telegram">{t('manageShop.aiSettings.notifTelegram')}</option>
                   </select>
+                  {aiSettings.handoff_settings.notification_channel === 'telegram' && (
+                    <p className={`mt-1 text-xs ${telegramConnected ? 'text-green-700' : 'text-amber-700'}`}>
+                      {telegramConnected
+                        ? t('manageShop.aiSettings.telegramConnected')
+                        : t('manageShop.aiSettings.telegramDisconnected')}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="cooldown-minutes" className="block text-sm font-medium text-gray-700 mb-1">{t('manageShop.aiSettings.cooldownLabel')}</label>
