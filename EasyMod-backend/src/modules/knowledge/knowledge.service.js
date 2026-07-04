@@ -600,7 +600,7 @@ const getRelevantFaqs = async (shopId, message, limit = 5) => {
 
         const rows = await FaqResponse.findAll({
             where: { shop_id: shopId, is_active: true, [Op.or]: conditions },
-            order:  [['priority', 'DESC'], ['hit_count', 'DESC']],
+            order:  [['priority', 'DESC'], ['use_count', 'DESC']],
             limit,
         });
 

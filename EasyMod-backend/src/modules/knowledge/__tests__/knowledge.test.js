@@ -338,6 +338,17 @@ describe('Knowledge API', () => {
             expect(res.body.total).toBe(0);
             expect(res.body.data).toEqual([]);
         });
+
+        it('uses the real FAQ usage column when selecting AI prompt FAQs', async () => {
+            const knowledgeService = require('src/modules/knowledge/knowledge.service');
+
+            await knowledgeService.getRelevantFaqs('shop-1', 'shipping delivery charge', 5);
+
+            expect(FaqResponse.findAll).toHaveBeenCalledWith(expect.objectContaining({
+                order: [['priority', 'DESC'], ['use_count', 'DESC']],
+                limit: 5,
+            }));
+        });
     });
 
     // ── POST /knowledge/query ─────────────────────────────────────────────
