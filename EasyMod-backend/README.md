@@ -2,7 +2,7 @@
 
 AI customer-service and order-automation API for Bangladeshi f-commerce sellers. Merchants connect one or more **Facebook Pages**; Easy Moderator answers direct Messenger DMs with a Bengali/Banglish-capable AI agent, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
 
-> **Channels:** Facebook Messenger only (Facebook-only launch, 2026-06-24). Instagram, WhatsApp, Telegram and other providers are out of product scope. The `instagram`/`telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable channels.
+> **Customer channels:** Facebook Messenger only (Facebook-only launch, 2026-06-24). Instagram, WhatsApp, Telegram customer chat, and other providers are out of product scope. Telegram exists only as a one-way merchant alert bot; it is not a connectable customer inbox. The `instagram`/`telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable customer channels.
 
 ---
 
@@ -38,7 +38,7 @@ AI customer-service and order-automation API for Bangladeshi f-commerce sellers.
 | Auth | JWT (`jsonwebtoken`) + `bcryptjs`, HttpOnly refresh cookies, CSRF (`csrf-csrf`) |
 | Security | `helmet`, `cors`, `express-rate-limit` + `rate-limit-redis`, XSS sanitiser, HMAC webhook verification |
 | Validation | `joi` + `express-validator` |
-| Notifications | `web-push` + `firebase-admin` (FCM), `resend` (transactional email) |
+| Notifications | `web-push` + `firebase-admin` (FCM), Telegram Bot API, `resend` (transactional email) |
 | Docs / invoices | `pdfkit` |
 | Observability | Sentry (`@sentry/node`, profiling), structured logger, ops/Slack alerts |
 | Process mgmt | PM2 (`ecosystem.config.js`), Docker Compose |
@@ -136,7 +136,7 @@ All routers mount under `/api`. Source of truth: `src/modules/routes.js`.
 | `/subscription` | `subscription` | Plan, usage, top-ups, invoices |
 | `/partner`, `/admin/partner` | `subscription` | Partner-plan application + admin approval |
 | `/dashboard`, `/analytics` | `dashboard`, `analytics` | KPIs, GMV, resolution rate, growth metrics |
-| `/notifications` | `notification` | Web-push subscriptions + delivery |
+| `/notifications` | `notification` | Browser push subscriptions, in-app owner notifications, Telegram alert settings/test |
 | `/audit` | `audit` | Audit log of sensitive actions |
 | `/rto-shield` | `rto-shield` | Return-to-origin / fake-order risk scoring |
 | `/templates` | `template` | Canned response templates |
@@ -144,6 +144,7 @@ All routers mount under `/api`. Source of truth: `src/modules/routes.js`.
 | `/admin/failed-jobs` | `admin` | Inspect & retry dead-lettered BullMQ jobs |
 | `/public` | `public` | Unauthenticated marketing stats |
 | `/webhooks/meta` | `integration` | Inbound Meta webhooks (mounted in `app.js`, outside `/api`) |
+| `/api/webhooks/telegram` | `webhooks` | Telegram Bot API webhook for merchant alert group binding/removal |
 
 ---
 
@@ -201,6 +202,36 @@ Conversation limits are enforced by `conversation-limit.middleware.js` across al
 
 ---
 
+## Merchant Notifications
+
+Day-one merchant alert channels:
+
+- Browser push: `/api/notifications/subscriptions`, backed by `push_subscriptions` and VAPID/FCM.
+- In-app notification center: `/api/notifications/in-app`, backed by `owner_notifications`.
+- Telegram alerts: `/api/notifications/telegram/*`, backed by `telegram_notification_bindings`.
+
+Telegram is a **one-way alert channel**. It sends only merchant operational alerts and deep links back to Easy Moderator. It does not receive customer messages, does not show AI logs, and does not let merchants reply to customers from Telegram.
+
+Supported Telegram event preferences:
+
+- New order
+- AI needs human help / HITL
+- Customer waiting too long
+- Courier booking failed
+- Payment or subscription issue
+- Daily sales summary
+
+Operational requirements:
+
+- Set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and `TELEGRAM_WEBHOOK_SECRET` in production.
+- Configure Telegram `setWebhook` to `https://<api-domain>/api/webhooks/telegram` with `secret_token` equal to `TELEGRAM_WEBHOOK_SECRET`.
+- Merchant connect flow is Settings → Notifications → Connect Telegram group. The backend creates a short-lived one-time command, stores only its hash, and binds the Telegram `chat_id` after Telegram sends the command to the webhook.
+- The `notifications` BullMQ queue fans out event jobs to browser push and Telegram. In-app notification records are created before queue fan-out so the header bell remains useful even if an external provider is unavailable.
+- Source events are emitted from order creation, human handoff, courier booking failure, failed-payment reconciliation, `customer-waiting-notifier`, and `daily-sales-summary-notifier`.
+- `CUSTOMER_WAITING_ALERT_MINUTES` and `CUSTOMER_WAITING_ALERT_SCAN_LIMIT` are optional production knobs for the waiting-customer scan.
+
+---
+
 ## Background Jobs
 
 `src/jobs/` — workers (BullMQ consumers) and cron jobs (registered by `job-runner.js` / `queue-manager.js`):
@@ -216,6 +247,8 @@ Conversation limits are enforced by `conversation-limit.middleware.js` across al
 | `daily-overage-calculator.js` | Cron | Compute Partner-plan per-order charges |
 | `invoice-generator.js` | Cron | Generate subscription/partner invoices (PDF) |
 | `failed-payment-reconciler.js` | Cron | Retry/flag failed bKash payments |
+| `customer-waiting-notifier.js` | BullMQ cron | Alert when a HITL customer waits too long |
+| `daily-sales-summary-notifier.js` | BullMQ cron | Send previous-24h merchant sales summary |
 | `courier-reconciliation.job.js` | Cron | Reconcile courier delivery statuses |
 | `pipeline-canary.job.js` | Cron | Synthetic auto-reply canary + DLQ watchdog → ops alert |
 | `knowledge/auto-index.job.js` | Cron | Re-index product/knowledge embeddings |
@@ -319,6 +352,11 @@ EMAIL_FROM=Easy Moderator <no-reply@easymod.tech>
 SENTRY_DSN=...
 SLACK_ALERT_WEBHOOK_URL=...
 ADMIN_EMAIL=hello@hexabyte.co
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_BOT_USERNAME=EasyModBot
+TELEGRAM_WEBHOOK_SECRET=...
+CUSTOMER_WAITING_ALERT_MINUTES=30
+CUSTOMER_WAITING_ALERT_SCAN_LIMIT=200
 
 # AI behaviour
 AI_BOT_ATTRIBUTION_ENABLED=true

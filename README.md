@@ -22,7 +22,8 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 ## Production Scope
 
 - Live channel: Facebook Page Messenger DMs.
-- Out of current launch scope: Instagram, WhatsApp, Telegram, public comment automation, cold-DM automation, and broadcast campaigns.
+- Out of current launch scope: Instagram, WhatsApp, Telegram as a customer/inbox channel, public comment automation, cold-DM automation, and broadcast campaigns.
+- Merchant alert channels: browser push, in-app notification center, and one-way Telegram group alerts through the global EasyModerator bot.
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
@@ -66,6 +67,20 @@ Production deploys are driven by pushes to `main` through `.github/workflows/ci-
 5. Sync `/opt/easymod`, run Docker Compose, run migrations, and verify `/health/ready`.
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
+
+### Telegram alert bot
+
+Telegram is notification-only. It is not a customer inbox, AI reply surface, or second support channel.
+
+Required production env names:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_BOT_USERNAME`
+- `TELEGRAM_WEBHOOK_SECRET`
+
+Configure BotFather/setWebhook to deliver Telegram updates to `https://<api-domain>/api/webhooks/telegram` with the same `secret_token` value as `TELEGRAM_WEBHOOK_SECRET`. Do not commit token values.
+
+Supported merchant alert events are new order, AI human-handoff, customer waiting too long, courier booking failure, payment/subscription issue, and daily sales summary.
 
 ---
 
