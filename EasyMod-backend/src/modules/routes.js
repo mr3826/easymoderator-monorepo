@@ -1,6 +1,7 @@
 const express = require('express');
 const authRoutes = require('./auth/auth.routes');
 const shopRoutes = require('./shop/shop.routes');
+const setupRoutes = require('./setup/setup.routes');
 const categoryRoutes = require('./category/category.routes');
 const productRoutes = require('./product/product.routes');
 const customerRoutes = require('./customer/customer.routes');
@@ -32,6 +33,7 @@ const router = express.Router();
 router.use('/public', require('./public/public-stats.routes')); // unauthenticated marketing stats
 router.use('/auth', authRoutes);
 router.use('/shop', shopRoutes);
+router.use('/setup', setupRoutes);
 router.use('/category', categoryRoutes);
 router.use('/product', productRoutes);
 router.use('/customer', customerRoutes);

@@ -14,6 +14,21 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 vi.mock('@/api', () => ({
   apiClient: {
+    getSetupStatus: vi.fn().mockResolvedValue({
+      isComplete: true,
+      completedCount: 5,
+      totalCount: 5,
+      progressPercent: 100,
+      tasks: [],
+      counts: {
+        connectedFacebookPages: 1,
+        webhookVerifiedFacebookPages: 1,
+        activeProducts: 3,
+        activeFaqs: 1,
+        knowledgeDocuments: 0,
+      },
+      generatedAt: '2026-07-04T00:00:00.000Z',
+    }),
     getDashboardMetrics: vi.fn().mockResolvedValue({
       analytics: { llm_calls: 42 }
     }),

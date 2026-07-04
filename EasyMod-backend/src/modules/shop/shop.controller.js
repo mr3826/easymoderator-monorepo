@@ -1,6 +1,7 @@
 const shopService = require('./shop.service');
-const { Shop, MetaChannel, Product, FaqResponse, Conversation, Message } = require('../entities');
+const { Shop } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
+const setupStatusService = require('../setup/setup-status.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 const cacheService = require('../../utils/cache.service');
@@ -85,69 +86,12 @@ const getBusinessInfo = async (req, res, next) => {
     }
 };
 
-async function buildOnboardingStatus(shopId, userId) {
-    const shop = await shopService.getShopById(shopId, userId);
-    const settings = shop.settings || {};
-    const businessInfo = settings.businessInfo || {};
-
-    const [
-        facebookConnected,
-        activeProducts,
-        activeFaqs,
-        aiMessages,
-    ] = await Promise.all([
-        MetaChannel.count({
-            where: { shop_id: shopId, platform: 'facebook', status: 'CONNECTED' },
-        }),
-        Product.count({
-            where: { shop_id: shopId, is_active: true },
-        }),
-        FaqResponse.count({
-            where: { shop_id: shopId, is_active: true },
-        }),
-        Message.count({
-            where: { sender: 'ai' },
-            include: [{
-                model: Conversation,
-                as: 'conversation',
-                attributes: [],
-                where: { shop_id: shopId },
-            }],
-        }).catch(() => 0),
-    ]);
-
-    const checks = {
-        facebook_connected: facebookConnected > 0,
-        business_info_added: Boolean(
-            businessInfo.shopName &&
-            (businessInfo.phone || businessInfo.address || businessInfo.openingHours)
-        ),
-        knowledge_added: activeProducts > 0 || activeFaqs > 0,
-        assistant_test_completed: Boolean(settings.onboarding_assistant_test_completed || aiMessages > 0),
-    };
-    const missing = Object.entries(checks)
-        .filter(([, passed]) => !passed)
-        .map(([key]) => key);
-
-    return {
-        completed: Boolean(settings.onboarding_completed),
-        can_complete: missing.length === 0,
-        checks,
-        missing,
-        counts: {
-            connected_facebook_pages: facebookConnected,
-            active_products: activeProducts,
-            active_faqs: activeFaqs,
-            ai_messages: aiMessages,
-        },
-    };
-}
-
 const getOnboardingStatus = async (req, res, next) => {
     try {
         const { shopId, userId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
-        const status = await buildOnboardingStatus(shopId, userId);
+        const setupStatus = await setupStatusService.getSetupStatus({ shopId, userId });
+        const status = setupStatusService.toLegacyOnboardingStatus(setupStatus);
         res.status(200).json({ success: true, data: status });
     } catch (error) {
         next(error);
@@ -159,7 +103,8 @@ const completeOnboarding = async (req, res, next) => {
         const { shopId, userId } = req.user;
         if (!shopId) throw new AppError('No shop selected', 400);
 
-        const status = await buildOnboardingStatus(shopId, userId);
+        const setupStatus = await setupStatusService.getSetupStatus({ shopId, userId });
+        const status = setupStatusService.toLegacyOnboardingStatus(setupStatus);
         if (!status.can_complete) {
             return res.status(409).json({
                 success: false,
@@ -183,7 +128,8 @@ const completeOnboarding = async (req, res, next) => {
             },
         });
 
-        const nextStatus = await buildOnboardingStatus(shopId, userId);
+        const nextSetupStatus = await setupStatusService.getSetupStatus({ shopId, userId });
+        const nextStatus = setupStatusService.toLegacyOnboardingStatus(nextSetupStatus);
         res.status(200).json({ success: true, data: nextStatus });
     } catch (error) {
         next(error);

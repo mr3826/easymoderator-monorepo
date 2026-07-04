@@ -11,6 +11,7 @@ import { apiClient } from '@/api';
 // ── Mock the API client (same path Dashboard.tsx uses: @/api) ─────────────────
 vi.mock('@/api', () => ({
   apiClient: {
+    getSetupStatus: vi.fn(),
     getDashboardMetrics: vi.fn(),
     getDashboardQueue: vi.fn(),
     getOrders: vi.fn(),
@@ -61,9 +62,26 @@ const baseQueue = {
   at_risk_orders: [],
 };
 
+const completeSetupStatus = {
+  isComplete: true,
+  completedCount: 5,
+  totalCount: 5,
+  progressPercent: 100,
+  tasks: [],
+  counts: {
+    connectedFacebookPages: 1,
+    webhookVerifiedFacebookPages: 1,
+    activeProducts: 3,
+    activeFaqs: 1,
+    knowledgeDocuments: 0,
+  },
+  generatedAt: '2026-07-04T00:00:00.000Z',
+};
+
 describe('Dashboard — cash position section', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(apiClient.getSetupStatus).mockResolvedValue(completeSetupStatus as never);
     vi.mocked(apiClient.getDashboardQueue).mockResolvedValue(baseQueue as never);
     vi.mocked(apiClient.getOrders).mockResolvedValue([] as never);
   });
@@ -100,6 +118,39 @@ describe('Dashboard — cash position section', () => {
     // Order counts visible as plain digits
     expect(screen.getByText(/\b7\b/)).toBeInTheDocument();
     expect(screen.getByText(/\b2\b/)).toBeInTheDocument();
+  });
+
+  it('renders first-time setup instead of loading pulse data while setup is incomplete', async () => {
+    vi.mocked(apiClient.getSetupStatus).mockResolvedValueOnce({
+      ...completeSetupStatus,
+      isComplete: false,
+      completedCount: 1,
+      progressPercent: 20,
+      tasks: [
+        {
+          key: 'connect_channel',
+          title: 'Connect Facebook Page',
+          description: 'Connect a page',
+          status: 'incomplete',
+          required: true,
+          ctaLabel: 'Manage channel',
+          href: '/app/manage-shop/chat-settings',
+          missing: [],
+          warnings: [],
+          meta: {},
+        },
+      ],
+    } as never);
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.setup.title')).toBeInTheDocument();
+    });
+
+    expect(apiClient.getDashboardMetrics).not.toHaveBeenCalled();
+    expect(apiClient.getDashboardQueue).not.toHaveBeenCalled();
+    expect(apiClient.getOrders).not.toHaveBeenCalled();
   });
 
   it('renders zero-state placeholders when backend omits cashPosition (backwards compat)', async () => {

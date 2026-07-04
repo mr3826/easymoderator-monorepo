@@ -11,7 +11,7 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 | Path | Purpose |
 |---|---|
 | `EasyMod-backend/` | Express API, worker, scheduler, Sequelize models/migrations, Meta webhook handling, AI/order services. |
-| `EasyMod-frontend/` | React/Vite merchant dashboard, marketing pages, inbox, products, orders, onboarding, and legal pages. |
+| `EasyMod-frontend/` | React/Vite merchant dashboard, marketing pages, inbox, products, orders, first-time setup, and legal pages. |
 | `.github/workflows/ci-cd.yml` | Canonical CI/CD pipeline for test, image build, GitHub Container Registry push, and production deploy. |
 | `docker-compose.prod.yml` | Production service composition used on the DigitalOcean droplet. |
 | `Caddyfile` | Production reverse proxy/static serving configuration. |
@@ -28,6 +28,22 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
 - Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
+
+---
+
+## First-Time Setup Dashboard
+
+New shops see the dashboard setup checklist until the backend reports the shop is ready. The source of truth is `GET /api/setup/status`; the UI does not rely on localStorage, dismissible modals, or a manual `onboarding_completed` flag.
+
+Required completion rules:
+
+- At least one connected Facebook Page channel.
+- Minimal shop profile: shop name, support contact, delivery info, and payment methods.
+- At least one active product; three or more active products are recommended.
+- AI reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
+- At least one active FAQ or usable knowledge document.
+
+The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete, and the normal dashboard appears automatically when all required items pass. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 
 ---
 

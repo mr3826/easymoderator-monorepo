@@ -65,6 +65,7 @@ import * as knowledgeDomain from './domains/knowledge';
 import * as subscriptionDomain from './domains/subscription';
 import * as conversationDomain from './domains/conversation';
 import * as shopDomain from './domains/shop';
+import * as setupDomain from './domains/setup';
 import * as paymentDomain from './domains/payment';
 import * as auditDomain from './domains/audit';
 import * as rtoShieldDomain from './domains/rto-shield';
@@ -197,8 +198,7 @@ export const apiClient = {
   updateShopAISettings: shopDomain.updateShopAISettings,
   getShop: shopDomain.getShop,
   updateShop: shopDomain.updateShop,
-  getOnboardingStatus: shopDomain.getOnboardingStatus,
-  completeOnboarding: shopDomain.completeOnboarding,
+  getSetupStatus: setupDomain.getSetupStatus,
 
   // Payment config methods
   getPaymentConfig: paymentDomain.getPaymentConfig,

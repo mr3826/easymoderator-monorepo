@@ -4,6 +4,10 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Bot, CheckCircle2, Clock4, Loader2, Truck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+import FirstTimeSetupDashboard from "./FirstTimeSetupDashboard";
+import { useSetupStatus } from "@/app/lib/useSetupStatus";
+
+const SETUP_DASHBOARD_ENABLED = import.meta.env.VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD !== "false";
 
 type CashPosition = {
   inTransit: { amount: number; count: number };
@@ -63,6 +67,12 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const {
+    data: setupStatus,
+    isLoading: isSetupLoading,
+    error: setupError,
+    refresh: refreshSetupStatus,
+  } = useSetupStatus({ enabled: SETUP_DASHBOARD_ENABLED });
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("bn-BD", {
@@ -153,6 +163,11 @@ export default function Dashboard() {
   }, [t]);
 
   useEffect(() => {
+    const shouldLoadPulse = !SETUP_DASHBOARD_ENABLED || Boolean(setupError) || Boolean(setupStatus?.isComplete);
+    if (!shouldLoadPulse) {
+      return;
+    }
+
     refreshPulse(true);
     const timer = window.setInterval(() => refreshPulse(false), 60000);
     return () => {
@@ -160,7 +175,7 @@ export default function Dashboard() {
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
     };
-  }, [refreshPulse]);
+  }, [refreshPulse, setupError, setupStatus?.isComplete]);
 
   const cards = useMemo(() => {
     if (!pulseData) {
@@ -187,6 +202,26 @@ export default function Dashboard() {
       },
     ];
   }, [pulseData, t]);
+
+  if (SETUP_DASHBOARD_ENABLED && isSetupLoading && !setupStatus && !setupError) {
+    return (
+      <div className="min-h-full bg-background p-4 md:p-6">
+        <div className="mb-4 flex items-center gap-2 text-gray-600">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-sm font-semibold">{t("dashboard.setup.loading")}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (SETUP_DASHBOARD_ENABLED && setupStatus && !setupStatus.isComplete) {
+    return (
+      <FirstTimeSetupDashboard
+        setupStatus={setupStatus}
+        onRefresh={refreshSetupStatus}
+      />
+    );
+  }
 
   if (isLoading) {
     return (

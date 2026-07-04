@@ -430,6 +430,60 @@
         "ordersUnit": "{{count}} orders"
       }
     },
+    "setup": {
+      "loading": "Checking shop setup...",
+      "eyebrow": "First-time setup",
+      "title": "Finish your shop setup",
+      "subtitle": "Complete these essentials before using the live dashboard. Your sidebar stays open, and the normal dashboard appears automatically when every required item is done.",
+      "refresh": "Refresh status",
+      "progressTitle": "Launch readiness",
+      "progress": "{{completed}} of {{total}} complete",
+      "complete": "Complete",
+      "incomplete": "Needs work",
+      "missingPrefix": "Missing:",
+      "noteTitle": "Draft-first AI is expected",
+      "noteBody": "EasyModerator keeps AI replies in draft mode by default. Review the draft answers with real customer questions before turning on any higher automation mode.",
+      "tasks": {
+        "connect_channel": {
+          "title": "Connect Facebook Page",
+          "description": "Connect at least one Facebook page so EasyModerator can receive and reply to customer messages.",
+          "cta": "Manage channel"
+        },
+        "shop_profile": {
+          "title": "Complete shop profile",
+          "description": "Add the shop name, support contact, delivery details, and payment methods customers need.",
+          "cta": "Edit profile"
+        },
+        "first_product": {
+          "title": "Add first product",
+          "description": "Publish at least one active product. Three or more products are recommended before launch.",
+          "cta": "Add product"
+        },
+        "ai_settings": {
+          "title": "Configure AI reply settings",
+          "description": "Keep AI replies in draft mode with a confidence threshold until the shop is ready for automation.",
+          "cta": "Review AI settings"
+        },
+        "starter_knowledge": {
+          "title": "Add starter FAQ or knowledge",
+          "description": "Add at least one FAQ or knowledge item so AI replies have shop-specific answers.",
+          "cta": "Add knowledge"
+        }
+      },
+      "missing": {
+        "shop_name": "shop name",
+        "support_contact": "support contact",
+        "delivery_info": "delivery information",
+        "payment_methods": "payment methods",
+        "automation_mode": "AI mode",
+        "confidence_threshold": "confidence threshold"
+      },
+      "warnings": {
+        "WEBHOOK_NOT_VERIFIED": "No recent webhook verification was found. Send a test message before launch.",
+        "LOW_PRODUCT_COUNT": "Three or more active products are recommended before launch.",
+        "AI_NOT_DRAFT": "Draft mode is recommended for first launch verification."
+      }
+    },
     "nav": {
       "dashboard": "Dashboard",
       "inbox": "Inbox",

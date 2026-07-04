@@ -6,9 +6,8 @@ import {
   CreditCard, Bell, ChevronLeft, ChevronRight,
   ChevronDown, Building2, MessageSquare, Truck, Settings,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import OnboardingWizard from "./OnboardingWizard";
 import InstallPrompt from "./InstallPrompt";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
@@ -46,20 +45,6 @@ export default function DashboardLayout() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [showShopPanel, setShowShopPanel] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-
-  useEffect(() => {
-    if (!currentShop?.id) return;
-    if (!currentShop.settings?.onboarding_completed) {
-      setShowOnboarding(true);
-    } else {
-      setShowOnboarding(false);
-    }
-  }, [currentShop?.id, currentShop?.settings?.onboarding_completed]);
-
-  const handleOnboardingComplete = () => {
-    setShowOnboarding(false);
-  };
 
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
@@ -312,11 +297,6 @@ export default function DashboardLayout() {
           })}
         </ul>
       </nav>
-
-      {/* ─── Onboarding Wizard ────────────────────────────────────── */}
-      {showOnboarding && (
-        <OnboardingWizard onComplete={handleOnboardingComplete} />
-      )}
 
       {/* ─── PWA install prompt ───────────────────────────────────── */}
       <InstallPrompt />

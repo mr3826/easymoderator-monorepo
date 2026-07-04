@@ -13,6 +13,7 @@ export * as knowledge from './knowledge';
 export * as audit from './audit';
 export * as subscription from './subscription';
 export * as shop from './shop';
+export * as setup from './setup';
 export * as payment from './payment';
 export * as rtoShield from './rto-shield';
 export * as notification from './notification';
