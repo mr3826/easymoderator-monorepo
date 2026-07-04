@@ -13,6 +13,7 @@ import InstallPrompt from "./InstallPrompt";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
 import LanguageToggle from "./LanguageToggle";
+import InAppNotificationCenter from "./InAppNotificationCenter";
 
 const appBasePath = '/app';
 
@@ -33,6 +34,7 @@ export default function DashboardLayout() {
     { name: t('nav.chat'), path: `${appBasePath}/manage-shop/chat-settings`, icon: MessageSquare },
     { name: t('nav.delivery'), path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
     { name: t('nav.payment'), path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
+    { name: t('nav.notifications'), path: `${appBasePath}/manage-shop/notifications`, icon: Bell },
   ];
 
   const mobileNavigation = [
@@ -232,9 +234,7 @@ export default function DashboardLayout() {
           <h1 className="text-sm font-semibold text-gray-800 flex-1 truncate">{pageTitle}</h1>
 
           {/* Notifications */}
-          <button aria-label="Notifications" className="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
-            <Bell className="w-5 h-5" />
-          </button>
+          <InAppNotificationCenter />
 
           {/* Account menu */}
           <div className="relative">

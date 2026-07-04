@@ -414,17 +414,20 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
         if (process.env.NODE_ENV !== 'test') {
             setImmediate(() => {
                 try {
-                    const queueManager = require('../../jobs/queue-manager');
-                    if (queueManager.queues.notifications) {
-                        queueManager.queues.notifications.add({
-                            shopId,
-                            payload: {
-                                title: 'নতুন অর্ডার',
-                                body: `অর্ডার #${order.order_number} এসেছে`,
-                                data: { orderId: order.id, type: 'new_order' }
-                            }
-                        }).catch(() => {});
-                    }
+                    const merchantNotificationService = require('../notification/merchant-notification.service');
+                    const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
+                    merchantNotificationService.notifyShop(
+                        shopId,
+                        NOTIFICATION_EVENTS.NEW_ORDER,
+                        {
+                            orderId: order.id,
+                            orderNumber: order.order_number,
+                            total: order.total,
+                            customerName: order.customer_name,
+                            channel: order.channel
+                        },
+                        { dedupeKey: order.id }
+                    ).catch(() => {});
                 } catch (_) { /* notification failure must never affect order */ }
             });
         }

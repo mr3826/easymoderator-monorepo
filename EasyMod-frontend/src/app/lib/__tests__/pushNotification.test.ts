@@ -4,6 +4,14 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { httpClient } from '@/shared/lib/http/client';
+
+vi.mock('@/shared/lib/http/client', () => ({
+    httpClient: {
+        post: vi.fn(),
+        delete: vi.fn(),
+    },
+}));
 
 // ── Browser API Mocks ─────────────────────────────────────────────────────────
 
@@ -54,13 +62,7 @@ Object.defineProperty(globalThis, 'Notification', {
     configurable: true
 });
 
-// ── Fetch mock ────────────────────────────────────────────────────────────────
-
 const mockFetchResponse = { success: true, id: 'sub-backend-1' };
-global.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: vi.fn().mockResolvedValue(mockFetchResponse)
-}) as unknown as typeof fetch;
 
 // ── Module under test ─────────────────────────────────────────────────────────
 
@@ -80,10 +82,8 @@ describe('pushNotification service', () => {
         mockNotification.requestPermission.mockResolvedValue('granted');
         mockPushManager.getSubscription.mockResolvedValue(null);
         mockPushManager.subscribe.mockResolvedValue(mockSubscription);
-        (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-            ok: true,
-            json: vi.fn().mockResolvedValue(mockFetchResponse)
-        });
+        (httpClient.post as any).mockResolvedValue({ data: mockFetchResponse });
+        (httpClient.delete as any).mockResolvedValue({ data: { success: true } });
     });
 
     // ── registerServiceWorker ─────────────────────────────────────────────────
@@ -136,7 +136,7 @@ describe('pushNotification service', () => {
 
     describe('subscribeToPush', () => {
         const shopId = 'shop-1';
-        const accessToken = 'Bearer test-token';
+        const accessToken = 'test-token';
 
         it('requests notification permission', async () => {
             await subscribeToPush(shopId, accessToken);
@@ -159,16 +159,17 @@ describe('pushNotification service', () => {
 
         it('POSTs subscription JSON to backend', async () => {
             await subscribeToPush(shopId, accessToken);
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/notifications/subscriptions'),
-                expect.objectContaining({ method: 'POST' })
+            expect(httpClient.post).toHaveBeenCalledWith(
+                '/api/notifications/subscriptions',
+                expect.objectContaining({ type: 'web', subscription_json: expect.any(Object) }),
+                expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) })
             );
         });
 
         it('sends Authorization header with token', async () => {
             await subscribeToPush(shopId, accessToken);
-            const [, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-            expect(options.headers['Authorization']).toContain('Bearer');
+            const [, , config] = (httpClient.post as any).mock.calls[0];
+            expect(config.headers.Authorization).toBe('Bearer test-token');
         });
 
         it('returns true when subscription succeeds', async () => {
@@ -191,21 +192,21 @@ describe('pushNotification service', () => {
         });
 
         it('calls subscription.unsubscribe()', async () => {
-            await unsubscribeFromPush('sub-backend-1', 'Bearer test-token');
+            await unsubscribeFromPush('sub-backend-1', 'test-token');
             expect(mockSubscription.unsubscribe).toHaveBeenCalled();
         });
 
         it('sends DELETE request to backend', async () => {
-            await unsubscribeFromPush('sub-backend-1', 'Bearer test-token');
-            expect(global.fetch).toHaveBeenCalledWith(
-                expect.stringContaining('/notifications/subscriptions/sub-backend-1'),
-                expect.objectContaining({ method: 'DELETE' })
+            await unsubscribeFromPush('sub-backend-1', 'test-token');
+            expect(httpClient.delete).toHaveBeenCalledWith(
+                '/api/notifications/subscriptions/sub-backend-1',
+                expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) })
             );
         });
 
         it('resolves even when no active subscription found', async () => {
             mockPushManager.getSubscription.mockResolvedValueOnce(null);
-            await expect(unsubscribeFromPush('sub-backend-1', 'Bearer test-token')).resolves.not.toThrow();
+            await expect(unsubscribeFromPush('sub-backend-1', 'test-token')).resolves.not.toThrow();
         });
     });
 });

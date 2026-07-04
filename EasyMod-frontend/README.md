@@ -121,7 +121,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Knowledge base (FAQ/policy upload)
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Chat/AI, Delivery, Payment, Business Info
+- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)
@@ -134,10 +134,12 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 
 ```
 auth · shop · conversation · customer · order · product · knowledge
-dashboard · payment · subscription · meta-channels · audit · rto-shield
+dashboard · payment · subscription · meta-channels · audit · rto-shield · notification
 ```
 
 The Axios instance sends credentials, attaches the CSRF token, transparently refreshes the access token on `401`, and normalises error shapes. Prefer adding new calls to the matching domain module rather than calling Axios directly from components.
+
+Notification UI lives in `NotificationSettings` and `InAppNotificationCenter`. Browser push registration uses the same Axios client as the rest of the app so CSRF and cookie auth remain consistent.
 
 ---
 

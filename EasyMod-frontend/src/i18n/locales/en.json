@@ -8,6 +8,7 @@
     "chat": "Chat",
     "delivery": "Delivery",
     "payment": "Payment",
+    "notifications": "Notifications",
     "settings": "Settings",
     "subscription": "Subscription",
     "shopSettings": "Shop Settings",
@@ -1464,7 +1465,8 @@
       "businessInfo": "Business Info",
       "chatSettings": "Chat Settings",
       "deliverySettings": "Delivery Settings",
-      "paymentSettings": "Payment Settings"
+      "paymentSettings": "Payment Settings",
+      "notifications": "Notifications"
     },
     "businessInfo": {
       "loading": "Loading business info...",
@@ -1678,9 +1680,54 @@
         "name": "Payment Settings",
         "desc": "Payment gateways and advance payment rules"
       },
+      "notifications": {
+        "name": "Notifications",
+        "desc": "Browser, in-app and Telegram alerts"
+      },
       "subscription": {
         "name": "Subscription",
         "desc": "Manage your plan, usage and invoices"
+      }
+    },
+    "notifications": {
+      "title": "Notifications",
+      "subtitle": "Choose where merchant alerts should appear.",
+      "errors": {
+        "load": "Failed to load notification settings."
+      },
+      "browser": {
+        "title": "Browser notifications",
+        "subtitle": "Receive urgent shop alerts on this device when the browser allows notifications.",
+        "unsupported": "unsupported",
+        "enable": "Enable browser notifications",
+        "enabled": "Browser notifications enabled.",
+        "failed": "Browser notifications could not be enabled."
+      },
+      "inApp": {
+        "title": "In-app notification center",
+        "subtitle": "Recent alerts appear under the bell in the app header.",
+        "active": "In-app alerts are active for this shop."
+      },
+      "telegram": {
+        "title": "Telegram alerts",
+        "subtitle": "Send order, handoff, courier, billing and daily summary alerts to one merchant group.",
+        "connected": "Connected",
+        "pending": "Waiting for group command",
+        "unhealthy": "Needs reconnect",
+        "disconnected": "Disconnected",
+        "notConfigured": "Telegram bot environment variables are not configured on the server.",
+        "groupName": "Suggested group name: {{name}}",
+        "connect": "Connect Telegram group",
+        "intentCreated": "Telegram connect command created.",
+        "intentFailed": "Could not create Telegram connect command.",
+        "copied": "Connect command copied.",
+        "copy": "Copy",
+        "test": "Send test alert",
+        "testSent": "Telegram test alert sent.",
+        "testFailed": "Telegram test alert failed.",
+        "disconnectedToast": "Telegram alerts disconnected.",
+        "disconnectFailed": "Could not disconnect Telegram alerts.",
+        "preferenceFailed": "Could not update Telegram preferences."
       }
     },
     "aiSettings": {

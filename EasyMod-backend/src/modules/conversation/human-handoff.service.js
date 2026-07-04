@@ -47,6 +47,20 @@ async function escalateToHuman({
     try {
         if (conversation && conversation.hitl !== true) {
             await conversation.update({ hitl: true });
+            try {
+                const merchantNotificationService = require('../notification/merchant-notification.service');
+                const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
+                merchantNotificationService.notifyShop(
+                    shopId,
+                    NOTIFICATION_EVENTS.AI_HITL,
+                    {
+                        conversationId: convId,
+                        reason,
+                        platform
+                    },
+                    { dedupeKey: `${convId}:${reason || 'handoff'}` }
+                ).catch(() => {});
+            } catch (_) { /* alert failure must never block HITL */ }
         }
         sseManager.emit(shopId, 'hitl_changed', { conversation_id: convId, hitl: true });
     } catch (err) {

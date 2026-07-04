@@ -9,6 +9,8 @@ const {
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
+    DailySalesSummaryNotifier,
+    CustomerWaitingNotifier,
     MetaTokenRefreshJob,
     PipelineCanaryJob,
     TrialExpiryJob,
@@ -40,6 +42,8 @@ class QueueManager {
             ['monthly-usage-reset', 'monthlyReset', MonthlyUsageReset],
             ['invoice-generator', 'invoiceGenerator', InvoiceGenerator],
             ['failed-payment-reconciler', 'paymentReconciler', FailedPaymentReconciler],
+            ['daily-sales-summary-notifier', 'dailySalesSummaryNotifier', DailySalesSummaryNotifier],
+            ['customer-waiting-notifier', 'customerWaitingNotifier', CustomerWaitingNotifier],
             // Phase 2 — refresh Meta channel tokens before they expire.
             ['meta-token-refresh', 'metaTokenRefresh', MetaTokenRefreshJob],
             // Reliability — auto-reply pipeline canary (every 5 min, see scheduleJobs)
@@ -70,8 +74,8 @@ class QueueManager {
             },
         });
         this.workers.notifications = new Worker('notifications', async (job) => {
-            const { sendPushToShop } = require('../modules/notification/push-notification.service');
-            return sendPushToShop(job.data.shopId, job.data.payload);
+            const { dispatchQueuedNotification } = require('../modules/notification/merchant-notification.service');
+            return dispatchQueuedNotification(job.data || {});
         }, {
             connection,
             limiter: { max: 50, duration: 10000 },
@@ -153,6 +157,20 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Merchant alerts — summarize the previous 24h shortly after the
+        // Bangladesh business day rolls over (00:05 Asia/Dhaka = 18:05 UTC).
+        await this.queues.dailySalesSummaryNotifier.upsertJobScheduler(
+            'daily-sales-summary-notifier',
+            { pattern: '5 18 * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
+        await this.queues.customerWaitingNotifier.upsertJobScheduler(
+            'customer-waiting-notifier',
+            { pattern: '*/15 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         // Phase 2 — refresh Meta tokens every 6 hours so they never expire silently.
         await this.queues.metaTokenRefresh.upsertJobScheduler(
             'meta-token-refresh',
@@ -185,6 +203,8 @@ class QueueManager {
             'monthly_usage_reset': 'monthlyReset',
             'invoice_generator': 'invoiceGenerator',
             'failed_payment_reconciler': 'paymentReconciler',
+            'daily_sales_summary_notifier': 'dailySalesSummaryNotifier',
+            'customer_waiting_notifier': 'customerWaitingNotifier',
             'meta_token_refresh': 'metaTokenRefresh',
             'pipeline_canary': 'pipelineCanary',
             'trial_expiry': 'trialExpiry',

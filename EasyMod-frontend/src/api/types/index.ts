@@ -12,3 +12,4 @@ export * from './dashboard';
 export * from './knowledge';
 export * from './audit';
 export * from './subscription';
+export * from './notification';

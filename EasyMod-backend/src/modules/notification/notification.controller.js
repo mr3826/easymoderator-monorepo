@@ -112,7 +112,7 @@ class NotificationController {
             // Enqueue push notification — sendPushToShop handles web + FCM delivery
             let jobId = null;
             if (queueManager.queues.notifications) {
-                const job = await queueManager.queues.notifications.add({
+                const job = await queueManager.queues.notifications.add('push-notification', {
                     shopId: shop_id,
                     payload: { title, body, data }
                 });

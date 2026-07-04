@@ -28,6 +28,7 @@ let mockSubRow = null;
 jest.mock('../../entities', () => ({
     PushSubscription: {
         findOne: jest.fn(async () => mockSubRow),
+        findAll: jest.fn(async () => []),
         create: jest.fn(async (data) => ({ id: 'sub-uuid-1', ...data })),
         destroy: jest.fn(async () => 1),
     }
@@ -68,6 +69,7 @@ beforeEach(() => {
     mockSubRow = null;
     const { PushSubscription } = require('../../entities');
     PushSubscription.create.mockResolvedValue({ id: 'sub-uuid-1', shop_id: 'shop-1', type: 'web', subscription_json: null, device_token: null });
+    PushSubscription.findAll.mockResolvedValue([]);
     PushSubscription.destroy.mockResolvedValue(1);
 });
 
@@ -134,6 +136,27 @@ describe('POST /api/notifications/subscriptions', () => {
 
         expect(res.status).toBe(201);
         expect(existingMock.update).toHaveBeenCalled();
+    });
+
+    it('upserts web push subscription when endpoint already exists', async () => {
+        const subJson = { endpoint: 'https://fcm.googleapis.com/existing', keys: { p256dh: 'pk', auth: 'ak' } };
+        const existingMock = {
+            id: 'sub-existing-web',
+            subscription_json: subJson,
+            update: jest.fn().mockResolvedValue(true)
+        };
+        const { PushSubscription } = require('../../entities');
+        PushSubscription.findAll.mockResolvedValue([existingMock]);
+
+        const res = await request(app)
+            .post('/api/notifications/subscriptions')
+            .send({ type: 'web', subscription_json: subJson });
+
+        expect(res.status).toBe(201);
+        expect(existingMock.update).toHaveBeenCalledWith(expect.objectContaining({
+            subscription_json: subJson
+        }));
+        expect(PushSubscription.create).not.toHaveBeenCalled();
     });
 
     it('returns 500 when DB throws', async () => {

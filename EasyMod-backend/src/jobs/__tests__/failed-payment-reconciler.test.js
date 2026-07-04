@@ -16,9 +16,14 @@ jest.mock('../../modules/entities', () => ({
 jest.mock('../../utils/email.service', () => ({
     sendEmail: jest.fn().mockResolvedValue({ sent: true }),
 }));
+jest.mock('../../modules/notification/merchant-notification.service', () => ({
+    notifyShop: jest.fn().mockResolvedValue({ queued: true }),
+}));
 
 const { Invoice } = require('../../modules/entities');
 const emailService = require('../../utils/email.service');
+const merchantNotificationService = require('../../modules/notification/merchant-notification.service');
+const { NOTIFICATION_EVENTS } = require('../../modules/notification/notification-events');
 const FailedPaymentReconciler = require('../failed-payment-reconciler');
 
 const daysAgo = (n) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -59,6 +64,15 @@ describe('FailedPaymentReconciler.run', () => {
         expect(res.subscriptionsSuspended).toBe(1);
         expect(res.invoicesOverdue).toBe(1);
         expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            inv.shop_id,
+            NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+            expect.objectContaining({
+                invoiceNumber: inv.invoice_number,
+                issue: expect.stringMatching(/suspended/i)
+            }),
+            expect.objectContaining({ dedupeTtlSeconds: 24 * 60 * 60 })
+        );
     });
 
     it('suspends for a partner_per_order recurring invoice too', async () => {
@@ -85,6 +99,15 @@ describe('FailedPaymentReconciler.run', () => {
         expect(res.subscriptionsSuspended).toBe(0);
         expect(res.remindersSent).toBe(1);
         expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            inv.shop_id,
+            NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+            expect.objectContaining({
+                invoiceNumber: inv.invoice_number,
+                issue: expect.stringMatching(/overdue/i)
+            }),
+            expect.any(Object)
+        );
     });
 
     it('dry-run makes no writes and sends no email', async () => {
@@ -96,6 +119,7 @@ describe('FailedPaymentReconciler.run', () => {
 
         expect(inv.subscription.update).not.toHaveBeenCalled();
         expect(emailService.sendEmail).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).not.toHaveBeenCalled();
         expect(res.invoicesOverdue).toBe(1); // counted, not applied
         expect(res.subscriptionsSuspended).toBe(1); // tallied as the action that *would* run
     });
