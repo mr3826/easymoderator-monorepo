@@ -151,9 +151,26 @@ class DeliveryService extends EventEmitter {
             this.emit('order_dispatch_failed', {
                 shop_id: shopId,
                 order_number: orderData.order_number,
+                provider: preferredProvider,
                 error: error.message,
                 timestamp: new Date()
             });
+
+            try {
+                const merchantNotificationService = require('../notification/merchant-notification.service');
+                const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
+                merchantNotificationService.notifyShop(
+                    shopId,
+                    NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED,
+                    {
+                        orderId: orderData.id,
+                        orderNumber: orderData.order_number,
+                        provider: preferredProvider,
+                        error: error.message
+                    },
+                    { dedupeKey: `${orderData.id || orderData.order_number || Date.now()}:${preferredProvider || 'active'}` }
+                ).catch(() => {});
+            } catch (_) { /* delivery failure is already being thrown */ }
 
             throw error;
         }

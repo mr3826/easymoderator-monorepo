@@ -31,8 +31,8 @@ router.post(
         }
 
         const { type, subscription_json, device_token } = req.body;
-        const shopId = req.shopId;
-        const userId = req.userId;
+        const shopId = req.shopId || req.user?.shopId;
+        const userId = req.userId || req.user?.userId;
 
         try {
             // Upsert: if the device_token / endpoint already exists for this shop,
@@ -45,20 +45,28 @@ router.post(
                 return res.status(400).json({ success: false, error: 'Missing subscription identifier' });
             }
 
-            // Find existing subscription for this shop+type+identifier
-            const existing = await PushSubscription.findOne({
-                where: {
-                    shop_id: shopId,
-                    type,
-                    ...(type === 'web'
-                        ? {}  // JSONB endpoint matching done below
-                        : { device_token: uniqueKey })
-                }
-            });
+            // Find existing subscription for this shop+type+identifier. Web push
+            // endpoints are stored inside JSONB, so compare them in JS after
+            // constraining by shop/type.
+            let existing = null;
+            if (type === 'web') {
+                const webSubscriptions = await PushSubscription.findAll({
+                    where: { shop_id: shopId, type }
+                });
+                existing = webSubscriptions.find((sub) => sub.subscription_json?.endpoint === uniqueKey) || null;
+            } else {
+                existing = await PushSubscription.findOne({
+                    where: { shop_id: shopId, type, device_token: uniqueKey }
+                });
+            }
 
             let sub;
-            if (existing && type === 'fcm') {
-                await existing.update({ user_id: userId, device_token });
+            if (existing) {
+                await existing.update({
+                    user_id: userId,
+                    subscription_json: type === 'web' ? subscription_json : null,
+                    device_token: type === 'fcm' ? device_token : null
+                });
                 sub = existing;
             } else {
                 sub = await PushSubscription.create({
@@ -93,7 +101,7 @@ router.delete(
             return res.status(400).json({ success: false, errors: errors.array() });
         }
 
-        const shopId = req.shopId;
+        const shopId = req.shopId || req.user?.shopId;
         try {
             const deleted = await PushSubscription.destroy({
                 where: { id: req.params.id, shop_id: shopId }

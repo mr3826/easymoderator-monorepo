@@ -9,6 +9,8 @@ const DailyOverageCalculator = require('./daily-overage-calculator');
 const MonthlyUsageReset = require('./monthly-usage-reset');
 const InvoiceGenerator = require('./invoice-generator');
 const FailedPaymentReconciler = require('./failed-payment-reconciler');
+const DailySalesSummaryNotifier = require('./daily-sales-summary-notifier');
+const CustomerWaitingNotifier = require('./customer-waiting-notifier');
 // Phase 5: token-refresh-check.job.js deleted (replaced by meta-token-refresh.job.js Phase 2)
 const MetaTokenRefreshJob = require('./meta-token-refresh.job');
 const CourierReconciliationJob = require('./courier-reconciliation.job');
@@ -22,6 +24,8 @@ module.exports = {
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
+    DailySalesSummaryNotifier,
+    CustomerWaitingNotifier,
     MetaTokenRefreshJob,
     CourierReconciliationJob,
     PipelineCanaryJob,

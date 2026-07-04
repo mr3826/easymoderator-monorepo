@@ -93,6 +93,7 @@ class FailedPaymentReconciler extends BaseJob {
                 // Send the dunning / reminder email (Nodemailer via email.service.js)
                 if (!dryRun) {
                     await this.sendReminderNotification(invoice, action.action);
+                    await this.sendMerchantPaymentAlert(invoice, action.action, runDate);
                     results.remindersSent++;
                 }
 
@@ -244,6 +245,35 @@ class FailedPaymentReconciler extends BaseJob {
         } catch (error) {
             // Email failures must never break the reconciler — log and continue
             this.logger.warn(`Failed to send dunning email`, {
+                invoiceId: invoice.id,
+                shopId: invoice.shop_id,
+                error: error.message
+            });
+        }
+    }
+
+    async sendMerchantPaymentAlert(invoice, action, runDate = new Date()) {
+        try {
+            const merchantNotificationService = require('../modules/notification/merchant-notification.service');
+            const { NOTIFICATION_EVENTS } = require('../modules/notification/notification-events');
+            await merchantNotificationService.notifyShop(
+                invoice.shop_id,
+                NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+                {
+                    invoiceNumber: invoice.invoice_number,
+                    issue: action === 'suspended'
+                        ? 'Subscription suspended for overdue recurring invoice'
+                        : 'Invoice payment is overdue',
+                    amount: invoice.amount,
+                    dueDate: invoice.due_date
+                },
+                {
+                    dedupeKey: `${invoice.id}:${action}:${runDate.toISOString().split('T')[0]}`,
+                    dedupeTtlSeconds: 24 * 60 * 60
+                }
+            );
+        } catch (error) {
+            this.logger.warn(`Failed to queue merchant payment alert`, {
                 invoiceId: invoice.id,
                 shopId: invoice.shop_id,
                 error: error.message

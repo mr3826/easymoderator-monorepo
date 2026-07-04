@@ -45,7 +45,7 @@ async function sendWebPush(subscription, payload) {
       JSON.stringify({
         title: payload.title,
         body: payload.body,
-        icon: payload.icon || '/icon-192.png',
+        icon: payload.icon || '/icon-512.png',
         data: payload.data || {}
       })
     );
@@ -123,7 +123,7 @@ async function sendFCM(deviceToken, payload) {
  * @returns {{ web: number, fcm: number, expired: number }}
  */
 async function sendPushToShop(shopId, payload) {
-  const { PushSubscription } = require('../modules/notification/push-subscription.entity');
+  const { PushSubscription } = require('../entities');
 
   const subs = await PushSubscription.findAll({ where: { shop_id: shopId } });
   if (subs.length === 0) return { web: 0, fcm: 0, expired: 0 };

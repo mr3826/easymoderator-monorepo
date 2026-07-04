@@ -7,7 +7,8 @@
  * via web push (VAPID) and in-app notification records.
  */
 
-const { PushSubscription, User, UserShop } = require('../entities');
+const { Op } = require('sequelize');
+const { PushSubscription, UserShop } = require('../entities');
 const pushNotificationService = require('../notification/push-notification.service');
 const { createLogger } = require('../../utils/structured-logger');
 
@@ -80,7 +81,7 @@ const sendConvLimitNotification = async (shopId, type, data = {}) => {
 
         // Find web push subscriptions for these users
         const pushSubs = await PushSubscription.findAll({
-            where: { user_id: ownerIds }
+            where: { user_id: { [Op.in]: ownerIds }, type: 'web' }
         });
 
         const payload = {
@@ -93,7 +94,7 @@ const sendConvLimitNotification = async (shopId, type, data = {}) => {
         // Send push to each subscription
         const results = await Promise.allSettled(
             pushSubs.map(ps =>
-                pushNotificationService.sendWebPush(ps.subscription, payload)
+                pushNotificationService.sendWebPush(ps.subscription_json, payload)
                     .then(result => {
                         if (result.expired) {
                             // Clean up expired subscriptions

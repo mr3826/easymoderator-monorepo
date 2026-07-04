@@ -37,6 +37,7 @@ const OwnerNotification = require('./notification/owner-notification.entity');
 const OrderInvoice = require('./billing/invoice.entity');
 const DeliveryTracking = require('./order/delivery-tracking.entity');
 const PushSubscription = require('./notification/push-subscription.entity');
+const TelegramNotificationBinding = require('./notification/telegram-notification-binding.entity');
 const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.entity');
 const CourierCodCollection = require('./reconciliation/courier-collection.entity');
 const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
@@ -362,6 +363,10 @@ Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking
 PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
 
+// Telegram Notification Binding relationships
+TelegramNotificationBinding.belongsTo(Shop, { foreignKey: 'shop_id', as: 'telegram_notification_binding' });
+Shop.hasOne(TelegramNotificationBinding, { foreignKey: 'shop_id', as: 'telegram_notification_binding' });
+
 // ── Phase 1: MetaChannel associations ──────────────────────────────────────
 // Shop <-> MetaChannel (one shop, many channels — one per platform)
 Shop.hasMany(MetaChannel, {
@@ -459,6 +464,7 @@ module.exports = {
     OrderInvoice,
     DeliveryTracking,
     PushSubscription,
+    TelegramNotificationBinding,
     PasswordResetToken,
     CustomerDeliveryStats,
     CourierCodCollection,
