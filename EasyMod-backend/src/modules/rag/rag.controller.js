@@ -12,11 +12,16 @@ const ingestData = async (req, res, next) => {
             collection_id: collectionId,
             metadata = {}
         } = req.body;
+        const shopId = req.user?.shopId;
+        if (!shopId) {
+            throw new AppError('No shop selected. Please login again.', 400);
+        }
 
         const result = await ragService.ingestData({
             text: data,
             metadata: {
                 ...metadata,
+                shopId,
                 ...(contentType ? { contentType } : {}),
                 ...(collectionId ? { collectionId } : {})
             }

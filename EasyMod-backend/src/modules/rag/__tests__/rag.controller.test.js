@@ -22,11 +22,12 @@ describe('rag.controller', () => {
 
     it('maps validated ingest data into ragService text input', async () => {
         const req = {
+            user: { shopId: 'shop-1' },
             body: {
                 data: 'Delivery takes 2 days',
                 content_type: 'text',
                 collection_id: '11111111-2222-4333-8444-555555555555',
-                metadata: { documentId: 'manual-test', shopId: 'shop-1' },
+                metadata: { documentId: 'manual-test', shopId: 'attacker-shop' },
             },
         };
         const res = createRes();
@@ -49,5 +50,19 @@ describe('rag.controller', () => {
             success: true,
             data: { success: true, ingestionId: 'point-1' },
         });
+    });
+
+    it('rejects ingest when no authenticated shop is selected', async () => {
+        const req = { body: { data: 'Delivery takes 2 days' } };
+        const res = createRes();
+        const next = jest.fn();
+
+        await controller.ingestData(req, res, next);
+
+        expect(ragService.ingestData).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'No shop selected. Please login again.',
+            status: 400,
+        }));
     });
 });
