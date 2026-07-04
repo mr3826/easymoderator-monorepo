@@ -25,6 +25,7 @@ const SettingsHub = lazy(() => import("./components/SettingsHub"));
 const ChatSettings = lazy(() => import("./components/ChatSettings"));
 const DeliverySettings = lazy(() => import("./components/DeliverySettings"));
 const PaymentSettings = lazy(() => import("./components/PaymentSettings"));
+const NotificationSettings = lazy(() => import("./components/NotificationSettings"));
 const BusinessInfoSettings = lazy(() => import("./components/BusinessInfoSettings"));
 const SignIn = lazy(() => import("./components/SignIn"));
 const Signup = lazy(() => import("./components/Signup"));
@@ -145,6 +146,7 @@ export const router = createBrowserRouter([
 					{ path: "chat-settings", Component: withSuspense(ChatSettings) },
 					{ path: "delivery-settings", Component: withSuspense(DeliverySettings) },
 					{ path: "payment-settings", Component: withSuspense(PaymentSettings) },
+					{ path: "notifications", Component: withSuspense(NotificationSettings) },
 				],
 			},
 			{ path: "products", Component: withSuspense(Products) },

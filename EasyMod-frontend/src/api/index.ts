@@ -68,6 +68,7 @@ import * as shopDomain from './domains/shop';
 import * as paymentDomain from './domains/payment';
 import * as auditDomain from './domains/audit';
 import * as rtoShieldDomain from './domains/rto-shield';
+import * as notificationDomain from './domains/notification';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
@@ -220,6 +221,15 @@ export const apiClient = {
   // Audit methods
   getAuditLogs: auditDomain.getAuditLogs,
   getResourceAuditLogs: auditDomain.getResourceAuditLogs,
+
+  // Notification methods
+  getTelegramNotificationStatus: notificationDomain.getTelegramNotificationStatus,
+  createTelegramConnectIntent: notificationDomain.createTelegramConnectIntent,
+  sendTelegramTestAlert: notificationDomain.sendTelegramTestAlert,
+  updateTelegramPreferences: notificationDomain.updateTelegramPreferences,
+  disconnectTelegramAlerts: notificationDomain.disconnectTelegramAlerts,
+  getInAppNotifications: notificationDomain.getInAppNotifications,
+  markInAppNotificationRead: notificationDomain.markInAppNotificationRead,
 
   // Utility methods
   initCsrfToken: () => httpClient.initCsrfToken(),

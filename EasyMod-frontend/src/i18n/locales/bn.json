@@ -8,6 +8,7 @@
     "chat": "চ্যাট",
     "delivery": "ডেলিভারি",
     "payment": "পেমেন্ট",
+    "notifications": "নোটিফিকেশন",
     "settings": "সেটিংস",
     "subscription": "সাবস্ক্রিপশন",
     "shopSettings": "শপ সেটিংস",
@@ -1464,7 +1465,8 @@
       "businessInfo": "ব্যবসার তথ্য",
       "chatSettings": "চ্যাট সেটিংস",
       "deliverySettings": "ডেলিভারি সেটিংস",
-      "paymentSettings": "পেমেন্ট সেটিংস"
+      "paymentSettings": "পেমেন্ট সেটিংস",
+      "notifications": "নোটিফিকেশন"
     },
     "businessInfo": {
       "loading": "ব্যবসার তথ্য লোড হচ্ছে...",
@@ -1678,9 +1680,54 @@
         "name": "পেমেন্ট সেটিংস",
         "desc": "পেমেন্ট গেটওয়ে ও অগ্রিম পেমেন্ট নিয়ম"
       },
+      "notifications": {
+        "name": "নোটিফিকেশন",
+        "desc": "ব্রাউজার, ইন-অ্যাপ ও Telegram alert"
+      },
       "subscription": {
         "name": "সাবস্ক্রিপশন",
         "desc": "প্ল্যান, ব্যবহার ও ইনভয়েস ম্যানেজ করুন"
+      }
+    },
+    "notifications": {
+      "title": "নোটিফিকেশন",
+      "subtitle": "মার্চেন্ট alert কোথায় দেখাবে তা বেছে নিন।",
+      "errors": {
+        "load": "নোটিফিকেশন সেটিংস লোড করা যায়নি।"
+      },
+      "browser": {
+        "title": "ব্রাউজার নোটিফিকেশন",
+        "subtitle": "এই ডিভাইসে জরুরি শপ alert পান, যদি ব্রাউজার অনুমতি দেয়।",
+        "unsupported": "সাপোর্ট নেই",
+        "enable": "ব্রাউজার নোটিফিকেশন চালু করুন",
+        "enabled": "ব্রাউজার নোটিফিকেশন চালু হয়েছে।",
+        "failed": "ব্রাউজার নোটিফিকেশন চালু করা যায়নি।"
+      },
+      "inApp": {
+        "title": "ইন-অ্যাপ নোটিফিকেশন সেন্টার",
+        "subtitle": "সাম্প্রতিক alert অ্যাপ হেডারের bell আইকনে দেখা যাবে।",
+        "active": "এই শপের জন্য ইন-অ্যাপ alert চালু আছে।"
+      },
+      "telegram": {
+        "title": "Telegram alert",
+        "subtitle": "অর্ডার, handoff, courier, billing ও daily summary alert একটি merchant group-এ পাঠান।",
+        "connected": "সংযুক্ত",
+        "pending": "গ্রুপ command-এর অপেক্ষায়",
+        "unhealthy": "পুনরায় সংযোগ দরকার",
+        "disconnected": "বিচ্ছিন্ন",
+        "notConfigured": "সার্ভারে Telegram bot environment variables কনফিগার করা নেই।",
+        "groupName": "Suggested group name: {{name}}",
+        "connect": "Telegram group সংযুক্ত করুন",
+        "intentCreated": "Telegram connect command তৈরি হয়েছে।",
+        "intentFailed": "Telegram connect command তৈরি করা যায়নি।",
+        "copied": "Connect command কপি হয়েছে।",
+        "copy": "কপি",
+        "test": "Test alert পাঠান",
+        "testSent": "Telegram test alert পাঠানো হয়েছে।",
+        "testFailed": "Telegram test alert ব্যর্থ হয়েছে।",
+        "disconnectedToast": "Telegram alert বিচ্ছিন্ন হয়েছে।",
+        "disconnectFailed": "Telegram alert বিচ্ছিন্ন করা যায়নি।",
+        "preferenceFailed": "Telegram preference আপডেট করা যায়নি।"
       }
     },
     "aiSettings": {

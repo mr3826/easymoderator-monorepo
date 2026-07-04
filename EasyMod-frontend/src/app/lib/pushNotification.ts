@@ -3,8 +3,10 @@
  *
  * Usage:
  *   import { subscribeToPush, unsubscribeFromPush } from './pushNotification';
- *   await subscribeToPush(shopId, accessToken);
+ *   await subscribeToPush();
  */
+
+import { httpClient } from '@/shared/lib/http/client';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
 const SW_PATH = '/sw.js';
@@ -33,7 +35,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
  * Request notification permission and subscribe to web push.
  * POSTs the subscription to the backend for the given shop.
  */
-export async function subscribeToPush(shopId: string, accessToken: string): Promise<boolean> {
+export async function subscribeToPush(_shopId?: string, accessToken?: string): Promise<boolean> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
   if (!VAPID_PUBLIC_KEY) {
     console.warn('VITE_VAPID_PUBLIC_KEY not set — push disabled');
@@ -50,19 +52,16 @@ export async function subscribeToPush(shopId: string, accessToken: string): Prom
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
   });
 
-  const res = await fetch('/api/notifications/subscriptions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`
-    },
-    body: JSON.stringify({
+  const res = await httpClient.post(
+    '/api/notifications/subscriptions',
+    {
       type: 'web',
       subscription_json: subscription.toJSON()
-    })
-  });
+    },
+    accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined
+  );
 
-  return res.ok;
+  return Boolean(res.data?.success);
 }
 
 /**
@@ -75,10 +74,10 @@ export async function unsubscribeFromPush(subscriptionId: string, accessToken: s
   const sub = await reg.pushManager.getSubscription();
   if (sub) await sub.unsubscribe();
 
-  await fetch(`/api/notifications/subscriptions/${subscriptionId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
+  await httpClient.delete(
+    `/api/notifications/subscriptions/${subscriptionId}`,
+    accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined
+  );
 }
 
 /**
