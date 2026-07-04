@@ -94,8 +94,10 @@ describe('Qdrant point-id normalization', () => {
         });
 
         const res = await rag.queryData({ query: 'delivery', shopId: 's1', limit: 3 });
+        const searchBody = JSON.parse(calls.find((call) => call.url.includes('/points/search')).init.body);
 
         expect(res.success).toBe(true);
+        expect(searchBody.with_payload).toBe(true);
         expect(res.results.map((item) => item.content)).toEqual([
             'Delivery takes 2 days',
             'Legacy content payload',

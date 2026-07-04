@@ -111,6 +111,7 @@ const searchPoints = async ({ vector, limit = 5, filter, shopId }) => {
         body: JSON.stringify({
             vector,
             limit,
+            with_payload: true,
             filter: searchFilter
         })
     });
