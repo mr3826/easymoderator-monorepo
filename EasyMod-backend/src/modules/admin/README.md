@@ -52,7 +52,9 @@ Mutations (`SUPER_ADMIN` only — each writes an audit row):
 ## Safe operations
 
 - **Suspend / reactivate** — sets `Subscription.status` and busts the 60s
-  `subscription:status` cache. Suspended shops are blocked by `checkSubscriptionStatus`.
+  `subscription:status` cache. Suspended shops have automated AI paused by the
+  worker, but the manual inbox remains accessible so merchants can keep handling
+  customers while resolving billing.
 - **Extend trial** — advances `trial_ends_at` (1..90 days) and keeps status `trialing`.
 - **Add credits** — calls `subscription.service.grantBonusConversations` (adds to `topup_balance`).
 - **Change plan** — reuses `subscription.service.updatePlan` (no duplicated billing logic).

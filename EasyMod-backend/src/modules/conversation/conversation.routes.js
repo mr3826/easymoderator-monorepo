@@ -3,11 +3,12 @@ const router = express.Router();
 const conversationController = require('./conversation.controller');
 const conversationValidator = require('./conversation.validator');
 const { validate } = require('../helpers');
-const { authenticate, checkSubscriptionStatus } = require('../../middleware/auth.middleware');
+const { authenticate } = require('../../middleware/auth.middleware');
 
-// All conversation routes require authentication + active subscription
+// All conversation routes require authentication. Billing suspension pauses
+// automated AI replies in the worker; the manual inbox must stay usable so
+// merchants can read and respond to customers while resolving billing.
 router.use(authenticate);
-router.use(checkSubscriptionStatus);
 
 // Routes for conversations
 router.get(
