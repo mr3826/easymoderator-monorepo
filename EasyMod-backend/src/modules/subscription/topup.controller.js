@@ -12,6 +12,25 @@
 
 const topupService = require('./topup.service');
 const { AppError } = require('../../utils/AppError');
+const { User, Shop } = require('../entities');
+
+const readBusinessInfo = (shop) => {
+    const settings = shop?.settings || {};
+    return settings.businessInfo || settings.business_info || {};
+};
+
+const resolvePaymentContact = async (req, { phone, name }) => {
+    const [user, shop] = await Promise.all([
+        req.user?.userId ? User.findByPk(req.user.userId, { attributes: ['full_name', 'phone'] }) : null,
+        req.user?.shopId ? Shop.findByPk(req.user.shopId, { attributes: ['name', 'shop_name', 'settings'] }) : null
+    ]);
+    const businessInfo = readBusinessInfo(shop);
+
+    return {
+        phone: phone || user?.phone || businessInfo.phone || null,
+        name: name || user?.full_name || businessInfo.shopName || businessInfo.shop_name || shop?.shop_name || shop?.name || 'Shop Owner'
+    };
+};
 
 const getPacks = async (req, res, next) => {
     try {
@@ -26,10 +45,11 @@ const initiateTopup = async (req, res, next) => {
 
         if (!pack_code) throw new AppError('pack_code is required', 400);
         if (!callback_url) throw new AppError('callback_url is required', 400);
+        const contact = await resolvePaymentContact(req, { phone, name });
 
         const result = await topupService.initiateTopup(shopId, pack_code, {
-            phone: phone || req.user.phone,
-            name: name || req.user.name,
+            phone: contact.phone,
+            name: contact.name,
             callbackUrl: callback_url
         });
 
