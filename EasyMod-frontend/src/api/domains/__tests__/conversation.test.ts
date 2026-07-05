@@ -28,13 +28,35 @@ describe('Conversation Domain API', () => {
 
   describe('getConversations', () => {
     it('should return paginated conversations', async () => {
-      const mockData = { items: [{ id: 'c1', status: 'active' }], total: 1 };
+      const mockData = { data: [{ id: 'c1', status: 'active' }], total: 1, page: 1, pageSize: 50 };
       (httpClient.get as any).mockResolvedValue({ data: { data: mockData } });
 
       const result = await conversation.getConversations();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: undefined });
       expect(result).toEqual(mockData);
+    });
+
+    it('should normalize production conversation list payloads', async () => {
+      (httpClient.get as any).mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            conversations: [{ id: 'c1', status: 'active' }],
+            pagination: { total: 1, page: 1, limit: 50, totalPages: 1 },
+          },
+        },
+      });
+
+      const result = await conversation.getConversations({ limit: 50 });
+
+      expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: { limit: 50 } });
+      expect(result).toEqual({
+        data: [{ id: 'c1', status: 'active' }],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+      });
     });
 
     it('should forward query params', async () => {

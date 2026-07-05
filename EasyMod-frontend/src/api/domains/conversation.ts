@@ -14,13 +14,46 @@ import type {
 import type { AuditLog } from '../types/audit';
 import type { AxiosResponse } from 'axios';
 
+interface ConversationListBody {
+  conversations?: Conversation[];
+  pagination?: {
+    total?: number;
+    page?: number;
+    limit?: number;
+    pageSize?: number;
+    totalPages?: number;
+  };
+}
+
+type ConversationListResponse = PaginatedResponse<Conversation> | ConversationListBody;
+
+function normalizeConversationList(
+  body: ConversationListResponse | undefined
+): PaginatedResponse<Conversation> {
+  if (body && 'data' in body && Array.isArray(body.data)) {
+    return body;
+  }
+
+  const conversations = body && 'conversations' in body && Array.isArray(body.conversations)
+    ? body.conversations
+    : [];
+  const pagination = body && 'pagination' in body ? body.pagination : undefined;
+
+  return {
+    data: conversations,
+    total: pagination?.total ?? conversations.length,
+    page: pagination?.page ?? 1,
+    pageSize: pagination?.pageSize ?? pagination?.limit ?? conversations.length,
+  };
+}
+
 // Conversations
 export async function getConversations(
   params?: Record<string, unknown>
 ): Promise<PaginatedResponse<Conversation>> {
-  const response: AxiosResponse<ApiResponse<PaginatedResponse<Conversation>>> =
+  const response: AxiosResponse<ApiResponse<ConversationListResponse>> =
     await httpClient.get('/api/conversation', { params });
-  return response.data.data;
+  return normalizeConversationList(response.data.data);
 }
 
 export async function getConversation(conversationId: string): Promise<Conversation> {
