@@ -238,7 +238,7 @@ const getInvoicePdf = async (req, res, next) => {
 </head>
 <body>
   <div class="header">
-    <div class="brand">Easy Moderator<span>AI Commerce Assistant</span></div>
+    <div class="brand">EasyModerator<span>Messenger Sales Assistant</span></div>
     <div class="invoice-meta">
       <h1>INVOICE</h1>
       <div style="font-size:14px;color:#6b7280;margin-top:4px">${invoice.invoice_number}</div>
@@ -291,7 +291,7 @@ const getInvoicePdf = async (req, res, next) => {
   ${invoice.notes ? `<div style="font-size:13px;color:#6b7280;margin-bottom:24px"><strong>Notes:</strong> ${invoice.notes}</div>` : ''}
 
   <hr class="divider">
-  <div class="footer">Easy Moderator &bull; easymod.io &bull; This is a computer-generated invoice.</div>
+  <div class="footer">EasyModerator &bull; easymod.tech &bull; This is a computer-generated invoice.</div>
 
   <script>
     // Auto-open print dialog when opened in a new tab

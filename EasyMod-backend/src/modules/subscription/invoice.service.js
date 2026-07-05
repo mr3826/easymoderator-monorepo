@@ -49,7 +49,7 @@ const generateTopupInvoice = async ({
         doc.pipe(stream);
 
         // Header
-        doc.fontSize(24).font('Helvetica-Bold').text('Easy Moderator', { align: 'center' });
+        doc.fontSize(24).font('Helvetica-Bold').text('EasyModerator', { align: 'center' });
         doc.fontSize(12).font('Helvetica').text('Invoice', { align: 'center' });
         doc.moveDown(2);
 
@@ -75,7 +75,7 @@ const generateTopupInvoice = async ({
         doc.moveDown(2);
 
         doc.fontSize(10).fillColor('#888888')
-            .text('Thank you for using Easy Moderator.', { align: 'center' });
+            .text('Thank you for using EasyModerator.', { align: 'center' });
 
         doc.end();
 
@@ -120,7 +120,7 @@ const generateSubscriptionInvoice = async ({
         const stream = fs.createWriteStream(filePath);
         doc.pipe(stream);
 
-        doc.fontSize(24).font('Helvetica-Bold').text('Easy Moderator', { align: 'center' });
+        doc.fontSize(24).font('Helvetica-Bold').text('EasyModerator', { align: 'center' });
         doc.fontSize(12).font('Helvetica').text('Subscription Invoice', { align: 'center' });
         doc.moveDown(2);
 
@@ -150,7 +150,7 @@ const generateSubscriptionInvoice = async ({
         doc.moveDown(2);
 
         doc.fontSize(10).fillColor('#888888')
-            .text('Thank you for using Easy Moderator.', { align: 'center' });
+            .text('Thank you for using EasyModerator.', { align: 'center' });
 
         doc.end();
 

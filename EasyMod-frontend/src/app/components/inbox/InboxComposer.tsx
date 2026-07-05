@@ -1,5 +1,5 @@
 /**
- * InboxComposer — Message input bar with attachment and quick templates.
+ * InboxComposer — Message input bar with attachments and quick replies.
  */
 import { useRef, useState, ChangeEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -107,12 +107,12 @@ export function InboxComposer({
     const file = event.target.files?.[0] || null;
     if (!file) return;
     if (!SUPPORTED_ATTACHMENT_TYPES.has(file.type)) {
-      toast.error("This file type is not supported for Messenger.");
+      toast.error("Messenger cannot send this file type. Use an image, PDF, document, CSV, or text file.");
       event.target.value = "";
       return;
     }
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      toast.error("Attachment must be 25MB or smaller.");
+      toast.error("Attachment must be 25MB or smaller for Messenger.");
       event.target.value = "";
       return;
     }
@@ -185,8 +185,8 @@ export function InboxComposer({
   const resolveTemplateContent = (template: ResponseTemplate): string => {
     const customerName = selectedConversation?.customer?.name || "Customer";
     return template.content
-      .replaceAll("{{customer_name}}", customerName)
-      .replaceAll("{{name}}", customerName);
+      .replace(/\{\{\s*customer_name\s*\}\}/g, customerName)
+      .replace(/\{\{\s*name\s*\}\}/g, customerName);
   };
 
   const handleTemplateInsert = (template: ResponseTemplate) => {
@@ -214,7 +214,7 @@ export function InboxComposer({
     const name = templateForm.name.trim();
     const content = templateForm.content.trim();
     if (!name || !content) {
-      toast.error("Template name and message are required.");
+      toast.error("Add a quick reply name and message before saving.");
       return;
     }
     try {
@@ -237,9 +237,9 @@ export function InboxComposer({
       }
       await onTemplatesChanged();
       resetTemplateForm();
-      toast.success("Template saved.");
+      toast.success("Quick reply saved.");
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Template save failed.");
+      toast.error((err as { message?: string })?.message || "Quick reply could not be saved.");
     } finally {
       setTemplateSaving(false);
     }
@@ -251,9 +251,9 @@ export function InboxComposer({
       await apiClient.deleteTemplate(templateId);
       await onTemplatesChanged();
       if (editingTemplateId === templateId) resetTemplateForm();
-      toast.success("Template deleted.");
+      toast.success("Quick reply deleted.");
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message || "Template delete failed.");
+      toast.error((err as { message?: string })?.message || "Quick reply could not be deleted.");
     } finally {
       setDeletingTemplateId(null);
     }
@@ -316,14 +316,14 @@ export function InboxComposer({
             className="absolute bottom-full left-0 mb-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-lg shadow-xl z-20 overflow-hidden"
           >
             <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-600">Templates</span>
+              <span className="text-xs font-semibold text-gray-600">Quick replies</span>
               <button
                 onClick={() => setShowTemplateManager(true)}
                 className="text-xs text-blue-700 hover:text-blue-900 font-medium"
               >
-                Manage Templates
+                Manage quick replies
               </button>
-              <button onClick={() => setShowQuickReplies(false)} className="text-gray-400 hover:text-gray-600" aria-label="Close templates">
+              <button onClick={() => setShowQuickReplies(false)} className="text-gray-400 hover:text-gray-600" aria-label="Close quick replies">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -333,14 +333,14 @@ export function InboxComposer({
                 <input
                   value={quickSearch}
                   onChange={(e) => setQuickSearch(e.target.value)}
-                  placeholder="Search templates"
+                  placeholder="Search quick replies"
                   className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
             <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
               {loadingTemplates && (
-                <div className="px-3 py-2 text-xs text-gray-500">Loading templates...</div>
+                <div className="px-3 py-2 text-xs text-gray-500">Loading quick replies...</div>
               )}
               {filteredQuickTemplates.map((template) => (
                 <button
@@ -353,7 +353,7 @@ export function InboxComposer({
                 </button>
               ))}
               {!loadingTemplates && filteredQuickTemplates.length === 0 && (
-                <div className="px-3 py-3 text-xs text-gray-500">No templates found.</div>
+                <div className="px-3 py-3 text-xs text-gray-500">No quick replies yet. Save common delivery, payment, and order answers here.</div>
               )}
             </div>
           </div>
@@ -361,8 +361,8 @@ export function InboxComposer({
 
         <button
           onClick={() => setShowQuickReplies((v) => !v)}
-          title="Quick Reply"
-          aria-label="Quick reply templates"
+          title="Quick replies"
+          aria-label="Quick replies"
           className="p-2.5 text-amber-500 hover:text-amber-600 hover:bg-amber-50 border border-gray-300 rounded-lg transition-colors flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
         >
           <Zap className="w-4 h-4" />
@@ -421,8 +421,8 @@ export function InboxComposer({
         >
           <div className="h-full w-full max-w-lg bg-white shadow-2xl flex flex-col">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">Manage Templates</h2>
-              <button onClick={() => setShowTemplateManager(false)} className="text-gray-500 hover:text-gray-700" aria-label="Close template manager">
+              <h2 className="text-base font-semibold text-gray-900">Manage quick replies</h2>
+              <button onClick={() => setShowTemplateManager(false)} className="text-gray-500 hover:text-gray-700" aria-label="Close quick reply manager">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -431,7 +431,7 @@ export function InboxComposer({
                 <input
                   value={templateForm.name}
                   onChange={(e) => setTemplateForm((prev) => ({ ...prev, name: e.target.value }))}
-                  placeholder="Template name"
+                  placeholder="Quick reply name"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <input
@@ -444,7 +444,7 @@ export function InboxComposer({
               <textarea
                 value={templateForm.content}
                 onChange={(e) => setTemplateForm((prev) => ({ ...prev, content: e.target.value }))}
-                placeholder="Template message"
+                placeholder="Quick reply message"
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -473,7 +473,7 @@ export function InboxComposer({
                 <input
                   value={templateSearch}
                   onChange={(e) => setTemplateSearch(e.target.value)}
-                  placeholder="Search templates"
+                  placeholder="Search quick replies"
                   className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -509,7 +509,7 @@ export function InboxComposer({
                 </div>
               ))}
               {!loadingTemplates && filteredManagedTemplates.length === 0 && (
-                <div className="p-5 text-sm text-gray-500">No saved templates found.</div>
+                <div className="p-5 text-sm text-gray-500">No saved quick replies yet. Add answers you send often to save time in customer conversations.</div>
               )}
             </div>
           </div>

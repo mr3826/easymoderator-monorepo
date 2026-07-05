@@ -11,7 +11,6 @@ import {
   Unplug,
   RefreshCw,
   ShieldCheck,
-  Plus,
   Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -1066,8 +1065,8 @@ function HealthRow({
 }
 
 /**
- * Per-channel AI auto-reply toggle. Loads the channel's MetaChannelSettings and
- * lets the merchant turn AI auto-reply on/off for that Page. This is a
+ * Per-channel automatic reply toggle. Loads the channel's MetaChannelSettings and
+ * lets the merchant turn automatic replies on/off for that Page. This is a
  * per-channel control available on every plan — packages differ only by
  * conversation quota, never by feature access.
  */

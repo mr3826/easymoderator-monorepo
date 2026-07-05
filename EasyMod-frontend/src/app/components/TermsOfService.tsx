@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 const EFFECTIVE_DATE = "April 24, 2026";
 const LAST_UPDATED = "May 20, 2026";
 const COMPANY_NAME = "Hexabyte Limited";
-const APP_NAME = "Easy Moderator";
+const APP_NAME = "EasyModerator";
 const SUPPORT_EMAIL = "support@easymod.tech";
 const PRIVACY_EMAIL = "privacy@easymod.tech";
 

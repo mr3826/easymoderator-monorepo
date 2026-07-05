@@ -1,6 +1,6 @@
-# Easy Moderator — Backend
+# EasyModerator — Backend
 
-AI customer-service and order-automation API for Bangladeshi f-commerce sellers. Merchants connect one or more **Facebook Pages**; Easy Moderator answers direct Messenger DMs with a Bengali/Banglish-capable AI agent, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
+Messenger sales and order automation API for Bangladeshi f-commerce sellers. Merchants connect one or more **Facebook Pages**; EasyModerator drafts or sends Bengali/Banglish-capable replies, captures orders from conversations, routes them to couriers, and bills the merchant on a simple monthly plan.
 
 > **Customer channels:** Facebook Messenger only (Facebook-only launch, 2026-06-24). Instagram, WhatsApp, Telegram customer chat, and other providers are out of product scope. Telegram exists only as a one-way merchant alert bot; it is not a connectable customer inbox. The `instagram`/`telegram`/`webchat`/`manual` values that still appear in some enums and validators are legacy taxonomy retained for stored historical conversations — they are **not** connectable customer channels.
 
@@ -48,7 +48,7 @@ AI customer-service and order-automation API for Bangladeshi f-commerce sellers.
 
 ## Architecture
 
-Easy Moderator is a **modular monolith**. One codebase and one Docker image run in three process roles in production:
+EasyModerator is a **modular monolith**. One codebase and one Docker image run in three process roles in production:
 
 ```
                          Meta Graph API (Facebook Pages)
@@ -193,7 +193,7 @@ Source of truth: `src/modules/subscription/subscription.plans.js`.
 
 | Plan | Price | Limit | Notes |
 |---|---|---|---|
-| **Growth** | ৳999 / month (৳9,990 / year) | 300 AI conversations/mo + 50 grace buffer | Every feature included. Fronted by a **card-less 14-day trial** (a `trialing` status, not a separate plan). |
+| **Growth** | ৳999 / month (৳9,990 / year) | 300 customer conversations/mo + 50 grace buffer | Every feature included. Fronted by a **card-less 14-day trial** (a `trialing` status, not a separate plan). |
 | **Partner** | ৳0 upfront | Unlimited conversations | Billed per **delivered order**, tiered: ≤500 → ৳15, ≤1,000 → ৳12, 1,000+ → ৳10. Apply → admin approves. |
 
 **Top-up packs** (bKash): `TOPUP_100` ৳150, `TOPUP_250` ৳350, `TOPUP_500` ৳650, `TOPUP_1000` ৳1,200.
@@ -212,7 +212,7 @@ Day-one merchant alert channels:
 - In-app notification center: `/api/notifications/in-app`, backed by `owner_notifications`.
 - Telegram alerts: `/api/notifications/telegram/*`, backed by `telegram_notification_bindings`.
 
-Telegram is a **one-way alert channel**. It sends only merchant operational alerts and deep links back to Easy Moderator. It does not receive customer messages, does not show AI logs, and does not let merchants reply to customers from Telegram.
+Telegram is a **one-way alert channel**. It sends only merchant operational alerts and deep links back to EasyModerator. It does not receive customer messages, does not show AI logs, and does not let merchants reply to customers from Telegram.
 
 Human-handoff settings can select `telegram` as the alert channel after the shop connects the EasyModerator bot in Settings -> Notifications. Handoff still creates an in-app notification first; Telegram is an additional group alert, not a customer communication channel.
 
@@ -352,7 +352,7 @@ QDRANT_VECTOR_SIZE=384
 
 # Email, push, errors, ops
 RESEND_API_KEY=...
-EMAIL_FROM=Easy Moderator <no-reply@easymod.tech>
+EMAIL_FROM=EasyModerator <no-reply@easymod.tech>
 SENTRY_DSN=...
 SLACK_ALERT_WEBHOOK_URL=...
 ADMIN_EMAIL=hello@hexabyte.co

@@ -214,8 +214,8 @@ function PlanCard({
         {[
           // Fair-use framing — we intentionally don't headline the 300 cap.
           { icon: MessageSquare, label: plan.limits.conversations === -1 ? t("pricing.limits.unlimitedConversations") : t("pricing.limits.conversationsFairUse") },
-          { icon: ShoppingCart, label: plan.limits.orders === -1 ? t("pricing.limits.unlimitedOrders") : t("pricing.limits.ordersPerMonth", { count: plan.limits.orders.toLocaleString() }) },
-          { icon: Package, label: plan.limits.products === -1 ? t("pricing.limits.unlimitedProducts") : t("pricing.limits.products", { count: plan.limits.products.toLocaleString() }) },
+          { icon: ShoppingCart, label: plan.limits.orders === -1 ? t("pricing.limits.unlimitedOrders") : t("pricing.limits.ordersPerMonth", { count: plan.limits.orders }) },
+          { icon: Package, label: plan.limits.products === -1 ? t("pricing.limits.unlimitedProducts") : t("pricing.limits.products", { count: plan.limits.products }) },
         ].map(({ icon: Icon, label }) => (
           <div key={label} className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-600"}`}>
             <Icon className="w-3.5 h-3.5 flex-shrink-0" />
@@ -279,7 +279,7 @@ export default function Pricing() {
             className="text-xl font-bold text-blue-600 cursor-pointer"
             onClick={() => navigate("/")}
           >
-            Easy Moderator
+            EasyModerator
           </span>
           <div className="flex items-center gap-3">
             <button
@@ -383,7 +383,7 @@ export default function Pricing() {
       </main>
 
       <footer className="border-t border-gray-100 mt-16 py-8 text-center text-sm text-gray-400">
-        © {new Date().getFullYear()} Easy Moderator &bull;{" "}
+        © {new Date().getFullYear()} EasyModerator &bull;{" "}
         <span className="cursor-pointer hover:text-gray-600" onClick={() => navigate("/privacy-policy")}>
           {t("common.privacyPolicy")}
         </span>

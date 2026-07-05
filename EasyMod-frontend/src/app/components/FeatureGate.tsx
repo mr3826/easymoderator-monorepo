@@ -92,7 +92,7 @@ interface FeatureGateProps {
  * include the feature. Clicking the overlay opens an upgrade modal.
  *
  * Usage:
- *   <FeatureGate feature="image_understanding" featureLabel="Image Understanding" requiredPlan="PACKAGE_2">
+ *   <FeatureGate feature="image_understanding" featureLabel="Understands Product Photos" requiredPlan="PACKAGE_2">
  *     <ImageUploader />
  *   </FeatureGate>
  */

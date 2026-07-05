@@ -32,7 +32,7 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
     id: "growth",
     name: "Growth",
     description:
-      "আপনার সম্পূর্ণ AI সেলস টিম — একটাই সহজ দাম। ১৪ দিন ফ্রি ট্রায়াল, কার্ড লাগবে না।",
+      "Messenger sales and order automation — one simple price. 14-day free trial, no card needed.",
     monthlyPrice: 999,
     yearlyPrice: 9990, // ~2 months free
     // 300 is the hidden fair-use cap (+50 grace buffer) enforced server-side; it
@@ -51,18 +51,18 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       messenger_dm_only: true,
     },
     highlights: [
-      "সব ফিচার আনলিমিটেড — কোনো লক নেই",
-      "Facebook AI Inbox",
-      "Advanced RTO Shield + Analytics",
-      "Messenger DM-only launch scope + ছবি বোঝে",
-      "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই",
+      "Everything you need to start selling on Messenger",
+      "Facebook sales inbox",
+      "COD risk checks and performance reports",
+      "Campaigns plus voice and product photo support",
+      "14-day free trial — no card required",
     ],
     popular: true,
   },
   {
     id: "partner",
     name: "Partner",
-    description: "মাসে ৩০০+ অর্ডার আছে? আমাদের পার্টনার হোন।",
+    description: "Have 300+ orders a month? Become our partner.",
     monthlyPrice: 0,
     yearlyPrice: 0,
     // Entry per-order rate. Backend bills on a tiered scale (15/12/10 BDT by
@@ -82,11 +82,11 @@ export const subscriptionPlans: SubscriptionPlanDefinition[] = [
       messenger_dm_only: true,
     },
     highlights: [
-      "মাত্র ৳10–15/ডেলিভার্ড অর্ডার",
-      "কোনো মাসিক ফি নেই",
-      "Unlimited কথোপকথন",
-      "Facebook Messenger আনলিমিটেড",
-      "ডেডিকেটেড সাপোর্ট ম্যানেজার",
+      "Only ৳10–15 per delivered order",
+      "No monthly fee",
+      "Fair-use customer conversations",
+      "Facebook Messenger focused",
+      "Dedicated support manager",
     ],
   },
 ];

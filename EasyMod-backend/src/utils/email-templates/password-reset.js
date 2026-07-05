@@ -4,7 +4,7 @@
  * @returns {{ subject: string, html: string, text: string }}
  */
 function passwordResetEmail(resetLink) {
-  const subject = 'পাসওয়ার্ড রিসেট করুন | EasyMod';
+  const subject = 'পাসওয়ার্ড রিসেট করুন | EasyModerator';
 
   const html = `<!DOCTYPE html>
 <html lang="bn">
@@ -16,7 +16,7 @@ function passwordResetEmail(resetLink) {
         <!-- Header -->
         <tr>
           <td style="background:#2563eb;padding:24px 32px;">
-            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyMod</h1>
+            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyModerator</h1>
           </td>
         </tr>
         <!-- Body -->
@@ -24,7 +24,7 @@ function passwordResetEmail(resetLink) {
           <td style="padding:32px;">
             <h2 style="margin:0 0 12px;color:#111;font-size:18px;">পাসওয়ার্ড রিসেট অনুরোধ</h2>
             <p style="color:#555;font-size:14px;line-height:1.6;">
-              আপনি আপনার EasyMod অ্যাকাউন্টের পাসওয়ার্ড রিসেট করতে অনুরোধ করেছেন।
+              আপনি আপনার EasyModerator অ্যাকাউন্টের পাসওয়ার্ড রিসেট করতে অনুরোধ করেছেন।
               নিচের বাটনে ক্লিক করে নতুন পাসওয়ার্ড সেট করুন:
             </p>
             <div style="text-align:center;margin:28px 0;">
@@ -49,7 +49,7 @@ function passwordResetEmail(resetLink) {
         <tr>
           <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e4e4e7;">
             <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">
-              © 2025 EasyMod — BD F-Commerce Platform
+              © 2025 EasyModerator — Messenger sales and order automation
             </p>
           </td>
         </tr>
@@ -59,7 +59,7 @@ function passwordResetEmail(resetLink) {
 </body>
 </html>`;
 
-  const text = `পাসওয়ার্ড রিসেট করুন | EasyMod\n\nআপনি পাসওয়ার্ড রিসেটের অনুরোধ করেছেন। নিচের লিংক ব্যবহার করুন:\n\n${resetLink}\n\nএই লিংকটি ১ ঘণ্টা পরে মেয়াদোত্তীর্ণ হবে। আপনি যদি এই অনুরোধ না করে থাকেন, এই ইমেইল উপেক্ষা করুন।`;
+  const text = `পাসওয়ার্ড রিসেট করুন | EasyModerator\n\nআপনি পাসওয়ার্ড রিসেটের অনুরোধ করেছেন। নিচের লিংক ব্যবহার করুন:\n\n${resetLink}\n\nএই লিংকটি ১ ঘণ্টা পরে মেয়াদোত্তীর্ণ হবে। আপনি যদি এই অনুরোধ না করে থাকেন, এই ইমেইল উপেক্ষা করুন।`;
 
   return { subject, html, text };
 }

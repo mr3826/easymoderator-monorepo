@@ -38,7 +38,7 @@ const applyForPartner = async ({ businessName, phone, pageLink, shopId = null })
     const adminEmail = process.env.ADMIN_EMAIL || 'hello@hexabyte.co';
     emailService.sendEmail({
         to: adminEmail,
-        subject: `[Easy Moderator] New Partner Application — ${businessName}`,
+        subject: `[EasyModerator] New Partner Application - ${businessName}`,
         text: `New Partner plan application received.\n\nBusiness: ${businessName}\nPhone: ${phone}\nFacebook Page: ${pageLink}\nApplication ID: ${application.id}\n`,
         html: `<h2>New Partner Plan Application</h2>
                <p><strong>Business:</strong> ${businessName}</p>

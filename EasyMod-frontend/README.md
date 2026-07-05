@@ -1,6 +1,6 @@
-# Easy Moderator — Frontend
+# EasyModerator — Frontend
 
-The merchant dashboard and marketing site for Easy Moderator — an AI customer-service and order-automation platform for Bangladeshi f-commerce sellers. Sellers connect Facebook Pages, then manage a Messenger inbox, products, orders, couriers, and billing from this single-page app.
+The merchant dashboard and marketing site for EasyModerator — a Messenger sales and order automation platform for Bangladeshi f-commerce sellers. Sellers connect Facebook Pages, then manage customer conversations, products, orders, couriers, and billing from this single-page app.
 
 Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and localised for English and Bengali/Banglish seller workflows.
 
@@ -47,7 +47,7 @@ Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and loc
 
 ## Architecture
 
-A client-rendered SPA served as static assets by nginx, talking to the [Easy Moderator backend](../EasyMod-backend) over a JSON API. In production the SPA is **same-origin** with the API (empty `VITE_API_BASE_URL`), so cookies and CSRF work without cross-site complications.
+A client-rendered SPA served as static assets by nginx, talking to the [EasyModerator backend](../EasyMod-backend) over a JSON API. In production the SPA is **same-origin** with the API (empty `VITE_API_BASE_URL`), so cookies and CSRF work without cross-site complications.
 
 ```
 Browser
@@ -119,8 +119,8 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Customers
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Chat/AI, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
-  Business Info contains the owner-editable additional info field used to ground AI replies. AI Behaviour defaults to Draft, derives auto-reply from automation mode, and shows Telegram group alerts as a handoff option when notification status is loaded.
+- Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
+  Business Info contains the owner-editable additional info field used to ground replies. Reply Settings defaults to Draft, derives automatic replies from automation mode, and shows Telegram group alerts as a handoff option when notification status is loaded.
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)
@@ -155,10 +155,10 @@ Notification UI lives in `NotificationSettings` and `InAppNotificationCenter`. B
 
 - `i18next` + `react-i18next`, with `i18next-browser-languagedetector`.
 - **Default language: Bengali (`bn`).** English (`en`) is the secondary locale. The detector persists the choice in `localStorage` under `easymod_lang`; `fallbackLng` is `bn`, so a **missing key renders the raw key string** — keep both files in sync.
-- Strings live in `src/i18n/locales/{en,bn}.json`. **Brand/product terms are intentionally kept in English** (e.g. "Easy Moderator", "RTO Shield").
+- Strings live in `src/i18n/locales/{en,bn}.json`. **Brand/product terms are intentionally kept in English** (e.g. "EasyModerator", "RTO Shield").
 - The global app-shell navigation (sidebar + mobile bottom-nav, in `DashboardLayout`) reads from the top-level **`nav.*`** namespace — never hardcode nav labels in a single language.
 - Add a key to **both** locale files when introducing user-facing copy.
-- **Known follow-up:** ~200 hardcoded-Bengali strings remain across onboarding/settings/pricing screens (tracked in the launch-readiness audit). They render correctly for the default Bengali audience but do not switch to English. Migrate them to i18n keys opportunistically when touching those screens.
+- **Known follow-up:** some older hardcoded Bengali strings remain across settings and admin surfaces. They render correctly for the default Bengali audience but do not switch to English. Migrate them to i18n keys opportunistically when touching those screens.
 
 ---
 

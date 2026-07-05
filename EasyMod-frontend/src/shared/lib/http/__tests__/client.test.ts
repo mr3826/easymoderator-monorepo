@@ -1,6 +1,34 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { httpClient } from '../client';
 
+const readHeader = (headers: any, name: string) => {
+  return headers?.[name] ?? headers?.get?.(name);
+};
+
+const captureNextRequest = async () => {
+  const axiosInstance = httpClient.getAxiosInstance();
+  const originalAdapter = axiosInstance.defaults.adapter;
+  const captured: any[] = [];
+
+  axiosInstance.defaults.adapter = vi.fn(async (config) => {
+    captured.push(config);
+    return {
+      data: {},
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    };
+  });
+
+  try {
+    await httpClient.get('/api/test');
+    return captured[0];
+  } finally {
+    axiosInstance.defaults.adapter = originalAdapter;
+  }
+};
+
 describe('HTTP Client - Shop ID Injection', () => {
   beforeEach(() => {
     // Clear localStorage before each test
@@ -36,23 +64,16 @@ describe('HTTP Client - Shop ID Injection', () => {
     it('should not inject X-Shop-ID header when shop ID is null', async () => {
       httpClient.setShopId(null);
 
-      try {
-        // This will fail due to no server, but we can check interceptor behavior
-        await httpClient.get('/api/test');
-      } catch (error: any) {
-        // The error should not have X-Shop-ID header
-        // (we're testing the interceptor setup, not actual requests)
-      }
+      const request = await captureNextRequest();
+      expect(readHeader(request.headers, 'X-Shop-ID')).toBeUndefined();
     });
 
     it('should inject shop ID via header', async () => {
-      const axiosInstance = httpClient.getAxiosInstance();
-      const requestSpy = vi.spyOn(axiosInstance.interceptors.request, 'use');
-
       httpClient.setShopId('shop_789');
 
-      // Request interceptor is already set up, verify shop ID is stored
+      const request = await captureNextRequest();
       expect(httpClient.getShopId()).toBe('shop_789');
+      expect(readHeader(request.headers, 'X-Shop-ID')).toBe('shop_789');
     });
   });
 

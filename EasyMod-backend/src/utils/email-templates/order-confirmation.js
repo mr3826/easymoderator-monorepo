@@ -5,7 +5,7 @@
  * @returns {{ subject: string, html: string, text: string }}
  */
 function orderConfirmationEmail(order, customer) {
-  const subject = `অর্ডার নিশ্চিত হয়েছে #${order.order_number || order.id} | EasyMod`;
+  const subject = `অর্ডার নিশ্চিত হয়েছে #${order.order_number || order.id} | EasyModerator`;
 
   const itemRows = (order.items || [])
     .map(
@@ -27,7 +27,7 @@ function orderConfirmationEmail(order, customer) {
       <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e4e4e7;">
         <tr>
           <td style="background:#16a34a;padding:24px 32px;">
-            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyMod ✓</h1>
+            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyModerator ✓</h1>
             <p style="margin:4px 0 0;color:#bbf7d0;font-size:13px;">অর্ডার নিশ্চিত হয়েছে</p>
           </td>
         </tr>
@@ -84,7 +84,7 @@ function orderConfirmationEmail(order, customer) {
         <tr>
           <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e4e4e7;">
             <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">
-              © 2025 EasyMod — BD F-Commerce Platform
+              © 2025 EasyModerator — Messenger sales and order automation
             </p>
           </td>
         </tr>

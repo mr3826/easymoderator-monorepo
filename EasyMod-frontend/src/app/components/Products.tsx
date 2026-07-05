@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, ChangeEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Upload, Bot, CheckCircle, Edit2, Trash2, AlertCircle, Search, Filter, Download, X, Loader2 } from "lucide-react";
+import { Plus, Upload, Bot, CheckCircle, Edit2, Trash2, AlertCircle, Search, Filter, X, Loader2, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogOverlay } from "./ui/dialog";
 import { apiClient } from "@/api";
 import type { Product } from "@/api/types/product";
@@ -266,7 +266,7 @@ export default function Products() {
 
     setApprovingIds(prev => [...prev, product.id]);
     try {
-      const created = await apiClient.createProduct(buildCreatePayload(product));
+      await apiClient.createProduct(buildCreatePayload(product));
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setAiGeneratedProducts(prev => prev.filter(p => p.id !== product.id));
     } catch (error: any) {
@@ -287,7 +287,7 @@ export default function Products() {
       setError(t('products.errors.someInvalidPrices'));
     }
 
-    const results = await Promise.allSettled(
+    await Promise.allSettled(
       validProducts.map(product =>
         apiClient.createProduct(buildCreatePayload(product))
           .then(() => {
@@ -415,10 +415,10 @@ export default function Products() {
         </div>
       ) : isFetched && allProducts.length === 0 && !appliedSearchQuery && !appliedFilters.category_id && !appliedFilters.is_active && !appliedFilters.minPrice && !appliedFilters.maxPrice ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4 bg-white rounded-xl border border-dashed border-gray-300">
-          <Bot className="h-12 w-12 text-gray-300" />
+          <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center max-w-md">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('products.emptyTitle', 'No products yet')}</h3>
-            <p className="text-sm text-gray-500">{t('products.emptySubtitle', 'Upload a CSV with your catalog or add your first product manually to get started.')}</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('products.emptyTitle', 'Add your first product')}</h3>
+            <p className="text-sm text-gray-500">{t('products.emptySubtitle', 'Add products so EasyModerator can recommend the right price, stock, size, and delivery details in customer conversations.')}</p>
           </div>
           <div className="flex gap-3">
             <button
@@ -643,7 +643,7 @@ export default function Products() {
                         <div className="flex flex-wrap gap-1">
                           {product.variants.map((variant, idx) => (
                             <span key={idx} className="inline-block px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded">
-                              {typeof variant === 'object' ? variant.name || variant : variant}
+                              {typeof variant === 'object' && variant !== null ? String((variant as { name?: unknown }).name ?? '') : String(variant)}
                             </span>
                           ))}
                         </div>
@@ -658,7 +658,7 @@ export default function Products() {
                           ? 'bg-gray-100 text-gray-700'
                           : 'bg-yellow-100 text-yellow-700'
                         }`}>
-                        {t(`products.status.${product.status}`, product.status)}
+                        {t(`products.status.${product.status}`, { defaultValue: product.status || '' })}
                       </span>
                     </td>
                     <td className="px-6 py-4">

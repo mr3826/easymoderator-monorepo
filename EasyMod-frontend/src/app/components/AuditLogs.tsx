@@ -64,7 +64,7 @@ export default function AuditLogs() {
         {loading ? (
           <p className="text-sm text-gray-500">Loading logs...</p>
         ) : logs.length === 0 ? (
-          <p className="text-sm text-gray-500">No logs found for current filters.</p>
+          <p className="text-sm text-gray-500">Audit activity matching these filters will appear here.</p>
         ) : (
           <div className="overflow-auto">
             <table className="w-full text-sm">

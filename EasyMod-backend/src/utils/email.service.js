@@ -12,7 +12,7 @@ const sendEmail = async ({ to, subject, text, html }) => {
         return { sent: false };
     }
 
-    const from = process.env.EMAIL_FROM || 'Easy Moderator <no-reply@easymod.tech>';
+    const from = process.env.EMAIL_FROM || 'EasyModerator <no-reply@easymod.tech>';
 
     // The Resend SDK does NOT throw on API errors (unverified sender domain,
     // invalid/restricted key, bad `from`, rate limit). It resolves to

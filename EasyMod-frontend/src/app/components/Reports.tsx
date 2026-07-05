@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, ShoppingCart, Brain, MessageSquare, Package, Download, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, ShoppingCart, MessageSquare, Package, Download, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/api';
 import { listMetaChannels, type MetaChannel } from '@/api/domains/meta-channels';
@@ -250,7 +250,7 @@ export default function Reports() {
       <div className="bg-white rounded-xl p-6 border border-gray-200 mb-8">
         <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <Brain className="w-6 h-6 text-purple-600" />
+            <MessageSquare className="w-6 h-6 text-purple-600" />
             <div>
               <h2 className="text-lg font-semibold text-gray-900">{t('reports.knowledgePerformance')}</h2>
               <p className="text-sm text-gray-500">{t('reports.knowledgeGapsSubtitle')}</p>

@@ -244,7 +244,7 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
                 return { success: false, reason: 'no_email' };
             }
 
-            const subject = '🔔 Payment Confirmation Required - Easy Moderator';
+            const subject = '🔔 Payment Confirmation Required - EasyModerator';
             const html = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px;">

@@ -1,5 +1,5 @@
-import { Receipt, AlertCircle, CheckCircle2, Download, Eye, TrendingUp, Package, ShoppingCart, MessageSquare, CreditCard, Clock } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { AlertCircle, CheckCircle2, Download, Eye, TrendingUp, Package, ShoppingCart, MessageSquare, CreditCard, Clock } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { Progress } from "@/app/components/ui/progress";
 import { Badge } from "@/app/components/ui/badge";
@@ -7,10 +7,6 @@ import { Switch } from "@/app/components/ui/switch";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
-import { FeatureGate } from "@/app/components/FeatureGate";
-import { UsageMeter } from "./billing/UsageMeter";
-import { BKashCheckout } from "./billing/BKashCheckout";
-import { PlanComparison } from "./billing/PlanComparison";
 
 interface Invoice {
   id: string;       // invoice_number (displayed)
@@ -143,7 +139,7 @@ export default function Subscription() {
       const ctx = JSON.parse(ctxRaw) as { kind: 'invoice' | 'topup'; ref: string };
       if (ctx.kind === 'topup') {
         const res = await apiClient.completeTopup(ctx.ref, paymentID);
-        setSuccess(t('subscription.topupPaymentSuccess', { count: res.conversations_added ?? '' }));
+        setSuccess(t('subscription.topupPaymentSuccess', { count: res.conversations_added ?? 0 }));
       } else {
         const res = await apiClient.completeInvoicePayment(ctx.ref, paymentID);
         setSuccess(
@@ -269,14 +265,6 @@ export default function Subscription() {
     }
   };
 
-  const planFeatures = [
-    'AI Auto-Reply & Chatbot',
-    'Image-based product understanding',
-    'Product question answering',
-    'Order draft creation',
-    'Cash on Delivery support'
-  ];
-
   // Top-up packs — must mirror the backend TOPUP_PACKS (subscription.plans.js)
   // so the displayed price + pack code match what is charged.
   const conversationPacks = [
@@ -339,7 +327,10 @@ export default function Subscription() {
       setError(null);
       setSuccess(null);
 
-      const response = await apiClient.subscribeToPlan(selectedPlan.id, billingCycle);
+      const response = await apiClient.subscribeToPlan(selectedPlan.id, billingCycle) as unknown as {
+        success?: boolean;
+        message?: string;
+      };
 
       if (response?.success) {
         setSuccess(response.message || t('subscription.planUpdateSuccess'));
@@ -625,8 +616,8 @@ export default function Subscription() {
                   ))}
                 </ul>
                 <div className="mt-4 space-y-1 text-xs text-gray-500">
-                  <div>{t('subscription.conversationsLimit')} {plan.limits.conversations < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.conversations.toLocaleString() })}</div>
-                  <div>{t('subscription.ordersLimit')} {plan.limits.orders < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.orders.toLocaleString() })}</div>
+                  <div>{t('subscription.conversationsLimit')} {plan.limits.conversations < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.conversations })}</div>
+                  <div>{t('subscription.ordersLimit')} {plan.limits.orders < 0 ? t('subscription.unlimited') : t('subscription.perMonthCount', { count: plan.limits.orders })}</div>
                   <div>{t('subscription.productsLimit')} {plan.limits.products < 0 ? t('subscription.unlimited') : plan.limits.products.toLocaleString()}</div>
                 </div>
                 <div className="mt-auto pt-5">
@@ -662,7 +653,7 @@ export default function Subscription() {
 
       {/* Section 3: Usage Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {/* AI Conversations */}
+        {/* Customer Conversations */}
         <div className="bg-white rounded-xl p-6 border border-gray-200">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">

@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, type Variants } from "motion/react";
+import { CheckCircle2, MessageCircle, ShieldCheck, Truck } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
-import { Switch } from "./ui/switch";
 import { useAuth } from "../../features/auth/AuthProvider";
 import { apiClient } from "@/api";
-import { subscriptionPlans, getPlanPrice } from "../lib/subscriptionPlans";
+import { subscriptionPlans } from "../lib/subscriptionPlans";
 import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
 import { signupSchema, type SignupFormData } from '../../features/auth/validation/schemas';
@@ -18,31 +18,34 @@ import { PasswordStrengthMeter } from '../../features/auth/components/PasswordSt
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { trackFunnelEvent } from "@/app/lib/funnel";
 
-const heroVariants = {
+const smoothEase = [0.22, 1, 0.36, 1] as const;
+
+const heroVariants: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.1 } },
 };
-const heroChild = {
+const heroChild: Variants = {
   hidden: { opacity: 0, y: 18 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: smoothEase } },
 };
 
-const featureStripVariants = {
+const featureStripVariants: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.1, delayChildren: 0.5 } },
 };
-const featureChild = {
+const featureChild: Variants = {
   hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: smoothEase } },
 };
+
+function stringList(value: unknown, fallback: string[]) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : fallback;
+}
 
 export default function Signup() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { signup } = useAuth();
-  const [billingAnnual, setBillingAnnual] = useState(false);
-  // Every new signup starts a card-less 14-day GROWTH trial.
-  const [selectedPlanId, setSelectedPlanId] = useState("growth");
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -64,15 +67,25 @@ export default function Signup() {
   }, []);
 
   const selectedPlan = useMemo(
-    () => subscriptionPlans.find((plan) => plan.id === selectedPlanId) ?? subscriptionPlans[0],
-    [selectedPlanId]
+    () => subscriptionPlans.find((plan) => plan.id === "growth") ?? subscriptionPlans[0],
+    []
+  );
+  const translatedGrowthHighlights = t('subscription.plans.growth.highlights', { returnObjects: true });
+  const trialBenefits = stringList(t('auth.signup.trialBenefits', { returnObjects: true }), [
+    "No credit card required",
+    "Upgrade anytime",
+    "Business Setup after signup",
+  ]);
+  const growthHighlights = stringList(
+    translatedGrowthHighlights && typeof translatedGrowthHighlights === 'object' && !Array.isArray(translatedGrowthHighlights)
+      ? Object.values(translatedGrowthHighlights as Record<string, unknown>)
+      : selectedPlan.highlights,
+    selectedPlan.highlights,
   );
 
   // Signup is always card-free now: every new shop gets a 14-day GROWTH trial
   // with no payment upfront. Keep the no-payment signup UX.
   const isFreePlan = true;
-
-  const formatPrice = (value: number) => `৳${value.toLocaleString()}`;
 
   const onSubmit = async (data: SignupFormData) => {
     try {
@@ -92,7 +105,7 @@ export default function Signup() {
         "easymod_selected_plan",
         JSON.stringify({
           planId: selectedPlan.id,
-          billing: billingAnnual ? "annual" : "monthly",
+          billing: "monthly",
         })
       );
 
@@ -109,9 +122,9 @@ export default function Signup() {
   };
 
   const signupFeatures = [
-    { icon: '🛡️', title: t('auth.signup.features.rtoShield.title'), desc: t('auth.signup.features.rtoShield.desc') },
-    { icon: '🚚', title: t('auth.signup.features.delivery.title'), desc: t('auth.signup.features.delivery.desc') },
-    { icon: '💬', title: t('auth.signup.features.chatbot.title'), desc: t('auth.signup.features.chatbot.desc') },
+    { icon: ShieldCheck, title: t('auth.signup.features.rtoShield.title'), desc: t('auth.signup.features.rtoShield.desc') },
+    { icon: Truck, title: t('auth.signup.features.delivery.title'), desc: t('auth.signup.features.delivery.desc') },
+    { icon: MessageCircle, title: t('auth.signup.features.chatbot.title'), desc: t('auth.signup.features.chatbot.desc') },
   ];
 
   return (
@@ -159,99 +172,38 @@ export default function Signup() {
         </motion.div>
 
         <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* Left — plan selection */}
+          {/* Left — trial value */}
           <div className="order-2 flex-1 min-w-0 lg:order-1">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">{t('auth.signup.choosePlan')}</h2>
-                  <p className="text-sm text-gray-500 mt-0.5">{t('auth.signup.annualSavings')}</p>
-                </div>
-                <div className="flex items-center gap-3 text-sm">
-                  <span className={`font-medium ${!billingAnnual ? 'text-gray-900' : 'text-gray-400'}`}>
-                    {t('auth.signup.monthly')}
-                  </span>
-                  <Switch
-                    checked={billingAnnual}
-                    onCheckedChange={(value: boolean) => setBillingAnnual(value)}
-                    aria-label={t('auth.signup.toggleAnnualBilling')}
-                    className="data-[state=checked]:bg-emerald-600"
-                  />
-                  <span className={`font-medium ${billingAnnual ? 'text-gray-900' : 'text-gray-400'}`}>
-                    {t('auth.signup.annual')}
-                  </span>
-                  <AnimatePresence>
-                    {billingAnnual && (
-                      <motion.span
-                        key="savings-badge"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        transition={{ duration: 0.2 }}
-                        className="bg-emerald-100 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-full"
-                      >
-                        {t('auth.signup.twoMonthsFree')}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
+              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                <p className="text-sm font-bold uppercase tracking-normal text-emerald-700">
+                  {t('auth.signup.trialEyebrow')}
+                </p>
+                <h2 className="mt-2 text-3xl font-black text-gray-900">{t('auth.signup.trialTitle')}</h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-gray-600">{t('auth.signup.trialSubtitle')}</p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  {trialBenefits.map((benefit) => (
+                    <div key={benefit} className="flex items-start gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-gray-700 shadow-sm">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>{benefit}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                {subscriptionPlans.filter((p) => p.id !== "partner").map((plan, i) => {
-                  const isSelected = plan.id === selectedPlanId;
-                  const price = getPlanPrice(plan, billingAnnual ? "yearly" : "monthly");
-                  return (
-                    <motion.button
-                      key={plan.id}
-                      type="button"
-                      onClick={() => setSelectedPlanId(plan.id)}
-                      className={`flex flex-col rounded-2xl border-2 p-5 text-left transition-colors duration-200 ${
-                        isSelected
-                          ? 'border-emerald-500 bg-emerald-50 shadow-md ring-1 ring-emerald-500/20'
-                          : 'border-gray-150 bg-white hover:border-emerald-300 hover:shadow-sm'
-                      }`}
-                      style={{ borderColor: isSelected ? '#00A651' : undefined }}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 + i * 0.08, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                      whileHover={!isSelected ? { y: -4, boxShadow: "0 8px 24px rgba(0,166,81,0.12)" } : {}}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <div className="flex items-start justify-between gap-1 mb-3">
-                        <p className="text-base font-bold text-gray-900">{plan.name}</p>
-                        {plan.popular && (
-                          <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-600 text-white">
-                            {t('auth.signup.popular')}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-end gap-1 mb-1">
-                        <span className="text-2xl font-extrabold text-gray-900">{formatPrice(price)}</span>
-                        <span className="text-xs text-gray-400 pb-1">{t('auth.signup.perMonth')}</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-4">
-                        {billingAnnual ? t('auth.signup.annualBilling') : t('auth.signup.monthlyBilling')}
-                      </p>
-
-                      <ul className="space-y-1.5 text-xs text-gray-600 flex-1">
-                        {plan.highlights.map((feature) => (
-                          <li key={feature} className="flex items-start gap-2">
-                            <span className="mt-0.5 text-emerald-500 font-bold">✓</span>
-                            <span>{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-
-                      {isSelected && (
-                        <div className="mt-4 pt-3 border-t border-emerald-200 text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                          {t('auth.signup.selectedPlan')}
-                        </div>
-                      )}
-                    </motion.button>
-                  );
-                })}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {growthHighlights.map((feature, i) => (
+                  <motion.div
+                    key={feature}
+                    className="flex min-h-[88px] items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 + i * 0.08, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <span className="text-sm font-semibold leading-6 text-gray-700">{feature}</span>
+                  </motion.div>
+                ))}
               </div>
             </div>
 
@@ -262,13 +214,13 @@ export default function Signup() {
               initial="hidden"
               animate="visible"
             >
-              {signupFeatures.map(({ icon, title, desc }) => (
+              {signupFeatures.map(({ icon: Icon, title, desc }) => (
                 <motion.div
                   key={title}
                   variants={featureChild}
                   className="bg-white rounded-xl border border-gray-100 p-3 flex items-start gap-2.5"
                 >
-                  <span className="text-xl">{icon}</span>
+                  <Icon className="h-5 w-5 shrink-0 text-emerald-700" />
                   <div>
                     <p className="text-xs font-semibold text-gray-800">{title}</p>
                     <p className="text-xs text-gray-400">{desc}</p>
@@ -434,7 +386,7 @@ export default function Signup() {
                   <div className="flex justify-between text-gray-600">
                     <span>{t('auth.signup.billing')}</span>
                     <span className="font-semibold text-gray-900">
-                      {billingAnnual ? t('auth.signup.annual') : t('auth.signup.monthly')}
+                      {t('auth.signup.monthly')}
                     </span>
                   </div>
                   <div className="border-t border-gray-200 pt-2 flex justify-between">

@@ -78,7 +78,7 @@ export default function InstallPrompt() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900">
-            {t("pwa.installTitle", "Install Easy Moderator")}
+            {t("pwa.installTitle", "Install EasyModerator")}
           </p>
           <p className="text-xs text-gray-500">
             {t("pwa.installSubtitle", "Add to your home screen for faster, app-like access.")}

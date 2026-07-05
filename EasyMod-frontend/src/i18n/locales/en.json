@@ -50,7 +50,7 @@
     "name": "Name",
     "description": "Description",
     "image": "Image",
-    "noData": "No data available",
+    "noData": "Nothing to show here yet.",
     "error": "Error",
     "success": "Success",
     "view": "View",
@@ -90,12 +90,12 @@
       "getStarted": "Get Started"
     },
     "hero": {
-      "badge": "The COD-trust OS for Bangladesh f-commerce",
-      "headline1": "The Order &",
-      "headline2": "COD-Trust",
-      "headline3": "OS for Your Shop",
-      "subheadline": "A Bangla-first Facebook Messenger AI sales assistant for BD f-commerce sellers. It drafts buyer replies, helps capture orders, and supports COD/RTO risk checks — so you ship with more confidence.",
-      "ctaStart": "Get Started →",
+      "badge": "Built for Bangladesh Messenger commerce",
+      "headline1": "Turn Facebook",
+      "headline2": "Messages Into",
+      "headline3": "Confirmed Orders",
+      "subheadline": "A Bangla-first Messenger sales assistant for BD shops. It drafts replies, captures order details, and flags risky COD orders so you can sell faster with more confidence.",
+      "ctaStart": "Start free →",
       "ctaDemo": "View Demo",
       "stat1Value": "Pilot",
       "stat1Label": "Private launch",
@@ -120,8 +120,8 @@
         },
         {
           "icon": "🙋",
-          "title": "AI hands hard questions to you",
-          "desc": "Unsure? The AI steps back and lets you reply personally — no wrong answers to customers."
+          "title": "Hard questions come to you",
+          "desc": "When EasyModerator is unsure, it pauses and asks you to reply personally — no risky answers sent to customers."
         }
       ]
     },
@@ -149,8 +149,8 @@
       "items": [
         {
           "icon": "🤖",
-          "title": "AI Chat",
-          "desc": "Automated answers to customer questions",
+          "title": "Instant customer replies",
+          "desc": "Answers product, delivery, and payment questions",
           "colorClass": "bg-blue-500/15 text-blue-400"
         },
         {
@@ -174,7 +174,7 @@
         {
           "icon": "📊",
           "title": "Analytics",
-          "desc": "Detailed reports on sales and conversations",
+          "desc": "Sales, reply, and order performance",
           "colorClass": "bg-cyan-500/15 text-cyan-400"
         },
         {
@@ -230,26 +230,26 @@
     "cta": {
       "heading1": "Start Today —",
       "heading2": "Protect Your COD Revenue",
-      "subheading": "Free to start. Messenger AI drafts + COD/RTO support in a guided setup.",
+      "subheading": "Free to start. Draft replies, order capture, and COD risk checks in a guided setup.",
       "button": "Get Started Now →"
     },
     "footer": {
-      "tagline": "The order + COD-trust OS for Bangladesh f-commerce"
+      "tagline": "Messenger sales and order automation for Bangladesh shops"
     }
   },
   "auth": {
     "signin": {
-      "tagline": "Messenger AI assistant for BD shops",
-      "heading": "Make your business smart.",
-      "subheading": "Facebook — manage all your Pages together.",
+      "tagline": "Messenger sales assistant for BD shops",
+      "heading": "Manage Facebook orders faster.",
+      "subheading": "Reply to customers, confirm orders, and keep your shop moving from one place.",
       "stats": [
         {
           "stat": "Pilot",
           "label": "Private Launch"
         },
         {
-          "stat": "98%",
-          "label": "Happy Customers"
+          "stat": "Draft",
+          "label": "Review First"
         },
         {
           "stat": "5 min",
@@ -257,14 +257,14 @@
         },
         {
           "stat": "24/7",
-          "label": "AI Support"
+          "label": "Reply Coverage"
         }
       ],
-      "testimonialQuote": "Draft-first Messenger AI keeps the seller in control while we prove launch metrics.",
-      "testimonialName": "Easy Moderator",
+      "testimonialQuote": "Draft-first Messenger replies keep the seller in control while orders are captured faster.",
+      "testimonialName": "EasyModerator",
       "testimonialShop": "BD pilot launch",
       "welcomeBack": "Welcome back! 👋",
-      "loginPrompt": "Sign in to your Easy Moderator account",
+      "loginPrompt": "Sign in to your EasyModerator account",
       "emailLabel": "Email or Mobile Number",
       "emailPlaceholder": "Enter your email",
       "passwordLabel": "Password",
@@ -287,9 +287,17 @@
       "signIn": "Sign in",
       "badge": "🇧🇩 Private BD seller pilot",
       "heading": "Start Today",
-      "subheading": "Grow your Bangladeshi business with AI — set up in just 5 minutes.",
-      "choosePlan": "Choose your plan",
-      "annualSavings": "Get 2 months free with annual billing",
+      "subheading": "Start replying faster and capturing orders in about 5 minutes.",
+      "choosePlan": "14-day Growth trial",
+      "annualSavings": "No credit card required. Upgrade anytime.",
+      "trialEyebrow": "14-day free trial",
+      "trialTitle": "Growth trial included",
+      "trialSubtitle": "Every new shop starts with the Growth plan trial. Create your account, prepare your shop, then upgrade only when you are ready to keep replies and order capture running.",
+      "trialBenefits": [
+        "No credit card required",
+        "Upgrade anytime",
+        "Business setup opens next"
+      ],
       "monthly": "Monthly",
       "annual": "Annual",
       "twoMonthsFree": "2 months free",
@@ -300,7 +308,7 @@
       "free": "Free",
       "selectedPlan": "✓ Selected plan",
       "createAccountHeading": "Create Account",
-      "activatePlan": "Fill in below to activate your plan.",
+      "activatePlan": "trial starts after account setup.",
       "fullName": "Full Name",
       "fullNamePlaceholder": "Enter your name",
       "email": "Email Address",
@@ -319,13 +327,13 @@
       "billing": "Billing",
       "payToday": "Payment today",
       "devModeAmount": "৳0 (Dev Mode)",
-      "freeAmount": "৳0 — Free forever",
-      "noCardFree": "No card needed — start free",
-      "upgradeAnytime": "Upgrade anytime as you grow.",
-      "startFreeButton": "Start Free →",
+      "freeAmount": "৳0 — 14-day trial",
+      "noCardFree": "No card needed — 14-day free trial",
+      "upgradeAnytime": "After signup, we will open Business Setup.",
+      "startFreeButton": "Create account and start setup →",
       "creating": "Creating account...",
       "createButton": "Create Account →",
-      "secure": "🔒 Your information is completely secure",
+      "secure": "Your shop information is protected",
       "features": {
         "rtoShield": {
           "title": "RTO Shield",
@@ -336,8 +344,8 @@
           "desc": "Direct delivery"
         },
         "chatbot": {
-          "title": "AI Chatbot",
-          "desc": "24/7 Auto Reply"
+          "title": "Sales assistant",
+          "desc": "24/7 draft replies"
         }
       },
       "errors": {
@@ -346,7 +354,7 @@
         "enterEmail": "Please enter a valid email.",
         "createPassword": "Please create a password.",
         "acceptTerms": "Please accept the terms to continue.",
-        "unableToCreate": "Unable to create account."
+        "unableToCreate": "We could not create your account. Check the details and try again."
       },
       "toggleAnnualBilling": "Toggle annual billing",
       "subscriptionPaymentMethod": "Subscription payment method"
@@ -385,8 +393,8 @@
   },
   "dashboard": {
     "pulse": {
-      "title": "Today's Status",
-      "subtitle": "Quick shop update, at a glance",
+      "title": "Business Health",
+      "subtitle": "Orders, replies, and cash position for today",
       "refresh": "Refresh",
       "loading": "Loading today's status...",
       "errorTitle": "Dashboard Could Not Load",
@@ -395,10 +403,10 @@
       "partialFail": "Some data could not be updated.",
       "cards": {
         "todaySales": "Today's Sales",
-        "confirmedOrders": "Confirmed",
+        "confirmedOrders": "Today's Orders",
         "confirmedOrdersUnit": "{{count}} Orders",
-        "missedReplies": "Unanswered",
-        "missedRepliesUnit": "{{count}} Missed",
+        "missedReplies": "Customers Waiting",
+        "missedRepliesUnit": "{{count}} waiting",
         "viewMissed": "View"
       },
       "status": {
@@ -408,15 +416,15 @@
         "paymentPending": "Payment Due 💳"
       },
       "botActivity": {
-        "title": "Bot Activity",
-        "botReplied": "Bot replied to {{count}} today ✅",
-        "needsAttention": "You need to check: {{count}} ⚠️"
+        "title": "Reply Performance",
+        "botReplied": "Replies drafted or sent today: {{count}}",
+        "needsAttention": "{{count}} customer items need review"
       },
       "atRisk": "⚠️ {{count}} customers at risk — check now",
       "latestOrders": {
         "title": "Last 5 Orders",
         "viewAll": "View All",
-        "empty": "No orders have come in today yet.",
+        "empty": "Today's orders will appear here after customers confirm details in Messenger.",
         "noProduct": "No product specified"
       },
       "liveUpdate": "Live update every 60 seconds",
@@ -433,37 +441,63 @@
     },
     "setup": {
       "loading": "Checking shop setup...",
-      "eyebrow": "First-time setup",
-      "title": "Finish your shop setup",
-      "subtitle": "Complete these essentials before using the live dashboard. Your sidebar stays open, and the normal dashboard appears automatically when every required item is done.",
+      "welcomeEyebrow": "Business Setup",
+      "welcomeTitle": "Welcome to EasyModerator!",
+      "welcomeSubtitle": "Let's prepare your business in about 5 minutes. We will help you connect Facebook, add products, review replies, and get ready to receive orders.",
+      "welcomeBullets": [
+        "Connect Facebook",
+        "Add products",
+        "Review reply settings",
+        "Get ready to receive orders"
+      ],
+      "estimatedTime": "Estimated time: about 5 minutes",
+      "startCta": "Start Business Setup",
+      "completeEyebrow": "Your shop is ready",
+      "completeTitle": "Your shop is ready.",
+      "completeSubtitle": "EasyModerator can now help reply to customers, recommend products, capture orders, and reduce manual work.",
+      "completeBullets": [
+        "Reply to customers",
+        "Recommend products",
+        "Capture orders",
+        "Reduce manual work"
+      ],
+      "goToDashboard": "Go To Dashboard",
+      "reviewReplySettings": "Review Reply Settings",
+      "eyebrow": "Business Setup Progress",
+      "title": "Complete Your Shop Setup",
+      "subtitle": "Finish these essentials so EasyModerator can help turn Messenger conversations into confirmed orders.",
       "refresh": "Refresh status",
-      "progressTitle": "Launch readiness",
+      "progressTitle": "Business Setup Progress",
       "progress": "{{completed}} of {{total}} complete",
+      "progressPercent": "Your shop is {{percent}}% ready.",
+      "progressOneLeft": "Only one step left.",
+      "progressAlmostReady": "Your business is almost ready.",
+      "progressReady": "Your shop is ready.",
       "complete": "Complete",
       "incomplete": "Needs work",
       "missingPrefix": "Missing:",
-      "noteTitle": "Draft-first AI is expected",
-      "noteBody": "EasyModerator keeps AI replies in draft mode by default. Review the draft answers with real customer questions before turning on any higher automation mode.",
+      "noteTitle": "Review first is recommended",
+      "noteBody": "EasyModerator keeps replies in Draft by default. Review real customer questions first, then switch to automatic replies only when you are comfortable.",
       "tasks": {
         "connect_channel": {
           "title": "Connect Facebook Page",
-          "description": "Connect at least one Facebook page so EasyModerator can receive and reply to customer messages.",
-          "cta": "Manage channel"
+          "description": "Receive customer messages automatically and keep every conversation in one inbox.",
+          "cta": "Connect Facebook"
         },
         "shop_profile": {
-          "title": "Complete shop profile",
-          "description": "Add the shop name, support contact, delivery details, and payment methods customers need.",
-          "cta": "Edit profile"
+          "title": "Complete Business Information",
+          "description": "Help customers trust your business with clear contact, delivery, and payment details.",
+          "cta": "Complete Info"
         },
         "first_product": {
-          "title": "Add first product",
-          "description": "Publish at least one active product. Three or more products are recommended before launch.",
-          "cta": "Add product"
+          "title": "Add Your First Product",
+          "description": "Allow EasyModerator to recommend products with the right price, stock, and details.",
+          "cta": "Add Product"
         },
         "ai_settings": {
-          "title": "Configure AI reply settings",
-          "description": "Keep AI replies in draft mode with a confidence threshold until the shop is ready for automation.",
-          "cta": "Review AI settings"
+          "title": "Review Reply Settings",
+          "description": "Choose when EasyModerator drafts, sends, or pauses replies for customer conversations.",
+          "cta": "Review Replies"
         }
       },
       "missing": {
@@ -471,13 +505,13 @@
         "support_contact": "support contact",
         "delivery_info": "delivery information",
         "payment_methods": "payment methods",
-        "automation_mode": "AI mode",
+        "automation_mode": "reply mode",
         "confidence_threshold": "confidence threshold"
       },
       "warnings": {
         "WEBHOOK_NOT_VERIFIED": "No recent webhook verification was found. Send a test message before launch.",
         "LOW_PRODUCT_COUNT": "Three or more active products are recommended before launch.",
-        "AI_NOT_DRAFT": "Draft mode is recommended for first launch verification."
+        "AI_NOT_DRAFT": "Review first is recommended for first launch verification."
       }
     },
     "nav": {
@@ -488,7 +522,7 @@
       "orders": "Orders",
       "customer": "Customer",
       "manageShop": "Manage Shop",
-      "aiKnowledge": "AI Knowledge",
+      "aiKnowledge": "FAQs",
       "reports": "Reports",
       "subscription": "Subscription"
     },
@@ -513,12 +547,12 @@
         "conversionRate": "Conversion Rate"
       },
       "ordersChart": "Orders This Week",
-      "noChartData": "No chart data available from the backend.",
+      "noChartData": "Connect Facebook and confirm orders to see trends here.",
       "channelStatus": "Channel Status",
       "activeChannels": "Active Channels",
-      "noActiveChannels": "No active channels",
+      "noActiveChannels": "Connect your Facebook Page to see messages here.",
       "channelsActive": "{{active}} of {{total}} channels are active",
-      "aiInsights": "AI-Generated Insights",
+      "aiInsights": "Shop Insights",
       "updatedAgo": "Updated 5 mins ago",
       "insights": {
         "performance": "Performance Overview",
@@ -531,7 +565,7 @@
         "decreased": "decreased"
       },
       "error": "Error Loading Dashboard",
-      "noMetrics": "No dashboard metrics available from the backend."
+      "noMetrics": "Dashboard insights will appear after your first Messenger conversations and orders."
     }
   },
   "inbox": {
@@ -559,7 +593,7 @@
     "outsideWindowPlaceholder": "Wait for the customer to message again...",
     "send": "Send",
     "sending": "Sending...",
-    "outsideWindowDisabled": "Meta's 24-hour messaging window has expired. Easy Moderator will not send out-of-window Messenger messages in this launch version.",
+    "outsideWindowDisabled": "Meta's 24-hour messaging window has expired. EasyModerator will not send out-of-window Messenger messages in this launch version.",
     "windowWarning": "The Messenger reply window is closing soon. Reply only if this is part of the active customer conversation.",
     "selectConversation": "Select a conversation to view messages",
     "imageProcessed": "Image processed ✓",
@@ -618,8 +652,8 @@
   },
   "products": {
     "title": "Products & Inventory",
-    "subtitle": "Manage your product catalog with AI assistance",
-    "uploadFile": "Upload File for AI",
+    "subtitle": "Add products so customer replies include the right price, stock, size, and delivery details.",
+    "uploadFile": "Upload Product File",
     "addManually": "Add Manually",
     "downloadTemplate": "Download Upload Template",
     "searchPlaceholder": "Search by product name, SKU",
@@ -634,7 +668,7 @@
     "allSources": "All Sources",
     "statusActive": "Active",
     "statusInactive": "Inactive",
-    "sourceAI": "AI Generated",
+    "sourceAI": "Imported",
     "sourceManual": "Manual",
     "priceMin": "Min",
     "priceMax": "Max",
@@ -650,28 +684,28 @@
       "actions": "Actions"
     },
     "noVariants": "No variants",
-    "aiSource": "AI ({{confidence}}%)",
+    "aiSource": "Imported ({{confidence}}%)",
     "loading": "Loading products...",
     "loadError": "Could not load products. Please try again.",
-    "emptyTitle": "No products yet",
-    "emptySubtitle": "Upload a CSV with your catalog or add your first product manually to get started.",
+    "emptyTitle": "Add your first product",
+    "emptySubtitle": "Add products so EasyModerator can recommend the right price, stock, size, and delivery details in customer conversations.",
     "uploadModal": {
       "title": "Upload Product File",
-      "subtitle": "Upload CSV, TSV, or text files for AI processing",
+      "subtitle": "Upload CSV, TSV, or text files and review the imported products before saving.",
       "dragDrop": "Drag and drop or click to upload",
       "chooseFile": "Choose File",
       "supported": "Supported: CSV, TSV, TXT",
-      "processing": "Processing with AI...",
-      "aiExtracting": "AI is extracting product information...",
-      "description": "Upload CSV, TSV, or text files for AI processing",
-      "extracting": "AI is extracting product information..."
+      "processing": "Reading your product file...",
+      "aiExtracting": "Reading product details from your file...",
+      "description": "Upload CSV, TSV, or text files and review the imported products before saving.",
+      "extracting": "Reading product details from your file..."
     },
     "reviewModal": {
-      "title": "Review AI-Generated Products",
-      "subtitle": "Review and approve products extracted by AI",
+      "title": "Review Imported Products",
+      "subtitle": "Review and approve products found in your file",
       "confidence": "Confidence: {{percent}}%",
       "approveAll": "Approve All",
-      "description": "Review and approve products extracted by AI",
+      "description": "Review and approve products found in your file",
       "skuLabel": "SKU:",
       "priceLabel": "Price:",
       "categoryLabel": "Category:",
@@ -806,7 +840,7 @@
     },
     "errors": {
       "unsupportedFileType": "Unsupported file type. Please upload CSV, TSV, or TXT files.",
-      "noProductsExtracted": "No products could be extracted from the file.",
+      "noProductsExtracted": "We could not extract products from this file. Check the columns and try again.",
       "uploadFailed": "Failed to process upload.",
       "invalidPrice": "Please set a valid price for {{name}} before approving.",
       "approveFailed": "Failed to approve product.",
@@ -949,7 +983,7 @@
       "streetAddress": "House / Road / Area",
       "productsSection": "Products",
       "addProduct": "Add Product",
-      "noProducts": "No products added yet",
+      "noProducts": "Add products before creating an order.",
       "orderSummary": "Order Summary",
       "subtotal": "Subtotal:",
       "discount": "Discount:",
@@ -967,7 +1001,7 @@
       "rtoWarning": "COD/unpaid orders carry higher return-to-origin (RTO) risk.",
       "createButton": "Create Order",
       "searchProducts": "Search and add products…",
-      "noProductsFound": "No products found"
+      "noProductsFound": "No matching products. Try another product name or SKU."
     },
     "detailModal": {
       "title": "Order Details",
@@ -1063,7 +1097,7 @@
     "allChannels": "All Channels",
     "addCustomer": "Add Customer",
     "loading": "Loading customers...",
-    "noCustomers": "No customers found",
+    "noCustomers": "Customer conversations will appear here after your Facebook Page is connected.",
     "noCustomersHint": "Try adjusting your search or filters",
     "columns": {
       "customer": "Customer",
@@ -1174,7 +1208,7 @@
         "facebook": [
           "Facebook will ask for your Page permissions",
           "Select your Facebook Page",
-          "EasyMod connects automatically"
+          "EasyModerator connects automatically"
         ]
       },
       "oauthPrivacyNote": "We never see your Facebook password",
@@ -1274,13 +1308,13 @@
       "pagesShowList": "see your Page list",
       "pagesMessaging": "read and send Messenger messages",
       "pagesManageMetadata": "subscribe to realtime webhooks",
-      "note": "EasyMod uses these permissions only for customer messages."
+      "note": "EasyModerator uses these permissions only for customer messages."
     },
     "aiModel": {
       "title": "AI Model Configuration",
       "subtitle": "The language model for AI auto-reply",
       "autoSelectedTitle": "AI Model: Auto-Selected for Best Results",
-      "autoSelectedDesc": "EasyMod automatically picks the best model for every conversation — available on all plans."
+      "autoSelectedDesc": "EasyModerator chooses the best reply path for every conversation - available on all plans."
     },
     "disconnectModal": {
       "title": "Disconnect {{name}}?",
@@ -1289,11 +1323,11 @@
     },
     "noPages": {
       "title": "No Facebook Page found",
-      "desc": "This is usually a Meta Business access issue, not an EasyMod problem. Meta only shows Pages assigned to the Facebook login you just used.",
+      "desc": "This is usually a Meta Business access issue, not an EasyModerator problem. Meta only shows Pages assigned to the Facebook login you just used.",
       "step1": "Open Meta Business Settings and select the correct Business Portfolio.",
       "step2": "In Users > People, confirm this Facebook login has full control or assigned access.",
       "step3": "In Accounts > Pages, confirm the Page is inside that portfolio.",
-      "step4": "Remove EasyMod from Business Integrations, then retry the connection.",
+      "step4": "Remove EasyModerator from Business Integrations, then retry the connection.",
       "openSettings": "Open Meta Business Settings",
       "tryAgain": "Try again"
     },
@@ -1308,162 +1342,9 @@
       "toggleTitle": "AI auto-reply toggle"
     }
   },
-  "knowledge": {
-    "title": "AI Knowledge Training",
-    "subtitle": "Train your AI with business information and FAQs",
-    "uploadKnowledge": "Upload Knowledge",
-    "uploading": "Uploading...",
-    "addFAQ": "Add FAQ",
-    "loading": "Loading knowledge data...",
-    "tabs": {
-      "overview": "Overview",
-      "faqs": "FAQs",
-      "branding": "Branding",
-      "gaps": "Knowledge Gaps",
-      "businessInfo": "Business Info",
-      "knowledgeGaps": "Knowledge Gaps"
-    },
-    "metrics": {
-      "activeKnowledge": "Active Knowledge",
-      "activeFAQs": "Active FAQs",
-      "totalAnswers": "Total Answers Used",
-      "knowledgeGaps": "Knowledge Gaps",
-      "totalAnswersUsed": "Total Answers Used"
-    },
-    "howItWorks": "How AI Knowledge Training Works",
-    "howItWorksDesc": "Upload documents about your business, and our AI will extract FAQs, business information, and branding guidelines. You review and approve before anything goes live.",
-    "badgePdf": "Supported: PDF, DOC, TXT, MD",
-    "badgeConfidence": "AI Confidence: 85-98%",
-    "badgeOverride": "Manual Override: Always Available",
-    "mostUsedFAQs": "Most Used FAQs",
-    "timesUsed": "{{count}} times used",
-    "knowledgeStatus": "Knowledge Status",
-    "statusItems": {
-      "businessInfo": "Business Info",
-      "brandingRules": "Branding Rules",
-      "activeFAQs": "Active FAQs",
-      "inactiveFAQs": "Inactive FAQs"
-    },
-    "manageFAQs": "Manage FAQs",
-    "faqCount": "{{active}} active / {{total}} total",
-    "branding": {
-      "toneLabel": "Tone of Voice",
-      "toneFormal": "Formal",
-      "toneFriendly": "Friendly",
-      "toneCasual": "Casual",
-      "emojiLabel": "Emoji Usage",
-      "emojiNone": "None",
-      "emojiLight": "Light (1-2 per message)",
-      "emojiModerate": "Moderate (3-4 per message)",
-      "emojiHeavy": "Heavy (5+ per message)",
-      "greetingLabel": "Greeting Style",
-      "greetingPlaceholder": "Hi! How can I help you?",
-      "closingLabel": "Closing Style",
-      "closingPlaceholder": "Thank you!",
-      "forbiddenLabel": "Forbidden Phrases (comma separated)",
-      "forbiddenPlaceholder": "maybe, I think, not sure",
-      "escalationLabel": "Escalation Keywords (comma separated)",
-      "escalationPlaceholder": "human, agent, help",
-      "escalationHint": "When a customer sends any of these keywords, AI auto-reply is automatically paused and the conversation is flagged for human review.",
-      "preview": "Preview",
-      "saveChanges": "Save Changes",
-      "toneOfVoice": "Tone of Voice",
-      "emojiUsage": "Emoji Usage",
-      "greetingStyle": "Greeting Style",
-      "closingStyle": "Closing Style",
-      "forbiddenPhrases": "Forbidden Phrases (comma separated)",
-      "escalationKeywords": "Escalation Keywords (comma separated)",
-      "previewGreetingFallback": "(greeting)",
-      "previewBody": "We're at {{address}}. Hours: {{hours}}.",
-      "previewClosingFallback": "(closing)",
-      "updateSuccess": "Branding rules updated and indexed.",
-      "updateFailed": "Failed to update branding rules."
-    },
-    "gaps": {
-      "title": "Unanswered Questions",
-      "desc": "These questions were asked by customers but don't have answers in your knowledge base.",
-      "askedTimes": "Asked {{count}} times",
-      "aiSuggested": "AI Suggested Answer:",
-      "confidence": "Confidence: {{percent}}%",
-      "createFAQ": "Create FAQ",
-      "dismiss": "Dismiss",
-      "description": "These questions were asked by customers but don't have answers in your knowledge base.",
-      "empty": "No unanswered questions — your AI is handling everything!",
-      "firstAsked": "First asked: {{date}}",
-      "lastAsked": "Last asked: {{date}}"
-    },
-    "uploadModal": {
-      "title": "Upload Knowledge Document",
-      "subtitle": "Upload documents containing FAQs, business info, or branding guidelines",
-      "privacy": "Privacy notice:",
-      "privacyText": "Content uploaded here is processed by our AI to generate automated responses. Uploaded data is stored encrypted and isolated to your shop only.",
-      "dragDrop": "Drag and drop or click to upload",
-      "chooseFile": "Choose File",
-      "supported": "Supported: DOC, DOCX, TXT",
-      "extracting": "AI Extracting Knowledge...",
-      "extractingMsg": "Analyzing FAQs, business info, and branding...",
-      "privacyNoticeLabel": "Privacy notice:",
-      "privacyNotice": "Content uploaded here is processed by our AI to generate automated responses. Uploaded data is stored encrypted and isolated to your shop only.",
-      "supportedFormats": "Supported: DOC, DOCX, TXT",
-      "readingFile": "Reading file…",
-      "uploading": "Uploading…",
-      "done": "Done!",
-      "analyzing": "Analyzing FAQs, business info, and branding..."
-    },
-    "reviewModal": {
-      "title": "Review Extracted Knowledge",
-      "confidence": "Confidence: {{percent}}%",
-      "extractedFAQs": "Extracted FAQs",
-      "extractedBusiness": "Extracted Business Info",
-      "extractedBranding": "Extracted Branding Rules",
-      "approveAll": "Approve All",
-      "questionLabel": "Question",
-      "answerLabel": "Answer",
-      "categoryLabel": "Category",
-      "categoryPlaceholder": "e.g., Delivery, Payment, Policy",
-      "saveFAQ": "Save FAQ",
-      "editFAQ": "Edit FAQ",
-      "addNewFAQ": "Add New FAQ",
-      "questionPlaceholder": "What is your question?",
-      "answerPlaceholder": "Your answer here…"
-    },
-    "errors": {
-      "loadFailed": "Failed to load knowledge data",
-      "loadGapsFailed": "Failed to load knowledge gaps.",
-      "unsupportedFile": "Only .txt, .doc, or .docx files are supported.",
-      "uploadFailed": "Failed to upload document.",
-      "updateFaqFailed": "Failed to update FAQ.",
-      "deleteFaqFailed": "Failed to delete FAQ.",
-      "saveFaqFailed": "Failed to save FAQ."
-    },
-    "uploadQueued": "Document uploaded and queued for indexing.",
-    "faqActivated": "FAQ activated.",
-    "faqDeactivated": "FAQ deactivated.",
-    "faqDeleted": "FAQ deleted.",
-    "faqSaved": "FAQ saved.",
-    "noActiveFAQs": "No active FAQs yet.",
-    "notSet": "Not set",
-    "businessInfoTab": {
-      "shopName": "Shop Name",
-      "shopNamePlaceholder": "My Boutique",
-      "address": "Address",
-      "addressPlaceholder": "Dhaka, Bangladesh",
-      "phone": "Phone",
-      "phonePlaceholder": "+880 1XXX-XXXXXX",
-      "openingHours": "Opening Hours",
-      "openingHoursPlaceholder": "Sat–Thu 10am–9pm",
-      "save": "Save Business Info",
-      "updateSuccess": "Business info updated and indexed.",
-      "updateFailed": "Failed to update business info."
-    },
-    "confidenceBadge": "{{percent}}% confidence",
-    "faqSource": "Source: {{source}}",
-    "faqUsedTimes": "Used {{count}} times",
-    "noFAQs": "No FAQs yet. Add one or upload a document to get started."
-  },
   "reports": {
-    "title": "Reports & Analytics",
-    "subtitle": "AI-powered insights and business intelligence",
+    "title": "Sales and Reply Performance",
+    "subtitle": "Track sales, replies, orders, and customer questions",
     "metrics": {
       "totalMessages": "Total Messages",
       "activeProducts": "Active Products",
@@ -1471,12 +1352,12 @@
       "conversionRate": "Conversion Rate",
       "ordersInPeriod": "Orders (last {{period}}d)"
     },
-    "knowledgePerformance": "Knowledge Base Performance",
-    "knowledgeNotConnected": "Backend knowledge analytics not connected.",
-    "knowledgeHint": "Connect knowledge analytics endpoints to populate this section.",
-    "channelPerformance": "Channel Performance Analysis",
+    "knowledgePerformance": "Unanswered Customer Questions",
+    "knowledgeNotConnected": "Question analytics are not connected yet.",
+    "knowledgeHint": "Customer question insights will appear here after conversations are processed.",
+    "channelPerformance": "Messenger Connection Performance",
     "loading": "Loading...",
-    "noChannelData": "No channel data available. Connect your channels to see performance metrics.",
+    "noChannelData": "Connect your Facebook Page to see Messenger performance here.",
     "columns": {
       "channel": "Channel",
       "messages": "Messages",
@@ -1489,25 +1370,25 @@
       "reportData": "Failed to load report data",
       "loadChannelData": "Failed to load channel data",
       "loadReportData": "Failed to load report data",
-      "noMetrics": "No dashboard metrics available from the backend."
+      "noMetrics": "Sales and reply metrics will appear after customer conversations start."
     },
-    "aiPerformance": "AI Performance (today)",
+    "aiPerformance": "Reply Assistant Performance (today)",
     "ai": {
       "messagesHandled": "Messages handled",
-      "llmCalls": "LLM calls",
-      "cacheHits": "Cache hits",
-      "estCost": "Est. AI cost"
+      "llmCalls": "Replies prepared",
+      "cacheHits": "Saved answers reused",
+      "estCost": "Estimated reply cost"
     },
-    "knowledgeGapsSubtitle": "Questions your AI couldn't answer.",
+    "knowledgeGapsSubtitle": "Questions EasyModerator could not answer confidently.",
     "exportCsv": "Export CSV",
-    "noKnowledgeGaps": "No unanswered questions yet — your AI is handling everything!",
+    "noKnowledgeGaps": "No unanswered customer questions yet. New gaps will appear here when a reply needs your input.",
     "gapColumns": {
       "question": "Question",
       "platform": "Platform",
       "language": "Language",
       "date": "Date"
     },
-    "connectFirstChannel": "Connect your first channel →"
+    "connectFirstChannel": "Connect Facebook Page →"
   },
   "manageShop": {
     "title": "Manage Shop",
@@ -1527,14 +1408,14 @@
       "openingHours": "Opening Hours",
       "saving": "Saving...",
       "saveChanges": "Save Changes",
-      "successMsg": "Business info updated and indexed.",
-      "errorLoad": "Failed to load business info.",
-      "errorUpdate": "Failed to update business info.",
+      "successMsg": "Business info saved and ready for future replies.",
+      "errorLoad": "Business information could not load. Refresh and try again.",
+      "errorUpdate": "Business information could not be saved. Check the details and try again.",
       "sectionTitle": "Business Information",
       "openingHoursPlaceholder": "e.g. Sat–Thu 9am–9pm",
-      "additionalInfo": "Additional owner info",
-      "additionalInfoPlaceholder": "Any shop-specific facts, policies, sizing notes, warranty rules, or tone guidance the AI should know.",
-      "additionalInfoHelp": "Saved here is used as shop knowledge for AI replies.",
+      "additionalInfo": "Extra shop information",
+      "additionalInfoPlaceholder": "Add any shop facts, policies, sizing notes, warranty rules, or tone guidance EasyModerator should use in replies.",
+      "additionalInfoHelp": "Saved here can be used by the reply assistant when customers ask.",
       "social": {
         "title": "Social Media Links",
         "help": "Any links you add will be shown in the \"Follow us\" section of the order-confirmation message. (optional)",
@@ -1544,14 +1425,14 @@
     },
     "faqs": {
       "title": "FAQs",
-      "subtitle": "Manage the answers the AI can use for customer questions.",
+      "subtitle": "Manage answers EasyModerator can use when customers ask.",
       "addFaq": "Add FAQ",
       "refresh": "Refresh",
       "loading": "Loading FAQs...",
       "manageTitle": "FAQ answers",
       "faqCount": "{{active}} active / {{total}} total",
       "emptyTitle": "No FAQs yet",
-      "emptyDescription": "Add common delivery, payment, return, and ordering answers so AI replies have shop-specific context.",
+      "emptyDescription": "Add common delivery, payment, return, and ordering answers so customer replies include your shop details.",
       "activate": "Activate",
       "deactivate": "Deactivate",
       "edit": "Edit FAQ",
@@ -1561,7 +1442,7 @@
       "confidence": "{{percent}}% confidence",
       "confirmDelete": "Delete this FAQ?",
       "validationError": "Question and answer are required.",
-      "saved": "FAQ saved.",
+      "saved": "Answer saved. EasyModerator can use it in customer replies.",
       "deleted": "FAQ deleted.",
       "activated": "FAQ activated.",
       "deactivated": "FAQ deactivated.",
@@ -1595,7 +1476,7 @@
     },
     "deliverySettings": {
       "title": "Delivery Settings",
-      "subtitle": "Configure your delivery providers for automated order fulfillment",
+      "subtitle": "Connect couriers and set delivery charges for orders.",
       "zoneInsideDhaka": "Dhaka",
       "zoneSubDhaka": "Sub Dhaka",
       "zoneOutsideDhaka": "Outside Dhaka",
@@ -1840,40 +1721,40 @@
       }
     },
     "aiSettings": {
-      "title": "AI Behaviour Settings",
-      "subtitle": "Control how the AI chatbot operates across all connected channels.",
-      "saveSuccess": "AI settings saved.",
-      "saveError": "Failed to save AI settings.",
-      "saveButton": "Save AI Settings",
-      "automationModeLabel": "How should the bot work?",
+      "title": "Reply Settings",
+      "subtitle": "Choose when EasyModerator drafts, sends, or pauses replies.",
+      "saveSuccess": "Reply settings saved.",
+      "saveError": "Reply settings could not be saved.",
+      "saveButton": "Save Reply Settings",
+      "automationModeLabel": "How should replies be handled?",
       "mode": {
-        "autoTitle": "🤖 Fully Automatic",
-        "autoDesc": "The bot sends replies on its own",
-        "draftTitle": "👁️ Review then send (Draft)",
-        "draftDesc": "Shows you the reply before sending",
-        "manualTitle": "✋ I'll send myself",
-        "manualDesc": "The bot won't send anything on its own"
+        "autoTitle": "Send automatically",
+        "autoDesc": "EasyModerator sends confident replies on its own",
+        "draftTitle": "Review first (Recommended)",
+        "draftDesc": "EasyModerator writes a draft, but you approve before customers receive it",
+        "manualTitle": "Manual replies only",
+        "manualDesc": "EasyModerator will not send or draft replies automatically"
       },
-      "languageLabel": "How should the bot talk?",
+      "languageLabel": "How should replies sound?",
       "language": {
         "mixed": "Friendly Banglish (default)",
         "bn": "Plain Bengali",
         "en": "English"
       },
-      "confidenceLabel": "How confident must the bot be before replying on its own?",
+      "confidenceLabel": "How confident must EasyModerator be before replying on its own?",
       "confidenceHint": "More cautious ◀━━━●━━━▶ More independent",
       "confidenceCautious": "Cautious",
       "confidenceBalanced": "Balanced",
       "confidenceIndependent": "Independent",
-      "maxAutoOrderLabel": "Max Auto-Order Value (৳)",
+      "maxAutoOrderLabel": "Maximum automatic order value (৳)",
       "maxAutoOrderHint": "Orders above this amount require manual approval.",
-      "autoReplyEnabled": "Auto-reply enabled",
+      "autoReplyEnabled": "Automatic replies enabled",
       "askEmail": "Ask customer for email",
-      "greetingLabel": "Greeting message",
+      "greetingLabel": "First customer message reply",
       "greetingHint": "(after the customer's first message in a new conversation)",
       "greetingPlaceholder": "e.g. Welcome! How can I help you?",
       "disclosurePrefix": "Always shown (Meta rule):",
-      "disclosureText": "You are chatting with the automated AI assistant of [your shop].",
+      "disclosureText": "You are chatting with the automated assistant of [your shop].",
       "disclosureSuffix": "— this clearly tells the customer that an automated system is replying. It cannot be turned off; your text below is added after it.",
       "closingLabel": "Closing message",
       "closingHint": "(when an order is confirmed)",
@@ -1891,8 +1772,8 @@
         "email_address": "Email address",
         "special_instructions": "Special instructions"
       },
-      "handoffTitle": "Human Handoff Settings",
-      "notificationChannel": "Notification Channel",
+      "handoffTitle": "When We Should Alert You",
+      "notificationChannel": "Alert channel",
       "notifInApp": "In-app notification",
       "notifEmail": "Email",
       "notifSms": "SMS",
@@ -1900,25 +1781,25 @@
       "telegramConnected": "Telegram alerts are connected for this shop.",
       "telegramDisconnected": "Connect Telegram alerts from Notifications before this channel can send group alerts.",
       "cooldownLabel": "Cooldown (minutes)",
-      "triggerKeywordsLabel": "Trigger Keywords",
+      "triggerKeywordsLabel": "Alert keywords",
       "triggerKeywordsPlaceholder": "e.g. complain, refund"
     }
   },
   "subscription": {
     "title": "Plan & Billing",
-    "subtitle": "Manage your subscription and view usage details",
+    "subtitle": "Keep Messenger replies, order capture, and billing running",
     "loading": "Loading subscription details...",
-    "noData": "No subscription data yet",
-    "noDataMsg": "This shop doesn't have any subscription details available. Try reloading or check back later.",
+    "noData": "Billing details are not ready yet",
+    "noDataMsg": "We could not find billing details for this shop. Reload, then contact support if it happens again.",
     "reload": "Reload",
     "planTitle": "{{plan}} Plan",
-    "imageUnderstanding": "Image Understanding Enabled",
+    "imageUnderstanding": "Understands Product Photos",
     "price": "৳{{price}} BDT / {{cycle}}",
     "nextBilling": "Next billing: {{date}}",
-    "addConversations": "Add More Conversations",
-    "upgradePlan": "Upgrade Plan",
+    "addConversations": "Add Customer Conversations",
+    "upgradePlan": "Keep Replies Running",
     "plansTitle": "Plans",
-    "plansSubtitle": "Switch billing cycles or change your package.",
+    "plansSubtitle": "Review billing options for the Growth plan.",
     "monthly": "Monthly",
     "annual": "Annual",
     "twoMonthsFree": "2 months free",
@@ -1929,7 +1810,7 @@
     "productsLimit": "Products:",
     "currentPlan": "Current plan",
     "switchPlan": "Switch plan",
-    "aiConversations": "AI Conversations",
+    "aiConversations": "Customer Conversations",
     "usagePerMonth": "{{used}} / {{limit}} per month",
     "statusSafe": "Safe",
     "statusAlmostUsed": "Almost Used",
@@ -1937,19 +1818,19 @@
     "extraUsageNote": "Extra usage will be added to next bill",
     "ordersCreated": "Orders Created",
     "productsUsed": "Products Used",
-    "extraAlert": "Your AI is still running",
-    "extraAlertMsg": "You have used {{count}} extra AI conversations. Your service is not stopped.",
+    "extraAlert": "Replies are still running",
+    "extraAlertMsg": "You have used {{count}} extra customer conversations. Replies and order capture are not stopped.",
     "extraCount": "Extra usage count:",
     "extraCharge": "Estimated extra charge:",
     "nextInvoiceNote": "This amount will be added to your next invoice.",
-    "addConversationsTitle": "Add More AI Conversations",
+    "addConversationsTitle": "Add Customer Conversations",
     "addedToCurrentPlan": "Added to your current plan",
     "requestInvoice": "Request Invoice",
     "invoiceNote": "Conversations will be available immediately after invoice approval.",
     "planIncludes": "Your Plan Includes",
     "planFeatures": [
-      "AI Auto-Reply & Chatbot",
-      "Image-based product understanding",
+      "Instant Messenger replies",
+      "Understands product photos",
       "Product question answering",
       "Order draft creation",
       "Cash on Delivery support"
@@ -1975,7 +1856,7 @@
     "toastUpgradeHint": "Upgrade or buy an extra pack.",
     "paymentCancelled": "Payment was cancelled or not completed. Please try again.",
     "topupPaymentSuccess": "Payment successful! {{count}} conversations added to your balance.",
-    "invoicePaymentSuccessActive": "Payment successful! Your subscription is active and the AI assistant is running.",
+    "invoicePaymentSuccessActive": "Payment successful. Your replies and order automation stay active.",
     "invoicePaymentSuccess": "Payment successful! Your invoice has been paid.",
     "paymentVerifyFailed": "Payment verification failed. Please contact support.",
     "loadFailed": "Failed to load subscription data",
@@ -1987,16 +1868,16 @@
     "trialEndsUrgent_other": "⚠️ Trial ends in {{count}} days!",
     "trialRemaining": "Trial: {{count}} day remaining",
     "trialRemaining_other": "Trial: {{count}} days remaining",
-    "trialUrgentMsg": "Upgrade now to keep your conversations and data.",
-    "trialMsg": "Enjoying Easy Moderator? Pick a plan before your trial ends.",
+    "trialUrgentMsg": "Upgrade to keep Messenger replies and order capture running.",
+    "trialMsg": "Do not miss customer replies after your trial. Pick a plan before it ends.",
     "viewPlans": "View plans",
     "statusTrial": "Trial",
     "statusPaymentDue": "Payment due",
     "statusTrialEnded": "Trial ended",
-    "statusAiPaused": "AI paused",
+    "statusAiPaused": "Automatic replies paused",
     "statusCancelled": "Cancelled",
-    "invoiceDueWarning": "Your monthly invoice is due. If not paid within 3 days, the AI assistant will be turned off.",
-    "aiPausedNote": "The AI assistant is off. Pay your monthly subscription to turn it back on.",
+    "invoiceDueWarning": "Your monthly invoice is due. If it is not paid within 3 days, automatic replies may pause.",
+    "aiPausedNote": "Automatic replies are paused. Pay your monthly subscription to resume reply drafts and order automation.",
     "payActivateBkash": "Pay ৳{{price}} with bKash",
     "popular": "Popular",
     "perMonthShort": "/mo",
@@ -2013,10 +1894,10 @@
     "conversationsCount": "{{count}} conversations",
     "plusConversations": "+{{count}} conversations",
     "addedToMonthlyLimit": "Added to your monthly limit",
-    "imageUnderstandingTitle": "Image Understanding",
-    "imageUnderstandingDesc": "AI reads product images to answer customer questions",
-    "advancedAiTitle": "Advanced AI",
-    "advancedAiDesc": "Higher accuracy responses + 30 req/min rate limit",
+    "imageUnderstandingTitle": "Understands Product Photos",
+    "imageUnderstandingDesc": "Uses product photos to answer customer questions more accurately",
+    "advancedAiTitle": "Better Reply Accuracy",
+    "advancedAiDesc": "More accurate replies for product, delivery, payment, and order questions",
     "toggleAnnualBilling": "Toggle annual billing",
     "payInvoiceTitle": "Pay this invoice with bKash",
     "viewInvoiceTitle": "View / Print invoice",
@@ -2038,31 +1919,31 @@
     "testMode": "Test mode",
     "testModeNote": "Test mode: no real payment will be made.",
     "invoiceCreateFailed": "Failed to create invoice",
-    "invoiceCreatedMsg": "Invoice created ({{number}}). Please pay {{price}} BDT via bKash and contact support@easymod.ai to activate your pack.",
+    "invoiceCreatedMsg": "Invoice created ({{number}}). Please pay {{price}} BDT via bKash and contact support@easymod.tech to activate your pack.",
     "yearly": "Yearly",
     "free": "Free",
     "perOrder": "/order",
     "perMonth": "/month",
     "perMonthBilledYearly": "/month (billed yearly)",
     "confirmPlan": "Change plan",
-    "upgradeToUnlock": "Upgrade to unlock",
+    "upgradeToUnlock": "Upgrade to reply faster",
     "featureAvailablePrefix": "is available on the",
     "featureAvailableSuffix": "plan and above.",
     "planNameLabel": "{{plan}} Plan",
     "pricePerMonth": "৳{{price}}/mo",
     "notNow": "Not now",
     "upgradeNow": "Upgrade now",
-    "upgradeUnlockTitle": "Upgrade to {{plan}} to unlock {{feature}}",
+    "upgradeUnlockTitle": "Upgrade to {{plan}} to keep {{feature}} available",
     "upgradeToPlan": "Upgrade to {{plan}}",
     "plans": {
       "growth": {
         "name": "Growth",
-        "description": "Your complete AI sales team — one simple price. 14-day free trial, no card needed.",
+        "description": "Messenger sales and order automation — one simple price. 14-day free trial, no card needed.",
         "highlights": {
-          "0": "All features unlimited — no locks",
-          "1": "Facebook AI Inbox",
-          "2": "Advanced RTO Shield + Analytics",
-          "3": "Broadcast + Campaign + understands voice/images",
+          "0": "Everything you need to start selling on Messenger",
+          "1": "Facebook sales inbox",
+          "2": "COD risk checks and performance reports",
+          "3": "Campaigns plus voice and product photo support",
           "4": "14-day free trial — no card required"
         }
       },
@@ -2133,7 +2014,7 @@
     }
   },
   "pwa": {
-    "installTitle": "Install Easy Moderator",
+    "installTitle": "Install EasyModerator",
     "installSubtitle": "Add to your home screen for faster, app-like access.",
     "install": "Install",
     "dismiss": "Dismiss"
@@ -2146,74 +2027,6 @@
     "providerError": "Meta returned an error: {{error}}",
     "retry": "Back to Chat Settings"
   },
-  "onboarding": {
-    "quickSetup": "Quick Setup",
-    "skipSetup": "Skip setup",
-    "closeWizard": "Close wizard",
-    "stepCounter": "{{current}} of {{total}} steps",
-    "tipLabel": "Tip:",
-    "back": "Go back",
-    "toast": {
-      "completed": "Setup completed. Keep AI in Draft while you test live conversations.",
-      "incomplete": "Finish the required setup checklist before completing onboarding.",
-      "completeError": "Could not complete onboarding. Please try again.",
-      "closeBlocked": "Complete the required setup checklist before closing onboarding."
-    },
-    "requirements": {
-      "title": "Required before launch",
-      "facebook": "Facebook Page connected",
-      "businessInfo": "Business info saved",
-      "knowledge": "At least one active product added",
-      "assistantTest": "Assistant test reply created",
-      "checking": "Checking..."
-    },
-    "steps": {
-      "facebook": {
-        "title": "Connect your Facebook Page",
-        "subtitle": "Step 1 of 5 — Channel",
-        "description": "Connect your Facebook Business Page. Without this, AI replies won't work.",
-        "tip": "Add Easy Moderator under Facebook Page > Settings > Advanced Messaging > Handover Protocol.",
-        "actionLabel": "Connect Facebook →",
-        "skipLabel": "I'll do it later",
-        "completedLabel": "Facebook"
-      },
-      "products": {
-        "title": "Add 3–5 Products",
-        "subtitle": "Step 2 of 5 — Products",
-        "description": "The AI needs to know about your products. Provide a name, price, and description.",
-        "tip": "Add photos to your products so the AI can recognise products from images too.",
-        "actionLabel": "Add Products →",
-        "skipLabel": "I'll do it later",
-        "completedLabel": "Products"
-      },
-      "faqs": {
-        "title": "Add 5 Common FAQs",
-        "subtitle": "Step 3 of 5 — Knowledge Base",
-        "description": "Answer common questions like delivery charge, payment method, and return policy. The AI will learn them.",
-        "tip": "The more FAQs you add, the more accurate the AI becomes.",
-        "actionLabel": "Add FAQs →",
-        "skipLabel": "I'll do it later",
-        "completedLabel": "FAQs"
-      },
-      "aiMode": {
-        "title": "Keep AI Mode: DRAFT",
-        "subtitle": "Step 4 of 5 — AI Settings",
-        "description": "In DRAFT mode the AI writes replies, but they're only sent after you approve them. This is the safest option for new sellers.",
-        "tip": "Keep it on DRAFT for 7–14 days. Once the AI replies well, you can switch to AUTO.",
-        "actionLabel": "View AI Settings →",
-        "skipLabel": "Keep DRAFT (Recommended)",
-        "completedLabel": "AI Mode"
-      },
-      "preview": {
-        "title": "All ready! View your Inbox",
-        "subtitle": "Step 5 of 5 — You're set!",
-        "description": "Your setup is complete. Now when a customer messages, the AI will create a DRAFT reply — it's sent only once you approve.",
-        "tip": "Go to the Inbox and watch how the AI replies. You don't need to approve everything at first — just learn.",
-        "actionLabel": "View Inbox →",
-        "completedLabel": "Preview"
-      }
-    }
-  },
   "pricing": {
     "mostPopular": "Most Popular",
     "perMonth": "/mo",
@@ -2224,18 +2037,18 @@
     "startFreeTrial": "Start 14-day free trial",
     "limits": {
       "unlimitedConversations": "Unlimited conversations",
-      "conversationsFairUse": "AI conversations — fair use",
+      "conversationsFairUse": "Customer conversations — fair use",
       "unlimitedOrders": "Unlimited orders",
       "ordersPerMonth": "{{count}} orders/mo",
       "unlimitedProducts": "Unlimited products",
       "products": "{{count}} products"
     },
     "features": {
-      "imageUnderstanding": "Image Understanding",
-      "advancedAi": "Advanced AI",
+      "imageUnderstanding": "Understands product photos",
+      "advancedAi": "Better reply accuracy",
       "prioritySupport": "Priority Support",
       "customBranding": "Custom Branding (White-label)",
-      "facebookInbox": "Facebook AI Inbox",
+      "facebookInbox": "Facebook sales inbox",
       "extraConversationPack": "Extra conversation pack — top up whenever you need"
     },
     "hero": {
@@ -2255,8 +2068,8 @@
       "q1": "Is there a free trial?",
       "a1": "Yes — new shops get a 14-day free trial, no card required. All Growth features stay active during the trial.",
       "q2": "What happens when the trial ends?",
-      "a2": "After the trial, upgrade to ৳999/month to keep the AI running. If you don't, AI auto-reply pauses, but you can still reply yourself from the inbox — no data is lost.",
-      "q3": "How many AI conversations do I get per month?",
+      "a2": "After the trial, upgrade to ৳999/month to keep automatic replies and order capture running. If you do not, automatic replies pause, but you can still reply yourself from the inbox — no data is lost.",
+      "q3": "How many customer conversations do I get per month?",
       "a3": "Enough for a typical growing shop (fair-use). If you need more, you can buy a conversation top-up anytime from the Subscription page.",
       "q4": "What happens when the conversation limit runs out?",
       "a4": "You get a free buffer; after that, AI auto-reply pauses. Buy a top-up pack from the Subscription page to resume instantly.",
@@ -2264,8 +2077,8 @@
       "a5": "Apply via 'Learn about the Partner Plan' at the bottom of the Pricing page. We verify 300+ orders/month and activate it — charged per delivered order, with no monthly fee."
     },
     "cta": {
-      "heading": "Ready to automate your shop?",
-      "subheading": "Pick a plan and start today. No hidden fees.",
+      "heading": "Ready to turn more messages into orders?",
+      "subheading": "Start your Growth trial today. No hidden fees.",
       "button": "Get started now"
     },
     "partnerModal": {
@@ -2309,7 +2122,7 @@
         "status": "Status",
         "trialEnds": "Trial ends",
         "conversations": "Conversations",
-        "onboarding": "Onboarding",
+        "onboarding": "Business Setup",
         "complete": "Complete",
         "incomplete": "Incomplete"
       },
@@ -2361,7 +2174,7 @@
   "errors": {
     "meta": {
       "tokenExpired": "Reconnect your page (security token expired)",
-      "needsMessageAccess": "Easy Moderator needs message access — please re-authorize",
+      "needsMessageAccess": "EasyModerator needs message access - please re-authorize",
       "sessionInvalid": "Session token invalid. Please reconnect your Facebook page.",
       "pageNotFound": "We couldn't find that page. Did you switch business managers?",
       "tooManyRequests": "Too many requests to Meta. Wait a few minutes and try again.",
@@ -2381,7 +2194,7 @@
       "noConsent": "Customer consent not found. They must message you first.",
       "blockedByPolicy": "Message blocked by platform policy. Check Meta's messaging guidelines.",
       "connectionExpired": "Channel connection expired. Please reconnect your Facebook page.",
-      "missingPermission": "Missing permission to send messages. Re-authorize Easy Moderator.",
+      "missingPermission": "Missing permission to send messages. Re-authorize EasyModerator.",
       "pageBlocked": "Customer may have blocked the page. You cannot send messages to them.",
       "fallback": "Message could not be sent. Check your connection or contact support."
     }

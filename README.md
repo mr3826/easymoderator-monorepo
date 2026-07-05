@@ -1,6 +1,6 @@
-# Easy Moderator
+# EasyModerator
 
-Easy Moderator is a production-focused AI inbox and order assistant for Bangladeshi f-commerce sellers. The current launch scope is intentionally narrow: merchants connect Facebook Pages and use Easy Moderator for Messenger DM handling, AI-assisted replies, product-grounded order capture, manual inbox work, COD/RTO risk support, and billing.
+EasyModerator is a production-focused Messenger sales and order automation platform for Bangladeshi f-commerce sellers. The current launch scope is intentionally narrow: merchants connect Facebook Pages and use EasyModerator for Messenger DM handling, draft and automatic replies, product-grounded order capture, manual inbox work, COD/RTO risk support, and billing.
 
 > Source of truth: `main` is the production branch. Keep short-lived feature/fix branches only while active, then merge or delete them. Do not keep stale local branches, remote branches, or stashes as parallel product history.
 
@@ -27,26 +27,28 @@ Easy Moderator is a production-focused AI inbox and order assistant for Banglade
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
-- Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, injected into the AI prompt immediately, and included in the scheduled business-info RAG index.
+- Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, used in reply context immediately, and included in the scheduled business-info search index.
 - Payment and delivery defaults come from the live shop operating context; FAQs are optional shop-specific knowledge, not required starter setup.
-- FAQ management lives under `Manage Shop -> FAQs` (`/app/manage-shop/faqs`). The retired `/app/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` vector immediately so AI/RAG answers do not wait for the scheduled auto-index job. Low-confidence and unknown AI turns are captured as knowledge gaps for FAQ improvement.
+- FAQ management lives under `Manage Shop -> FAQs` (`/app/manage-shop/faqs`). The retired `/app/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` search record immediately so reply answers do not wait for the scheduled auto-index job. Low-confidence and unknown reply turns are captured as knowledge gaps for FAQ improvement.
 - Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
 
 ---
 
 ## First-Time Setup Dashboard
 
-New shops see the dashboard setup checklist until the backend reports the shop is ready. The source of truth is `GET /api/setup/status`; the UI does not rely on localStorage, dismissible modals, or a manual `onboarding_completed` flag.
+New shops receive the Growth trial automatically after signup; there is no self-service package picker before account creation. After signup, merchants land in Business Setup before seeing the normal dashboard.
+
+The setup source of truth is `GET /api/setup/status`. The UI only uses localStorage for presentation state: whether the merchant has started the welcome screen and whether the final completion celebration was dismissed for that shop.
 
 Required completion rules:
 
 - At least one connected Facebook Page channel.
 - Minimal shop profile: shop name, support contact, delivery info, and payment methods.
 - At least one active product; three or more active products are recommended.
-- AI reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
+- Reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
 - AI auto-reply is derived from automation mode: Draft/Manual hold replies as merchant-visible suggestions, while Auto mode can send after policy and confidence gates pass.
 
-The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete, and the normal dashboard appears automatically when all required items pass. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
+The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete. When all required items pass, EasyModerator shows a one-time "Your shop is ready" completion screen before the normal dashboard. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 
 ---
 

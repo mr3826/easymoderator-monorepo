@@ -105,9 +105,9 @@ const router = express.Router();
  */
 router.get('/data-deletion', (req, res) => {
     res.json({
-        message: 'Easy Moderator Data Deletion Instructions',
+        message: 'EasyModerator Data Deletion Instructions',
         instructions: [
-            '1. Remove Easy Moderator from your Facebook App Settings (Settings > Apps and Websites).',
+            '1. Remove EasyModerator from your Facebook App Settings (Settings > Apps and Websites).',
             '2. Meta will automatically send a deletion request to our callback and we will delete your data within 30 days.',
             '3. Alternatively, email privacy@easymod.tech with subject "Facebook Data Deletion Request" and we will process it manually.',
             '4. You will receive a confirmation code by email once deletion is complete.'

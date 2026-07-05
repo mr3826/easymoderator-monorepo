@@ -58,8 +58,8 @@ describe('AISettingsForm', () => {
   it('renders with default settings', () => {
     render(<AISettingsForm {...defaultProps} />);
     
-    expect(screen.getByText('AI Behaviour Settings')).toBeInTheDocument();
-    expect(screen.getByText('Control how the AI chatbot operates across all connected channels.')).toBeInTheDocument();
+    expect(screen.getByText('Reply Settings')).toBeInTheDocument();
+    expect(screen.getByText('Choose when EasyModerator drafts, sends, or pauses replies.')).toBeInTheDocument();
   });
 
   it('renders automation mode options', () => {
@@ -73,18 +73,20 @@ describe('AISettingsForm', () => {
   it('marks Draft as the default active automation mode', () => {
     render(<AISettingsForm {...defaultProps} />);
 
-    const draftButton = screen.getByRole('button', { name: /DRAFT/i });
-    expect(draftButton.className).toContain('border-green-500');
+    const draftButton = screen.getByText('Review first (Recommended)').closest('button');
+    expect(draftButton).not.toBeNull();
+    expect(draftButton!.className).toContain('border-green-500');
   });
 
   it('selects automation mode on click', async () => {
     render(<AISettingsForm {...defaultProps} />);
     
-    const autoButton = screen.getByRole('button', { name: /AUTO/i });
-    fireEvent.click(autoButton);
+    const autoButton = screen.getByText('Send automatically').closest('button');
+    expect(autoButton).not.toBeNull();
+    fireEvent.click(autoButton!);
     
     // Check that the button has the active styling class
-    expect(autoButton.className).toContain('border-green-500');
+    expect(autoButton!.className).toContain('border-green-500');
   });
 
   it('renders language options', () => {
@@ -116,7 +118,7 @@ describe('AISettingsForm', () => {
   it('updates max auto order value on input change', async () => {
     render(<AISettingsForm {...defaultProps} />);
     
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     await userEvent.clear(maxOrderInput);
     await userEvent.type(maxOrderInput, '10000');
     
@@ -126,7 +128,7 @@ describe('AISettingsForm', () => {
   it('does not render a redundant auto-reply toggle', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
 
-    expect(screen.queryByText('Auto-reply enabled')).not.toBeInTheDocument();
+    expect(screen.queryByText('Automatic replies enabled')).not.toBeInTheDocument();
   });
 
   it('toggles required fields checkboxes', async () => {
@@ -142,32 +144,32 @@ describe('AISettingsForm', () => {
   it('expands handoff settings section on click', async () => {
     render(<AISettingsForm {...defaultProps} />);
     
-    const handoffButton = screen.getByRole('button', { name: /Human Handoff Settings/i });
+    const handoffButton = screen.getByRole('button', { name: /When We Should Alert You/i });
     fireEvent.click(handoffButton);
     
-    expect(screen.getByLabelText(/Notification Channel/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Alert channel/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Cooldown/i)).toBeInTheDocument();
   });
 
   it('changes notification channel in handoff settings to Telegram', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const handoffButton = screen.getByRole('button', { name: /Human Handoff Settings/i });
+    const handoffButton = screen.getByRole('button', { name: /When We Should Alert You/i });
     fireEvent.click(handoffButton);
     
-    const channelSelect = screen.getByLabelText(/Notification Channel/i);
+    const channelSelect = screen.getByLabelText(/Alert channel/i);
     fireEvent.change(channelSelect, { target: { value: 'telegram' } });
     
     expect(channelSelect).toHaveValue('telegram');
   });
 
-  it('adds trigger keywords in handoff settings', async () => {
+  it('adds alert keywords in handoff settings', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const handoffButton = screen.getByRole('button', { name: /Human Handoff Settings/i });
+    const handoffButton = screen.getByRole('button', { name: /When We Should Alert You/i });
     fireEvent.click(handoffButton);
     
-    // Find the trigger keywords input (second tag input in the form)
+    // Find the alert keywords input (second tag input in the form)
     const inputs = screen.getAllByPlaceholderText(/e\.g\./i);
     const keywordInput = inputs[inputs.length - 1]; // Last one is the handoff keywords
     
@@ -184,18 +186,18 @@ describe('AISettingsForm', () => {
 
   it('disables save button when no changes made', () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     expect(saveButton).toBeDisabled();
   });
 
   it('enables save button when settings change', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     await userEvent.clear(maxOrderInput);
     await userEvent.type(maxOrderInput, '10000');
     
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     expect(saveButton).not.toBeDisabled();
   });
 
@@ -204,11 +206,11 @@ describe('AISettingsForm', () => {
     
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     await userEvent.clear(maxOrderInput);
     await userEvent.type(maxOrderInput, '10000');
     
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     fireEvent.click(saveButton);
     
     await waitFor(() => {
@@ -225,10 +227,11 @@ describe('AISettingsForm', () => {
 
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
 
-    const autoButton = screen.getByRole('button', { name: /AUTO/i });
-    fireEvent.click(autoButton);
+    const autoButton = screen.getByText('Send automatically').closest('button');
+    expect(autoButton).not.toBeNull();
+    fireEvent.click(autoButton!);
 
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     fireEvent.click(saveButton);
 
     await waitFor(() => {
@@ -244,15 +247,15 @@ describe('AISettingsForm', () => {
     
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     await userEvent.clear(maxOrderInput);
     await userEvent.type(maxOrderInput, '10000');
     
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     fireEvent.click(saveButton);
     
     await waitFor(() => {
-      expect(screen.getByText('AI settings saved.')).toBeInTheDocument();
+      expect(screen.getByText('Reply settings saved.')).toBeInTheDocument();
     });
   });
 
@@ -263,11 +266,11 @@ describe('AISettingsForm', () => {
     
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     await userEvent.clear(maxOrderInput);
     await userEvent.type(maxOrderInput, '10000');
     
-    const saveButton = screen.getByRole('button', { name: /Save AI Settings/i });
+    const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     fireEvent.click(saveButton);
     
     await waitFor(() => {
@@ -287,11 +290,12 @@ describe('AISettingsForm', () => {
     expect(screen.getByText('80%')).toBeInTheDocument();
     
     // Check that defaults are merged for missing values
-    const maxOrderInput = screen.getByLabelText(/Max Auto-Order Value/i);
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     expect(maxOrderInput).toHaveValue(5000);
 
-    const autoButton = screen.getByRole('button', { name: /AUTO/i });
-    expect(autoButton.className).toContain('border-green-500');
+    const autoButton = screen.getByText('Send automatically').closest('button');
+    expect(autoButton).not.toBeNull();
+    expect(autoButton!.className).toContain('border-green-500');
   });
 
   it('deep merges required_fields correctly', async () => {
@@ -318,7 +322,7 @@ describe('AISettingsForm', () => {
   it('updates cooldown minutes in handoff settings', async () => {
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
     
-    const handoffButton = screen.getByRole('button', { name: /Human Handoff Settings/i });
+    const handoffButton = screen.getByRole('button', { name: /When We Should Alert You/i });
     fireEvent.click(handoffButton);
     
     const cooldownInput = screen.getByLabelText(/Cooldown/i);

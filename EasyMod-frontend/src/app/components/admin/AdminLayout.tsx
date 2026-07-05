@@ -10,7 +10,7 @@ export default function AdminLayout() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <aside className="w-56 shrink-0 border-r bg-white">
-        <div className="px-4 py-4 text-sm font-semibold text-gray-900">EasyMod Admin</div>
+        <div className="px-4 py-4 text-sm font-semibold text-gray-900">EasyModerator Admin</div>
         <nav className="space-y-1 px-2">
           {links.map((l) => (
             <NavLink

@@ -205,7 +205,7 @@ class FailedPaymentReconciler extends BaseJob {
         const isSuspended = action === 'suspended';
 
         const subject = isSuspended
-            ? 'Your Easy Moderator subscription has been suspended'
+            ? 'Your EasyModerator subscription has been suspended'
             : `Payment Reminder: Invoice ${invoiceNumber} is overdue`;
 
         const ctaColor = isSuspended ? '#dc2626' : '#2563eb';

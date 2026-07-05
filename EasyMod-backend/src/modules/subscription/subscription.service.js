@@ -496,7 +496,7 @@ const requestConversationPack = async (shopId, userId, packAmount, packPrice) =>
         addon_amount: 0,
         status: 'pending',
         due_date: dueDate,
-        notes: `Add-on: ${packAmount} AI conversations`
+        notes: `Add-on: ${packAmount} customer conversations`
     });
 
     return {

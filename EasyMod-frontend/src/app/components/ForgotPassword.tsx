@@ -44,7 +44,7 @@ export default function ForgotPassword() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl"></div>
-            <span className="text-3xl font-bold text-gray-900">Easy Moderator</span>
+            <span className="text-3xl font-bold text-gray-900">EasyModerator</span>
           </div>
           <p className="text-gray-600">{t('auth.forgotPassword.subtitle')}</p>
         </div>

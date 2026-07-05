@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Bot, CheckCircle2, Clock4, Loader2, Truck, Wallet } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock4, Loader2, MessageCircle, Truck, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import FirstTimeSetupDashboard from "./FirstTimeSetupDashboard";
 import { useSetupStatus } from "@/app/lib/useSetupStatus";
+import { authService } from "../lib/auth";
 
 const SETUP_DASHBOARD_ENABLED = import.meta.env.VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD !== "false";
 
@@ -18,7 +19,7 @@ type PulseData = {
   todaySales: number;
   confirmedOrders: number;
   missedReplies: number;
-  botReplies: number;
+  assistantReplies: number;
   needsAttention: number;
   atRiskCount: number;
   lastFiveOrders: Awaited<ReturnType<typeof apiClient.getOrders>>;
@@ -30,14 +31,13 @@ type CashPositionCardProps = {
   subLabel: string;
   countLabel: string;
   amount: number;
-  count: number;
   icon: typeof Truck;
   accent: "neutral" | "warning";
   onClick: () => void;
   formatCurrency: (v: number) => string;
 };
 
-function CashPositionCard({ label, subLabel, countLabel, amount, count, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
+function CashPositionCard({ label, subLabel, countLabel, amount, icon: Icon, accent, onClick, formatCurrency }: CashPositionCardProps) {
   const accentClass = accent === "warning"
     ? "bg-red-50 border-red-200"
     : "bg-card border-border";
@@ -67,12 +67,23 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const setupStorageKeyPrefix = `easymod:business-setup:${authService.getCurrentShopId() || 'default'}`;
+  const completionDismissedKey = `${setupStorageKeyPrefix}:complete-dismissed`;
+  const [setupCompletionDismissed, setSetupCompletionDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(completionDismissedKey) === '1';
+  });
   const {
     data: setupStatus,
     isLoading: isSetupLoading,
     error: setupError,
     refresh: refreshSetupStatus,
   } = useSetupStatus({ enabled: SETUP_DASHBOARD_ENABLED });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setSetupCompletionDismissed(window.localStorage.getItem(completionDismissedKey) === '1');
+  }, [completionDismissedKey]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("bn-BD", {
@@ -145,7 +156,7 @@ export default function Dashboard() {
         todaySales,
         confirmedOrders,
         missedReplies: queue?.unread_count || 0,
-        botReplies: metrics?.analytics?.llm_calls || 0,
+        assistantReplies: metrics?.analytics?.llm_calls || 0,
         needsAttention: (queue?.unread_count || 0) + (queue?.pending_payment_count || 0),
         atRiskCount: queue?.at_risk_orders?.length || 0,
         lastFiveOrders: todayOrders,
@@ -163,7 +174,7 @@ export default function Dashboard() {
   }, [t]);
 
   useEffect(() => {
-    const shouldLoadPulse = !SETUP_DASHBOARD_ENABLED || Boolean(setupError) || Boolean(setupStatus?.isComplete);
+    const shouldLoadPulse = !SETUP_DASHBOARD_ENABLED || Boolean(setupError) || Boolean(setupStatus?.isComplete && setupCompletionDismissed);
     if (!shouldLoadPulse) {
       return;
     }
@@ -175,7 +186,14 @@ export default function Dashboard() {
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
     };
-  }, [refreshPulse, setupError, setupStatus?.isComplete]);
+  }, [refreshPulse, setupCompletionDismissed, setupError, setupStatus?.isComplete]);
+
+  const dismissSetupCompletion = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(completionDismissedKey, '1');
+    }
+    setSetupCompletionDismissed(true);
+  };
 
   const cards = useMemo(() => {
     if (!pulseData) {
@@ -214,11 +232,13 @@ export default function Dashboard() {
     );
   }
 
-  if (SETUP_DASHBOARD_ENABLED && setupStatus && !setupStatus.isComplete) {
+  if (SETUP_DASHBOARD_ENABLED && setupStatus && (!setupStatus.isComplete || !setupCompletionDismissed)) {
     return (
       <FirstTimeSetupDashboard
         setupStatus={setupStatus}
         onRefresh={refreshSetupStatus}
+        onDismissCompletion={dismissSetupCompletion}
+        storageKeyPrefix={setupStorageKeyPrefix}
       />
     );
   }
@@ -313,7 +333,6 @@ export default function Dashboard() {
             subLabel={t("dashboard.pulse.cashPosition.inTransitSub")}
             countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.inTransit.count ?? 0 })}
             amount={pulseData.cashPosition?.inTransit.amount ?? 0}
-            count={pulseData.cashPosition?.inTransit.count ?? 0}
             icon={Truck}
             accent="neutral"
             onClick={() => navigate("/app/orders")}
@@ -324,7 +343,6 @@ export default function Dashboard() {
             subLabel={t("dashboard.pulse.cashPosition.atRiskSub", { days: pulseData.cashPosition?.atRisk.windowDays ?? 30 })}
             countLabel={t("dashboard.pulse.cashPosition.ordersUnit", { count: pulseData.cashPosition?.atRisk.count ?? 0 })}
             amount={pulseData.cashPosition?.atRisk.amount ?? 0}
-            count={pulseData.cashPosition?.atRisk.count ?? 0}
             icon={AlertTriangle}
             accent="warning"
             onClick={() => navigate("/app/orders")}
@@ -335,12 +353,12 @@ export default function Dashboard() {
 
       <section className="mb-4 rounded-2xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
-          <Bot className="h-5 w-5 text-green-600" />
+          <MessageCircle className="h-5 w-5 text-green-600" />
           <h2 className="text-base font-bold text-card-foreground">{t("dashboard.pulse.botActivity.title")}</h2>
         </div>
         <div className="grid gap-2 md:grid-cols-2">
           <div className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">
-            {t("dashboard.pulse.botActivity.botReplied", { count: pulseData.botReplies })}
+            {t("dashboard.pulse.botActivity.botReplied", { count: pulseData.assistantReplies })}
           </div>
           <button
             onClick={() => navigate("/app/inbox?tab=needs_review")}

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 const EFFECTIVE_DATE = "March 18, 2026";
 const LAST_UPDATED = "June 27, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
-const APP_NAME = "Easy Moderator";
+const APP_NAME = "EasyModerator";
 const COMPANY_NAME = "Hexabyte Limited";
 
 export default function PrivacyPolicy() {
@@ -105,16 +105,20 @@ export default function PrivacyPolicy() {
           {/* 3 — How We Use Information */}
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">3. How We Use Information</h2>
+            <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-950">
+              In plain language: {APP_NAME} uses shop and customer information to show Messenger conversations,
+              prepare replies, capture orders, process payments, book deliveries, and keep the merchant account secure.
+            </div>
             <p className="mb-3 leading-relaxed">We use the information we collect to:</p>
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>Provide, operate, and improve the {APP_NAME} platform</li>
-              <li>Enable AI-assisted customer service responses on behalf of businesses</li>
+              <li>Prepare customer service replies on behalf of businesses</li>
               <li>Process and manage customer orders, payments, and deliveries</li>
-              <li>Maintain a knowledge base for automated replies (RAG — Retrieval-Augmented Generation)</li>
+              <li>Maintain shop answers and product facts for automated replies (technical retrieval systems may be used)</li>
               <li>Track subscription usage and enforce plan limits</li>
               <li>Send transactional emails (account verification, password reset, invoices)</li>
               <li>Maintain security audit logs for fraud prevention and compliance</li>
-              <li>Provide analytics dashboards to business users (message counts, AI usage, costs)</li>
+              <li>Provide analytics dashboards to business users (message counts, reply usage, costs)</li>
               <li>Forward events to workflow automation tools chosen by the business (Make.com, n8n)</li>
             </ul>
             <p className="mt-3 text-sm leading-relaxed">
@@ -158,9 +162,9 @@ export default function PrivacyPolicy() {
             <ul className="list-disc list-inside space-y-1 text-sm leading-relaxed ml-2">
               <li>To display and manage conversations in the {APP_NAME} inbox</li>
               <li>To generate AI-assisted reply suggestions using our language model providers</li>
-              <li>To match customer inquiries against the business's knowledge base</li>
+              <li>To match customer questions against the business's FAQs and shop answers</li>
               <li>To associate conversations with customer profiles and order history</li>
-              <li>To provide analytics on message volume and AI usage to the business</li>
+              <li>To provide analytics on message volume and reply usage to the business</li>
             </ul>
 
             <h3 className="text-base font-semibold text-gray-800 mt-5 mb-2">What We Do Not Do with Meta Data</h3>
@@ -286,6 +290,11 @@ export default function PrivacyPolicy() {
           {/* 6 — Third-Party Service Providers */}
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">6. Third-Party Service Providers</h2>
+            <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950">
+              Most merchants only need to know this: we use Meta for Messenger, secure cloud hosting for the app,
+              payment and courier providers when you enable them, and reply providers only to prepare customer replies.
+              Customer conversation data is not used to train provider models.
+            </div>
             <p className="mb-4 leading-relaxed">
               To operate {APP_NAME}, we share data with the following categories of third-party service
               providers. Each provider has their own privacy policy and data processing terms.
@@ -309,21 +318,21 @@ export default function PrivacyPolicy() {
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Google (Gemini)</td>
-                    <td className="px-4 py-3 text-gray-600">AI Provider</td>
+                    <td className="px-4 py-3 text-gray-600">Reply provider</td>
                     <td className="px-4 py-3 text-gray-600">Conversation text (not used for training)</td>
-                    <td className="px-4 py-3 text-gray-600">Primary AI response generation</td>
+                    <td className="px-4 py-3 text-gray-600">Primary reply generation</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">OpenAI</td>
-                    <td className="px-4 py-3 text-gray-600">AI Provider</td>
-                    <td className="px-4 py-3 text-gray-600">Conversation text, text embeddings (not used for training)</td>
-                    <td className="px-4 py-3 text-gray-600">Fallback AI responses + knowledge base indexing (embeddings)</td>
+                    <td className="px-4 py-3 text-gray-600">Reply provider</td>
+                    <td className="px-4 py-3 text-gray-600">Conversation text and private search signals (not used for training)</td>
+                    <td className="px-4 py-3 text-gray-600">Fallback reply generation and FAQ search</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Qdrant (self-hosted)</td>
-                    <td className="px-4 py-3 text-gray-600">Vector Database</td>
-                    <td className="px-4 py-3 text-gray-600">Text embeddings (numerical vectors)</td>
-                    <td className="px-4 py-3 text-gray-600">Knowledge base semantic search — runs on our own infrastructure</td>
+                    <td className="px-4 py-3 text-gray-600">Private search index</td>
+                    <td className="px-4 py-3 text-gray-600">Private search signals for FAQs and shop answers</td>
+                    <td className="px-4 py-3 text-gray-600">FAQ and shop-answer search on our own infrastructure</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">bKash</td>
@@ -365,11 +374,11 @@ export default function PrivacyPolicy() {
               </table>
             </div>
             <p className="mt-3 text-sm text-gray-600 leading-relaxed">
-              AI providers receive conversation text for the sole purpose of generating automated customer
-              service responses. <strong>We do not permit any AI provider to use your data for training their
-              models.</strong> We use per-tenant isolation in vector databases to ensure that data from one
-              business is not retrievable by another. Workflow automation forwarding is entirely opt-in and
-              controlled by the business owner.
+              Reply providers receive conversation text only to prepare customer service replies.
+              <strong> We do not permit any provider to use your data for training their models.</strong>
+              We isolate each business's private search data so one business cannot retrieve another
+              business's information. Automation forwarding is entirely opt-in and controlled by the
+              business owner.
             </p>
           </section>
 
@@ -414,8 +423,8 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Retained for financial compliance purposes</td>
                   </tr>
                   <tr>
-                    <td className="px-4 py-3 text-gray-800">Knowledge base content</td>
-                    <td className="px-4 py-3 text-gray-600">Until deleted by the business; vector embeddings deleted simultaneously</td>
+                    <td className="px-4 py-3 text-gray-800">FAQs and shop answers</td>
+                    <td className="px-4 py-3 text-gray-600">Until deleted by the business; related private search data is deleted at the same time</td>
                   </tr>
                 </tbody>
               </table>

@@ -29,7 +29,7 @@ describe('email.service.sendEmail', () => {
         jest.clearAllMocks();
         process.env = { ...ORIGINAL_ENV };
         process.env.RESEND_API_KEY = 'test-resend-key';
-        process.env.EMAIL_FROM = 'Easy Moderator <no-reply@easymod.tech>';
+        process.env.EMAIL_FROM = 'EasyModerator <no-reply@easymod.tech>';
         warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
         errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
         ({ sendEmail } = require('../email.service'));

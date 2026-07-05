@@ -58,7 +58,7 @@ export default function DashboardLayout() {
     (item.path !== appBasePath && location.pathname.startsWith(item.path))
   );
   const pageTitle = activeNav?.name
-    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? t('nav.settings') : 'Easy Moderator');
+    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? t('nav.settings') : 'EasyModerator');
 
   const handleLogout = async () => {
     await logout();
@@ -83,7 +83,7 @@ export default function DashboardLayout() {
               <span className="text-white text-xs font-bold">EM</span>
             </div>
             {!collapsed && (
-              <span className="text-base font-bold text-gray-900 whitespace-nowrap">Easy Moderator</span>
+              <span className="text-base font-bold text-gray-900 whitespace-nowrap">EasyModerator</span>
             )}
           </div>
         </div>

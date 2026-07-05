@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
-import { CreditCard, Wallet, DollarSign, ChevronDown, ChevronUp, TestTube, X, Lock, Mail, Star, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Wallet, DollarSign, ChevronDown, ChevronUp, Mail, Star, Loader2 } from "lucide-react";
 import { apiClient } from "@/api";
 import { authService } from "@/app/lib/auth";
 
@@ -44,11 +43,8 @@ export default function PaymentSettings() {
   const [advancePercentage, setAdvancePercentage] = useState(50);
   const [advanceFixed, setAdvanceFixed] = useState(100);
   const [paymentMessage, setPaymentMessage] = useState(t('manageShop.paymentSettings.defaultPaymentMessage'));
-  const [loading, setLoading] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingGateway, setSavingGateway] = useState<string | null>(null);
-  const [testingGateway, setTestingGateway] = useState<string | null>(null);
-  const [disconnectingGateway, setDisconnectingGateway] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [savedGateways, setSavedGateways] = useState<Set<string>>(new Set());
@@ -85,8 +81,6 @@ export default function PaymentSettings() {
 
   const loadPaymentConfigs = async () => {
     try {
-      setLoading(true);
-      
       // Load payment gateway configs
       const response = await apiClient.getPaymentConfig();
       
@@ -130,8 +124,6 @@ export default function PaymentSettings() {
     } catch (error: any) {
       console.error('Failed to load payment configs:', error);
       setError(t('manageShop.paymentSettings.errors.loadFailed'));
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -229,43 +221,6 @@ export default function PaymentSettings() {
       setError(error.response?.data?.message || t('manageShop.paymentSettings.errors.saveConfigFailed'));
     } finally {
       setSavingGateway(null);
-    }
-  };
-
-  const disconnectGateway = async (gatewayId: string) => {
-    try {
-      setDisconnectingGateway(gatewayId);
-      setError(null);
-      setSuccess(null);
-
-      const gateway = gateways.find(gw => gw.id === gatewayId);
-      if (!gateway) return;
-
-      const canonicalGateway = toCanonicalGateway(gatewayId);
-      const response = await apiClient.deletePaymentConfig(canonicalGateway);
-
-      if (response.success) {
-        setSuccess(`✓ ${t('manageShop.paymentSettings.disconnectSuccess', { name: gateway.name })}`);
-
-        // Remove from saved gateways
-        setSavedGateways(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(gatewayId);
-          return newSet;
-        });
-
-        // Update gateway state to disabled
-        setGateways(prev => prev.map(gw =>
-          gw.id === gatewayId ? { ...gw, enabled: false } : gw
-        ));
-
-        setTimeout(() => setSuccess(null), 2500);
-      }
-    } catch (error: any) {
-      console.error('Failed to disconnect gateway:', error);
-      setError(error.response?.data?.message || t('manageShop.paymentSettings.errors.disconnectFailed'));
-    } finally {
-      setDisconnectingGateway(null);
     }
   };
 
@@ -420,7 +375,7 @@ export default function PaymentSettings() {
                     )}
                     {gateway.requiresContact ? (
                       <a
-                        href="mailto:support@easymod.ai?subject=Integrate AamarPay or SSLCommerz"
+                        href="mailto:support@easymod.tech?subject=Integrate AamarPay or SSLCommerz"
                         className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                         title={t('manageShop.paymentSettings.contactUsTitle')}
                       >

@@ -5,7 +5,7 @@
  * @returns {{ subject: string, html: string, text: string }}
  */
 function billingFailureEmail(shop, invoice) {
-  const subject = 'পেমেন্ট ব্যর্থ হয়েছে — অ্যাকশন প্রয়োজন | EasyMod';
+  const subject = 'পেমেন্ট ব্যর্থ হয়েছে — অ্যাকশন প্রয়োজন | EasyModerator';
 
   const dueDate = invoice.due_date
     ? new Date(invoice.due_date).toLocaleDateString('bn-BD')
@@ -20,7 +20,7 @@ function billingFailureEmail(shop, invoice) {
       <table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e4e4e7;">
         <tr>
           <td style="background:#dc2626;padding:24px 32px;">
-            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyMod ⚠️</h1>
+            <h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">EasyModerator ⚠️</h1>
             <p style="margin:4px 0 0;color:#fecaca;font-size:13px;">পেমেন্ট ব্যর্থ হয়েছে</p>
           </td>
         </tr>
@@ -30,7 +30,7 @@ function billingFailureEmail(shop, invoice) {
               ${shop?.name || 'প্রিয় ব্যবহারকারী'}, আপনার সাবস্ক্রিপশন পেমেন্ট ব্যর্থ হয়েছে
             </h2>
             <p style="color:#555;font-size:13px;line-height:1.6;">
-              আপনার EasyMod সাবস্ক্রিপশনের পেমেন্ট প্রক্রিয়া করা সম্ভব হয়নি।
+              আপনার EasyModerator সাবস্ক্রিপশনের পেমেন্ট প্রক্রিয়া করা সম্ভব হয়নি।
               আপনার অ্যাকাউন্ট সক্রিয় রাখতে অবিলম্বে পেমেন্ট করুন।
             </p>
 
@@ -60,14 +60,14 @@ function billingFailureEmail(shop, invoice) {
 
             <p style="color:#888;font-size:12px;line-height:1.6;margin-top:20px;">
               পেমেন্ট না হলে আপনার অ্যাকাউন্ট ৩০ দিন পরে <strong>সাসপেন্ড</strong> হতে পারে।
-              সাহায্যের জন্য <a href="mailto:support@easymod.ai" style="color:#dc2626;">support@easymod.ai</a> যোগাযোগ করুন।
+              সাহায্যের জন্য <a href="mailto:support@easymod.tech" style="color:#dc2626;">support@easymod.tech</a> যোগাযোগ করুন।
             </p>
           </td>
         </tr>
         <tr>
           <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e4e4e7;">
             <p style="margin:0;color:#aaa;font-size:11px;text-align:center;">
-              © 2025 EasyMod — BD F-Commerce Platform
+              © 2025 EasyModerator — Messenger sales and order automation
             </p>
           </td>
         </tr>
@@ -77,7 +77,7 @@ function billingFailureEmail(shop, invoice) {
 </body>
 </html>`;
 
-  const text = `পেমেন্ট ব্যর্থ | EasyMod\n\nইনভয়েস: ${invoice.id || '—'}\nবকেয়া: ৳${invoice.amount || 0}\nশেষ তারিখ: ${dueDate}\n${invoice.payment_link ? `পেমেন্ট লিংক: ${invoice.payment_link}` : ''}\n\nসাহায্যের জন্য: support@easymod.ai`;
+  const text = `পেমেন্ট ব্যর্থ | EasyModerator\n\nইনভয়েস: ${invoice.id || '—'}\nবকেয়া: ৳${invoice.amount || 0}\nশেষ তারিখ: ${dueDate}\n${invoice.payment_link ? `পেমেন্ট লিংক: ${invoice.payment_link}` : ''}\n\nসাহায্যের জন্য: support@easymod.tech`;
 
   return { subject, html, text };
 }

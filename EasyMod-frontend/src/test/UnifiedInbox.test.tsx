@@ -290,14 +290,14 @@ describe('UnifiedInbox 24h window behavior', () => {
       expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /quick reply templates/i }))
+    fireEvent.click(screen.getByRole('button', { name: /quick replies/i }))
     fireEvent.click(await screen.findByText('Greeting'))
 
     expect(screen.getByDisplayValue('Hi Alice')).toBeInTheDocument()
     expect(apiClient.createMessage).not.toHaveBeenCalled()
   })
 
-  it('creates, edits, deletes, and searches templates inside the inbox manager', async () => {
+  it('creates, edits, deletes, and searches quick replies inside the inbox manager', async () => {
     ;(apiClient.getResponseTemplates as any).mockResolvedValue([
       { id: 'tpl-1', name: 'Greeting', content: 'Hello there', category: 'Quick Reply', is_active: true },
     ])
@@ -311,11 +311,11 @@ describe('UnifiedInbox 24h window behavior', () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByRole('button', { name: /quick reply templates/i }))
-    fireEvent.click(await screen.findByText('Manage Templates'))
+    fireEvent.click(screen.getByRole('button', { name: /quick replies/i }))
+    fireEvent.click(await screen.findByText('Manage quick replies'))
 
-    fireEvent.change(screen.getByPlaceholderText('Template name'), { target: { value: 'Payment' } })
-    fireEvent.change(screen.getByPlaceholderText('Template message'), { target: { value: 'Please pay now' } })
+    fireEvent.change(screen.getByPlaceholderText('Quick reply name'), { target: { value: 'Payment' } })
+    fireEvent.change(screen.getByPlaceholderText('Quick reply message'), { target: { value: 'Please pay now' } })
     fireEvent.click(screen.getByRole('button', { name: /Create/i }))
 
     await waitFor(() => {
@@ -327,7 +327,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: /Edit Greeting/i }))
-    fireEvent.change(screen.getByPlaceholderText('Template message'), { target: { value: 'Updated reply' } })
+    fireEvent.change(screen.getByPlaceholderText('Quick reply message'), { target: { value: 'Updated reply' } })
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
 
     await waitFor(() => {
@@ -336,10 +336,10 @@ describe('UnifiedInbox 24h window behavior', () => {
       }))
     })
 
-    fireEvent.change(screen.getAllByPlaceholderText('Search templates')[1], { target: { value: 'missing' } })
-    expect(screen.getByText('No saved templates found.')).toBeInTheDocument()
+    fireEvent.change(screen.getAllByPlaceholderText('Search quick replies')[1], { target: { value: 'missing' } })
+    expect(screen.getByText('No saved quick replies yet. Add answers you send often to save time in customer conversations.')).toBeInTheDocument()
 
-    fireEvent.change(screen.getAllByPlaceholderText('Search templates')[1], { target: { value: '' } })
+    fireEvent.change(screen.getAllByPlaceholderText('Search quick replies')[1], { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: /Delete Greeting/i }))
 
     await waitFor(() => {

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Centralised notification service for Easy Moderator.
+ * Centralised notification service for EasyModerator.
  *
  * Handles conversation-limit threshold notifications (75%, 90%, exceeded)
  * via web push (VAPID) and in-app notification records.

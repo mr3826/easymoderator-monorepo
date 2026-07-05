@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { Checkbox } from '@/app/components/ui/checkbox';
@@ -13,13 +13,15 @@ import LanguageToggle from './LanguageToggle';
 import BrandLogo from './BrandLogo';
 import { signinSchema, type SigninFormData } from '../../features/auth/validation/schemas';
 
-const leftContainer = {
+const smoothEase = [0.22, 1, 0.36, 1] as const;
+
+const leftContainer: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.15, delayChildren: 0.2 } },
 };
-const leftItem = {
+const leftItem: Variants = {
   hidden: { opacity: 0, x: -20 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.6, ease: smoothEase } },
 };
 
 export default function SignIn() {
@@ -154,7 +156,7 @@ export default function SignIn() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.9, duration: 0.5 }}
         >
-          <p className="text-white/40 text-xs">© 2025 Easy Moderator · Made in Bangladesh 🇧🇩</p>
+          <p className="text-white/40 text-xs">© 2025 EasyModerator · Made in Bangladesh</p>
         </motion.div>
       </div>
 

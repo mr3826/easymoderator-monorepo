@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import Dashboard from '@/app/components/Dashboard'
 
@@ -44,19 +44,21 @@ vi.mock('@/api', () => ({
 }))
 
 describe('Dashboard', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    window.localStorage.setItem('easymod:business-setup:default:complete-dismissed', '1')
+  })
+
   it('renders dashboard with pulse data', async () => {
     render(<Dashboard />)
 
     // Wait for async data load — heading is always present after load.
-    // The test runtime resolves i18n to the English locale, so assert against
-    // the English copy (dashboard.pulse.* keys).
     await waitFor(() => {
-      expect(screen.getByText('Today\'s Status')).toBeInTheDocument()
+      expect(screen.getByText('Business Health')).toBeInTheDocument()
     })
 
-    // Stat cards rendered. "Confirmed" can also appear as an order-status badge,
-    // so allow more than one match.
+    // Stat cards rendered.
     expect(screen.getByText('Today\'s Sales')).toBeInTheDocument()
-    expect(screen.getAllByText('Confirmed').length).toBeGreaterThan(0)
+    expect(screen.getByText(/Confirmed/)).toBeInTheDocument()
   })
 })

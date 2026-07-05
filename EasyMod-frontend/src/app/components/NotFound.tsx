@@ -4,9 +4,9 @@ export default function NotFound() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-4 text-center px-4">
       <h1 className="text-6xl font-bold text-foreground">404</h1>
-      <p className="text-xl text-muted-foreground">Page not found.</p>
+      <p className="text-xl text-muted-foreground">We could not open this page.</p>
       <p className="text-sm text-muted-foreground max-w-sm">
-        The page you're looking for doesn't exist or has been moved.
+        The link may have changed. Go back to your dashboard or return home.
       </p>
       <Link
         to="/"

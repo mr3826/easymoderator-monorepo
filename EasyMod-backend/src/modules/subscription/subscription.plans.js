@@ -1,5 +1,5 @@
 /**
- * Easy Moderator subscription plan definitions.
+ * EasyModerator subscription plan definitions.
  *
  * Active plans (simplified 2026-05-31):
  * - GROWTH  : flat monthly (999 BDT / 300 moderator conversations + 50 grace buffer).

@@ -37,12 +37,12 @@ export default function BrandLogo({ size = "md", variant = "dark", animated = fa
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
       {iconEl}
-      <span className={`font-bold tracking-tight ${text} ${textColor}`}>Easy Moderator</span>
+      <span className={`font-bold tracking-tight ${text} ${textColor}`}>EasyModerator</span>
     </motion.div>
   ) : (
     <div className="flex items-center gap-2.5 select-none">
       {iconEl}
-      <span className={`font-bold tracking-tight ${text} ${textColor}`}>Easy Moderator</span>
+      <span className={`font-bold tracking-tight ${text} ${textColor}`}>EasyModerator</span>
     </div>
   );
 

@@ -81,6 +81,8 @@ const completeSetupStatus = {
 describe('Dashboard — cash position section', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    window.localStorage.setItem('easymod:business-setup:default:complete-dismissed', '1');
     vi.mocked(apiClient.getSetupStatus).mockResolvedValue(completeSetupStatus as never);
     vi.mocked(apiClient.getDashboardQueue).mockResolvedValue(baseQueue as never);
     vi.mocked(apiClient.getOrders).mockResolvedValue([] as never);
@@ -141,6 +143,7 @@ describe('Dashboard — cash position section', () => {
         },
       ],
     } as never);
+    window.localStorage.removeItem('easymod:business-setup:default:complete-dismissed');
 
     renderDashboard();
 
