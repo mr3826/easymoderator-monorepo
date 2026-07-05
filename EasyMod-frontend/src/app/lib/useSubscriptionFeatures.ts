@@ -33,11 +33,13 @@ const defaultFeatures: SubscriptionFeatures = {
 
 async function fetchAndCache(): Promise<void> {
   try {
-    const response = await apiClient.getSubscription();
-    if (response.data?.success && response.data?.data?.subscription) {
-      const sub = response.data.data.subscription;
+      const sub = await apiClient.getSubscription();
+    if (sub) {
       // Try matching by plan name first, then by plan code (e.g. "PACKAGE_1")
-      const matched = findPlanByName(sub.plan_name) ?? findPlanByCode(sub.plan_code) ?? null;
+      const matched =
+        (sub.plan_name ? findPlanByName(sub.plan_name) : undefined) ??
+        (sub.plan_code ? findPlanByCode(sub.plan_code) : undefined) ??
+        null;
       let derivedFeatures: SubscriptionFeatures;
       if (matched?.features) {
         derivedFeatures = {

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { motion, useScroll, useMotionValue, useMotionValueEvent, useInView, animate } from "motion/react";
+import { motion, useScroll, useMotionValue, useMotionValueEvent, useInView, animate, type Variants } from "motion/react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import LanguageToggle from "./LanguageToggle";
@@ -14,13 +14,14 @@ const gradientText: React.CSSProperties = {
   backgroundClip: "text",
 };
 
-const heroContainer = {
+const heroEase = [0.22, 1, 0.36, 1] as const;
+const heroContainer: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
 };
-const heroItem = {
+const heroItem: Variants = {
   hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: heroEase } },
 };
 
 function useCountUp(target: number, inView: boolean, duration = 1.8) {
@@ -30,7 +31,7 @@ function useCountUp(target: number, inView: boolean, duration = 1.8) {
     if (!inView) return;
     const ctrl = animate(mv, target, {
       duration,
-      ease: [0.22, 1, 0.36, 1] as any,
+      ease: heroEase,
       onUpdate: (v: number) => setDisplay(Math.round(v).toString()),
     });
     return ctrl.stop;

@@ -1,6 +1,6 @@
 import { eventBus, EventTypes as EVENTS } from '../../app/lib/events';
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import type { User, Shop, SigninRequest, SignupRequest } from "@/api/types";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import type { SigninRequest, SignupRequest } from "@/api/types";
 import { authService, AuthState } from "../../app/lib/auth";
 import { httpClient } from "../../shared/lib/http/client";
 import { toast } from "sonner";

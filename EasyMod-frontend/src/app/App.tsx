@@ -5,18 +5,13 @@ import { apiClient } from "@/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider } from "../features/auth/AuthProvider";
 import { useAuthHttpShopId } from "@/shared/lib/http";
-import PageLoader from "./components/PageLoader";
 
 function AppContent() {
   useAuthHttpShopId();
 
   return (
     <ErrorBoundary>
-      {/* fallbackElement: shown while the initial route loader (publicLoader /
-          protectedLoader) is awaiting authService.ensureInitialized(). Without
-          this, React Router renders nothing (blank white screen) for the ~0.5–8 s
-          window while the /me check + optional refresh cycle completes. */}
-      <RouterProvider router={router} fallbackElement={<PageLoader />} />
+      <RouterProvider router={router} />
     </ErrorBoundary>
   );
 }

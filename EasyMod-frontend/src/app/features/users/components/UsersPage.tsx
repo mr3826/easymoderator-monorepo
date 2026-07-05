@@ -3,10 +3,11 @@
  * Admin-only page for managing users with permission-gated CRUD actions
  */
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/features/auth/hooks';
 import { useUserPermissions } from '@/shared/lib/rbac/useUserPermissions';
-import { DisableIfNoPermission, PermissionGate } from '@/shared/components/guards';
+import { UserRole } from '@/shared/lib/rbac/types';
+import { DisableIfNoPermission } from '@/shared/components/guards';
 import { useUsersApi } from '../api/useUsersApi';
 import { User, CreateUserInput, UpdateUserInput } from '../types';
 import UsersTable from './UsersTable';
@@ -14,7 +15,7 @@ import CreateUserModal from './CreateUserModal';
 import EditUserModal from './EditUserModal';
 
 export default function UsersPage() {
-  const { user, isAuthenticated, isLoading: authLoading, currentShop } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, currentShop } = useAuth();
   const { hasRole } = useUserPermissions();
   const { users, isLoading, error, listUsers, createUser, updateUser, deleteUser, clearError } = useUsersApi();
 
@@ -23,7 +24,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   // Check authorization
-  const isAdmin = hasRole('admin');
+  const isAdmin = hasRole(UserRole.ADMIN);
 
   // Load users on mount and when shop changes
   useEffect(() => {
@@ -86,7 +87,7 @@ export default function UsersPage() {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Users Management</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manage system users and their permissions for {currentShop?.name}
+            Manage system users and their permissions for {currentShop?.shop_name || currentShop?.unique_code}
           </p>
         </div>
 

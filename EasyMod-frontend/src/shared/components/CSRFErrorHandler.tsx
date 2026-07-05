@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, X, RefreshCw } from 'lucide-react';
 import { httpClient } from '@/shared/lib/http/client';
 
@@ -48,19 +48,8 @@ export default function CSRFErrorHandler({ error, onRetry, className = '' }: CSR
     onRetry?.();
   };
 
-  const handleRefresh = async () => {
-    setIsVisible(false);
-    try {
-      // Clear current CSRF token and get a new one
-      await httpClient.initCsrfToken();
-      window.location.reload();
-    } catch (refreshError) {
-      console.error('Failed to refresh CSRF token:', refreshError);
-    }
-  };
-
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${className}`}>
       <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
         {/* Icon */}
         <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mb-4">

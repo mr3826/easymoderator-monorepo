@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Edit2, Trash2, Share2, Heart, Loader2 } from "lucide-react";
+import { ArrowLeft, Edit2, Trash2, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";

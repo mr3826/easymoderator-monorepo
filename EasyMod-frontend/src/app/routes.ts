@@ -1,4 +1,4 @@
-import { lazy, createElement, Suspense, type LazyExoticComponent } from "react";
+import { lazy, createElement, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { createBrowserRouter, redirect } from "react-router-dom";
 import { authService } from "./lib/auth";
 import { AdminRoute } from "@/shared/components/guards";
@@ -66,9 +66,15 @@ async function publicLoader() {
 	return null;
 }
 
-const withSuspense = (Component: LazyExoticComponent<any>) => (props: any) =>
-	createElement(Suspense, { fallback: createElement(PageLoader) },
-		createElement(Component, props));
+type RoutableComponent<P extends object = Record<string, never>> =
+	ComponentType<P> | LazyExoticComponent<ComponentType<P>>;
+
+const withSuspense = <P extends object>(Component: RoutableComponent<P>) => (props: P) =>
+	createElement(
+		Suspense,
+		{ fallback: createElement(PageLoader) },
+		createElement(Component as ComponentType<P>, props)
+	);
 
 export const router = createBrowserRouter([
 	{
@@ -167,8 +173,8 @@ export const router = createBrowserRouter([
 			{ path: "subscription", Component: withSuspense(Subscription) },
 			{
 				path: "admin/users",
-				Component: withSuspense((props: any) =>
-					createElement(AdminRoute, {}, createElement(UsersPage, props))
+				Component: withSuspense((props: Record<string, never>) =>
+					createElement(AdminRoute, null, createElement(UsersPage, props))
 				),
 			},
 		],
@@ -184,8 +190,8 @@ export const router = createBrowserRouter([
 		path: "/admin",
 		loader: protectedLoader,
 		errorElement: createElement(RouteError),
-		Component: withSuspense((props: any) =>
-			createElement(PlatformAdminRoute, {}, createElement(AdminLayout, props))
+		Component: withSuspense((props: Record<string, never>) =>
+			createElement(PlatformAdminRoute, null, createElement(AdminLayout, props))
 		),
 		children: [
 			{ index: true, Component: withSuspense(AdminDashboard) },

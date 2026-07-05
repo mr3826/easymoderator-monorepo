@@ -13,6 +13,7 @@ const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
 const courierWebhookRoutes = require('./modules/webhooks/courier-webhook.routes');
+const paymentWebhookRoutes = require('./modules/webhooks/payment-webhook.routes');
 const telegramWebhookRoutes = require('./modules/webhooks/telegram-webhook.routes');
 const { AppError, globalErrorHandler } = require('./utils/AppError');
 const { initSentry, sentryCaptureException } = require('./config/sentry');
@@ -157,6 +158,7 @@ if (config.env !== 'test') {
 // Phase 5: only canonical /api/webhooks/meta remains.
 // Update your Meta App Dashboard webhook URL to use /api/webhooks/meta.
 app.use('/api/webhooks/meta', metaWebhookRoutes);
+app.use('/api/webhooks/delivery', courierWebhookRoutes);
 app.use('/webhooks/delivery', courierWebhookRoutes);
 
 // Body parsing — verify callback captures raw bytes so payment HMAC middleware
@@ -169,6 +171,7 @@ app.use(express.urlencoded({ extended: true, limit: config.bodySizeLimit }));
 
 // Telegram Bot API webhook is JSON and secret-header protected. It must be
 // registered before CSRF because Telegram cannot supply browser CSRF tokens.
+app.use('/api/webhooks', paymentWebhookRoutes);
 app.use('/api/webhooks/telegram', telegramWebhookRoutes);
 
 // Global XSS sanitization — strips script tags, event handlers, javascript: URIs from req.body

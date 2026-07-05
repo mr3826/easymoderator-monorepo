@@ -419,7 +419,7 @@ describe('AddProduct', () => {
   // ── Edit / update flow ────────────────────────────────────────────────
 
   it('calls updateProduct (not createProduct) in edit mode', async () => {
-    const { onSave } = await renderModal(true, mockProduct);
+    await renderModal(true, mockProduct);
 
     const nameInput = Array.from(document.querySelectorAll('input[type="text"], input:not([type])')).find(
       el => (el as HTMLInputElement).value === 'Test T-Shirt'
@@ -442,7 +442,6 @@ describe('AddProduct', () => {
 
     await waitFor(() => {
       const updateCalled = mockUpdateProduct.mock.calls.length > 0;
-      const createCalled = mockCreateProduct.mock.calls.length > 0;
       // In edit mode, update should be called, not create
       if (updateCalled) {
         expect(mockCreateProduct).not.toHaveBeenCalled();

@@ -2,7 +2,7 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle, Clock, Loader2, Package as PackageIcon, XCircle, Eye, Plus, Search, Download, ChevronDown, X, AlertTriangle } from "lucide-react";
+import { CheckCircle, Clock, Loader2, Package as PackageIcon, XCircle, Plus, Search, Download, ChevronDown, X, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import type { Order, DeliveryAddress } from "@/api/types/order";
@@ -59,15 +59,16 @@ export default function Orders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [appliedSearchQuery, setAppliedSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('last7days');
   const [searchQuery, setSearchQuery] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [showProductSelector, setShowProductSelector] = useState(false);
   const [detailNote, setDetailNote] = useState('');
@@ -182,7 +183,7 @@ export default function Orders() {
       }
       try {
         const list = await apiClient.getConversations({ search: selectedOrder.customerName, limit: 1 });
-        const firstConv = list.conversations?.[0];
+        const firstConv = list.data?.[0];
         if (!firstConv) {
           setConversationSnippets([]);
           return;
@@ -515,7 +516,7 @@ export default function Orders() {
             {showExportMenu && (
               <>
                 <div className="fixed inset-0 z-[9]" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                <div ref={exportMenuRef} className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
                 <button
                   onClick={() => handleExport('csv')}
                   className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm"

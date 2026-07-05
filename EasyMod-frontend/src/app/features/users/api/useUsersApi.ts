@@ -64,8 +64,8 @@ export function useUsersApi(): UseUsersApiReturn {
           },
         });
 
-        setUsers(response.data);
-        setTotalCount(response.total);
+        setUsers(response.data.data);
+        setTotalCount(response.data.total);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to load users';
         setError(message);
@@ -89,7 +89,8 @@ export function useUsersApi(): UseUsersApiReturn {
       setError(undefined);
 
       try {
-        const newUser = await httpClient.post<User>('/api/users', input);
+        const response = await httpClient.post<User>('/api/users', input);
+        const newUser = response.data;
         setLastCreatedUser(newUser);
         // Refresh list after creation
         await listUsers();
@@ -109,7 +110,8 @@ export function useUsersApi(): UseUsersApiReturn {
       setError(undefined);
 
       try {
-        const updated = await httpClient.put<User>(`/api/users/${userId}`, input);
+        const response = await httpClient.put<User>(`/api/users/${userId}`, input);
+        const updated = response.data;
         // Update user in list
         setUsers((prevUsers) =>
           prevUsers.map((user) => (user.id === userId ? updated : user))

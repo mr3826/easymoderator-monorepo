@@ -25,6 +25,13 @@ interface ProviderConfig {
   }[];
 }
 
+interface PlatformPriorityResponse {
+  data?: {
+    payment?: string[];
+    delivery?: string[];
+  };
+}
+
 const PROVIDER_CONFIGS: ProviderConfig[] = [
   {
     provider: 'pathao',
@@ -173,8 +180,11 @@ export default function DeliverySettings() {
   // Load delivery settings on mount
   useEffect(() => {
     loadDeliverySettings();
-    apiClient.get('/shop/platform-priority')
-      .then(res => setPriority(res.data?.data || { payment: [], delivery: [] }))
+    apiClient.get<PlatformPriorityResponse>('/shop/platform-priority')
+      .then(res => setPriority({
+        payment: res.data?.data?.payment || [],
+        delivery: res.data?.data?.delivery || [],
+      }))
       .catch(() => {});
   }, []);
 
@@ -693,7 +703,7 @@ export default function DeliverySettings() {
                             <div className="w-2 h-2 rounded-full bg-green-500"></div>
                             <span className="text-xs text-gray-600">{t('manageShop.deliverySettings.connected')}</span>
                           </div>
-                          {providerStatus.last_validated_at && (
+                          {providerStatus?.last_validated_at && (
                             <span className="text-xs text-gray-500">
                               {t('manageShop.deliverySettings.lastTested', { date: new Date(providerStatus.last_validated_at).toLocaleDateString() })}
                             </span>

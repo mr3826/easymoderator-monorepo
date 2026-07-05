@@ -3,7 +3,6 @@
  * Displays users in a table with permission-gated action buttons
  */
 
-import React from 'react';
 import { DisableIfNoPermission, PermissionGate } from '@/shared/components/guards';
 import { User, ROLE_LABELS } from '../types';
 

@@ -74,7 +74,7 @@ describe('AdminRoute', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     render(
@@ -98,7 +98,7 @@ describe('AdminRoute', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     render(
@@ -198,7 +198,7 @@ describe('PermissionRoute', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => true,
+      can: (_action: string, _resource: string) => true,
     });
 
     render(
@@ -220,7 +220,7 @@ describe('PermissionRoute', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     render(
@@ -242,7 +242,7 @@ describe('PermissionRoute', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     render(
@@ -299,7 +299,7 @@ describe('withRouteGuard HOC', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     const TestComponent = () => <div>Protected Content</div>;
@@ -325,7 +325,7 @@ describe('withRouteGuard HOC', () => {
     });
 
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => true,
+      can: (_action: string, _resource: string) => true,
     });
 
     const TestComponent = () => <div>Permission Protected</div>;

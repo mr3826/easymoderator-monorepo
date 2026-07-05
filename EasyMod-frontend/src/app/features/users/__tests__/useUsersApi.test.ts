@@ -3,11 +3,20 @@
  * Tests for useUsersApi hook - list, create, edit, delete operations
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useUsersApi } from '../api/useUsersApi';
 import { httpClient } from '@/shared/lib/http';
-import { User, CreateUserInput, UpdateUserInput } from '../types';
+import { User, UpdateUserInput } from '../types';
+import { AxiosHeaders, type AxiosResponse } from 'axios';
+
+const mockAxiosResponse = <T,>(data: T): AxiosResponse<T> => ({
+  data,
+  status: 200,
+  statusText: 'OK',
+  headers: {},
+  config: { headers: new AxiosHeaders() },
+});
 
 // Mock the HTTP client
 vi.mock('@/shared/lib/http', () => ({
@@ -39,12 +48,12 @@ describe('useUsersApi', () => {
         },
       ];
 
-      vi.mocked(httpClient.get).mockResolvedValueOnce({
+      vi.mocked(httpClient.get).mockResolvedValueOnce(mockAxiosResponse({
         data: mockUsers,
         total: 1,
         page: 1,
         pageSize: 10,
-      });
+      }));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -62,7 +71,12 @@ describe('useUsersApi', () => {
 
     it('should handle loading state during fetch', async () => {
       vi.mocked(httpClient.get).mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve({ data: [] }), 100))
+        () => new Promise((resolve) => setTimeout(() => resolve(mockAxiosResponse({
+          data: [],
+          total: 0,
+          page: 1,
+          pageSize: 10,
+        })), 100))
       );
 
       const { result } = renderHook(() => useUsersApi());
@@ -91,7 +105,12 @@ describe('useUsersApi', () => {
     });
 
     it('should support pagination parameters', async () => {
-      vi.mocked(httpClient.get).mockResolvedValueOnce({ data: [], total: 0 });
+      vi.mocked(httpClient.get).mockResolvedValueOnce(mockAxiosResponse({
+        data: [],
+        total: 0,
+        page: 2,
+        pageSize: 20,
+      }));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -122,7 +141,7 @@ describe('useUsersApi', () => {
         updatedAt: '2024-01-02',
       };
 
-      vi.mocked(httpClient.post).mockResolvedValueOnce(createdUser);
+      vi.mocked(httpClient.post).mockResolvedValueOnce(mockAxiosResponse(createdUser));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -190,7 +209,7 @@ describe('useUsersApi', () => {
         updatedAt: '2024-01-02',
       };
 
-      vi.mocked(httpClient.put).mockResolvedValueOnce(updatedUser);
+      vi.mocked(httpClient.put).mockResolvedValueOnce(mockAxiosResponse(updatedUser));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -221,7 +240,7 @@ describe('useUsersApi', () => {
     it('should delete a user by ID', async () => {
       const userId = '1';
 
-      vi.mocked(httpClient.delete).mockResolvedValueOnce({ success: true });
+      vi.mocked(httpClient.delete).mockResolvedValueOnce(mockAxiosResponse({ success: true }));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -250,7 +269,12 @@ describe('useUsersApi', () => {
 
   describe('multi-tenant shop scoping', () => {
     it('should automatically include shop context in all requests', async () => {
-      vi.mocked(httpClient.get).mockResolvedValueOnce({ data: [] });
+      vi.mocked(httpClient.get).mockResolvedValueOnce(mockAxiosResponse({
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      }));
 
       const { result } = renderHook(() => useUsersApi());
 
@@ -291,8 +315,18 @@ describe('useUsersApi', () => {
       ];
 
       vi.mocked(httpClient.get)
-        .mockResolvedValueOnce({ data: shopAUsers })
-        .mockResolvedValueOnce({ data: shopBUsers });
+        .mockResolvedValueOnce(mockAxiosResponse({
+          data: shopAUsers,
+          total: shopAUsers.length,
+          page: 1,
+          pageSize: 10,
+        }))
+        .mockResolvedValueOnce(mockAxiosResponse({
+          data: shopBUsers,
+          total: shopBUsers.length,
+          page: 1,
+          pageSize: 10,
+        }));
 
       const { result } = renderHook(() => useUsersApi());
 

@@ -75,30 +75,46 @@ function permissionMatches(permission: Permission, action: string, resource: str
   return actionMatch && resourceMatch;
 }
 
+function normalizeUserRole(role?: string): UserRole {
+  const upperRole = role?.toUpperCase();
+  return Object.values(UserRole).includes(upperRole as UserRole)
+    ? (upperRole as UserRole)
+    : UserRole.USER;
+}
+
+function normalizeShopRole(role?: string): ShopRole | undefined {
+  const upperRole = role?.toUpperCase();
+  if (upperRole === 'ADMIN') return ShopRole.OWNER;
+  return Object.values(ShopRole).includes(upperRole as ShopRole)
+    ? (upperRole as ShopRole)
+    : undefined;
+}
+
 export function useUserPermissions(): UserPermissionResult {
   const { user, currentShop } = useAuth();
   // The app standardized on AuthProvider; <ShopProvider> is never mounted, so the
   // old useShopRole() (which calls useShop()) threw "useShop must be used within
   // <ShopProvider>" and crashed every page that uses this hook (e.g. /app/admin/users).
   // The shop role already lives on the authenticated shop — read it from there.
-  const currentShopRole: string | undefined = currentShop?.role;
+  const currentShopRole = normalizeShopRole(currentShop?.role);
+  const currentUserRole = normalizeUserRole(user?.role);
 
   // Compute effective permissions based on user role + shop role
   const effectivePermissions = useMemo(() => {
     if (!user) return [];
 
     // Start with global permissions from user role
-    const globalPerms = PERMISSION_MATRIX[user.role as UserRole] || [];
+    const globalPerms = PERMISSION_MATRIX[currentUserRole] || [];
 
     // Add shop-level permissions if user has a shop role
     const shopPerms = currentShopRole
-      ? SHOP_PERMISSION_MATRIX[currentShopRole as ShopRole] || []
+      ? SHOP_PERMISSION_MATRIX[currentShopRole] || []
       : [];
 
     // Merge global and shop-scoped permissions to avoid dropping global capabilities
     // when a shop context is active.
     return Array.from(new Set([...globalPerms, ...shopPerms]));
-  }, [user?.role, currentShopRole]);
+  }, [user, currentUserRole, currentShopRole]);
 
   const can = (action: string, resource: string): boolean => {
     if (!user) return false;
@@ -109,7 +125,7 @@ export function useUserPermissions(): UserPermissionResult {
 
   const hasRole = (role: UserRole): boolean => {
     if (!user) return false;
-    return user.role === role;
+    return currentUserRole === role;
   };
 
   const hasShopRole = (role: ShopRole): boolean => {

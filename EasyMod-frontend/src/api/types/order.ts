@@ -17,6 +17,25 @@ export interface DeliveryAddress {
   zone?: 'inside_dhaka' | 'sub_dhaka' | 'outside_dhaka';
 }
 
+export interface CreateOrderItemPayload {
+  product_id: string;
+  quantity: number;
+  price: number;
+}
+
+export interface CreateOrderPayload {
+  customer_name: string;
+  customer_phone: string;
+  delivery_address: DeliveryAddress;
+  channel: string;
+  items: CreateOrderItemPayload[];
+  discount?: number;
+  tax?: number;
+  delivery_fee?: number;
+  payment_status?: string;
+  note?: string;
+}
+
 export interface Order {
   id: string;
   customerName: string;
@@ -95,8 +114,8 @@ export interface CourierBookingResult {
 export interface PathaoCredentials {
   client_id: string;
   client_secret: string;
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
 }
 
 export interface SteadfastCredentials {

@@ -669,7 +669,7 @@ const getReturnRequests = async (req, res, next) => {
 const bookCourier = async (req, res, next) => {
     try {
         const { orderId } = req.params;
-        const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+        const shopId = req.user?.shopId;
         const { provider, recipient_name, recipient_phone, recipient_address, cod_amount, weight_kg, item_description } = req.body;
 
         if (!shopId) {

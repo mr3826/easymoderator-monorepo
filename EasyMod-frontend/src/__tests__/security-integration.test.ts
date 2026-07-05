@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
 import { UserRole } from '@/shared/lib/rbac/types';
 
 /**
@@ -174,6 +172,8 @@ describe('Security Layer Integration Tests', () => {
       // Check permission
       const canDelete = user.role === UserRole.ADMIN;
       expect(canDelete).toBe(true);
+      expect(currentShopId).toBe('shop_1');
+      expect(token).toBe('token_123');
 
       // Would send request with:
       // Authorization: Bearer token_123
@@ -183,6 +183,7 @@ describe('Security Layer Integration Tests', () => {
     it('should deny user from deleting products', () => {
       // Setup
       const user = { id: 'user_1', role: UserRole.USER };
+      expect(user.role).toBe(UserRole.USER);
       const permissions = [
         { action: 'read', resource: 'posts' },
         { action: 'write', resource: 'profile' },
@@ -207,9 +208,6 @@ describe('Security Layer Integration Tests', () => {
 
   describe('Security Validation', () => {
     it('should validate auth before allowing requests', () => {
-      const token = localStorage.getItem('auth_token');
-      const isAuthenticated = !!token;
-
       localStorage.setItem('auth_token', 'valid_token');
       expect(!!localStorage.getItem('auth_token')).toBe(true);
 
@@ -267,7 +265,7 @@ describe('Security Layer Integration Tests', () => {
   describe('Cross-Component Communication', () => {
     it('should update guards when shop changes', () => {
       let currentShop = 'shop_1';
-      const listeners = [];
+      const listeners: string[] = [];
 
       // Subscribe to shop changes
       const onChange = (shop: string) => {

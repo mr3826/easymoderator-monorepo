@@ -31,6 +31,7 @@ export interface DashboardMetrics {
     inTransit: { amount: number; count: number };
     atRisk: { amount: number; count: number; windowDays: number };
   };
+  totalRevenue?: number;
 }
 
 export interface DashboardQueue {
@@ -44,6 +45,7 @@ export interface DashboardQueue {
     status: string;
     tracking_id: string | null;
   }>;
+  pendingOrders?: number;
 }
 
 export interface ShopAgent {
@@ -55,8 +57,10 @@ export interface ShopAgent {
 
 export interface ShopAISettings {
   automation_mode: string;
+  ai_enabled?: boolean;
   confidence_threshold: number;
   auto_reply_enabled: boolean;
+  response_language?: string;
   max_auto_order_value: number;
   ask_email: boolean;
   primary_language: string;

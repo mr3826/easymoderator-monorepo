@@ -2,8 +2,7 @@
  * Auth feature unit tests - Example test structure
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { httpClient } from '@shared/lib/http';
+import { describe, it, expect, vi } from 'vitest';
 import { LoginSchema, RegisterSchema } from '../types';
 
 vi.mock('@shared/lib/http', () => ({

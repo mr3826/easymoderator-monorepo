@@ -16,7 +16,7 @@ import { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/features/auth/hooks';
 import { useUserPermissions } from '@/shared/lib/rbac/useUserPermissions';
-import { UserRole, Permission } from '@/shared/lib/rbac/types';
+import { UserRole } from '@/shared/lib/rbac/types';
 
 interface ProtectedRouteProps {
   /** Component to render if authorized */
