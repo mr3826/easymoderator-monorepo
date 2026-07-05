@@ -2,7 +2,7 @@
  * Customer types
  */
 
-export type ChannelType = 'facebook' | 'manual' | 'messenger';
+export type ChannelType = 'facebook' | 'manual' | 'messenger' | 'telegram' | 'webchat';
 
 export interface Customer {
   id: string;
@@ -22,6 +22,7 @@ export interface CustomerFilters {
   search?: string;
   email?: string;
   number?: string;
+  phone?: string;
   channel_type?: ChannelType;
   start_date?: string;
   end_date?: string;

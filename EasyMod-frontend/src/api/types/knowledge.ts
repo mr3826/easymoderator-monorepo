@@ -20,6 +20,7 @@ export interface KnowledgeGap {
   question: string;
   platform: string;
   language: string;
+  frequency?: number;
   created_at: string;
 }
 
@@ -55,6 +56,7 @@ export interface KnowledgeDocument {
   id: string;
   name: string;
   contentType?: string;
+  fileType?: string;
   size?: number;
   url?: string;
   text?: string;

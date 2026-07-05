@@ -15,7 +15,7 @@ interface EditUserModalProps {
 }
 
 export default function EditUserModal({ isOpen, user, onClose, onSuccess }: EditUserModalProps) {
-  const { validateUserInput, isLoading } = useUsersApi();
+  const { isLoading } = useUsersApi();
   const [formData, setFormData] = useState<UpdateUserInput>({
     name: user.name,
     email: user.email,

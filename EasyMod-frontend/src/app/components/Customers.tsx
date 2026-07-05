@@ -12,19 +12,17 @@ import {
   Mail,
   MessageSquare,
   Calendar,
-  Filter,
   ShieldAlert,
   ShieldOff,
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
-import type { Customer, CustomerFilters } from "@/api/types/customer";
+import type { ChannelType as ApiChannelType, Customer, CustomerFilters } from "@/api/types/customer";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import RtoNetworkSettings from './RtoNetworkSettings';
 
-// Channel type string — facebook (MetaChannel platform) + legacy manual/webchat/telegram
-type ChannelType = string;
+type CustomerChannelFilter = ApiChannelType | 'all';
 
 const channelConfig: Record<string, { icon: any; color: string; bgColor: string; labelKey: string }> = {
   facebook:  { icon: MessageSquare, color: "text-blue-600",   bgColor: "bg-blue-50",   labelKey: "customers.channels.facebook" },
@@ -34,7 +32,11 @@ const channelConfig: Record<string, { icon: any; color: string; bgColor: string;
   manual:    { icon: UserPlus,      color: "text-gray-600",   bgColor: "bg-gray-50",   labelKey: "customers.channels.manual" },
 };
 
-const REST_CHANNELS = ['facebook', 'telegram', 'webchat', 'manual'];
+const REST_CHANNELS: ApiChannelType[] = ['facebook', 'telegram', 'webchat', 'manual'];
+const toCustomerChannel = (value: string): ApiChannelType | "" =>
+  REST_CHANNELS.includes(value as ApiChannelType) ? (value as ApiChannelType) : "";
+const toCustomerChannelFilter = (value: string): CustomerChannelFilter =>
+  value === "all" ? "all" : toCustomerChannel(value) || "all";
 
 const PAGE_SIZE = 10;
 
@@ -56,7 +58,7 @@ export default function Customers() {
 
   // Filters and pagination
   const [searchQuery, setSearchQuery] = useState("");
-  const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [channelFilter, setChannelFilter] = useState<CustomerChannelFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
 
   // UI state
@@ -70,7 +72,7 @@ export default function Customers() {
     name: "",
     number: "",
     email: "",
-    channel: "" as const,
+    channel: "" as "" | ApiChannelType,
   });
 
   // ── Stats fetch — once on mount ────────────────────────────────────────────
@@ -79,7 +81,7 @@ export default function Customers() {
       try {
         const [allResult, manualResult] = await Promise.all([
           apiClient.getCustomers({ pageSize: 1 }),
-          apiClient.getCustomers({ channel_type: 'manual' as ChannelType, pageSize: 1 }),
+          apiClient.getCustomers({ channel_type: 'manual', pageSize: 1 }),
         ]);
         setShopStats({
           total: allResult.total,
@@ -108,7 +110,7 @@ export default function Customers() {
       setError(null);
       const filters: CustomerFilters = { page: currentPage, pageSize: PAGE_SIZE };
       if (searchQuery) filters.search = searchQuery;
-      if (channelFilter !== 'all') filters.channel_type = channelFilter as ChannelType;
+      if (channelFilter !== 'all') filters.channel_type = channelFilter;
 
       const result = await apiClient.getCustomers(filters);
       // Guard against a malformed/empty payload so a shape drift degrades to an
@@ -128,7 +130,7 @@ export default function Customers() {
     setCurrentPage(1);
   };
 
-  const handleChannelChange = (value: string) => {
+  const handleChannelChange = (value: CustomerChannelFilter) => {
     setChannelFilter(value);
     setCurrentPage(1);
   };
@@ -153,7 +155,7 @@ export default function Customers() {
         channel: newCustomer.channel,
       });
       setShowCreateCustomer(false);
-      setNewCustomer({ name: "", number: "", email: "", channel: "" as const });
+      setNewCustomer({ name: "", number: "", email: "", channel: "" });
       toast.success(t('customers.success.created'));
       // Refresh table and stats
       fetchCustomers();
@@ -184,9 +186,13 @@ export default function Customers() {
   const handleToggleBlacklist = async (customer: Customer) => {
     try {
       setTogglingBlacklist(true);
-      const updated = customer.blacklisted
-        ? await apiClient.unblacklistCustomer(customer.id)
-        : await apiClient.blacklistCustomer(customer.id);
+      const nextBlacklisted = !customer.blacklisted;
+      if (nextBlacklisted) {
+        await apiClient.blacklistCustomer(customer.id);
+      } else {
+        await apiClient.removeFromBlacklist(customer.id);
+      }
+      const updated: Customer = { ...customer, blacklisted: nextBlacklisted };
       setCustomers(prev => prev.map(c => c.id === customer.id ? updated : c));
       setSelectedCustomer(updated);
       toast.success(updated.blacklisted ? t('customers.success.blacklisted') : t('customers.success.unblacklisted'));
@@ -194,20 +200,6 @@ export default function Customers() {
       toast.error(err.response?.data?.error?.message || t('customers.errors.blacklistFailed'));
     } finally {
       setTogglingBlacklist(false);
-    }
-  };
-
-  const handleUpdateCustomer = async (customerId: string, updates: Partial<Customer>) => {
-    try {
-      setIsSubmitting(true);
-      const updated = await apiClient.updateCustomer(customerId, updates);
-      setCustomers(prev => prev.map(c => c.id === customerId ? updated : c));
-      setSelectedCustomer(updated);
-      toast.success(t('customers.success.updated'));
-    } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || t('customers.errors.updateFailed'));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -294,7 +286,7 @@ export default function Customers() {
             <div className="md:w-64">
               <select
                 value={channelFilter}
-                onChange={(e) => handleChannelChange(e.target.value)}
+                onChange={(e) => handleChannelChange(toCustomerChannelFilter(e.target.value))}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
               >
                 <option value="all">{t('customers.allChannels')}</option>
@@ -698,7 +690,7 @@ export default function Customers() {
                 </label>
                 <select
                   value={newCustomer.channel}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, channel: e.target.value as any })}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, channel: toCustomerChannel(e.target.value) })}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
                 >
                   <option value="">{t('customers.addModal.channelPlaceholder')}</option>

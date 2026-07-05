@@ -174,16 +174,14 @@ export function InboxThreadList({
                           {conversation.customer?.name || t("inbox.unknownCustomer")}
                         </h3>
                         {isHITL && (
-                          <UserCheck
-                            className="w-3 h-3 text-amber-500 flex-shrink-0"
-                            title={t("inbox.humanTooltip")}
-                          />
+                          <span title={t("inbox.humanTooltip")} className="inline-flex">
+                            <UserCheck className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                          </span>
                         )}
                         {conversation.status === "closed" && (
-                          <CheckCircle2
-                            className="w-3 h-3 text-green-500 flex-shrink-0"
-                            title={t("inbox.resolved")}
-                          />
+                          <span title={t("inbox.resolved")} className="inline-flex">
+                            <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-gray-500">

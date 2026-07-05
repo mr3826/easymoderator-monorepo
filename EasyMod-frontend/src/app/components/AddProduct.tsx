@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Upload, X, Plus, ChevronDown, ChevronUp, Save, Calendar, Package, Tag, FolderTree, Loader2 } from "lucide-react";
+import { Upload, X, Plus, ChevronDown, ChevronUp, Package, Tag, FolderTree, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
 import type { Product } from "@/api/types/product";
-import { VALIDATION, SKU_PREFIX, SKU_LENGTH, DEFAULTS } from "../constants/product";
+import { VALIDATION, SKU_PREFIX, SKU_LENGTH } from "../constants/product";
 
 interface AddProductProps {
   editMode?: boolean;
@@ -602,7 +602,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
 
                   {productImages.length > 0 && (
                     <div className="grid grid-cols-5 gap-2">
-                      {productImages.map((file, index) => (
+                      {productImages.map((_file, index) => (
                         <div key={index} className="relative group">
                           <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-500 transition-colors">
                             <img

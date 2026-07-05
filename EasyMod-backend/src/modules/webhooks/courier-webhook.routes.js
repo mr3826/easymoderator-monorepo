@@ -12,6 +12,11 @@ const { createLogger } = require('../../utils/structured-logger');
 
 const router = express.Router();
 const logger = createLogger();
+const parseJsonWithRawBody = express.json({
+    verify: (req, _res, buf) => {
+        req.rawBody = buf;
+    }
+});
 
 /**
  * Resolve the shop's delivery credentials for a given provider using the tracking record.
@@ -194,8 +199,8 @@ function makeHandler(provider) {
     };
 }
 
-router.post('/steadfast', express.json(), validateSteadfastSignature, makeHandler('steadfast'));
-router.post('/redx',      express.json(), validateRedxSignature,      makeHandler('redx'));
-router.post('/pathao',    express.json(), validatePathaoSignature,     makeHandler('pathao'));
+router.post('/steadfast', parseJsonWithRawBody, validateSteadfastSignature, makeHandler('steadfast'));
+router.post('/redx',      parseJsonWithRawBody, validateRedxSignature,      makeHandler('redx'));
+router.post('/pathao',    parseJsonWithRawBody, validatePathaoSignature,     makeHandler('pathao'));
 
 module.exports = router;

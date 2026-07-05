@@ -22,6 +22,9 @@ export interface Subscription {
   id: string;
   shop_id: string;
   plan_id: string;
+  plan_code?: string;
+  plan_name?: string;
+  features?: Record<string, unknown>;
   status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'unpaid';
   current_period_start: string;
   current_period_end: string;

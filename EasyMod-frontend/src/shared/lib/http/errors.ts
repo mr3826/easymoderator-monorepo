@@ -5,8 +5,6 @@
  * making error handling consistent across the app
  */
 
-import { AxiosError } from 'axios';
-
 export type ApiErrorType = 
   | 'NETWORK_ERROR'
   | 'TIMEOUT_ERROR'

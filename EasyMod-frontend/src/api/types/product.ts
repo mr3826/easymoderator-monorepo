@@ -34,12 +34,26 @@ export interface Product {
   updatedAt: string;
 }
 
+export interface CategoryDraft {
+  id?: string;
+  name: string;
+  description?: string;
+  image?: string;
+  cover_image?: string;
+}
+
 export interface Category {
   id: string;
   shop_id?: string;
   name: string;
   description?: string;
+  image?: string;
+  cover_image?: string;
   parent_id?: string | null;
+  parent_category_id?: string | null;
+  is_active?: boolean;
+  subcategories?: CategoryDraft[];
+  subcategoryCount?: number;
   created_at: string;
   updated_at: string;
 }
@@ -56,5 +70,7 @@ export interface ProductExtractResult {
 export interface ProductUploadPayload {
   filename?: string;
   content_type?: string;
-  content: string;
+  content?: string;
+  file?: File;
+  format?: 'csv' | 'xlsx' | 'json';
 }

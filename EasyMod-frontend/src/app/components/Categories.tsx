@@ -1,20 +1,21 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Edit2, Trash2, ChevronRight, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 import { apiClient } from "@/api";
+import type { CategoryDraft } from "@/api/types/product";
 
 interface Category {
   id: string;
   name: string;
   description?: string;
-  parent_category_id?: string;
+  parent_category_id?: string | null;
   image?: string;
-  is_active: boolean;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
-  subcategories?: Category[];
+  subcategories?: CategoryDraft[];
   subcategoryCount?: number;
 }
 
@@ -23,8 +24,8 @@ export default function Categories() {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [, setLoading] = useState(true);
+  const [, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
 

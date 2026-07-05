@@ -15,7 +15,7 @@ describe('PermissionGate', () => {
   it('should render children when user has permission', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => true,
+      can: (_action: string, _resource: string) => true,
     });
 
     render(
@@ -30,7 +30,7 @@ describe('PermissionGate', () => {
   it('should not render children when user lacks permission', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     render(
@@ -45,7 +45,7 @@ describe('PermissionGate', () => {
   it('should render fallback when user lacks permission', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     render(
@@ -65,7 +65,7 @@ describe('PermissionGate', () => {
   it('should render null fallback by default', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     const { container } = render(
@@ -101,7 +101,7 @@ describe('RoleGate', () => {
   it('should not render children when user lacks required role', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     render(
@@ -131,7 +131,7 @@ describe('RoleGate', () => {
   it('should support fallback UI', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     render(
@@ -170,7 +170,7 @@ describe('AdminGate', () => {
   it('should not render for non-admin users', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      hasRole: (role: UserRole) => false,
+      hasRole: (_role: UserRole) => false,
     });
 
     render(
@@ -227,7 +227,7 @@ describe('DisableIfNoPermission', () => {
   it('should render enabled button when user has permission', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => true,
+      can: (_action: string, _resource: string) => true,
     });
 
     render(
@@ -244,7 +244,7 @@ describe('DisableIfNoPermission', () => {
   it('should render disabled button when user lacks permission', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     render(
@@ -261,7 +261,7 @@ describe('DisableIfNoPermission', () => {
   it('should apply opacity-50 and cursor-not-allowed classes when disabled', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     const { container } = render(
@@ -278,7 +278,7 @@ describe('DisableIfNoPermission', () => {
   it('should show tooltip on hover', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     const { container } = render(
@@ -298,7 +298,7 @@ describe('DisableIfNoPermission', () => {
   it('should show default tooltip if not provided', () => {
     const mockUseUserPermissions = useUserPermissions as any;
     mockUseUserPermissions.mockReturnValue({
-      can: (action: string, resource: string) => false,
+      can: (_action: string, _resource: string) => false,
     });
 
     const { container } = render(

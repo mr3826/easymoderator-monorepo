@@ -98,7 +98,7 @@ describe('Customer Domain API', () => {
       };
       (httpClient.patch as any).mockResolvedValue(mockResponse);
 
-      const result = await customer.updateCustomer('1', updateData);
+      await customer.updateCustomer('1', updateData);
 
       expect(httpClient.patch).toHaveBeenCalledWith('/api/customer/1', updateData);
     });

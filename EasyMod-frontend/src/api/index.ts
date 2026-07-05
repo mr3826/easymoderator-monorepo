@@ -73,6 +73,7 @@ import * as notificationDomain from './domains/notification';
 
 // Legacy ApiClient singleton for gradual migration
 import { httpClient } from '@/shared/lib/http/client';
+import type { AxiosResponse } from 'axios';
 
 /**
  * @deprecated Use auth domain directly: import { auth } from '@/api/domains'
@@ -101,6 +102,7 @@ export const apiClient = {
   extractProductsFromUpload: productDomain.extractProductsFromUpload,
   getCategories: productDomain.getCategories,
   getCategory: productDomain.getCategory,
+  getSubcategoryDetails: productDomain.getSubcategoryDetails,
   createCategory: productDomain.createCategory,
   updateCategory: productDomain.updateCategory,
   deleteCategory: productDomain.deleteCategory,
@@ -229,10 +231,14 @@ export const apiClient = {
   setAccessToken: (token: string | null) => httpClient.setAccessToken(token),
 
   // Raw HTTP passthrough — normalises paths that omit the /api prefix
-  get: (url: string, config?: any) => httpClient.get(url.startsWith('/api/') ? url : `/api${url}`, config),
-  post: (url: string, data?: any, config?: any) => httpClient.post(url.startsWith('/api/') ? url : `/api${url}`, data, config),
-  put: (url: string, data?: any, config?: any) => httpClient.put(url.startsWith('/api/') ? url : `/api${url}`, data, config),
-  delete: (url: string, config?: any) => httpClient.delete(url.startsWith('/api/') ? url : `/api${url}`, config),
+  get: <T = unknown>(url: string, config?: any): Promise<AxiosResponse<T>> =>
+    httpClient.get<T>(url.startsWith('/api/') ? url : `/api${url}`, config),
+  post: <T = unknown>(url: string, data?: any, config?: any): Promise<AxiosResponse<T>> =>
+    httpClient.post<T>(url.startsWith('/api/') ? url : `/api${url}`, data, config),
+  put: <T = unknown>(url: string, data?: any, config?: any): Promise<AxiosResponse<T>> =>
+    httpClient.put<T>(url.startsWith('/api/') ? url : `/api${url}`, data, config),
+  delete: <T = unknown>(url: string, config?: any): Promise<AxiosResponse<T>> =>
+    httpClient.delete<T>(url.startsWith('/api/') ? url : `/api${url}`, config),
 };
 
 // Utility functions

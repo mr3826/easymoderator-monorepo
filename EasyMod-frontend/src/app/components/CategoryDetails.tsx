@@ -4,19 +4,6 @@ import { ChevronRight, Upload, Loader2, Plus, Edit2, Trash2, X } from "lucide-re
 import { useTranslation } from 'react-i18next';
 import { apiClient } from "@/api";
 
-interface Category {
-  id: string;
-  name: string;
-  description?: string;
-  parent_category_id?: string;
-  image?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  subcategories?: Category[];
-  subcategoryCount?: number;
-}
-
 interface Subcategory {
   id?: string;
   name: string;

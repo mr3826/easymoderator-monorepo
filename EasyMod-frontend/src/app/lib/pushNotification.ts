@@ -11,11 +11,14 @@ import { httpClient } from '@/shared/lib/http/client';
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string;
 const SW_PATH = '/sw.js';
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  const output = Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  const buffer = new ArrayBuffer(output.byteLength);
+  new Uint8Array(buffer).set(output);
+  return buffer;
 }
 
 /**
@@ -49,10 +52,10 @@ export async function subscribeToPush(_shopId?: string, accessToken?: string): P
 
   const subscription = await reg.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    applicationServerKey: urlBase64ToArrayBuffer(VAPID_PUBLIC_KEY)
   });
 
-  const res = await httpClient.post(
+  const res = await httpClient.post<{ success?: boolean }>(
     '/api/notifications/subscriptions',
     {
       type: 'web',

@@ -11,6 +11,18 @@ interface ConvLimitState {
   threshold_active: boolean;
 }
 
+interface SubscriptionUsagePayload {
+  subscription?: {
+    conversations_limit: number;
+    topup_balance?: number;
+    threshold_conversations?: number;
+    conversations_used: number;
+  };
+  data?: {
+    subscription?: SubscriptionUsagePayload['subscription'];
+  };
+}
+
 const SESSION_DISMISSED_KEY = 'conv_alert_dismissed_pct';
 
 export default function ConversationAlertBanner() {
@@ -19,9 +31,9 @@ export default function ConversationAlertBanner() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    apiClient.get('/subscription')
+    apiClient.get<SubscriptionUsagePayload>('/subscription')
       .then(res => {
-        const sub = res.data.subscription || res.data.data?.subscription || res.data;
+        const sub = res.data.subscription || res.data.data?.subscription;
         if (!sub || sub.conversations_limit < 0) return; // unlimited plan
 
         const effective = sub.conversations_limit + (sub.topup_balance || 0) + (sub.threshold_conversations || 0);
@@ -42,7 +54,7 @@ export default function ConversationAlertBanner() {
           used: sub.conversations_used,
           limit: sub.conversations_limit,
           topup_balance: sub.topup_balance || 0,
-          threshold_active: sub.threshold_conversations > 0
+          threshold_active: (sub.threshold_conversations || 0) > 0
         });
       })
       .catch(() => {});

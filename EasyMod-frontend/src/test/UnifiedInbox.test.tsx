@@ -80,7 +80,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     })
     ;(apiClient.getShopAgents as any).mockResolvedValue([])
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [],
+      data: [],
       pagination: { page: 1, totalPages: 1 }
     })
     ;(apiClient.createMessage as any).mockResolvedValue({
@@ -144,7 +144,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     }
 
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [warningConversation],
+      data: [warningConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -163,7 +163,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     }
 
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [expiredConversation],
+      data: [expiredConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -189,7 +189,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     }
 
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [expiredConversation],
+      data: [expiredConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -215,7 +215,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     }
 
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [expiredConversation],
+      data: [expiredConversation],
       pagination: { page: 1, totalPages: 1 }
     })
     ;(apiClient.getMessages as any).mockResolvedValue({
@@ -261,7 +261,7 @@ describe('UnifiedInbox 24h window behavior', () => {
 
   it('keeps mic and assign controls hidden in Shared Inbox', async () => {
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [baseConversation],
+      data: [baseConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -280,7 +280,7 @@ describe('UnifiedInbox 24h window behavior', () => {
       { id: 'tpl-1', name: 'Greeting', content: 'Hi {{customer_name}}', category: 'Quick Reply', is_active: true },
     ])
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [baseConversation],
+      data: [baseConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -302,7 +302,7 @@ describe('UnifiedInbox 24h window behavior', () => {
       { id: 'tpl-1', name: 'Greeting', content: 'Hello there', category: 'Quick Reply', is_active: true },
     ])
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [baseConversation],
+      data: [baseConversation],
       pagination: { page: 1, totalPages: 1 }
     })
 
@@ -349,7 +349,7 @@ describe('UnifiedInbox 24h window behavior', () => {
 
   it('sends selected image attachment as upload metadata for backend delivery', async () => {
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [baseConversation],
+      data: [baseConversation],
       pagination: { page: 1, totalPages: 1 }
     })
     ;(apiClient.createMessage as any).mockResolvedValue({
@@ -451,7 +451,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
 
   const renderWith = (conv: any, messages: any[]) => {
     ;(apiClient.getConversations as any).mockResolvedValue({
-      conversations: [conv],
+      data: [conv],
       pagination: { page: 1, totalPages: 1 },
     })
     ;(apiClient.getMessages as any).mockResolvedValue({

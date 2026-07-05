@@ -82,9 +82,9 @@ export default function UnifiedInbox() {
       setLoadingConversations(true);
       setError(null);
       const result = await apiClient.getConversations({ limit: 50 });
-      setConversations(result.conversations);
-      if (result.conversations.length > 0 && !selectedConversation) {
-        setSelectedConversation(result.conversations[0]);
+      setConversations(result.data);
+      if (result.data.length > 0 && !selectedConversation) {
+        setSelectedConversation(result.data[0]);
       }
     } catch {
       setError(t("inbox.errors.loadConversations"));
@@ -209,7 +209,11 @@ export default function UnifiedInbox() {
       );
     }, []),
 
-    onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata }) => {
+    onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata }: {
+      conversation_id: string;
+      message_id: string;
+      metadata: Message["metadata"];
+    }) => {
       setMessages((prev) => {
         if (selectedConversation?.id !== conversation_id) return prev;
         return prev.map((message) =>
@@ -220,11 +224,11 @@ export default function UnifiedInbox() {
       });
     }, [selectedConversation?.id]),
 
-    onDeliveryFailed: useCallback(({ reason }) => {
+    onDeliveryFailed: useCallback(({ reason }: { reason: string }) => {
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
     }, []), // eslint-disable-line react-hooks/exhaustive-deps
 
-    onChannelError: useCallback(({ display_name, message: errMsg }) => {
+    onChannelError: useCallback(({ display_name, message: errMsg }: { display_name: string; message: string }) => {
       toast.error(t("inbox.channelIssue", { name: display_name, message: errMsg }), { duration: 12000 });
     }, []), // eslint-disable-line react-hooks/exhaustive-deps
 

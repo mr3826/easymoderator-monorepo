@@ -1,7 +1,6 @@
 import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import BusinessInfoSettings from './BusinessInfoSettings';
 
 // ── Hoist mock functions so they are available inside vi.mock factories ───
@@ -192,9 +191,6 @@ describe('BusinessInfoSettings', () => {
 
     // Find the Save Info button — it should be disabled (not dirty)
     const saveButtons = screen.getAllByRole('button', { name: /save/i });
-    const saveInfoButton = saveButtons.find(btn => btn.textContent?.toLowerCase().includes('info') ||
-                                                    btn.closest('[class*="business"]') ||
-                                                    saveButtons[0] === btn);
     // At least one save button should exist
     expect(saveButtons.length).toBeGreaterThan(0);
   });

@@ -14,9 +14,11 @@
  *   </PermissionGate>
  */
 
-import { ReactNode } from 'react';
+import React, { ReactNode } from 'react';
 import { useUserPermissions } from '@/shared/lib/rbac/useUserPermissions';
 import { UserRole } from '@/shared/lib/rbac/types';
+
+type PermissionGateRender = (state: { hasPermission: boolean }) => ReactNode;
 
 interface PermissionGateProps {
   /** Action to check (e.g., "read", "write", "delete", "manage") */
@@ -26,7 +28,7 @@ interface PermissionGateProps {
   resource: string;
 
   /** Content to render if user has permission */
-  children: ReactNode;
+  children: ReactNode | PermissionGateRender;
 
   /** Content to render if user lacks permission (defaults to nothing) */
   fallback?: ReactNode;
@@ -42,8 +44,13 @@ export function PermissionGate({
   fallback,
 }: PermissionGateProps): ReactNode {
   const { can } = useUserPermissions();
+  const hasPermission = can(action, resource);
 
-  if (can(action, resource)) {
+  if (typeof children === 'function') {
+    return children({ hasPermission });
+  }
+
+  if (hasPermission) {
     return children;
   }
 
@@ -125,7 +132,7 @@ export function ModeratorGate({
 interface DisableIfNoPermissionProps {
   action: string;
   resource: string;
-  children: React.ReactElement;
+  children: React.ReactElement<{ className?: string; disabled?: boolean }>;
   tooltip?: string;
 }
 
@@ -152,6 +159,3 @@ export function DisableIfNoPermission({
 
   return children;
 }
-
-// Import React at top if using React.cloneElement
-import React from 'react';

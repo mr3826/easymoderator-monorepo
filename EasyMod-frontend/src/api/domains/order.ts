@@ -7,6 +7,7 @@ import type { ApiResponse } from '../types/common';
 import type {
   Order,
   OrderItem,
+  CreateOrderPayload,
   DeliverySettings,
   CourierBookingPayload,
   CourierBookingResult,
@@ -110,7 +111,7 @@ export async function getOrder(orderId: string): Promise<Order> {
  * ```
  */
 export async function createOrder(
-  order: Omit<Order, 'id' | 'createdAt' | 'updatedAt'>
+  order: CreateOrderPayload
 ): Promise<Order> {
   // The manual-order form already sends a snake_case payload the create validator
   // expects, so only the response is normalised back into the app's Order shape.

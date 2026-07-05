@@ -1,6 +1,6 @@
 import { apiClient } from '@/api';
 import { httpClient } from '@/shared/lib/http/client';
-import type { User, Shop, AuthResponse, SigninRequest, SignupRequest, CreateShopRequest } from '@/api/types';
+import type { User, Shop, SigninRequest, SignupRequest, CreateShopRequest } from '@/api/types';
 import { queryClient } from './queryClient';
 
 // Auth state interface

@@ -88,6 +88,7 @@ export interface ResponseTemplate {
   id: string;
   name: string;
   content: string;
+  body?: string;
   variables?: string[];
   category?: string;
   is_active?: boolean;
@@ -102,5 +103,6 @@ export interface VoiceTranscriptionRequest {
 export interface VoiceTranscriptionResponse {
   messageId: string;
   transcript: string;
+  text?: string;
   language: string;
 }

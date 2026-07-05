@@ -40,7 +40,7 @@ const {
   mockHandleMetaOAuthCallback,
   mockConnectMetaAsset,
 } = vi.hoisted(() => ({
-  mockListMetaChannels:        vi.fn<[], Promise<MetaChannel[]>>().mockResolvedValue([]),
+  mockListMetaChannels:        vi.fn<() => Promise<MetaChannel[]>>().mockResolvedValue([]),
   mockInitiateMetaOAuth:       vi.fn(),
   mockHandleMetaOAuthCallback: vi.fn(),
   mockConnectMetaAsset:        vi.fn(),

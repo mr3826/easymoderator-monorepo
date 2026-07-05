@@ -46,12 +46,10 @@ function formatDate(dateString: string, t: TFunc): string {
 const MessageItem = memo(function MessageItem({
   message,
   customerName,
-  t,
   onRetry,
 }: {
   message: Message;
   customerName: string;
-  t: (key: string) => string;
   onRetry: (message: Message) => void;
 }) {
   const ts = new Date(message.created_at).toLocaleTimeString("en-US", {
@@ -173,7 +171,7 @@ interface InboxThreadDetailProps {
   templates: ResponseTemplate[];
   quickReplyTemplates: ResponseTemplate[];
   loadingTemplates: boolean;
-  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
   is24hExpired: boolean;
   is24hWarning: boolean;
   mobilePanelOpen: boolean;
@@ -432,7 +430,6 @@ export function InboxThreadDetail({
                 key={message.id}
                 message={message}
                 customerName={selectedConversation.customer?.name || "Unknown"}
-                t={t}
                 onRetry={handleRetryMessage}
               />
             ))}

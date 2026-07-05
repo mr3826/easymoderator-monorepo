@@ -66,8 +66,7 @@ vi.mock('@/api', () => ({
 
 // ── Mock TanStack Query ───────────────────────────────────────────────────
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: vi.fn(({ queryFn }) => {
-    const [data, setData] = vi.fn(() => [mockProducts, null])();
+  useQuery: vi.fn(() => {
     // Return synchronous mock instead of using hooks
     return {
       data: mockProducts,
