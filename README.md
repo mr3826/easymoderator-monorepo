@@ -89,6 +89,8 @@ Production deploys are driven by pushes to `main` through `.github/workflows/ci-
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
 
+Auth in production is intended to be same-origin through `https://easymod.tech/api`. Keep `VITE_API_BASE_URL` empty for the SPA. `COOKIE_DOMAIN` is optional; if it is set for a legacy subdomain deployment, the backend only applies it when it matches the current request host so browsers do not reject signin cookies.
+
 ### Telegram alert bot
 
 Telegram is notification-only. It is not a customer inbox, AI reply surface, or second support channel.

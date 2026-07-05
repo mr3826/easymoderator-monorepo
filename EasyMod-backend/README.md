@@ -327,6 +327,7 @@ FRONTEND_URL=http://localhost:5173
 JWT_ACCESS_SECRET=...
 JWT_REFRESH_SECRET=...
 SESSION_SECRET=...
+COOKIE_DOMAIN=                       # Optional; leave blank for same-origin /api deployments
 PAYMENT_ENCRYPTION_KEY=...            # 32 bytes
 CHANNEL_ENCRYPTION_KEY=...            # 64-hex (32 bytes) — encrypts Meta tokens at rest
 
@@ -396,7 +397,7 @@ CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 
 The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Process layout for non-Docker hosts is described in `ecosystem.config.js` (PM2).
 
-**Required GitHub secrets:** droplet host/SSH key, `VITE_API_BASE_URL`, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet.
+**Required GitHub secrets:** droplet host/SSH key, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet. Leave `VITE_API_BASE_URL` empty for the canonical same-origin SPA (`https://easymod.tech/api`). `COOKIE_DOMAIN` is optional; when set for legacy subdomain auth, it must match the request host or a parent domain such as `easymod.tech`.
 
 ---
 

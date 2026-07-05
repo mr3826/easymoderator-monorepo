@@ -80,7 +80,7 @@ const verify = async (req, res, next) => {
         await user.update({ refresh_token: hashedRefreshToken });
 
         // Set httpOnly cookies - never return tokens in response body
-        setAuthCookies(res, accessToken, refreshToken);
+        setAuthCookies(res, accessToken, refreshToken, req);
 
         res.status(200).json({
             success: true,

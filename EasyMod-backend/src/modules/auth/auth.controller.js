@@ -19,7 +19,7 @@ const signup = async (req, res, next) => {
         }
 
         // Set httpOnly cookies
-        setAuthCookies(res, result.accessToken, result.refreshToken);
+        setAuthCookies(res, result.accessToken, result.refreshToken, req);
 
         const { accessToken, refreshToken, ...safeResult } = result;
 
@@ -49,7 +49,7 @@ const signin = async (req, res, next) => {
         }
 
         // Set httpOnly cookies — tokens must NOT be returned in the response body
-        setAuthCookies(res, result.accessToken, result.refreshToken);
+        setAuthCookies(res, result.accessToken, result.refreshToken, req);
 
         const { accessToken, refreshToken, ...safeResult } = result;
 
@@ -77,7 +77,7 @@ const refresh = async (req, res, next) => {
         const result = await authService.validateRefreshToken(refreshToken);
 
         // Update access token cookie
-        setAuthCookies(res, result.accessToken, null);
+        setAuthCookies(res, result.accessToken, null, req);
 
         // Log successful token refresh — non-fatal, never block the response
         try {
@@ -156,7 +156,7 @@ const logout = async (req, res, next) => {
             await authService.logoutUser(token, req.user);
         }
 
-        clearAuthCookies(res);
+        clearAuthCookies(res, req);
 
         res.status(200).json({
             success: true,
