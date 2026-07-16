@@ -413,6 +413,16 @@ export default function LandingPage() {
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.pricing.heading")}</h2>
             <p className="mt-3 text-gray-500">{t("landing.pricing.subheading")}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+              <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("landing.pricing.badge1")}</span>
+              <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("landing.pricing.badge2")}</span>
+              <Link
+                to="/pricing"
+                className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-[#00A651] transition-colors hover:border-[#00A651] hover:bg-emerald-50"
+              >
+                {t("landing.pricing.details")}
+              </Link>
+            </div>
           </motion.div>
 
           <div ref={pricingRef} className="flex flex-col items-center justify-center gap-6 md:flex-row md:items-stretch">
@@ -423,7 +433,7 @@ export default function LandingPage() {
                   plan.popular
                     ? "border-2 border-[#00A651] bg-white shadow-2xl shadow-[#00A651]/15"
                     : plan.id === "partner"
-                    ? "border border-purple-200 bg-white shadow-sm"
+                    ? "border border-slate-200 bg-white shadow-sm"
                     : "border border-gray-200 bg-white shadow-sm"
                 }`}
                 initial={{ opacity: 0, scale: 0.92, y: 20 }}
@@ -440,7 +450,7 @@ export default function LandingPage() {
                 )}
                 {plan.id === "partner" && (
                   <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                    <span className="rounded-full bg-purple-600 px-4 py-1.5 text-xs font-semibold text-white shadow-md">
+                    <span className="rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow-md">
                       {t("landing.pricing.partnerBadge")}
                     </span>
                   </div>
@@ -463,7 +473,7 @@ export default function LandingPage() {
                       </>
                     )}
                   </div>
-                  <p className={`mt-2 text-xs font-semibold ${plan.id === "partner" ? "text-purple-600" : "text-[#00A651]"}`}>{plan.description}</p>
+                  <p className={`mt-2 text-xs font-semibold ${plan.id === "partner" ? "text-slate-700" : "text-[#00A651]"}`}>{plan.description}</p>
                 </div>
 
                 <ul className="mb-6 flex-1 space-y-2.5">
@@ -478,7 +488,7 @@ export default function LandingPage() {
                 {plan.id === "partner" ? (
                   <Link
                     to="/pricing"
-                    className="block rounded-xl bg-purple-600 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-purple-600/25 transition-all hover:bg-purple-700"
+                    className="block rounded-xl bg-slate-900 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition-all hover:bg-slate-800"
                   >
                     {t("landing.pricing.becomePartner")}
                   </Link>

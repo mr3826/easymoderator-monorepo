@@ -187,8 +187,11 @@
     },
     "pricing": {
       "label": "প্রাইসিং",
-      "heading": "একটাই সহজ দাম",
-      "subheading": "৳৯৯৯/মাস — ১৪ দিনের ফ্রি ট্রায়াল দিয়ে শুরু করুন, কার্ড লাগবে না।",
+      "heading": "মসৃণ ও সৎ মূল্য নির্ধারণ",
+      "subheading": "একটি Growth plan, একটি Partner path, আর কোনো hidden fee নেই।",
+      "badge1": "১৪ দিনের ফ্রি ট্রায়াল",
+      "badge2": "সবকিছু included",
+      "details": "Pricing details দেখুন",
       "perMonth": "/মাস",
       "mostPopular": "সবচেয়ে জনপ্রিয়",
       "getStarted": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন",
@@ -2028,6 +2031,7 @@
     "retry": "Chat Settings এ ফিরে যান"
   },
   "pricing": {
+    "label": "প্রাইসিং",
     "mostPopular": "সবচেয়ে জনপ্রিয়",
     "perMonth": "/মাস",
     "yearlyNote": "বা ৳{{price}}/বছর · ২ মাস সাশ্রয়",
@@ -2053,7 +2057,10 @@
     },
     "hero": {
       "heading": "মসৃণ ও সৎ মূল্য নির্ধারণ",
-      "subheading": "আপনার ব্যবসার আকার অনুযায়ী পরিকল্পনা বেছে নিন। কোনো লুকানো ফি নেই।"
+      "subheading": "একটি Growth plan, একটি Partner path, আর কোনো hidden fee নেই।",
+      "badge1": "Messenger-only launch scope",
+      "badge2": "১৪ দিনের ফ্রি ট্রায়াল",
+      "badge3": "কোনো hidden fee নেই"
     },
     "partnerTeaser": {
       "question": "মাসে ৩০০+ অর্ডার আছে?",

@@ -187,8 +187,11 @@
     },
     "pricing": {
       "label": "Pricing",
-      "heading": "One simple price",
-      "subheading": "৳999/month — start with a 14-day free trial, no card needed.",
+      "heading": "Smooth and honest pricing",
+      "subheading": "One Growth plan, one partner path, and no hidden fees.",
+      "badge1": "14-day free trial",
+      "badge2": "Everything included",
+      "details": "See pricing details",
       "perMonth": "/mo",
       "mostPopular": "Most Popular",
       "getStarted": "Start 14-day free trial",
@@ -2028,6 +2031,7 @@
     "retry": "Back to Chat Settings"
   },
   "pricing": {
+    "label": "Pricing",
     "mostPopular": "Most Popular",
     "perMonth": "/mo",
     "yearlyNote": "or ৳{{price}}/yr · save 2 months",
@@ -2053,7 +2057,10 @@
     },
     "hero": {
       "heading": "Smooth and honest pricing",
-      "subheading": "Choose a plan that fits your business size. No hidden fees."
+      "subheading": "One Growth plan, one partner path, and no hidden fees.",
+      "badge1": "Messenger-only launch scope",
+      "badge2": "14-day free trial",
+      "badge3": "No hidden fees"
     },
     "partnerTeaser": {
       "question": "Have 300+ orders a month?",

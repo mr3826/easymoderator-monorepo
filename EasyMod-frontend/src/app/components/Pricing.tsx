@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { subscriptionPlans, type SubscriptionPlanDefinition } from "@/app/lib/subscriptionPlans";
 import { httpClient } from "@/shared/lib/http/client";
+import BrandLogo from "./BrandLogo";
 
 const FEATURE_ROWS: { labelKey: string; key: keyof SubscriptionPlanDefinition["features"] }[] = [
   { labelKey: "pricing.features.imageUnderstanding", key: "image_understanding" },
@@ -76,7 +77,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
             <p className="text-gray-400 text-xs">{t("pricing.partnerModal.successMessageEn")}</p>
             <button
               onClick={onClose}
-              className="mt-6 px-6 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+              className="mt-6 px-6 py-2.5 bg-[#00A651] text-white rounded-xl font-semibold hover:bg-[#008040] transition-colors"
             >
               {t("pricing.partnerModal.ok")}
             </button>
@@ -97,7 +98,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.businessName}
                   onChange={(e) => setForm({ ...form, businessName: e.target.value })}
                   placeholder={t("pricing.partnerModal.businessNamePlaceholder")}
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.businessName ? "border-red-400" : "border-gray-300"}`}
+                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.businessName ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.businessName && <p className="text-xs text-red-500 mt-1">{errors.businessName}</p>}
               </div>
@@ -110,7 +111,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+880 1XXX-XXXXXX"
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? "border-red-400" : "border-gray-300"}`}
+                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.phone ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
               </div>
@@ -123,7 +124,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.pageLink}
                   onChange={(e) => setForm({ ...form, pageLink: e.target.value })}
                   placeholder="https://facebook.com/yourpage"
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.pageLink ? "border-red-400" : "border-gray-300"}`}
+                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.pageLink ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.pageLink && <p className="text-xs text-red-500 mt-1">{errors.pageLink}</p>}
               </div>
@@ -135,7 +136,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full py-2.5 bg-[#00A651] text-white font-semibold rounded-xl hover:bg-[#008040] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? t("pricing.partnerModal.submitting") : t("pricing.partnerModal.submit")}
               </button>
@@ -162,20 +163,20 @@ function PlanCard({
     <div
       className={`relative flex flex-col rounded-2xl border p-6 ${
         isPopular
-          ? "border-blue-600 bg-blue-600 text-white shadow-xl shadow-blue-200"
+          ? "border-[#00A651] bg-[#0F172A] text-white shadow-xl shadow-emerald-900/20"
           : "border-gray-200 bg-white"
       }`}
     >
       {isPopular && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-amber-400 text-amber-900 text-xs font-bold px-3 py-1 rounded-full">
+          <span className="bg-[#00A651] text-white text-xs font-bold px-3 py-1 rounded-full">
             {t("pricing.mostPopular")}
           </span>
         </div>
       )}
       {isPartner && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-purple-500 text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
+          <span className="bg-slate-900 text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
             {t("pricing.partnerEligibleBadge")}
           </span>
         </div>
@@ -185,7 +186,7 @@ function PlanCard({
         <p className={`text-lg font-bold ${isPopular ? "text-white" : "text-gray-900"}`}>
           {plan.name}
         </p>
-        <p className={`text-sm mt-0.5 ${isPopular ? "text-blue-100" : "text-gray-500"}`}>
+        <p className={`text-sm mt-0.5 ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
           {plan.description}
         </p>
       </div>
@@ -195,22 +196,22 @@ function PlanCard({
           <span className={`text-4xl font-extrabold ${isPopular ? "text-white" : "text-gray-900"}`}>
             ৳{plan.monthlyPrice.toLocaleString()}
           </span>
-          <span className={`text-sm mb-1 ${isPopular ? "text-blue-100" : "text-gray-500"}`}>{t("pricing.perMonth")}</span>
+          <span className={`text-sm mb-1 ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>{t("pricing.perMonth")}</span>
         </div>
         {!isPartner && (
-          <p className={`text-xs mt-1 ${isPopular ? "text-blue-100" : "text-gray-400"}`}>
+          <p className={`text-xs mt-1 ${isPopular ? "text-emerald-100" : "text-gray-400"}`}>
             {t("pricing.yearlyNote", { price: plan.yearlyPrice.toLocaleString() })}
           </p>
         )}
         {isPartner && (
-          <p className="text-xs mt-1 text-gray-400">
+          <p className={`text-xs mt-1 ${isPopular ? "text-emerald-100" : "text-gray-400"}`}>
             {t("pricing.partnerApplyNote")}
           </p>
         )}
       </div>
 
       {/* Limits */}
-      <div className={`rounded-xl p-3 mb-5 space-y-1.5 ${isPopular ? "bg-blue-500" : "bg-gray-50"}`}>
+      <div className={`rounded-xl p-3 mb-5 space-y-1.5 ${isPopular ? "bg-white/10" : "bg-gray-50"}`}>
         {[
           // Fair-use framing — we intentionally don't headline the 300 cap.
           { icon: MessageSquare, label: plan.limits.conversations === -1 ? t("pricing.limits.unlimitedConversations") : t("pricing.limits.conversationsFairUse") },
@@ -238,8 +239,8 @@ function PlanCard({
         onClick={onSelect}
         className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm transition-all ${
           isPopular
-            ? "bg-white text-blue-600 hover:bg-blue-50"
-            : "bg-blue-600 text-white hover:bg-blue-700"
+            ? "bg-white text-[#00A651] hover:bg-emerald-50"
+            : "bg-[#00A651] text-white hover:bg-[#008040]"
         }`}
       >
         {isPartner ? t("pricing.applyNow") : t("pricing.startFreeTrial")}
@@ -271,26 +272,23 @@ export default function Pricing() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-[#f4fbf7]">
       {/* Nav bar */}
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span
-            className="text-xl font-bold text-blue-600 cursor-pointer"
-            onClick={() => navigate("/")}
-          >
-            EasyModerator
-          </span>
+      <header className="sticky top-0 z-20 border-b border-emerald-100 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <button type="button" onClick={() => navigate("/")} className="shrink-0">
+            <BrandLogo size="sm" variant="dark" />
+          </button>
           <div className="flex items-center gap-3">
             <button
               onClick={() => navigate("/signin")}
-              className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+              className="text-sm font-medium text-gray-600 hover:text-gray-900"
             >
               {t("common.signIn")}
             </button>
             <button
               onClick={() => navigate("/signup")}
-              className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 font-medium"
+              className="flex items-center gap-1.5 rounded-lg bg-[#00A651] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#008040]"
             >
               <Zap className="w-3.5 h-3.5" />
               {t("landing.nav.getStarted")}
@@ -299,15 +297,23 @@ export default function Pricing() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-16">
+      <main className="mx-auto max-w-6xl px-6 py-16">
         {/* Hero */}
-        <div className="text-center mb-14">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4">
+        <div className="mb-14 text-center">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-[#00A651]">
+            {t("pricing.label")}
+          </p>
+          <h1 className="mb-4 text-4xl font-extrabold text-gray-900 md:text-5xl">
             {t("pricing.hero.heading")}
           </h1>
-          <p className="text-lg text-gray-500 max-w-xl mx-auto">
+          <p className="mx-auto max-w-2xl text-lg text-gray-600">
             {t("pricing.hero.subheading")}
           </p>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm text-gray-500">
+            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge1")}</span>
+            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge2")}</span>
+            <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("pricing.hero.badge3")}</span>
+          </div>
         </div>
 
         {/* Single Growth plan — one simple price. Partner applies separately. */}
@@ -323,23 +329,23 @@ export default function Pricing() {
         </div>
 
         {/* Partner plan teaser */}
-        <p className="text-center text-sm text-gray-500 mb-16">
+        <p className="mb-16 text-center text-sm text-gray-500">
           {t("pricing.partnerTeaser.question")}{" "}
           <a
             href="mailto:hello@hexabyte.co?subject=Partner Plan Inquiry"
-            className="text-blue-600 underline hover:text-blue-700"
+            className="text-[#00A651] underline hover:text-[#008040]"
           >
             {t("pricing.partnerTeaser.link")}
           </a>
         </p>
 
         {/* Everything included — Growth bundles every feature at one price. */}
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden mb-16">
-          <div className="px-6 py-5 border-b border-gray-100">
+        <div className="mb-16 overflow-hidden rounded-2xl border border-emerald-100 bg-white">
+          <div className="border-b border-emerald-50 px-6 py-5">
             <h2 className="text-xl font-bold text-gray-900">{t("pricing.included.heading")}</h2>
             <p className="text-sm text-gray-500 mt-0.5">{t("pricing.included.subheading")}</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-100">
+          <div className="grid grid-cols-1 gap-px bg-emerald-50 sm:grid-cols-2">
             {FEATURE_ROWS.map(({ labelKey }) => (
               <div key={labelKey} className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
                 <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -369,12 +375,12 @@ export default function Pricing() {
         </div>
 
         {/* CTA */}
-        <div className="mt-16 bg-blue-600 rounded-2xl p-10 text-center text-white">
+        <div className="mt-16 rounded-2xl bg-[#0F172A] p-10 text-center text-white">
           <h2 className="text-3xl font-extrabold mb-3">{t("pricing.cta.heading")}</h2>
-          <p className="text-blue-100 mb-6">{t("pricing.cta.subheading")}</p>
+          <p className="mb-6 text-emerald-100">{t("pricing.cta.subheading")}</p>
           <button
             onClick={() => navigate("/signup")}
-            className="inline-flex items-center gap-2 bg-white text-blue-600 font-bold px-8 py-3 rounded-xl hover:bg-blue-50 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#00A651] px-8 py-3 font-bold text-white transition-colors hover:bg-[#008040]"
           >
             <Zap className="w-4 h-4" />
             {t("pricing.cta.button")}
@@ -382,11 +388,11 @@ export default function Pricing() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-100 mt-16 py-8 text-center text-sm text-gray-400">
+      <footer className="mt-16 border-t border-emerald-100 py-8 text-center text-sm text-gray-400">
         © {new Date().getFullYear()} EasyModerator &bull;{" "}
-        <span className="cursor-pointer hover:text-gray-600" onClick={() => navigate("/privacy-policy")}>
+        <button type="button" className="cursor-pointer hover:text-gray-600" onClick={() => navigate("/privacy-policy")}>
           {t("common.privacyPolicy")}
-        </span>
+        </button>
       </footer>
 
       {showPartnerModal && (
