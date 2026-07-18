@@ -95,13 +95,15 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
-    async listManagedAssets({ userToken, includeBusinessPortfolio = false }) {
+    async listManagedAssets({ userToken }) {
         const PAGE_FIELDS =
             'id,name,category,access_token,' +
             'picture{data{url}},' +
             'tasks';
 
-        // ── Step 1: /me/accounts — REQUIRED. A failure here is fatal (nothing to show).
+        // /me/accounts is the only discovery edge used in the Messenger-only
+        // launch. Do not query Business Portfolio edges here: that requires the
+        // removed business_management permission and expands App Review scope.
         const meAccountsRaw = [];
         try {
             let url = `${GRAPH_BASE}/me/accounts`;
@@ -123,84 +125,19 @@ class MetaMessengerProvider extends ChannelProvider {
             throw metaError(err, 'listManagedAssets:me/accounts');
         }
 
-        // ── Step 2: Business Portfolio — OPTIONAL + ISOLATED. Only runs when the
-        // caller opts in (i.e. business_management was actually granted). ANY failure
-        // here is swallowed so it can never discard the Step 1 results above.
-        const bizPagesRaw = [];
-        let ownedCount = 0;
-        let clientCount = 0;
-        let portfolioError = null;
-        if (includeBusinessPortfolio) {
-            try {
-                let bizUrl = `${GRAPH_BASE}/me/businesses`;
-                let bizParams = {
-                    fields: 'id,name',
-                    limit: 100,
-                    access_token: userToken,
-                    appsecret_proof: appsecretProof(userToken),
-                };
-                const businesses = [];
-                while (bizUrl) {
-                    const resp = await axios.get(bizUrl, { params: bizParams });
-                    const batch = resp.data?.data || [];
-                    businesses.push(...batch);
-                    const next = resp.data?.paging?.next;
-                    if (next && batch.length > 0) { bizUrl = next; bizParams = {}; }
-                    else { bizUrl = null; }
-                }
-
-                for (const biz of businesses) {
-                    for (const edge of ['owned_pages', 'client_pages']) {
-                        let edgeUrl = `${GRAPH_BASE}/${biz.id}/${edge}`;
-                        let edgeParams = {
-                            fields: PAGE_FIELDS,
-                            limit: 100,
-                            access_token: userToken,
-                            appsecret_proof: appsecretProof(userToken),
-                        };
-                        while (edgeUrl) {
-                            const resp = await axios.get(edgeUrl, { params: edgeParams });
-                            const batch = resp.data?.data || [];
-                            bizPagesRaw.push(...batch);
-                            if (edge === 'owned_pages') ownedCount += batch.length;
-                            else clientCount += batch.length;
-                            const next = resp.data?.paging?.next;
-                            if (next && batch.length > 0) { edgeUrl = next; edgeParams = {}; }
-                            else { edgeUrl = null; }
-                        }
-                    }
-                }
-            } catch (err) {
-                // Non-fatal and expected when business_management was not granted.
-                // Captured here; the metaAssetsListed metrics log below carries
-                // portfolioError, so we don't emit a separate (redundant) warn line.
-                portfolioError = err.response?.data?.error?.message || err.message;
-            }
-        }
-
-        // ── Step 3: merge + dedup by page id (me/accounts wins) ──
-        const seenIds = new Set();
-        const mergedRaw = [];
-        for (const p of [...meAccountsRaw, ...bizPagesRaw]) {
-            if (!seenIds.has(p.id)) { seenIds.add(p.id); mergedRaw.push(p); }
-        }
-
-        // ── Step 4: normalise ──
-        const result = mergedRaw.map(p => ({
+        const result = meAccountsRaw.map(p => ({
             id: p.id,
             name: p.name,
             category: p.category || null,
             pictureUrl: p.picture?.data?.url || p.picture?.url || null,
         }));
 
-        // ── Per-source discovery metrics — emitted on every call ──
-        // source_* counts are raw (pre-dedup); `deduped` is the post-merge total.
         logger.info('metaAssetsListed', {
             source_me_accounts: meAccountsRaw.length,
-            source_owned_pages: ownedCount,
-            source_client_pages: clientCount,
-            portfolioAttempted: includeBusinessPortfolio,
-            portfolioError,
+            source_owned_pages: 0,
+            source_client_pages: 0,
+            portfolioAttempted: false,
+            portfolioError: null,
             deduped: result.length,
         });
 

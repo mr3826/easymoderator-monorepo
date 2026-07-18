@@ -8,5 +8,6 @@ module.exports = {
         on: jest.fn(),
         close: jest.fn().mockResolvedValue(undefined),
     },
+    drainChannelJobs: jest.fn().mockResolvedValue({ removed: 0 }),
     connection: { host: 'localhost', port: 6379 },
 };

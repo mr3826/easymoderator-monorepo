@@ -17,12 +17,30 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const MetaChannel = require('./meta-channel.entity');
 const MetaChannelSettings = require('./meta-channel-settings.entity');
+const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const { drainChannelJobs } = require('../../jobs/message-queue');
 
 const logger = createLogger('MetaChannelService');
 
 const VALID_STATUSES = ['CONNECTED', 'TOKEN_EXPIRED', 'REVOKED', 'DISCONNECTED', 'ERROR'];
+const RELEASABLE_CROSS_SHOP_STATUSES = new Set(['DISCONNECTED', 'REVOKED', 'TOKEN_EXPIRED', 'ERROR']);
+const REASSIGNED_LAST_ERROR = 'reassigned_to_new_shop_after_fresh_meta_oauth';
+
+function sameId(a, b) {
+    return a && b && String(a) === String(b);
+}
+
+function canReleaseCrossShopClaim(channel, userId) {
+    if (!channel) return false;
+    if (RELEASABLE_CROSS_SHOP_STATUSES.has(channel.status)) return true;
+    if (!channel.page_access_token_ct) return true;
+    // Legacy rows before the OAuth audit fix can have no connector id. A fresh
+    // Meta OAuth page token is the current ownership proof, so let those rows be
+    // released instead of permanently blocking the Page.
+    if (!channel.connected_by_user_id) return true;
+    return sameId(channel.connected_by_user_id, userId);
+}
 
 class MetaChannelService {
 
@@ -60,28 +78,61 @@ class MetaChannelService {
         if (!metaAssetId) throw new Error('MetaChannelService.upsertFromOAuth: metaAssetId is required');
 
         const transaction = await sequelize.transaction();
+        let committed = false;
+        let channel = null;
+        const releasedConflictingChannels = [];
         try {
-            // Check if this asset is claimed by a different shop (cross-shop guard)
-            const conflicting = await MetaChannel.findOne({
+            const now = new Date();
+            // Check if this asset is claimed by a different shop (cross-shop guard).
+            // Stale/non-routable claims are released after a fresh Meta OAuth
+            // proves the current user can manage this Page. A modern active claim
+            // from another user still blocks to prevent accidental tenant takeover.
+            const conflictingChannels = await MetaChannel.findAll({
                 where: {
                     meta_asset_id: metaAssetId,
                     shop_id: { [Op.ne]: shopId }
                 },
                 transaction
             });
-            if (conflicting) {
-                throw new Error(`meta_asset_id ${metaAssetId} is already connected to another shop`);
+            const blockingConflict = conflictingChannels.find((existing) => (
+                !canReleaseCrossShopClaim(existing, userId)
+            ));
+            if (blockingConflict) {
+                throw new AppError(
+                    'This Facebook Page is already connected to another EasyModerator shop. Disconnect it there first, or ask support to release the old connection.',
+                    409,
+                    'META_ASSET_ALREADY_CONNECTED',
+                    {
+                        metaAssetId,
+                        conflictingChannelId: blockingConflict.id,
+                        conflictingShopId: blockingConflict.shop_id,
+                    }
+                );
+            }
+
+            for (const existing of conflictingChannels) {
+                const previousStatus = existing.status;
+                existing.status = 'DISCONNECTED';
+                existing.page_access_token_ct = null;
+                existing.disconnected_at = now;
+                existing.last_error = REASSIGNED_LAST_ERROR;
+                await existing.save({ transaction });
+                releasedConflictingChannels.push({
+                    id: existing.id,
+                    shop_id: existing.shop_id,
+                    platform: existing.platform,
+                    previousStatus,
+                });
             }
 
             // Phase 1: upsert on (shop_id, meta_asset_id). A second page of the
             // same platform now creates a new row instead of overwriting the first.
             // Reconnecting the same page still updates in place.
-            let channel = await MetaChannel.findOne({
+            channel = await MetaChannel.findOne({
                 where: { shop_id: shopId, meta_asset_id: metaAssetId },
                 transaction
             });
 
-            const now = new Date();
             if (channel) {
                 // Update existing row — entity setter encrypts token automatically
                 channel.meta_asset_id = metaAssetId;
@@ -137,15 +188,11 @@ class MetaChannelService {
             }
 
             await transaction.commit();
-            logger.info('MetaChannelService.upsertFromOAuth: success', {
-                channelId: channel.id,
-                shopId,
-                platform,
-                metaAssetId
-            });
-            return channel;
+            committed = true;
         } catch (err) {
-            await transaction.rollback();
+            if (!committed) {
+                await transaction.rollback();
+            }
             // Expand Sequelize ValidationError/UniqueConstraintError so the
             // log line names the offending field instead of the parent
             // "Validation error" summary, which is useless on its own.
@@ -162,6 +209,36 @@ class MetaChannelService {
             });
             throw err;
         }
+
+        for (const released of releasedConflictingChannels) {
+            try {
+                const { removed } = await drainChannelJobs({
+                    metaChannelId: released.id,
+                    shopId: released.shop_id,
+                    platform: released.platform,
+                });
+                logger.info('MetaChannelService.upsertFromOAuth: drained reassigned channel jobs', {
+                    releasedChannelId: released.id,
+                    previousShopId: released.shop_id,
+                    queueJobsDrained: removed,
+                });
+            } catch (drainErr) {
+                logger.warn('MetaChannelService.upsertFromOAuth: failed to drain reassigned channel jobs', {
+                    releasedChannelId: released.id,
+                    previousShopId: released.shop_id,
+                    error: drainErr.message,
+                });
+            }
+        }
+
+        logger.info('MetaChannelService.upsertFromOAuth: success', {
+            channelId: channel.id,
+            shopId,
+            platform,
+            metaAssetId,
+            releasedCrossShopClaims: releasedConflictingChannels.length,
+        });
+        return channel;
     }
 
     /**
@@ -225,7 +302,10 @@ class MetaChannelService {
      */
     async findByMetaAssetId(metaAssetId) {
         if (!metaAssetId) return null;
-        return MetaChannel.findOne({ where: { meta_asset_id: metaAssetId } });
+        return MetaChannel.findOne({
+            where: { meta_asset_id: metaAssetId, status: 'CONNECTED' },
+            order: [['updated_at', 'DESC'], ['created_at', 'DESC']],
+        });
     }
 
     /**
