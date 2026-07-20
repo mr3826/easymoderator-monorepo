@@ -9,8 +9,9 @@
 Let shop owners control three customer-facing touches, all wired into the live AI
 reply pipeline, with sensible defaults provided out of the box:
 
-1. **Greeting** — an auto-sent welcome on the first AI reply of a conversation,
-   carrying a fixed **Meta AI-disclosure** identifier the owner writes *around*.
+1. **Greeting** — an auto-sent welcome on the first customer-visible AI reply of
+   a conversation, carrying a fixed **Meta AI-disclosure** identifier the owner
+   writes *around*.
 2. **Closing** — a thank-you + "follow us" message appended to the order
    confirmation.
 3. **Social media links** — shop profile links surfaced inside the closing.
@@ -51,10 +52,11 @@ A code-level, language-aware constant (owner cannot remove, can write after it):
 
 Sent greeting = **disclosure line + owner's `custom_text`**.
 
-**Compliance floor stays intact:** the first AI reply always starts with this clear
-plain-text automated-assistant declaration, before any owner greeting, FAQ answer,
-product answer, order-flow text, or LLM response. The disclosure has no icon and no
-owner-controlled off switch.
+**Compliance floor stays intact:** the first customer-visible AI reply always starts
+with this clear plain-text automated-assistant declaration, before any owner greeting,
+FAQ answer, product answer, order-flow text, or LLM response. Held drafts do not
+consume this disclosure because the customer never saw them. The disclosure has no
+icon and no owner-controlled off switch.
 
 ## Injection points (grounded in code)
 

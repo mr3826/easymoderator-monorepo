@@ -101,9 +101,9 @@ async function loadConversationHistory(conversationId, excludeIds) {
 }
 
 /**
- * The owner greeting is tied to the customer's first turn, not the first AI row.
- * That covers plain "hi" and first-turn image/product messages, while avoiding
- * a late greeting if earlier customer turns were held in Draft/HITL.
+ * Legacy helper kept for focused unit coverage around burst-flush customer-turn
+ * detection. Customer-visible disclosure now uses hasPriorCustomerVisibleAiReply
+ * so a held AI draft does not consume the customer's first visible AI identity.
  */
 async function isFirstCustomerTurn(conversationId, currentTurnMessageIds) {
     const excludeIds = (Array.isArray(currentTurnMessageIds) ? currentTurnMessageIds : [currentTurnMessageIds]).filter(Boolean);
@@ -113,6 +113,22 @@ async function isFirstCustomerTurn(conversationId, currentTurnMessageIds) {
     }
     const customerCount = await Message.count({ where });
     return excludeIds.length > 0 ? customerCount === 0 : customerCount <= 1;
+}
+
+function wasAiMessageCustomerVisible(message) {
+    const metadata = message?.metadata || {};
+    if (metadata.delivered === false) return false;
+    if (metadata.held_reason) return false;
+    return true;
+}
+
+async function hasPriorCustomerVisibleAiReply(conversationId) {
+    const priorAiMessages = await Message.findAll({
+        where: { conversation_id: conversationId, sender: 'ai' },
+        attributes: ['id', 'metadata'],
+        order: [['created_at', 'ASC']],
+    });
+    return priorAiMessages.some(wasAiMessageCustomerVisible);
 }
 
 /**
@@ -372,15 +388,15 @@ async function processMessageJob(job) {
     }
 
     // ── First-reply AI-disclosure greeting ──────────────────────────────────
-    // On the FIRST AI reply of a conversation, prepend the MANDATORY clear-text
-    // AI-disclosure (Meta Platform Policy — customers must know an automated
-    // system is replying) plus the owner's optional welcome text. Always applied
-    // when the AI is replying; there is no on/off toggle for the disclosure.
+    // On the FIRST customer-visible AI reply of a conversation, prepend the
+    // MANDATORY clear-text AI-disclosure (Meta Platform Policy — customers must
+    // know an automated system is replying) plus the owner's optional welcome
+    // text. Held drafts do not count because the customer never saw them.
     // Best-effort: any failure leaves the reply unchanged.
     let repliedText = rawResponse;
     try {
         if (rawResponse) {
-            if (await isFirstCustomerTurn(conversationId, historyExcludeIds)) {
+            if (!(await hasPriorCustomerVisibleAiReply(conversationId))) {
                 const { buildGreeting } = require('../modules/shop/ai-messaging');
                 const Shop = require('../modules/shop/shop.entity');
                 const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
@@ -637,5 +653,5 @@ module.exports = {
     processMessageJob,
     startWorker,
     getWorker: () => worker,
-    _private: { loadConversationHistory, isFirstCustomerTurn },
+    _private: { loadConversationHistory, isFirstCustomerTurn, hasPriorCustomerVisibleAiReply, wasAiMessageCustomerVisible },
 };

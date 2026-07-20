@@ -60,3 +60,47 @@ describe('message-worker first customer turn detection', () => {
         await expect(_private.isFirstCustomerTurn('conv-1', [])).resolves.toBe(false);
     });
 });
+
+describe('message-worker first customer-visible AI disclosure detection', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('does not count held AI drafts as customer-visible replies', async () => {
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', metadata: { delivered: false, held_reason: 'draft_mode' } },
+            { id: 'ai-2', metadata: { delivered: false, held_reason: 'low_confidence' } },
+        ]);
+
+        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(false);
+    });
+
+    it('counts delivered AI replies as customer-visible replies', async () => {
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', metadata: { delivered: false, held_reason: 'draft_mode' } },
+            { id: 'ai-2', metadata: { delivered: true } },
+        ]);
+
+        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(true);
+    });
+
+    it('treats legacy AI rows without delivery metadata as visible', async () => {
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', metadata: null },
+        ]);
+
+        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(true);
+    });
+
+    it('queries prior AI rows in the same conversation only', async () => {
+        Message.findAll.mockResolvedValueOnce([]);
+
+        await _private.hasPriorCustomerVisibleAiReply('conv-1');
+
+        expect(Message.findAll).toHaveBeenCalledWith({
+            where: { conversation_id: 'conv-1', sender: 'ai' },
+            attributes: ['id', 'metadata'],
+            order: [['created_at', 'ASC']],
+        });
+    });
+});
