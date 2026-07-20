@@ -66,40 +66,55 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
         jest.clearAllMocks();
     });
 
-    it('does not count held AI drafts as customer-visible replies', async () => {
+    it('does not count held AI drafts as customer-visible disclosures', async () => {
         Message.findAll.mockResolvedValueOnce([
-            { id: 'ai-1', metadata: { delivered: false, held_reason: 'draft_mode' } },
-            { id: 'ai-2', metadata: { delivered: false, held_reason: 'low_confidence' } },
+            { id: 'ai-1', content: 'Hi, I am the AI assistant from Demo Shop.', metadata: { delivered: false, held_reason: 'draft_mode' } },
+            { id: 'ai-2', content: 'Hi, I am the AI assistant from Demo Shop.', metadata: { delivered: false, held_reason: 'low_confidence' } },
         ]);
 
-        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(false);
+        await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(false);
     });
 
-    it('counts delivered AI replies as customer-visible replies', async () => {
+    it('does not count delivered AI replies that never disclosed the assistant', async () => {
         Message.findAll.mockResolvedValueOnce([
-            { id: 'ai-1', metadata: { delivered: false, held_reason: 'draft_mode' } },
-            { id: 'ai-2', metadata: { delivered: true } },
+            { id: 'ai-1', content: 'Hello! How can I help you today?', metadata: { delivered: true } },
         ]);
 
-        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(true);
+        await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(false);
     });
 
-    it('treats legacy AI rows without delivery metadata as visible', async () => {
+    it('counts delivered AI replies with disclosure text as customer-visible disclosures', async () => {
         Message.findAll.mockResolvedValueOnce([
-            { id: 'ai-1', metadata: null },
+            { id: 'ai-1', content: 'Hello! How can I help you today?', metadata: { delivered: true } },
+            { id: 'ai-2', content: "Hi, I'm the AI assistant from Demo Shop.\n\nHello!", metadata: { delivered: true } },
         ]);
 
-        await expect(_private.hasPriorCustomerVisibleAiReply('conv-1')).resolves.toBe(true);
+        await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(true);
+    });
+
+    it('counts the persisted disclosure metadata flag', async () => {
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', content: 'Custom localized disclosure', metadata: { delivered: true, ai_disclosure_applied: true } },
+        ]);
+
+        await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(true);
+    });
+
+    it('recognizes legacy Bangla disclosure text', () => {
+        expect(_private.hasAiDisclosure({
+            content: 'হাই, আমি Demo Shop-এর AI সহকারী।',
+            metadata: {},
+        })).toBe(true);
     });
 
     it('queries prior AI rows in the same conversation only', async () => {
         Message.findAll.mockResolvedValueOnce([]);
 
-        await _private.hasPriorCustomerVisibleAiReply('conv-1');
+        await _private.hasPriorCustomerVisibleAiDisclosure('conv-1');
 
         expect(Message.findAll).toHaveBeenCalledWith({
             where: { conversation_id: 'conv-1', sender: 'ai' },
-            attributes: ['id', 'metadata'],
+            attributes: ['id', 'content', 'metadata'],
             order: [['created_at', 'ASC']],
         });
     });
