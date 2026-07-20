@@ -48,6 +48,21 @@ function captureKnowledgeGap(params) {
         });
 }
 
+function buildOrderFlowFailureResponse(message, language = 'mixed') {
+    const { hasPurchaseIntent } = require('../modules/conversation/order-flow.service');
+    if (!hasPurchaseIntent(message)) return null;
+
+    return {
+        handled: true,
+        response: language === 'en'
+            ? 'I could not start the order system right now. Please send the product name or a photo again, and our team will help if it still does not start.'
+            : 'অর্ডার সিস্টেমটি এখন শুরু করা যায়নি। প্রোডাক্টের নাম বা ছবি আবার পাঠান, না হলে আমাদের টিম আপনাকে সাহায্য করবে।',
+        confidence: 1.0,
+        sourceReferences: null,
+        meta: { order_session: 'unavailable', reason: 'order_flow_error' },
+    };
+}
+
 /**
  * Resolve the MetaChannel row for this job. Prefers `metaChannelId` from the
  * job payload (set by the webhook dispatcher, unambiguous when a shop owns
@@ -365,7 +380,16 @@ async function processMessageJob(job) {
         });
     } catch (ofErr) {
         console.error(`[worker] handleOrderFlow failed for conv ${conversationId}:`, ofErr.message);
-        // Non-fatal — fall through to the conversational AI below.
+        const failureOrderFlow = buildOrderFlowFailureResponse(effMessage, detectedLanguage);
+        if (failureOrderFlow) {
+            orderFlow = failureOrderFlow;
+            opsAlert('Order flow failed on purchase intent — sent safe fallback instead of LLM', {
+                detail: `shop=${shopId} conv=${conversationId}\nerror: ${ofErr.message}`,
+                level: 'warning',
+                context: { shopId, conversationId, error: ofErr.message },
+            }).catch(() => {});
+        }
+        // Non-purchase messages remain non-fatal and fall through to conversational AI.
     }
 
     // AIChatbotController is loaded lazily to avoid circular requires
@@ -436,6 +460,7 @@ async function processMessageJob(job) {
         confidence,
         automation_mode: aiSettings.automation_mode,
         ai_disclosure_applied: disclosureApplied,
+        order_flow: orderFlow.meta || null,
         sourceReferences: sourceReferences || null,
     });
     const aiMessage = aiStoreResult.message;
@@ -668,5 +693,12 @@ module.exports = {
     processMessageJob,
     startWorker,
     getWorker: () => worker,
-    _private: { loadConversationHistory, isFirstCustomerTurn, hasPriorCustomerVisibleAiDisclosure, hasAiDisclosure, wasAiMessageCustomerVisible },
+    _private: {
+        loadConversationHistory,
+        isFirstCustomerTurn,
+        hasPriorCustomerVisibleAiDisclosure,
+        hasAiDisclosure,
+        wasAiMessageCustomerVisible,
+        buildOrderFlowFailureResponse,
+    },
 };

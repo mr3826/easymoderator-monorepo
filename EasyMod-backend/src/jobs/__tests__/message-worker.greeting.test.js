@@ -22,10 +22,14 @@ jest.mock('src/modules/policy/policy.engine', () => ({ evaluateOutbound: jest.fn
 jest.mock('src/modules/channel-providers/meta-channel.service', () => ({}));
 jest.mock('src/modules/channel-providers/meta-channel.entity', () => ({}));
 jest.mock('src/modules/customer/customer.entity', () => ({}));
+jest.mock('src/modules/conversation/order-flow.service', () => ({
+    hasPurchaseIntent: jest.fn((message) => String(message || '').toLowerCase().includes('order korbo')),
+}));
 
 const { Op } = require('sequelize');
 const { Message } = require('src/modules/conversation/conversation.entity');
 const { _private } = require('src/jobs/message-worker');
+const { hasPurchaseIntent } = require('src/modules/conversation/order-flow.service');
 
 describe('message-worker first customer turn detection', () => {
     beforeEach(() => {
@@ -117,5 +121,29 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
             attributes: ['id', 'content', 'metadata'],
             order: [['created_at', 'ASC']],
         });
+    });
+});
+
+describe('message-worker order-flow failure fallback', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        hasPurchaseIntent.mockImplementation((message) => String(message || '').toLowerCase().includes('order korbo'));
+    });
+
+    it('handles purchase intent safely instead of letting the LLM claim an order started', () => {
+        const result = _private.buildOrderFlowFailureResponse('order korbo', 'bn');
+
+        expect(result).toEqual(expect.objectContaining({
+            handled: true,
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'unavailable', reason: 'order_flow_error' },
+        }));
+        expect(result.response).toContain('অর্ডার সিস্টেমটি');
+        expect(result.response).not.toMatch(/শুরু হয়ে যাবে|started|processing/i);
+    });
+
+    it('leaves non-purchase messages on the normal AI path', () => {
+        expect(_private.buildOrderFlowFailureResponse('price koto?', 'bn')).toBeNull();
     });
 });

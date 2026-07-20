@@ -155,16 +155,17 @@ Inbound message → reply, end to end:
 1. **Webhook in** — `POST /webhooks/meta` verifies the `x-hub-signature-256` HMAC, then enqueues the event to the `message-queue` (returns `200` immediately).
 2. **Burst coalescing** — `burst-coalescer.js` waits for a short window (`AI_BURST_WINDOW_MS`, default 8s) so a customer who splits one thought across several quick messages (or a photo + a caption) gets **one** combined reply, not many.
 3. **Worker** — `message-worker.js` resolves conversation state, enforces policy guards, and builds context.
-4. **Intent routing** — `intent-router.service.js` classifies the message (order, payment, support, …) and decides whether to retrieve product/FAQ context.
-5. **RAG** — `rag.service.js` embeds the query and queries **Qdrant** (per-tenant collection) for the top-K product/knowledge chunks; live prices are read from Postgres so the model never quotes a stale price.
-6. **LLM failover chain** (`llm.service.js`):
+4. **Deterministic order capture** — `order-flow.service.js` runs before the LLM. Active order sessions always stay in the step-machine. Clear purchase intent such as `order korbo` either starts/continues the order flow or gets a safe product-needed/unavailable reply; it must not fall through to a generic AI reply that claims an order has started.
+5. **Intent routing** — `intent-router.service.js` classifies the message (order, payment, support, …) and decides whether to retrieve product/FAQ context.
+6. **RAG** — `rag.service.js` embeds the query and queries **Qdrant** (per-tenant collection) for the top-K product/knowledge chunks; live prices are read from Postgres so the model never quotes a stale price.
+7. **LLM failover chain** (`llm.service.js`):
    1. `gemini-3.1-flash-lite` — primary (fast, cheap)
    2. `gemini-3.1-pro-preview` — fallback / high-stakes
    3. `gpt-4.1-mini` — final fallback
    A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
-7. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
-8. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. Draft/Manual modes store the reply as an inbox suggestion; Auto mode can send only after policy and confidence gates pass.
-9. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
+8. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
+9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. Draft/Manual modes store the reply as an inbox suggestion; Auto mode can send only after policy and confidence gates pass.
+10. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
 **Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.
 
