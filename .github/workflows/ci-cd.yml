@@ -39,6 +39,11 @@ on:
         required: false
         default: ''
         type: string
+      seed_admin:
+        description: 'Seed/update the SEED_ADMIN_* production review account. Type SEED to confirm.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -284,6 +289,9 @@ jobs:
           SEED_ADMIN_PASSWORD=${{ secrets.SEED_ADMIN_PASSWORD }}
           SEED_ADMIN_NAME=EasyMod Admin
           SEED_ADMIN_PHONE=01700000000
+          SEED_ADMIN_SHOP=EasyModerator Review Shop
+          SEED_ADMIN_PLATFORM_ROLE=SUPER_ADMIN
+          SEED_ADMIN_PAID_MONTHS=12
 
           ALLOW_SELF_SIGNED_TLS=${{ secrets.ALLOW_SELF_SIGNED_TLS }}
           BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
@@ -312,7 +320,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB
+          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN
           script: |
             set -e
 
@@ -382,6 +390,13 @@ jobs:
               docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run migrate
             fi
 
+            # Idempotent production review account seed. Requires exact SEED input
+            # so normal deploys do not reset credentials or grant admin access.
+            if [ "$SEED_ADMIN" = "SEED" ]; then
+              echo "==> Seeding production admin review account"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run seed:admin
+            fi
+
             # Health check
             for i in $(seq 1 20); do
               STATUS=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
@@ -408,3 +423,4 @@ jobs:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
+          SEED_ADMIN: ${{ github.event.inputs.seed_admin }}

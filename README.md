@@ -93,6 +93,8 @@ Manual production changes should not bypass this path unless there is an inciden
 
 The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved for confirmed production resets. It drops and recreates the EasyModerator Postgres database, flushes Redis queues/cache/session state, clears backend uploads, removes the active Qdrant vector-store volume, recreates services, bootstraps schema, seeds migration history, and verifies `/health/ready`.
 
+The manual workflow input `seed_admin=SEED` creates or updates the production review account from `SEED_ADMIN_*` environment values. The seed grants `SUPER_ADMIN`, ensures an owner shop, resets the configured password, and keeps that shop on an active Growth subscription paid through the next 12 months. The password is supplied by GitHub Secrets, never committed.
+
 Auth in production is intended to be same-origin through `https://easymod.tech/api`. Keep `VITE_API_BASE_URL` empty for the SPA. `COOKIE_DOMAIN` is optional; if it is set for a legacy subdomain deployment, the backend only applies it when it matches the current request host so browsers do not reject signin cookies.
 
 ### Telegram alert bot
