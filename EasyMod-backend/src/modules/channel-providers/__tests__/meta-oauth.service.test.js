@@ -3,6 +3,7 @@
 // Mock the OAuth state store so tests don't need a real Redis instance.
 jest.mock('../oauth-state.store', () => ({
     put:  jest.fn().mockResolvedValue(undefined),
+    get:  jest.fn(),
     take: jest.fn().mockResolvedValue({ userId: 'user-xyz', shopId: 'shop-abc', platform: 'facebook' }),
     TTL_SECONDS: 900,
 }));
@@ -36,6 +37,7 @@ jest.mock('../meta-channel.service', () => ({
     confirmWebhookActive: mockConfirmWebhookActive,
 }));
 
+const stateStore = require('../oauth-state.store');
 const oauthService = require('../meta-oauth.service');
 
 describe('initiateOAuth (facebook) scopes', () => {
@@ -61,8 +63,6 @@ describe('initiateOAuth (facebook) scopes', () => {
 });
 
 describe('OAuth callback null-state guards', () => {
-    const stateStore = require('../oauth-state.store');
-
     beforeEach(() => jest.clearAllMocks());
 
     test('handleCallback rejects with status 400 and "Invalid or expired" when stateStore.take returns null', async () => {
@@ -74,6 +74,27 @@ describe('OAuth callback null-state guards', () => {
             message: 'Invalid or expired OAuth state token',
             status: 400,
         });
+    });
+
+    test('handleCallback returns an opaque callback token and stores the Meta user token server-side', async () => {
+        const pages = [{ id: 'PAGE_42', name: 'My Page' }];
+        mockListManagedAssets.mockResolvedValueOnce(pages);
+
+        const result = await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
+
+        expect(result.pages).toEqual(pages);
+        expect(result.tempToken).toMatch(/^[a-f0-9]{64}$/);
+        expect(result.tempToken).not.toBe('user-tok');
+        expect(stateStore.put).toHaveBeenCalledWith(
+            `callback:shop-abc:facebook:${result.tempToken}`,
+            expect.objectContaining({
+                userToken: 'user-tok',
+                pages,
+                userId: 'user-xyz',
+                shopId: 'shop-abc',
+                platform: 'facebook',
+            }),
+        );
     });
 });
 
@@ -88,6 +109,13 @@ describe('connectPage() webhook verify wiring', () => {
         mockUpsertFromOAuth.mockResolvedValue(CHANNEL);
         mockGetAssetAccessToken.mockResolvedValue({ token: 'page-tok', expiresAt: null });
         mockSubscribeWebhook.mockResolvedValue(undefined);
+        stateStore.get.mockResolvedValue({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{ id: ASSET_ID, name: 'Stored Page Name' }],
+            userId: USER_ID,
+            shopId: SHOP_ID,
+        });
     });
 
     test('calls updateStatus(ERROR, webhook_subscription_unverified) when verify returns ok:false', async () => {
@@ -95,6 +123,13 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
+        expect(mockGetAssetAccessToken).toHaveBeenCalledWith({
+            assetId: ASSET_ID,
+            userToken: 'stored-user-token',
+        });
+        expect(mockUpsertFromOAuth).toHaveBeenCalledWith(expect.objectContaining({
+            displayName: 'Stored Page Name',
+        }));
         expect(mockSubscribeWebhook).toHaveBeenCalledTimes(1);
         expect(mockVerifyWebhookSubscription).toHaveBeenCalledTimes(1);
         expect(mockUpdateStatus).toHaveBeenCalledWith('chan-1', 'ERROR', 'webhook_subscription_unverified');
@@ -134,5 +169,26 @@ describe('connectPage() webhook verify wiring', () => {
         const result = await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
         expect(result.webhookWarning).toBeNull();
+    });
+
+    test('rejects a Page that was not selected in the Meta OAuth callback', async () => {
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{ id: 'PAGE_OTHER', name: 'Other Page' }],
+            userId: USER_ID,
+            shopId: SHOP_ID,
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({
+            status: 403,
+            message: expect.stringContaining('was not selected'),
+        });
+
+        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
     });
 });

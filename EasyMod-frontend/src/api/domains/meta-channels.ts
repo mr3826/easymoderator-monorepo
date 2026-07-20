@@ -60,6 +60,7 @@ export interface MetaOAuthAsset {
 
 export interface MetaOAuthCallbackResult {
   pages: MetaOAuthAsset[];
+  /** Opaque callback token; never a raw Meta access token. */
   tempToken: string;
 }
 

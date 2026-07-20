@@ -25,6 +25,21 @@ async function put(key, payload) {
     }
 }
 
+async function get(key) {
+    if (useRedis) {
+        const raw = await cacheRedis.get(PREFIX + key);
+        if (raw == null) return null;
+        try { return JSON.parse(raw); } catch { return null; }
+    }
+    const entry = _mem.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+        _mem.delete(key);
+        return null;
+    }
+    try { return JSON.parse(entry.value); } catch { return null; }
+}
+
 async function take(key) {
     if (useRedis) {
         const raw = await cacheRedis.get(PREFIX + key);
@@ -42,4 +57,4 @@ async function take(key) {
     try { return JSON.parse(entry.value); } catch { return null; }
 }
 
-module.exports = { put, take, TTL_SECONDS };
+module.exports = { put, get, take, TTL_SECONDS };

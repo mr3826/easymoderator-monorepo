@@ -32,6 +32,19 @@ describe('MetaMessengerProvider', () => {
         expect(provider.platform).toBe('facebook');
     });
 
+    function debugTokenResponse(targetIds) {
+        return {
+            data: {
+                data: {
+                    granular_scopes: [
+                        { scope: 'pages_messaging', target_ids: targetIds },
+                        { scope: 'pages_manage_metadata', target_ids: targetIds },
+                    ],
+                },
+            },
+        };
+    }
+
     describe('buildAuthUrl() default scopes (App Review surface)', () => {
         test('requests exactly the Messenger-only Facebook scopes when none are passed', async () => {
             const url = await provider.buildAuthUrl({ state: 'facebook:s:u:n', scopes: [] });
@@ -279,7 +292,7 @@ describe('MetaMessengerProvider', () => {
                     ],
                     paging: { cursors: { before: 'abc', after: 'def' } }
                 }
-            });
+            }).mockResolvedValueOnce(debugTokenResponse(['P1', 'P2']));
             // NO /me/businesses mock — default flow must not call it.
 
             const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
@@ -292,10 +305,14 @@ describe('MetaMessengerProvider', () => {
             expect(result[1]).toMatchObject({ id: 'P2', name: 'Page 2' });
             expect(result[1]).not.toHaveProperty('instagramAccount');
             // Only /me/accounts is hit by default now.
-            expect(axios.get).toHaveBeenCalledTimes(1);
+            expect(axios.get).toHaveBeenCalledTimes(2);
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/me/accounts'),
                 expect.objectContaining({ params: expect.objectContaining({ limit: 100 }) })
+            );
+            expect(axios.get).toHaveBeenCalledWith(
+                expect.stringContaining('/debug_token'),
+                expect.objectContaining({ params: expect.objectContaining({ input_token: 'tok_abc' }) })
             );
         });
 
@@ -313,21 +330,60 @@ describe('MetaMessengerProvider', () => {
                     data: [{ id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: null }],
                     paging: { cursors: { before: 'x', after: 'y' } }
                 }
-            });
+            }).mockResolvedValueOnce(debugTokenResponse(['P1', 'P2']));
             // No /me/businesses mock — default flow does not call it
 
             const result = await provider.listManagedAssets({ userToken: 'tok_xyz' });
 
             expect(result).toHaveLength(2);
             expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
-            // 2 pages of me/accounts only (no businesses call)
-            expect(axios.get).toHaveBeenCalledTimes(2);
+            // 2 pages of me/accounts plus token introspection (no businesses call)
+            expect(axios.get).toHaveBeenCalledTimes(3);
             // Second call (cursor follow) uses the `next` URL directly (no extra params)
             expect(axios.get).toHaveBeenNthCalledWith(
                 2,
                 'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR',
                 { params: {} }
             );
+            expect(axios.get).toHaveBeenNthCalledWith(
+                3,
+                expect.stringContaining('/debug_token'),
+                expect.objectContaining({ params: expect.objectContaining({ input_token: 'tok_xyz' }) })
+            );
+        });
+
+        test('filters out pages not selected in Meta granular permissions', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P1', name: 'Selected Page', category: null, picture: null },
+                        { id: 'P2', name: 'Unselected Page', category: null, picture: null },
+                    ],
+                    paging: {},
+                },
+            }).mockResolvedValueOnce(debugTokenResponse(['P1']));
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_selected' });
+
+            expect(result.map((page) => page.id)).toEqual(['P1']);
+        });
+
+        test('returns no connectable pages when granular target ids are missing', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [
+                        { id: 'P1', name: 'Page 1', category: null, picture: null },
+                        { id: 'P2', name: 'Page 2', category: null, picture: null },
+                    ],
+                    paging: {},
+                },
+            }).mockResolvedValueOnce({
+                data: { data: { granular_scopes: [{ scope: 'pages_messaging' }] } },
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_no_targets' });
+
+            expect(result).toEqual([]);
         });
 
         test('returns empty array when me/accounts returns no pages and no businesses', async () => {
@@ -390,7 +446,7 @@ describe('MetaMessengerProvider', () => {
                     data: [{ id: 'P1', name: 'Page 1', category: null, picture: null }],
                     paging: {},
                 },
-            });
+            }).mockResolvedValueOnce(debugTokenResponse(['P1']));
 
             const result = await provider.listManagedAssets({
                 userToken: 'tok_default',
@@ -398,7 +454,7 @@ describe('MetaMessengerProvider', () => {
             });
 
             expect(result).toHaveLength(1);
-            expect(axios.get).toHaveBeenCalledTimes(1);
+            expect(axios.get).toHaveBeenCalledTimes(2);
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/me/accounts'),
                 expect.anything(),
@@ -414,7 +470,7 @@ describe('MetaMessengerProvider', () => {
 
             axios.get.mockResolvedValueOnce({
                 data: { data: [{ id: 'PA', name: 'A', category: null, picture: null }], paging: {} },
-            });
+            }).mockResolvedValueOnce(debugTokenResponse(['PA']));
 
             await provider.listManagedAssets({ userToken: 'tok_log' });
 
@@ -429,6 +485,8 @@ describe('MetaMessengerProvider', () => {
                 source_client_pages: 0,
                 portfolioAttempted: false,
                 portfolioError: null,
+                selected_target_ids: 1,
+                filtered_unselected_pages: 0,
                 deduped: 1,
             });
             expect(entry).not.toHaveProperty('withIG');

@@ -34,6 +34,11 @@ const WEBHOOK_FIELDS = [
     'messages'
 ];
 
+const GRANULAR_PAGE_SCOPES = [
+    'pages_messaging',
+    'pages_manage_metadata',
+];
+
 function appsecretProof(token) {
     const secret = config.metaAppSecret || process.env.META_APP_SECRET;
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
@@ -44,6 +49,26 @@ function metaError(err, context) {
     const code = err.response?.data?.error?.code;
     logger.error(`${context} failed`, { metaCode: code, metaMsg: msg });
     return new AppError(`${context}: ${msg}`, err.response?.status || 500);
+}
+
+function intersectSets(sets) {
+    if (!sets.length) return null;
+    const [first, ...rest] = sets;
+    return new Set([...first].filter((id) => rest.every((set) => set.has(id))));
+}
+
+function selectedPageIdsFromDebugToken(debugData) {
+    const granularScopes = Array.isArray(debugData?.granular_scopes)
+        ? debugData.granular_scopes
+        : [];
+    const targetedScopeSets = GRANULAR_PAGE_SCOPES
+        .map((scope) => granularScopes.find((entry) => entry?.scope === scope))
+        .map((entry) => Array.isArray(entry?.target_ids)
+            ? new Set(entry.target_ids.map(String))
+            : null)
+        .filter(Boolean);
+
+    return intersectSets(targetedScopeSets);
 }
 
 class MetaMessengerProvider extends ChannelProvider {
@@ -95,6 +120,28 @@ class MetaMessengerProvider extends ChannelProvider {
         }
     }
 
+    async getSelectedPageIds({ userToken }) {
+        const appId = config.metaAppId || process.env.META_APP_ID;
+        const appSecret = config.metaAppSecret || process.env.META_APP_SECRET;
+        const appAccessToken = `${appId}|${appSecret}`;
+        try {
+            const resp = await axios.get(`${GRAPH_BASE}/debug_token`, {
+                params: {
+                    input_token: userToken,
+                    access_token: appAccessToken,
+                },
+            });
+            const selectedPageIds = selectedPageIdsFromDebugToken(resp.data?.data || {});
+            if (!selectedPageIds) {
+                logger.warn('debugTokenGranularScopes missing Page target IDs; returning no connectable Pages');
+                return new Set();
+            }
+            return selectedPageIds;
+        } catch (err) {
+            throw metaError(err, 'debugTokenGranularScopes');
+        }
+    }
+
     async listManagedAssets({ userToken }) {
         const PAGE_FIELDS =
             'id,name,category,access_token,' +
@@ -125,7 +172,14 @@ class MetaMessengerProvider extends ChannelProvider {
             throw metaError(err, 'listManagedAssets:me/accounts');
         }
 
-        const result = meAccountsRaw.map(p => ({
+        const selectedPageIds = meAccountsRaw.length
+            ? await this.getSelectedPageIds({ userToken })
+            : null;
+        const visiblePages = selectedPageIds
+            ? meAccountsRaw.filter((p) => selectedPageIds.has(String(p.id)))
+            : meAccountsRaw;
+
+        const result = visiblePages.map(p => ({
             id: p.id,
             name: p.name,
             category: p.category || null,
@@ -138,6 +192,8 @@ class MetaMessengerProvider extends ChannelProvider {
             source_client_pages: 0,
             portfolioAttempted: false,
             portfolioError: null,
+            selected_target_ids: selectedPageIds ? selectedPageIds.size : null,
+            filtered_unselected_pages: selectedPageIds ? meAccountsRaw.length - visiblePages.length : 0,
             deduped: result.length,
         });
 
@@ -379,3 +435,4 @@ class MetaMessengerProvider extends ChannelProvider {
 }
 
 module.exports = MetaMessengerProvider;
+module.exports._private = { selectedPageIdsFromDebugToken };
