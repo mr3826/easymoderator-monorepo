@@ -91,7 +91,7 @@ Production deploys are driven by pushes to `main` through `.github/workflows/ci-
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
 
-The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved for confirmed production resets. It drops and recreates the EasyModerator Postgres database, flushes Redis queues/cache/session state, clears backend uploads, removes the active Qdrant vector-store volume, recreates services, bootstraps schema, seeds migration history, and verifies `/health/ready`.
+The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved for confirmed production resets. It drops and recreates the runtime database named by production `DATABASE_URL`, flushes Redis queues/cache/session state, clears backend uploads, removes the active Qdrant vector-store volume, recreates services, bootstraps schema, seeds migration history, and verifies `/health/ready`.
 
 The manual workflow input `seed_admin=SEED` creates or updates the production review account from `SEED_ADMIN_*` environment values. The seed grants `SUPER_ADMIN`, ensures an owner shop, resets the configured password, and keeps that shop on an active Growth subscription paid through the next 12 months. The password is supplied by GitHub Secrets, never committed.
 
