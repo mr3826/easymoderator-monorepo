@@ -15,7 +15,7 @@ Final requested set: `pages_show_list`, `pages_messaging`, `pages_manage_metadat
 
 | # | Permission | Feature it powers | Key Graph API call(s) | Webhook field | Reviewer proof |
 |---|------------|-------------------|------------------------|---------------|----------------|
-| 1 | `pages_show_list` | Shows the merchant the Facebook Pages they can connect | `GET /me/accounts` | - | After OAuth, the Page picker lists the tester's Page(s) |
+| 1 | `pages_show_list` | Shows the merchant the Facebook Pages they selected/authorized for Easy Moderator | `GET /me/accounts` intersected with `debug_token` granular target IDs | - | After OAuth, the Page picker lists only the tester-selected Page(s) |
 | 2 | `pages_messaging` | Receives direct Messenger DMs and sends AI/manual replies | `POST /me/messages` | `messages` | Tester DMs the Page; message appears in Shared Inbox; AI/manual reply is delivered |
 | 3 | `pages_manage_metadata` | Subscribes/verifies/unsubscribes the Page Messenger webhook | `POST` / `GET` / `DELETE /{page-id}/subscribed_apps` | - | Connected channel card shows webhook active after server-side verification |
 

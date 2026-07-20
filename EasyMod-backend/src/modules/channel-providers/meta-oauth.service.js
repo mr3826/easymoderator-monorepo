@@ -21,6 +21,15 @@ const stateStore = require('./oauth-state.store');
 
 const logger = createLogger('MetaOAuthService');
 
+function callbackKey(shopId, platform, token) {
+    return `callback:${shopId}:${platform}:${token}`;
+}
+
+function findAuthorizedPage(pages, assetId) {
+    return (Array.isArray(pages) ? pages : [])
+        .find((page) => String(page.id) === String(assetId));
+}
+
 /**
  * Generate a CSRF-safe OAuth state token containing shopId + platform.
  * Signed with a random 128-bit nonce; stored in the temp store keyed by state.
@@ -69,11 +78,18 @@ async function handleCallback(code, state, userId, shopId) {
     // List pages/IG accounts this user manages
     const pages = await provider.listManagedAssets({ userToken });
 
-    // Store the user token for the subsequent connectPage call. The key is
-    // scoped by platform so concurrent FB and IG OAuth flows for the same shop
-    // do not clobber each other's callback payloads.
-    const tempToken = userToken;
-    await stateStore.put(`callback:${shopId}:${platform}`, { userToken, platform, pages });
+    // Store the user token server-side for the subsequent connectPage calls.
+    // The returned tempToken is intentionally opaque: the frontend should never
+    // need to hold a raw Meta user token, and connectPage validates assetId
+    // against the exact pages returned by this callback.
+    const tempToken = crypto.randomBytes(32).toString('hex');
+    await stateStore.put(callbackKey(shopId, platform, tempToken), {
+        userToken,
+        platform,
+        pages,
+        userId,
+        shopId,
+    });
 
     logger.info('OAuth callback processed', { shopId, platform, pageCount: pages.length });
     return { pages, tempToken };
@@ -85,7 +101,7 @@ async function handleCallback(code, state, userId, shopId) {
  *
  * @param {string} assetId
  * @param {string} displayName
- * @param {string} tempToken    — long-lived user access token from handleCallback
+ * @param {string} tempToken    — opaque callback token from handleCallback
  * @param {string} userId
  * @param {string} shopId
  * @param {'facebook'} platform — required; the temp-store callback entry is
@@ -96,15 +112,29 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     if (!platform) {
         throw Object.assign(new Error('platform is required to connect a Meta asset'), { status: 400 });
     }
-    // Consume the platform-scoped callback entry.
-    await stateStore.take(`callback:${shopId}:${platform}`);
+
+    const callbackPayload = await stateStore.get(callbackKey(shopId, platform, tempToken));
+    if (!callbackPayload || callbackPayload.platform !== platform) {
+        throw Object.assign(new Error('OAuth callback expired. Please reconnect Facebook and select the Page again.'), { status: 400 });
+    }
+    if (callbackPayload.userId && callbackPayload.userId !== userId) {
+        throw Object.assign(new Error('OAuth callback belongs to a different user.'), { status: 403 });
+    }
+    if (callbackPayload.shopId && callbackPayload.shopId !== shopId) {
+        throw Object.assign(new Error('OAuth callback belongs to a different shop.'), { status: 403 });
+    }
+
+    const authorizedPage = findAuthorizedPage(callbackPayload.pages, assetId);
+    if (!authorizedPage) {
+        throw Object.assign(new Error('This Facebook Page was not selected in the Meta authorization step. Please reconnect and select it in Facebook first.'), { status: 403 });
+    }
 
     const provider = getProvider('facebook');
 
     // Get page-specific access token from the Messenger provider.
     const { token: pageToken, expiresAt } = await provider.getAssetAccessToken({
         assetId,
-        userToken: tempToken,
+        userToken: callbackPayload.userToken,
     });
 
     // Upsert into meta_channels. NOTE: the key is `userId` — upsertFromOAuth
@@ -114,7 +144,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         shopId,
         platform,
         metaAssetId: assetId,
-        displayName,
+        displayName: authorizedPage.name || displayName,
         pageAccessToken: pageToken,
         tokenExpiresAt: expiresAt,
         userId,
@@ -145,4 +175,4 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     return { ...channel.toJSON(), webhookWarning };
 }
 
-module.exports = { initiateOAuth, handleCallback, connectPage };
+module.exports = { initiateOAuth, handleCallback, connectPage, _private: { callbackKey, findAuthorizedPage } };

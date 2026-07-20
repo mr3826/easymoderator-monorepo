@@ -27,7 +27,7 @@ Webhook subscription field: `messages` on the `page` object only.
 
 **1. `pages_show_list`**
 
-> Easy Moderator uses this permission after Facebook Login to call `GET /me/accounts` and show the merchant the Facebook Pages they administer. The merchant selects the Page(s) they want to connect. Pages shown but not selected are not stored.
+> Easy Moderator uses this permission after Facebook Login to call `GET /me/accounts`, then intersects the returned Pages with Meta `debug_token` granular permission target IDs. The merchant sees and can connect only the Facebook Page(s) they selected/authorized in Facebook. Pages not selected in Facebook are not shown and are rejected by the connect endpoint.
 
 **2. `pages_messaging`**
 

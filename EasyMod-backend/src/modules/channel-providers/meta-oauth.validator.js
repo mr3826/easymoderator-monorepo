@@ -50,11 +50,10 @@ exports.connectAsset = {
         displayName: Joi.string().trim().max(255).required().messages({
             'any.required': 'displayName is required',
         }),
-        // tempToken is the raw Meta long-lived user access token returned by
-        // /oauth/callback (handleCallback assigns userToken → tempToken).
-        // Meta user tokens are ~180-220 chars; the previous length(64) cap was
-        // a leftover from a pre-Phase-5 hex-nonce design and would 400 every
-        // real first connection. Range guard preserved against junk values.
+        // tempToken is an opaque callback token returned by /oauth/callback.
+        // The raw Meta user token remains server-side in the callback cache.
+        // Range guard preserved so old in-flight raw tokens can fail cleanly
+        // through service validation instead of Joi shape validation.
         tempToken: Joi.string().trim().min(40).max(512).required().messages({
             'string.min': 'tempToken is too short',
             'string.max': 'tempToken is too long',
