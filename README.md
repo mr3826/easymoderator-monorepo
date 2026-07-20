@@ -91,6 +91,8 @@ Production deploys are driven by pushes to `main` through `.github/workflows/ci-
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
 
+The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved for confirmed production resets. It drops and recreates the EasyModerator Postgres database, flushes Redis queues/cache/session state, clears backend uploads, removes the active Qdrant vector-store volume, recreates services, bootstraps schema, seeds migration history, and verifies `/health/ready`.
+
 Auth in production is intended to be same-origin through `https://easymod.tech/api`. Keep `VITE_API_BASE_URL` empty for the SPA. `COOKIE_DOMAIN` is optional; if it is set for a legacy subdomain deployment, the backend only applies it when it matches the current request host so browsers do not reject signin cookies.
 
 ### Telegram alert bot

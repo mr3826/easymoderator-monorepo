@@ -357,14 +357,20 @@ jobs:
 
               # Full reset: a true first-time state must also clear the other
               # stateful stores, otherwise stale dedup keys can suppress new
-              # messages and orphaned RAG vectors can bleed into AI replies.
+              # messages, orphaned RAG vectors can bleed into AI replies, and
+              # old attachment URLs can expose previous merchant media.
               echo "==> Flushing Redis (BullMQ jobs, dedup keys, rate buckets, SSE replay, sessions)"
               docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T redis redis-cli FLUSHALL || true
+              echo "==> Clearing backend uploads volume"
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps backend sh -lc 'find /app/uploads -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +'
               echo "==> Resetting Qdrant vector store (RAG embeddings)"
+              QDRANT_VOLUME=$(docker inspect easymod-qdrant-1 --format '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true)
               docker compose --env-file .env.prod -f docker-compose.prod.yml stop qdrant 2>/dev/null || true
               docker compose --env-file .env.prod -f docker-compose.prod.yml rm -f qdrant 2>/dev/null || true
-              for v in $(docker volume ls -q | grep -i qdrant); do docker volume rm "$v" 2>/dev/null || true; done
-              echo "==> Redis flushed and Qdrant volume reset"
+              if [ -n "$QDRANT_VOLUME" ]; then
+                docker volume rm "$QDRANT_VOLUME" 2>/dev/null || true
+              fi
+              echo "==> Redis flushed, uploads cleared, and Qdrant volume reset"
             fi
 
             # Restart services with latest images
