@@ -172,6 +172,14 @@ async function claimDedupKey(key) {
     }
 }
 
+function normalizeAutomationMode(mode) {
+    return mode === 'AUTO' ? 'AI_ACTIVE' : mode;
+}
+
+function isShopManualKillSwitch(settings = {}) {
+    return normalizeAutomationMode(settings?.automation_mode) === 'MANUAL';
+}
+
 /**
  * Stamp the delivery outcome on a stored AI message and emit it to agent tabs.
  *
@@ -281,9 +289,13 @@ async function processMessageJob(job) {
         getShopAISettings(shopId),
         getChannelAISettings(jobChannel),
     ]);
+    if (isShopManualKillSwitch(shopAISettings)) {
+        return { skipped: true, reason: 'manual_mode', scope: 'shop' };
+    }
+
     const aiSettings = { ...shopAISettings, ...channelAISettings };
     if (aiSettings.automation_mode === 'MANUAL') {
-        return { skipped: true, reason: 'manual_mode' };
+        return { skipped: true, reason: 'manual_mode', scope: 'effective' };
     }
 
     // ── Guard 4b: Per-channel ai_auto_reply flag ────────────────────────────
@@ -700,5 +712,7 @@ module.exports = {
         hasAiDisclosure,
         wasAiMessageCustomerVisible,
         buildOrderFlowFailureResponse,
+        normalizeAutomationMode,
+        isShopManualKillSwitch,
     },
 };

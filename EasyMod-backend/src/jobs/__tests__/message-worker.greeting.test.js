@@ -124,6 +124,19 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
     });
 });
 
+describe('message-worker automation mode helpers', () => {
+    it('normalizes legacy AUTO mode to AI_ACTIVE', () => {
+        expect(_private.normalizeAutomationMode('AUTO')).toBe('AI_ACTIVE');
+        expect(_private.normalizeAutomationMode('AI_ACTIVE')).toBe('AI_ACTIVE');
+    });
+
+    it('treats shop MANUAL as a hard kill switch', () => {
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'MANUAL' })).toBe(true);
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'AI_ACTIVE' })).toBe(false);
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'AUTO' })).toBe(false);
+    });
+});
+
 describe('message-worker order-flow failure fallback', () => {
     beforeEach(() => {
         jest.clearAllMocks();

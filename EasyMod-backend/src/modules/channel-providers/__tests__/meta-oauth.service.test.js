@@ -141,7 +141,7 @@ describe('connectPage() webhook verify wiring', () => {
 
         await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
 
-        expect(mockConfirmWebhookActive).toHaveBeenCalledWith('chan-1');
+        expect(mockConfirmWebhookActive).toHaveBeenCalledWith('chan-1', ['messages']);
         expect(mockUpdateStatus).not.toHaveBeenCalledWith('chan-1', 'ERROR', expect.anything());
     });
 

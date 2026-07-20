@@ -158,7 +158,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         await provider.subscribeWebhook({ channel });
         const verify = await provider.verifyWebhookSubscription({ channel });
         if (verify.ok) {
-            await metaChannelService.confirmWebhookActive(channel.id);
+            await metaChannelService.confirmWebhookActive(channel.id, verify.fields);
             logger.info('Webhook subscribed + verified', { channelId: channel.id, platform });
         } else {
             webhookWarning = 'Webhook subscription could not be verified — action required.';

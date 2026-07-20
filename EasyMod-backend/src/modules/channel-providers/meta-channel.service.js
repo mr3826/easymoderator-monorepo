@@ -372,16 +372,23 @@ class MetaChannelService {
      * and clears last_error. Call ONLY after verifyWebhookSubscription returns ok.
      *
      * @param {string} channelId
+     * @param {string[]|null} webhookSubscribedFields
      * @returns {Promise<MetaChannel>}
      */
-    async confirmWebhookActive(channelId) {
+    async confirmWebhookActive(channelId, webhookSubscribedFields = null) {
         const channel = await MetaChannel.findByPk(channelId);
         if (!channel) throw new Error(`confirmWebhookActive: channel ${channelId} not found`);
         channel.webhook_last_verified_at = new Date();
+        if (Array.isArray(webhookSubscribedFields)) {
+            channel.webhook_subscribed_fields = [...new Set(webhookSubscribedFields)];
+        }
         channel.status = 'CONNECTED';
         channel.last_error = null;
         await channel.save();
-        logger.info('MetaChannelService.confirmWebhookActive', { channelId });
+        logger.info('MetaChannelService.confirmWebhookActive', {
+            channelId,
+            webhookSubscribedFields: channel.webhook_subscribed_fields,
+        });
         return channel;
     }
 
