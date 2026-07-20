@@ -245,8 +245,10 @@ hands (Meta portal, bKash merchant secrets, DO account) — that's the human han
 
 **Compliance posture:** the first customer-visible AI reply always starts with a clear plain-text
 automated-assistant declaration before any owner greeting, FAQ/product answer, order-flow response,
-or LLM text. Held drafts do not consume the disclosure because the customer never saw them. There is
-no icon-only marker and no owner-controlled off switch for this first-message disclosure.
+or LLM text. Held drafts do not consume the disclosure because the customer never saw them. Legacy
+visible AI replies that were sent without disclosure also do not consume it; the next AI reply will
+prepend the disclosure. There is no icon-only marker and no owner-controlled off switch for this
+first-message disclosure.
 
 **Risk:** low. **No DB migration** (`Shop.settings` is JSON; `sanitizeSettings` already preserves
 `ai`/`businessInfo`). Greeting/closing injection is best-effort (failures never block a reply or

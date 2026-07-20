@@ -55,8 +55,10 @@ Sent greeting = **disclosure line + owner's `custom_text`**.
 **Compliance floor stays intact:** the first customer-visible AI reply always starts
 with this clear plain-text automated-assistant declaration, before any owner greeting,
 FAQ answer, product answer, order-flow text, or LLM response. Held drafts do not
-consume this disclosure because the customer never saw them. The disclosure has no
-icon and no owner-controlled off switch.
+consume this disclosure because the customer never saw them. Legacy visible AI
+replies that did not contain a disclosure also do not consume it; the next AI
+reply will prepend the disclosure. The disclosure has no icon and no
+owner-controlled off switch.
 
 ## Injection points (grounded in code)
 

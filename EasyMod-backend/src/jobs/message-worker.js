@@ -122,13 +122,23 @@ function wasAiMessageCustomerVisible(message) {
     return true;
 }
 
-async function hasPriorCustomerVisibleAiReply(conversationId) {
+function hasAiDisclosure(message) {
+    const metadata = message?.metadata || {};
+    if (metadata.ai_disclosure_applied === true) return true;
+
+    const content = String(message?.content || '').toLowerCase();
+    return content.includes('ai assistant') || content.includes('ai সহকার');
+}
+
+async function hasPriorCustomerVisibleAiDisclosure(conversationId) {
     const priorAiMessages = await Message.findAll({
         where: { conversation_id: conversationId, sender: 'ai' },
-        attributes: ['id', 'metadata'],
+        attributes: ['id', 'content', 'metadata'],
         order: [['created_at', 'ASC']],
     });
-    return priorAiMessages.some(wasAiMessageCustomerVisible);
+    return priorAiMessages.some((message) => (
+        wasAiMessageCustomerVisible(message) && hasAiDisclosure(message)
+    ));
 }
 
 /**
@@ -388,21 +398,25 @@ async function processMessageJob(job) {
     }
 
     // ── First-reply AI-disclosure greeting ──────────────────────────────────
-    // On the FIRST customer-visible AI reply of a conversation, prepend the
+    // Until the conversation has a customer-visible AI disclosure, prepend the
     // MANDATORY clear-text AI-disclosure (Meta Platform Policy — customers must
     // know an automated system is replying) plus the owner's optional welcome
-    // text. Held drafts do not count because the customer never saw them.
+    // text. Held drafts and old non-disclosed replies do not count.
     // Best-effort: any failure leaves the reply unchanged.
     let repliedText = rawResponse;
+    let disclosureApplied = false;
     try {
         if (rawResponse) {
-            if (!(await hasPriorCustomerVisibleAiReply(conversationId))) {
+            if (!(await hasPriorCustomerVisibleAiDisclosure(conversationId))) {
                 const { buildGreeting } = require('../modules/shop/ai-messaging');
                 const Shop = require('../modules/shop/shop.entity');
                 const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
                 const shopName = shopRow?.settings?.businessInfo?.shopName || shopRow?.name || '';
                 const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: aiSettings.greeting });
-                if (greetingText) repliedText = `${greetingText}\n\n${rawResponse}`;
+                if (greetingText) {
+                    repliedText = `${greetingText}\n\n${rawResponse}`;
+                    disclosureApplied = true;
+                }
             }
         }
     } catch (greetErr) {
@@ -421,6 +435,7 @@ async function processMessageJob(job) {
         platform,
         confidence,
         automation_mode: aiSettings.automation_mode,
+        ai_disclosure_applied: disclosureApplied,
         sourceReferences: sourceReferences || null,
     });
     const aiMessage = aiStoreResult.message;
@@ -653,5 +668,5 @@ module.exports = {
     processMessageJob,
     startWorker,
     getWorker: () => worker,
-    _private: { loadConversationHistory, isFirstCustomerTurn, hasPriorCustomerVisibleAiReply, wasAiMessageCustomerVisible },
+    _private: { loadConversationHistory, isFirstCustomerTurn, hasPriorCustomerVisibleAiDisclosure, hasAiDisclosure, wasAiMessageCustomerVisible },
 };
