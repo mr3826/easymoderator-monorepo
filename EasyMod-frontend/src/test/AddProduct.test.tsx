@@ -4,6 +4,7 @@ import AddProduct from '../app/components/AddProduct'
 
 const mockNavigate = vi.fn()
 const mockOnClose = vi.fn()
+const mockInvalidateQueries = vi.fn()
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
@@ -23,6 +24,12 @@ vi.mock('@/api', () => ({
   },
 }))
 
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: mockInvalidateQueries,
+  }),
+}))
+
 const getPublishButton = () => {
   const button = screen
     .getAllByRole('button')
@@ -38,6 +45,7 @@ const getPublishButton = () => {
 describe('AddProduct', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockInvalidateQueries.mockResolvedValue(undefined)
   })
 
   it('renders add product modal fields', () => {

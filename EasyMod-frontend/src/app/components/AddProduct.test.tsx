@@ -9,6 +9,7 @@ const {
   mockUpdateProduct,
   mockGetProduct,
   mockGetCategories,
+  mockInvalidateQueries,
 } = vi.hoisted(() => {
   const mockProductData = {
     id: 'prod-1',
@@ -36,6 +37,7 @@ const {
     mockUpdateProduct:  vi.fn().mockResolvedValue(mockProductData),
     mockGetProduct:     vi.fn().mockResolvedValue(mockProductData),
     mockGetCategories:  vi.fn().mockResolvedValue(mockCategoryData),
+    mockInvalidateQueries: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -61,6 +63,13 @@ vi.mock('@/api', () => ({
     getProduct:     mockGetProduct,
     getCategories:  mockGetCategories,
   },
+}));
+
+// ── Mock TanStack Query ───────────────────────────────────────────────────
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: mockInvalidateQueries,
+  }),
 }));
 
 // ── Mock react-router-dom ─────────────────────────────────────────────────
@@ -126,6 +135,7 @@ describe('AddProduct', () => {
       { id: 'cat-1', name: 'Clothing' },
       { id: 'cat-2', name: 'Electronics' },
     ]);
+    mockInvalidateQueries.mockReset().mockResolvedValue(undefined);
     mockNavigate.mockReset();
   });
 
@@ -416,6 +426,34 @@ describe('AddProduct', () => {
     }
   });
 
+  it('invalidates product list cache before returning after manual create', async () => {
+    await renderModal();
+
+    const nameInput = document.querySelector('[id*="modal-product-name"]') as HTMLInputElement;
+    const priceInput = document.querySelector('[id*="modal-base-price"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'New Product' } });
+      fireEvent.change(priceInput, { target: { value: '500' } });
+    });
+
+    const publishBtn = Array.from(document.querySelectorAll('button')).find(
+      btn => btn.textContent?.toLowerCase().includes('publish') ||
+             btn.textContent?.toLowerCase().includes('products.form.publish')
+    );
+
+    await act(async () => {
+      fireEvent.click(publishBtn!);
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(mockCreateProduct).toHaveBeenCalled();
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['products'] });
+      expect(mockNavigate).toHaveBeenCalledWith('/app/products');
+    });
+  });
+
   // ── Edit / update flow ────────────────────────────────────────────────
 
   it('calls updateProduct (not createProduct) in edit mode', async () => {
@@ -446,6 +484,32 @@ describe('AddProduct', () => {
       if (updateCalled) {
         expect(mockCreateProduct).not.toHaveBeenCalled();
       }
+    });
+  });
+
+  it('invalidates product list cache after editing a product', async () => {
+    const { onClose } = await renderModal(true, mockProduct);
+
+    const nameInput = document.querySelector('[id*="modal-product-name"]') as HTMLInputElement;
+
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: 'Updated T-Shirt' } });
+    });
+
+    const saveBtn = Array.from(document.querySelectorAll('button')).find(
+      btn => btn.textContent?.toLowerCase().includes('products.form.updateproduct') ||
+             btn.textContent?.toLowerCase().includes('publish')
+    );
+
+    await act(async () => {
+      fireEvent.click(saveBtn!);
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(mockUpdateProduct).toHaveBeenCalled();
+      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['products'] });
+      expect(onClose).toHaveBeenCalled();
     });
   });
 

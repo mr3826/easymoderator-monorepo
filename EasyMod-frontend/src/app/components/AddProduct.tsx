@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Upload, X, Plus, ChevronDown, ChevronUp, Package, Tag, FolderTree, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -20,6 +21,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
     // Store object URLs for cleanup
     const [imageObjectUrls, setImageObjectUrls] = useState<string[]>([]);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { productId } = useParams<{ productId?: string }>();
   
   // Determine if this is an edit page based on URL
@@ -287,6 +289,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
         // Update existing product
         const updateId = isEditPage ? productId : editProduct?.id;
         await apiClient.updateProduct(updateId!, productData);
+        await queryClient.invalidateQueries({ queryKey: ["products"] });
         console.log("Updating product as:", action);
         if (onSave) {
           onSave({ ...editProduct, ...productData });
@@ -299,6 +302,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
       } else {
         // Create new product
         await apiClient.createProduct(productData);
+        await queryClient.invalidateQueries({ queryKey: ["products"] });
         console.log("Creating product as:", action);
         navigate("/app/products");
       }
