@@ -167,8 +167,8 @@
         },
         {
           "icon": "🚚",
-          "title": "Pathao ইন্টিগ্রেশন",
-          "desc": "এক ক্লিকে ডেলিভারি বুক করুন",
+          "title": "ডেলিভারি ইন্টিগ্রেশন",
+          "desc": "সমর্থিত কুরিয়ার দিয়ে এক ক্লিকে ডেলিভারি বুক করুন",
           "colorClass": "bg-purple-500/15 text-purple-400"
         },
         {
@@ -343,8 +343,8 @@
           "desc": "ভুয়া অর্ডার ব্লক"
         },
         "delivery": {
-          "title": "Pathao & Steadfast",
-          "desc": "সরাসরি ডেলিভারি"
+          "title": "ডেলিভারি পার্টনার",
+          "desc": "সরাসরি কুরিয়ার বুকিং"
         },
         "chatbot": {
           "title": "Sales assistant",
@@ -1312,12 +1312,6 @@
       "pagesMessaging": "Messenger বার্তা পড়া ও পাঠানো",
       "pagesManageMetadata": "Realtime webhook subscribe",
       "note": "EasyModerator শুধু customer message-এর জন্য এই permission ব্যবহার করে।"
-    },
-    "aiModel": {
-      "title": "AI Model Configuration",
-      "subtitle": "AI auto-reply এর ভাষা মডেল",
-      "autoSelectedTitle": "AI মডেল: সেরা ফলাফলের জন্য স্বয়ংক্রিয়ভাবে নির্বাচিত",
-      "autoSelectedDesc": "EasyModerator প্রতিটি conversation-এর জন্য best reply path বেছে নেয় — সব plan-এ available।"
     },
     "disconnectModal": {
       "title": "{{name}} সংযোগ বিচ্ছিন্ন করবেন?",

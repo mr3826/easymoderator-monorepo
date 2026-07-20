@@ -133,6 +133,12 @@ describe('ChatSettings', () => {
     expect(screen.getByText('Channel Settings')).toBeInTheDocument();
   });
 
+  it('does not render the redundant AI model information card', async () => {
+    await renderComponent();
+    expect(screen.queryByText('AI Model Configuration')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Auto-Selected for Best Results/i)).not.toBeInTheDocument();
+  });
+
   it('makes API call to load channels on mount', async () => {
     await renderComponent();
     await waitFor(() => {

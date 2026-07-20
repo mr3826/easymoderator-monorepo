@@ -167,8 +167,8 @@
         },
         {
           "icon": "🚚",
-          "title": "Pathao Integration",
-          "desc": "Book delivery with one click",
+          "title": "Courier Integrations",
+          "desc": "Book delivery across supported providers",
           "colorClass": "bg-purple-500/15 text-purple-400"
         },
         {
@@ -343,8 +343,8 @@
           "desc": "Block fake orders"
         },
         "delivery": {
-          "title": "Pathao & Steadfast",
-          "desc": "Direct delivery"
+          "title": "Delivery partners",
+          "desc": "Direct courier booking"
         },
         "chatbot": {
           "title": "Sales assistant",
@@ -1312,12 +1312,6 @@
       "pagesMessaging": "read and send Messenger messages",
       "pagesManageMetadata": "subscribe to realtime webhooks",
       "note": "EasyModerator uses these permissions only for customer messages."
-    },
-    "aiModel": {
-      "title": "AI Model Configuration",
-      "subtitle": "The language model for AI auto-reply",
-      "autoSelectedTitle": "AI Model: Auto-Selected for Best Results",
-      "autoSelectedDesc": "EasyModerator chooses the best reply path for every conversation - available on all plans."
     },
     "disconnectModal": {
       "title": "Disconnect {{name}}?",

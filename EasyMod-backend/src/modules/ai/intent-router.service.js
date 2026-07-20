@@ -404,7 +404,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                     if (md.type === 'product' && md.product_id) {
                         const id = String(md.product_id);
                         if (!injectedProductIds.has(id)) productHitIds.push(id);
-                    } else if (r.content) {
+                    } else if (md.type !== 'business_info' && r.content) {
                         knowledgeResults.push(r);
                     }
                 }
@@ -609,6 +609,13 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
     const { businessInfo = {}, brandingRules = {}, faqs = [] } = shopKnowledge || {};
 
     const shopName = businessInfo.shopName || 'this shop';
+    const socialLinks = businessInfo.socialLinks && typeof businessInfo.socialLinks === 'object'
+        ? businessInfo.socialLinks
+        : {};
+    const socialLinksSection = Object.entries(socialLinks)
+        .filter(([, value]) => typeof value === 'string' && value.trim())
+        .map(([key, value]) => `${key}: ${value.trim()}`)
+        .join('\n');
 
     const langInstruction =
         language === 'bn'
@@ -653,6 +660,7 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
         businessInfo.phone ? `Phone: ${businessInfo.phone}` : '',
         businessInfo.openingHours ? `Hours: ${businessInfo.openingHours}` : '',
         businessInfo.additionalInfo ? `Additional shop owner info: ${businessInfo.additionalInfo}` : '',
+        socialLinksSection ? `Shop links:\n${socialLinksSection}` : '',
         // Legacy tone override (if shop set a custom freeform tone)
         brandingRules.tone && !TONE_PERSONA_INSTRUCTIONS[brandingRules.tone] ? `Tone: ${brandingRules.tone}` : '',
         faqSection ? `\n--- Frequently Asked Questions ---\n${faqSection}` : ''

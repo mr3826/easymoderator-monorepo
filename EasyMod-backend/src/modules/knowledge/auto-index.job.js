@@ -64,6 +64,9 @@ const indexShop = async (shopId) => {
                 info.phone && `Phone: ${info.phone}`,
                 (info.openingHours || info.businessHours) && `Business hours: ${info.openingHours || info.businessHours}`,
                 info.additionalInfo && `Additional shop owner info: ${info.additionalInfo}`,
+                ...Object.entries(info.socialLinks || {})
+                    .filter(([, value]) => typeof value === 'string' && value.trim())
+                    .map(([key, value]) => `${key}: ${value.trim()}`),
                 info.returnPolicy && `Return policy: ${info.returnPolicy}`,
                 info.deliveryPolicy && `Delivery policy: ${info.deliveryPolicy}`
             ].filter(Boolean).join('\n');
