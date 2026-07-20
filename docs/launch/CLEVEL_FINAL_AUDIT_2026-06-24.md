@@ -234,8 +234,8 @@ hands (Meta portal, bKash merchant secrets, DO account) — that's the human han
 
 **What shipped (owner-configurable, woven into the live AI pipeline):**
 - **Greeting** — auto-prepended to the **first** AI reply of each conversation. Carries a fixed,
-  owner-uneditable **Meta AI-disclosure** (`🤖 …AI assistant…`, language-aware) followed by the
-  owner's editable welcome text. Edited on **Chat Settings**.
+  owner-uneditable **Meta AI-disclosure** (`Hi, I'm the AI assistant from {shop}.`,
+  language-aware) followed by the owner's editable welcome text. Edited on **Chat Settings**.
 - **Closing** — appended to the **order-confirmation** message (after the invoice): owner thank-you +
   a "Follow us:" block rendering only the social links that are set. Edited on **Chat Settings**;
   links live on **Business Info**.
@@ -243,10 +243,9 @@ hands (Meta portal, bKash merchant secrets, DO account) — that's the human han
   Older stored keys under `settings.businessInfo.socialLinks` are treated as legacy data.
 - **Defaults seeded** for every shop (greeting + closing both on, Banglish defaults).
 
-**Compliance posture:** the existing always-on ` 🤖` per-message attribution suffix (Meta Platform
-Policy 4.2) is unchanged and remains the disclosure floor — even if an owner disables the greeting,
-every automated message is still identifiable. The greeting's 🤖 makes the worker's `alreadyMarked`
-check skip a duplicate suffix on the first turn.
+**Compliance posture:** the first AI reply always starts with a clear plain-text automated-assistant
+declaration before any owner greeting, FAQ/product answer, order-flow response, or LLM text. There is
+no icon-only marker and no owner-controlled off switch for this first-message disclosure.
 
 **Risk:** low. **No DB migration** (`Shop.settings` is JSON; `sanitizeSettings` already preserves
 `ai`/`businessInfo`). Greeting/closing injection is best-effort (failures never block a reply or

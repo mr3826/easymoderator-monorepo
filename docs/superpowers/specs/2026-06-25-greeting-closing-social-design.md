@@ -41,29 +41,27 @@ a BD phone number; empty allowed). Greeting/closing ride the existing
 `getShopAISettings`/`updateShopAISettings` endpoints; social links ride the existing
 business-info endpoints. **No new routes.**
 
-## The Meta AI-disclosure (static + editable)
+## The Meta AI-disclosure (static + owner text after it)
 
 A code-level, language-aware constant (owner cannot remove, can write after it):
 
-- bn: `🤖 আপনি {shop}-এর AI সহকারীর সাথে কথা বলছেন।`
-- en: `🤖 You're chatting with {shop}'s AI assistant.`
-- mixed: `🤖 Apni {shop}-er AI assistant er sathe kotha bolchen.`
+- bn: `হাই, আমি {shop}-এর AI সহকারী।`
+- en: `Hi, I'm the AI assistant from {shop}.`
+- mixed: `Hi, ami {shop}-er AI assistant.`
 
 Sent greeting = **disclosure line + owner's `custom_text`**.
 
-**Compliance floor stays intact:** the existing per-message ` 🤖` attribution suffix
-(`message-worker.js`, Meta Policy 4.2) remains always-on, so *every* automated
-message is identifiable even if the owner disables the greeting. Because the greeting
-contains `🤖`, the worker's existing `alreadyMarked` regex suppresses a duplicate
-suffix on that first turn.
+**Compliance floor stays intact:** the first AI reply always starts with this clear
+plain-text automated-assistant declaration, before any owner greeting, FAQ answer,
+product answer, order-flow text, or LLM response. The disclosure has no icon and no
+owner-controlled off switch.
 
 ## Injection points (grounded in code)
 
-**Greeting** — `jobs/message-worker.js`, just before the attribution block (~line 347):
-if `greeting.enabled` AND this is the first AI reply in the conversation (zero prior
-`Message` rows with `sender = 'ai'` for `conversation_id`), prepend
-`greetingPrefix + "\n\n"` to `rawResponse`. Single send chokepoint → covers LLM,
-cache, order-flow and the greeting fast-path uniformly.
+**Greeting** — `jobs/message-worker.js`, before the AI response is stored/sent:
+on the customer's first turn in the conversation, prepend `greetingPrefix + "\n\n"`
+to `rawResponse`. Single send chokepoint → covers FAQ/product/LLM, fallback, and
+order-flow replies uniformly.
 
 **Closing** — `modules/order/order-session-standalone.service.js`, where the order is
 created and `orderPrompt` (`✅ Order placed… + invoice`) is built (~line 702-722):

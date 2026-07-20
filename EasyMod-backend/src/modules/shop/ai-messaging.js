@@ -21,9 +21,9 @@ const GENERIC_SHOP = { en: 'our shop', bn: 'আমাদের দোকান',
 // must know an automated system is replying). Clear TEXT, no icon. The owner's
 // custom greeting text, if any, is appended AFTER this line.
 const DISCLOSURE = {
-    en: (shop) => `You're chatting with ${shop}'s automated AI assistant.`,
-    bn: (shop) => `আপনি ${shop}-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।`,
-    mixed: (shop) => `Apni ${shop}-er automated AI assistant er sathe kotha bolchen.`,
+    en: (shop) => `Hi, I'm the AI assistant from ${shop}.`,
+    bn: (shop) => `হাই, আমি ${shop}-এর AI সহকারী।`,
+    mixed: (shop) => `Hi, ami ${shop}-er AI assistant.`,
 };
 
 // Stable launch render order + display labels for the social-links block.

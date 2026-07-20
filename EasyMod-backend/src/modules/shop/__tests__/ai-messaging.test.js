@@ -17,28 +17,28 @@ const { validateAISettings } = require('../shop-settings.validator');
 describe('ai-messaging · buildDisclosure', () => {
     it('interpolates the shop name in English (clear text, no icon)', () => {
         expect(buildDisclosure('Rina Saree', 'en')).toBe(
-            "You're chatting with Rina Saree's automated AI assistant."
+            "Hi, I'm the AI assistant from Rina Saree."
         );
     });
 
     it('renders the Bangla disclosure', () => {
         expect(buildDisclosure('রিনা শাড়ি', 'bn')).toBe(
-            'আপনি রিনা শাড়ি-এর স্বয়ংক্রিয় AI সহকারীর সাথে কথা বলছেন।'
+            'হাই, আমি রিনা শাড়ি-এর AI সহকারী।'
         );
     });
 
     it('falls back to mixed for unknown / missing language', () => {
         expect(buildDisclosure('Rina', 'klingon')).toBe(
-            'Apni Rina-er automated AI assistant er sathe kotha bolchen.'
+            'Hi, ami Rina-er AI assistant.'
         );
         expect(buildDisclosure('Rina')).toBe(
-            'Apni Rina-er automated AI assistant er sathe kotha bolchen.'
+            'Hi, ami Rina-er AI assistant.'
         );
     });
 
     it('uses a generic name when shopName is missing', () => {
         expect(buildDisclosure('', 'en')).toBe(
-            "You're chatting with our shop's automated AI assistant."
+            "Hi, I'm the AI assistant from our shop."
         );
     });
 
@@ -53,7 +53,7 @@ describe('ai-messaging · buildDisclosure', () => {
 
 describe('ai-messaging · buildGreeting', () => {
     const base = { shopName: 'Rina Saree', language: 'en' };
-    const DISCLAIMER = "You're chatting with Rina Saree's automated AI assistant.";
+    const DISCLAIMER = "Hi, I'm the AI assistant from Rina Saree.";
 
     it('always includes the mandatory disclaimer even if legacy-"disabled"', () => {
         expect(buildGreeting({ ...base, greeting: { enabled: false, custom_text: 'hi' } })).toBe(
