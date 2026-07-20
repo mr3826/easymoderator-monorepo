@@ -18,6 +18,15 @@ function getMetaChannelAttrs() {
     return defineCall[1];
 }
 
+function getMetaChannelSettingsAttrs() {
+    const { sequelize } = require('src/utils/database/database-setup');
+    sequelize.define.mockClear();
+    jest.isolateModules(() => { require('src/modules/channel-providers/meta-channel-settings.entity'); });
+    const defineCall = sequelize.define.mock.calls.find(c => c[0] === 'MetaChannelSettings');
+    if (!defineCall) throw new Error('MetaChannelSettings was not defined via sequelize.define()');
+    return defineCall[1];
+}
+
 function makeTokenHelpers(attrs) {
     let rawValue;
     const inst = {
@@ -113,5 +122,15 @@ describe('MetaChannel entity - model structure', () => {
         ['CONNECTED', 'TOKEN_EXPIRED', 'REVOKED', 'DISCONNECTED', 'ERROR'].forEach(s => {
             expect(values).toContain(s);
         });
+    });
+});
+
+describe('MetaChannelSettings entity - defaults', () => {
+    let attrs;
+    beforeAll(() => { attrs = getMetaChannelSettingsAttrs(); });
+
+    it('defaults newly connected channels to active auto-reply', () => {
+        expect(attrs.ai_auto_reply.defaultValue).toBe(true);
+        expect(attrs.automation_mode.defaultValue).toBe('AI_ACTIVE');
     });
 });
