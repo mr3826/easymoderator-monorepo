@@ -124,6 +124,73 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
     });
 });
 
+describe('message-worker AI disclosure greeting gate', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('applies only for AI_ACTIVE first customer turns with no prior visible disclosure', async () => {
+        Message.count.mockResolvedValueOnce(0);
+        Message.findAll.mockResolvedValueOnce([]);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(true);
+    });
+
+    it.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL'])(
+        'does not apply in %s mode because that would become a draft/manual suggestion',
+        async (automationMode) => {
+            await expect(_private.shouldApplyAiDisclosureGreeting({
+                conversationId: 'conv-1',
+                currentTurnMessageIds: ['msg-1'],
+                aiSettings: { automation_mode: automationMode, ai_auto_reply: true },
+            })).resolves.toBe(false);
+
+            expect(Message.count).not.toHaveBeenCalled();
+            expect(Message.findAll).not.toHaveBeenCalled();
+        }
+    );
+
+    it('does not apply when per-channel auto reply is disabled', async () => {
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: false },
+        })).resolves.toBe(false);
+
+        expect(Message.count).not.toHaveBeenCalled();
+        expect(Message.findAll).not.toHaveBeenCalled();
+    });
+
+    it('does not apply after the customer already has a prior turn', async () => {
+        Message.count.mockResolvedValueOnce(1);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-2'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(false);
+
+        expect(Message.findAll).not.toHaveBeenCalled();
+    });
+
+    it('does not apply when the conversation already has a visible AI disclosure', async () => {
+        Message.count.mockResolvedValueOnce(0);
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', content: "Hi, I'm the AI assistant from Demo Shop.", metadata: { delivered: true } },
+        ]);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(false);
+    });
+});
+
 describe('message-worker automation mode helpers', () => {
     it('normalizes legacy AUTO mode to AI_ACTIVE', () => {
         expect(_private.normalizeAutomationMode('AUTO')).toBe('AI_ACTIVE');

@@ -156,6 +156,14 @@ async function hasPriorCustomerVisibleAiDisclosure(conversationId) {
     ));
 }
 
+async function shouldApplyAiDisclosureGreeting({ conversationId, currentTurnMessageIds, aiSettings } = {}) {
+    const mode = normalizeAutomationMode(aiSettings?.automation_mode || 'AI_ACTIVE');
+    if (mode !== 'AI_ACTIVE') return false;
+    if (aiSettings?.ai_auto_reply === false) return false;
+    if (!(await isFirstCustomerTurn(conversationId, currentTurnMessageIds))) return false;
+    return !(await hasPriorCustomerVisibleAiDisclosure(conversationId));
+}
+
 /**
  * Atomic NX set with 24 h TTL. Returns true if the key was newly set (first time).
  * Falls back to a get+setex pattern for mock Redis clients in dev.
@@ -433,52 +441,16 @@ async function processMessageJob(job) {
         }
     }
 
-    // ── First-reply AI-disclosure greeting ──────────────────────────────────
-    // Until the conversation has a customer-visible AI disclosure, prepend the
-    // MANDATORY clear-text AI-disclosure (Meta Platform Policy — customers must
-    // know an automated system is replying) plus the owner's optional welcome
-    // text. Held drafts and old non-disclosed replies do not count.
-    // Best-effort: any failure leaves the reply unchanged.
     let repliedText = rawResponse;
     let disclosureApplied = false;
-    try {
-        if (rawResponse) {
-            if (!(await hasPriorCustomerVisibleAiDisclosure(conversationId))) {
-                const { buildGreeting } = require('../modules/shop/ai-messaging');
-                const Shop = require('../modules/shop/shop.entity');
-                const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
-                const shopName = shopRow?.settings?.businessInfo?.shopName || shopRow?.name || '';
-                const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: aiSettings.greeting });
-                if (greetingText) {
-                    repliedText = `${greetingText}\n\n${rawResponse}`;
-                    disclosureApplied = true;
-                }
-            }
-        }
-    } catch (greetErr) {
-        console.error(`[worker] AI-disclosure greeting failed for conv ${conversationId}:`, greetErr.message);
-    }
-
-    // ── AI disclosure ───────────────────────────────────────────────────────
-    // Disclosure happens once per conversation via the clear-text AI-disclaimer
-    // prepended above (Meta Platform Policy). The previous per-message 🤖 icon
-    // suffix was removed — no icon; the start-of-conversation text disclaimer is
-    // the disclosure.
-    const response = repliedText;
-
-    // ── Store AI response ───────────────────────────────────────────────────
-    const aiStoreResult = await ConversationStateService.storeAIResponse(conversationId, response, {
+    const storeAiResponse = (content, aiDisclosureApplied) => ConversationStateService.storeAIResponse(conversationId, content, {
         platform,
         confidence,
         automation_mode: aiSettings.automation_mode,
-        ai_disclosure_applied: disclosureApplied,
+        ai_disclosure_applied: aiDisclosureApplied,
         order_flow: orderFlow.meta || null,
         sourceReferences: sourceReferences || null,
     });
-    const aiMessage = aiStoreResult.message;
-    // NOTE: the new_message SSE is emitted later (finalizeAiMessage) once the
-    // delivery outcome is known, so the inbox never shows a "suggestion" panel
-    // for a reply that was actually auto-sent.
 
     // ── Confidence gate: hold + hand off when the AI is unsure ──────────────
     // In auto-send mode, an answer below the shop's confidence_threshold is NOT
@@ -486,14 +458,15 @@ async function processMessageJob(job) {
     // sees the held draft in the inbox), and send the customer one reassurance
     // message so they are not left in silence. Order-flow turns are deterministic
     // (confidence 1.0) and never held.
+    const { shouldHoldForLowConfidence } = require('../modules/ai/confidence-gate.service');
+    const holdForLowConfidence = shouldHoldForLowConfidence({
+        confidence,
+        automationMode: aiSettings.automation_mode,
+        confidenceThreshold: aiSettings.confidence_threshold,
+        orderFlowHandled: orderFlow.handled,
+    });
     {
-        const { shouldHoldForLowConfidence } = require('../modules/ai/confidence-gate.service');
-        if (shouldHoldForLowConfidence({
-            confidence,
-            automationMode: aiSettings.automation_mode,
-            confidenceThreshold: aiSettings.confidence_threshold,
-            orderFlowHandled: orderFlow.handled,
-        })) {
+        if (holdForLowConfidence) {
             if (!knowledgeGapCaptured) {
                 knowledgeGapCaptured = true;
                 void captureKnowledgeGap({
@@ -504,6 +477,7 @@ async function processMessageJob(job) {
                     source: fallbackKnowledgeGapSource || 'low_confidence_handoff',
                 });
             }
+            const aiMessage = (await storeAiResponse(rawResponse, false)).message;
             await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'low_confidence' });
             const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
             await escalateToHuman({
@@ -529,6 +503,35 @@ async function processMessageJob(job) {
             source: fallbackKnowledgeGapSource || 'ai_unknown_response',
         });
     }
+
+    // ── First-turn AI-disclosure greeting ───────────────────────────────────
+    // Apply only when this reply will be attempted as an auto-send on the
+    // customer's first turn. Held draft/manual suggestions must stay as plain
+    // suggested copy for the shop owner to review.
+    try {
+        if (rawResponse && await shouldApplyAiDisclosureGreeting({
+            conversationId,
+            currentTurnMessageIds: historyExcludeIds,
+            aiSettings,
+        })) {
+            const { buildGreeting } = require('../modules/shop/ai-messaging');
+            const Shop = require('../modules/shop/shop.entity');
+            const shopRow = await Shop.findByPk(shopId, { attributes: ['name', 'settings'] });
+            const shopName = shopRow?.settings?.businessInfo?.shopName || shopRow?.name || '';
+            const greetingText = buildGreeting({ shopName, language: detectedLanguage, greeting: aiSettings.greeting });
+            if (greetingText) {
+                repliedText = `${greetingText}\n\n${rawResponse}`;
+                disclosureApplied = true;
+            }
+        }
+    } catch (greetErr) {
+        console.error(`[worker] AI-disclosure greeting failed for conv ${conversationId}:`, greetErr.message);
+    }
+
+    // ── AI disclosure ───────────────────────────────────────────────────────
+    // Disclosure happens through a clear-text first-turn disclaimer only when
+    // the automated reply is actually allowed to go out. No per-message icon.
+    const response = repliedText;
 
     // ── Policy Engine: mandatory outbound gate ─────────────────────────────
     // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
@@ -577,14 +580,22 @@ async function processMessageJob(job) {
             return { delayed: true, reason: 'policy_rate_limit', retryAfterMs: decision.retryAfterMs };
         }
         // DRAFT / SUGGEST_ONLY / MANUAL / OPTED_OUT / NO_CONSENT / OUTSIDE_24H:
-        // AI response is already stored but withheld — surface it as a held
-        // suggestion the agent can review/send (delivered:false).
+        // Store the raw AI response as a held suggestion. Do not include the
+        // automated-assistant disclosure in draft/manual suggestions.
+        const aiMessage = (await storeAiResponse(rawResponse, false)).message;
         await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'draft_mode' });
         return {
             success: true, conversationId, confidence,
             sent: false, reason: decision.reason, decisionId: decision.decisionId,
         };
     }
+
+    // ── Store AI response ───────────────────────────────────────────────────
+    const aiStoreResult = await storeAiResponse(response, disclosureApplied);
+    const aiMessage = aiStoreResult.message;
+    // NOTE: the new_message SSE is emitted later (finalizeAiMessage) once the
+    // delivery outcome is known, so the inbox never shows a "suggestion" panel
+    // for a reply that was actually auto-sent.
 
     // ── Send to Meta via provider registry ─────────────────────────────────
     const finalText = decision.transform?.text || response;
@@ -708,6 +719,7 @@ module.exports = {
     _private: {
         loadConversationHistory,
         isFirstCustomerTurn,
+        shouldApplyAiDisclosureGreeting,
         hasPriorCustomerVisibleAiDisclosure,
         hasAiDisclosure,
         wasAiMessageCustomerVisible,
