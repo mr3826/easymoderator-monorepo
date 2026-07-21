@@ -120,7 +120,7 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - Reports & Analytics, Audit Logs
 - Channels (Meta OAuth connect + per-channel health) + OAuth callback
 - Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
-  Business Info contains the owner-editable additional info field used to ground replies. Reply Settings defaults to Draft, derives automatic replies from automation mode, and shows Telegram group alerts as a handoff option when notification status is loaded.
+  Business Info contains the owner-editable additional info field used to ground replies. Reply Settings defaults to Draft and is the source of truth for Auto/Draft/Manual across connected Pages; channel toggles only opt a Page in or out. Telegram group alerts appear as a handoff option when notification status is loaded.
 - Subscription & billing
 - Users (admin)
 - `bd-lite` seller shell (`Today's Queue` simplified view)

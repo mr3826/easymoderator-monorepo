@@ -164,7 +164,7 @@ Inbound message → reply, end to end:
    3. `gpt-4.1-mini` — final fallback
    A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
 8. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
-9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. Draft/Manual modes store the reply as an inbox suggestion; Auto mode can send only after policy and confidence gates pass.
+9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. The business reply setting is authoritative across connected Pages: Draft mode stores the reply as an inbox suggestion, Manual mode disables AI generation, and Auto mode can send only after policy and confidence gates pass. Per-channel toggles can opt a Page out, but cannot upgrade Draft/Manual to auto-send.
 10. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
 **Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.

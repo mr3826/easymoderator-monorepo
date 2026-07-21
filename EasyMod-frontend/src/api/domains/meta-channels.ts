@@ -189,7 +189,7 @@ export async function getMetaChannelConsentSummary(
   return res.data.data;
 }
 
-/** Per-channel AI / automation behaviour. Available on every plan. */
+/** Per-channel AI participation. Business Reply Settings controls send/draft/manual mode. */
 export type MetaAutomationMode =
   | 'AI_ACTIVE'
   | 'AI_SUGGEST_ONLY'
@@ -199,6 +199,7 @@ export type MetaAutomationMode =
 
 export interface MetaChannelSettings {
   aiAutoReply: boolean;
+  /** Legacy API field retained for compatibility; not the source of truth for reply mode. */
   automationMode: MetaAutomationMode;
   confidenceThresholdSend: number;
   confidenceThresholdSuggest: number;

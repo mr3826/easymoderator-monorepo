@@ -1329,14 +1329,14 @@
       "tryAgain": "Try again"
     },
     "autoReply": {
-      "enabledToast": "AI auto-reply turned on",
-      "disabledToast": "AI auto-reply turned off",
+      "enabledToast": "Page AI participation turned on",
+      "disabledToast": "Page AI participation turned off",
       "saveFailed": "Could not save setting",
       "loading": "Loading AI setting…",
-      "title": "AI auto-reply",
-      "onDesc": "AI will automatically reply to new messages",
-      "offDesc": "AI replies off — only drafts are created",
-      "toggleTitle": "AI auto-reply toggle"
+      "title": "Page AI participation",
+      "onDesc": "Uses the business reply mode for this Page",
+      "offDesc": "AI will not draft or send replies for this Page",
+      "toggleTitle": "Toggle whether this Page uses the business reply mode"
     }
   },
   "reports": {

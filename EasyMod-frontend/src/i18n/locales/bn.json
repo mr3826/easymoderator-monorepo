@@ -1329,14 +1329,14 @@
       "tryAgain": "আবার চেষ্টা করুন"
     },
     "autoReply": {
-      "enabledToast": "AI auto-reply চালু হয়েছে",
-      "disabledToast": "AI auto-reply বন্ধ হয়েছে",
+      "enabledToast": "Page AI participation চালু হয়েছে",
+      "disabledToast": "Page AI participation বন্ধ হয়েছে",
       "saveFailed": "সেটিং সেভ করা যায়নি",
       "loading": "AI সেটিং লোড হচ্ছে…",
-      "title": "AI auto-reply",
-      "onDesc": "নতুন বার্তায় AI স্বয়ংক্রিয়ভাবে উত্তর দেবে",
-      "offDesc": "AI উত্তর বন্ধ — শুধু খসড়া তৈরি হবে",
-      "toggleTitle": "AI auto-reply টগল"
+      "title": "Page AI participation",
+      "onDesc": "এই Page business reply mode follow করবে",
+      "offDesc": "এই Page-এ AI draft বা send করবে না",
+      "toggleTitle": "এই Page business reply mode ব্যবহার করবে কি না"
     }
   },
   "reports": {

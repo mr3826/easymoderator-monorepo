@@ -141,7 +141,7 @@ describe('message-worker AI disclosure greeting gate', () => {
     });
 
     it.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL'])(
-        'does not apply in %s mode because that would become a draft/manual suggestion',
+        'does not apply in %s mode because it is not customer-visible auto-send',
         async (automationMode) => {
             await expect(_private.shouldApplyAiDisclosureGreeting({
                 conversationId: 'conv-1',
@@ -201,6 +201,46 @@ describe('message-worker automation mode helpers', () => {
         expect(_private.isShopManualKillSwitch({ automation_mode: 'MANUAL' })).toBe(true);
         expect(_private.isShopManualKillSwitch({ automation_mode: 'AI_ACTIVE' })).toBe(false);
         expect(_private.isShopManualKillSwitch({ automation_mode: 'AUTO' })).toBe(false);
+    });
+
+    it('keeps business DRAFT authoritative when the page is AI_ACTIVE', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'DRAFT', confidence_threshold: 75 },
+            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true, confidence_threshold_send: 90 }
+        );
+
+        expect(effective).toEqual(expect.objectContaining({
+            automation_mode: 'DRAFT',
+            ai_auto_reply: true,
+            confidence_threshold_send: 90,
+        }));
+    });
+
+    it('keeps business MANUAL authoritative when the page is AI_ACTIVE', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'MANUAL' },
+            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('MANUAL');
+    });
+
+    it('uses the page automation mode only when business mode is missing', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { confidence_threshold: 70 },
+            { automation_mode: 'DRAFT', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('DRAFT');
+    });
+
+    it('normalizes legacy business AUTO before applying channel settings', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'AUTO' },
+            { automation_mode: 'DRAFT', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('AI_ACTIVE');
     });
 });
 

@@ -10,7 +10,7 @@
  *   1. Redis idempotency  — drop duplicates via NX key (24 h TTL)
  *   2. HITL flag          — skip if a human agent has taken over the conversation
  *   3. AI pause           — skip if agent sent a manual message within the last 30 min
- *   4. Automation mode    — skip if shop is in MANUAL mode
+ *   4. Automation mode    — business mode controls send/draft/manual for all channels
  *   5. Meta rate limit    — delay job if the page has hit 170 sends/hr (leaky bucket)
  *
  * Fair queueing: each job is dispatched with group.id = shopId. BullMQ v5 processes
@@ -184,6 +184,22 @@ function normalizeAutomationMode(mode) {
     return mode === 'AUTO' ? 'AI_ACTIVE' : mode;
 }
 
+function hasExplicitAutomationMode(settings = {}) {
+    return typeof settings?.automation_mode === 'string' && settings.automation_mode.trim() !== '';
+}
+
+function resolveEffectiveAiSettings(shopSettings = {}, channelSettings = {}) {
+    const merged = { ...shopSettings, ...channelSettings };
+    if (hasExplicitAutomationMode(shopSettings)) {
+        merged.automation_mode = normalizeAutomationMode(shopSettings.automation_mode);
+    } else if (hasExplicitAutomationMode(channelSettings)) {
+        merged.automation_mode = normalizeAutomationMode(channelSettings.automation_mode);
+    } else {
+        merged.automation_mode = normalizeAutomationMode(merged.automation_mode || 'AI_ACTIVE');
+    }
+    return merged;
+}
+
 function isShopManualKillSwitch(settings = {}) {
     return normalizeAutomationMode(settings?.automation_mode) === 'MANUAL';
 }
@@ -293,6 +309,8 @@ async function processMessageJob(job) {
     if (paused) return { skipped: true, reason: 'ai_paused' };
 
     // ── Guard 4: Automation mode ────────────────────────────────────────────
+    // Business/shop reply mode is authoritative. Channel settings can opt a
+    // Page out, but cannot upgrade business Draft/Manual to auto-send.
     const [shopAISettings, channelAISettings] = await Promise.all([
         getShopAISettings(shopId),
         getChannelAISettings(jobChannel),
@@ -301,7 +319,7 @@ async function processMessageJob(job) {
         return { skipped: true, reason: 'manual_mode', scope: 'shop' };
     }
 
-    const aiSettings = { ...shopAISettings, ...channelAISettings };
+    const aiSettings = resolveEffectiveAiSettings(shopAISettings, channelAISettings);
     if (aiSettings.automation_mode === 'MANUAL') {
         return { skipped: true, reason: 'manual_mode', scope: 'effective' };
     }
@@ -553,7 +571,8 @@ async function processMessageJob(job) {
     if (channel) {
         try {
             const s = await metaChannelService.getSettings(channel.id);
-            channelSettings = { ...aiSettings, ...(s?.toJSON?.() || s || {}) };
+            const latestChannelAISettings = { ...channelAISettings, ...(s?.toJSON?.() || s || {}) };
+            channelSettings = resolveEffectiveAiSettings(shopAISettings, latestChannelAISettings);
         } catch { /* fall back to aiSettings */ }
     }
 
@@ -725,6 +744,7 @@ module.exports = {
         wasAiMessageCustomerVisible,
         buildOrderFlowFailureResponse,
         normalizeAutomationMode,
+        resolveEffectiveAiSettings,
         isShopManualKillSwitch,
     },
 };
