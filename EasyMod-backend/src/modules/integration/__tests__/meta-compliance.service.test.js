@@ -23,11 +23,13 @@ const mockSequelize = {
 const mockConsent = {
     recordDataDeletion: jest.fn(),
 };
+const mockOpsAlert = jest.fn();
 const mockUnlink = jest.fn();
 
 jest.mock('../../entities', () => mockModels);
 jest.mock('../../../utils/database/database-setup', () => ({ sequelize: mockSequelize }));
 jest.mock('../../consent/consent.service', () => mockConsent);
+jest.mock('../../../utils/ops-alert', () => ({ opsAlert: mockOpsAlert }));
 jest.mock('fs/promises', () => ({ unlink: mockUnlink }));
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
@@ -70,7 +72,7 @@ describe('Meta compliance deletion transaction', () => {
         mockConsent.recordDataDeletion.mockResolvedValue({});
     });
 
-    test('unknown Meta identity completes safely and audibly with zero matches', async () => {
+    test('unmapped identity remains durable and retryable without false completion', async () => {
         const request = deletionRequest();
         mockModels.MetaDataDeletionRequest.findOrCreate.mockResolvedValue([request, true]);
 
@@ -80,13 +82,109 @@ describe('Meta compliance deletion transaction', () => {
             appSecret: 'secret',
         });
 
-        expect(result.request.status).toBe('COMPLETED');
+        expect(result.request.status).toBe('IDENTITY_NOT_RESOLVED');
         expect(result.request.matched_customer_count).toBe(0);
         expect(mockModels.Customer.destroy).not.toHaveBeenCalled();
+        expect(mockModels.AuditLog.create).toHaveBeenCalledWith(
+            expect.objectContaining({ action: 'meta_deletion_identity_not_resolved' }),
+            expect.anything(),
+        );
+        expect(mockModels.AuditLog.create).not.toHaveBeenCalledWith(
+            expect.objectContaining({
+                action: expect.stringMatching(
+                    /^meta_deletion_(identity_resolved|completed|shop_data_removed)$/,
+                ),
+            }),
+            expect.anything(),
+        );
+        expect(mockConsent.recordDataDeletion).not.toHaveBeenCalled();
+        expect(mockOpsAlert).toHaveBeenCalledWith(
+            'Meta deletion identity not resolved',
+            expect.objectContaining({
+                context: { requestId: request.id },
+            }),
+        );
+        expect(service.serializeDeletionStatus(result.request)).toMatchObject({
+            status: 'identity_not_resolved',
+            retryable: true,
+            matched_customers: 0,
+        });
+    });
+
+    test('legitimately resolved identity with no retained customer data completes as no-data', async () => {
+        const request = deletionRequest();
+        mockModels.MetaDataDeletionRequest.findOrCreate.mockResolvedValue([request, true]);
+        mockModels.MetaUserIdentity.findAll.mockResolvedValue([{
+            channel_id: 'channel-1',
+            shop_id: 'shop-1',
+            page_scoped_user_id: 'psid-1',
+        }]);
+        mockModels.Customer.findOne.mockResolvedValue(null);
+
+        const result = await service.processDeletionRequest({
+            signedRequest: 'signed-resolved-no-data',
+            appScopedUserId: 'app-user-1',
+            appSecret: 'secret',
+        });
+
+        expect(result.request).toMatchObject({
+            status: 'COMPLETED',
+            matched_customer_count: 0,
+        });
+        expect(mockModels.MetaUserIdentity.destroy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { app_scoped_user_id: 'app-user-1' },
+            }),
+        );
+        expect(mockConsent.recordDataDeletion).not.toHaveBeenCalled();
+        expect(mockModels.AuditLog.create).toHaveBeenCalledWith(
+            expect.objectContaining({ action: 'meta_deletion_identity_resolved' }),
+            expect.anything(),
+        );
         expect(mockModels.AuditLog.create).toHaveBeenCalledWith(
             expect.objectContaining({ action: 'meta_deletion_completed' }),
             expect.anything(),
         );
+        expect(mockOpsAlert).not.toHaveBeenCalled();
+    });
+
+    test('an unresolved request retries after a legitimate mapping becomes available', async () => {
+        const request = deletionRequest();
+        mockModels.MetaDataDeletionRequest.findOrCreate
+            .mockResolvedValueOnce([request, true])
+            .mockResolvedValueOnce([request, false]);
+
+        const first = await service.processDeletionRequest({
+            signedRequest: 'signed-retryable',
+            appScopedUserId: 'app-user-1',
+            appSecret: 'secret',
+        });
+        expect(first.request.status).toBe('IDENTITY_NOT_RESOLVED');
+
+        const mapping = {
+            channel_id: 'channel-1',
+            shop_id: 'shop-1',
+            page_scoped_user_id: 'psid-1',
+        };
+        mockModels.MetaUserIdentity.findAll.mockResolvedValue([mapping]);
+        mockModels.Customer.findOne.mockResolvedValue(null);
+
+        const second = await service.processDeletionRequest({
+            signedRequest: 'signed-retryable',
+            appScopedUserId: 'app-user-1',
+            appSecret: 'secret',
+        });
+
+        expect(second.request.status).toBe('COMPLETED');
+        expect(mockModels.MetaDataDeletionRequest.update).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'PROCESSING' }),
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    id: request.id,
+                }),
+            }),
+        );
+        expect(mockModels.Customer.destroy).not.toHaveBeenCalled();
     });
 
     test('deletes conversations/messages, handles attachments, and anonymizes order PII', async () => {
@@ -133,7 +231,11 @@ describe('Meta compliance deletion transaction', () => {
                 customer_name: 'Deleted customer',
                 customer_phone: null,
                 delivery_address: null,
+                delivery_area: null,
+                delivery_location: null,
+                delivery_zone: null,
                 note: null,
+                notes: null,
             }),
             expect.objectContaining({
                 where: { shop_id: 'shop-1', customer_id: 'customer-1' },
@@ -186,7 +288,7 @@ describe('Meta compliance deletion transaction', () => {
         expect(mockConsent.recordDataDeletion).toHaveBeenCalled();
     });
 
-    test('does not delete a customer outside the mapped shop and Page identity', async () => {
+    test('resolved mapping never deletes a customer outside the mapped shop and Page identity', async () => {
         const request = deletionRequest();
         mockModels.MetaDataDeletionRequest.findOrCreate.mockResolvedValue([request, true]);
         mockModels.MetaUserIdentity.findAll.mockResolvedValue([{

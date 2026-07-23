@@ -13,7 +13,12 @@ describe('Meta compliance identity and deletion migration', () => {
         expect(sql).toContain('uq_meta_user_identities_app_channel');
         expect(sql).toContain('CREATE TABLE IF NOT EXISTS meta_data_deletion_requests');
         expect(sql).toContain('request_fingerprint VARCHAR(64) NOT NULL UNIQUE');
-        expect(sql).toContain("AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')");
+        expect(sql).toMatch(
+            /AS ENUM\s*\(\s*'PENDING',\s*'PROCESSING',\s*'IDENTITY_NOT_RESOLVED',\s*'COMPLETED',\s*'FAILED'\s*\)/,
+        );
+        expect(sql).toContain(
+            "ADD VALUE IF NOT EXISTS 'IDENTITY_NOT_RESOLVED'",
+        );
         expect(sql).not.toContain('signed_request');
         expect(sql).not.toContain('confirmation_code VARCHAR');
     });

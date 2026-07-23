@@ -57,7 +57,7 @@ router.get('/data-deletion', (req, res) => {
         instructions: [
             'Remove EasyModerator from Facebook Settings > Apps and Websites.',
             'Meta will send a signed deletion callback and return an opaque confirmation code.',
-            'Open the returned status URL to see pending, completed, or failed status.',
+            'Open the returned status URL to see pending, identity-not-resolved, completed, or failed status.',
             'For manual assistance, email privacy@easymod.tech.',
         ],
         contact: 'privacy@easymod.tech',

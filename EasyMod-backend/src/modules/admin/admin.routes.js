@@ -14,6 +14,8 @@ const superOnly = requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN);
 
 // Reads (SUPPORT_ADMIN or SUPER_ADMIN)
 router.get('/dashboard', ctrl.getDashboard);
+router.get('/meta-identity-readiness', ctrl.getMetaIdentityReadiness);
+router.get('/payment-processing-reconciliation', ctrl.getStalePaymentProcessing);
 router.get('/shops', ctrl.listShops);
 router.get('/shops/:shopId', ctrl.getShopOverview);
 router.get('/shops/:shopId/channels', ctrl.getShopChannels);

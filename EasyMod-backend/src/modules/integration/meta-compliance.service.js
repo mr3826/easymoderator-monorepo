@@ -19,6 +19,7 @@ const {
 } = require('../entities');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('MetaComplianceService');
 const UPLOAD_ROOT = path.resolve(__dirname, '../../../uploads');
@@ -59,7 +60,7 @@ function serializeDeletionStatus(row) {
         orders_anonymized: row.orders_anonymized_count || 0,
         attachments_deleted: row.attachments_deleted_count || 0,
         completed_at: row.completed_at || null,
-        retryable: row.status === 'FAILED',
+        retryable: ['FAILED', 'IDENTITY_NOT_RESOLVED'].includes(row.status),
         failure_code: row.failure_code || null,
     };
 }
@@ -222,8 +223,10 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
             customer_phone: null,
             delivery_location: null,
             delivery_address: null,
+            delivery_area: null,
             delivery_zone: null,
             note: null,
+            notes: null,
         }, {
             where: { shop_id: shopId, customer_id: customerId },
             transaction,
@@ -342,7 +345,11 @@ async function processDeletionRequest({
         where: {
             id: request.id,
             [Op.or]: [
-                { status: { [Op.in]: ['PENDING', 'FAILED'] } },
+                {
+                    status: {
+                        [Op.in]: ['PENDING', 'FAILED', 'IDENTITY_NOT_RESOLVED'],
+                    },
+                },
                 {
                     status: 'PROCESSING',
                     [Op.or]: [
@@ -392,6 +399,31 @@ async function processDeletionRequest({
                 appScopedUserId,
                 transaction,
             );
+
+            if (mappings.length === 0) {
+                await request.update({
+                    status: 'IDENTITY_NOT_RESOLVED',
+                    matched_customer_count: 0,
+                    conversations_deleted_count: 0,
+                    messages_deleted_count: 0,
+                    orders_anonymized_count: 0,
+                    attachments_deleted_count: 0,
+                    pending_attachment_paths: [],
+                    failure_code: 'IDENTITY_MAPPING_UNAVAILABLE',
+                    failure_detail: 'Legitimate Meta identity mapping is not yet available',
+                    data_phase_completed_at: null,
+                    completed_at: null,
+                }, { transaction });
+                await writeAudit('meta_deletion_identity_not_resolved', request.id, {
+                    metadata: {
+                        retryable: true,
+                        mappings_found: 0,
+                    },
+                    transaction,
+                });
+                return;
+            }
+
             await writeAudit('meta_deletion_identity_resolved', request.id, {
                 metadata: {
                     mappings_found: mappings.length,
@@ -448,6 +480,19 @@ async function processDeletionRequest({
                 transaction,
             });
         });
+
+        if (request.status === 'IDENTITY_NOT_RESOLVED') {
+            await opsAlert('Meta deletion identity not resolved', {
+                detail: `Deletion request ${request.id} requires identity reconciliation`,
+                level: 'warning',
+                context: { requestId: request.id },
+            });
+            return {
+                request,
+                confirmationCode: code,
+                unresolvedIdentity: true,
+            };
+        }
 
         const cleanup = await cleanupOwnedAttachments(pendingAttachmentPaths);
         await request.update({

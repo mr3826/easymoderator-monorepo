@@ -17,8 +17,21 @@ The application never fabricates a Page-scoped ID. If Meta does not return a
 Page identity, the mapping can still identify channels for deauthorization, but
 it cannot identify a Messenger customer for deletion. Channels connected before
 this migration must reconnect once to seed the mapping. An unmatched deletion
-request completes with zero customer matches; it never guesses across shops or
-Pages.
+request remains `IDENTITY_NOT_RESOLVED`; it never guesses across shops or Pages,
+never emits a deletion-completed audit event, and never counts as completed.
+Operations receives a throttled alert containing only the durable request ID.
+Repeating the same valid callback after a legitimate mapping is captured safely
+retries the durable request through the same atomic claim.
+
+Deletion outcomes are intentionally distinct:
+
+- `COMPLETED` with positive counters means mapped retained data was deleted or
+  anonymized.
+- `COMPLETED` with zero counters is allowed only when a legitimate identity
+  mapping existed but no retained customer data was found.
+- `IDENTITY_NOT_RESOLVED` means no legitimate mapping existed. Its counters stay
+  zero, `completed_at` stays null, and the status endpoint reports it as
+  retryable.
 
 For a mapped Messenger customer, the deletion transaction:
 
@@ -50,6 +63,17 @@ Status endpoint:
 POST /api/webhooks/meta/data-deletion
 GET  /api/webhooks/meta/data-deletion/status/:confirmationCode
 ```
+
+Platform administrators can inspect mapping readiness without seeing customer
+identifiers or tokens:
+
+```text
+GET /api/admin/meta-identity-readiness
+```
+
+The response contains only total connected channels, connected channels with a
+valid app-scoped/Page-scoped mapping, missing-channel count, most recent mapping
+capture time, and an aggregate readiness boolean.
 
 ## Meta deauthorization and invalid-token recovery
 
@@ -95,6 +119,8 @@ channel marked `CONNECTED`.
 | `POST /api/webhooks/telegram` | Public Telegram callback | Required `X-Telegram-Bot-Api-Secret-Token`; disabled or unconfigured service fails closed. |
 | `POST /api/webhooks/meta` | Public Meta callback | Raw-body `X-Hub-Signature-256` HMAC; unconfigured app secret fails closed. |
 | Meta deletion/deauthorization callbacks | Public Meta callbacks | HMAC-SHA256 signed request, 24-hour maximum age, five-minute clock-skew allowance, and durable/auditable processing. |
+| `GET /api/admin/meta-identity-readiness` | Platform-admin authenticated | Aggregate mapping coverage only; no Meta identifiers or tokens. |
+| `GET /api/admin/payment-processing-reconciliation` | Platform-admin authenticated | Read-only stale `processing` payment report by age; never resets or replays fulfillment. |
 
 The public `/api/analytics/funnel` endpoint remains intentionally public for the
 first-party acquisition funnel. It accepts only a fixed event allowlist, does
@@ -182,6 +208,27 @@ npm run build
 ```
 
 Frontend unit tests are blocking in CI after the Phase 1 green baseline.
+
+## Stale payment processing reconciliation
+
+A completed gateway callback atomically claims a payment by moving it to
+`processing`. Repeated callbacks cannot claim that state and return pending
+without invoking fulfillment again. A crash after the claim can therefore
+leave durable work requiring human reconciliation.
+
+Platform administrators can identify that work by age:
+
+```bash
+curl -H "Authorization: Bearer <platform-admin-token>" \
+  "https://easymod.tech/api/admin/payment-processing-reconciliation?olderThanMinutes=15&limit=100"
+```
+
+The report includes internal payment, shop, and order IDs, gateway, update time,
+and age; it excludes gateway payloads and customer data. A non-empty report
+emits a throttled operations alert containing only aggregate counts and age.
+The endpoint deliberately performs no mutation. The operator must compare the
+gateway and order state before an approved manual resolution; automatically
+resetting `processing` could duplicate fulfillment.
 
 Security-relevant auth tests are re-enabled. The following Jest exclusions
 remain because they require live infrastructure or cover unrelated incomplete

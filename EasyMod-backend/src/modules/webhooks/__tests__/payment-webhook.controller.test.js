@@ -107,6 +107,31 @@ describe('bKash payment webhook replay protection', () => {
         expect(fulfillment).not.toHaveBeenCalled();
     });
 
+    test('a processing callback remains pending and cannot repeat fulfillment', async () => {
+        mockPaymentTransaction.findOne.mockResolvedValue({
+            id: 'payment-1',
+            status: 'processing',
+            updated_at: new Date(Date.now() - 60 * 60 * 1000),
+            update: jest.fn(),
+        });
+        const fulfillment = jest.spyOn(controller, 'processSuccessfulPayment');
+        const res = response();
+
+        await controller.handleBkashWebhook({
+            body: {
+                paymentID: 'gateway-payment-1',
+                transactionStatus: 'Completed',
+                trxID: 'trx-1',
+                amount: '100.00',
+            },
+        }, res);
+
+        expect(res.status).toHaveBeenCalledWith(202);
+        expect(res.json).toHaveBeenCalledWith({ success: true, pending: true });
+        expect(mockPaymentTransaction.update).not.toHaveBeenCalled();
+        expect(fulfillment).not.toHaveBeenCalled();
+    });
+
     test('rejects an invalid completed transition', async () => {
         mockPaymentTransaction.findOne.mockResolvedValue({
             id: 'payment-1',

@@ -34,10 +34,22 @@ module.exports = {
         await sequelize.query(`
             DO $$ BEGIN
                 CREATE TYPE enum_meta_data_deletion_requests_status
-                    AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
+                    AS ENUM (
+                        'PENDING',
+                        'PROCESSING',
+                        'IDENTITY_NOT_RESOLVED',
+                        'COMPLETED',
+                        'FAILED'
+                    );
             EXCEPTION
                 WHEN duplicate_object THEN NULL;
             END $$;
+        `);
+        // Keeps up() re-runnable if an earlier draft of this migration created
+        // the enum before IDENTITY_NOT_RESOLVED was introduced.
+        await sequelize.query(`
+            ALTER TYPE enum_meta_data_deletion_requests_status
+            ADD VALUE IF NOT EXISTS 'IDENTITY_NOT_RESOLVED';
         `);
         await sequelize.query(`
             CREATE TABLE IF NOT EXISTS meta_data_deletion_requests (

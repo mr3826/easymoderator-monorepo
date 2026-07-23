@@ -13,6 +13,18 @@ function auditCtx(req) {
 exports.getDashboard = async (req, res, next) => {
   try { ok(res, await adminService.getDashboard()); } catch (e) { next(e); }
 };
+exports.getMetaIdentityReadiness = async (req, res, next) => {
+  try { ok(res, await adminService.getMetaIdentityReadiness()); } catch (e) { next(e); }
+};
+exports.getStalePaymentProcessing = async (req, res, next) => {
+  try {
+    const reconciliationService = require('../payment/payment-processing-reconciliation.service');
+    ok(res, await reconciliationService.getStalePaymentProcessingReport({
+      olderThanMinutes: req.query.olderThanMinutes,
+      limit: req.query.limit,
+    }));
+  } catch (e) { next(e); }
+};
 exports.listShops = async (req, res, next) => {
   try { ok(res, await adminService.listShops(req.query)); } catch (e) { next(e); }
 };

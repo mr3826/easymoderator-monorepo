@@ -30,7 +30,13 @@ const MetaDataDeletionRequest = sequelize.define('MetaDataDeletionRequest', {
         unique: true,
     },
     status: {
-        type: DataTypes.ENUM('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'),
+        type: DataTypes.ENUM(
+            'PENDING',
+            'PROCESSING',
+            'IDENTITY_NOT_RESOLVED',
+            'COMPLETED',
+            'FAILED',
+        ),
         allowNull: false,
         defaultValue: 'PENDING',
     },

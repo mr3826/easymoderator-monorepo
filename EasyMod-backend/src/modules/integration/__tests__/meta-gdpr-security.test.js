@@ -83,14 +83,26 @@ describe('Meta GDPR signed requests and callback truthfulness', () => {
         expect(response.body.confirmation_code).toBeUndefined();
     });
 
-    test('exposes honest completed, failed, and missing status', async () => {
+    test('exposes honest completed, unresolved, and missing status', async () => {
         mockGetDeletionStatus.mockResolvedValueOnce({ status: 'completed', retryable: false });
         await request(app)
             .get(`/api/webhooks/meta/data-deletion/status/DEL-${'a'.repeat(32)}`)
             .expect(200, { status: 'completed', retryable: false });
-        mockGetDeletionStatus.mockResolvedValueOnce(null);
+        mockGetDeletionStatus.mockResolvedValueOnce({
+            status: 'identity_not_resolved',
+            retryable: true,
+            matched_customers: 0,
+        });
         await request(app)
             .get(`/api/webhooks/meta/data-deletion/status/DEL-${'b'.repeat(32)}`)
+            .expect(200, {
+                status: 'identity_not_resolved',
+                retryable: true,
+                matched_customers: 0,
+            });
+        mockGetDeletionStatus.mockResolvedValueOnce(null);
+        await request(app)
+            .get(`/api/webhooks/meta/data-deletion/status/DEL-${'c'.repeat(32)}`)
             .expect(404);
     });
 
