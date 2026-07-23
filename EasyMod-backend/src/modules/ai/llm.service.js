@@ -22,6 +22,7 @@
  */
 
 const { circuitBreaker } = require('./circuit-breaker.service');
+const { safeFetchMedia } = require('../../utils/safe-media-fetch');
 
 const GEMINI_LITE_MODEL = process.env.LLM_GEMINI_LITE_MODEL || 'gemini-3.1-flash-lite';
 const GEMINI_PRO_MODEL  = process.env.LLM_GEMINI_PRO_MODEL  || 'gemini-3.1-pro-preview';
@@ -37,21 +38,22 @@ const hasVisionContent = (messages) =>
     messages.some(m => Array.isArray(m.content));
 
 const fetchImageAsBase64 = async (url) => {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const buffer = await res.arrayBuffer();
-    return { data: Buffer.from(buffer).toString('base64'), mimeType: contentType.split(';')[0] };
+    const { buffer, mimeType } = await safeFetchMedia(url);
+    return { data: buffer.toString('base64'), mimeType };
 };
 
-const toOpenAIContent = (content) => {
+const toOpenAIContent = async (content) => {
     if (typeof content === 'string') return content;
-    return content.map(block => {
+    return Promise.all(content.map(async (block) => {
         if (block.type === 'image_url') {
-            return { type: 'image_url', image_url: { url: block.url } };
+            const { data, mimeType } = await fetchImageAsBase64(block.url);
+            return {
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${data}` },
+            };
         }
         return { type: 'text', text: block.text || '' };
-    });
+    }));
 };
 
 const toGeminiParts = async (content) => {
@@ -79,7 +81,12 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
     const timeoutMs = parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000;
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
-    oaiMessages.push(...messages.map(m => ({ role: m.role, content: toOpenAIContent(m.content) })));
+    oaiMessages.push(...await Promise.all(
+        messages.map(async (m) => ({
+            role: m.role,
+            content: await toOpenAIContent(m.content),
+        })),
+    ));
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
