@@ -15,16 +15,29 @@ const mockVerifyWebhookSubscription = jest.fn();
 const mockGetAssetAccessToken = jest.fn().mockResolvedValue({ token: 'page-tok', expiresAt: null });
 const mockExchangeCode = jest.fn().mockResolvedValue({ userToken: 'user-tok' });
 const mockListManagedAssets = jest.fn().mockResolvedValue([]);
+const mockGetOAuthIdentity = jest.fn().mockResolvedValue({
+    appScopedUserId: 'app-user-1',
+    pageScopedIdentities: [{ pageId: 'PAGE_42', pageScopedUserId: 'psid-1' }],
+});
 
 jest.mock('../provider.registry', () => ({
     getProvider: () => ({
         buildAuthUrl: mockBuildAuthUrl,
         exchangeCode: mockExchangeCode,
         listManagedAssets: mockListManagedAssets,
+        getOAuthIdentity: mockGetOAuthIdentity,
         getAssetAccessToken: mockGetAssetAccessToken,
         subscribeWebhook: mockSubscribeWebhook,
         verifyWebhookSubscription: mockVerifyWebhookSubscription,
     }),
+}));
+
+const mockIdentityUpdate = jest.fn().mockResolvedValue(undefined);
+const mockIdentityFindOrCreate = jest.fn().mockResolvedValue([
+    { update: mockIdentityUpdate },
+]);
+jest.mock('../meta-user-identity.entity', () => ({
+    findOrCreate: mockIdentityFindOrCreate,
 }));
 
 const mockUpsertFromOAuth = jest.fn();
@@ -113,6 +126,10 @@ describe('connectPage() webhook verify wiring', () => {
             userToken: 'stored-user-token',
             platform: 'facebook',
             pages: [{ id: ASSET_ID, name: 'Stored Page Name' }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
             userId: USER_ID,
             shopId: SHOP_ID,
         });

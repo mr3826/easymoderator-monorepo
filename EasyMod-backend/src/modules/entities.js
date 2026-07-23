@@ -46,6 +46,8 @@ const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.e
 const MetaChannel = require('./channel-providers/meta-channel.entity');
 const MetaChannelSettings = require('./channel-providers/meta-channel-settings.entity');
 const MetaChannelConsentEvent = require('./channel-providers/meta-channel-consent-event.entity');
+const MetaUserIdentity = require('./channel-providers/meta-user-identity.entity');
+const MetaDataDeletionRequest = require('./integration/meta-data-deletion-request.entity');
 
 // Phase 3 — Policy Engine audit log
 const PolicyDecision = require('./policy/policy-decision.entity');
@@ -425,6 +427,35 @@ MetaChannelConsentEvent.belongsTo(Customer, {
     as: 'customer'
 });
 
+// OAuth-captured app-scoped <-> Page-scoped identity bridge.
+MetaChannel.hasMany(MetaUserIdentity, {
+    foreignKey: 'channel_id',
+    as: 'userIdentities',
+    onDelete: 'CASCADE',
+});
+MetaUserIdentity.belongsTo(MetaChannel, {
+    foreignKey: 'channel_id',
+    as: 'channel',
+});
+Shop.hasMany(MetaUserIdentity, {
+    foreignKey: 'shop_id',
+    as: 'metaUserIdentities',
+    onDelete: 'CASCADE',
+});
+MetaUserIdentity.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop',
+});
+User.hasMany(MetaUserIdentity, {
+    foreignKey: 'internal_user_id',
+    as: 'metaUserIdentities',
+    onDelete: 'SET NULL',
+});
+MetaUserIdentity.belongsTo(User, {
+    foreignKey: 'internal_user_id',
+    as: 'internalUser',
+});
+
 // Export entities
 module.exports = {
     User,
@@ -473,5 +504,7 @@ module.exports = {
     MetaChannel,
     MetaChannelSettings,
     MetaChannelConsentEvent,
+    MetaUserIdentity,
+    MetaDataDeletionRequest,
     PolicyDecision,
 };
