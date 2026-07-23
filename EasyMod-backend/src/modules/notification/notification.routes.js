@@ -1,13 +1,67 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { body } = require('express-validator');
 const { param, query, validationResult } = require('express-validator');
 const NotificationController = require('./notification.controller');
 const pushSubscriptionRoutes = require('./push-subscription.routes');
 const telegramNotificationRoutes = require('./telegram-notification.routes');
 const { authenticate } = require('../../middleware/auth.middleware');
-const { OwnerNotification } = require('../entities');
+const { OwnerNotification, UserShop } = require('../entities');
+const ownerNotificationService = require('./owner-notification.service');
+const { AppError } = require('../../utils/AppError');
 
 const router = express.Router();
+
+// Every notification action reads or mutates tenant data.
+router.use(authenticate);
+const paymentActionLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+router.post(
+    '/payment-confirmation/:notificationId/:action',
+    paymentActionLimiter,
+    [
+        param('notificationId').isUUID().withMessage('notificationId must be a UUID'),
+        param('action').isIn(['approve', 'reject']).withMessage('Invalid action'),
+    ],
+    async (req, res, next) => {
+        try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({ success: false, errors: errors.array() });
+            }
+            const notification = await OwnerNotification.findByPk(req.params.notificationId, {
+                attributes: ['id', 'shop_id'],
+            });
+            if (!notification) throw new AppError('Notification not found', 404);
+            if (req.user?.shopId !== notification.shop_id) {
+                throw new AppError('Payment confirmation belongs to another shop', 403);
+            }
+            const membership = await UserShop.findOne({
+                where: {
+                    user_id: req.user.userId,
+                    shop_id: notification.shop_id,
+                    role: 'owner',
+                    is_active: true,
+                },
+            });
+            if (!membership) throw new AppError('Active shop owner access is required', 403);
+
+            const result = await ownerNotificationService.handleOwnerResponse(
+                notification.id,
+                req.params.action,
+                { userId: req.user.userId },
+            );
+            return res.status(200).json(result);
+        } catch (err) {
+            return next(err);
+        }
+    },
+);
 
 // Push subscription management (register / unregister device tokens)
 router.use(pushSubscriptionRoutes);
@@ -15,7 +69,6 @@ router.use('/telegram', telegramNotificationRoutes);
 
 router.get(
     '/in-app',
-    authenticate,
     [query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('limit must be 1-50')],
     async (req, res) => {
         try {
@@ -41,7 +94,6 @@ router.get(
 
 router.patch(
     '/in-app/:id/read',
-    authenticate,
     [param('id').isUUID().withMessage('id must be a UUID')],
     async (req, res) => {
         try {
@@ -69,7 +121,7 @@ router.patch(
 
 // Validation middleware
 const validateMarkHandoff = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('customer_id').notEmpty().withMessage('customer_id is required'),
     body('platform').isIn(['messenger']).withMessage('Invalid platform'),
     body('trigger_reason').notEmpty().withMessage('trigger_reason is required'),
@@ -78,7 +130,7 @@ const validateMarkHandoff = [
 ];
 
 const validatePushNotification = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('type').notEmpty().withMessage('type is required'),
     body('title').notEmpty().withMessage('title is required'),
     body('body').notEmpty().withMessage('body is required'),

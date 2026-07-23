@@ -2,6 +2,8 @@ const { validationResult } = require('express-validator');
 const KnowledgeGap = require('./knowledge-gap.entity');
 const enhancedAnalyticsService = require('./analytics-enhanced.service');
 const { recordFunnelEvent, ALLOWED_FUNNEL_EVENTS } = require('./funnel-events.service');
+const { AuditLog } = require('../entities');
+const { sequelize } = require('../../utils/database/database-setup');
 
 class AnalyticsController {
     static async logFunnelEvent(req, res) {
@@ -45,17 +47,39 @@ class AnalyticsController {
                 });
             }
 
-            const { question, shop_id, platform, language = 'mixed' } = req.body;
+            const { question, platform, language = 'mixed' } = req.body;
+            const shop_id = req.user?.shopId;
+            if (!shop_id) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No authenticated shop selected',
+                });
+            }
+            if (req.body.shop_id && req.body.shop_id !== shop_id) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Cross-shop knowledge-gap writes are forbidden',
+                });
+            }
 
-            const gap = await KnowledgeGap.create({
-                shop_id,
-                question,
-                platform,
-                language,
-                source: 'ai_handler'
+            let gap;
+            await sequelize.transaction(async (transaction) => {
+                gap = await KnowledgeGap.create({
+                    shop_id,
+                    question,
+                    platform,
+                    language,
+                    source: 'ai_handler'
+                }, { transaction });
+                await AuditLog.create({
+                    user_id: req.user.userId,
+                    shop_id,
+                    action: 'knowledge_gap_created',
+                    resource_type: 'knowledge_gap',
+                    resource_id: gap.id,
+                    metadata: { platform, language },
+                }, { transaction });
             });
-
-            console.log(`📚 Knowledge gap logged for shop ${shop_id}: "${question}"`);
 
             res.json({ success: true, logged: true, analytics_id: gap.id });
         } catch (error) {
@@ -69,9 +93,7 @@ class AnalyticsController {
      */
     static async getKnowledgeGaps(req, res) {
         try {
-            // When called from the authenticated frontend, use the token's shopId.
-            // When called by internal tooling without auth, fall back to query param.
-            const shop_id = req.user?.shopId || req.query.shop_id;
+            const shop_id = req.user?.shopId;
             const limit = Math.min(parseInt(req.query.limit) || 50, 200);
             const offset = parseInt(req.query.offset) || 0;
 
@@ -109,7 +131,7 @@ class AnalyticsController {
      */
     static async getTopUnansweredQuestions(req, res) {
         try {
-            const shop_id = req.user?.shopId || req.query.shop_id;
+            const shop_id = req.user?.shopId;
             if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
 
             const limit = Math.min(parseInt(req.query.limit) || 10, 50);
@@ -127,7 +149,7 @@ class AnalyticsController {
      */
     static async getPeakHours(req, res) {
         try {
-            const shop_id = req.user?.shopId || req.query.shop_id;
+            const shop_id = req.user?.shopId;
             if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
 
             const days = Math.min(parseInt(req.query.days) || 30, 365);
@@ -145,7 +167,7 @@ class AnalyticsController {
      */
     static async getIntentBreakdown(req, res) {
         try {
-            const shop_id = req.user?.shopId || req.query.shop_id;
+            const shop_id = req.user?.shopId;
             if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
 
             const days = Math.min(parseInt(req.query.days) || 30, 365);
@@ -163,7 +185,7 @@ class AnalyticsController {
      */
     static async getConfidenceDistribution(req, res) {
         try {
-            const shop_id = req.user?.shopId || req.query.shop_id;
+            const shop_id = req.user?.shopId;
             if (!shop_id) return res.status(400).json({ success: false, error: 'shop_id is required' });
 
             const days = Math.min(parseInt(req.query.days) || 30, 365);
