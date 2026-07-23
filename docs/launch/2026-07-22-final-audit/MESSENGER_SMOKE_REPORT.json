@@ -1,0 +1,224 @@
+{
+  "generatedAt": "2026-07-19T03:20:00+06:00",
+  "scope": "remediation-rerun-and-preflight-only",
+  "verdict": "NOT_RUN",
+  "preflightStatus": "FAIL",
+  "messengerSmokeStarted": false,
+  "humanFirstMessageReceived": false,
+  "secretsPrinted": false,
+  "realOutboundMessengerSendTriggered": false,
+  "realCourierBookingTriggered": false,
+  "realPaymentRequestTriggered": false,
+  "subscriptionActivationTriggered": false,
+  "testAssets": {
+    "merchantEmail": "admin@test.prod",
+    "userId": "3a5989f2-8443-4af8-a0f8-3938f6168c79",
+    "shopId": "30010a3a-c180-4f2b-bd74-4bc9c468097e",
+    "shopName": "Bornohin Fashion",
+    "channelId": "843cdd8e-49d5-4a19-9b7d-05900787abaf",
+    "pageId": "1006927412511938",
+    "pageDisplayName": "Bornohin Fashion BD",
+    "rejectedCandidatePageIds": ["61575483248182"]
+  },
+  "liveEnvironment": {
+    "activeApiBaseUrl": "https://easymod.tech/api",
+    "configuredApiSubdomain": "https://api.easymod.tech",
+    "configuredApiSubdomainStatus": "FAIL_TLS_INTERNAL_ERROR",
+    "version": {
+      "gitSha": "dad4b99a0a2cca56023c7aebb5ad1e095de050ce",
+      "gitShortSha": "dad4b99a",
+      "buildTime": "2026-07-16T23:11:23Z",
+      "startedAt": "2026-07-18T20:07:54.964Z"
+    },
+    "healthReady": true,
+    "csrfEndpoint": "https://easymod.tech/api/csrf"
+  },
+  "codeRemediation": {
+    "deployed": false,
+    "localBranch": "codex/chatbot-testing",
+    "changes": [
+      {
+        "file": "EasyMod-backend/src/modules/shop/shop.controller.js",
+        "status": "PATCHED_LOCAL",
+        "summary": "Fix ai-diagnostics 500 by selecting page_access_token_ct and returning non-secret channel webhook metadata."
+      },
+      {
+        "file": "EasyMod-backend/src/modules/channel-providers/meta-channel.controller.js",
+        "status": "PATCHED_LOCAL",
+        "summary": "Extend test-webhook to verify and optionally repair Meta subscription fields."
+      },
+      {
+        "file": "EasyMod-backend/src/modules/channel-providers/meta-channel.service.js",
+        "status": "PATCHED_LOCAL",
+        "summary": "Persist verified webhook_subscribed_fields when confirmWebhookActive succeeds."
+      },
+      {
+        "file": "EasyMod-backend/src/jobs/message-worker.js",
+        "status": "PATCHED_LOCAL",
+        "summary": "Make shop-level MANUAL mode a hard kill switch before channel settings are merged."
+      }
+    ]
+  },
+  "liveTenantRemediation": {
+    "shopAi": {
+      "automationMode": "AI_ACTIVE",
+      "autoReplyEnabled": true,
+      "autoSendEnabledLegacyField": false,
+      "confidenceThreshold": 75,
+      "paymentMethods": ["COD"],
+      "requiredFields": {
+        "customer_name": true,
+        "mobile_number": true,
+        "delivery_address": true,
+        "payment_method": true,
+        "email_address": false,
+        "special_instructions": false
+      },
+      "handoffKeywordsInclude": ["human", "agent", "refund", "return", "payment dispute", "রিফান্ড", "রিটার্ন", "পেমেন্ট সমস্যা"]
+    },
+    "channel": {
+      "id": "843cdd8e-49d5-4a19-9b7d-05900787abaf",
+      "automationMode": "AI_ACTIVE",
+      "aiAutoReply": true,
+      "allowOrderCreation": true,
+      "confidenceThresholdSend": 0.75,
+      "confidenceThresholdSuggest": 0.5,
+      "purposeLabel": "Messenger Smoke Test - Bornohin Fashion BD"
+    },
+    "productFixture": {
+      "id": "95162218-b5d9-4690-8544-0f296f2925b6",
+      "name": "EM Smoke Test Tracked Panjabi",
+      "nameBn": "ইএম স্মোক টেস্ট ট্র্যাকড পাঞ্জাবি",
+      "price": "1490.00",
+      "quantity": 9,
+      "trackQuantity": true,
+      "inStock": true,
+      "isActive": true,
+      "variants": [
+        {
+          "name": "Size",
+          "options": ["M", "L"],
+          "priceAdjustment": 0,
+          "sku": ""
+        }
+      ],
+      "aliases": [
+        "em smoke test panjabi",
+        "smoke test panjabi",
+        "smoke panjabi",
+        "test panjabi",
+        "tracked panjabi",
+        "স্মোক টেস্ট পাঞ্জাবি",
+        "টেস্ট পাঞ্জাবি",
+        "panjabi dam",
+        "panjabi price",
+        "smok panjabi",
+        "smoak panjabi"
+      ]
+    },
+    "delivery": {
+      "codEnabled": true,
+      "codCharge": 0,
+      "defaultDeliveryCharge": 60,
+      "areaPricing": [
+        { "zone": "inside_dhaka", "charge": 60, "codEnabled": true },
+        { "zone": "sub_dhaka", "charge": 80, "codEnabled": true },
+        { "zone": "outside_dhaka", "charge": 120, "codEnabled": true }
+      ]
+    },
+    "faqFixture": {
+      "id": "13",
+      "category": "smoke_test_return_refund_policy",
+      "active": true,
+      "priority": 1000
+    }
+  },
+  "webhook": {
+    "route": "https://easymod.tech/api/webhooks/meta",
+    "invalidVerifyTokenRejected": true,
+    "invalidSignatureRejected": true,
+    "positiveChallengeWithLocalSecretsPassed": false,
+    "localTokenCandidateFingerprints": [
+      { "source": "EasyMod-backend/.env.prod", "fingerprint": "db06fed9", "status": 403 },
+      { "source": "EasyMod-backend/.env", "fingerprint": "db06fed9", "status": 403 },
+      { "source": "EasyMod-backend/.env.docker", "fingerprint": "db06fed9", "status": 403 }
+    ],
+    "pageTokenPing": {
+      "ok": true,
+      "latencyMs": 1877,
+      "checkedAt": "2026-07-18T21:19:43Z"
+    },
+    "storedSubscribedFields": [],
+    "requiredSubscribedFields": ["messages"],
+    "subscriptionAuthoritativelyVerified": false
+  },
+  "sideEffects": {
+    "couriers": [
+      { "provider": "pathao", "connected": false, "active": false },
+      { "provider": "steadfast", "connected": false, "active": false },
+      { "provider": "redx", "connected": false, "active": false }
+    ],
+    "paymentConfigCount": 0,
+    "availablePaymentMethods": ["cod"],
+    "subscription": {
+      "planCode": "GROWTH",
+      "status": "trial_expired",
+      "conversationsUsed": 0,
+      "ordersUsed": 0,
+      "productsUsed": 0,
+      "extraCharge": "0.00"
+    }
+  },
+  "observability": {
+    "aiDiagnosticsStatus": 500,
+    "directDbTraceAvailable": false,
+    "directRedisTraceAvailable": false,
+    "channelTestWebhookPing": true
+  },
+  "blockingDefects": [
+    {
+      "severity": "P0",
+      "title": "Test subscription is trial_expired",
+      "impact": "Live worker suppresses automated AI before LLM processing."
+    },
+    {
+      "severity": "P0",
+      "title": "Deployed webhook verify token does not match local candidates",
+      "impact": "Positive Meta challenge cannot be proven."
+    },
+    {
+      "severity": "P0",
+      "title": "Required messages subscription is not verified",
+      "impact": "Inbound Messenger delivery is not authoritatively proven."
+    },
+    {
+      "severity": "P0",
+      "title": "Shop-level kill switch precedence fix is not deployed",
+      "impact": "Live channel settings may override shop MANUAL kill switch."
+    },
+    {
+      "severity": "P1",
+      "title": "AI diagnostics endpoint still returns 500 on live",
+      "impact": "Webhook-to-worker trace remains incomplete."
+    },
+    {
+      "severity": "P1",
+      "title": "Configured api.easymod.tech host fails HTTPS",
+      "impact": "Production host targeting remains inconsistent."
+    }
+  ],
+  "scenarios": [
+    { "id": "bangla_product_price", "status": "NOT_RUN" },
+    { "id": "banglish_typo", "status": "NOT_RUN" },
+    { "id": "product_price_plus_delivery_charge", "status": "NOT_RUN" },
+    { "id": "unknown_product", "status": "NOT_RUN" },
+    { "id": "explicit_human_request", "status": "NOT_RUN" },
+    { "id": "refund_request", "status": "NOT_RUN" },
+    { "id": "complete_cod_order", "status": "NOT_RUN" },
+    { "id": "duplicate_confirmation", "status": "NOT_RUN" },
+    { "id": "attachment_file_behavior", "status": "NOT_RUN" },
+    { "id": "low_confidence_handoff", "status": "NOT_RUN" },
+    { "id": "ai_disabled_or_hitl_active", "status": "NOT_RUN" },
+    { "id": "response_inside_messenger_window", "status": "NOT_RUN" }
+  ]
+}

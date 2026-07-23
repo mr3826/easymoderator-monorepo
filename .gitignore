@@ -37,6 +37,7 @@ secret.*.json
 
 # Test
 coverage/
+EasyMod-backend/ai-tests/reports/
 
 # Docker
 *.pid
@@ -93,6 +94,7 @@ claude-skills/
 EasyMod-backend/.easymod/
 .claude/
 .kilo/
+.codex-worktrees/
 .playwright-mcp/
 graphify-out/
 .code-review-graph/

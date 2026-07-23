@@ -41,7 +41,7 @@ Messenger sales and order automation API for Bangladeshi f-commerce sellers. Mer
 | Notifications | `web-push` + `firebase-admin` (FCM), Telegram Bot API, `resend` (transactional email) |
 | Docs / invoices | `pdfkit` |
 | Observability | Sentry (`@sentry/node`, profiling), structured logger, ops/Slack alerts |
-| Process mgmt | PM2 (`ecosystem.config.js`), Docker Compose |
+| Process mgmt | Docker Compose (single production definition) |
 | Tests | Jest 30 + Supertest, SQLite in-memory DB |
 
 ---
@@ -396,7 +396,7 @@ CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 3. **Build & push** — Docker images to GHCR, tagged with the commit SHA + `:latest`.
 4. **Deploy** — SSH into the droplet, pull images, `docker compose up -d`, run `npm run migrate`, health-check `/health/ready`.
 
-The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Process layout for non-Docker hosts is described in `ecosystem.config.js` (PM2).
+The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Docker Compose is the only supported production runtime (the legacy PM2 path was retired 2026-07-23).
 
 **Required GitHub secrets:** droplet host/SSH key, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet. Leave `VITE_API_BASE_URL` empty for the canonical same-origin SPA (`https://easymod.tech/api`). `COOKIE_DOMAIN` is optional; when set for legacy subdomain auth, it must match the request host or a parent domain such as `easymod.tech`.
 
