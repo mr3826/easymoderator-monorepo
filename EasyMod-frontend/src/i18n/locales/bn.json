@@ -167,8 +167,8 @@
         },
         {
           "icon": "🚚",
-          "title": "Pathao ইন্টিগ্রেশন",
-          "desc": "এক ক্লিকে ডেলিভারি বুক করুন",
+          "title": "ডেলিভারি ইন্টিগ্রেশন",
+          "desc": "সমর্থিত কুরিয়ার দিয়ে এক ক্লিকে ডেলিভারি বুক করুন",
           "colorClass": "bg-purple-500/15 text-purple-400"
         },
         {
@@ -343,8 +343,8 @@
           "desc": "ভুয়া অর্ডার ব্লক"
         },
         "delivery": {
-          "title": "Pathao & Steadfast",
-          "desc": "সরাসরি ডেলিভারি"
+          "title": "ডেলিভারি পার্টনার",
+          "desc": "সরাসরি কুরিয়ার বুকিং"
         },
         "chatbot": {
           "title": "Sales assistant",
@@ -1313,12 +1313,6 @@
       "pagesManageMetadata": "Realtime webhook subscribe",
       "note": "EasyModerator শুধু customer message-এর জন্য এই permission ব্যবহার করে।"
     },
-    "aiModel": {
-      "title": "AI Model Configuration",
-      "subtitle": "AI auto-reply এর ভাষা মডেল",
-      "autoSelectedTitle": "AI মডেল: সেরা ফলাফলের জন্য স্বয়ংক্রিয়ভাবে নির্বাচিত",
-      "autoSelectedDesc": "EasyModerator প্রতিটি conversation-এর জন্য best reply path বেছে নেয় — সব plan-এ available।"
-    },
     "disconnectModal": {
       "title": "{{name}} সংযোগ বিচ্ছিন্ন করবেন?",
       "message": "এই চ্যানেলে বার্তা পাওয়া বন্ধ হয়ে যাবে। পরে আবার সংযুক্ত করা যাবে।",
@@ -1335,14 +1329,14 @@
       "tryAgain": "আবার চেষ্টা করুন"
     },
     "autoReply": {
-      "enabledToast": "AI auto-reply চালু হয়েছে",
-      "disabledToast": "AI auto-reply বন্ধ হয়েছে",
+      "enabledToast": "Page AI participation চালু হয়েছে",
+      "disabledToast": "Page AI participation বন্ধ হয়েছে",
       "saveFailed": "সেটিং সেভ করা যায়নি",
       "loading": "AI সেটিং লোড হচ্ছে…",
-      "title": "AI auto-reply",
-      "onDesc": "নতুন বার্তায় AI স্বয়ংক্রিয়ভাবে উত্তর দেবে",
-      "offDesc": "AI উত্তর বন্ধ — শুধু খসড়া তৈরি হবে",
-      "toggleTitle": "AI auto-reply টগল"
+      "title": "Page AI participation",
+      "onDesc": "এই Page business reply mode follow করবে",
+      "offDesc": "এই Page-এ AI draft বা send করবে না",
+      "toggleTitle": "এই Page business reply mode ব্যবহার করবে কি না"
     }
   },
   "reports": {
@@ -1754,11 +1748,11 @@
       "autoReplyEnabled": "Automatic replies enabled",
       "askEmail": "গ্রাহকের ইমেইল জিজ্ঞাসা করুন",
       "greetingLabel": "First customer message reply",
-      "greetingHint": "(নতুন কথোপকথনে গ্রাহকের প্রথম মেসেজের পরে)",
+      "greetingHint": "(শুধু automatic replies চালু থাকলে এবং গ্রাহকের প্রথম মেসেজে auto-send হলে)",
       "greetingPlaceholder": "যেমন: স্বাগতম! কীভাবে সাহায্য করতে পারি?",
-      "disclosurePrefix": "সবসময় দেখানো হয় (Meta নিয়ম):",
+      "disclosurePrefix": "শুধু একবার auto-send হয় (Meta নিয়ম):",
       "disclosureText": "আপনি [আপনার দোকান]-এর automated assistant-এর সাথে কথা বলছেন।",
-      "disclosureSuffix": "— গ্রাহককে স্পষ্টভাবে জানানো হয় যে একটি স্বয়ংক্রিয় সিস্টেম উত্তর দিচ্ছে। এটি বন্ধ করা যায় না; এর পরে আপনার নিচের লেখাটি যুক্ত হবে।",
+      "disclosureSuffix": "— গ্রাহকের প্রথম auto-sent reply-তেই দেখানো হয়। Draft/manual suggestions-এ এটি যুক্ত হয় না।",
       "closingLabel": "ক্লোজিং মেসেজ",
       "closingHint": "(অর্ডার নিশ্চিত হলে)",
       "closingPlaceholder": "যেমন: কেনাকাটার জন্য ধন্যবাদ!",

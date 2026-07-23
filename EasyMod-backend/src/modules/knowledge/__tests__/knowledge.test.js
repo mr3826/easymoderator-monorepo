@@ -101,6 +101,10 @@ jest.mock('src/modules/rag/rag.service', () => ({
     queryData:    jest.fn(() => Promise.resolve({ success: true, data: [{ score: 0.91, text: 'Delivery is 2-3 days' }] })),
 }));
 
+jest.mock('src/modules/ai/gemini-cache.service', () => ({
+    invalidate: jest.fn(() => Promise.resolve()),
+}));
+
 // ── Mock cache service ────────────────────────────────────────────────────
 jest.mock('src/utils/cache.service', () => ({
     getForShop:    jest.fn(() => Promise.resolve(null)),
@@ -141,6 +145,13 @@ jest.mock('src/middleware/auth.middleware', () => ({
     authenticate:              (req, res, next) => { req.user = TEST_USER; next(); },
     checkSubscriptionStatus:   (req, res, next) => next(),
 }));
+
+jest.mock('src/modules/routes', () => {
+    const express = require('express');
+    const router = express.Router();
+    router.use('/knowledge', require('src/modules/knowledge/knowledge.routes'));
+    return router;
+});
 
 // ── Refs to mocked modules (populated after jest.mock) ────────────────────
 const { Shop, UserShop, FaqResponse } = require('src/modules/entities');
@@ -468,6 +479,15 @@ describe('Knowledge API', () => {
             const { Shop, UserShop } = require('src/modules/entities');
 
             UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+            mockShop.settings = {
+                ...mockShopSettings,
+                businessInfo: {
+                    ...mockShopSettings.businessInfo,
+                    description: 'Legacy shop description',
+                    email: 'shop@example.com',
+                    website: 'https://shop.example.com',
+                },
+            };
             Shop.findByPk.mockResolvedValue(mockShop);
 
             // Only update the phone number
@@ -481,6 +501,9 @@ describe('Knowledge API', () => {
             expect(saved.address).toBe('123 Main St');
             expect(saved.deliveryAreas).toEqual(['Dhaka']);
             expect(saved.additionalInfo).toBe('Existing owner note');
+            expect(saved.description).toBe('Legacy shop description');
+            expect(saved.email).toBe('shop@example.com');
+            expect(saved.website).toBe('https://shop.example.com');
             // Updated field must be new value
             expect(saved.phone).toBe('01800');
         });
@@ -517,29 +540,51 @@ describe('Knowledge API', () => {
             expect(saved.shopName).toBe('Existing Shop'); // untouched
         });
 
-        it('skips RAG ingest when business text has not changed (hash guard)', async () => {
+        it('replaces the business_info vector and invalidates prompt caches after save', async () => {
+            const ragService = require('src/modules/rag/rag.service');
+            const cacheService = require('src/utils/cache.service');
+            const geminiCache = require('src/modules/ai/gemini-cache.service');
+            const knowledgeService = require('src/modules/knowledge/knowledge.service');
+
+            Shop.findByPk.mockResolvedValue(mockShop);
+
+            await knowledgeService.updateBusinessInfo('user-1', 'shop-1', {
+                phone: '01800',
+                additionalInfo: 'Exchange requires an unboxing video.',
+            });
+
+            expect(ragService.deletePoint).toHaveBeenCalledWith('biz-shop-1', 'shop-1');
+            expect(ragService.ingestData).toHaveBeenCalledWith(expect.objectContaining({
+                text: expect.stringContaining('Phone: 01800'),
+                metadata: expect.objectContaining({
+                    documentId: 'biz-shop-1',
+                    shopId: 'shop-1',
+                    type: 'business_info',
+                }),
+            }));
+            expect(ragService.ingestData.mock.calls.at(-1)[0].text).toContain('Additional shop owner info: Exchange requires an unboxing video.');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
+            expect(geminiCache.invalidate).toHaveBeenCalledWith('shop-1');
+        });
+
+        it('deletes the business_info vector when all business text is cleared', async () => {
             const ragService = require('src/modules/rag/rag.service');
             const knowledgeService = require('src/modules/knowledge/knowledge.service');
 
-            // Pre-set a hash that matches the current businessInfo content
-            const crypto = require('crypto');
-            const businessText = [
-                'Shop Name: Existing Shop', 'Address: 123 Main St', 'Phone: 01700',
-                'Opening Hours: 9-5', 'Delivery Areas: Dhaka', 'Payment Methods: COD'
-            ].join('\n');
-            const existingHash = crypto.createHash('sha256').update(businessText).digest('hex');
-
-            mockShop.settings = { ...mockShopSettings, businessInfoHash: existingHash };
+            mockShop.settings = { businessInfo: {} };
             Shop.findByPk.mockResolvedValue(mockShop);
 
-            // Send the exact same data (no real change)
             await knowledgeService.updateBusinessInfo('user-1', 'shop-1', {
-                shopName: 'Existing Shop', address: '123 Main St', phone: '01700',
-                openingHours: '9-5', deliveryAreas: ['Dhaka'], paymentMethods: ['COD']
+                shopName: '',
+                address: '',
+                phone: '',
+                openingHours: '',
+                additionalInfo: '',
+                deliveryAreas: [],
+                paymentMethods: [],
             });
 
-            // RAG ingest should NOT have been called (staleRAG = false)
-            await new Promise(r => setTimeout(r, 10)); // let any async fire
+            expect(ragService.deletePoint).toHaveBeenCalledWith('biz-shop-1', 'shop-1');
             expect(ragService.ingestData).not.toHaveBeenCalled();
         });
     });

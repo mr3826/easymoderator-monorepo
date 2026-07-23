@@ -41,7 +41,7 @@ Messenger sales and order automation API for Bangladeshi f-commerce sellers. Mer
 | Notifications | `web-push` + `firebase-admin` (FCM), Telegram Bot API, `resend` (transactional email) |
 | Docs / invoices | `pdfkit` |
 | Observability | Sentry (`@sentry/node`, profiling), structured logger, ops/Slack alerts |
-| Process mgmt | PM2 (`ecosystem.config.js`), Docker Compose |
+| Process mgmt | Docker Compose (single production definition) |
 | Tests | Jest 30 + Supertest, SQLite in-memory DB |
 
 ---
@@ -164,7 +164,7 @@ Inbound message → reply, end to end:
    3. `gpt-4.1-mini` — final fallback
    A circuit breaker (`circuit-breaker.service.js`) trips a provider after repeated failures.
 8. **Safety** — prompt sanitiser, guardrail service, hallucination/quality gate, and a confidence threshold decide auto-send vs. human handoff. Low-confidence handoffs and default unknown responses are captured in `knowledge_gaps` so merchants can turn real customer questions into FAQs.
-9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. Draft/Manual modes store the reply as an inbox suggestion; Auto mode can send only after policy and confidence gates pass.
+9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. The business reply setting is authoritative across connected Pages: Draft mode stores the reply as an inbox suggestion, Manual mode disables AI generation, and Auto mode can send only after policy and confidence gates pass. Per-channel toggles can opt a Page out, but cannot upgrade Draft/Manual to auto-send.
 10. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
 **Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.
@@ -396,7 +396,7 @@ CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 3. **Build & push** — Docker images to GHCR, tagged with the commit SHA + `:latest`.
 4. **Deploy** — SSH into the droplet, pull images, `docker compose up -d`, run `npm run migrate`, health-check `/health/ready`.
 
-The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Process layout for non-Docker hosts is described in `ecosystem.config.js` (PM2).
+The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Docker Compose is the only supported production runtime (the legacy PM2 path was retired 2026-07-23).
 
 **Required GitHub secrets:** droplet host/SSH key, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet. Leave `VITE_API_BASE_URL` empty for the canonical same-origin SPA (`https://easymod.tech/api`). `COOKIE_DOMAIN` is optional; when set for legacy subdomain auth, it must match the request host or a parent domain such as `easymod.tech`.
 

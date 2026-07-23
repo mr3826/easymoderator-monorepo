@@ -167,8 +167,8 @@
         },
         {
           "icon": "🚚",
-          "title": "Pathao Integration",
-          "desc": "Book delivery with one click",
+          "title": "Courier Integrations",
+          "desc": "Book delivery across supported providers",
           "colorClass": "bg-purple-500/15 text-purple-400"
         },
         {
@@ -343,8 +343,8 @@
           "desc": "Block fake orders"
         },
         "delivery": {
-          "title": "Pathao & Steadfast",
-          "desc": "Direct delivery"
+          "title": "Delivery partners",
+          "desc": "Direct courier booking"
         },
         "chatbot": {
           "title": "Sales assistant",
@@ -1313,12 +1313,6 @@
       "pagesManageMetadata": "subscribe to realtime webhooks",
       "note": "EasyModerator uses these permissions only for customer messages."
     },
-    "aiModel": {
-      "title": "AI Model Configuration",
-      "subtitle": "The language model for AI auto-reply",
-      "autoSelectedTitle": "AI Model: Auto-Selected for Best Results",
-      "autoSelectedDesc": "EasyModerator chooses the best reply path for every conversation - available on all plans."
-    },
     "disconnectModal": {
       "title": "Disconnect {{name}}?",
       "message": "You will stop receiving messages on this channel. You can reconnect later.",
@@ -1335,14 +1329,14 @@
       "tryAgain": "Try again"
     },
     "autoReply": {
-      "enabledToast": "AI auto-reply turned on",
-      "disabledToast": "AI auto-reply turned off",
+      "enabledToast": "Page AI participation turned on",
+      "disabledToast": "Page AI participation turned off",
       "saveFailed": "Could not save setting",
       "loading": "Loading AI setting…",
-      "title": "AI auto-reply",
-      "onDesc": "AI will automatically reply to new messages",
-      "offDesc": "AI replies off — only drafts are created",
-      "toggleTitle": "AI auto-reply toggle"
+      "title": "Page AI participation",
+      "onDesc": "Uses the business reply mode for this Page",
+      "offDesc": "AI will not draft or send replies for this Page",
+      "toggleTitle": "Toggle whether this Page uses the business reply mode"
     }
   },
   "reports": {
@@ -1754,11 +1748,11 @@
       "autoReplyEnabled": "Automatic replies enabled",
       "askEmail": "Ask customer for email",
       "greetingLabel": "First customer message reply",
-      "greetingHint": "(after the customer's first message in a new conversation)",
+      "greetingHint": "(only when automatic replies are enabled and the customer's first message is auto-sent)",
       "greetingPlaceholder": "e.g. Welcome! How can I help you?",
-      "disclosurePrefix": "Always shown (Meta rule):",
+      "disclosurePrefix": "Auto-sent only once (Meta rule):",
       "disclosureText": "You are chatting with the automated assistant of [your shop].",
-      "disclosureSuffix": "— this clearly tells the customer that an automated system is replying. It cannot be turned off; your text below is added after it.",
+      "disclosureSuffix": "— shown only on the customer's first auto-sent reply. Draft/manual suggestions do not include it.",
       "closingLabel": "Closing message",
       "closingHint": "(when an order is confirmed)",
       "closingPlaceholder": "e.g. Thank you for shopping with us!",

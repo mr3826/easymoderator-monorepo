@@ -124,6 +124,126 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
     });
 });
 
+describe('message-worker AI disclosure greeting gate', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('applies only for AI_ACTIVE first customer turns with no prior visible disclosure', async () => {
+        Message.count.mockResolvedValueOnce(0);
+        Message.findAll.mockResolvedValueOnce([]);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(true);
+    });
+
+    it.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL'])(
+        'does not apply in %s mode because it is not customer-visible auto-send',
+        async (automationMode) => {
+            await expect(_private.shouldApplyAiDisclosureGreeting({
+                conversationId: 'conv-1',
+                currentTurnMessageIds: ['msg-1'],
+                aiSettings: { automation_mode: automationMode, ai_auto_reply: true },
+            })).resolves.toBe(false);
+
+            expect(Message.count).not.toHaveBeenCalled();
+            expect(Message.findAll).not.toHaveBeenCalled();
+        }
+    );
+
+    it('does not apply when per-channel auto reply is disabled', async () => {
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: false },
+        })).resolves.toBe(false);
+
+        expect(Message.count).not.toHaveBeenCalled();
+        expect(Message.findAll).not.toHaveBeenCalled();
+    });
+
+    it('does not apply after the customer already has a prior turn', async () => {
+        Message.count.mockResolvedValueOnce(1);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-2'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(false);
+
+        expect(Message.findAll).not.toHaveBeenCalled();
+    });
+
+    it('does not apply when the conversation already has a visible AI disclosure', async () => {
+        Message.count.mockResolvedValueOnce(0);
+        Message.findAll.mockResolvedValueOnce([
+            { id: 'ai-1', content: "Hi, I'm the AI assistant from Demo Shop.", metadata: { delivered: true } },
+        ]);
+
+        await expect(_private.shouldApplyAiDisclosureGreeting({
+            conversationId: 'conv-1',
+            currentTurnMessageIds: ['msg-1'],
+            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+        })).resolves.toBe(false);
+    });
+});
+
+describe('message-worker automation mode helpers', () => {
+    it('normalizes legacy AUTO mode to AI_ACTIVE', () => {
+        expect(_private.normalizeAutomationMode('AUTO')).toBe('AI_ACTIVE');
+        expect(_private.normalizeAutomationMode('AI_ACTIVE')).toBe('AI_ACTIVE');
+    });
+
+    it('treats shop MANUAL as a hard kill switch', () => {
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'MANUAL' })).toBe(true);
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'AI_ACTIVE' })).toBe(false);
+        expect(_private.isShopManualKillSwitch({ automation_mode: 'AUTO' })).toBe(false);
+    });
+
+    it('keeps business DRAFT authoritative when the page is AI_ACTIVE', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'DRAFT', confidence_threshold: 75 },
+            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true, confidence_threshold_send: 90 }
+        );
+
+        expect(effective).toEqual(expect.objectContaining({
+            automation_mode: 'DRAFT',
+            ai_auto_reply: true,
+            confidence_threshold_send: 90,
+        }));
+    });
+
+    it('keeps business MANUAL authoritative when the page is AI_ACTIVE', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'MANUAL' },
+            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('MANUAL');
+    });
+
+    it('uses the page automation mode only when business mode is missing', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { confidence_threshold: 70 },
+            { automation_mode: 'DRAFT', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('DRAFT');
+    });
+
+    it('normalizes legacy business AUTO before applying channel settings', () => {
+        const effective = _private.resolveEffectiveAiSettings(
+            { automation_mode: 'AUTO' },
+            { automation_mode: 'DRAFT', ai_auto_reply: true }
+        );
+
+        expect(effective.automation_mode).toBe('AI_ACTIVE');
+    });
+});
+
 describe('message-worker order-flow failure fallback', () => {
     beforeEach(() => {
         jest.clearAllMocks();

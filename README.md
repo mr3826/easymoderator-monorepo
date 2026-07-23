@@ -48,7 +48,7 @@ Required completion rules:
 - Minimal shop profile: shop name, support contact, delivery info, and payment methods.
 - At least one active product; three or more active products are recommended.
 - Reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
-- AI auto-reply is derived from automation mode: Draft/Manual hold replies as merchant-visible suggestions, while Auto mode can send after policy and confidence gates pass.
+- AI auto-reply is derived from the business automation mode: Draft holds replies as merchant-visible suggestions, Manual disables AI generation, and Auto can send after policy and confidence gates pass. Per-Page channel toggles only opt a Page in or out of that business reply mode.
 
 The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete. When all required items pass, EasyModerator shows a one-time "Your shop is ready" completion screen before the normal dashboard. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 

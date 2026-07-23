@@ -12,7 +12,12 @@ process.env.NODE_ENV = 'test';
 const { buildSystemPrompt } = require('src/modules/ai/intent-router.service');
 
 const KNOWLEDGE = {
-    businessInfo: { shopName: 'Test Shop', address: 'Dhaka', additionalInfo: 'Exchange requires an unboxing video.' },
+    businessInfo: {
+        shopName: 'Test Shop',
+        address: 'Dhaka',
+        additionalInfo: 'Exchange requires an unboxing video.',
+        socialLinks: { website: 'https://shop.example', facebook: 'https://facebook.com/testshop' },
+    },
     brandingRules: {},
     faqs: [{ category: 'How can I pay?', template_en: 'You can pay via bKash, Nagad, or COD.' }],
 };
@@ -68,6 +73,14 @@ test('owner additional business info is included as AI grounding context', () =>
 
     expect(prompt).toContain('Additional shop owner info');
     expect(prompt).toContain('Exchange requires an unboxing video.');
+});
+
+test('owner website and social links are included as AI grounding context', () => {
+    const prompt = buildSystemPrompt(KNOWLEDGE, 'mixed', false, 'friendly_bd', null, '');
+
+    expect(prompt).toContain('Shop links');
+    expect(prompt).toContain('website: https://shop.example');
+    expect(prompt).toContain('facebook: https://facebook.com/testshop');
 });
 
 test('friendly persona does not infer customer gender from product context', () => {

@@ -84,6 +84,7 @@ describe('auto-index.job — indexShop', () => {
                     shopName: 'Rina Fashion',
                     openingHours: '10am-8pm',
                     additionalInfo: 'Exchange requires an unboxing video.',
+                    socialLinks: { website: 'https://rina.example' },
                 },
             },
         });
@@ -95,6 +96,7 @@ describe('auto-index.job — indexShop', () => {
         const { text, metadata } = mockIngest.mock.calls[0][0];
         expect(text).toContain('Business hours: 10am-8pm');
         expect(text).toContain('Additional shop owner info: Exchange requires an unboxing video.');
+        expect(text).toContain('website: https://rina.example');
         expect(metadata.type).toBe('business_info');
     });
 });

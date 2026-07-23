@@ -641,7 +641,16 @@ const getAIDiagnostics = async (req, res, next) => {
         // All connected channels + their settings (backfill missing rows idempotently)
         const channels = await MetaChannel.findAll({
             where: { shop_id: shopId, status: 'CONNECTED' },
-            attributes: ['id', 'display_name', 'platform', 'page_access_token'],
+            attributes: [
+                'id',
+                'display_name',
+                'platform',
+                'meta_asset_id',
+                'status',
+                'webhook_subscribed_fields',
+                'webhook_last_verified_at',
+                'page_access_token_ct',
+            ],
         });
         const channelDiagnostics = await Promise.all(channels.map(async (ch) => {
             const [settings] = await MetaChannelSettings.findOrCreate({
@@ -652,7 +661,11 @@ const getAIDiagnostics = async (req, res, next) => {
                 channel_id: ch.id,
                 display_name: ch.display_name,
                 platform: ch.platform,
-                token_present: !!ch.page_access_token,
+                meta_asset_id: ch.meta_asset_id,
+                status: ch.status,
+                token_present: Boolean(ch.getDataValue('page_access_token_ct')),
+                webhook_subscribed_fields: ch.webhook_subscribed_fields || [],
+                webhook_last_verified_at: ch.webhook_last_verified_at,
                 ai_auto_reply: settings.ai_auto_reply,
                 automation_mode: settings.automation_mode,
             };

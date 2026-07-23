@@ -46,6 +46,12 @@ function getShopIdFromRequest(req) {
     }
 }
 
+function isAuthSessionProbe(req) {
+    const path = req.path || req.originalUrl || '';
+    return req.method === 'GET'
+        && (path === '/me' || req.originalUrl?.split('?')[0] === '/api/auth/me');
+}
+
 const app = express();
 
 // P2-2: Request timeouts — global 30s; use timeout.set(5000) for read routes, timeout.set(10000) for write routes
@@ -147,6 +153,7 @@ if (config.env !== 'test') {
             max: 10, // 10 requests per minute per IP
             standardHeaders: true,
             legacyHeaders: false,
+            skip: isAuthSessionProbe,
             message: { success: false, error: { code: '429', message: 'Too many authentication attempts. Please try again later.' } },
             store: buildStore('rl:auth:')
         });

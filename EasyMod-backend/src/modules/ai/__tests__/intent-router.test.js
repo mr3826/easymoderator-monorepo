@@ -116,4 +116,26 @@ describe('C — RAG product hit re-fetched live', () => {
         expect(sys).toContain('KNOWLEDGE BASE CONTEXT');
         expect(sys).toContain('We deliver to Dhaka');
     });
+
+    test('business_info vector hits are ignored because business info is injected live', async () => {
+        rag.queryData.mockResolvedValue({
+            success: true,
+            results: [{
+                score: 0.92,
+                content: 'Phone: 017-old-stale',
+                metadata: { type: 'business_info', documentId: 'biz-shop-1', shopId: SHOP },
+            }],
+        });
+
+        await route({
+            shopId: SHOP,
+            message: 'What is your phone number?',
+            systemPrompt: 'Phone: 018-live-current',
+        });
+
+        const sys = lastSystemPrompt();
+        expect(sys).toContain('018-live-current');
+        expect(sys).not.toContain('017-old-stale');
+        expect(sys).not.toContain('KNOWLEDGE BASE CONTEXT');
+    });
 });

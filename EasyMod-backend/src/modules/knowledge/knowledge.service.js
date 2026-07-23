@@ -4,6 +4,7 @@ const KnowledgeGap = require('../analytics/knowledge-gap.entity');
 const { AppError } = require('../../utils/AppError');
 const ragService = require('../rag/rag.service');
 const cacheService = require('../../utils/cache.service');
+const geminiCache = require('../ai/gemini-cache.service');
 const crypto = require('crypto');
 const { Op, fn, col, literal } = require('sequelize');
 
@@ -77,6 +78,46 @@ const syncFaqRagIndex = async (shopId, faq) => {
     if (!result?.success) {
         console.warn('FAQ RAG sync skipped:', result?.message || 'unknown error');
     }
+};
+
+const buildBusinessInfoIndexText = (businessInfo = {}) => [
+    businessInfo.shopName && `Shop name: ${businessInfo.shopName}`,
+    businessInfo.description && `Description: ${businessInfo.description}`,
+    businessInfo.address && `Address: ${businessInfo.address}`,
+    businessInfo.phone && `Phone: ${businessInfo.phone}`,
+    (businessInfo.openingHours || businessInfo.businessHours) && `Business hours: ${businessInfo.openingHours || businessInfo.businessHours}`,
+    businessInfo.additionalInfo && `Additional shop owner info: ${businessInfo.additionalInfo}`,
+    ...Object.entries(normalizeObject(businessInfo.socialLinks))
+        .filter(([, value]) => typeof value === 'string' && value.trim())
+        .map(([key, value]) => `${key}: ${value.trim()}`),
+    businessInfo.returnPolicy && `Return policy: ${businessInfo.returnPolicy}`,
+    businessInfo.deliveryPolicy && `Delivery policy: ${businessInfo.deliveryPolicy}`,
+].filter(Boolean).join('\n');
+
+const syncBusinessInfoRagIndex = async (shopId, businessInfo) => {
+    const documentId = `biz-${shopId}`;
+    await ragService.deletePoint(documentId, shopId).catch(() => {});
+
+    const text = buildBusinessInfoIndexText(businessInfo);
+    if (!text) return;
+
+    const result = await ragService.ingestData({
+        text,
+        metadata: {
+            documentId,
+            shopId,
+            type: 'business_info'
+        }
+    }).catch((error) => ({ success: false, message: error.message }));
+
+    if (!result?.success) {
+        console.warn('Business info RAG sync skipped:', result?.message || 'unknown error');
+    }
+};
+
+const invalidateShopKnowledgeCaches = async (shopId) => {
+    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await geminiCache.invalidate(shopId).catch(() => {});
 };
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -159,6 +200,7 @@ const updateBusinessInfo = async (userId, shopId, data) => {
 
     // Merge incoming data onto existing values — never overwrite with empty strings on partial save
     const businessInfo = {
+        ...existing,
         shopName:       data.shopName       !== undefined ? String(data.shopName).trim()       : existing.shopName       || '',
         address:        data.address        !== undefined ? String(data.address).trim()        : existing.address        || '',
         phone:          data.phone          !== undefined ? String(data.phone).trim()          : existing.phone          || '',
@@ -177,7 +219,8 @@ const updateBusinessInfo = async (userId, shopId, data) => {
     }
 
     await shop.update(shopUpdates);
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await syncBusinessInfoRagIndex(shopId, businessInfo);
+    await invalidateShopKnowledgeCaches(shopId);
 
     return { businessInfo };
 };
@@ -190,7 +233,7 @@ const updateBrandingRules = async (userId, shopId, brandingRules) => {
 
     const settings = normalizeObject(shop.settings);
     await shop.update({ settings: { ...settings, brandingRules: brandingRules || {} } });
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await invalidateShopKnowledgeCaches(shopId);
 
     return { brandingRules };
 };
@@ -219,7 +262,7 @@ const createFaq = async (userId, shopId, faq) => {
     });
 
     await syncFaqRagIndex(shopId, newFaq);
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await invalidateShopKnowledgeCaches(shopId);
 
     return formatFaq(newFaq);
 };
@@ -247,7 +290,7 @@ const updateFaq = async (userId, shopId, faqId, updates) => {
     Object.assign(indexedFaq, nextValues);
 
     await syncFaqRagIndex(shopId, indexedFaq);
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await invalidateShopKnowledgeCaches(shopId);
 
     return formatFaq(indexedFaq);
 };
@@ -256,7 +299,7 @@ const deleteFaq = async (userId, shopId, faqId) => {
     await verifyShopAccess(userId, shopId);
     await FaqResponse.destroy({ where: { id: faqId, shop_id: shopId } });
     await ragService.deletePoint(`faq-${faqId}`, shopId).catch(() => {});
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
+    await invalidateShopKnowledgeCaches(shopId);
     return { message: 'FAQ deleted successfully' };
 };
 

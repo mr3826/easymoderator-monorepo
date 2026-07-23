@@ -317,12 +317,36 @@ exports.testWebhook = async (req, res, next) => {
         const { channelId } = req.params;
         const { shopId } = req.user;
         const channel = await assertChannelBelongsToShop(channelId, shopId);
+        const repairSubscription = req.body?.repairSubscription === true;
 
         const provider = getProvider(channel.platform);
         const pingResult = await provider.ping({ channel }).catch((err) => ({
             ok: false,
             error: err.message,
         }));
+        const requiredFields = typeof provider.webhookFields === 'function'
+            ? provider.webhookFields()
+            : ['messages'];
+        let subscriptionResult = await provider.verifyWebhookSubscription({ channel }).catch((err) => ({
+            ok: false,
+            fields: [],
+            error: err.message,
+        }));
+        let repaired = false;
+
+        if (!subscriptionResult.ok && repairSubscription) {
+            await provider.subscribeWebhook({ channel });
+            repaired = true;
+            subscriptionResult = await provider.verifyWebhookSubscription({ channel }).catch((err) => ({
+                ok: false,
+                fields: [],
+                error: err.message,
+            }));
+        }
+
+        if (subscriptionResult.ok) {
+            await metaChannelService.confirmWebhookActive(channelId, subscriptionResult.fields);
+        }
 
         res.json({
             success: true,
@@ -330,6 +354,12 @@ exports.testWebhook = async (req, res, next) => {
                 channelId,
                 platform: channel.platform,
                 ping: pingResult,
+                subscription: {
+                    ok: subscriptionResult.ok,
+                    fields: subscriptionResult.fields || [],
+                    requiredFields,
+                    repaired,
+                },
                 checkedAt: new Date().toISOString(),
             },
         });
