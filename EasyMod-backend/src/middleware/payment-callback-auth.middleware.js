@@ -18,15 +18,10 @@ const paymentGatewayIpAllowlist = (req, res, next) => {
         return next(); // Development: no allowlist = allow all
     }
 
-    const clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || '';
-
-    // Handle forwarded headers (e.g. behind reverse proxy)
-    const forwardedFor = req.headers['x-forwarded-for'];
-    const realIp = forwardedFor
-        ? forwardedFor.split(',')[0].trim()
-        : clientIp;
-
-    if (!allowlist.includes(realIp) && !allowlist.includes(clientIp)) {
+    // Express derives req.ip using the configured trust-proxy hop count. Never
+    // parse X-Forwarded-For here because the client can supply that header.
+    const clientIp = req.ip || req.socket?.remoteAddress || '';
+    if (!allowlist.includes(clientIp)) {
         return next(new AppError('Payment callback rejected: IP not in allowlist', 403));
     }
 
@@ -41,7 +36,10 @@ const paymentGatewayIpAllowlist = (req, res, next) => {
 const paymentCallbackHmacVerify = (req, res, next) => {
     const secret = config.paymentCallbackHmacSecret;
     if (!secret) {
-        return next(); // No secret configured = skip (allow other verification)
+        if (['production', 'staging'].includes(config.env)) {
+            return next(new AppError('Payment callback verification is unavailable', 503));
+        }
+        return next();
     }
 
     const receivedSignature = req.headers['x-payment-hmac-sha256'];
@@ -55,7 +53,11 @@ const paymentCallbackHmacVerify = (req, res, next) => {
         .update(rawBody)
         .digest('hex');
 
-    if (!crypto.timingSafeEqual(Buffer.from(receivedSignature, 'hex'), Buffer.from(expected, 'hex'))) {
+    if (
+        !/^[a-f0-9]{64}$/i.test(receivedSignature)
+        || Buffer.byteLength(receivedSignature) !== Buffer.byteLength(expected)
+        || !crypto.timingSafeEqual(Buffer.from(receivedSignature), Buffer.from(expected))
+    ) {
         return next(new AppError('Invalid payment callback signature', 403));
     }
 

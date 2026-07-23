@@ -36,12 +36,4 @@ router.post(
     paymentWebhookController.handleBkashWebhook
 );
 
-/**
- * Owner Payment Confirmation Webhook
- * POST /api/webhooks/owner/payment-confirmation/:notificationId/:action
- */
-router.post('/owner/payment-confirmation/:notificationId/:action', 
-    paymentWebhookController.handleOwnerPaymentConfirmation
-);
-
 module.exports = router;

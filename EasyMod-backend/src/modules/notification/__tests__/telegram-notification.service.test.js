@@ -119,6 +119,12 @@ describe('telegram-notification.service', () => {
             .rejects.toMatchObject({ statusCode: 401 });
     });
 
+    it('fails closed when the Telegram webhook secret is not configured', async () => {
+        delete process.env.TELEGRAM_WEBHOOK_SECRET;
+        await expect(service.handleTelegramUpdate({}, { secretToken: 'anything' }))
+            .rejects.toMatchObject({ statusCode: 503 });
+    });
+
     it('marks a binding unhealthy when Telegram reports the bot was removed', async () => {
         binding = makeBinding({ telegram_chat_id: '-100123', status: 'connected', enabled: true });
         TelegramNotificationBinding.findOne.mockResolvedValue(binding);

@@ -18,6 +18,14 @@ const parseJsonWithRawBody = express.json({
     }
 });
 
+function timingSafeStringEqual(received, expected) {
+    if (typeof received !== 'string' || typeof expected !== 'string') return false;
+    const receivedBuffer = Buffer.from(received, 'utf8');
+    const expectedBuffer = Buffer.from(expected, 'utf8');
+    return receivedBuffer.length === expectedBuffer.length
+        && crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
+}
+
 /**
  * Resolve the shop's delivery credentials for a given provider using the tracking record.
  * Returns null if consignment not found.
@@ -54,16 +62,17 @@ async function validateSteadfastSignature(req, res, next) {
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        if (signature && resolved.credentials?.secret_key) {
-            const expected = crypto
-                .createHmac('sha256', resolved.credentials.secret_key)
-                .update(req.rawBody || JSON.stringify(req.body))
-                .digest('hex');
-
-            if (signature !== expected) {
-                logger.warn('Steadfast webhook: invalid signature', { consignmentId });
-                return res.status(401).json({ error: 'Invalid signature' });
-            }
+        if (!resolved.credentials?.secret_key) {
+            logger.error('Steadfast webhook rejected: active integration has no verification secret');
+            return res.status(503).json({ error: 'Webhook verification unavailable' });
+        }
+        const expected = crypto
+            .createHmac('sha256', resolved.credentials.secret_key)
+            .update(req.rawBody || Buffer.from(''))
+            .digest('hex');
+        if (!timingSafeStringEqual(signature, expected)) {
+            logger.warn('Steadfast webhook: missing or invalid signature', { consignmentId });
+            return res.status(401).json({ error: 'Invalid signature' });
         }
 
         req.resolvedTracking = resolved.tracking;
@@ -94,8 +103,12 @@ async function validateRedxSignature(req, res, next) {
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        if (token && resolved.credentials?.api_key && token !== resolved.credentials.api_key) {
-            logger.warn('RedX webhook: invalid API key', { consignmentId });
+        if (!resolved.credentials?.api_key) {
+            logger.error('RedX webhook rejected: active integration has no verification credential');
+            return res.status(503).json({ error: 'Webhook verification unavailable' });
+        }
+        if (!timingSafeStringEqual(token, resolved.credentials.api_key)) {
+            logger.warn('RedX webhook: missing or invalid authorization', { consignmentId });
             return res.status(401).json({ error: 'Invalid API key' });
         }
 
@@ -127,16 +140,17 @@ async function validatePathaoSignature(req, res, next) {
             return res.status(404).json({ error: 'Order not found' });
         }
 
-        if (signature && resolved.credentials?.client_secret) {
-            const expected = crypto
-                .createHmac('sha256', resolved.credentials.client_secret)
-                .update(req.rawBody || JSON.stringify(req.body))
-                .digest('hex');
-
-            if (signature !== expected) {
-                logger.warn('Pathao webhook: invalid signature', { consignmentId });
-                return res.status(401).json({ error: 'Invalid signature' });
-            }
+        if (!resolved.credentials?.client_secret) {
+            logger.error('Pathao webhook rejected: active integration has no verification secret');
+            return res.status(503).json({ error: 'Webhook verification unavailable' });
+        }
+        const expected = crypto
+            .createHmac('sha256', resolved.credentials.client_secret)
+            .update(req.rawBody || Buffer.from(''))
+            .digest('hex');
+        if (!timingSafeStringEqual(signature, expected)) {
+            logger.warn('Pathao webhook: missing or invalid signature', { consignmentId });
+            return res.status(401).json({ error: 'Invalid signature' });
         }
 
         req.resolvedTracking = resolved.tracking;
@@ -181,7 +195,7 @@ function makeHandler(provider) {
             const { trackingNumber, status, location } = extractStatusData(provider, req.body);
 
             if (!trackingNumber || !status) {
-                logger.warn(`${provider} webhook: missing trackingNumber or status`, { body: req.body });
+                logger.warn(`${provider} webhook: missing tracking number or status`);
                 return res.status(400).json({ error: 'Invalid payload' });
             }
 
@@ -204,3 +218,9 @@ router.post('/redx',      parseJsonWithRawBody, validateRedxSignature,      make
 router.post('/pathao',    parseJsonWithRawBody, validatePathaoSignature,     makeHandler('pathao'));
 
 module.exports = router;
+module.exports._private = {
+    timingSafeStringEqual,
+    validatePathaoSignature,
+    validateRedxSignature,
+    validateSteadfastSignature,
+};

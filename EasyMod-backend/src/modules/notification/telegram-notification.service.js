@@ -262,7 +262,17 @@ async function handleMembershipUpdate(update) {
 
 async function handleTelegramUpdate(update, { secretToken } = {}) {
     const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    if (expectedSecret && secretToken !== expectedSecret) {
+    if (!expectedSecret) {
+        const err = new Error('Telegram webhook is disabled because its secret is not configured');
+        err.statusCode = 503;
+        throw err;
+    }
+    const received = Buffer.from(String(secretToken || ''), 'utf8');
+    const expected = Buffer.from(expectedSecret, 'utf8');
+    if (
+        received.length !== expected.length
+        || !crypto.timingSafeEqual(received, expected)
+    ) {
         const err = new Error('Invalid Telegram webhook secret');
         err.statusCode = 401;
         throw err;
