@@ -77,6 +77,11 @@ npm run dev
 
 See [EasyMod-backend/README.md](EasyMod-backend/README.md) and [EasyMod-frontend/README.md](EasyMod-frontend/README.md) for module-specific setup, environment variables, testing, and architecture.
 
+Launch-critical Meta deletion/deauthorization behavior, the authenticated/public
+route inventory, webhook guarantees, external-media policy, required production
+configuration, and rollback instructions live in
+[docs/security/PHASE1_SECURITY_COMPLIANCE.md](docs/security/PHASE1_SECURITY_COMPLIANCE.md).
+
 ---
 
 ## Deployment
@@ -88,6 +93,20 @@ Production deploys are driven by pushes to `main` through `.github/workflows/ci-
 3. Build and push GHCR images.
 4. SSH to the DigitalOcean droplet.
 5. Sync `/opt/easymod`, run Docker Compose, run migrations, and verify `/health/ready`.
+
+The backend configuration preflight runs before traffic is served and before CI
+replaces a production container. For Phase 1 changes, run the merge-blocking
+security suite plus full backend and frontend verification:
+
+```bash
+cd EasyMod-backend
+npm run test:security
+npm test -- --runInBand
+
+cd ../EasyMod-frontend
+npm run test:unit
+npm run build
+```
 
 Manual production changes should not bypass this path unless there is an incident and the workaround is documented afterward.
 
