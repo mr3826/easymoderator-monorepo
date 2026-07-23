@@ -31,6 +31,8 @@ process.on('uncaughtException', (err) => {
         // Database Connection
         await sequelize.authenticate();
         console.log('Database connection established successfully.');
+        await require('src/config/production-integration.validator')
+            .assertProductionIntegrations();
 
         // Ensure Redis is available for production/staging
         if (config.env === 'production' || config.env === 'staging') {

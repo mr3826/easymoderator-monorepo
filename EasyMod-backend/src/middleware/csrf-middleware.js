@@ -5,7 +5,7 @@ const { AppError } = require('../utils/AppError');
 
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
-    getSecret: () => config.sessionSecret,
+    getSecret: () => config.csrfSecret,
     getSessionIdentifier: (req) => {
         // Prefer express-session ID (stable across requests in the same session)
         if (req.sessionID) return req.sessionID;
