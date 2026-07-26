@@ -121,3 +121,26 @@ exports.emergencyDisableAi = async (req, res, next) => {
     ok(res, after);
   } catch (e) { next(e); }
 };
+
+// ── Ops alerting self-test (finding F-06) ────────────────────────────────────
+// Fires a deliberate, PII-free alert so an operator can confirm a real human
+// receives it. Reports which sinks are configured and whether each accepted the
+// event. Configuration alone does NOT close launch gate 8 — a person must still
+// confirm receipt on a device they watch.
+exports.sendTestAlert = async (req, res, next) => {
+  try {
+    const { sendTestAlert } = require('../../utils/ops-alert');
+    const result = await sendTestAlert({ actorLabel: `admin:${req.user.userId}` });
+    await AuditService.logOperation({
+      userId: req.user.userId, shopId: null, action: 'admin:ops_test_alert',
+      resourceType: 'OPS', resourceId: null,
+      oldValues: null, newValues: result, ...auditCtx(req),
+    });
+    ok(res, {
+      ...result,
+      note: result.anySinkConfigured
+        ? 'Alert dispatched. Confirm a human received it before treating alerting as verified.'
+        : 'No alert sink is configured (SENTRY_DSN / SLACK_ALERT_WEBHOOK_URL). Alerting reaches no one.',
+    });
+  } catch (e) { next(e); }
+};
