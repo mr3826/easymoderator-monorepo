@@ -18,6 +18,8 @@ const CourierReconciliationJob = require('./courier-reconciliation.job');
 const PipelineCanaryJob = require('./pipeline-canary.job');
 // Pricing — expire 14-day GROWTH trials + send trial-ending nudges
 const TrialExpiryJob = require('./trial-expiry.job');
+// Reliability — replay inbound Meta events held as durable webhook receipts
+const WebhookReceiptReconcilerJob = require('./webhook-receipt-reconciler.job');
 
 module.exports = {
     DailyOverageCalculator,
@@ -30,4 +32,5 @@ module.exports = {
     CourierReconciliationJob,
     PipelineCanaryJob,
     TrialExpiryJob,
+    WebhookReceiptReconcilerJob,
 };

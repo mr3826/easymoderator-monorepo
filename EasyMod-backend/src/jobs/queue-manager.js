@@ -14,6 +14,7 @@ const {
     MetaTokenRefreshJob,
     PipelineCanaryJob,
     TrialExpiryJob,
+    WebhookReceiptReconcilerJob,
 } = require('./index');
 
 class QueueManager {
@@ -50,6 +51,8 @@ class QueueManager {
             ['pipeline-canary', 'pipelineCanary', PipelineCanaryJob],
             // Pricing — expire 14-day GROWTH trials + trial-ending nudges (daily)
             ['trial-expiry', 'trialExpiry', TrialExpiryJob],
+            // Reliability — replay inbound Meta events held as durable receipts
+            ['webhook-receipt-reconciler', 'webhookReceiptReconciler', WebhookReceiptReconcilerJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -194,6 +197,15 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        // Reliability — replay held inbound Meta events every 2 minutes. A
+        // message whose Page was momentarily unresolved reaches the merchant in
+        // minutes rather than never.
+        await this.queues.webhookReceiptReconciler.upsertJobScheduler(
+            'webhook-receipt-reconciler',
+            { pattern: '*/2 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -208,6 +220,7 @@ class QueueManager {
             'meta_token_refresh': 'metaTokenRefresh',
             'pipeline_canary': 'pipelineCanary',
             'trial_expiry': 'trialExpiry',
+            'webhook_receipt_reconciler': 'webhookReceiptReconciler',
         };
 
         const queueKey = queueMap[jobName];
