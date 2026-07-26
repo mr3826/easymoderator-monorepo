@@ -64,6 +64,14 @@ function isPlaceholder(value) {
     return !normalized
         || normalized.includes('change_me')
         || normalized.includes('change-me')
+        || normalized.includes('change_in_production')
+        || normalized.includes('change-in-production')
+        || normalized.includes('replace_me')
+        || normalized.includes('replace-me')
+        || normalized.includes('placeholder')
+        || normalized.startsWith('your-')
+        || normalized.startsWith('your_')
+        || normalized === 'db_url'
         || normalized.includes('example')
         || normalized === 'secret';
 }

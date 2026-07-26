@@ -103,14 +103,20 @@ router.patch(
             }
 
             const shopId = req.user?.shopId || req.shopId;
-            const [updated] = await OwnerNotification.update(
-                { status: 'completed', responded_at: new Date() },
-                { where: { id: req.params.id, shop_id: shopId } }
-            );
-
-            if (!updated) {
+            const notification = await OwnerNotification.findOne({
+                where: { id: req.params.id, shop_id: shopId },
+                attributes: ['id', 'type'],
+            });
+            if (!notification) {
                 return res.status(404).json({ success: false, error: 'Notification not found' });
             }
+            if (notification.type === 'payment_confirmation') {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Payment confirmations require an explicit owner action',
+                });
+            }
+            await notification.update({ status: 'completed', responded_at: new Date() });
 
             res.json({ success: true });
         } catch (error) {

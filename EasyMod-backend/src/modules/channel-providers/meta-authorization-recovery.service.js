@@ -138,7 +138,10 @@ async function disableChannel(channel, {
 
 async function processDeauthorization(appScopedUserId) {
     const mappings = await MetaUserIdentity.findAll({
-        where: { app_scoped_user_id: String(appScopedUserId) },
+        where: {
+            app_scoped_user_id: String(appScopedUserId),
+            is_current_connection: true,
+        },
         include: [{ model: MetaChannel, as: 'channel', required: true }],
     });
 

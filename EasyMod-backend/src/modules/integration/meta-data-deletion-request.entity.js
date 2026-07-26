@@ -80,6 +80,10 @@ const MetaDataDeletionRequest = sequelize.define('MetaDataDeletionRequest', {
         allowNull: true,
         comment: 'Sanitized operational detail with no personal data',
     },
+    processing_token: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+    },
     started_at: {
         type: DataTypes.DATE,
         allowNull: true,

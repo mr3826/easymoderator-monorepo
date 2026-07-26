@@ -409,14 +409,17 @@ jobs:
               echo "==> Redis flushed, uploads cleared, and Qdrant volume reset"
             fi
 
+            # Run additive migrations from the candidate backend image before
+            # replacing the currently running API and worker. This prevents new
+            # application code from starting against an old schema.
+            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
+              echo "Running database migrations before service replacement..."
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
+            fi
+
             # Restart services with latest images
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
-
-            # Run migrations only when backend was updated (skip on wipe — already seeded)
-            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
-              echo "Running database migrations..."
-              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run migrate
-            fi
 
             # Idempotent production review account seed. Requires exact SEED input
             # so normal deploys do not reset credentials or grant admin access.

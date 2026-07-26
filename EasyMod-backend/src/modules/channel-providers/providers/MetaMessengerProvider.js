@@ -501,6 +501,15 @@ class MetaMessengerProvider extends ChannelProvider {
                         channelId: channel.id,
                         error: recoveryError.message,
                     });
+                    // Do not convert the message into an unrecoverable job until
+                    // the durable channel/token recovery transition succeeds.
+                    normalized.code = 'META_AUTHORIZATION_RECOVERY_FAILED';
+                    normalized.status = 503;
+                    normalized.details = {
+                        ...normalized.details,
+                        recoveryPending: true,
+                    };
+                    throw normalized;
                 }
                 normalized.code = 'META_AUTHORIZATION_REQUIRED';
                 normalized.status = 401;

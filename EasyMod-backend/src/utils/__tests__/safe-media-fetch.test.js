@@ -2,6 +2,7 @@
 
 const { EventEmitter } = require('events');
 const {
+    decodeDataImage,
     safeFetchMedia,
     _private,
 } = require('../safe-media-fetch');
@@ -34,6 +35,7 @@ describe('safe external media fetch policy', () => {
         BASE_URL: 'https://easymod.tech',
         MEDIA_FETCH_ALLOWED_HOSTS: 'media.easymod.tech',
     };
+    const png = Buffer.from('89504e470d0a1a0a00000000', 'hex');
 
     test.each([
         '127.0.0.1',
@@ -66,12 +68,15 @@ describe('safe external media fetch policy', () => {
             env,
             lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
             requestImpl: mockRequest(() => response({
-                headers: { 'content-type': 'image/png', 'content-length': '3' },
-                chunks: ['png'],
+                headers: {
+                    'content-type': 'image/png',
+                    'content-length': String(png.length),
+                },
+                chunks: [png],
             })),
         });
         expect(result.mimeType).toBe('image/png');
-        expect(result.buffer.toString()).toBe('png');
+        expect(result.buffer).toEqual(png);
     });
 
     test('rejects redirects whose DNS resolves to a private address', async () => {
@@ -105,6 +110,31 @@ describe('safe external media fetch policy', () => {
                 headers: { 'content-type': 'text/plain' },
             })),
         })).rejects.toThrow(/MIME/);
+    });
+
+    test('rejects a response whose bytes spoof the declared image MIME type', async () => {
+        await expect(safeFetchMedia('https://media.easymod.tech/a.png', {
+            env,
+            lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+            requestImpl: mockRequest(() => response({
+                headers: { 'content-type': 'image/png' },
+                chunks: ['not-a-png'],
+            })),
+        })).rejects.toThrow(/declared MIME/);
+    });
+
+    test('accepts only bounded canonical data images with matching signatures', () => {
+        const dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+        expect(decodeDataImage(dataUrl)).toEqual({
+            buffer: png,
+            mimeType: 'image/png',
+        });
+        expect(() => decodeDataImage('data:text/html;base64,PGgxPk5PVCBBTiBJTUFHRTwvaDE+'))
+            .toThrow(/invalid/);
+        expect(() => decodeDataImage('data:image/png;base64,bm90LWEtcG5n'))
+            .toThrow(/declared MIME/);
+        expect(() => decodeDataImage(dataUrl, { maxBytes: 4 }))
+            .toThrow(/size limit/);
     });
 
     test('rejects a streamed response that exceeds the byte limit', async () => {

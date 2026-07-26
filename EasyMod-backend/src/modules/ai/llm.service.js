@@ -22,7 +22,7 @@
  */
 
 const { circuitBreaker } = require('./circuit-breaker.service');
-const { safeFetchMedia } = require('../../utils/safe-media-fetch');
+const { decodeDataImage, safeFetchMedia } = require('../../utils/safe-media-fetch');
 
 const GEMINI_LITE_MODEL = process.env.LLM_GEMINI_LITE_MODEL || 'gemini-3.1-flash-lite';
 const GEMINI_PRO_MODEL  = process.env.LLM_GEMINI_PRO_MODEL  || 'gemini-3.1-pro-preview';
@@ -38,7 +38,9 @@ const hasVisionContent = (messages) =>
     messages.some(m => Array.isArray(m.content));
 
 const fetchImageAsBase64 = async (url) => {
-    const { buffer, mimeType } = await safeFetchMedia(url);
+    const { buffer, mimeType } = typeof url === 'string' && url.startsWith('data:')
+        ? decodeDataImage(url)
+        : await safeFetchMedia(url);
     return { data: buffer.toString('base64'), mimeType };
 };
 

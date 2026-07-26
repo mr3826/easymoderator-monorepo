@@ -52,7 +52,6 @@ class DeliveryTrackingService {
         try {
             const tracking = await DeliveryTracking.create({
                 order_id: order.id,
-                shop_id: order.shop_id,
                 provider: deliveryResult.provider,
                 tracking_number: deliveryResult.tracking_code,
                 current_status: 'booked',
@@ -109,6 +108,7 @@ class DeliveryTrackingService {
                 include: [{
                     model: Order,
                     as: 'order',
+                    required: true,
                     include: [{
                         model: Shop,
                         as: 'shop'
@@ -127,6 +127,15 @@ class DeliveryTrackingService {
             // Check if status actually changed
             if (normalizedStatus === tracking.current_status) {
                 return { success: true, message: 'No status change' };
+            }
+            if (['delivered', 'cancelled', 'returned'].includes(tracking.current_status)) {
+                this.logger.warn('Ignored courier status regression after terminal state', {
+                    trackingId: tracking.id,
+                    provider,
+                    currentStatus: tracking.current_status,
+                    attemptedStatus: normalizedStatus,
+                });
+                return { success: true, message: 'Terminal status preserved', ignored: true };
             }
 
             // Update tracking record
@@ -161,7 +170,7 @@ class DeliveryTrackingService {
                 });
                 await this.handleSuccessfulDelivery(tracking);
                 RtoShieldService.trackDeliveryOutcome(
-                    tracking.order.customer_phone, tracking.shop_id, false
+                    tracking.order.customer_phone, tracking.order.shop_id, false
                 ).catch(() => {});
             } else if (normalizedStatus.includes('cancelled') || normalizedStatus === 'returned') {
                 await tracking.order.update({
@@ -170,11 +179,11 @@ class DeliveryTrackingService {
                 });
                 await this.handleFailedDelivery(tracking);
                 RtoShieldService.trackDeliveryOutcome(
-                    tracking.order.customer_phone, tracking.shop_id, true
+                    tracking.order.customer_phone, tracking.order.shop_id, true
                 ).catch(() => {});
             } else if (normalizedStatus === 'failed_delivery') {
                 RtoShieldService.trackDeliveryOutcome(
-                    tracking.order.customer_phone, tracking.shop_id, true
+                    tracking.order.customer_phone, tracking.order.shop_id, true
                 ).catch(() => {});
             }
 
@@ -223,7 +232,8 @@ class DeliveryTrackingService {
                 },
                 include: [{
                     model: Order,
-                    as: 'order'
+                    as: 'order',
+                    required: true,
                 }],
                 limit: 50 // Process in batches
             });
@@ -335,7 +345,7 @@ class DeliveryTrackingService {
             // The old code looked up an undefined `Channel` model and passed a phone
             // number as the Meta recipient, so this notification silently never sent.
             const result = await webhookService.sendToCustomer({
-                shopId: tracking.shop_id,
+                shopId: tracking.order.shop_id,
                 customerId: tracking.order.customer_id,
                 message: notificationMessage,
             });
@@ -373,7 +383,7 @@ class DeliveryTrackingService {
             const completionMessage = `✅ ডেলিভারি সম্পন্ন হয়েছে!\n\nআপনার অর্ডার #${tracking.order.order_number} সফলভাবে ডেলিভারি হয়েছে।\n\nপণ্য পেয়ে থাকলে আমাদের জানান।\n\nধন্যবাদ!\n\n---\n\n✅ Delivery Completed!\n\nYour order #${tracking.order.order_number} has been successfully delivered.\n\nPlease let us know once you've received the package.\n\nThank you!`;
 
             await webhookService.sendToCustomer({
-                shopId: tracking.shop_id,
+                shopId: tracking.order.shop_id,
                 customerId: tracking.order.customer_id,
                 message: completionMessage,
             });
@@ -405,7 +415,7 @@ class DeliveryTrackingService {
             const ownerNotificationService = require('../notification/owner-notification.service');
             
             await ownerNotificationService.sendPaymentConfirmationRequest(
-                tracking.shop_id,
+                tracking.order.shop_id,
                 {
                     id: tracking.order.id,
                     order_number: tracking.order.order_number,
@@ -442,11 +452,13 @@ class DeliveryTrackingService {
      */
     async getTrackingByOrderId(orderId, shopId) {
         const tracking = await DeliveryTracking.findOne({
-            where: { order_id: orderId, shop_id: shopId },
+            where: { order_id: orderId },
             include: [{
                 model: Order,
                 as: 'order',
-                attributes: ['order_number', 'customer_name', 'customer_phone', 'total']
+                attributes: ['order_number', 'customer_name', 'customer_phone', 'total'],
+                where: { shop_id: shopId },
+                required: true,
             }]
         });
 
@@ -462,7 +474,14 @@ class DeliveryTrackingService {
      */
     async getTrackingHistory(trackingId, shopId) {
         const tracking = await DeliveryTracking.findOne({
-            where: { id: trackingId, shop_id: shopId }
+            where: { id: trackingId },
+            include: [{
+                model: Order,
+                as: 'order',
+                attributes: ['id'],
+                where: { shop_id: shopId },
+                required: true,
+            }],
         });
 
         if (!tracking) {

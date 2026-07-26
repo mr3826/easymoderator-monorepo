@@ -31,8 +31,6 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onMessageDeliveryUpda
 
     useEffect(() => {
         if (!shopId) return;
-        const activeShopId = shopId;
-
         let es: EventSource | null = null;
         let retryTimeout: ReturnType<typeof setTimeout> | null = null;
         let retryDelay = 1000;
@@ -42,7 +40,9 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onMessageDeliveryUpda
             if (destroyed) return;
 
             const apiOrigin = config.apiBaseUrl.startsWith('http') ? normalizeApiBaseUrl(config.apiBaseUrl) : '';
-            const url = `${apiOrigin}/api/conversation/events?shop_id=${encodeURIComponent(activeShopId)}`;
+            // The backend binds the tenant exclusively from the authenticated
+            // session. A query selector is intentionally forbidden.
+            const url = `${apiOrigin}/api/conversation/events`;
             es = new EventSource(url, { withCredentials: true });
 
             es.addEventListener('new_message', (e: MessageEvent) => {

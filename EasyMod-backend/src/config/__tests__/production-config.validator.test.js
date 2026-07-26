@@ -84,6 +84,21 @@ describe('production configuration validation', () => {
         ]));
     });
 
+    test('rejects the literal JWT and session defaults published in .env.example', () => {
+        const result = validateProductionConfig(validEnv({
+            JWT_ACCESS_SECRET: 'your-access-secret-key-change-in-production',
+            JWT_REFRESH_SECRET: 'your-refresh-secret-key-change-in-production',
+            SESSION_SECRET: 'your-session-secret-change-in-production',
+        }));
+
+        expect(result.valid).toBe(false);
+        expect(result.invalid).toEqual(expect.arrayContaining([
+            'JWT_ACCESS_SECRET',
+            'JWT_REFRESH_SECRET',
+            'SESSION_SECRET',
+        ]));
+    });
+
     test('requires either Sentry or Slack and either OpenAI or Gemini', () => {
         const result = validateProductionConfig(validEnv({
             SENTRY_DSN: '',

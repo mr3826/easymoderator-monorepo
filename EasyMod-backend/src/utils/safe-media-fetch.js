@@ -18,6 +18,49 @@ const META_HOST_SUFFIXES = [
     '.fbsbx.com',
 ];
 
+function hasExpectedImageSignature(buffer, mimeType) {
+    if (!Buffer.isBuffer(buffer)) return false;
+    if (mimeType === 'image/png') {
+        return buffer.length >= 8
+            && buffer.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
+    }
+    if (mimeType === 'image/jpeg') {
+        return buffer.length >= 3
+            && buffer[0] === 0xff
+            && buffer[1] === 0xd8
+            && buffer[2] === 0xff;
+    }
+    if (mimeType === 'image/gif') {
+        return buffer.length >= 6
+            && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'));
+    }
+    if (mimeType === 'image/webp') {
+        return buffer.length >= 12
+            && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+            && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+    }
+    return false;
+}
+
+function decodeDataImage(value, options = {}) {
+    const maxBytes = options.maxBytes || DEFAULT_MAX_BYTES;
+    if (typeof value !== 'string') throw new Error('Image data URL is invalid');
+    const match = value.match(/^data:(image\/(?:gif|jpeg|png|webp));base64,([A-Za-z0-9+/]*={0,2})$/);
+    if (!match || match[2].length === 0 || match[2].length % 4 !== 0) {
+        throw new Error('Image data URL is invalid');
+    }
+    const estimatedBytes = Math.floor((match[2].length * 3) / 4);
+    if (estimatedBytes > maxBytes + 2) throw new Error('Image data exceeds the size limit');
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length > maxBytes) throw new Error('Image data exceeds the size limit');
+    if (buffer.toString('base64') !== match[2]) throw new Error('Image data URL is invalid');
+    const mimeType = match[1];
+    if (!hasExpectedImageSignature(buffer, mimeType)) {
+        throw new Error('Image data does not match its declared MIME type');
+    }
+    return { buffer, mimeType };
+}
+
 function ipv4Number(value) {
     const octets = value.split('.').map(Number);
     if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
@@ -175,10 +218,15 @@ function requestOnce(url, resolved, {
                 }
                 chunks.push(chunk);
             });
-            response.on('end', () => finish(resolve, {
-                buffer: Buffer.concat(chunks),
-                mimeType,
-            }));
+            response.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                if (!hasExpectedImageSignature(buffer, mimeType)) {
+                    return finish(reject, new Error(
+                        'Media response does not match its declared MIME type',
+                    ));
+                }
+                return finish(resolve, { buffer, mimeType });
+            });
             response.on('error', (error) => finish(reject, error));
         });
         req.setTimeout(timeoutMs, () => req.destroy(new Error('Media fetch connection timed out')));
@@ -213,9 +261,11 @@ async function safeFetchMedia(value, options = {}) {
 
 module.exports = {
     ALLOWED_MIME_TYPES,
+    decodeDataImage,
     safeFetchMedia,
     _private: {
         configuredHosts,
+        hasExpectedImageSignature,
         inIpv4Cidr,
         isAllowedHost,
         isPublicIp,

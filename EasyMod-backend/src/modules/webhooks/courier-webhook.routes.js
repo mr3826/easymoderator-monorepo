@@ -6,7 +6,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { DeliveryTracking, DeliveryIntegration } = require('../entities');
+const { DeliveryTracking, DeliveryIntegration, Order } = require('../entities');
 const deliveryTrackingService = require('../delivery/delivery-tracking.service');
 const { createLogger } = require('../../utils/structured-logger');
 
@@ -32,12 +32,18 @@ function timingSafeStringEqual(received, expected) {
  */
 async function resolveShopCredentials(provider, consignmentId) {
     const tracking = await DeliveryTracking.findOne({
-        where: { tracking_number: consignmentId, provider }
+        where: { tracking_number: consignmentId, provider },
+        include: [{
+            model: Order,
+            as: 'order',
+            attributes: ['shop_id'],
+            required: true,
+        }],
     });
     if (!tracking) return null;
 
     const integration = await DeliveryIntegration.findOne({
-        where: { shop_id: tracking.shop_id, provider, is_active: true }
+        where: { shop_id: tracking.order.shop_id, provider, is_active: true }
     });
     return integration ? { tracking, credentials: integration.credentials } : { tracking, credentials: null };
 }

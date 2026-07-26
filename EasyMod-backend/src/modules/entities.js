@@ -356,9 +356,7 @@ Shop.hasMany(OrderInvoice, { foreignKey: 'shop_id', as: 'order_invoices' });
 Order.hasMany(OrderInvoice, { foreignKey: 'order_id', as: 'invoices' });
 
 // Delivery Tracking relationships
-DeliveryTracking.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 DeliveryTracking.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
-Shop.hasMany(DeliveryTracking, { foreignKey: 'shop_id', as: 'delivery_tracking' });
 Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking' });
 
 // Push Subscription relationships

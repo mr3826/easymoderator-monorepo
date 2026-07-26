@@ -54,7 +54,7 @@ export type KnownSSEEvent =
   | (string & Record<never, never>); // allow arbitrary strings for forward-compat
 
 export interface SSEClientOptions {
-  /** Shop ID — used to build the SSE endpoint URL. */
+  /** Shop ID — used only to isolate the local Last-Event-ID cursor. */
   shopId: string;
   /** Override the base URL (defaults to window.location.origin). */
   baseUrl?: string;
@@ -165,7 +165,6 @@ export class SSEClient {
 
   private _buildUrl(): string {
     const url = new URL(this.path, this.baseUrl);
-    url.searchParams.set('shop_id', this.shopId);
 
     // Append last_event_id as a query parameter as a fallback for page-reload
     // reconnects where the browser cannot carry Last-Event-ID in the header.

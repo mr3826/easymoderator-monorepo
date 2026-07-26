@@ -44,6 +44,7 @@ describe('Meta identity coverage readiness', () => {
             col: 'channel_id',
             where: expect.objectContaining({
                 page_scoped_user_id: expect.any(Object),
+                is_current_connection: true,
             }),
         }));
         expect(mappingQuery.include[0]).toEqual(expect.objectContaining({

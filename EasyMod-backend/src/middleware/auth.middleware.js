@@ -38,22 +38,23 @@ const authenticate = async (req, res, next) => {
         // Cache the DB value for 60 s per user to avoid a SELECT on every request.
         // The cache is invalidated immediately when token_version is incremented
         // (see auth.service.js resetPassword).
-        if (decoded.tokenVersion) {
-            const tvCacheKey = `user:${decoded.userId}:token_version`;
-            let dbTokenVersion = await cacheService.get(tvCacheKey);
-            if (dbTokenVersion === null) {
-                const user = await User.findByPk(decoded.userId, {
-                    attributes: ['token_version']
-                });
-                if (!user) {
-                    throw new AppError('Token has been invalidated. Please login again.', 401);
-                }
-                dbTokenVersion = user.token_version;
-                await cacheService.set(tvCacheKey, dbTokenVersion, 60);
-            }
-            if (dbTokenVersion !== decoded.tokenVersion) {
+        if (!Number.isInteger(decoded.tokenVersion) || decoded.tokenVersion < 0) {
+            throw new AppError('Token is missing required revocation state. Please login again.', 401);
+        }
+        const tvCacheKey = `user:${decoded.userId}:token_version`;
+        let dbTokenVersion = await cacheService.get(tvCacheKey);
+        if (dbTokenVersion === null) {
+            const user = await User.findByPk(decoded.userId, {
+                attributes: ['token_version']
+            });
+            if (!user) {
                 throw new AppError('Token has been invalidated. Please login again.', 401);
             }
+            dbTokenVersion = user.token_version;
+            await cacheService.set(tvCacheKey, dbTokenVersion, 60);
+        }
+        if (dbTokenVersion !== decoded.tokenVersion) {
+            throw new AppError('Token has been invalidated. Please login again.', 401);
         }
 
         // 5. Attach user data to request

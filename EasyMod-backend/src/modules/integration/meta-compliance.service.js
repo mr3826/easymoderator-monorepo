@@ -11,19 +11,29 @@ const {
     Customer,
     CustomerDeliveryStats,
     CustomerPreference,
+    DeliveryTracking,
     Message,
     MetaDataDeletionRequest,
     MetaUserIdentity,
     Order,
+    OrderInvoice,
+    OrderReturn,
     OwnerNotification,
+    PaymentTransaction,
+    SupportTicket,
+    TrxIDLog,
 } = require('../entities');
+const OrderSession = require('../order/order-session.entity');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
 
 const logger = createLogger('MetaComplianceService');
 const UPLOAD_ROOT = path.resolve(__dirname, '../../../uploads');
-const OWNED_ATTACHMENT_PREFIX = '/uploads/conversation-attachments/';
+const OWNED_ATTACHMENT_PREFIXES = [
+    '/uploads/conversation-attachments/',
+    '/uploads/invoices/',
+];
 const PROCESSING_STALE_MS = 15 * 60 * 1000;
 
 function sha256(value) {
@@ -91,7 +101,7 @@ function ownedAttachmentPath(value) {
     } catch (_) {
         return null;
     }
-    if (!pathname.startsWith(OWNED_ATTACHMENT_PREFIX)) return null;
+    if (!OWNED_ATTACHMENT_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
 
     let decoded;
     try {
@@ -100,10 +110,69 @@ function ownedAttachmentPath(value) {
         return null;
     }
     const normalized = decoded.replace(/\\/g, '/');
-    if (!normalized.startsWith('conversation-attachments/') || normalized.split('/').includes('..')) {
+    const allowedDirectory = normalized.startsWith('conversation-attachments/')
+        || normalized.startsWith('invoices/');
+    if (!allowedDirectory || normalized.split('/').includes('..')) {
         return null;
     }
     return normalized;
+}
+
+function collectOwnedInvoicePaths(invoices) {
+    const paths = new Set();
+    for (const invoice of invoices || []) {
+        const relativePath = ownedAttachmentPath(invoice?.pdf_url || invoice?.get?.('pdf_url'));
+        if (relativePath) paths.add(relativePath);
+    }
+    return [...paths];
+}
+
+function retainedOrderSnapshot(value) {
+    const snapshot = value && typeof value === 'object' ? value : {};
+    const allowed = [
+        'order_number',
+        'items',
+        'subtotal',
+        'discount',
+        'tax',
+        'delivery_fee',
+        'total',
+        'payment_method',
+        'payment_status',
+    ];
+    return allowed.reduce((result, key) => {
+        if (Object.prototype.hasOwnProperty.call(snapshot, key)) result[key] = snapshot[key];
+        return result;
+    }, { customerDeleted: true });
+}
+
+function retainedTrackingHistory(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map((entry) => ({
+        status: entry?.status || null,
+        timestamp: entry?.timestamp || null,
+    }));
+}
+
+function claimLostError() {
+    return Object.assign(new Error('Deletion processing claim was superseded'), {
+        code: 'DELETION_CLAIM_LOST',
+    });
+}
+
+async function fencedRequestUpdate(request, processingToken, values, {
+    transaction = null,
+} = {}) {
+    const [updated] = await MetaDataDeletionRequest.update(values, {
+        where: {
+            id: request.id,
+            status: 'PROCESSING',
+            processing_token: processingToken,
+        },
+        transaction,
+    });
+    if (updated !== 1) throw claimLostError();
+    Object.assign(request, values);
 }
 
 function collectOwnedAttachmentPaths(messages) {
@@ -175,6 +244,63 @@ async function scrubOwnerNotifications(shopId, orderIds, transaction) {
     }
 }
 
+async function scrubOrderInvoices(shopId, orderIds, transaction) {
+    if (!orderIds.length) return [];
+    const invoices = await OrderInvoice.findAll({
+        where: {
+            shop_id: shopId,
+            order_id: { [Op.in]: orderIds },
+        },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+    });
+    for (const invoice of invoices) {
+        await invoice.update({
+            pdf_url: null,
+            customer_info: null,
+            delivery_info: null,
+            order_data: retainedOrderSnapshot(invoice.order_data),
+        }, { transaction });
+    }
+    return collectOwnedInvoicePaths(invoices);
+}
+
+async function scrubDeliveryTracking(orderIds, transaction) {
+    if (!orderIds.length) return;
+    const rows = await DeliveryTracking.findAll({
+        where: { order_id: { [Op.in]: orderIds } },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+    });
+    for (const row of rows) {
+        await row.update({
+            tracking_number: `deleted-${row.id}`,
+            status_history: retainedTrackingHistory(row.status_history),
+            location_info: null,
+            delivery_agent_info: null,
+        }, { transaction });
+    }
+}
+
+async function scrubAuditRecords(shopId, customerId, orderIds, transaction) {
+    const resourceIds = [customerId, ...orderIds].map(String);
+    const rows = await AuditLog.findAll({
+        where: {
+            shop_id: shopId,
+            resource_id: { [Op.in]: resourceIds },
+        },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+    });
+    for (const row of rows) {
+        await row.update({
+            old_values: null,
+            new_values: null,
+            metadata: { subjectDeleted: true },
+        }, { transaction });
+    }
+}
+
 async function deleteCustomerData(customer, mapping, request, transaction) {
     const shopId = customer.shop_id;
     const customerId = customer.id;
@@ -182,7 +308,6 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
         where: {
             shop_id: shopId,
             customer_id: customerId,
-            ...(mapping.channel_id ? { meta_channel_id: mapping.channel_id } : {}),
         },
         attributes: ['id'],
         transaction,
@@ -216,7 +341,47 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
     });
     const orderIds = orders.map((row) => row.id);
 
+    await OrderSession.destroy({
+        where: {
+            shop_id: shopId,
+            [Op.or]: [
+                { customer_id: customerId },
+                { customer_channel_id: mapping.page_scoped_user_id },
+            ],
+        },
+        transaction,
+    });
+    await OrderReturn.destroy({
+        where: { customer_id: customerId },
+        transaction,
+    });
+    await SupportTicket.destroy({
+        where: { shop_id: shopId, customer_id: customerId },
+        transaction,
+    });
+
     if (orderIds.length) {
+        attachmentPaths.push(...await scrubOrderInvoices(shopId, orderIds, transaction));
+        await TrxIDLog.update({
+            sender_phone: null,
+            ocr_raw: null,
+        }, {
+            where: {
+                shop_id: shopId,
+                order_id: { [Op.in]: orderIds },
+            },
+            transaction,
+        });
+        await PaymentTransaction.update({
+            gateway_response: null,
+        }, {
+            where: {
+                shop_id: shopId,
+                order_id: { [Op.in]: orderIds },
+            },
+            transaction,
+        });
+        await scrubDeliveryTracking(orderIds, transaction);
         await Order.update({
             customer_id: null,
             customer_name: 'Deleted customer',
@@ -225,14 +390,31 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
             delivery_address: null,
             delivery_area: null,
             delivery_zone: null,
+            delivery_consignment_id: null,
+            delivery_tracking_code: null,
             note: null,
             notes: null,
+            idempotency_key: null,
         }, {
             where: { shop_id: shopId, customer_id: customerId },
             transaction,
         });
+        // These Phase 0 columns remain in the production PostgreSQL table but
+        // are intentionally absent from the current Order entity.
+        await sequelize.query(`
+            UPDATE orders
+            SET courier_data = NULL,
+                tracking_id = NULL,
+                metadata = NULL
+            WHERE shop_id = :shopId
+              AND id IN (:orderIds)
+        `, {
+            replacements: { shopId, orderIds },
+            transaction,
+        });
         await scrubOwnerNotifications(shopId, orderIds, transaction);
     }
+    await scrubAuditRecords(shopId, customerId, orderIds, transaction);
 
     if (customer.phone) {
         await CustomerDeliveryStats.destroy({
@@ -265,20 +447,23 @@ async function deleteCustomerData(customer, mapping, request, transaction) {
         conversationsDeleted: conversationIds.length,
         messagesDeleted: messages.length,
         ordersAnonymized: orderIds.length,
-        attachmentPaths,
+        attachmentPaths: [...new Set(attachmentPaths)],
     };
 }
 
 async function resolveMappedCustomers(appScopedUserId, transaction) {
     const mappings = await MetaUserIdentity.findAll({
-        where: { app_scoped_user_id: String(appScopedUserId) },
+        where: {
+            app_scoped_user_id: String(appScopedUserId),
+            is_current_connection: true,
+        },
         transaction,
         lock: transaction.LOCK.UPDATE,
     });
     const resolved = [];
+    const usableMappings = mappings.filter((mapping) => Boolean(mapping.page_scoped_user_id));
     const seen = new Set();
-    for (const mapping of mappings) {
-        if (!mapping.page_scoped_user_id) continue;
+    for (const mapping of usableMappings) {
         const customer = await Customer.findOne({
             where: {
                 shop_id: mapping.shop_id,
@@ -294,7 +479,7 @@ async function resolveMappedCustomers(appScopedUserId, transaction) {
         seen.add(key);
         resolved.push({ mapping, customer });
     }
-    return { mappings, resolved };
+    return { mappings, usableMappings, resolved };
 }
 
 async function processDeletionRequest({
@@ -331,8 +516,10 @@ async function processDeletionRequest({
 
     const resumeCompletedDataPhase = Boolean(request.data_phase_completed_at)
         && (request.status === 'FAILED' || staleProcessing);
+    const processingToken = crypto.randomBytes(32).toString('hex');
     const processingState = {
         status: 'PROCESSING',
+        processing_token: processingToken,
         started_at: new Date(),
         completed_at: null,
         failure_code: null,
@@ -369,40 +556,49 @@ async function processDeletionRequest({
     }
     Object.assign(request, processingState);
 
-    // The database transaction committed before a prior crash/failure. Resume
-    // only the external attachment phase and completion audit.
-    if (resumeCompletedDataPhase) {
-        const cleanup = await cleanupOwnedAttachments(request.pending_attachment_paths);
-        await request.update({
-            attachments_deleted_count: request.attachments_deleted_count + cleanup.deleted,
-            pending_attachment_paths: cleanup.remaining,
-            status: cleanup.remaining.length ? 'FAILED' : 'COMPLETED',
-            failure_code: cleanup.remaining.length ? 'ATTACHMENT_CLEANUP_FAILED' : null,
-            failure_detail: cleanup.remaining.length ? 'Server-owned attachment cleanup remains pending' : null,
-            completed_at: cleanup.remaining.length ? null : new Date(),
-        });
-        if (cleanup.remaining.length) {
-            throw Object.assign(new Error('Attachment cleanup remains incomplete'), {
-                code: 'ATTACHMENT_CLEANUP_FAILED',
-            });
-        }
-        await writeAudit('meta_deletion_completed', request.id, {
-            metadata: serializeDeletionStatus(request),
-        });
-        return { request, confirmationCode: code, repeated: true };
-    }
-
     let pendingAttachmentPaths = [];
     try {
+        // The database transaction committed before a prior crash/failure. Resume
+        // only the external attachment phase and completion audit.
+        if (resumeCompletedDataPhase) {
+            const cleanup = await cleanupOwnedAttachments(request.pending_attachment_paths);
+            await sequelize.transaction(async (transaction) => {
+                await fencedRequestUpdate(request, processingToken, {
+                    attachments_deleted_count: request.attachments_deleted_count + cleanup.deleted,
+                    pending_attachment_paths: cleanup.remaining,
+                    status: cleanup.remaining.length ? 'FAILED' : 'COMPLETED',
+                    processing_token: null,
+                    failure_code: cleanup.remaining.length ? 'ATTACHMENT_CLEANUP_FAILED' : null,
+                    failure_detail: cleanup.remaining.length
+                        ? 'Server-owned attachment cleanup remains pending'
+                        : null,
+                    completed_at: cleanup.remaining.length ? null : new Date(),
+                }, { transaction });
+                if (!cleanup.remaining.length) {
+                    await writeAudit('meta_deletion_completed', request.id, {
+                        metadata: serializeDeletionStatus(request),
+                        transaction,
+                    });
+                }
+            });
+            if (cleanup.remaining.length) {
+                throw Object.assign(new Error('Attachment cleanup remains incomplete'), {
+                    code: 'ATTACHMENT_CLEANUP_FAILED',
+                });
+            }
+            return { request, confirmationCode: code, repeated: true };
+        }
+
         await sequelize.transaction(async (transaction) => {
-            const { mappings, resolved } = await resolveMappedCustomers(
+            const { mappings, usableMappings, resolved } = await resolveMappedCustomers(
                 appScopedUserId,
                 transaction,
             );
 
-            if (mappings.length === 0) {
-                await request.update({
+            if (mappings.length === 0 || usableMappings.length !== mappings.length) {
+                await fencedRequestUpdate(request, processingToken, {
                     status: 'IDENTITY_NOT_RESOLVED',
+                    processing_token: null,
                     matched_customer_count: 0,
                     conversations_deleted_count: 0,
                     messages_deleted_count: 0,
@@ -417,7 +613,8 @@ async function processDeletionRequest({
                 await writeAudit('meta_deletion_identity_not_resolved', request.id, {
                     metadata: {
                         retryable: true,
-                        mappings_found: 0,
+                        mappings_found: mappings.length,
+                        usable_mappings_found: usableMappings.length,
                     },
                     transaction,
                 });
@@ -455,7 +652,7 @@ async function processDeletionRequest({
             }
 
             pendingAttachmentPaths = [...new Set(pendingAttachmentPaths)];
-            await request.update({
+            await fencedRequestUpdate(request, processingToken, {
                 matched_customer_count: totals.matchedCustomers,
                 conversations_deleted_count: totals.conversationsDeleted,
                 messages_deleted_count: totals.messagesDeleted,
@@ -495,32 +692,44 @@ async function processDeletionRequest({
         }
 
         const cleanup = await cleanupOwnedAttachments(pendingAttachmentPaths);
-        await request.update({
-            attachments_deleted_count: cleanup.deleted,
-            pending_attachment_paths: cleanup.remaining,
-            status: cleanup.remaining.length ? 'FAILED' : 'COMPLETED',
-            failure_code: cleanup.remaining.length ? 'ATTACHMENT_CLEANUP_FAILED' : null,
-            failure_detail: cleanup.remaining.length ? 'Server-owned attachment cleanup remains pending' : null,
-            completed_at: cleanup.remaining.length ? null : new Date(),
+        await sequelize.transaction(async (transaction) => {
+            await fencedRequestUpdate(request, processingToken, {
+                attachments_deleted_count: cleanup.deleted,
+                pending_attachment_paths: cleanup.remaining,
+                status: cleanup.remaining.length ? 'FAILED' : 'COMPLETED',
+                processing_token: null,
+                failure_code: cleanup.remaining.length ? 'ATTACHMENT_CLEANUP_FAILED' : null,
+                failure_detail: cleanup.remaining.length
+                    ? 'Server-owned attachment cleanup remains pending'
+                    : null,
+                completed_at: cleanup.remaining.length ? null : new Date(),
+            }, { transaction });
+            if (!cleanup.remaining.length) {
+                await writeAudit('meta_deletion_completed', request.id, {
+                    metadata: serializeDeletionStatus(request),
+                    transaction,
+                });
+            }
         });
         if (cleanup.remaining.length) {
             throw Object.assign(new Error('Attachment cleanup incomplete'), {
                 code: 'ATTACHMENT_CLEANUP_FAILED',
             });
         }
-        await writeAudit('meta_deletion_completed', request.id, {
-            metadata: serializeDeletionStatus(request),
-        });
         return { request, confirmationCode: code };
     } catch (err) {
+        if (err.code === 'DELETION_CLAIM_LOST') {
+            throw err;
+        }
         const failureCode = err.code || 'DELETION_PROCESSING_FAILED';
         if (request.status !== 'FAILED' || request.failure_code !== 'ATTACHMENT_CLEANUP_FAILED') {
-            await request.update({
+            await fencedRequestUpdate(request, processingToken, {
                 status: 'FAILED',
+                processing_token: null,
                 failure_code: failureCode,
                 failure_detail: failureCode === 'ATTACHMENT_CLEANUP_FAILED'
                     ? 'Server-owned attachment cleanup remains pending'
-                    : 'Transactional deletion failed and was rolled back',
+                    : 'Deletion processing failed before durable completion',
                 completed_at: null,
             });
         }
@@ -559,5 +768,6 @@ module.exports = {
         ownedAttachmentPath,
         requestFingerprint,
         resolveMappedCustomers,
+        fencedRequestUpdate,
     },
 };

@@ -49,6 +49,11 @@ const MetaUserIdentity = sequelize.define('MetaUserIdentity', {
         allowNull: false,
         defaultValue: 'facebook_oauth',
     },
+    is_current_connection: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+    },
     last_verified_at: {
         type: DataTypes.DATE,
         allowNull: false,
@@ -72,6 +77,12 @@ const MetaUserIdentity = sequelize.define('MetaUserIdentity', {
         {
             fields: ['internal_user_id'],
             name: 'idx_meta_user_identities_internal_user',
+        },
+        {
+            unique: true,
+            fields: ['channel_id'],
+            where: { is_current_connection: true },
+            name: 'uq_meta_user_identities_current_channel',
         },
     ],
 });

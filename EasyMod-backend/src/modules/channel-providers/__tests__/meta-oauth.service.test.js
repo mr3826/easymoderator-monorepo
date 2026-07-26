@@ -33,21 +33,30 @@ jest.mock('../provider.registry', () => ({
 }));
 
 const mockIdentityUpdate = jest.fn().mockResolvedValue(undefined);
+const mockIdentityRetire = jest.fn().mockResolvedValue([1]);
 const mockIdentityFindOrCreate = jest.fn().mockResolvedValue([
     { update: mockIdentityUpdate },
 ]);
 jest.mock('../meta-user-identity.entity', () => ({
+    update: mockIdentityRetire,
     findOrCreate: mockIdentityFindOrCreate,
+}));
+jest.mock('../../../utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(async (callback) => callback({ id: 'identity-tx' })),
+    },
 }));
 
 const mockUpsertFromOAuth = jest.fn();
 const mockUpdateStatus = jest.fn().mockResolvedValue({});
 const mockConfirmWebhookActive = jest.fn().mockResolvedValue({});
+const mockDisconnect = jest.fn().mockResolvedValue({});
 
 jest.mock('../meta-channel.service', () => ({
     upsertFromOAuth: mockUpsertFromOAuth,
     updateStatus: mockUpdateStatus,
     confirmWebhookActive: mockConfirmWebhookActive,
+    disconnect: mockDisconnect,
 }));
 
 const stateStore = require('../oauth-state.store');
@@ -160,6 +169,28 @@ describe('connectPage() webhook verify wiring', () => {
 
         expect(mockConfirmWebhookActive).toHaveBeenCalledWith('chan-1', ['messages']);
         expect(mockUpdateStatus).not.toHaveBeenCalledWith('chan-1', 'ERROR', expect.anything());
+        expect(mockIdentityRetire).toHaveBeenCalledWith(
+            { is_current_connection: false },
+            expect.objectContaining({ where: { channel_id: 'chan-1' } }),
+        );
+        expect(mockIdentityUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({ is_current_connection: true }),
+            expect.objectContaining({ transaction: expect.anything() }),
+        );
+    });
+
+    test('fails closed and clears the Page token when identity persistence fails', async () => {
+        mockIdentityFindOrCreate.mockRejectedValueOnce(new Error('identity database unavailable'));
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toThrow('identity database unavailable');
+
+        expect(mockDisconnect).toHaveBeenCalledWith('chan-1', {
+            status: 'ERROR',
+            lastError: 'meta_identity_mapping_failed',
+        });
+        expect(mockSubscribeWebhook).not.toHaveBeenCalled();
     });
 
     test('calls updateStatus(ERROR, webhook_subscription_failed) when subscribeWebhook throws', async () => {

@@ -33,7 +33,7 @@ router.post(
     '/bkash/payment-status',
     webhookRateLimiter,
     validateWebhookSignature('bkash'),
-    paymentWebhookController.handleBkashWebhook
+    paymentWebhookController.handleBkashWebhook.bind(paymentWebhookController)
 );
 
 module.exports = router;

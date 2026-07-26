@@ -14,9 +14,10 @@ jest.mock('./webhook.middleware', () => ({
 jest.mock('../entities', () => ({
     DeliveryTracking: {
         findOne: jest.fn().mockResolvedValue({
-            shop_id: 'shop-1'
+            order: { shop_id: 'shop-1' }
         })
     },
+    Order: {},
     DeliveryIntegration: {
         findOne: jest.fn().mockResolvedValue({
             credentials: {

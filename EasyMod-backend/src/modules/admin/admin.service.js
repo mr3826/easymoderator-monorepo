@@ -63,6 +63,7 @@ async function getMetaIdentityReadiness() {
   const mappingScope = {
     where: {
       page_scoped_user_id: { [Op.ne]: null },
+      is_current_connection: true,
     },
     include: [{
       model: MetaChannel,

@@ -13,6 +13,12 @@ Login:
 - the connected `meta_channels` row
 - the EasyModerator shop and internal merchant user
 
+Only the mapping captured by the channel's current OAuth connection is
+authoritative. Reconnect retires prior rows in the same transaction before
+marking the new row current; a partial unique index prevents two current
+mappings for one channel. Deletion, deauthorization, and readiness checks all
+ignore retired connection history.
+
 The application never fabricates a Page-scoped ID. If Meta does not return a
 Page identity, the mapping can still identify channels for deauthorization, but
 it cannot identify a Messenger customer for deletion. Channels connected before
@@ -38,15 +44,19 @@ For a mapped Messenger customer, the deletion transaction:
 1. records receipt, signed-request validation, and identity resolution;
 2. records a strict consent/deletion event;
 3. identifies the customer by exact shop, Page channel, and Page-scoped ID;
-4. deletes conversations, messages, customer preferences, delivery-risk
-   profile data, and the customer profile;
+4. deletes conversations (including legacy rows without a channel ID),
+   messages, active order sessions, returns, support tickets, customer
+   preferences, delivery-risk profile data, and the customer profile;
 5. retains orders and financial facts while removing the customer foreign key
    and anonymizing name, phone, delivery address/location/zone, instructions,
-   and free-text notes;
-6. scrubs customer PII copied into owner notifications;
-7. deletes only server-owned conversation attachment paths under
-   `uploads/conversation-attachments`;
-8. records completion or a sanitized failure code.
+   free-text notes, courier payloads/tracking fields, and idempotency metadata;
+6. retains invoice/payment/accounting facts while scrubbing invoice customer
+   and delivery snapshots, gateway response payloads, OCR text/sender phone,
+   delivery location/agent data, and subject audit payloads;
+7. scrubs customer PII copied into owner notifications;
+8. deletes only server-owned conversation and invoice attachment paths under
+   `uploads/conversation-attachments` and `uploads/invoices`;
+9. records completion or a sanitized failure code.
 
 The durable `meta_data_deletion_requests` record contains hashes and counters,
 not the raw signed request, Meta ID, confirmation code, or remote attachment
@@ -55,7 +65,9 @@ transaction and return an error instead of a false success. A committed data
 phase is checkpointed so a stale worker resumes only outstanding attachment
 cleanup and completion-audit work rather than deleting twice. Attachment
 cleanup failures remain `failed` and retry only the outstanding server-owned
-paths.
+paths. Every processing claim has a random durable token; a worker whose stale
+lease was superseded cannot publish counters, completion status, or completion
+audit events.
 
 Status endpoint:
 
@@ -95,20 +107,23 @@ data-deletion request can still resolve the affected customer records.
 Meta send failures that indicate invalid or expired authorization mark the
 channel `TOKEN_EXPIRED`, preserve the failed BullMQ job in failed-job retention,
 stop futile automatic retries, and expose the existing reconnect action in
-Channel Settings. Notification or unsubscribe failure does not leave the
-channel marked `CONNECTED`.
+Channel Settings. If durable token-recovery state cannot be written, the send is
+reported as retryable rather than being mislabeled as a permanent authorization
+failure. Notification or unsubscribe failure does not leave the channel marked
+`CONNECTED`.
 
 ## Route inventory
 
 | Route | Exposure | Tenant/security contract |
 |---|---|---|
-| `/api/ai-chatbot/*` | Removed from root router | Legacy browser-callable process, context, and handoff endpoints are not mounted. The Messenger worker is authoritative. |
+| `/api/ai-chatbot/*` | Removed from root router | Legacy browser-callable process, context, and handoff endpoints are not mounted. The Messenger worker is authoritative. The checked-in `n8n-workflows/easymod-bd-chatbot.workflow.json` and frontend E2E fixtures still reference this removed route as archived history; they must not be imported or treated as a supported runtime caller. No n8n deployment reference was found in the repository. |
 | `/api/payment/bangladesh/*` | Removed from root router | The obsolete duplicate router, including its unauthenticated callback and client-selected tenant operations, is no longer reachable. Canonical authenticated payment routes and `/api/webhooks/bkash/payment-status` remain. Existing callers of this legacy surface receive `404`; no frontend caller was found. |
 | `GET /api/conversation/events` | Merchant-authenticated | Shop comes only from the access token. `x-shop-id` and `shop_id` query overrides are rejected. |
 | `/api/conversation/*` | Merchant-authenticated | Reads and mutations use `req.user.shopId`; client shop selectors are not authoritative. |
 | `POST /api/analytics/knowledge-gap` | Merchant-authenticated | Token shop binding, Messenger-only input, 1,000-character bound, 30/minute rate limit, and audit event. |
 | `POST /api/notifications/mark-handoff` | Merchant-authenticated | Token shop binding; cross-shop body selectors are rejected. |
 | `POST /api/notifications/push` | Merchant-authenticated | Token shop binding; cross-shop body selectors are rejected. |
+| `POST /api/notifications/:id/read` | Merchant-authenticated | Token shop binding. Payment-confirmation notifications return `409` and must use the owner-only approve/reject workflow; marking a notification read cannot bypass payment authorization. |
 | `/api/delivery/rag/*` | Merchant-authenticated | All reads and mutations bind to the token shop; client body/query/path shop overrides are rejected. Global collection initialization requires `SUPER_ADMIN`. |
 | `POST /api/notifications/payment-confirmation/:notificationId/:action` | Authenticated owner only | Exact notification shop, active owner membership, pending/unexpired notification and payment states, row locks, replay rejection, 10/minute rate limit, and append-only audit event. |
 | `/api/webhooks/owner/payment-confirmation/*` | Removed | No public link can approve or reject a payment. Email directs owners to the authenticated dashboard. |
@@ -131,7 +146,11 @@ not accept a tenant ID, and is not a tenant-data mutation path.
 - Steadfast and Pathao use the raw-body HMAC formats represented by their
   existing EasyModerator integration credentials. The current payload
   contracts do not expose a provider timestamp, so replay resistance comes from
-  idempotent status handling rather than a timestamp window.
+  idempotent status handling rather than a timestamp window. Terminal delivery
+  states (`delivered`, `cancelled`, `returned`) cannot be regressed by a later
+  non-terminal callback. Non-terminal callbacks still rely on provider ordering
+  because the represented payloads contain no event ID or authoritative event
+  timestamp.
 - RedX's represented contract is bearer API-key verification, not a
   cryptographic per-payload signature. The request must resolve through an
   existing RedX tracking record and active shop integration.
@@ -151,9 +170,12 @@ All server-side LLM image retrieval goes through `safe-media-fetch.js`.
 - every redirect revalidated, maximum two redirects
 - 10-second connection and total deadline, 8 MiB response limit, image MIME
   types only
+- image magic bytes must match the declared MIME type; inline data images use
+  the same allowlist, byte limit, strict base64 decoding, and signature checks
 - no caller authentication headers forwarded
 
-OpenAI receives a validated data URL rather than the original arbitrary URL.
+OpenAI and the self-MFS screenshot flow receive a validated data URL rather than
+the original arbitrary URL.
 
 ## Production configuration
 

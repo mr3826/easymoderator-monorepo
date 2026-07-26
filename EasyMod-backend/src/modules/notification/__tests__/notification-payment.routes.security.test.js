@@ -3,7 +3,7 @@
 const express = require('express');
 const request = require('supertest');
 
-const mockOwnerNotification = { findByPk: jest.fn() };
+const mockOwnerNotification = { findByPk: jest.fn(), findOne: jest.fn() };
 const mockUserShop = { findOne: jest.fn() };
 const mockHandleOwnerResponse = jest.fn();
 
@@ -100,5 +100,43 @@ describe('owner payment confirmation route authorization', () => {
             'approve',
             { userId: 'owner-1' },
         );
+    });
+
+    test('generic mark-read cannot complete a pending payment confirmation', async () => {
+        const update = jest.fn();
+        mockOwnerNotification.findOne.mockResolvedValue({
+            id: notificationId,
+            type: 'payment_confirmation',
+            update,
+        });
+
+        const response = await request(app())
+            .patch(`/in-app/${notificationId}/read`);
+
+        expect(response.status).toBe(409);
+        expect(mockOwnerNotification.findOne).toHaveBeenCalledWith({
+            where: { id: notificationId, shop_id: 'shop-1' },
+            attributes: ['id', 'type'],
+        });
+        expect(update).not.toHaveBeenCalled();
+        expect(mockHandleOwnerResponse).not.toHaveBeenCalled();
+    });
+
+    test('generic mark-read still completes a non-payment notification in its shop', async () => {
+        const update = jest.fn().mockResolvedValue(undefined);
+        mockOwnerNotification.findOne.mockResolvedValue({
+            id: notificationId,
+            type: 'escalation',
+            update,
+        });
+
+        const response = await request(app())
+            .patch(`/in-app/${notificationId}/read`);
+
+        expect(response.status).toBe(200);
+        expect(update).toHaveBeenCalledWith({
+            status: 'completed',
+            responded_at: expect.any(Date),
+        });
     });
 });

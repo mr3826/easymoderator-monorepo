@@ -76,6 +76,12 @@ describe('Meta deauthorization and invalid-token recovery', () => {
 
         const result = await service.processDeauthorization('app-user-1');
         expect(result).toMatchObject({ channelsDisabled: 2, repeated: false });
+        expect(mockModels.MetaUserIdentity.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            where: {
+                app_scoped_user_id: 'app-user-1',
+                is_current_connection: true,
+            },
+        }));
         for (const item of [first, second]) {
             expect(item).toMatchObject({
                 status: 'REVOKED',

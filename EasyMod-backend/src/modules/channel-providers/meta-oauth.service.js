@@ -16,6 +16,7 @@
 const crypto = require('crypto');
 const metaChannelService = require('./meta-channel.service');
 const MetaUserIdentity = require('./meta-user-identity.entity');
+const { sequelize } = require('../../utils/database/database-setup');
 const { getProvider } = require('./provider.registry');
 const { createLogger } = require('../../utils/structured-logger');
 const stateStore = require('./oauth-state.store');
@@ -157,11 +158,10 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
 
     const metaIdentity = callbackPayload.metaIdentity;
     if (!metaIdentity?.appScopedUserId) {
-        await metaChannelService.updateStatus(
-            channel.id,
-            'ERROR',
-            'meta_identity_mapping_missing',
-        );
+        await metaChannelService.disconnect(channel.id, {
+            status: 'ERROR',
+            lastError: 'meta_identity_mapping_missing',
+        });
         throw Object.assign(
             new Error('Meta identity could not be bound to this Page. Please reconnect Facebook.'),
             { status: 502, code: 'META_IDENTITY_MAPPING_REQUIRED' },
@@ -171,33 +171,43 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     const pageIdentity = (metaIdentity.pageScopedIdentities || [])
         .find((identity) => String(identity.pageId) === String(assetId));
     try {
-        const [identityRow] = await MetaUserIdentity.findOrCreate({
-            where: {
-                app_scoped_user_id: String(metaIdentity.appScopedUserId),
-                channel_id: channel.id,
-            },
-            defaults: {
-                app_scoped_user_id: String(metaIdentity.appScopedUserId),
+        await sequelize.transaction(async (transaction) => {
+            await MetaUserIdentity.update({
+                is_current_connection: false,
+            }, {
+                where: { channel_id: channel.id },
+                transaction,
+            });
+            const [identityRow] = await MetaUserIdentity.findOrCreate({
+                where: {
+                    app_scoped_user_id: String(metaIdentity.appScopedUserId),
+                    channel_id: channel.id,
+                },
+                defaults: {
+                    app_scoped_user_id: String(metaIdentity.appScopedUserId),
+                    page_scoped_user_id: pageIdentity?.pageScopedUserId || null,
+                    internal_user_id: userId,
+                    shop_id: shopId,
+                    channel_id: channel.id,
+                    source: 'facebook_oauth',
+                    is_current_connection: true,
+                    last_verified_at: new Date(),
+                },
+                transaction,
+            });
+            await identityRow.update({
                 page_scoped_user_id: pageIdentity?.pageScopedUserId || null,
                 internal_user_id: userId,
                 shop_id: shopId,
-                channel_id: channel.id,
-                source: 'facebook_oauth',
+                is_current_connection: true,
                 last_verified_at: new Date(),
-            },
-        });
-        await identityRow.update({
-            page_scoped_user_id: pageIdentity?.pageScopedUserId || null,
-            internal_user_id: userId,
-            shop_id: shopId,
-            last_verified_at: new Date(),
+            }, { transaction });
         });
     } catch (identityErr) {
-        await metaChannelService.updateStatus(
-            channel.id,
-            'ERROR',
-            'meta_identity_mapping_failed',
-        );
+        await metaChannelService.disconnect(channel.id, {
+            status: 'ERROR',
+            lastError: 'meta_identity_mapping_failed',
+        });
         logger.error('Meta identity mapping failed', {
             channelId: channel.id,
             shopId,

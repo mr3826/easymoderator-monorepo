@@ -24,6 +24,14 @@ const IDS = {
     messageWithOrder: '00000000-0000-4000-8000-000000000601',
     messageWithoutOrder: '00000000-0000-4000-8000-000000000602',
     order: '00000000-0000-4000-8000-000000000701',
+    orderSessionWithCustomer: '00000000-0000-4000-8000-000000000711',
+    orderSessionWithPsid: '00000000-0000-4000-8000-000000000712',
+    orderReturn: '00000000-0000-4000-8000-000000000721',
+    supportTicket: '00000000-0000-4000-8000-000000000731',
+    orderInvoice: '00000000-0000-4000-8000-000000000741',
+    deliveryTracking: '00000000-0000-4000-8000-000000000751',
+    trxLog: '00000000-0000-4000-8000-000000000761',
+    linkedPayment: '00000000-0000-4000-8000-000000000771',
     notification: '00000000-0000-4000-8000-000000000801',
     payment: '00000000-0000-4000-8000-000000000901',
 };
@@ -36,6 +44,7 @@ const ATTACHMENT_DIR = path.resolve(
 const ATTACHMENTS = [
     path.join(ATTACHMENT_DIR, 'with-order.txt'),
     path.join(ATTACHMENT_DIR, 'without-order.txt'),
+    path.resolve(__dirname, '../uploads/invoices/phase1-validation/order.pdf'),
 ];
 
 async function query(sql, replacements = []) {
@@ -210,7 +219,9 @@ async function seedBaseline() {
         }
         for (const [id, customerId, channelId] of [
             [IDS.conversationWithOrder, IDS.customerWithOrder, IDS.channelWithOrder],
-            [IDS.conversationWithoutOrder, IDS.customerWithoutOrder, IDS.channelWithoutOrder],
+            // Legacy rows may predate channel ownership. Exact customer/shop
+            // ownership must still be sufficient for compliant deletion.
+            [IDS.conversationWithoutOrder, IDS.customerWithoutOrder, null],
         ]) {
             await sequelize.query(
                 `INSERT INTO conversations (
@@ -262,10 +273,13 @@ async function seedBaseline() {
                 delivery_charge, discount, subtotal, tax, delivery_fee, total,
                 customer_name, customer_phone, delivery_address, delivery_area,
                 delivery_zone, delivery_location, note, notes, payment_method,
-                payment_status, order_status
+                payment_status, order_status, delivery_consignment_id,
+                delivery_tracking_code, idempotency_key, courier_data,
+                tracking_id, metadata
              ) VALUES (
                 ?, ?, ?, ?, 1250.00, 1000.00, 100.00, 50.00, 1200.00, 25.00,
                 75.00, 1250.00, ?, ?, ?, ?, ?, ?, ?, ?, 'bkash', 'paid', 'confirmed'
+                , ?, ?, ?, CAST(? AS JSONB), ?, CAST(? AS JSONB)
              )`,
             {
                 replacements: [
@@ -281,6 +295,192 @@ async function seedBaseline() {
                     'Synthetic location',
                     'Synthetic note',
                     'Synthetic legacy notes',
+                    'phase1-consignment-pii',
+                    'phase1-tracking-pii',
+                    'phase1-idempotency-pii',
+                    JSON.stringify({
+                        customerName: 'Synthetic Customer With Order',
+                        customerPhone: '01700000001',
+                    }),
+                    'phase1-legacy-tracking-pii',
+                    JSON.stringify({ deliveryAddress: 'Synthetic delivery address' }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO order_sessions (
+                id, shop_id, customer_id, customer_channel_id, channel,
+                current_step, step_data, product_info, status, automation_mode,
+                confidence_threshold, last_activity_at, final_summary, metadata
+             ) VALUES (
+                ?, ?, ?, ?, 'messenger', 'COLLECT_ADDRESS', CAST(? AS JSONB),
+                CAST(? AS JSONB), 'ACTIVE', 'DRAFT', 60, NOW(), ?, CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.orderSessionWithCustomer,
+                    IDS.shop,
+                    IDS.customerWithOrder,
+                    PSID_WITH_ORDER,
+                    JSON.stringify({ phone: '01700000001' }),
+                    JSON.stringify({ customerName: 'Synthetic Customer With Order' }),
+                    'Synthetic customer address',
+                    JSON.stringify({ deliveryAddress: 'Synthetic delivery address' }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO order_sessions (
+                id, shop_id, customer_id, customer_channel_id, channel,
+                current_step, step_data, status, automation_mode,
+                confidence_threshold, last_activity_at, metadata
+             ) VALUES (
+                ?, ?, NULL, ?, 'messenger', 'INITIAL', CAST(? AS JSONB),
+                'ACTIVE', 'DRAFT', 60, NOW(), CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.orderSessionWithPsid,
+                    IDS.shop,
+                    PSID_WITHOUT_ORDER,
+                    JSON.stringify({ email: 'without-order@example.invalid' }),
+                    JSON.stringify({ psid: PSID_WITHOUT_ORDER }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO order_returns (
+                id, order_id, customer_id, reason, items, description, status
+             ) VALUES (?, ?, ?, 'customer_request', CAST(? AS JSONB), ?, 'pending_approval')`,
+            {
+                replacements: [
+                    IDS.orderReturn,
+                    IDS.order,
+                    IDS.customerWithOrder,
+                    JSON.stringify([{ sku: 'SYNTHETIC-SKU', quantity: 1 }]),
+                    'Synthetic customer return description',
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO support_tickets (
+                id, ticket_number, tenant_id, shop_id, customer_id,
+                conversation_id, priority, category, description, status, metadata
+             ) VALUES (
+                ?, 'PHASE1-SYNTHETIC-TICKET', ?, ?, ?, ?, 'high', 'order',
+                ?, 'open', CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.supportTicket,
+                    IDS.tenant,
+                    IDS.shop,
+                    IDS.customerWithOrder,
+                    IDS.conversationWithOrder,
+                    'Synthetic customer phone 01700000001',
+                    JSON.stringify({ email: 'with-order@example.invalid' }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO order_invoices (
+                id, order_id, shop_id, invoice_number, pdf_url, status,
+                customer_info, order_data, payment_info, delivery_info
+             ) VALUES (
+                ?, ?, ?, 'PHASE1-SYNTHETIC-INVOICE',
+                '/uploads/invoices/phase1-validation/order.pdf', 'generated',
+                CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.orderInvoice,
+                    IDS.order,
+                    IDS.shop,
+                    JSON.stringify({
+                        name: 'Synthetic Customer With Order',
+                        phone: '01700000001',
+                    }),
+                    JSON.stringify({
+                        order_number: 'PHASE1-SYNTHETIC-ORDER',
+                        customer_name: 'Synthetic Customer With Order',
+                        customer_phone: '01700000001',
+                        items: [{ sku: 'SYNTHETIC-SKU', total: '1200.00' }],
+                        subtotal: '1200.00',
+                        tax: '25.00',
+                        delivery_fee: '75.00',
+                        total: '1250.00',
+                        payment_method: 'bkash',
+                        payment_status: 'paid',
+                    }),
+                    JSON.stringify({ transactionId: 'phase1-synthetic-trx', amount: '1250.00' }),
+                    JSON.stringify({ address: 'Synthetic delivery address' }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO delivery_tracking (
+                id, order_id, provider, tracking_number, current_status,
+                previous_status, status_history, location_info, delivery_agent_info
+             ) VALUES (
+                ?, ?, 'pathao', 'PHASE1-TRACKING-PII', 'in_transit', 'picked_up',
+                CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.deliveryTracking,
+                    IDS.order,
+                    JSON.stringify([{
+                        status: 'picked_up',
+                        timestamp: '2026-07-23T00:00:00.000Z',
+                        location: 'Synthetic customer neighborhood',
+                        customerPhone: '01700000001',
+                    }]),
+                    JSON.stringify({ address: 'Synthetic customer neighborhood' }),
+                    JSON.stringify({ name: 'Synthetic Agent', phone: '01800000000' }),
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO trx_id_logs (
+                id, shop_id, order_id, trx_id, mfs_type, amount,
+                sender_phone, receiver_phone, ocr_raw
+             ) VALUES (?, ?, ?, 'PHASE1-SYNTHETIC-TRX', 'bkash', 1250.00, ?, ?, ?)`,
+            {
+                replacements: [
+                    IDS.trxLog,
+                    IDS.shop,
+                    IDS.order,
+                    '01700000001',
+                    '01900000000',
+                    'Synthetic OCR included sender 01700000001',
+                ],
+                ...options,
+            },
+        );
+        await sequelize.query(
+            `INSERT INTO payment_transactions (
+                id, order_id, shop_id, payment_method, payment_gateway,
+                transaction_id, amount, status, gateway_response
+             ) VALUES (
+                ?, ?, ?, 'bkash', 'bkash', 'PHASE1-LINKED-PAYMENT', 1250.00,
+                'paid', CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.linkedPayment,
+                    IDS.order,
+                    IDS.shop,
+                    JSON.stringify({
+                        payerPhone: '01700000001',
+                        payerName: 'Synthetic Customer With Order',
+                    }),
                 ],
                 ...options,
             },
@@ -342,6 +542,26 @@ async function seedBaseline() {
                 ...options,
             },
         );
+        await sequelize.query(
+            `INSERT INTO audit_logs (
+                shop_id, user_id, action, resource_type, resource_id,
+                old_values, new_values, metadata
+             ) VALUES (
+                ?, ?, 'phase1_synthetic_customer_update', 'customer', ?,
+                CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB)
+             )`,
+            {
+                replacements: [
+                    IDS.shop,
+                    IDS.user,
+                    IDS.customerWithOrder,
+                    JSON.stringify({ phone: '01700000001' }),
+                    JSON.stringify({ email: 'with-order@example.invalid' }),
+                    JSON.stringify({ customerName: 'Synthetic Customer With Order' }),
+                ],
+                ...options,
+            },
+        );
     });
 
     console.log(JSON.stringify({
@@ -354,7 +574,8 @@ async function seedBaseline() {
         customersWithoutOrders: 1,
         conversations: 2,
         messages: 2,
-        attachmentsRepresented: 2,
+        attachmentsRepresented: 3,
+        residualPiiStoresRepresented: 8,
     }));
 }
 
@@ -390,6 +611,7 @@ async function verifyComplianceSchema() {
         'meta_user_identities.shop_id',
         'meta_user_identities.channel_id',
         'meta_user_identities.source',
+        'meta_user_identities.is_current_connection',
         'meta_user_identities.last_verified_at',
         'meta_data_deletion_requests.request_fingerprint',
         'meta_data_deletion_requests.identity_hash',
@@ -397,6 +619,7 @@ async function verifyComplianceSchema() {
         'meta_data_deletion_requests.status',
         'meta_data_deletion_requests.pending_attachment_paths',
         'meta_data_deletion_requests.data_phase_completed_at',
+        'meta_data_deletion_requests.processing_token',
         'meta_data_deletion_requests.completed_at',
     ]) {
         assert.ok(columnMap.has(required), `Missing column ${required}`);
@@ -412,6 +635,26 @@ async function verifyComplianceSchema() {
     assert.match(
         columnMap.get('meta_user_identities.last_verified_at').column_default,
         /now\(\)/i,
+    );
+    assert.equal(
+        columnMap.get('meta_user_identities.is_current_connection').data_type,
+        'boolean',
+    );
+    assert.equal(
+        columnMap.get('meta_user_identities.is_current_connection').is_nullable,
+        'NO',
+    );
+    assert.match(
+        columnMap.get('meta_user_identities.is_current_connection').column_default,
+        /false/i,
+    );
+    assert.equal(
+        columnMap.get('meta_data_deletion_requests.processing_token').data_type,
+        'character varying',
+    );
+    assert.equal(
+        columnMap.get('meta_data_deletion_requests.processing_token').is_nullable,
+        'YES',
     );
     assert.match(
         columnMap.get('meta_data_deletion_requests.status').column_default,
@@ -442,6 +685,7 @@ async function verifyComplianceSchema() {
     `), 'index_name');
     for (const indexName of [
         'uq_meta_user_identities_app_channel',
+        'uq_meta_user_identities_current_channel',
         'idx_meta_user_identities_shop_psid',
         'idx_meta_user_identities_internal_user',
         'idx_meta_deletion_identity_hash',
@@ -452,6 +696,10 @@ async function verifyComplianceSchema() {
     assert.match(
         indexes.get('uq_meta_user_identities_app_channel').definition,
         /UNIQUE/i,
+    );
+    assert.match(
+        indexes.get('uq_meta_user_identities_current_channel').definition,
+        /UNIQUE.*\(channel_id\).*WHERE \(is_current_connection = true\)/i,
     );
 
     const constraints = await query(`
@@ -483,9 +731,9 @@ async function verifyComplianceSchema() {
     return {
         tablesVerified: 2,
         columnsVerified: columns.length,
-        indexesVerified: 5,
+        indexesVerified: 6,
         foreignKeysVerified: 3,
-        uniqueControlsVerified: 3,
+        uniqueControlsVerified: 4,
         enumLabelsVerified: enumRows.length,
     };
 }
@@ -499,6 +747,7 @@ async function createIdentityMappings() {
             internal_user_id: IDS.user,
             shop_id: IDS.shop,
             channel_id: IDS.channelWithOrder,
+            is_current_connection: true,
         }),
         MetaUserIdentity.create({
             app_scoped_user_id: APP_SCOPED_USER_ID,
@@ -506,6 +755,7 @@ async function createIdentityMappings() {
             internal_user_id: IDS.user,
             shop_id: IDS.shop,
             channel_id: IDS.channelWithoutOrder,
+            is_current_connection: true,
         }),
     ]);
     assert.equal(mappings.length, 2);
@@ -516,6 +766,7 @@ async function createIdentityMappings() {
             internal_user_id: IDS.user,
             shop_id: IDS.shop,
             channel_id: IDS.channelWithOrder,
+            is_current_connection: true,
         }),
         /unique|duplicate/i,
     );
@@ -550,7 +801,8 @@ async function verifyUpAndSyntheticDeletion() {
         ready: true,
     });
 
-    await fs.mkdir(ATTACHMENT_DIR, { recursive: true });
+    await Promise.all(ATTACHMENTS.map((file) =>
+        fs.mkdir(path.dirname(file), { recursive: true })));
     await Promise.all(ATTACHMENTS.map((file) => fs.writeFile(file, 'synthetic', 'utf8')));
 
     const result = await complianceService.processDeletionRequest({
@@ -563,7 +815,7 @@ async function verifyUpAndSyntheticDeletion() {
     assert.equal(result.request.conversations_deleted_count, 2);
     assert.equal(result.request.messages_deleted_count, 2);
     assert.equal(result.request.orders_anonymized_count, 1);
-    assert.equal(result.request.attachments_deleted_count, 2);
+    assert.equal(result.request.attachments_deleted_count, 3);
 
     const status = await complianceService.getDeletionStatus(result.confirmationCode);
     assert.deepEqual({
@@ -603,10 +855,27 @@ async function verifyUpAndSyntheticDeletion() {
     assert.equal(messageCount, 0);
     assert.equal(preferenceCount, 0);
     assert.equal(deliveryStatsCount, 0);
+    for (const [tableName, whereClause, replacements] of [
+        [
+            'order_sessions',
+            '(customer_id = ? OR customer_channel_id IN (?, ?))',
+            [IDS.customerWithOrder, PSID_WITH_ORDER, PSID_WITHOUT_ORDER],
+        ],
+        ['order_returns', 'id = ?', [IDS.orderReturn]],
+        ['support_tickets', 'id = ?', [IDS.supportTicket]],
+    ]) {
+        const [{ count }] = await query(
+            `SELECT COUNT(*)::int AS count FROM ${tableName} WHERE ${whereClause}`,
+            replacements,
+        );
+        assert.equal(count, 0, `Expected ${tableName} subject rows to be removed`);
+    }
 
     const [order] = await query(`
         SELECT customer_id, customer_name, customer_phone, delivery_address,
                delivery_area, delivery_zone, delivery_location, note, notes,
+               delivery_consignment_id, delivery_tracking_code, idempotency_key,
+               courier_data, tracking_id, metadata,
                total_amount::text, cod_amount::text, delivery_charge::text,
                discount::text, subtotal::text, tax::text, delivery_fee::text,
                total::text, payment_status, order_status, order_number
@@ -623,6 +892,12 @@ async function verifyUpAndSyntheticDeletion() {
         'delivery_location',
         'note',
         'notes',
+        'delivery_consignment_id',
+        'delivery_tracking_code',
+        'idempotency_key',
+        'courier_data',
+        'tracking_id',
+        'metadata',
     ]) {
         assert.equal(order[field], null, `Expected order.${field} to be anonymized`);
     }
@@ -662,6 +937,63 @@ async function verifyUpAndSyntheticDeletion() {
     assert.equal(notification.customer_data.customerName, undefined);
     assert.equal(notification.customer_data.customerPhone, undefined);
     assert.equal(notification.customer_data.screenshotUrl, undefined);
+
+    const [invoice] = await query(`
+        SELECT pdf_url, customer_info, delivery_info, order_data,
+               payment_info, invoice_number
+        FROM order_invoices WHERE id = ?
+    `, [IDS.orderInvoice]);
+    assert.equal(invoice.pdf_url, null);
+    assert.equal(invoice.customer_info, null);
+    assert.equal(invoice.delivery_info, null);
+    assert.equal(invoice.order_data.customerDeleted, true);
+    assert.equal(invoice.order_data.customer_name, undefined);
+    assert.equal(invoice.order_data.customer_phone, undefined);
+    assert.equal(invoice.order_data.total, '1250.00');
+    assert.equal(invoice.invoice_number, 'PHASE1-SYNTHETIC-INVOICE');
+    assert.equal(invoice.payment_info.amount, '1250.00');
+
+    const [tracking] = await query(`
+        SELECT tracking_number, current_status, status_history,
+               location_info, delivery_agent_info
+        FROM delivery_tracking WHERE id = ?
+    `, [IDS.deliveryTracking]);
+    assert.equal(tracking.tracking_number, `deleted-${IDS.deliveryTracking}`);
+    assert.equal(tracking.current_status, 'in_transit');
+    assert.equal(tracking.location_info, null);
+    assert.equal(tracking.delivery_agent_info, null);
+    assert.deepEqual(tracking.status_history, [{
+        status: 'picked_up',
+        timestamp: '2026-07-23T00:00:00.000Z',
+    }]);
+
+    const [trxLog] = await query(`
+        SELECT trx_id, amount::text, sender_phone, receiver_phone, ocr_raw
+        FROM trx_id_logs WHERE id = ?
+    `, [IDS.trxLog]);
+    assert.equal(trxLog.trx_id, 'PHASE1-SYNTHETIC-TRX');
+    assert.equal(trxLog.amount, '1250.00');
+    assert.equal(trxLog.sender_phone, null);
+    assert.equal(trxLog.receiver_phone, '01900000000');
+    assert.equal(trxLog.ocr_raw, null);
+
+    const [linkedPayment] = await query(`
+        SELECT transaction_id, amount::text, status, gateway_response
+        FROM payment_transactions WHERE id = ?
+    `, [IDS.linkedPayment]);
+    assert.equal(linkedPayment.transaction_id, 'PHASE1-LINKED-PAYMENT');
+    assert.equal(linkedPayment.amount, '1250.00');
+    assert.equal(linkedPayment.status, 'paid');
+    assert.equal(linkedPayment.gateway_response, null);
+
+    const [subjectAudit] = await query(`
+        SELECT old_values, new_values, metadata
+        FROM audit_logs
+        WHERE action = 'phase1_synthetic_customer_update'
+    `);
+    assert.equal(subjectAudit.old_values, null);
+    assert.equal(subjectAudit.new_values, null);
+    assert.deepEqual(subjectAudit.metadata, { subjectDeleted: true });
 
     const consentRows = await query(`
         SELECT event, source, customer_id
@@ -730,8 +1062,9 @@ async function verifyUpAndSyntheticDeletion() {
             conversationsDeleted: 2,
             messagesDeleted: 2,
             ordersAnonymized: 1,
-            attachmentsDeleted: 2,
+            attachmentsDeleted: 3,
             retainedFinancialOrder: true,
+            residualPiiStoresVerified: 8,
         },
         stalePaymentReport: {
             total: paymentReport.total,
@@ -780,6 +1113,7 @@ async function verifyReapply() {
         internal_user_id: IDS.user,
         shop_id: IDS.shop,
         channel_id: IDS.channelWithOrder,
+        is_current_connection: true,
     });
     assert.equal(mapping.source, 'facebook_oauth');
     assert.ok(mapping.last_verified_at);

@@ -425,14 +425,21 @@ class MetaChannelService {
      * @param {string} channelId
      * @returns {Promise<MetaChannel>}
      */
-    async disconnect(channelId) {
+    async disconnect(channelId, {
+        status = 'DISCONNECTED',
+        lastError = null,
+    } = {}) {
+        if (!VALID_STATUSES.includes(status)) {
+            throw new Error(`MetaChannelService.disconnect: invalid status "${status}"`);
+        }
         const channel = await MetaChannel.findByPk(channelId);
         if (!channel) throw new Error(`MetaChannelService.disconnect: channel ${channelId} not found`);
 
-        channel.status = 'DISCONNECTED';
+        channel.status = status;
         channel.page_access_token_ct = null;
+        channel.token_expires_at = null;
         channel.disconnected_at = new Date();
-        channel.last_error = null;
+        channel.last_error = lastError;
         await channel.save();
 
         // Best-effort: drain queued jobs for this channel. Non-fatal — if Redis
