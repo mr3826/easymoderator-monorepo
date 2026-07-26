@@ -1,4 +1,20 @@
 const axios = require('axios');
+const { AppError } = require('../../utils/AppError');
+
+/**
+ * bKash is a live-money integration. It is OFF unless it is switched on AND
+ * every merchant credential is present — a half-configured gateway must never
+ * reach the network, and no surface may imply a customer can pay.
+ *
+ * Read at call time rather than construction time so a config change does not
+ * require a restart to take effect, and so a module imported at boot cannot
+ * capture a stale "enabled" verdict.
+ */
+function isBkashEnabled(env = process.env) {
+    if (String(env.BKASH_ENABLED || '').toLowerCase() !== 'true') return false;
+    return ['BKASH_BASE_URL', 'BKASH_USERNAME', 'BKASH_PASSWORD', 'BKASH_APP_KEY', 'BKASH_APP_SECRET']
+        .every((name) => Boolean(env[name]));
+}
 
 class BangladeshPaymentService {
     constructor() {
@@ -12,10 +28,27 @@ class BangladeshPaymentService {
         };
     }
 
+    /** @returns {boolean} */
+    static isEnabled() {
+        return isBkashEnabled();
+    }
+
+    /**
+     * Single choke point for every bKash network call. Throws before any HTTP
+     * request when the gateway is disabled, so a disabled deployment cannot
+     * initiate, verify, or refund a real payment.
+     */
+    assertEnabled() {
+        if (!isBkashEnabled()) {
+            throw new AppError('bKash payments are not available', 503);
+        }
+    }
+
     /**
      * Initialize bKash payment
      */
     async initializeBkashPayment(orderData) {
+        this.assertEnabled();
         const {
             order_id,
             amount,
@@ -70,6 +103,7 @@ class BangladeshPaymentService {
      * Verify bKash payment
      */
     async verifyBkashPayment(payment_id) {
+        this.assertEnabled();
         const token = await this.getBkashToken();
 
         const response = await axios.post(
@@ -111,6 +145,7 @@ class BangladeshPaymentService {
      * Get bKash OAuth token
      */
     async getBkashToken() {
+        this.assertEnabled();
         const response = await axios.post(
             `${this.bkashConfig.baseUrl}/checkout/token/grant`,
             { app_key: this.bkashConfig.appKey, app_secret: this.bkashConfig.appSecret },
@@ -159,6 +194,7 @@ class BangladeshPaymentService {
      * Refund bKash payment
      */
     async refundBkashPayment(payment_id, amount, reason) {
+        this.assertEnabled();
         const token = await this.getBkashToken();
 
         const response = await axios.post(
@@ -198,7 +234,7 @@ class BangladeshPaymentService {
                 method: 'bKash',
                 display_name: 'bKash',
                 icon: '/icons/bkash.png',
-                enabled: !!this.bkashConfig.appKey,
+                enabled: isBkashEnabled(),
                 description: 'Pay with bKash mobile wallet'
             }
         ];
@@ -206,6 +242,7 @@ class BangladeshPaymentService {
 
     validatePaymentConfig() {
         const issues = [];
+        if (!isBkashEnabled()) issues.push('bKash is disabled (BKASH_ENABLED is not "true")');
         if (!this.bkashConfig.appKey) issues.push('bKash app key not configured');
         if (!this.bkashConfig.appSecret) issues.push('bKash app secret not configured');
         return { valid: issues.length === 0, issues };
@@ -213,3 +250,4 @@ class BangladeshPaymentService {
 }
 
 module.exports = BangladeshPaymentService;
+module.exports.isBkashEnabled = isBkashEnabled;

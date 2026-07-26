@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+import { isBkashEnabled } from "@/app/lib/config";
 
 const IS_SANDBOX = import.meta.env.VITE_BKASH_SANDBOX === "true" ||
   import.meta.env.VITE_ENV === "development" ||
@@ -36,6 +37,28 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
   const { t } = useTranslation();
   const [selectedPack, setSelectedPack] = useState<number | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
+
+  // bKash is off for the controlled pilot (launch remediation, §6). Show an
+  // honest unavailable state — never a purchase button that the backend would
+  // reject with 503.
+  if (!isBkashEnabled()) {
+    return (
+      <div
+        data-testid="bkash-unavailable"
+        className="bg-card rounded-xl border border-border p-5 space-y-2"
+      >
+        <h3 className="text-base font-semibold text-foreground font-bn">
+          {t("subscription.buyConvPack", "Conversation Pack কিনুন")}
+        </h3>
+        <p className="text-sm text-muted-foreground font-bn">
+          {t(
+            "subscription.bkashUnavailable",
+            "bKash payment এখন available নয়। আপনার trial চলাকালীন সব feature ব্যবহার করতে পারবেন।"
+          )}
+        </p>
+      </div>
+    );
+  }
 
   const handleRequestInvoice = async () => {
     if (!selectedPack) return;
