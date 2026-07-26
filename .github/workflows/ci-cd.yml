@@ -339,10 +339,35 @@ jobs:
             fi
             echo "==> Disk usage after reclaim:"
             df -h / || true
-            # Redis latches stop-writes after a failed save; once disk is free a
-            # restart clears the latch so it can persist again (safe: a WIPE run
-            # flushes it anyway, and a normal run only loses nothing on restart).
-            docker compose --env-file .env.prod -f docker-compose.prod.yml restart redis 2>/dev/null || true
+            # A disk-full crash can corrupt Redis's append-only file, so the
+            # container crash-loops and never passes its `redis-cli ping`
+            # healthcheck. Because backend/worker/db:sync all wait on
+            # `redis: condition: service_healthy`, that silently aborts the whole
+            # deploy. Recover by resetting the persistence volume so Redis starts
+            # clean. On a WIPE run this is always correct (clean first-run state);
+            # otherwise only reset when Redis is genuinely unhealthy.
+            reset_redis_volume() {
+              docker compose --env-file .env.prod -f docker-compose.prod.yml rm -sf redis 2>/dev/null || true
+              RVOL=$(docker volume ls -q | grep -E 'redis_data$' | head -1 || true)
+              if [ -n "$RVOL" ]; then docker volume rm "$RVOL" 2>/dev/null || true; fi
+            }
+            if [ "$WIPE_DB" = "WIPE" ]; then
+              echo "==> WIPE run: resetting Redis persistence volume for a clean start"
+              reset_redis_volume
+            else
+              docker compose --env-file .env.prod -f docker-compose.prod.yml restart redis 2>/dev/null || true
+              RSTATE=starting
+              for k in $(seq 1 8); do
+                RSTATE=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-redis-1 2>/dev/null || echo missing)
+                [ "$RSTATE" = "healthy" ] && break
+                [ "$RSTATE" = "unhealthy" ] && break
+                sleep 5
+              done
+              if [ "$RSTATE" != "healthy" ]; then
+                echo "==> Redis $RSTATE — resetting its persistence volume to recover"
+                reset_redis_volume
+              fi
+            fi
 
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
