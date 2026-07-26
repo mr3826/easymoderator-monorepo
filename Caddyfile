@@ -1,7 +1,7 @@
 # EasyModerator Caddyfile
 # Canonical origin: https://easymod.tech (apex)
 # www → apex 301 redirect
-# /api/*, /uploads/*, and /webhooks/* → backend
+# /health, /health/*, /api/*, /uploads/*, and /webhooks/* → backend
 # Everything else → SPA (frontend served inline via file_server)
 #
 # Caddy auto-obtains and renews TLS certs via Let's Encrypt.
@@ -9,52 +9,67 @@
 
 # www → apex permanent redirect
 www.easymod.tech {
-    redir https://easymod.tech{uri} 301
+	redir https://easymod.tech{uri} 301
 }
 
 easymod.tech {
-    # ── Backend proxy: API + Webhooks ────────────────────────────────────────
-    handle /api/* {
-        reverse_proxy backend:3000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-            # Generous timeouts for SSE + long-running AI calls
-            transport http {
-                read_timeout 120s
-                write_timeout 120s
-            }
-        }
-    }
+	# ── Health probes → REAL backend ─────────────────────────────────────────
+	# These MUST reach the API. Before this block existed, /health* fell through
+	# to the SPA container, which answered with a hardcoded {"status":"healthy"}
+	# stub — so the external launch gate reported PASS for a backend it had never
+	# contacted (F-05). Declared first and matched explicitly so it can never be
+	# shadowed by the catch-all again.
+	@health path /health /health/*
+	handle @health {
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 
-    # Legacy /webhooks/* paths → 301 to canonical /api/webhooks/* so any old
-    # Meta dashboard registrations or external callers still resolve.
-    redir /webhooks/* /api{uri} 301
+	# ── Backend proxy: API + Webhooks ────────────────────────────────────────
+	handle /api/* {
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			# Generous timeouts for SSE + long-running AI calls
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
 
-    # ── Backend-uploaded media ───────────────────────────────────────────────
-    # Shared Inbox outbound attachments are stored on the backend upload volume
-    # and must be publicly fetchable by Meta Messenger over HTTPS.
-    handle /uploads/* {
-        reverse_proxy backend:3000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
+	# Legacy /webhooks/* paths → 301 to canonical /api/webhooks/* so any old
+	# Meta dashboard registrations or external callers still resolve.
+	redir /webhooks/* /api{uri} 301
 
-    # ── SPA: serve built static files ────────────────────────────────────────
-    # The frontend image is NOT used here for Caddy deployments.
-    # Build the frontend and mount /app/dist as a Caddy volume, OR
-    # proxy to the internal nginx frontend container at port 8080.
-    #
-    # We proxy to the nginx frontend container (consistent with docker-compose).
-    handle {
-        reverse_proxy frontend:8080
-    }
+	# ── Backend-uploaded media ───────────────────────────────────────────────
+	# Shared Inbox outbound attachments are stored on the backend upload volume
+	# and must be publicly fetchable by Meta Messenger over HTTPS.
+	handle /uploads/* {
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 
-    # ── Logging ───────────────────────────────────────────────────────────────
-    log {
-        output stdout
-        format json
-    }
+	# ── SPA: serve built static files ────────────────────────────────────────
+	# The frontend image is NOT used here for Caddy deployments.
+	# Build the frontend and mount /app/dist as a Caddy volume, OR
+	# proxy to the internal nginx frontend container at port 8080.
+	#
+	# We proxy to the nginx frontend container (consistent with docker-compose).
+	handle {
+		reverse_proxy frontend:8080
+	}
+
+	# ── Logging ───────────────────────────────────────────────────────────────
+	log {
+		output stdout
+		format json
+	}
 }

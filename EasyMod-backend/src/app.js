@@ -218,9 +218,19 @@ app.get('/', (req, res) => {
     res.send('welcome to EasyModerator API server');
 });
 
-// This tells AWS: "Yes, I am alive and working!"
+// Liveness + release identity. `service: 'easymod-backend'` is the field callers
+// use to prove the response came from the API and not from a reverse-proxy or
+// static-host stub; `commit` proves WHICH build is serving. Both are required by
+// the launch-readiness gate, which must never accept a 200 on its own.
 app.get('/health', (req, res) => {
-    res.status(200).send('OK');
+    res.status(200).json({
+        service: 'easymod-backend',
+        status: 'ok',
+        commit: process.env.GIT_SHA || null,
+        builtAt: process.env.BUILD_TIME || null,
+        version: process.env.APP_VERSION || null,
+        timestamp: new Date().toISOString(),
+    });
 });
 
 // Sentry request handler (no-op until SENTRY_DSN is set)
