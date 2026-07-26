@@ -286,7 +286,7 @@ jobs:
           BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
           MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
 
-      - name: Copy .env.prod to droplet
+      - name: Copy .env.prod and deploy config to droplet
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
@@ -294,7 +294,14 @@ jobs:
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
           ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
           scp -i ~/.ssh/deploy_key _tmp/.env.prod root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/.env.prod
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod'
+          # Sync compose + Caddy config straight from the runner's checkout. The
+          # droplet has no GitHub auth, so its `git fetch` (in the deploy script)
+          # silently failed and left STALE config on disk — which is why the F-05
+          # `/health* -> backend` routing never reached production. scp makes the
+          # runner the single source of truth for these two files.
+          scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/docker-compose.prod.yml
+          scp -i ~/.ssh/deploy_key Caddyfile root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/Caddyfile
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -312,9 +319,30 @@ jobs:
 
             cd /opt/easymod
 
-            # Sync compose + Caddy config from repo (already checked out on runner,
-            # but we pull directly on the droplet to keep files in sync)
-            git -C /opt/easymod fetch origin main && git -C /opt/easymod checkout origin/main -- docker-compose.prod.yml Caddyfile 2>/dev/null || true
+            # docker-compose.prod.yml and Caddyfile are synced from the runner via
+            # scp in the previous step (the droplet has no GitHub auth), so no git
+            # pull is attempted here — that call always failed and left stale config.
+
+            # ── Reclaim disk BEFORE pulling images ───────────────────────────────
+            # The droplet ran out of space (accumulated deploy images + local DB
+            # backups). That both failed `docker pull` and blocked Redis
+            # persistence (stop-writes-on-bgsave-error -> API 500s). Free space
+            # first so the pull and the running services can recover.
+            echo "==> Disk usage before reclaim:"
+            df -h / || true
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker container prune -f || true
+            # Keep only the 3 newest local backups; the durable copy is off-site.
+            if [ -d /opt/easymod/backups ]; then
+              ls -1t /opt/easymod/backups/* 2>/dev/null | tail -n +4 | xargs -r rm -f || true
+            fi
+            echo "==> Disk usage after reclaim:"
+            df -h / || true
+            # Redis latches stop-writes after a failed save; once disk is free a
+            # restart clears the latch so it can persist again (safe: a WIPE run
+            # flushes it anyway, and a normal run only loses nothing on restart).
+            docker compose --env-file .env.prod -f docker-compose.prod.yml restart redis 2>/dev/null || true
 
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
@@ -430,6 +458,15 @@ jobs:
 
             # Restart services with latest images
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
+
+            # The Caddyfile is bind-mounted read-only, so `up -d` will NOT restart
+            # Caddy just because the file's contents changed. Reload it explicitly
+            # so the F-05 `/health* -> backend` routing actually takes effect.
+            echo "==> Reloading Caddy with synced config"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T caddy \
+              caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+              || docker compose --env-file .env.prod -f docker-compose.prod.yml restart caddy \
+              || true
 
             # Idempotent production review account seed. Requires exact SEED input
             # so normal deploys do not reset credentials or grant admin access.
