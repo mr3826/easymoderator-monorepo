@@ -30,6 +30,7 @@ Exit code `0` = all hard gates pass. The script prints PASS/FAIL per gate.
 | 7 | **≥10 shops activated** — 10 real shops reached their first successful AI reply | `launch-readiness.js` gate 5 (`/api/analytics/growth` → `totals.activated`) | Auto |
 | 8 | **Alerting actually reaches a human** — `SLACK_ALERT_WEBHOOK_URL` and/or `SENTRY_DSN` set in prod and a test alert was received | Trigger a test alert; confirm receipt | Eng |
 | 9 | **Shared Inbox upload volume ready** — outbound attachments persist on the droplet and are publicly reachable for Meta Messenger | Manual upload smoke test below | Eng |
+| 10 | **Meta deletion identity coverage ready** — every connected active pilot/reviewer Page has a legitimate app-scoped/Page-scoped identity mapping | `GET /api/admin/meta-identity-readiness` reports `connectedChannelsMissingMappings: 0`; reconnect missing channels before Meta submission/public launch | Eng |
 
 ## Informational (track, not blocking)
 
@@ -44,6 +45,8 @@ For each of the 10 pilot shops:
 
 1. Sign up → the **Onboarding Wizard** opens automatically.
 2. **Connect** the Facebook Page (wizard step 1).
+   - Confirm the aggregate Meta identity-readiness diagnostic still has zero
+     connected channels missing mappings.
 3. Add 3–5 products (step 2).
 4. Review shop profile delivery/payment defaults and keep AI mode on **DRAFT** for the first 7–14 days.
 5. Send a test customer message and confirm an AI reply is produced.
@@ -97,5 +100,6 @@ Then verify the live Shared Inbox flow with a Facebook Page tester:
 - [ ] Gate 7 — ≥10 shops activated
 - [ ] Gate 8 — Alerting verified reaching a human
 - [ ] Gate 9 — Shared Inbox upload volume + attachment round-trip verified
+- [ ] Gate 10 — All connected pilot/reviewer Meta channels have valid identity mappings
 
 **Launch approved by:** ______________________  **Date:** ____________

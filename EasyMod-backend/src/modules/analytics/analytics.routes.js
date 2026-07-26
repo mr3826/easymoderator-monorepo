@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { body } = require('express-validator');
 const AnalyticsController = require('./analytics.controller');
 const growthMetrics = require('./growth-metrics.service');
@@ -7,11 +8,20 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
 const router = express.Router();
+const knowledgeGapWriteLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Validation middleware
 const validateKnowledgeGap = [
-    body('question').notEmpty().withMessage('question is required'),
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('question')
+        .trim()
+        .notEmpty().withMessage('question is required')
+        .isLength({ max: 1000 }).withMessage('question must not exceed 1000 characters'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('platform').isIn(['messenger']).withMessage('Invalid platform'),
     body('language').optional().isIn(['en', 'bn', 'mixed']).withMessage('Invalid language')
 ];
@@ -71,7 +81,13 @@ router.get('/', authenticate, async (req, res) => {
  * POST /api/analytics/knowledge-gap
  * Log knowledge gaps when FAQ handler can't answer
  */
-router.post('/knowledge-gap', validateKnowledgeGap, AnalyticsController.logKnowledgeGap);
+router.post(
+    '/knowledge-gap',
+    authenticate,
+    knowledgeGapWriteLimiter,
+    validateKnowledgeGap,
+    AnalyticsController.logKnowledgeGap,
+);
 
 // GET /api/analytics/knowledge-gap — authenticated, scoped to the logged-in shop
 router.get('/knowledge-gap', authenticate, AnalyticsController.getKnowledgeGaps);

@@ -20,7 +20,7 @@
  *   RUN_WORKER=true node src/jobs/message-worker.js
  */
 
-const { Worker, Queue } = require('bullmq');
+const { Worker, Queue, UnrecoverableError } = require('bullmq');
 const { connection } = require('./message-queue');
 const { cacheRedis } = require('../config/redis');
 const { opsAlert } = require('../utils/ops-alert');
@@ -641,6 +641,11 @@ async function processMessageJob(job) {
         if (err.retryAfterMs) {
             await job.moveToDelayed(Date.now() + err.retryAfterMs, job.token);
             return { delayed: true, reason: 'meta_rate_limit', retryAfterMs: err.retryAfterMs };
+        }
+        if (err.code === 'META_AUTHORIZATION_REQUIRED') {
+            throw new UnrecoverableError(
+                'Meta authorization is invalid; reconnect is required before delivery can resume',
+            );
         }
         throw err; // Other send errors bubble up for normal retry/DLQ handling
     }

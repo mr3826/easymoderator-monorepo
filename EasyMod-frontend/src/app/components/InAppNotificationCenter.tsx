@@ -14,6 +14,19 @@ function notificationTime(notification: OwnerNotification) {
   return new Date(value).toLocaleString();
 }
 
+// Payment confirmations are completed by an explicit approve/reject action, not by
+// marking them read. The API rejects generic mark-read for them with a 409.
+function requiresOwnerAction(notification: OwnerNotification) {
+  return notification.type === "payment_confirmation";
+}
+
+function actionLink(notification: OwnerNotification) {
+  const deepLink = notification.customer_data?.deepLink;
+  if (deepLink) return String(deepLink);
+  const orderId = notification.customer_data?.orderId;
+  return orderId ? `/app/orders?orderId=${encodeURIComponent(String(orderId))}` : null;
+}
+
 export default function InAppNotificationCenter() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,8 +59,14 @@ export default function InAppNotificationCenter() {
   };
 
   const markRead = async (id: string) => {
-    await markInAppNotificationRead(id);
-    setNotifications(current => current.map(item => item.id === id ? { ...item, status: "completed" } : item));
+    try {
+      await markInAppNotificationRead(id);
+      setNotifications(current => current.map(item => item.id === id ? { ...item, status: "completed" } : item));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update notification");
+      // The server rejected the change, so resync rather than leave a stale row on screen.
+      await load();
+    }
   };
 
   return (
@@ -81,7 +100,8 @@ export default function InAppNotificationCenter() {
                 <div className="px-4 py-8 text-center text-sm text-gray-500">No notifications</div>
               ) : (
                 notifications.map((notification) => {
-                  const deepLink = notification.customer_data?.deepLink;
+                  const deepLink = actionLink(notification);
+                  const ownerActionRequired = requiresOwnerAction(notification);
                   return (
                     <div key={notification.id} className="border-b border-gray-100 px-4 py-3 last:border-b-0">
                       <div className="flex items-start gap-3">
@@ -97,15 +117,23 @@ export default function InAppNotificationCenter() {
                           <p className="mt-1 line-clamp-2 text-xs text-gray-500">{notification.customer_message}</p>
                           <div className="mt-2 text-[11px] text-gray-400">{notificationTime(notification)}</div>
                         </div>
-                        {notification.status === "pending" && (
+                        {notification.status === "pending" && !ownerActionRequired && (
                           <button
                             type="button"
                             aria-label="Mark notification read"
-                            onClick={() => markRead(notification.id)}
+                            onClick={() => void markRead(notification.id)}
                             className="rounded-md p-1 text-gray-400 hover:bg-gray-50 hover:text-emerald-600"
                           >
                             <CheckCircle2 className="h-4 w-4" />
                           </button>
+                        )}
+                        {notification.status === "pending" && ownerActionRequired && deepLink && (
+                          <a
+                            href={deepLink}
+                            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            Review
+                          </a>
                         )}
                       </div>
                     </div>

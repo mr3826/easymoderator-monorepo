@@ -46,9 +46,20 @@ function appsecretProof(token) {
 
 function metaError(err, context) {
     const msg = err.response?.data?.error?.message || err.message;
-    const code = err.response?.data?.error?.code;
-    logger.error(`${context} failed`, { metaCode: code, metaMsg: msg });
-    return new AppError(`${context}: ${msg}`, err.response?.status || 500);
+    const meta = err.response?.data?.error || {};
+    logger.error(`${context} failed`, {
+        metaCode: meta.code,
+        metaSubcode: meta.error_subcode,
+        metaMsg: msg,
+    });
+    const appError = new AppError(`${context}: ${msg}`, err.response?.status || 500);
+    appError.code = 'META_API_ERROR';
+    appError.details = {
+        metaCode: meta.code || null,
+        metaSubcode: meta.error_subcode || null,
+        isTransient: meta.is_transient === true,
+    };
+    return appError;
 }
 
 function intersectSets(sets) {
@@ -200,6 +211,70 @@ class MetaMessengerProvider extends ChannelProvider {
         return result;
     }
 
+    async getOAuthIdentity({ userToken }) {
+        let appScopedUserId;
+        try {
+            const me = await axios.get(`${GRAPH_BASE}/me`, {
+                params: {
+                    fields: 'id',
+                    access_token: userToken,
+                    appsecret_proof: appsecretProof(userToken),
+                },
+            });
+            appScopedUserId = me.data?.id ? String(me.data.id) : null;
+        } catch (err) {
+            throw metaError(err, 'getOAuthIdentity:me');
+        }
+
+        if (!appScopedUserId) {
+            throw new AppError(
+                'Meta OAuth identity response did not include an app-scoped user ID',
+                502,
+                'META_IDENTITY_UNAVAILABLE',
+            );
+        }
+
+        const pageScopedIdentities = [];
+        try {
+            let url = `${GRAPH_BASE}/${appScopedUserId}/ids_for_pages`;
+            let params = {
+                fields: 'id,page',
+                limit: 100,
+                access_token: userToken,
+                appsecret_proof: appsecretProof(userToken),
+            };
+            while (url) {
+                const response = await axios.get(url, { params });
+                const batch = Array.isArray(response.data?.data) ? response.data.data : [];
+                for (const item of batch) {
+                    const pageId = item?.page?.id || item?.page_id || item?.page?.data?.id;
+                    if (pageId && item?.id) {
+                        pageScopedIdentities.push({
+                            pageId: String(pageId),
+                            pageScopedUserId: String(item.id),
+                        });
+                    }
+                }
+                const next = response.data?.paging?.next;
+                if (next && batch.length > 0) {
+                    url = next;
+                    params = {};
+                } else {
+                    url = null;
+                }
+            }
+        } catch (err) {
+            // Meta does not expose this edge for every app/user combination.
+            // Keep the verified app-scoped identity for deauthorization, but do
+            // not invent a Page-scoped customer identity for deletion.
+            logger.warn('getOAuthIdentity: ids_for_pages unavailable', {
+                metaCode: err.response?.data?.error?.code,
+            });
+        }
+
+        return { appScopedUserId, pageScopedIdentities };
+    }
+
     async getAssetAccessToken({ assetId, userToken }) {
         try {
             const resp = await axios.get(`${GRAPH_BASE}/${assetId}`, {
@@ -271,15 +346,16 @@ class MetaMessengerProvider extends ChannelProvider {
 
     async unsubscribeWebhook({ channel }) {
         const token = channel.page_access_token_ct;
-        if (!token) return;  // already disconnected — nothing to unsubscribe
+        if (!token) return { ok: true, skipped: true };
         try {
             await axios.delete(
                 `${GRAPH_BASE}/${channel.meta_asset_id}/subscribed_apps`,
                 { params: { access_token: token } }
             );
+            return { ok: true };
         } catch (err) {
-            // Non-fatal — channel is being disconnected anyway
             logger.warn('unsubscribeWebhook failed', { error: err.message, channelId: channel.id });
+            return { ok: false, error: metaError(err, 'unsubscribeWebhook') };
         }
     }
 
@@ -415,7 +491,30 @@ class MetaMessengerProvider extends ChannelProvider {
                 providerMessageIds,
             };
         } catch (err) {
-            throw metaError(err, 'sendMessage');
+            const normalized = metaError(err, 'sendMessage');
+            if ([102, 190].includes(Number(normalized.details?.metaCode))) {
+                try {
+                    await require('../meta-authorization-recovery.service')
+                        .recoverInvalidToken(channel, normalized.details);
+                } catch (recoveryError) {
+                    logger.error('Invalid Meta token recovery failed', {
+                        channelId: channel.id,
+                        error: recoveryError.message,
+                    });
+                    // Do not convert the message into an unrecoverable job until
+                    // the durable channel/token recovery transition succeeds.
+                    normalized.code = 'META_AUTHORIZATION_RECOVERY_FAILED';
+                    normalized.status = 503;
+                    normalized.details = {
+                        ...normalized.details,
+                        recoveryPending: true,
+                    };
+                    throw normalized;
+                }
+                normalized.code = 'META_AUTHORIZATION_REQUIRED';
+                normalized.status = 401;
+            }
+            throw normalized;
         }
     }
 

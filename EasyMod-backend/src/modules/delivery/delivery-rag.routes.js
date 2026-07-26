@@ -1,12 +1,41 @@
 const express = require('express');
 const { body, param } = require('express-validator');
 const DeliveryRAGController = require('./delivery-rag.controller');
+const { authenticate } = require('../../middleware/auth.middleware');
+const {
+    requirePlatformAdmin,
+    PLATFORM_ROLES,
+} = require('../../middleware/platform-admin.middleware');
 
 const router = express.Router();
+const superAdminOnly = requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN);
+
+router.use(authenticate);
+
+function bindAuthenticatedShop(req, res, next) {
+    const shopId = req.user?.shopId;
+    if (!shopId) {
+        return res.status(400).json({
+            success: false,
+            error: 'No authenticated shop selected',
+        });
+    }
+    const requestedShop = req.body?.shop_id
+        || req.params?.shop_id
+        || req.query?.shop_id;
+    if (requestedShop && String(requestedShop) !== String(shopId)) {
+        return res.status(403).json({
+            success: false,
+            error: 'Cross-shop delivery access is forbidden',
+        });
+    }
+    req.authenticatedShopId = shopId;
+    return next();
+}
 
 // Validation middleware
 const validateAddDeliveryZone = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('zone_name').notEmpty().withMessage('zone_name is required'),
     body('areas').isArray({ min: 1 }).withMessage('areas must be a non-empty array'),
     body('areas.*').notEmpty().withMessage('each area must be a non-empty string'),
@@ -16,7 +45,7 @@ const validateAddDeliveryZone = [
 ];
 
 const validateMatchAddress = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('address').notEmpty().withMessage('address is required')
 ];
 
@@ -30,13 +59,13 @@ const validateUpdateDeliveryZone = [
 ];
 
 const validateCalculateDeliveryCharge = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('zone_name').notEmpty().withMessage('zone_name is required'),
     body('order_value').isNumeric().withMessage('order_value must be a number')
 ];
 
 const validateBatchAddDeliveryZones = [
-    body('shop_id').notEmpty().withMessage('shop_id is required'),
+    body('shop_id').optional().isUUID().withMessage('shop_id must be a UUID'),
     body('zones').isArray({ min: 1 }).withMessage('zones must be a non-empty array'),
     body('zones.*.zone_name').notEmpty().withMessage('each zone must have a zone_name'),
     body('zones.*.areas').isArray({ min: 1 }).withMessage('each zone must have areas array'),
@@ -49,60 +78,90 @@ const validateBatchAddDeliveryZones = [
  * POST /api/delivery/rag/initialize
  * Initialize delivery RAG collections
  */
-router.post('/initialize', DeliveryRAGController.initializeCollections);
+router.post('/initialize', superAdminOnly, DeliveryRAGController.initializeCollections);
 
 /**
  * POST /api/delivery/rag/zones
  * Add new delivery zone
  */
-router.post('/zones', validateAddDeliveryZone, DeliveryRAGController.addDeliveryZone);
+router.post(
+    '/zones',
+    bindAuthenticatedShop,
+    validateAddDeliveryZone,
+    DeliveryRAGController.addDeliveryZone,
+);
 
 /**
  * POST /api/delivery/rag/zones/batch
  * Batch add delivery zones
  */
-router.post('/zones/batch', validateBatchAddDeliveryZones, DeliveryRAGController.batchAddDeliveryZones);
+router.post(
+    '/zones/batch',
+    bindAuthenticatedShop,
+    validateBatchAddDeliveryZones,
+    DeliveryRAGController.batchAddDeliveryZones,
+);
 
 /**
  * GET /api/delivery/rag/zones
  * Get all delivery zones for a shop
  */
-router.get('/zones', DeliveryRAGController.getDeliveryZones);
+router.get('/zones', bindAuthenticatedShop, DeliveryRAGController.getDeliveryZones);
 
 /**
  * PUT /api/delivery/rag/zones/:shop_id/:zone_name
  * Update delivery zone
  */
-router.put('/zones/:shop_id/:zone_name', validateUpdateDeliveryZone, DeliveryRAGController.updateDeliveryZone);
+router.put(
+    '/zones/:shop_id/:zone_name',
+    bindAuthenticatedShop,
+    validateUpdateDeliveryZone,
+    DeliveryRAGController.updateDeliveryZone,
+);
 
 /**
  * DELETE /api/delivery/rag/zones/:shop_id/:zone_name
  * Delete delivery zone
  */
-router.delete('/zones/:shop_id/:zone_name', DeliveryRAGController.deleteDeliveryZone);
+router.delete(
+    '/zones/:shop_id/:zone_name',
+    bindAuthenticatedShop,
+    DeliveryRAGController.deleteDeliveryZone,
+);
 
 /**
  * POST /api/delivery/rag/match-address
  * Match address to delivery zone
  */
-router.post('/match-address', validateMatchAddress, DeliveryRAGController.matchAddress);
+router.post(
+    '/match-address',
+    bindAuthenticatedShop,
+    validateMatchAddress,
+    DeliveryRAGController.matchAddress,
+);
 
 /**
  * POST /api/delivery/rag/calculate-charge
  * Calculate delivery charge
  */
-router.post('/calculate-charge', validateCalculateDeliveryCharge, DeliveryRAGController.calculateDeliveryCharge);
+router.post(
+    '/calculate-charge',
+    bindAuthenticatedShop,
+    validateCalculateDeliveryCharge,
+    DeliveryRAGController.calculateDeliveryCharge,
+);
 
 /**
  * GET /api/delivery/rag/stats
  * Get delivery statistics
  */
-router.get('/stats', DeliveryRAGController.getDeliveryStats);
+router.get('/stats', bindAuthenticatedShop, DeliveryRAGController.getDeliveryStats);
 
 /**
  * GET /api/delivery/rag/test
  * Test address matching with sample data
  */
-router.get('/test', DeliveryRAGController.testAddressMatching);
+router.get('/test', bindAuthenticatedShop, DeliveryRAGController.testAddressMatching);
 
 module.exports = router;
+module.exports._private = { bindAuthenticatedShop };

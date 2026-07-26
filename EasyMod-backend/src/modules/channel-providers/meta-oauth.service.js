@@ -15,6 +15,8 @@
 
 const crypto = require('crypto');
 const metaChannelService = require('./meta-channel.service');
+const MetaUserIdentity = require('./meta-user-identity.entity');
+const { sequelize } = require('../../utils/database/database-setup');
 const { getProvider } = require('./provider.registry');
 const { createLogger } = require('../../utils/structured-logger');
 const stateStore = require('./oauth-state.store');
@@ -76,7 +78,10 @@ async function handleCallback(code, state, userId, shopId) {
     const { userToken } = await provider.exchangeCode({ code });
 
     // List pages/IG accounts this user manages
-    const pages = await provider.listManagedAssets({ userToken });
+    const [pages, metaIdentity] = await Promise.all([
+        provider.listManagedAssets({ userToken }),
+        provider.getOAuthIdentity({ userToken }),
+    ]);
 
     // Store the user token server-side for the subsequent connectPage calls.
     // The returned tempToken is intentionally opaque: the frontend should never
@@ -87,6 +92,7 @@ async function handleCallback(code, state, userId, shopId) {
         userToken,
         platform,
         pages,
+        metaIdentity,
         userId,
         shopId,
     });
@@ -149,6 +155,66 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         tokenExpiresAt: expiresAt,
         userId,
     });
+
+    const metaIdentity = callbackPayload.metaIdentity;
+    if (!metaIdentity?.appScopedUserId) {
+        await metaChannelService.disconnect(channel.id, {
+            status: 'ERROR',
+            lastError: 'meta_identity_mapping_missing',
+        });
+        throw Object.assign(
+            new Error('Meta identity could not be bound to this Page. Please reconnect Facebook.'),
+            { status: 502, code: 'META_IDENTITY_MAPPING_REQUIRED' },
+        );
+    }
+
+    const pageIdentity = (metaIdentity.pageScopedIdentities || [])
+        .find((identity) => String(identity.pageId) === String(assetId));
+    try {
+        await sequelize.transaction(async (transaction) => {
+            await MetaUserIdentity.update({
+                is_current_connection: false,
+            }, {
+                where: { channel_id: channel.id },
+                transaction,
+            });
+            const [identityRow] = await MetaUserIdentity.findOrCreate({
+                where: {
+                    app_scoped_user_id: String(metaIdentity.appScopedUserId),
+                    channel_id: channel.id,
+                },
+                defaults: {
+                    app_scoped_user_id: String(metaIdentity.appScopedUserId),
+                    page_scoped_user_id: pageIdentity?.pageScopedUserId || null,
+                    internal_user_id: userId,
+                    shop_id: shopId,
+                    channel_id: channel.id,
+                    source: 'facebook_oauth',
+                    is_current_connection: true,
+                    last_verified_at: new Date(),
+                },
+                transaction,
+            });
+            await identityRow.update({
+                page_scoped_user_id: pageIdentity?.pageScopedUserId || null,
+                internal_user_id: userId,
+                shop_id: shopId,
+                is_current_connection: true,
+                last_verified_at: new Date(),
+            }, { transaction });
+        });
+    } catch (identityErr) {
+        await metaChannelService.disconnect(channel.id, {
+            status: 'ERROR',
+            lastError: 'meta_identity_mapping_failed',
+        });
+        logger.error('Meta identity mapping failed', {
+            channelId: channel.id,
+            shopId,
+            error: identityErr.message,
+        });
+        throw identityErr;
+    }
 
     // Subscribe, then HARD-VERIFY. A page can report success on subscribe yet not
     // actually deliver — so we re-read subscribed_apps and only keep CONNECTED if

@@ -34,10 +34,37 @@ const mockRedis = {
     status: 'ready'
 };
 
+const mockCacheStore = new Map();
+const mockCacheService = {
+    get: jest.fn(async (key) => mockCacheStore.get(key) ?? null),
+    set: jest.fn(async (key, value) => {
+        mockCacheStore.set(key, value);
+        return true;
+    }),
+    delete: jest.fn(async (key) => mockCacheStore.delete(key)),
+    getForShop: jest.fn(async (shopId, key) => mockCacheStore.get(`${shopId}:${key}`) ?? null),
+    setForShop: jest.fn(async (shopId, key, value) => {
+        mockCacheStore.set(`${shopId}:${key}`, value);
+        return true;
+    }),
+    deleteForShop: jest.fn(async (shopId, key) => mockCacheStore.delete(`${shopId}:${key}`)),
+};
+jest.mock('src/utils/cache.service', () => mockCacheService);
+
 jest.mock('src/utils/redis-client', () => ({
     getRedisClient: () => mockRedis,
     isRedisAvailable: () => true,
     closeRedis: jest.fn()
+}));
+
+// The auth app mounts notification routes, which import the global queue
+// manager. Keep this security suite hermetic: it must never open BullMQ/Redis.
+jest.mock('src/jobs/queue-manager', () => ({
+    queues: {
+        notifications: {
+            add: jest.fn().mockResolvedValue({ id: 'test-job-id' }),
+        },
+    },
 }));
 
 // ── Mock Sequelize ─────────────────────────────────────────────────────
@@ -149,6 +176,7 @@ describe('Auth Security Fixes', () => {
 
     beforeEach(() => {
         Object.keys(redisStore).forEach(k => delete redisStore[k]);
+        mockCacheStore.clear();
         jest.clearAllMocks();
         mockUser.token_version = 1;
         mockUser.refresh_token = null;
@@ -248,21 +276,22 @@ describe('Auth Security Fixes', () => {
     // ============================================================================
     describe('Refresh Token - Requires shopId', () => {
         it('should reject refresh when user has no last_logged_shop_id', async () => {
+            const refreshToken = generateRefreshToken({ userId: mockUser.id });
             // User with no shop context
             const userNoShop = {
                 ...mockUser,
                 last_logged_shop_id: null,
-                refresh_token: crypto.createHash('sha256').update('valid-refresh-token').digest('hex')
+                refresh_token: crypto.createHash('sha256').update(refreshToken).digest('hex')
             };
 
             User.findByPk.mockResolvedValue(userNoShop);
 
             const res = await request(app)
                 .post('/api/auth/refresh')
-                .send({ refresh_token: 'valid-refresh-token' });
+                .set('Cookie', `refresh_token=${refreshToken}`);
 
             expect(res.status).toBe(401);
-            expect(res.body.error?.message || res.body.message).toContain('No active shop session');
+            expect(res.body.error?.message || res.body.message).toContain('Invalid or expired refresh token');
         });
     });
 
@@ -271,7 +300,7 @@ describe('Auth Security Fixes', () => {
     // ============================================================================
     describe('Refresh Token - SHA-256 Hashing', () => {
         it('should use SHA-256 hash for refresh token comparison', async () => {
-            const refreshToken = 'test-refresh-token-' + Date.now();
+            const refreshToken = generateRefreshToken({ userId: mockUser.id });
             const expectedHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
             const userWithToken = {
@@ -283,7 +312,7 @@ describe('Auth Security Fixes', () => {
 
             const res = await request(app)
                 .post('/api/auth/refresh')
-                .send({ refresh_token: refreshToken });
+                .set('Cookie', `refresh_token=${refreshToken}`);
 
             // Should succeed because SHA-256 hash matches
             // Response should have new access token (in cookie)

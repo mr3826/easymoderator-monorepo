@@ -15,7 +15,7 @@
 const llmService = require('../ai/llm.service');
 const { TrxIDLog } = require('../entities');
 const { Op, Sequelize } = require('sequelize');
-const axios = require('axios');
+const { safeFetchMedia } = require('../../utils/safe-media-fetch');
 const { normalizePhone } = require('../../utils/validators/phone.validator');
 
 // ---------------------------------------------------------------------------
@@ -111,14 +111,11 @@ IMPORTANT: Only return fields you can clearly read from the image. Do not guess.
  */
 const preprocessImage = async (imageUrl) => {
     try {
-        const response = await axios.get(imageUrl, {
-            responseType: 'arraybuffer',
-            timeout: 8000,
-            maxContentLength: 5 * 1024 * 1024 // 5 MB cap
+        const { buffer, mimeType } = await safeFetchMedia(imageUrl, {
+            maxBytes: 5 * 1024 * 1024,
+            timeoutMs: 8000,
         });
-        const mime = (response.headers['content-type'] || 'image/jpeg').split(';')[0].trim();
-        const base64 = Buffer.from(response.data).toString('base64');
-        return `data:${mime};base64,${base64}`;
+        return `data:${mimeType};base64,${buffer.toString('base64')}`;
     } catch (err) {
         console.warn('[SelfMfsHandler] Image download for preprocessing failed, using URL directly:', err.message);
         return imageUrl;
@@ -336,4 +333,9 @@ const verifyPaymentScreenshot = async ({
     };
 };
 
-module.exports = { verifyPaymentScreenshot, ocrScreenshot, computeFraudScore };
+module.exports = {
+    verifyPaymentScreenshot,
+    ocrScreenshot,
+    computeFraudScore,
+    _private: { preprocessImage },
+};

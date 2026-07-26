@@ -14,11 +14,12 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | `f1c7ee5` (`codex/messenger-production-recovery`) — **not on `main` at time of freeze; corrected by the launch PR, after which prod SHA == merge SHA on `origin/main`** | 2026-07-23 audit |
+| Production commit SHA | `3f878e3862f425a974c1851d0354da6bfd20a096` — PR #73 merge on `main`; deployment workflow completed successfully. Live container/image identity was not separately probed during the Phase 1 branch work. | 2026-07-23 GitHub Actions run `29971092335` |
 | Latest migration on `main` | `20260704_001_telegram_notification_bindings` | 2026-07-23 (`git ls-tree origin/main`) |
 | Backend / worker version | image tag of `ghcr.io/mr3826/easymod-backend` currently on droplet | run command below |
 | Frontend build version | image tag of `ghcr.io/mr3826/easymod-frontend` currently on droplet | run command below |
-| Deployment timestamp | container creation time on droplet | run command below |
+| Deployment workflow | PR #73 merge deployment succeeded at `2026-07-23T01:15:14Z` | [Actions run 29971092335](https://github.com/mr3826/easymod-backend/actions/runs/29971092335) |
+| Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Post-deploy verification (run on the droplet after each deploy)
 
@@ -38,4 +39,4 @@ docker exec easymod-backend-1 npm run migrate -- --status 2>/dev/null || \
 
 | Date | Exception | Resolution |
 |---|---|---|
-| 2026-07-23 | Prod running `f1c7ee5` from unmerged branch `codex/messenger-production-recovery` | Launch PR merges `codex/final-production-readiness-fixes` (contains `f1c7ee5` + 3 readiness fixes) into `main`; redeploy from `main` restores the invariant |
+| 2026-07-23 | Prod had been running `f1c7ee5` from unmerged branch `codex/messenger-production-recovery` | PR #73 merged as `3f878e3`; the canonical `main` deployment workflow completed successfully and restored the source-of-truth invariant |

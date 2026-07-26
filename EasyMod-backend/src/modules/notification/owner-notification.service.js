@@ -5,7 +5,16 @@
  * WhatsApp removed from product scope 2026-05-20.
  */
 
-const { OwnerNotification, Shop, User, UserShop } = require('../entities');
+const {
+    AuditLog,
+    Order,
+    OwnerNotification,
+    PaymentTransaction,
+    Shop,
+    User,
+    UserShop,
+} = require('../entities');
+const { sequelize } = require('../../utils/database/database-setup');
 const { AppError } = require('../../utils/AppError');
 const { sendEmail } = require('../../utils/email.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -95,48 +104,108 @@ class OwnerNotificationService {
      * Handle owner's response to payment confirmation
      */
     async handleOwnerResponse(notificationId, response, ownerInfo) {
+        if (!['approve', 'reject'].includes(response)) {
+            throw new AppError('Invalid payment confirmation action', 400);
+        }
+        let completedNotification;
         try {
-            const notification = await OwnerNotification.findByPk(notificationId);
-            if (!notification) {
-                throw new AppError('Notification not found', 404);
-            }
+            await sequelize.transaction(async (transaction) => {
+                const notification = await OwnerNotification.findByPk(notificationId, {
+                    transaction,
+                    lock: transaction.LOCK.UPDATE,
+                });
+                if (!notification) throw new AppError('Notification not found', 404);
+                if (notification.type !== 'payment_confirmation') {
+                    throw new AppError('Notification is not a payment confirmation', 400);
+                }
+                if (notification.status !== 'pending') {
+                    throw new AppError('Payment confirmation has already been completed', 409);
+                }
+                if (notification.expires_at && notification.expires_at <= new Date()) {
+                    throw new AppError('Payment confirmation has expired', 410);
+                }
 
-            // Update notification with owner response
-            await notification.update({
-                owner_response: response,
-                status: 'completed',
-                responded_at: new Date(),
-                owner_info: ownerInfo
+                const orderId = notification.customer_data?.orderId;
+                const transactionId = notification.customer_data?.transactionId;
+                const order = await Order.findOne({
+                    where: { id: orderId, shop_id: notification.shop_id },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE,
+                });
+                if (!order) throw new AppError('Order not found for this shop', 404);
+                const paymentTransaction = await PaymentTransaction.findOne({
+                    where: {
+                        order_id: order.id,
+                        shop_id: notification.shop_id,
+                        transaction_id: transactionId,
+                    },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE,
+                });
+                if (!paymentTransaction) throw new AppError('Payment transaction not found', 404);
+                if (!['pending', 'initiated', 'processing'].includes(paymentTransaction.status)) {
+                    throw new AppError('Payment transaction is not awaiting owner confirmation', 409);
+                }
+
+                if (response === 'approve') {
+                    await order.update({
+                        payment_status: 'paid',
+                        paid_at: new Date(),
+                        order_status: 'confirmed',
+                    }, { transaction });
+                    await paymentTransaction.update({
+                        status: 'verified',
+                        verified_at: new Date(),
+                    }, { transaction });
+                } else {
+                    await order.update({
+                        payment_status: 'failed',
+                        order_status: 'cancelled',
+                    }, { transaction });
+                    await paymentTransaction.update({ status: 'rejected' }, { transaction });
+                }
+                await notification.update({
+                    owner_response: response,
+                    status: 'completed',
+                    responded_at: new Date(),
+                    owner_info: {
+                        user_id: ownerInfo.userId,
+                        source: 'authenticated_dashboard',
+                    },
+                }, { transaction });
+                await AuditLog.create({
+                    user_id: ownerInfo.userId,
+                    shop_id: notification.shop_id,
+                    action: `owner_payment_${response}`,
+                    resource_type: 'payment_transaction',
+                    resource_id: paymentTransaction.id,
+                    metadata: {
+                        notification_id: notification.id,
+                        order_id: order.id,
+                    },
+                    idempotency_key: `owner-payment:${notification.id}:${response}`,
+                }, { transaction });
+                completedNotification = notification;
             });
 
-            // Process the response
-            if (response === 'approve') {
-                await this.approvePayment(notification);
-            } else if (response === 'reject') {
-                await this.rejectPayment(notification);
-            }
-
-            // Send confirmation back to customer
-            await this.sendCustomerResponse(notification, response);
-
+            await this.sendCustomerResponse(completedNotification, response);
             this.logger.info('Owner payment confirmation processed', {
                 notificationId,
                 response,
-                orderId: notification.customer_data.orderId
+                orderId: completedNotification.customer_data.orderId,
             });
-
             return {
                 success: true,
                 message: `Payment ${response}d successfully`,
-                orderId: notification.customer_data.orderId
+                orderId: completedNotification.customer_data.orderId,
             };
-
         } catch (error) {
             this.logger.error('Failed to handle owner response', {
                 notificationId,
                 response,
                 error: error.message
             });
+            if (error instanceof AppError) throw error;
             throw new AppError('Failed to handle owner response', 500);
         }
     }
@@ -179,9 +248,6 @@ class OwnerNotificationService {
      * Format payment confirmation message
      */
     formatPaymentConfirmationMessage(orderData, paymentInfo, notificationId) {
-        const approveUrl = `${process.env.BASE_URL}/api/webhooks/owner/payment-confirmation/${notificationId}/approve`;
-        const rejectUrl = `${process.env.BASE_URL}/api/webhooks/owner/payment-confirmation/${notificationId}/reject`;
-
         return `💰 পেমেন্ট নিশ্চিতকরণ প্রয়োজন!
 
 📋 অর্ডার তথ্য:
@@ -197,8 +263,7 @@ class OwnerNotificationService {
 ${paymentInfo.screenshotUrl ? `• স্ক্রিনশট: ${paymentInfo.screenshotUrl}` : ''}
 
 🔘 সিদ্ধান্ত নিন:
-✅ অনুমোদন করতে: ${approveUrl}
-❌ বাতিল করতে: ${rejectUrl}
+নিরাপদ EasyModerator ড্যাশবোর্ড খুলে অনুমোদন বা বাতিল করুন।
 
 ---
 
@@ -217,8 +282,9 @@ ${paymentInfo.screenshotUrl ? `• স্ক্রিনশট: ${paymentInfo.sc
 ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : ''}
 
 🔘 Make Decision:
-✅ Approve: ${approveUrl}
-❌ Reject: ${rejectUrl}`;
+Open the authenticated EasyModerator dashboard to approve or reject.
+
+Reference: ${notificationId}`;
     }
 
     /**
@@ -251,7 +317,7 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
                         <h2 style="color: #333; margin-bottom: 20px;">💰 Payment Confirmation Required</h2>
                         <div style="background-color: white; padding: 20px; border-radius: 8px; white-space: pre-wrap;">${message}</div>
                         <p style="margin-top: 20px; font-size: 12px; color: #666;">
-                            Please click the links above to approve or reject the payment.
+                            Open the authenticated EasyModerator dashboard to approve or reject the payment.
                         </p>
                     </div>
                 </div>
@@ -280,11 +346,8 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
      */
     async createDashboardNotification(shopId, message) {
         try {
-            // This would integrate with your frontend notification system
-            // For now, we'll just log it
             this.logger.info('Dashboard notification created', {
                 shopId,
-                message: message.substring(0, 100) + '...'
             });
 
             return { success: true, channel: 'dashboard' };
@@ -296,58 +359,6 @@ ${paymentInfo.screenshotUrl ? `• Screenshot: ${paymentInfo.screenshotUrl}` : '
             });
             return { success: false, reason: 'creation_error', error: error.message };
         }
-    }
-
-    /**
-     * Approve payment and update order
-     */
-    async approvePayment(notification) {
-        const { Order } = require('../entities');
-        const { PaymentTransaction } = require('../entities');
-
-        // Update order status
-        await Order.update({
-            payment_status: 'paid',
-            paid_at: new Date(),
-            order_status: 'confirmed'
-        }, {
-            where: { id: notification.customer_data.orderId }
-        });
-
-        // Update payment transaction
-        await PaymentTransaction.update({
-            status: 'verified',
-            verified_at: new Date()
-        }, {
-            where: { transaction_id: notification.customer_data.transactionId }
-        });
-
-        // Trigger order confirmation flow
-        const orderService = require('../order/order.service');
-        await orderService.confirmOrderInternal(notification.customer_data.orderId, notification.shop_id);
-    }
-
-    /**
-     * Reject payment
-     */
-    async rejectPayment(notification) {
-        const { Order } = require('../entities');
-        const { PaymentTransaction } = require('../entities');
-
-        // Update order status
-        await Order.update({
-            payment_status: 'failed',
-            order_status: 'cancelled'
-        }, {
-            where: { id: notification.customer_data.orderId }
-        });
-
-        // Update payment transaction
-        await PaymentTransaction.update({
-            status: 'rejected'
-        }, {
-            where: { transaction_id: notification.customer_data.transactionId }
-        });
     }
 
     /**

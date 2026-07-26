@@ -98,6 +98,23 @@ class ChannelProvider {
     }
 
     /**
+     * Resolve the Facebook Login app-scoped user ID and any legitimate
+     * Page-scoped IDs exposed by Meta for that same OAuth user.
+     *
+     * Implementations must never infer or synthesize Page-scoped IDs.
+     *
+     * @param {object} params
+     * @param {string} params.userToken
+     * @returns {Promise<{
+     *   appScopedUserId: string,
+     *   pageScopedIdentities: Array<{pageId: string, pageScopedUserId: string}>
+     * }>}
+     */
+    async getOAuthIdentity({ userToken }) {
+        throw new Error('not_implemented');
+    }
+
+    /**
      * Get the page-scoped access token for a specific asset.
      *
      * @param {object} params

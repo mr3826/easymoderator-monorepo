@@ -275,7 +275,7 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
 class ConversationController {
     async getConversations(req, res, next) {
         try {
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
 
             if (!shopId) {
                 return res.status(400).json({
@@ -296,7 +296,7 @@ class ConversationController {
     async getConversationById(req, res, next) {
         try {
             const { conversationId } = req.params;
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
 
             if (!shopId) {
                 return res.status(400).json({
@@ -315,7 +315,7 @@ class ConversationController {
     async getMessages(req, res, next) {
         try {
             const { conversationId } = req.params;
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
 
             if (!shopId) {
                 return res.status(400).json({
@@ -333,7 +333,7 @@ class ConversationController {
 
     async createConversation(req, res) {
         try {
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             
             if (!shopId) {
                 return res.status(400).json({
@@ -400,7 +400,7 @@ class ConversationController {
     async createMessage(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             
             if (!shopId) {
                 return res.status(400).json({
@@ -448,7 +448,7 @@ class ConversationController {
     async updateConversation(req, res) {
         try {
             const { conversationId } = req.params;
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
 
             if (!shopId) {
                 return res.status(400).json({
@@ -511,7 +511,7 @@ class ConversationController {
     async updateConversationStatus(req, res) {
         try {
             const { conversationId } = req.params; // Already validated
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             
             if (!shopId) {
                 return res.status(400).json({
@@ -546,7 +546,7 @@ class ConversationController {
 
     async getHistory(req, res) {
         try {
-            const shopId = req.query?.shop_id || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             if (!shopId) {
                 return res.status(400).json({
                     success: false,
@@ -599,7 +599,16 @@ class ConversationController {
     }
 
     async getEventStream(req, res) {
-        const shopId = req.headers['x-shop-id'] || req.query.shop_id || req.user?.shopId;
+        if (req.headers['x-shop-id'] || req.query.shop_id) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'UNTRUSTED_SHOP_OVERRIDE',
+                    message: 'SSE shop selection must come from the authenticated session',
+                },
+            });
+        }
+        const shopId = req.user?.shopId;
         if (!shopId) {
             return res.status(400).json({
                 success: false,
@@ -680,7 +689,7 @@ class ConversationController {
      */
     async bulkUpdateStatus(req, res) {
         try {
-            const shopId = req.body?.shopId || req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             if (!shopId) {
                 return res.status(400).json({
                     success: false,
@@ -707,7 +716,7 @@ class ConversationController {
      */
     async searchConversations(req, res) {
         try {
-            const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+            const shopId = req.user?.shopId;
             if (!shopId) {
                 return res.status(400).json({
                     success: false,

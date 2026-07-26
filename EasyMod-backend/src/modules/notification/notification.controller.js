@@ -18,13 +18,19 @@ class NotificationController {
             }
 
             const {
-                shop_id,
                 customer_id,
                 platform,
                 trigger_reason,
                 confidence_score,
                 last_message
             } = req.body;
+            const shop_id = req.user?.shopId;
+            if (!shop_id || (req.body.shop_id && req.body.shop_id !== shop_id)) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Cross-shop handoff is forbidden',
+                });
+            }
 
             // Find the most recent conversation for this customer
             const conversation = await Conversation.findOne({
@@ -92,12 +98,18 @@ class NotificationController {
             }
 
             const {
-                shop_id,
                 type,
                 title,
                 body,
                 data = {}
             } = req.body;
+            const shop_id = req.user?.shopId;
+            if (!shop_id || (req.body.shop_id && req.body.shop_id !== shop_id)) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Cross-shop notification is forbidden',
+                });
+            }
 
             // Get shop information
             const shop = await getShopById(shop_id); // Note: This might need user_id, adjust as needed

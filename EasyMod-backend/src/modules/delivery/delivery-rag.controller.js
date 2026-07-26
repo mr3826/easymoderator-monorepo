@@ -39,13 +39,13 @@ class DeliveryRAGController {
             }
 
             const {
-                shop_id,
                 zone_name,
                 areas,
                 delivery_charge,
                 estimated_time,
                 metadata = {}
             } = req.body;
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const result = await deliveryService.addDeliveryZone({
@@ -85,7 +85,8 @@ class DeliveryRAGController {
                 });
             }
 
-            const { shop_id, address } = req.body;
+            const { address } = req.body;
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const result = await deliveryService.matchAddressToZone(address, shop_id);
@@ -109,14 +110,7 @@ class DeliveryRAGController {
      */
     static async getDeliveryZones(req, res) {
         try {
-            const { shop_id } = req.query;
-
-            if (!shop_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'shop_id is required'
-                });
-            }
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const zones = await deliveryService.getDeliveryZones(shop_id);
@@ -149,7 +143,8 @@ class DeliveryRAGController {
                 });
             }
 
-            const { shop_id, zone_name } = req.params;
+            const { zone_name } = req.params;
+            const shop_id = req.authenticatedShopId;
             const updateData = req.body;
 
             const deliveryService = new DeliveryRAGService();
@@ -175,7 +170,8 @@ class DeliveryRAGController {
      */
     static async deleteDeliveryZone(req, res) {
         try {
-            const { shop_id, zone_name } = req.params;
+            const { zone_name } = req.params;
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const result = await deliveryService.deleteDeliveryZone(zone_name, shop_id);
@@ -208,7 +204,8 @@ class DeliveryRAGController {
                 });
             }
 
-            const { shop_id, zone_name, order_value } = req.body;
+            const { zone_name, order_value } = req.body;
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const result = await deliveryService.calculateDeliveryCharge(zone_name, order_value, shop_id);
@@ -232,14 +229,7 @@ class DeliveryRAGController {
      */
     static async getDeliveryStats(req, res) {
         try {
-            const { shop_id } = req.query;
-
-            if (!shop_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'shop_id is required'
-                });
-            }
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const stats = await deliveryService.getDeliveryStats(shop_id);
@@ -271,7 +261,8 @@ class DeliveryRAGController {
                 });
             }
 
-            const { shop_id, zones } = req.body;
+            const { zones } = req.body;
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             const results = [];
@@ -324,14 +315,7 @@ class DeliveryRAGController {
      */
     static async testAddressMatching(req, res) {
         try {
-            const { shop_id } = req.query;
-
-            if (!shop_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'shop_id is required'
-                });
-            }
+            const shop_id = req.authenticatedShopId;
 
             const deliveryService = new DeliveryRAGService();
             

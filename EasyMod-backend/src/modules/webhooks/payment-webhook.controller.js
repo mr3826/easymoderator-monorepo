@@ -5,6 +5,7 @@
  */
 
 const { PaymentTransaction, Order, OrderSession } = require('../entities');
+const { Op } = require('sequelize');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const bkashService = require('../payment/bkash-merchant.service');
@@ -41,19 +42,63 @@ class PaymentWebhookController {
                 return res.status(404).json({ error: 'Payment transaction not found' });
             }
 
-            // Update payment transaction
-            await paymentTransaction.update({
-                status: transactionStatus === 'Completed' ? 'paid' : 'failed',
-                gateway_response: req.body,
-                verified_at: transactionStatus === 'Completed' ? new Date() : null
-            });
-
             // If payment successful, update order and trigger fulfillment
             if (transactionStatus === 'Completed') {
+                if (['paid', 'verified'].includes(paymentTransaction.status)) {
+                    return res.status(200).json({ success: true, duplicate: true });
+                }
+
+                if (paymentTransaction.status === 'processing') {
+                    return res.status(202).json({ success: true, pending: true });
+                }
+
+                const claimableStatuses = ['pending', 'initiated', 'failed'];
+                if (!claimableStatuses.includes(paymentTransaction.status)) {
+                    return res.status(409).json({ error: 'Invalid payment state transition' });
+                }
+
+                // Claim the callback atomically. Concurrent/replayed callbacks cannot
+                // execute order fulfillment, delivery booking, or notifications twice.
+                const [claimed] = await PaymentTransaction.update({
+                    status: 'processing',
+                    gateway_response: req.body
+                }, {
+                    where: {
+                        id: paymentTransaction.id,
+                        status: { [Op.in]: claimableStatuses }
+                    }
+                });
+
+                if (claimed !== 1) {
+                    return res.status(202).json({ success: true, pending: true });
+                }
+
                 await this.processSuccessfulPayment(paymentTransaction, {
                     gateway: 'bkash',
                     transactionId: trxID,
                     amount
+                });
+
+                await paymentTransaction.update({
+                    status: 'paid',
+                    gateway_response: req.body,
+                    verified_at: new Date()
+                });
+            } else {
+                // A late failure callback must never downgrade a completed payment.
+                if (['paid', 'verified', 'processing'].includes(paymentTransaction.status)) {
+                    return res.status(200).json({ success: true, duplicate: true });
+                }
+
+                await PaymentTransaction.update({
+                    status: 'failed',
+                    gateway_response: req.body,
+                    verified_at: null
+                }, {
+                    where: {
+                        id: paymentTransaction.id,
+                        status: { [Op.notIn]: ['paid', 'verified', 'processing'] }
+                    }
                 });
             }
 

@@ -2,7 +2,8 @@
 
 const { Op, fn, col, where: sequelizeWhere } = require('sequelize');
 const {
-  Shop, Subscription, Message, Order, MetaChannel, AuditLog, User, Invoice,
+  Shop, Subscription, Message, Order, MetaChannel, MetaUserIdentity,
+  AuditLog, User, Invoice,
 } = require('../entities');
 const cacheService = require('../../utils/cache.service');
 const subscriptionService = require('../subscription/subscription.service');
@@ -56,6 +57,47 @@ async function getDashboard() {
   };
   await cacheService.set(cacheKey, data, 30).catch(() => {});
   return data;
+}
+
+async function getMetaIdentityReadiness() {
+  const mappingScope = {
+    where: {
+      page_scoped_user_id: { [Op.ne]: null },
+      is_current_connection: true,
+    },
+    include: [{
+      model: MetaChannel,
+      as: 'channel',
+      attributes: [],
+      required: true,
+      where: { status: 'CONNECTED' },
+    }],
+  };
+  const [
+    totalConnectedChannels,
+    channelsWithValidMappings,
+    mostRecentMappingCaptureAt,
+  ] = await Promise.all([
+    MetaChannel.count({ where: { status: 'CONNECTED' } }),
+    MetaUserIdentity.count({
+      ...mappingScope,
+      distinct: true,
+      col: 'channel_id',
+    }),
+    MetaUserIdentity.max('last_verified_at', mappingScope),
+  ]);
+  const connectedChannelsMissingMappings = Math.max(
+    0,
+    totalConnectedChannels - channelsWithValidMappings,
+  );
+
+  return {
+    totalConnectedChannels,
+    channelsWithValidMappings,
+    connectedChannelsMissingMappings,
+    mostRecentMappingCaptureAt: mostRecentMappingCaptureAt || null,
+    ready: connectedChannelsMissingMappings === 0,
+  };
 }
 
 // ── Shops list ───────────────────────────────────────────────────────────────
@@ -355,7 +397,8 @@ async function emergencyDisableAi(shopId, adminUserId) {
 
 module.exports = {
   // reads
-  getDashboard, listShops, getShopOverview, getShopChannels, getShopBilling, getAuditLogs,
+  getDashboard, getMetaIdentityReadiness, listShops, getShopOverview,
+  getShopChannels, getShopBilling, getAuditLogs,
   // mutations
   setShopStatus, extendTrial, addCredits, changePlan, markChannelReconnect, emergencyDisableAi,
 };

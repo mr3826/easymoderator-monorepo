@@ -17,7 +17,6 @@ module.exports = {
         'src/modules/ai/__tests__/chatbot-rag.test.js',
         // Auth tests have ordering/isolation bugs needing investigation
         'src/modules/auth/__tests__/auth.test.js',
-        'src/modules/auth/__tests__/auth.security.test.js',
         'src/modules/auth/__tests__/totp.service.test.js',
         // Dead tests deleted in Phase 5 Step 2 (these files no longer exist):
         // tests/meta-integration.test.js, tests/webhooks/meta-webhook.test.js,
@@ -35,7 +34,6 @@ module.exports = {
         'src/modules/shop/__tests__/shop.api.integration.test.js',
         'src/modules/shop/__tests__/shop.service.test.js',
         'src/modules/shop/__tests__/ai-settings.test.js',
-        'src/modules/payment/__tests__/payment-webhooks.test.js',
         'src/modules/notification/__tests__/notification.api.integration.test.js',
         'src/modules/notification/__tests__/notification.controller.test.js',
         'src/modules/customer/__tests__/customer.service.test.js',

@@ -110,6 +110,7 @@ jobs:
         working-directory: ./EasyMod-backend
         run: |
           npm ci
+          npm run test:security
           npm test
 
       # Frontend production build — TypeScript/import errors fail here, before a
@@ -126,13 +127,9 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_ENV: production
 
-      # Frontend unit tests (Vitest) — currently has known pre-existing failures
-      # (incomplete icon mocks in the test harness, not product breakage). Run for
-      # visibility but NON-BLOCKING until triaged, so it can't wedge the deploy.
-      # TODO(launch+1): fix the Vitest harness and make this blocking.
-      - name: Frontend — unit tests (non-blocking)
+      # Frontend unit tests (Vitest) are a blocking launch gate.
+      - name: Frontend — unit tests
         if: needs.changes.outputs.frontend == 'true'
-        continue-on-error: true
         working-directory: ./EasyMod-frontend
         run: npm run test:unit
 
@@ -143,6 +140,7 @@ jobs:
     needs: [changes, test]
     if: |
       github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
       (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
@@ -215,93 +213,68 @@ jobs:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
     needs: [changes, build]
+    if: github.ref == 'refs/heads/main'
     environment: production
     steps:
-      - name: Render .env.prod from secrets
-        run: |
-          mkdir -p _tmp
-          cat > _tmp/.env.prod <<'ENVEOF'
-          NODE_ENV=production
-          PORT=3000
-          LOG_LEVEL=info
+      - uses: actions/checkout@v6
 
-          DATABASE_URL=postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@postgres:5432/${{ secrets.POSTGRES_DB }}
-          DB_USER=${{ secrets.POSTGRES_USER }}
-          DB_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          DB_NAME=${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-
-          REDIS_URL=redis://redis:6379
-          REDIS_HOST=redis
-          REDIS_PORT=6379
-          DB_SSL=false
-
-          JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-          JWT_ACCESS_EXPIRES_IN=${{ secrets.JWT_ACCESS_EXPIRES_IN }}
-          JWT_REFRESH_EXPIRES_IN=${{ secrets.JWT_REFRESH_EXPIRES_IN }}
-          SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-
-          PAYMENT_ENCRYPTION_KEY=${{ secrets.PAYMENT_ENCRYPTION_KEY }}
-          DELIVERY_ENCRYPTION_KEY=${{ secrets.DELIVERY_ENCRYPTION_KEY }}
-          CHANNEL_ENCRYPTION_KEY=${{ secrets.CHANNEL_ENCRYPTION_KEY }}
-          PAYMENT_CALLBACK_HMAC_SECRET=${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
-          INTERNAL_WEBHOOK_SECRET=${{ secrets.INTERNAL_WEBHOOK_SECRET }}
-
-          CORS_ORIGINS=${{ secrets.CORS_ORIGINS }}
-          FRONTEND_URL=${{ secrets.FRONTEND_URL }}
-          BASE_URL=${{ secrets.BASE_URL || 'https://easymod.tech' }}
-          COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
-          META_OAUTH_REDIRECT_URI=${{ secrets.META_OAUTH_REDIRECT_URI }}
-
-          META_APP_ID=${{ secrets.VITE_META_APP_ID }}
-          META_APP_SECRET=${{ secrets.META_APP_SECRET }}
-          META_WEBHOOK_VERIFY_TOKEN=${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
-          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_BOT_USERNAME=${{ secrets.TELEGRAM_BOT_USERNAME }}
-          TELEGRAM_WEBHOOK_SECRET=${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
-          CUSTOMER_WAITING_ALERT_MINUTES=${{ vars.CUSTOMER_WAITING_ALERT_MINUTES || '30' }}
-          CUSTOMER_WAITING_ALERT_SCAN_LIMIT=${{ vars.CUSTOMER_WAITING_ALERT_SCAN_LIMIT || '200' }}
-
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
-          GEMINI_API_KEY=${{ secrets.GOOGLE_GEMINI_API_KEY }}
-          GEMINI_EMBEDDING_MODEL=${{ secrets.GEMINI_EMBEDDING_MODEL }}
-          EMBEDDING_PROVIDER=${{ secrets.EMBEDDING_PROVIDER }}
-          EMBEDDING_MODEL=${{ secrets.EMBEDDING_MODEL }}
-          # Vector store: standardized on Qdrant (Pinecone removed). Do NOT set
-          # PINECONE_* here — a single vector store keeps prod and the deploy
-          # wipe/reset path (which only resets Qdrant) consistent.
-          QDRANT_URL=${{ secrets.QDRANT_URL }}
-          QDRANT_API_KEY=${{ secrets.QDRANT_API_KEY }}
-          QDRANT_COLLECTION=${{ secrets.QDRANT_COLLECTION }}
-
-          # ── Transactional email (Resend) ──
-          # The app sends all email via Resend (utils/email.service.js). Without
-          # RESEND_API_KEY the client is null and every send is silently skipped —
-          # so this MUST be present for password-reset / order / invoice emails.
-          RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
-          EMAIL_FROM=${{ secrets.EMAIL_FROM }}
-
-          SEED_ADMIN_EMAIL=admin@easymod.tech
-          SEED_ADMIN_PASSWORD=${{ secrets.SEED_ADMIN_PASSWORD }}
-          SEED_ADMIN_NAME=EasyMod Admin
-          SEED_ADMIN_PHONE=01700000000
-          SEED_ADMIN_SHOP=EasyModerator Review Shop
-          SEED_ADMIN_PLATFORM_ROLE=SUPER_ADMIN
-          SEED_ADMIN_PAID_MONTHS=12
-
-          ALLOW_SELF_SIGNED_TLS=${{ secrets.ALLOW_SELF_SIGNED_TLS }}
-          BODY_SIZE_LIMIT=${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
-          WF1_WEBHOOK_URL=${{ secrets.WF1_WEBHOOK_URL }}
-
-          START_EMBEDDED_WORKERS=false
-          RUN_MIGRATIONS_ON_STARTUP=false
-          MAX_LOGIN_ATTEMPTS=5
-          LOGIN_LOCKOUT_MINUTES=15
-          ENVEOF
+      - name: Render and validate .env.prod without shell interpolation
+        run: node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod
+        env:
+          DB_USER: ${{ secrets.POSTGRES_USER }}
+          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME: ${{ secrets.POSTGRES_DB }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
+          PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          BASE_URL: ${{ secrets.BASE_URL || 'https://easymod.tech' }}
+          PUBLIC_BASE_URL: ${{ secrets.BASE_URL || 'https://easymod.tech' }}
+          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+          META_OAUTH_REDIRECT_URI: ${{ secrets.META_OAUTH_REDIRECT_URI }}
+          META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          BKASH_ENABLED: "true"
+          BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
+          BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
+          BKASH_PASSWORD: ${{ secrets.BKASH_PASSWORD }}
+          BKASH_APP_KEY: ${{ secrets.BKASH_APP_KEY }}
+          BKASH_APP_SECRET: ${{ secrets.BKASH_APP_SECRET }}
+          BKASH_WEBHOOK_SECRET: ${{ secrets.BKASH_WEBHOOK_SECRET }}
+          BKASH_SANDBOX: "false"
+          PATHAO_CLIENT_ID: ${{ secrets.PATHAO_CLIENT_ID }}
+          PATHAO_CLIENT_SECRET: ${{ secrets.PATHAO_CLIENT_SECRET }}
+          STEADFAST_API_KEY: ${{ secrets.STEADFAST_API_KEY }}
+          STEADFAST_SECRET_KEY: ${{ secrets.STEADFAST_SECRET_KEY }}
+          TELEGRAM_ENABLED: "true"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
+          EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
+          BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
+          MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
 
       - name: Copy .env.prod to droplet
         run: |
@@ -348,6 +321,11 @@ jobs:
               docker pull "$FRONTEND_TAG"
               docker tag "$FRONTEND_TAG" "$GHCR_FRONTEND:latest"
             fi
+
+            # Validate the rendered environment with the candidate backend image
+            # before replacing any running container.
+            docker run --rm --env-file .env.prod "$GHCR_BACKEND:latest" \
+              node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
 
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
             if [ "$WIPE_DB" = "WIPE" ]; then
@@ -431,14 +409,17 @@ jobs:
               echo "==> Redis flushed, uploads cleared, and Qdrant volume reset"
             fi
 
+            # Run additive migrations from the candidate backend image before
+            # replacing the currently running API and worker. This prevents new
+            # application code from starting against an old schema.
+            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
+              echo "Running database migrations before service replacement..."
+              docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
+            fi
+
             # Restart services with latest images
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
-
-            # Run migrations only when backend was updated (skip on wipe — already seeded)
-            if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
-              echo "Running database migrations..."
-              docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend npm run migrate
-            fi
 
             # Idempotent production review account seed. Requires exact SEED input
             # so normal deploys do not reset credentials or grant admin access.

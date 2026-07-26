@@ -11,6 +11,12 @@
 
 const crypto = require('crypto');
 const axios = require('axios');
+const mockRecoverInvalidToken = jest.fn();
+
+jest.mock('../meta-authorization-recovery.service', () => ({
+    recoverInvalidToken: mockRecoverInvalidToken,
+}));
+
 const MetaMessengerProvider = require('../providers/MetaMessengerProvider');
 const ChannelProvider = require('../ChannelProvider');
 
@@ -206,11 +212,12 @@ describe('MetaMessengerProvider', () => {
     });
 
     describe('sendMessage()', () => {
-        const channel = { page_access_token_ct: 'page-token' };
+        const channel = { id: 'channel-1', page_access_token_ct: 'page-token' };
         const decision = { allow: true };
 
         beforeEach(() => {
             axios.post.mockResolvedValue({ data: { message_id: 'mid_sent' } });
+            mockRecoverInvalidToken.mockResolvedValue(undefined);
         });
 
         afterEach(() => {
@@ -269,6 +276,53 @@ describe('MetaMessengerProvider', () => {
             expect(axios.post.mock.calls[1][1].message.attachment).toMatchObject({
                 type: 'file',
                 payload: { url: 'https://cdn.example.com/invoice.pdf', is_reusable: true },
+            });
+        });
+
+        test.each([102, 190])(
+            'marks Meta error %s permanent only after durable recovery succeeds',
+            async (metaCode) => {
+                axios.post.mockRejectedValue({
+                    response: {
+                        status: 401,
+                        data: { error: { code: metaCode, message: 'Invalid access token' } },
+                    },
+                });
+
+                await expect(provider.sendMessage({
+                    channel,
+                    recipientId: 'PSID_3',
+                    normalizedMessage: { text: 'test', attachments: [] },
+                    decision,
+                })).rejects.toMatchObject({
+                    code: 'META_AUTHORIZATION_REQUIRED',
+                    status: 401,
+                });
+                expect(mockRecoverInvalidToken).toHaveBeenCalledWith(
+                    channel,
+                    expect.objectContaining({ metaCode }),
+                );
+            },
+        );
+
+        test('keeps invalid-token delivery retryable when durable recovery fails', async () => {
+            axios.post.mockRejectedValue({
+                response: {
+                    status: 401,
+                    data: { error: { code: 190, message: 'Invalid access token' } },
+                },
+            });
+            mockRecoverInvalidToken.mockRejectedValue(new Error('database unavailable'));
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_4',
+                normalizedMessage: { text: 'test', attachments: [] },
+                decision,
+            })).rejects.toMatchObject({
+                code: 'META_AUTHORIZATION_RECOVERY_FAILED',
+                status: 503,
+                details: expect.objectContaining({ recoveryPending: true }),
             });
         });
     });

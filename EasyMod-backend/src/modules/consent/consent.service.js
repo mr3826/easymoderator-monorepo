@@ -89,7 +89,16 @@ class ConsentService {
         return v ? new Date(v) : null;
     }
 
-    async _writeAuditEvent({ shopId, channelId, customerId, event, source, metadata = null, transaction = null }) {
+    async _writeAuditEvent({
+        shopId,
+        channelId,
+        customerId,
+        event,
+        source,
+        metadata = null,
+        transaction = null,
+        strict = false,
+    }) {
         try {
             const payload = {
                 shop_id: shopId,
@@ -105,10 +114,13 @@ class ConsentService {
                 await MetaChannelConsentEvent.create(payload);
             }
         } catch (err) {
-            // Audit must not break the inbound path. Log loudly so it surfaces in metrics.
             logger.error('ConsentService: failed to write audit event', {
                 error: err.message, shopId, channelId, customerId, event, source,
             });
+            // Inbound message processing remains best-effort, but compliance
+            // callbacks opt into strict mode so they can never report success
+            // when the required audit record was not persisted.
+            if (strict) throw err;
         }
     }
 
@@ -216,23 +228,51 @@ class ConsentService {
         return customer;
     }
 
-    async recordDeauthorize({ shopId, channelId, customerId, platform, metadata = null }) {
+    async recordDeauthorize({
+        shopId,
+        channelId,
+        customerId,
+        platform,
+        metadata = null,
+        transaction = null,
+        strictAudit = false,
+    }) {
         return this._terminalEvent({
             shopId, channelId, customerId, platform,
             event: 'DEAUTHORIZED', source: 'meta_callback', metadata,
+            transaction, strictAudit,
         });
     }
 
-    async recordDataDeletion({ shopId, channelId, customerId, platform, metadata = null }) {
+    async recordDataDeletion({
+        shopId,
+        channelId,
+        customerId,
+        platform,
+        metadata = null,
+        transaction = null,
+        strictAudit = false,
+    }) {
         return this._terminalEvent({
             shopId, channelId, customerId, platform,
             event: 'DATA_DELETED', source: 'meta_callback', metadata,
+            transaction, strictAudit,
         });
     }
 
-    async _terminalEvent({ shopId, channelId, customerId, platform, event, source, metadata }) {
+    async _terminalEvent({
+        shopId,
+        channelId,
+        customerId,
+        platform,
+        event,
+        source,
+        metadata,
+        transaction = null,
+        strictAudit = false,
+    }) {
         if (!customerId || !platform) return null;
-        const customer = await Customer.findByPk(customerId);
+        const customer = await Customer.findByPk(customerId, { transaction });
         if (!customer) return null;
 
         const next = ensurePlatformShape(customer.messaging_consent, platform, {
@@ -241,9 +281,18 @@ class ConsentService {
         });
         customer.messaging_consent = next;
         customer.changed('messaging_consent', true);
-        await customer.save();
+        await customer.save({ transaction });
 
-        await this._writeAuditEvent({ shopId, channelId, customerId, event, source, metadata });
+        await this._writeAuditEvent({
+            shopId,
+            channelId,
+            customerId,
+            event,
+            source,
+            metadata,
+            transaction,
+            strict: strictAudit,
+        });
         return customer;
     }
 }

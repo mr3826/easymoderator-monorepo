@@ -74,6 +74,12 @@ const Order = sequelize.define('Order', {
         type: DataTypes.TEXT,
         allowNull: true
     },
+    // Legacy initial-schema PII column retained for compatibility. The Meta
+    // deletion path must clear it together with delivery_location/address.
+    delivery_area: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
     delivery_address: {
         type: DataTypes.TEXT,
         allowNull: true,
@@ -137,6 +143,11 @@ const Order = sequelize.define('Order', {
         allowNull: true
     },
     note: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
+    // Legacy initial-schema free-text PII column.
+    notes: {
         type: DataTypes.TEXT,
         allowNull: true
     },
