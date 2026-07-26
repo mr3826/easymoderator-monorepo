@@ -48,6 +48,7 @@ const MetaChannelSettings = require('./channel-providers/meta-channel-settings.e
 const MetaChannelConsentEvent = require('./channel-providers/meta-channel-consent-event.entity');
 const MetaUserIdentity = require('./channel-providers/meta-user-identity.entity');
 const MetaDataDeletionRequest = require('./integration/meta-data-deletion-request.entity');
+const MetaWebhookReceipt = require('./integration/meta-webhook-receipt.entity');
 
 // Phase 3 — Policy Engine audit log
 const PolicyDecision = require('./policy/policy-decision.entity');
@@ -504,5 +505,6 @@ module.exports = {
     MetaChannelConsentEvent,
     MetaUserIdentity,
     MetaDataDeletionRequest,
+    MetaWebhookReceipt,
     PolicyDecision,
 };

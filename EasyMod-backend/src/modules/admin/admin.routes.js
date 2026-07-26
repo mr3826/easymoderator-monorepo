@@ -22,6 +22,9 @@ router.get('/shops/:shopId/channels', ctrl.getShopChannels);
 router.get('/shops/:shopId/billing', ctrl.getShopBilling);
 router.get('/audit-logs', ctrl.getAuditLogs);
 
+// Ops alerting self-test — SUPER_ADMIN only, PII-free (finding F-06).
+router.post('/ops/test-alert', superOnly, ctrl.sendTestAlert);
+
 // Mutations (SUPER_ADMIN only)
 router.patch('/shops/:shopId/status', superOnly, ctrl.setShopStatus);
 router.patch('/shops/:shopId/billing', superOnly, ctrl.changePlan);

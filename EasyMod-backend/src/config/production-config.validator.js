@@ -20,7 +20,11 @@ const CORE_REQUIRED = [
     'DELIVERY_ENCRYPTION_KEY',
     'CHANNEL_ENCRYPTION_KEY',
     'PAYMENT_CALLBACK_HMAC_SECRET',
-    'BKASH_WEBHOOK_SECRET',
+    // BKASH_WEBHOOK_SECRET is deliberately NOT core. It only guards the bKash
+    // callback route, which is unreachable while the gateway is disabled, and
+    // requiring it unconditionally pressures an operator into inventing a fake
+    // credential to make the deploy pass. It is required with the rest of the
+    // bKash set below whenever BKASH_ENABLED=true.
     'RESEND_API_KEY',
     'EMAIL_FROM',
 ];

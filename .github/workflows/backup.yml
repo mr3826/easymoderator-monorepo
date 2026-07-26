@@ -11,7 +11,18 @@ on:
 #   DO_HOST            — Droplet IP or hostname
 #   DO_SSH_PRIVATE_KEY — SSH private key with root access to the droplet
 #
-# Backups are stored on the droplet at /opt/easymod/backups/ (7-day retention).
+# Local backups are written to /opt/easymod/backups/ (7-day retention).
+#
+# OFF-SITE backups (finding F-04) are uploaded to S3-compatible object storage,
+# client-side encrypted, when ALL of these secrets are configured:
+#   BACKUP_ENCRYPTION_KEY     — passphrase for client-side AES-256 (app-owned)
+#   SPACES_ACCESS_KEY_ID      — DO Spaces / S3 access key      (EXTERNAL)
+#   SPACES_SECRET_ACCESS_KEY  — DO Spaces / S3 secret key      (EXTERNAL)
+#   SPACES_ENDPOINT           — e.g. https://blr1.digitaloceanspaces.com
+#   BACKUP_BUCKET             — bucket/space name
+# Until the EXTERNAL Spaces credentials exist, off-site upload is skipped with a
+# clear message and F-04 remains BLOCKED_EXTERNAL_CREDENTIAL. A backup that sits
+# only on the droplet it protects does not satisfy the pilot DR requirement.
 # ──────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -19,15 +30,23 @@ jobs:
     name: Backup PostgreSQL
     runs-on: ubuntu-latest
     steps:
-      - name: Run pg_dump via SSH
+      - name: Run pg_dump + encrypted off-site upload via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          SPACES_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+          SPACES_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+          SPACES_ENDPOINT: ${{ secrets.SPACES_ENDPOINT }}
+          BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
+          OFFSITE_RETENTION_DAYS: ${{ vars.OFFSITE_RETENTION_DAYS || '30' }}
         with:
           host: ${{ secrets.DO_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
-          timeout: 120s
+          timeout: 300s
+          envs: BACKUP_ENCRYPTION_KEY,SPACES_ACCESS_KEY_ID,SPACES_SECRET_ACCESS_KEY,SPACES_ENDPOINT,BACKUP_BUCKET,OFFSITE_RETENTION_DAYS
           script: |
-            set -e
+            set -euo pipefail
 
             BACKUP_DIR=/opt/easymod/backups
             mkdir -p "$BACKUP_DIR"
@@ -50,8 +69,62 @@ jobs:
               -c "cd /app/uploads && tar czf /backup/$UPLOADS_BACKUP_FILE ."
             echo "Uploads backup complete: $(du -sh "$BACKUP_DIR/$UPLOADS_BACKUP_FILE" | cut -f1)"
 
-            # Retain only the last 7 days
+            # ── Off-site upload (F-04) ────────────────────────────────────────
+            # All-or-nothing guard: every off-site secret must be present. A
+            # partial config is treated as "not configured" so we never upload
+            # UNENCRYPTED (missing BACKUP_ENCRYPTION_KEY) or to an unauthenticated
+            # target.
+            if [ -n "${BACKUP_ENCRYPTION_KEY:-}" ] && [ -n "${SPACES_ACCESS_KEY_ID:-}" ] \
+               && [ -n "${SPACES_SECRET_ACCESS_KEY:-}" ] && [ -n "${SPACES_ENDPOINT:-}" ] \
+               && [ -n "${BACKUP_BUCKET:-}" ]; then
+              echo "Off-site upload: credentials present — encrypting and uploading."
+
+              upload_one() {
+                SRC="$1"; DEST_PREFIX="$2"
+                BASE=$(basename "$SRC")
+                ENC="$BACKUP_DIR/${BASE}.enc"
+
+                # Client-side AES-256 encryption. The object storage never sees
+                # plaintext; losing BACKUP_ENCRYPTION_KEY means the archive is
+                # unrecoverable, so that secret must be preserved off-platform.
+                openssl enc -aes-256-cbc -pbkdf2 -salt -in "$SRC" -out "$ENC" \
+                  -pass env:BACKUP_ENCRYPTION_KEY
+
+                # Integrity checksum uploaded alongside the object.
+                sha256sum "$ENC" | awk '{print $1}' > "$ENC.sha256"
+
+                # Use the official aws-cli container so we do not depend on the
+                # host having awscli installed. DO Spaces is S3-compatible.
+                docker run --rm \
+                  -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
+                  -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
+                  -v "$BACKUP_DIR":/backup \
+                  amazon/aws-cli s3 cp "/backup/$(basename "$ENC")" \
+                  "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC")" \
+                  --endpoint-url "$SPACES_ENDPOINT"
+
+                docker run --rm \
+                  -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
+                  -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
+                  -v "$BACKUP_DIR":/backup \
+                  amazon/aws-cli s3 cp "/backup/$(basename "$ENC").sha256" \
+                  "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" \
+                  --endpoint-url "$SPACES_ENDPOINT"
+
+                echo "Off-site upload OK: $DEST_PREFIX/$(basename "$ENC")"
+                rm -f "$ENC" "$ENC.sha256"
+              }
+
+              upload_one "$BACKUP_FILE" "db"
+              upload_one "$BACKUP_DIR/$UPLOADS_BACKUP_FILE" "uploads"
+              echo "Off-site upload complete."
+            else
+              echo "::warning::Off-site backup upload SKIPPED — object-storage credentials not configured (F-04 BLOCKED_EXTERNAL_CREDENTIAL). Backups exist ONLY on the droplet."
+            fi
+
+            # Retain only the last 7 days of LOCAL copies
             find "$BACKUP_DIR" -name "easymod-*.sql.gz" -mtime +7 -delete
             find "$BACKUP_DIR" -name "easymod-uploads-*.tar.gz" -mtime +7 -delete
+            find "$BACKUP_DIR" -name "*.enc" -mtime +1 -delete 2>/dev/null || true
             echo "Retention cleanup done. Current backups:"
             ls -lh "$BACKUP_DIR"

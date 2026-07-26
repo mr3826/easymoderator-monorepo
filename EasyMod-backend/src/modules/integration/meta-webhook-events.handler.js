@@ -4,12 +4,19 @@
  * Meta Webhook — Page Event Handler
  *
  * Handles inbound Messenger (page) webhooks:
+ *   - Persist a durable receipt for every event BEFORE acknowledging Meta
  *   - Find-or-create customer
  *   - Find-or-create conversation (rolling 24h window)
  *   - Store message with idempotency guard
  *   - Emit SSE event to connected dashboard clients
  *   - Process consent (STOP keyword → opt-out, else OPT_IN_IMPLICIT)
  *   - Dispatch BullMQ job for AI processing (unless STOP or duplicate)
+ *   - Record the outcome on the receipt so nothing is ever silently dropped
+ *
+ * F-02 / F-03: an unmapped Page or a failed message INSERT used to be logged and
+ * abandoned while Meta was told 200 — which suppresses Meta's own retry and
+ * destroys the only copy of a real customer message. Every event now lands in
+ * meta_webhook_receipts first, and every terminal outcome is written back.
  */
 
 const { Customer } = require('../entities');
@@ -19,6 +26,7 @@ const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
+const receiptService = require('./meta-webhook-receipt.service');
 
 const logger = createLogger('MetaWebhookEvents');
 
@@ -436,83 +444,142 @@ async function storeIncomingMessage(event) {
 // ─── Page event handler ──────────────────────────────────────────────────────
 
 /**
+ * Notify the owning shop that its Page is no longer routable. Best-effort — the
+ * durable receipt, not this SSE frame, is what keeps the message recoverable.
+ */
+async function notifyPageDisconnected(pageId) {
+    try {
+        const MetaChannel = require('../channel-providers/meta-channel.entity');
+        const prev = await MetaChannel.findOne({
+            where: { meta_asset_id: pageId },
+            attributes: ['shop_id', 'display_name', 'status']
+        });
+        if (prev) {
+            sseManager.emit(prev.shop_id, 'channel_error', {
+                type: 'page_disconnected',
+                page_id: pageId,
+                display_name: prev.display_name || pageId,
+                status: prev.status,
+                message: `Facebook page messages are not being delivered — the channel is ${prev.status}. Reconnect it in Settings → Channels.`
+            });
+        }
+    } catch (_) { /* best-effort SSE */ }
+}
+
+/**
+ * Ingest one `entry.messaging[]` event against an already-resolved channel and
+ * record the outcome on its durable receipt.
+ *
+ * Shared by the live webhook path and the reconciler that replays held events,
+ * so a retry follows exactly the same code path as a first delivery.
+ *
+ * @returns {Promise<'processed'|'skipped'|'failed'>}
+ */
+async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
+    const senderId = messaging.sender?.id;
+
+    if (messaging.optin) {
+        await handleMessagingOptin({ channel, senderId, optin: messaging.optin });
+        await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
+        return 'processed';
+    }
+    if (messaging.message?.is_echo) {
+        logger.debug(`Skipped echo event from ${senderId}`);
+        await receiptService.markSkipped(receipt, 'ECHO');
+        return 'skipped';
+    }
+
+    const messageText = messaging.message?.text || null;
+    const attachments = messaging.message?.attachments || [];
+    if (!messageText && attachments.length === 0) {
+        logger.debug(`Skipped non-message event from ${senderId}`, { keys: Object.keys(messaging) });
+        await receiptService.markSkipped(receipt, 'NON_MESSAGE_EVENT');
+        return 'skipped';
+    }
+
+    const normalizedEvent = {
+        platform: 'facebook',
+        shop_id: channel.shop_id,
+        meta_channel_id: channel.id,
+        sender: senderId,
+        message: messageText || '',
+        attachments,
+        timestamp: new Date(messaging.timestamp),
+        raw_event: messaging
+    };
+
+    try {
+        logger.info(`Processing message from ${senderId} to shop ${channel.shop_id}`);
+        await receiptService.markProcessing(receipt);
+        const storeResult = await storeIncomingMessage(normalizedEvent);
+        if (!storeResult.duplicate) {
+            const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
+            sseManager.emit(channel.shop_id, 'new_message', {
+                conversation_id: storeResult.conversation_id,
+                message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
+            });
+        }
+        const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
+        if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
+        else cancelPendingDispatch(storeResult.conversation_id);
+
+        await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
+        return 'processed';
+    } catch (err) {
+        logger.error(`Failed to store message from ${senderId} (page ${pageId})`, {
+            error: err.message, stack: err.stack
+        });
+        // Durable, retryable, and alerted. Previously this branch swallowed the
+        // failure and the message was gone.
+        await receiptService.markStoreFailure(receipt, err, { pageId });
+        return 'failed';
+    }
+}
+
+/**
  * Handle Facebook Messenger (page object) webhooks.
+ *
+ * Throws {@link receiptService.WebhookReceiptPersistenceError} when the durable
+ * receipt cannot be written; the router turns that into a retryable 5xx so Meta
+ * redelivers instead of the event being lost.
  */
 async function handlePageWebhook(payload, resolveConnectedChannel) {
-    for (const entry of payload.entry) {
+    for (const entry of (payload.entry || [])) {
         const pageId = entry.id;
-        logger.info(`Processing Facebook page ${pageId}`, { eventCount: entry.messaging?.length || 0 });
+        const events = entry.messaging || [];
+        logger.info(`Processing Facebook page ${pageId}`, { eventCount: events.length });
+
+        // Phase 1 — durable receipts BEFORE channel resolution or any business
+        // work. Nothing below this point can lose an event.
+        const recorded = [];
+        for (const messaging of events) {
+            const { receipt, duplicate } = await receiptService.recordReceipt({ pageId, messaging });
+            recorded.push({ messaging, receipt, duplicate });
+        }
 
         const channel = await resolveConnectedChannel(pageId, 'facebook');
 
         if (!channel) {
-            logger.error(`No CONNECTED facebook channel for page_id=${pageId} — incoming messages are being dropped`);
-            try {
-                const MetaChannel = require('../channel-providers/meta-channel.entity');
-                const prev = await MetaChannel.findOne({
-                    where: { meta_asset_id: pageId },
-                    attributes: ['shop_id', 'display_name', 'status']
-                });
-                if (prev) {
-                    sseManager.emit(prev.shop_id, 'channel_error', {
-                        type: 'page_disconnected',
-                        page_id: pageId,
-                        display_name: prev.display_name || pageId,
-                        status: prev.status,
-                        message: `Facebook page messages are not being delivered — the channel is ${prev.status}. Reconnect it in Settings → Channels.`
-                    });
-                }
-            } catch (_) { /* best-effort SSE */ }
+            logger.error(`No CONNECTED facebook channel for page_id=${pageId} — inbound messages held for retry`);
+            let alerted = false;
+            for (const { receipt } of recorded) {
+                if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
+                await receiptService.markIdentityNotResolved(receipt, { pageId, alert: !alerted });
+                alerted = true;
+            }
+            await notifyPageDisconnected(pageId);
             continue;
         }
 
-        for (const messaging of (entry.messaging || [])) {
-            if (messaging.optin) {
-                await handleMessagingOptin({ channel, senderId: messaging.sender?.id, optin: messaging.optin });
+        for (const { messaging, receipt, duplicate } of recorded) {
+            // A redelivery of something already settled must not re-run ingestion.
+            if (duplicate && receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) {
+                logger.debug(`Duplicate webhook event skipped (receipt ${receipt.id} is ${receipt.status})`);
                 continue;
             }
-            if (messaging.message?.is_echo) {
-                logger.debug(`Skipped echo event from ${messaging.sender.id}`);
-                continue;
-            }
-            const messageText = messaging.message?.text || null;
-            const attachments = messaging.message?.attachments || [];
-            if (!messageText && attachments.length === 0) {
-                logger.debug(`Skipped non-message event from ${messaging.sender.id}`, { keys: Object.keys(messaging) });
-                continue;
-            }
-
-            const normalizedEvent = {
-                platform: 'facebook',
-                shop_id: channel.shop_id,
-                meta_channel_id: channel.id,
-                sender: messaging.sender.id,
-                message: messageText || '',
-                attachments,
-                timestamp: new Date(messaging.timestamp),
-                raw_event: messaging
-            };
-
-            try {
-                logger.info(`Processing message from ${messaging.sender.id} to shop ${channel.shop_id}`);
-                const storeResult = await storeIncomingMessage(normalizedEvent);
-                if (!storeResult.duplicate) {
-                    const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
-                    sseManager.emit(channel.shop_id, 'new_message', {
-                        conversation_id: storeResult.conversation_id,
-                        message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
-                    });
-                }
-                const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
-                if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
-                else cancelPendingDispatch(storeResult.conversation_id);
-            } catch (err) {
-                logger.error(`Failed to store message from ${messaging.sender.id} (page ${pageId})`, {
-                    error: err.message, stack: err.stack
-                });
-            }
+            await processMessagingEvent({ messaging, channel, receipt, pageId });
         }
     }
 }
 
-module.exports = { handlePageWebhook, storeIncomingMessage };
+module.exports = { handlePageWebhook, processMessagingEvent, storeIncomingMessage };

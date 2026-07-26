@@ -80,4 +80,58 @@ async function opsAlert(title, { detail = '', level = 'error', context = {} } = 
     await sendSlack(detail ? `${emoji} *${title}*\n${detail}` : `${emoji} *${title}*`);
 }
 
-module.exports = { opsAlert, sendSlack };
+/**
+ * Which alert sinks are configured — booleans only, never the DSN or URL.
+ * Used by the admin test-alert endpoint and to answer launch gate 8.
+ */
+function describeAlertSinks() {
+    return {
+        slackConfigured: Boolean(process.env.SLACK_ALERT_WEBHOOK_URL),
+        sentryConfigured: Boolean(process.env.SENTRY_DSN),
+    };
+}
+
+/**
+ * Fire a deliberate, PII-free test alert and report what happened per sink.
+ *
+ * Bypasses the per-title throttle so an operator running this twice actually
+ * sees two events. Slack acceptance is observable (the webhook POST resolves);
+ * Sentry send is fire-and-forget, so it is reported as "attempted" when the DSN
+ * is configured. The caller must still confirm the message arrived on a device
+ * they watch — configuration alone does not close launch gate 8.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.actorLabel] non-PII marker (e.g. an admin user id) for traceability
+ * @returns {Promise<{slackConfigured:boolean, sentryConfigured:boolean, slackAccepted:boolean, sentryAttempted:boolean, anySinkConfigured:boolean}>}
+ */
+async function sendTestAlert({ actorLabel = 'unknown' } = {}) {
+    const sinks = describeAlertSinks();
+    const title = 'EasyModerator ops alert test';
+    const detail = `Manual alerting self-test. actor=${actorLabel}. `
+        + 'If you can read this, this sink is delivering. No customer data is included.';
+
+    // Always log for forensics.
+    console.warn(`[OPS-ALERT] ${title} — ${detail}`);
+
+    let sentryAttempted = false;
+    if (sinks.sentryConfigured) {
+        try {
+            sentryCaptureMessage(`[OPS] ${title}`, { level: 'warning', extra: { detail } });
+            sentryAttempted = true;
+        } catch (_) { /* never propagate */ }
+    }
+
+    let slackAccepted = false;
+    if (sinks.slackConfigured) {
+        slackAccepted = await sendSlack(`:test_tube: *${title}*\n${detail}`);
+    }
+
+    return {
+        ...sinks,
+        slackAccepted,
+        sentryAttempted,
+        anySinkConfigured: sinks.slackConfigured || sinks.sentryConfigured,
+    };
+}
+
+module.exports = { opsAlert, sendSlack, describeAlertSinks, sendTestAlert };

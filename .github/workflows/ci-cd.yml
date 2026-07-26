@@ -205,6 +205,7 @@ jobs:
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
             VITE_ENV=production
+            VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
           cache-from: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_FRONTEND }}:buildcache,mode=max
 
@@ -243,7 +244,12 @@ jobs:
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
-          BKASH_ENABLED: "true"
+          # bKash is a LIVE-money gateway. It stays OFF for the controlled pilot
+          # (finding F-14/§6). Flip the `BKASH_ENABLED` Actions *variable* to
+          # "true" only once every BKASH_* secret is set AND a real-money test
+          # has been signed off. While the variable is unset the render skips
+          # every bKash credential, so a partial config cannot deploy live.
+          BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
           BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
           BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
           BKASH_PASSWORD: ${{ secrets.BKASH_PASSWORD }}
@@ -267,7 +273,11 @@ jobs:
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # Backend alerting (finding F-06). The backend reads SENTRY_DSN, a
+          # separate name from the frontend's VITE_SENTRY_DSN. Fall back to the
+          # frontend DSN so ops alerts have a sink even before a dedicated
+          # backend project exists — both currently share one Sentry project.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}

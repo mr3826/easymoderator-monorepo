@@ -7,6 +7,7 @@ import { Switch } from "@/app/components/ui/switch";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
+import { isBkashEnabled } from "@/app/lib/config";
 
 interface Invoice {
   id: string;       // invoice_number (displayed)
@@ -20,6 +21,9 @@ interface Invoice {
 
 export default function Subscription() {
   const { t } = useTranslation();
+  // bKash purchasing is off for the controlled pilot (launch remediation, §6).
+  // No pay button or live-money CTA is shown while disabled.
+  const bkashEnabled = isBkashEnabled();
   const [selectedConversationPack, setSelectedConversationPack] = useState<number | null>(null);
   const [isRequestingInvoice, setIsRequestingInvoice] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -533,7 +537,10 @@ export default function Subscription() {
           </div>
         </div>
 
-        {/* AI paused / payment-needed banner — primary bKash CTA */}
+        {/* AI paused / payment-needed banner — primary bKash CTA.
+            The pay button appears only when bKash purchasing is enabled; while
+            disabled for the pilot the merchant still sees the status, but no
+            live-money CTA that the backend would reject. */}
         {['suspended', 'trial_expired', 'past_due', 'inactive'].includes(currentPlan.status) && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-lg border border-red-200 bg-red-50">
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
@@ -542,14 +549,16 @@ export default function Subscription() {
                 ? t('subscription.invoiceDueWarning')
                 : t('subscription.aiPausedNote')}
             </p>
-            <button
-              onClick={handleRenew}
-              disabled={isRenewing}
-              className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60 whitespace-nowrap"
-            >
-              <CreditCard className="w-4 h-4" />
-              {isRenewing ? '...' : t('subscription.payActivateBkash', { price: currentPlan.price.toLocaleString() })}
-            </button>
+            {bkashEnabled && (
+              <button
+                onClick={handleRenew}
+                disabled={isRenewing}
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-pink-600 text-white hover:bg-pink-700 transition-colors disabled:opacity-60 whitespace-nowrap"
+              >
+                <CreditCard className="w-4 h-4" />
+                {isRenewing ? '...' : t('subscription.payActivateBkash', { price: currentPlan.price.toLocaleString() })}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -811,45 +820,56 @@ export default function Subscription() {
         {/* Section 4: Add More Conversations */}
         <div id="topup-section" className="bg-white rounded-xl p-6 border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('subscription.addConversationsTitle')}</h3>
-          <div className="space-y-3 mb-6">
-            {conversationPacks.map((pack) => (
+          {/* Conversation-pack purchasing is a live bKash surface. While bKash
+              is disabled for the pilot we show an honest unavailable note
+              instead of packs and a pay button. */}
+          {bkashEnabled ? (
+            <>
+              <div className="space-y-3 mb-6">
+                {conversationPacks.map((pack) => (
+                  <button
+                    key={pack.amount}
+                    onClick={() => setSelectedConversationPack(pack.amount)}
+                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                      selectedConversationPack === pack.amount
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">{t('subscription.plusConversations', { count: pack.amount })}</p>
+                        <p className="text-xs text-gray-500 mt-1">{t('subscription.addedToMonthlyLimit')}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-gray-900">৳{pack.price.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">BDT</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
               <button
-                key={pack.amount}
-                onClick={() => setSelectedConversationPack(pack.amount)}
-                className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                  selectedConversationPack === pack.amount
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
+                onClick={handleRequestConversationPack}
+                disabled={!selectedConversationPack || isRequestingInvoice}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors ${
+                  selectedConversationPack && !isRequestingInvoice
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-gray-900">{t('subscription.plusConversations', { count: pack.amount })}</p>
-                    <p className="text-xs text-gray-500 mt-1">{t('subscription.addedToMonthlyLimit')}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-gray-900">৳{pack.price.toLocaleString()}</p>
-                    <p className="text-xs text-gray-500">BDT</p>
-                  </div>
-                </div>
+                <CreditCard className="w-4 h-4" />
+                {isRequestingInvoice ? '...' : t('subscription.payWithBkash', 'bKash দিয়ে Pay করুন')}
               </button>
-            ))}
-          </div>
-          <button
-            onClick={handleRequestConversationPack}
-            disabled={!selectedConversationPack || isRequestingInvoice}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors ${
-              selectedConversationPack && !isRequestingInvoice
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            {isRequestingInvoice ? '...' : t('subscription.payWithBkash', 'bKash দিয়ে Pay করুন')}
-          </button>
-          <p className="text-xs text-gray-500 text-center mt-3">
-            {t('subscription.topupBkashNote', 'Payment সফল হলে conversations সাথে সাথে balance-এ যোগ হবে।')}
-          </p>
+              <p className="text-xs text-gray-500 text-center mt-3">
+                {t('subscription.topupBkashNote', 'Payment সফল হলে conversations সাথে সাথে balance-এ যোগ হবে।')}
+              </p>
+            </>
+          ) : (
+            <p data-testid="topup-bkash-unavailable" className="text-sm text-gray-500">
+              {t('subscription.bkashUnavailable', 'bKash payment এখন available নয়। আপনার trial চলাকালীন সব feature ব্যবহার করতে পারবেন।')}
+            </p>
+          )}
         </div>
 
         {/* Section 5: Feature Access */}

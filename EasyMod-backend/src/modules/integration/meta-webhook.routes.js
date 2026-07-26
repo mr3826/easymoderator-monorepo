@@ -20,9 +20,9 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const config = require('../../config/config');
-const metaChannelService = require('../channel-providers/meta-channel.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { handlePageWebhook, storeIncomingMessage } = require('./meta-webhook-events.handler');
+const { resolveConnectedChannel } = require('./meta-channel-resolver');
 const gdprRouter = require('./meta-webhook-gdpr.handler');
 
 const logger = createLogger('MetaWebhook');
@@ -62,32 +62,6 @@ const isValidSignature = (rawBody, signature, secret) => {
         return false;
     }
 };
-
-// ─── Channel resolver ─────────────────────────────────────────────────────────
-
-/**
- * Resolve the connected channel for an incoming Meta asset ID.
- * Phase 5: reads exclusively from meta_channels (single source of truth).
- */
-async function resolveConnectedChannel(assetId, platform) {
-    const channel = await metaChannelService.findByMetaAssetId(assetId);
-    if (!channel) return null;
-    // Only treat genuinely-connected channels as routable. A DISCONNECTED /
-    // TOKEN_EXPIRED / REVOKED channel can never send a reply, so dispatching an
-    // AI job just burns quota and produces a reply that fails at send. Returning
-    // null here routes into the handler's null-branch, which notifies the owner
-    // (via SSE) to reconnect the channel.
-    if (channel.status !== 'CONNECTED') return null;
-    return {
-        id: channel.id,
-        shop_id: channel.shop_id,
-        platform: channel.platform,
-        asset_id: channel.meta_asset_id,
-        display_name: channel.display_name,
-        status: channel.status,
-        source: 'meta_channels',
-    };
-}
 
 // ─── GET / — webhook verification challenge ──────────────────────────────────
 
@@ -171,6 +145,17 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 
         res.sendStatus(200);
     } catch (error) {
+        // The ONLY case where Meta must retry: we failed to write the durable
+        // receipt, so no record of the event exists anywhere. Acknowledging here
+        // would destroy a real customer message. Everything else is already
+        // durably recorded and retried by the reconciler, so it acks 200.
+        if (error?.name === 'WebhookReceiptPersistenceError') {
+            logger.error('Durable webhook receipt persistence failed — asking Meta to redeliver', {
+                errorCode: error.cause?.name || 'UnknownError',
+            });
+            return res.sendStatus(503);
+        }
+
         const isExpected =
             error.name === 'SequelizeUniqueConstraintError' ||
             error.message?.includes('duplicate') ||
@@ -193,3 +178,6 @@ router.use('/', gdprRouter);
 // Export storeIncomingMessage so the channel test endpoint can use it directly
 module.exports = router;
 module.exports.storeIncomingMessage = storeIncomingMessage;
+// The reconciler replays held receipts through the same resolution path the live
+// webhook uses, so a retry can never resolve a Page differently from a delivery.
+module.exports.resolveConnectedChannel = resolveConnectedChannel;

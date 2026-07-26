@@ -37,17 +37,22 @@ router.get('/ready', async (req, res) => {
         const redisConnected = Object.values(redisStatus).some(status => status);
 
         res.status(200).json({
+            // Provenance marker — proves this response came from the API and not
+            // from a proxy or static-host stub. The launch gate requires it.
+            service: 'easymod-backend',
             status: 'ready',
             timestamp: new Date().toISOString(),
             database: 'connected',
             redis: redisConnected ? 'connected' : 'not_configured',
             redis_details: redisStatus,
+            commit: process.env.GIT_SHA || null,
             version: process.env.APP_VERSION || '1.0.0'
         });
     } catch (error) {
         // Do NOT include error.message — this endpoint is unauthenticated and
         // error messages can expose connection strings, DB hostnames, or credentials.
         res.status(503).json({
+            service: 'easymod-backend',
             status: 'not_ready',
             timestamp: new Date().toISOString(),
             database: 'disconnected',
@@ -61,7 +66,9 @@ router.get('/ready', async (req, res) => {
  */
 router.get('/detailed', authenticate, async (req, res) => {
     const checks = {
-        service: 'up',
+        service: 'easymod-backend',
+        status: 'up',
+        commit: process.env.GIT_SHA || null,
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         database: 'unknown',
@@ -69,6 +76,7 @@ router.get('/detailed', authenticate, async (req, res) => {
         redis_details: {},
         vectorDb: 'unknown',
         vectorProvider: 'qdrant',
+        autoReplyDlq: null,
         queues: null
     };
 
@@ -130,10 +138,29 @@ router.get('/detailed', authenticate, async (req, res) => {
         // the message-dlq sink). A non-zero dlq means real
         // customers got no reply — this is the path that must never fail silently.
         checks.criticalQueues = await queueManager.getCriticalQueueStats();
-        const dlqDepth = checks.criticalQueues?.messageDlq?.waiting || 0;
-        checks.autoReplyDlq = dlqDepth;
+        const dlqDepth = checks.criticalQueues?.messageDlq?.waiting;
+        // Never coerce an unknown depth to zero — the launch gate reads this
+        // field and a fabricated 0 is what made gate 4 report a false PASS.
+        checks.autoReplyDlq = Number.isInteger(dlqDepth) ? dlqDepth : null;
     } catch (_) {
         checks.queues = { error: 'queue_manager_unavailable' };
+        checks.autoReplyDlq = null;
+    }
+
+    // Inbound-side dead letters: events Meta delivered that were never ingested
+    // after every retry. Non-zero means real customer messages are lost.
+    try {
+        const receiptService = require('../modules/integration/meta-webhook-receipt.service');
+        const [deadLettered, held] = await Promise.all([
+            receiptService.countDeadLettered(),
+            receiptService.countUnresolved(),
+        ]);
+        checks.webhookReceipts = {
+            deadLettered: Number.isInteger(deadLettered) ? deadLettered : null,
+            held: Number.isInteger(held) ? held : null,
+        };
+    } catch (_) {
+        checks.webhookReceipts = { deadLettered: null, held: null };
     }
 
     // Auto-reply canary freshness — proves the message-processing worker is alive

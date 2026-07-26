@@ -54,6 +54,31 @@ describe('production configuration validation', () => {
         expect(() => assertProductionConfig(env)).toThrow(/CSRF_SECRET/);
     });
 
+    test('bKash disabled does not require BKASH_WEBHOOK_SECRET (moved out of core)', () => {
+        const env = validEnv({ BKASH_ENABLED: 'false' });
+        delete env.BKASH_WEBHOOK_SECRET;
+        const result = validateProductionConfig(env);
+        expect(result.valid).toBe(true);
+        expect(result.missing).not.toContain('BKASH_WEBHOOK_SECRET');
+        expect(result.requirements).not.toContain('BKASH_WEBHOOK_SECRET');
+    });
+
+    test('bKash enabled requires BKASH_WEBHOOK_SECRET again', () => {
+        const env = validEnv({
+            BKASH_ENABLED: 'true',
+            BKASH_BASE_URL: 'https://tokenized.pay.bka.sh',
+            BKASH_USERNAME: 'user',
+            BKASH_PASSWORD: 'pass',
+            BKASH_APP_KEY: 'app-key',
+            BKASH_APP_SECRET: 'app-secret',
+            BKASH_SANDBOX: 'false',
+        });
+        delete env.BKASH_WEBHOOK_SECRET;
+        const result = validateProductionConfig(env);
+        expect(result.valid).toBe(false);
+        expect(result.missing).toContain('BKASH_WEBHOOK_SECRET');
+    });
+
     test('requires the full live bKash set when enabled', () => {
         const result = validateProductionConfig(validEnv({
             BKASH_ENABLED: 'true',

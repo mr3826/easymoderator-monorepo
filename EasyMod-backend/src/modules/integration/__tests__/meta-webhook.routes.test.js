@@ -13,6 +13,8 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret-32chars!!';
 process.env.META_APP_SECRET = 'test-app-secret';
 process.env.META_WEBHOOK_VERIFY_TOKEN = 'global-verify-token';
+// Durable webhook receipts encrypt their replay body with this key.
+process.env.CHANNEL_ENCRYPTION_KEY = 'b'.repeat(64);
 // ── Mocks (before any require) ─────────────────────────────────────────────────
 
 jest.mock('src/config/redis', () => ({
@@ -458,11 +460,14 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         config.metaWebhookAppSecret = null;
     });
 
-    it('always returns 200 — never 5xx (Meta must not retry)', async () => {
+    // Acknowledgement contract: 200 once the event is durably recorded, 5xx only
+    // when the durable receipt itself could not be written. See
+    // meta-webhook-durability.test.js for the full F-02/F-03 matrix.
+    it('returns 200 once the event is durably recorded', async () => {
         await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
 
-    it('returns 200 even when MetaChannel is missing (message dropped gracefully)', async () => {
+    it('returns 200 when MetaChannel is missing (the event is held, not dropped)', async () => {
         mockMetaChannelService.findByMetaAssetId.mockResolvedValue(null);
         await sendWebhookWithSig(buildPagePayload()).expect(200);
     });
@@ -543,7 +548,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
         expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
-    it('returns 200 even when message storage fails (per-message error isolation)', async () => {
+    it('returns 200 when message storage fails — the receipt keeps it retryable', async () => {
         mockMessage.create.mockRejectedValue(new Error('DB write failed'));
 
         await sendWebhookWithSig(buildPagePayload()).expect(200);
