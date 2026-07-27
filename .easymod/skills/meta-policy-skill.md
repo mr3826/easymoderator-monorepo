@@ -131,7 +131,9 @@ These signals trigger Meta spam detection. Monitor and mitigate:
 - User must explicitly agree to receive messages from the business
 - Opt-out: `customer.whatsapp_opted_out = true`
 
-### Instagram
+### Instagram — **NOT IN THE INITIAL RELEASE**
+Kept for reference only. No Instagram provider exists and no `instagram_*` scope
+is requested; building against this section would put the app out of scope.
 - Same rules as Messenger — 24-hour window, user-initiated trigger only
 - Direct Instagram DMs: only in response to user-initiated action (comment / DM)
 
@@ -157,19 +159,33 @@ Required before submitting any new permission to Meta for review:
 
 ### Permissions EasyModerator Uses
 
+Source of truth is `DEFAULT_SCOPES` in
+`EasyMod-backend/src/modules/channel-providers/providers/MetaMessengerProvider.js`.
+If this table and that constant ever disagree, the constant is right and this
+table is stale — fix the table.
+
 | Permission | Purpose | Status |
 |-----------|---------|--------|
-| `pages_messaging` | Send/receive Messenger DMs | Active |
-| `pages_read_engagement` | Read comments on posts for keyword detection | Active |
-| `pages_manage_engagement` | Reply to comments | Active |
-| `instagram_basic` | Read IG profile and media for comment monitoring | Active |
-| `instagram_manage_messages` | Send/receive Instagram DMs | Active |
+| `pages_show_list` | List the Pages the merchant granted, for the Page picker | Active |
+| `pages_messaging` | Send/receive direct Messenger DMs | Active |
+| `pages_manage_metadata` | Subscribe/verify/unsubscribe the Page `messages` webhook | Active |
+
+Webhook subscription is `['messages']` on the `page` object. Nothing else.
 
 ### Removed Permissions
 
-| Permission        | Removed          | Reason                                                                                                                                           |
-|-------------------|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| `whatsapp_business_messaging` | 2026-05-20 | BD market validation showed Messenger+IG covers 95% of f-commerce conversations; WhatsApp Business API onboarding friction too high for SME pilot |
+**Do not implement a feature that needs any of these without an explicit scope
+decision from the founder first.** They were removed to shrink App Review
+surface; re-adding one reopens review.
+
+| Permission | Removed | Reason |
+|---|---|---|
+| `pages_read_engagement` | 2026-06-27 | Comment-to-DM cut from the initial launch — the app no longer reads Page post comments |
+| `pages_manage_engagement` | 2026-06-27 | Same — no public comment replies, no private replies to comments |
+| `instagram_basic` | 2026-06-24 | Instagram removed from the initial release; no provider exists (`provider.registry.js` is frozen to `{ facebook }`) |
+| `instagram_manage_messages` | 2026-06-24 | Same |
+| `business_management` | 2026-06-27 | Business Portfolio edges are deliberately not queried; Page discovery uses `/me/accounts` only |
+| `whatsapp_business_messaging` | 2026-05-20 | BD market validation showed Messenger covers the f-commerce conversation; WhatsApp Business API onboarding friction too high for the SME pilot |
 
 ---
 

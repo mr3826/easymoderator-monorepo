@@ -1,7 +1,7 @@
 # Permissions Justification
 
 **App:** Easy Moderator
-**Last updated:** 2026-06-27 (Messenger-only launch; Comment-to-DM removed)
+**Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
 
 Easy Moderator requests three Facebook Page permissions for the initial launch:
 
@@ -15,7 +15,7 @@ The app does not request `pages_read_engagement`, `pages_manage_engagement`, `bu
 
 **Use case:** List the Facebook Pages the merchant administers so they can select which Page(s) to connect.
 
-**User-facing screen:** Settings -> Chat Settings, after OAuth consent.
+**User-facing screen:** Settings → Chat (`/app/manage-shop/chat-settings`), after OAuth consent.
 
 **Graph API call:** `GET /me/accounts`.
 
@@ -25,7 +25,7 @@ The app does not request `pages_read_engagement`, `pages_manage_engagement`, `bu
 
 **Use case:** Receive direct Messenger DMs and send AI/manual replies on behalf of the connected Facebook Page.
 
-**User-facing screen:** Shared Inbox and Settings -> Chat Settings.
+**User-facing screen:** Shared Inbox and Settings → Chat (`/app/manage-shop/chat-settings`).
 
 **Graph API calls and webhook fields:**
 
@@ -38,7 +38,7 @@ The app does not request `pages_read_engagement`, `pages_manage_engagement`, `bu
 
 **Use case:** Subscribe, verify, and unsubscribe the connected Page's Messenger webhook.
 
-**User-facing screen:** Settings -> Chat Settings channel health card.
+**User-facing screen:** Settings → Chat (`/app/manage-shop/chat-settings`) channel health card.
 
 **Graph API calls:**
 

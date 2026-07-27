@@ -39,8 +39,15 @@ const GRANULAR_PAGE_SCOPES = [
     'pages_manage_metadata',
 ];
 
+// Meta accepts appsecret_proof on every Graph call and *requires* it once
+// "Require App Secret Proof for Server API calls" is switched on in the App
+// Dashboard. Send it everywhere — page-token calls included — so flipping that
+// setting can never break the Send API or the webhook subscription mid-review.
+// Returns null (which axios drops from the query string) when either input is
+// missing, so a misconfigured test env degrades instead of throwing.
 function appsecretProof(token) {
     const secret = config.metaAppSecret || process.env.META_APP_SECRET;
+    if (!secret || !token) return null;
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
@@ -335,6 +342,7 @@ class MetaMessengerProvider extends ChannelProvider {
                 {
                     params: {
                         access_token: token,
+                        appsecret_proof: appsecretProof(token),
                         subscribed_fields: this.webhookFields().join(',')
                     }
                 }
@@ -350,7 +358,7 @@ class MetaMessengerProvider extends ChannelProvider {
         try {
             await axios.delete(
                 `${GRAPH_BASE}/${channel.meta_asset_id}/subscribed_apps`,
-                { params: { access_token: token } }
+                { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
             );
             return { ok: true };
         } catch (err) {
@@ -365,7 +373,7 @@ class MetaMessengerProvider extends ChannelProvider {
         if (!token) return { ok: false, fields: [] };
         try {
             const resp = await axios.get(`${GRAPH_BASE}/${targetId}/subscribed_apps`, {
-                params: { access_token: token }
+                params: { access_token: token, appsecret_proof: appsecretProof(token) }
             });
             const apps = resp.data?.data || [];
             const fields = apps.flatMap(a => a.subscribed_fields || []);
@@ -482,7 +490,7 @@ class MetaMessengerProvider extends ChannelProvider {
                 const resp = await axios.post(
                     `${GRAPH_BASE}/me/messages`,
                     body,
-                    { params: { access_token: token } }
+                    { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
                 );
                 providerMessageIds.push(resp.data.message_id || null);
             }
