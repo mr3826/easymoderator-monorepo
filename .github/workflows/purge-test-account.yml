@@ -93,12 +93,36 @@ jobs:
           script: |
             set -e
             cd /opt/easymod
+
+            # `exec -T ... node < file` exits 0 having read an empty program, so
+            # a lost redirect looks exactly like a successful no-op purge. Assert
+            # the script arrived, then bind-mount it and name it as an argument
+            # rather than depending on stdin reaching the container at all.
+            SCRIPT=/opt/easymod/purge-test-account.js
+            BYTES=$(wc -c < "$SCRIPT")
+            echo "==> script: ${BYTES} bytes"
+            if [ "$BYTES" -lt 1000 ]; then
+              echo "ERROR: purge script missing or truncated"
+              exit 1
+            fi
+
             echo "==> mode=${TARGET_MODE} for ${TARGET_EMAIL}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T \
+            # Mount inside /app, not /tmp: node resolves `require('pg')` by
+            # walking up from the script's own directory, so /tmp/purge.js only
+            # ever finds /tmp/node_modules and /node_modules — never the app's.
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -v "$SCRIPT":/app/purge-test-account.js:ro \
               -e PURGE_EMAIL="${TARGET_EMAIL}" \
               -e PURGE_MODE="${TARGET_MODE}" \
-              backend node < /opt/easymod/purge-test-account.js
-            rm -f /opt/easymod/purge-test-account.js
+              -e RUN_MIGRATIONS_ON_STARTUP=false \
+              backend node /app/purge-test-account.js | tee /tmp/purge-output.txt
+
+            if [ ! -s /tmp/purge-output.txt ]; then
+              echo "ERROR: purge produced no output — treating as a failed run"
+              exit 1
+            fi
+
+            rm -f "$SCRIPT" /tmp/purge-output.txt
             echo "==> Done."
         env:
           TARGET_EMAIL: ${{ inputs.email }}

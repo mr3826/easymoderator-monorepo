@@ -148,7 +148,7 @@ The only build warning is the pre-existing chunk-size advisory.
 | 12 | Tests, typecheck and production build pass | ✅ 464 tests, 0 TS errors, build clean |
 | 13 | No fake, dead or placeholder controls in the release path | ✅ swept — none found |
 | 14 | Messenger-only scope preserved | ✅ no other channel surfaced; bKash purchasing correctly gated off |
-| 15 | **Fixes deployed to production** | ❌ **outstanding — production still runs the pre-fix build** |
+| 15 | **Fixes deployed to production** | ✅ deployed — see §11 |
 
 ---
 
@@ -156,4 +156,33 @@ The only build warning is the pre-existing chunk-size advisory.
 
 The two funnel-breaking defects share one root cause worth naming: **the frontend and backend disagreed about what valid input is, and the UI asserted confidence it had not earned.** A green "Strong" badge on a password the API rejects, and a Publish button that submits a payload the API refuses, are the same failure — client-side validation drifting from the contract it is supposed to mirror. The password fix is therefore structural (one policy module, with a parity test) rather than a one-line regex, and the i18n and payload fixes are likewise backed by tests that fail if the drift returns.
 
-Gate 15 is the one to act on now: every hour production stays on `afa031b6`, new merchants hit both blockers.
+Gate 15 was the one to act on, and it is now closed — see §11. Gate 5 is what remains.
+
+---
+
+## 11. Post-audit execution (same day)
+
+| Step | Outcome |
+|---|---|
+| Fixes committed | `aba0dbe`, merged as `5027475` (PR #79) |
+| Purge tooling | merged as `a8cf44c` (PR #80) |
+| Deployed | frontend image `5027475e`; backend rebuilt on the #80 merge |
+| Production commit | `/health` reports `a8cf44ca50ff736e7cd8083fc599b39b859e3904` — no longer `afa031b6` |
+| Production verification | 20/20 checks passed against `https://easymod.tech` at 360 / 768 / 1440 px |
+| QA account purged | `qa.audit.3923987@easymod-qa.test` — 9 rows across 6 tables, 2 audit rows anonymised; re-scan reports `found: false`; signin returns 401 |
+
+Both blockers were confirmed fixed **on production**, not just in the branch: the deployed
+bundle rates a password without a special character "Good" rather than "Strong" and blocks
+submission client-side, and `POST /api/product` with only `name` + `price` returns **201**.
+
+Two things surfaced during execution that the audit itself could not have found:
+
+1. **The API-level product deletes done during the audit were soft deletes.** The purge dry
+   run found 4 `products` rows still on disk for an account whose products had all been
+   "deleted" through the API. Anything that relies on `DELETE /api/product/:id` to actually
+   remove data is mistaken.
+2. **`safe-media-fetch.test.js` is flaky and sits in the deploy gate.** `req.setTimeout(timeoutMs, …)`
+   and `setTimeout(…, timeoutMs)` are armed with the *same* value, so which error message wins
+   is a coin flip; the test only accepts one of them. It failed once under `--runInBand` and
+   passed 3/3 in isolation. Unrelated to this release, but it can block a deploy at random.
+   Giving the total timer a longer deadline than the connection timer would settle it.
