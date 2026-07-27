@@ -57,9 +57,19 @@ jobs:
 
             echo "Starting backup: $BACKUP_FILE"
 
-            # Dump from the running postgres container and gzip inline
-            docker compose -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
+            # Dump from the running postgres container and gzip inline.
+            # --env-file is required: the compose file interpolates DB_PASSWORD
+            # into services.postgres.environment, and compose fails the whole
+            # command on a missing variable even for `exec`.
+            docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
               pg_dump -U easymod_user easymod | gzip > "$BACKUP_FILE"
+
+            # A pg_dump that fails mid-stream still leaves a valid gzip of a
+            # partial dump, so size-check the result rather than trusting exit 0.
+            BACKUP_BYTES=$(wc -c < "$BACKUP_FILE")
+            if [ "$BACKUP_BYTES" -lt 10000 ]; then
+              echo "ERROR: backup is only ${BACKUP_BYTES} bytes — treating as failed"; exit 1
+            fi
 
             echo "Backup complete: $(du -sh "$BACKUP_FILE" | cut -f1)"
 
