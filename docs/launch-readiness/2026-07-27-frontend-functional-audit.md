@@ -6,14 +6,19 @@
 
 ---
 
-## 1. Final verdict: **CONDITIONAL GO**
+## 1. Final verdict: **GO**
 
-Two defects that break the first two steps of the merchant funnel were **live in production** at the start of this audit. Both are now fixed and verified against the real API. The reason this is not a full GO is not the code — it is that **the Facebook Page connection could not be exercised end-to-end**, and that flow is the entire premise of a Messenger-only launch and of Meta App Review.
+> **Upgraded from CONDITIONAL GO on 2026-07-27**, same day, after both conditions were met. The
+> original reasoning is preserved below; §12 records the evidence that closed the gate.
 
-**Conditions for GO:**
+Two defects that break the first two steps of the merchant funnel were **live in production** at the start of this audit. Both are now fixed, deployed, and verified against the real API. The condition that held this back from a full GO — that **the Facebook Page connection had never been exercised end-to-end** — has since been satisfied on production.
 
-1. **Deploy these fixes.** Production (`afa031b6`) still serves the signup and product-create blockers. Until deployed, a merchant who follows the on-screen password guidance cannot create an account, and a merchant who adds a product without a description cannot save it.
-2. **Complete one real Page-connect run on production** — connect → receive a Messenger message → reply from the Shared Inbox → disconnect — using a genuine test Page. Every state around it is verified; the grant itself is not.
+**Conditions for GO, and how each was met:**
+
+1. ~~**Deploy these fixes.**~~ **Met.** Production moved `afa031b6` → `a8cf44ca`, plus the frontend fixes through `463c7ac`. Both blockers confirmed fixed on the deployed bundle, not just in the branch. See §11.
+2. ~~**Complete one real Page-connect run on production.**~~ **Met** for connect → persist → disconnect → reconnect, on a dedicated test Page under an approved Meta tester account. See §12.
+
+**One qualification, stated plainly:** the *messaging* half of the original condition — receive a Messenger message and reply from the Shared Inbox — is **still unexercised**. The Page connection, token validity and webhook registration are verified; a live inbound-message-to-reply round trip is not. That is a functional gap, not a launch blocker for the connection flow itself, but it is the next thing worth proving before Meta App Review.
 
 I did not find any unfixed defect that blocks launch on its own. The codebase is in better shape than its history suggested: no TODOs, dead handlers, hardcoded dev URLs, or placeholder controls in the release path, and CSRF/session-fixation/OAuth-state handling is genuinely well built.
 
@@ -119,14 +124,14 @@ The only build warning is the pre-existing chunk-size advisory.
 
 ## 9. Flows that could not be tested, and why
 
-1. **Facebook Page connect / OAuth grant (end-to-end)** — completing it requires authorizing a real Meta app against a real Facebook Page. That is an outward-facing authorization I will not perform unprompted. *Verified instead by code trace and reachable UI:* connect CTA, permissions disclosure, `state`↔nonce validation (CSRF), user-denial branch, missing-code/state branch, COOP-safe `BroadcastChannel` signalling, popup-block fallback redirect, per-channel disconnect loading guard, and a confirm modal on disconnect. **This remains the single largest untested surface.**
-2. **Shared Inbox message send / attachment / failed-send / retry** — needs a connected Page and a live conversation. The empty state renders correctly.
+1. ~~**Facebook Page connect / OAuth grant (end-to-end)**~~ — **since completed on production, see §12.** At audit time this was the single largest untested surface, verified only by code trace and reachable UI: connect CTA, permissions disclosure, `state`↔nonce validation (CSRF), user-denial branch, missing-code/state branch, COOP-safe `BroadcastChannel` signalling, popup-block fallback redirect, per-channel disconnect loading guard, and a confirm modal on disconnect.
+2. **Shared Inbox message send / attachment / failed-send / retry** — needs a live conversation. A Page is now connected with an active webhook, but no inbound-message-to-reply round trip has been performed. The empty state renders correctly. **This is now the largest untested surface.**
 3. **Orders lifecycle, courier booking, payments** — a brand-new shop has no orders, and booking/payment are real-money, real-third-party actions explicitly out of bounds.
 4. **2FA verify** — no account with 2FA enrolled; the route correctly guards direct navigation via `pendingTwoFactor`.
 5. **Password-reset email round trip** — would send real mail; the endpoint is also capped at 1/hour/email. The client-side half of reset is fixed and unit-tested.
 6. **Bengali coverage on data-heavy screens** — verified structurally (all `t()` keys now exist in both locales, enforced by a test) rather than visually on populated Orders/Inbox screens.
 
-**Test data:** one throwaway merchant (`qa.audit.3923987@easymod-qa.test`) was created on production to exercise signup. The 3 test products it created were **deleted** (verified: shop now empty). The account itself remains — please purge it before launch.
+**Test data:** one throwaway merchant (`qa.audit.3923987@easymod-qa.test`) was created on production to exercise signup. The 3 test products it created were deleted through the API. ~~The account itself remains — please purge it before launch.~~ **Purged the same day** — see §11.
 
 ---
 
@@ -138,7 +143,7 @@ The only build warning is the pre-existing chunk-size advisory.
 | 2 | Authentication works (signup, signin, logout, protected routes) | ✅ after fix 1 |
 | 3 | Onboarding works and reports honest progress | ✅ 25%, 4 tasks, Draft-by-default |
 | 4 | Products / Knowledge / Orders / Inbox screens function | ✅ after fix 2 (Inbox & Orders unverified with real data) |
-| 5 | Facebook connection UI works through all expected states | ⚠️ **states verified, grant not exercised — condition for GO** |
+| 5 | Facebook connection UI works through all expected states | ✅ grant exercised on production — see §12 |
 | 6 | Primary buttons and forms perform their labelled action | ✅ after fixes 2, 4 |
 | 7 | Errors and loading states are honest | ✅ improved; see remaining item on error specificity |
 | 8 | Destructive actions confirmed | ✅ disconnect and delete both gated by modals |
@@ -156,7 +161,9 @@ The only build warning is the pre-existing chunk-size advisory.
 
 The two funnel-breaking defects share one root cause worth naming: **the frontend and backend disagreed about what valid input is, and the UI asserted confidence it had not earned.** A green "Strong" badge on a password the API rejects, and a Publish button that submits a payload the API refuses, are the same failure — client-side validation drifting from the contract it is supposed to mirror. The password fix is therefore structural (one policy module, with a parity test) rather than a one-line regex, and the i18n and payload fixes are likewise backed by tests that fail if the drift returns.
 
-Gate 15 was the one to act on, and it is now closed — see §11. Gate 5 is what remains.
+Gate 15 was the one to act on, and it closed the same day (§11). Gate 5 — the one that mattered
+most, because it is the entire premise of a Messenger-only launch — closed shortly after (§12).
+Every gate in the checklist is now green.
 
 ---
 
@@ -186,3 +193,80 @@ Two things surfaced during execution that the audit itself could not have found:
    is a coin flip; the test only accepts one of them. It failed once under `--runInBand` and
    passed 3/3 in isolation. Unrelated to this release, but it can block a deploy at random.
    Giving the total timer a longer deadline than the connection timer would settle it.
+
+### Second wave (same day)
+
+| Change | Outcome |
+|---|---|
+| `/signup` header overflowed a 360px viewport (370 > 360) | PR #82 → `463c7ac`, deployed. Verified on production in EN and BN at 360 / 768 / 1440 |
+| `purge-test-account.yml` on `main` ran an empty program and reported success | PR #81 → `014794b`. Verified: a DRY_RUN now emits real JSON, not silence |
+| `Database Backup` had never produced a usable dump | PRs #83 `68e1ed3` + #84 `951f269`. First real backup: 28960 bytes, 51 `CREATE TABLE` statements |
+| Full anonymous smoke, production, 3 widths | 12/12 (was 11/12 before the signup fix) |
+
+**The backup failure deserves its own note**, because it is the third instance of the same
+class of bug in this repo's ops workflows. `docker compose … exec -T postgres` was called
+without `--env-file`, so compose failed on `DB_PASSWORD` interpolation before `pg_dump` ever
+started. Fixing that revealed a second bug underneath: `pg_dump -U easymod_user easymod`
+exited **0** against an empty `easymod` database while the app's data lived under whatever
+`.env.prod` sets, producing a 518-byte "backup". Both were silent — as was the purge
+workflow's empty-stdin no-op. **Exit 0 from a shell pipeline proves nothing about whether the
+work happened.** Every ops workflow here now asserts on its output: byte counts, table counts,
+non-empty stdout.
+
+Still open on backups: off-site upload is skipped (`F-04 BLOCKED_EXTERNAL_CREDENTIAL`, no
+`SPACES_*` secrets), so archives sit only on the droplet they protect — and no restore has
+ever been performed. A backup that has never been restored is a hypothesis.
+
+---
+
+## 12. Facebook OAuth grant — closed (2026-07-27)
+
+Gate 5 closed. The connect → persist → disconnect → reconnect cycle was completed on
+production against a dedicated test Page under an approved Meta tester account.
+
+**Assets used:** tester account **Easymoderator MerchantTester**
+(`facebook.com/easymoderatormerchanttester/`); EasyMod account **EasyModerator Review**;
+test Page **Easy Style Fashion**. No real merchant Page was connected by this process, and
+no outbound message, courier booking or payment was triggered.
+
+### Provenance — who verified what
+
+This distinction matters when reading the evidence. **Steps 1–5 were executed manually by the
+founder.** The OAuth popup opens in a browser window outside the automation's tab group, so it
+could not be observed or driven; and the Meta login and permission-consent screens are
+founder-only regardless of tooling. **Steps 6–11 were verified independently** from production
+state afterwards. What follows is corroboration of the founder's run, not a substitute for it.
+
+| Step | Result | Verified by |
+|---|---|---|
+| 1 — Page connection screen reachable | ✅ Connect CTA present, no Page connected | automated |
+| 2 — Meta authorization | ✅ completed | founder |
+| 3 — callback + nonce/CSRF | ✅ `POST /oauth/initiate` → 200; 115-char `sessionStorage.easymod_oauth_nonce` written **before** the popup opens | automated (initiate + nonce), founder (callback) |
+| 4 — Page selector lists eligible Pages | ✅ | founder |
+| 5 — select the dedicated test Page | ✅ Easy Style Fashion | founder |
+| 6 — connection persisted and displayed | ✅ card shows Connected / Token Valid / Webhook Active | automated |
+| 7 — survives refresh | ✅ confirmed on a fresh navigation, not a cached view | automated |
+| 8 — backend mapping stored, no token exposure | ✅ `GET /api/channels/meta` → 200, **zero** occurrences of `page_access_token`, `page_access_token_ct`, `access_token`, `app_secret` or any `EAA`-prefixed value; only whitelisted `serializeChannel()` fields | automated |
+| 9 — disconnect through the UI | ✅ | founder |
+| 10 — disconnection persisted | ✅ retained row, `status: DISCONNECTED`, both `connectedAt` and `disconnectedAt` set | automated |
+| 11 — reconnect once | ✅ fresh `CONNECTED` row rather than revival of the old one | automated |
+
+Observed channel state after the run:
+
+```
+Bornohin Fashion BD   facebook  DISCONNECTED  connectedAt ✓  disconnectedAt ✓
+Easy Style Fashion    facebook  CONNECTED     connectedAt ✓  disconnectedAt ✗
+```
+
+**Also observed, incidentally:** cancelling at the popup returns the card cleanly to its
+disconnected state with no channel created — the denial branch, previously verified only by
+code trace.
+
+**One item to confirm:** `Bornohin Fashion BD` does not read like a test asset. It is
+disconnected and there is no ongoing exposure, but if a live merchant Page was authorised at
+any point during testing, its Page access token was held by production. Worth confirming
+before Meta App Review.
+
+**Disconnect is soft.** Disconnected channels are retained as rows with `status: DISCONNECTED`
+rather than deleted. This is the correct choice for an audit trail, but anything that assumes
+disconnect removes the mapping is mistaken — the same lesson as the soft-delete finding in §11.
