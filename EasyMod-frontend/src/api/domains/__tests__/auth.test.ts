@@ -14,6 +14,7 @@ vi.mock('@/shared/lib/http/client', () => ({
     get: vi.fn(),
     clearCsrfToken: vi.fn(),
     initCsrfToken: vi.fn().mockResolvedValue(undefined),
+    setSessionHint: vi.fn(),
   },
 }));
 

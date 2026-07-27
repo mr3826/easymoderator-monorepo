@@ -36,6 +36,44 @@ export interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
   __skipShopId?: boolean;
 }
 
+/**
+ * Marks that this browser has established a session at least once.
+ *
+ * The auth cookies are httpOnly, so JS cannot tell "logged out" from "access
+ * token expired". Without a hint, every anonymous page view answered a 401 on
+ * GET /api/auth/me by firing POST /api/auth/refresh — a request that can only
+ * fail when there is no session. That wasted call is rate limited (10/min/IP on
+ * /api/auth plus 20/5min/IP on the refresh route), and because Bangladeshi
+ * mobile carriers put many users behind one NATed IP, anonymous landing-page
+ * traffic could exhaust the budget and make real merchants' sign-ins 429.
+ *
+ * Persisted in localStorage so it survives a reload: the bootstrap /me on a
+ * fresh page load still needs to know whether a refresh is worth attempting.
+ * Clearing site data clears cookies and localStorage together, so the flag
+ * cannot outlive the cookies it stands for.
+ */
+const SESSION_HINT_KEY = 'em.hasSession';
+
+function readSessionHint(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage?.getItem(SESSION_HINT_KEY) === '1';
+  } catch {
+    // Private mode / storage disabled — assume a session may exist so that a
+    // genuine expired-token refresh is never suppressed.
+    return true;
+  }
+}
+
+function writeSessionHint(hasSession: boolean): void {
+  try {
+    if (typeof window === 'undefined') return;
+    if (hasSession) window.localStorage?.setItem(SESSION_HINT_KEY, '1');
+    else window.localStorage?.removeItem(SESSION_HINT_KEY);
+  } catch {
+    /* storage unavailable — the in-memory path still works for this tab */
+  }
+}
+
 class HttpClient {
   private client: AxiosInstance;
   private csrfToken: string | null = null;
@@ -124,7 +162,10 @@ class HttpClient {
           config.url?.includes('/auth/signup') ||
           config.url?.includes('/auth/2fa/verify');
         const isCsrfEndpoint = config.url?.includes('/api/csrf');
-        if (status === 401 && !config.__retry && !isRefreshEndpoint && !isAuthEndpoint && !isCsrfEndpoint) {
+        // Skip the refresh entirely when this browser has never held a session —
+        // there is nothing to refresh, and the attempt would burn shared per-IP
+        // auth rate-limit budget that real sign-ins need. See SESSION_HINT_KEY.
+        if (status === 401 && !config.__retry && !isRefreshEndpoint && !isAuthEndpoint && !isCsrfEndpoint && readSessionHint()) {
           config.__retry = true;
 
           try {
@@ -211,6 +252,21 @@ class HttpClient {
   private clearTokens(): void {
     this.accessToken = null;
     this.csrfToken = null;
+    // The session is definitively gone (refresh failed or a retried request
+    // still 401'd), so stop attempting refreshes until the next sign-in.
+    writeSessionHint(false);
+  }
+
+  /**
+   * Record whether this browser currently holds a session. Call with `true`
+   * after any successful authentication, `false` on logout.
+   */
+  setSessionHint(hasSession: boolean): void {
+    writeSessionHint(hasSession);
+  }
+
+  hasSessionHint(): boolean {
+    return readSessionHint();
   }
 
   private clearRefreshQueue(): void {

@@ -212,7 +212,10 @@ export default function DashboardLayout() {
       </aside>
 
       {/* ─── Main area ───────────────────────────────────────────────── */}
-      <div className={`flex-1 ${mainML} transition-all duration-200 flex flex-col h-screen`}>
+      {/* min-w-0: a flex child defaults to min-width:auto, so a wide table or
+          grid inside refuses to shrink and forces the whole page to scroll
+          horizontally on narrow screens. */}
+      <div className={`flex-1 min-w-0 ${mainML} transition-all duration-200 flex flex-col h-screen`}>
 
         {/* ─── Sticky AppBar ─────────────────────────────────────────── */}
         <header className="sticky top-0 z-20 h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-4 shrink-0">

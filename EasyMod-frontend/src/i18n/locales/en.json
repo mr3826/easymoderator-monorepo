@@ -388,7 +388,7 @@
       "backToSignIn": "Back to Sign In",
       "errors": {
         "missingToken": "Reset token is missing. Please use the link from your email.",
-        "minLength": "Password must be at least 6 characters long.",
+        "policy": "Use 8+ characters with uppercase, lowercase, a number, and a special character.",
         "mismatch": "Passwords do not match.",
         "failed": "Failed to reset password"
       }
@@ -1117,19 +1117,25 @@
     "rtoMedium": "Medium",
     "rtoLow": "Low",
     "pagination": "Showing {{start}} to {{end}} of {{total}} customers",
+    "unknownName": "Unnamed customer",
     "detail": {
       "title": "Customer Details",
       "id": "Customer ID: {{id}}",
       "phone": "Phone Number",
+      "phoneNumber": "Phone Number",
       "email": "Email",
       "channel": "Channel",
       "createdAt": "Created At",
       "lastUpdated": "Last Updated",
       "rtoSection": "RTO Shield",
       "rtoRisk": "Risk Level:",
+      "rtoRiskLabel": "{{level}} RTO risk",
       "rtoCount": "RTO Count:",
+      "notProvided": "Not provided",
+      "notAvailable": "Not available",
       "removeBlacklist": "Remove from Blacklist",
-      "blacklist": "Blacklist Customer"
+      "blacklist": "Blacklist Customer",
+      "addBlacklist": "Blacklist Customer"
     },
     "addModal": {
       "title": "Add Customer",
@@ -1145,16 +1151,21 @@
     },
     "deleteModal": {
       "title": "Delete Customer",
-      "message": "Are you sure you want to delete this customer? This action cannot be undone."
+      "message": "Are you sure you want to delete this customer? This action cannot be undone.",
+      "deleteButton": "Delete Customer",
+      "deleting": "Deleting..."
     },
     "success": {
       "created": "Customer created successfully",
       "updated": "Customer updated",
       "deleted": "Customer deleted",
+      "blacklisted": "Customer added to blacklist",
+      "unblacklisted": "Customer removed from blacklist",
       "removedBlacklist": "Customer removed from blacklist"
     },
     "errors": {
       "requiredFields": "Please fill in all required fields",
+      "fetchFailed": "Failed to load customers",
       "createFailed": "Failed to create customer",
       "updateFailed": "Failed to update customer",
       "deleteFailed": "Failed to delete customer",
@@ -1879,6 +1890,7 @@
     "popular": "Popular",
     "perMonthShort": "/mo",
     "unlimited": "Unlimited",
+    "bkashUnavailable": "bKash payment is not available yet. You can use every feature during your trial.",
     "perMonthCount": "{{count}}/mo",
     "applyNow": "Apply now →",
     "slashUnlimited": "/ Unlimited",

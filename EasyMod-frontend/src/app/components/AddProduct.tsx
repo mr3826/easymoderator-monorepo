@@ -28,6 +28,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
   const isEditPage = !!productId && !isModal;
   
   // Form state - Product Info
+  const [isSaving, setIsSaving] = useState(false);
   const [productName, setProductName] = useState("");
   const [description, setDescription] = useState("");
   const [basePrice, setBasePrice] = useState("");
@@ -224,9 +225,13 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
   };
 
   const handleSave = async (action: "draft" | "publish") => {
+    // Guard against double submission — without this a second click while the
+    // POST was in flight created a duplicate product.
+    if (isSaving) return;
+
     try {
       setError(null);
-      
+
       if (!productName.trim()) {
         setError('Product name is required');
         return;
@@ -240,20 +245,29 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
 
       const productData: any = {
         name: productName.trim(),
-        description: description.trim(),
         price,
       };
+
+      // Only send optional text fields when they have content. The API validates
+      // them with Joi `.optional()`, which still rejects "" — sending an empty
+      // description made every product without one fail with a 400.
+      const trimmedDescription = description.trim();
+      if (trimmedDescription) {
+        productData.description = trimmedDescription;
+      }
 
       if (selectedCategories.length > 0) {
         productData.category_id = selectedCategories[0];
       }
 
-      if (sku) {
-        productData.sku = sku;
+      // Trim before the emptiness check — a whitespace-only value would survive
+      // a truthiness test and then be rejected by the API's `.trim()` rule.
+      if (sku.trim()) {
+        productData.sku = sku.trim();
       }
 
-      if (brand) {
-        productData.brand = brand;
+      if (brand.trim()) {
+        productData.brand = brand.trim();
       }
 
       if (tags.length > 0) {
@@ -285,6 +299,8 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
 
       // Add other fields as needed
 
+      setIsSaving(true);
+
       if ((editMode && editProduct) || isEditPage) {
         // Update existing product
         const updateId = isEditPage ? productId : editProduct?.id;
@@ -307,43 +323,27 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
         navigate("/app/products");
       }
     } catch (error: any) {
-      // Log the full error for debugging
-      console.error("Error details:", {
-        status: error?.response?.status,
-        data: error?.response?.data,
-        message: error?.message
-      });
-      console.error("Product data sent:", {
-        name: productName,
-        description,
-        price: basePrice,
-        category_id: selectedCategories[0],
-        sku
-      });
-
-      // Extract error message from various possible response structures
+      // httpClient normalises every axios failure via normalizeApiError, which
+      // returns a flat { type, statusCode, message, details } object — there is
+      // no `error.response`. Reading it yielded undefined and silently discarded
+      // the field-level validation messages the API had actually returned.
+      const details = error?.details;
       let errorMessage = 'An error occurred while saving the product';
-      
-      // Check for validation errors with details
-      if (error?.response?.data?.error?.details && Array.isArray(error.response.data.error.details)) {
-        const details = error.response.data.error.details as any[];
-        const messages = details.map(d => `${d.field}: ${d.message}`).join('; ');
-        errorMessage = `Validation Error: ${messages}`;
-      } else if (error?.response?.data?.error?.message) {
-        errorMessage = error.response.data.error.message;
-      } else if (error?.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error?.response?.data?.error) {
-        errorMessage = JSON.stringify(error.response.data.error);
-      } else if (error?.response?.data?.details) {
-        errorMessage = error.response.data.details;
+
+      if (Array.isArray(details) && details.length > 0) {
+        errorMessage = details
+          .map((d: any) => (d?.field ? `${d.field}: ${d.message}` : d?.message))
+          .filter(Boolean)
+          .join('; ');
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       setError(errorMessage);
       toast.error(errorMessage);
       console.error("Error saving product:", error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1341,19 +1341,28 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
       </div>
 
       {/* FOOTER ACTIONS - Sticky */}
-      <div className="fixed bottom-0 left-64 right-0 bg-white border-t border-gray-200 px-8 py-4 flex justify-end gap-3 z-10">
+      {/* The sidebar offset only exists from `md` up (DashboardLayout uses
+          md:ml-64), so anchoring at left-64 on every width squeezed these
+          actions into ~100px on a 360px phone and pushed them off-screen. */}
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-white border-t border-gray-200 px-4 md:px-8 py-4 flex justify-end gap-3 z-10">
         <button
           onClick={() => navigate('/app/products')}
-          className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          disabled={isSaving}
+          className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
           {t('common.cancel')}
         </button>
         <button
           onClick={() => handleSave("publish")}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+          disabled={isSaving}
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <Package className="w-5 h-5" />
-          {isEditPage ? t('products.form.updateProduct') : t('products.form.publish')}
+          {isSaving
+            ? <Loader2 className="w-5 h-5 animate-spin" />
+            : <Package className="w-5 h-5" />}
+          {isSaving
+            ? t('common.saving', 'Saving...')
+            : (isEditPage ? t('products.form.updateProduct') : t('products.form.publish'))}
         </button>
       </div>
 

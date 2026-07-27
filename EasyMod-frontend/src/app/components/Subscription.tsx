@@ -746,7 +746,13 @@ export default function Subscription() {
           <div className="mb-4">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold text-gray-900">{usage.orders.used.toLocaleString()}</span>
-              <span className="text-gray-500">{t('subscription.usagePerMonth', { used: usage.orders.used.toLocaleString(), limit: usage.orders.limit.toLocaleString() })}</span>
+              {/* A negative limit is the API's "unlimited" sentinel — rendering
+                  it raw showed merchants "0 / -1 per month". */}
+              <span className="text-gray-500">
+                {usage.orders.limit < 0
+                  ? t('subscription.unlimited')
+                  : t('subscription.usagePerMonth', { used: usage.orders.used.toLocaleString(), limit: usage.orders.limit.toLocaleString() })}
+              </span>
             </div>
           </div>
           <Progress 
@@ -771,7 +777,11 @@ export default function Subscription() {
           <div className="mb-4">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold text-gray-900">{usage.products.used.toLocaleString()}</span>
-              <span className="text-gray-500">{t('subscription.usagePerMonth', { used: usage.products.used.toLocaleString(), limit: usage.products.limit.toLocaleString() })}</span>
+              <span className="text-gray-500">
+                {usage.products.limit < 0
+                  ? t('subscription.unlimited')
+                  : t('subscription.usagePerMonth', { used: usage.products.used.toLocaleString(), limit: usage.products.limit.toLocaleString() })}
+              </span>
             </div>
           </div>
           <Progress 
