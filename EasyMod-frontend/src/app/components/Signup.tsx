@@ -141,7 +141,10 @@ export default function Signup() {
           <div className="flex items-center gap-4">
             <LanguageToggle variant="dark" />
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>{t('auth.signup.alreadyHaveAccount')}</span>
+              {/* The prompt pushes this row 10px past a 360px viewport (and
+                  further in Bengali). Drop the sentence on narrow screens and
+                  keep the link, which is the part that has to stay reachable. */}
+              <span className="hidden sm:inline">{t('auth.signup.alreadyHaveAccount')}</span>
               <Link to="/signin" className="font-semibold transition-colors" style={{ color: '#00A651' }}>
                 {t('auth.signup.signIn')}
               </Link>
