@@ -1,0 +1,105 @@
+name: Purge Test Account
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Delete a test/QA account and everything it exclusively owns from production.
+#
+# Same shape as "Grant Platform Admin": it SSHes into the prod droplet with the
+# deploy secrets and runs inside the backend container, so nobody needs direct
+# droplet access. The script is piped in over stdin rather than baked into the
+# image, so this works without waiting for a rebuild + deploy.
+#
+# DRY_RUN is the default and prints the delete plan without writing anything.
+# Run it first, read the plan, then re-run with mode=APPLY.
+#
+# Guardrails live in the script (EasyMod-backend/scripts/purge-test-account.js):
+# shops with other members are skipped, tenants are only touched when every shop
+# under them is in scope, `users`/`shops`/`tenants` are never reached by FK
+# expansion, audit rows are anonymised rather than deleted, and the whole thing
+# aborts if the delete set is implausibly large.
+#
+# Trigger:  Actions → "Purge Test Account" → Run workflow
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Email of the test account to purge'
+        required: true
+        type: string
+      mode:
+        description: 'DRY_RUN prints the plan; APPLY deletes.'
+        required: true
+        default: DRY_RUN
+        type: choice
+        options:
+          - DRY_RUN
+          - APPLY
+      confirm:
+        description: 'For APPLY only — retype the email exactly to confirm.'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: purge-test-account
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  purge:
+    name: Purge account on production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+
+      # An APPLY that does not name the same account twice is a mistake, not a
+      # deletion. Fail before touching the droplet.
+      - name: Require a matching confirmation for APPLY
+        if: inputs.mode == 'APPLY'
+        env:
+          TARGET_EMAIL: ${{ inputs.email }}
+          CONFIRM_EMAIL: ${{ inputs.confirm }}
+        run: |
+          if [ "$TARGET_EMAIL" != "$CONFIRM_EMAIL" ]; then
+            echo "::error::confirm must exactly match email for an APPLY run"
+            exit 1
+          fi
+
+      - name: Copy purge script to droplet
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          scp -i ~/.ssh/deploy_key EasyMod-backend/scripts/purge-test-account.js \
+            root@"$DEPLOY_HOST":/opt/easymod/purge-test-account.js
+
+      - name: Run purge inside the backend container
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 300s
+          # Forwarded as named env vars so the email is never interpolated into
+          # the remote shell (same reasoning as grant-platform-admin.yml).
+          envs: TARGET_EMAIL,TARGET_MODE
+          script: |
+            set -e
+            cd /opt/easymod
+            echo "==> mode=${TARGET_MODE} for ${TARGET_EMAIL}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T \
+              -e PURGE_EMAIL="${TARGET_EMAIL}" \
+              -e PURGE_MODE="${TARGET_MODE}" \
+              backend node < /opt/easymod/purge-test-account.js
+            rm -f /opt/easymod/purge-test-account.js
+            echo "==> Done."
+        env:
+          TARGET_EMAIL: ${{ inputs.email }}
+          TARGET_MODE: ${{ inputs.mode }}
