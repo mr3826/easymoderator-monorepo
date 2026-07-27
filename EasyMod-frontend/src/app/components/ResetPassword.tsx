@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { apiClient } from '@/api';
+import { getPasswordError } from '@/features/auth/validation/passwordPolicy';
 
 export default function ResetPassword() {
   const { t } = useTranslation();
@@ -35,8 +36,10 @@ export default function ResetPassword() {
       return;
     }
 
-    if (!password || password.length < 6) {
-      setError(t('auth.resetPassword.errors.minLength'));
+    // Enforce the same policy the API enforces. The previous 6-character check
+    // let through passwords the backend rejects with an opaque 400.
+    if (!password || getPasswordError(password)) {
+      setError(t('auth.resetPassword.errors.policy'));
       return;
     }
 

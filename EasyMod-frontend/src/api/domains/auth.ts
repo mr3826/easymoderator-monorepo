@@ -47,6 +47,7 @@ export async function signin(credentials: SigninRequest): Promise<AuthResponse> 
   // (navigate('/app')) is not blocked waiting for the extra round-trip.
   httpClient.clearCsrfToken();
   httpClient.initCsrfToken();
+  httpClient.setSessionHint(true);
   return data;
 }
 
@@ -63,6 +64,7 @@ export async function signup(userData: SignupRequest): Promise<AuthResponse> {
   };
   httpClient.clearCsrfToken();
   httpClient.initCsrfToken();
+  httpClient.setSessionHint(true);
   return normalizedData;
 }
 
@@ -122,6 +124,11 @@ export async function logout(): Promise<void> {
     await httpClient.post('/api/auth/logout');
   } catch {
     // Best-effort — even if server fails, proceed
+  } finally {
+    // Always clear the hint, even if the server call failed: the client is
+    // dropping its session either way, so future 401s must not trigger a
+    // refresh attempt.
+    httpClient.setSessionHint(false);
   }
 }
 
@@ -146,6 +153,9 @@ export async function getAuthContext(): Promise<{
     currentShop: Shop;
     allShops: Shop[];
   }>> = await httpClient.get('/api/auth/me');
+  // A valid session exists — re-arm the hint in case storage was cleared while
+  // the cookies survived, so a later expiry can still be refreshed.
+  httpClient.setSessionHint(true);
   return response.data.data;
 }
 

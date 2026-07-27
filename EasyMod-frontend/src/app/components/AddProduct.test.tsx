@@ -90,6 +90,7 @@ vi.mock('lucide-react', () => {
   return {
     Upload: Icon, X: Icon, Plus: Icon, ChevronDown: Icon, ChevronUp: Icon,
     Save: Icon, Calendar: Icon, Package: Icon, Tag: Icon, FolderTree: Icon,
+    Loader2: Icon,
   };
 });
 
@@ -689,6 +690,94 @@ describe('AddProduct', () => {
       ) as HTMLInputElement | undefined;
 
       if (unlimitedRadio) expect(unlimitedRadio.checked).toBe(true);
+    });
+  });
+
+  // ── Payload shape ─────────────────────────────────────────────────────
+  // The API validates optional strings with Joi `.optional()`, which still
+  // rejects "". Sending an empty description made every product without one
+  // fail with a 400 — which is what the "Add your first product" onboarding
+  // task did by default.
+  describe('optional field payload', () => {
+    const submitNameAndPriceOnly = async () => {
+      await renderModal();
+
+      const nameInput = document.querySelector('[id*="modal-product-name"]') as HTMLInputElement;
+      const priceInput = Array.from(document.querySelectorAll('input')).find(
+        el => (el as HTMLInputElement).id?.toLowerCase().includes('price')
+      ) as HTMLInputElement | undefined;
+
+      await act(async () => {
+        if (nameInput) fireEvent.change(nameInput, { target: { value: 'Minimal Product' } });
+        if (priceInput) fireEvent.change(priceInput, { target: { value: '499' } });
+      });
+
+      const publishBtn = Array.from(document.querySelectorAll('button')).find(
+        btn => btn.textContent?.toLowerCase().includes('publish')
+      );
+
+      await act(async () => {
+        if (publishBtn) fireEvent.click(publishBtn);
+        await flushPromises();
+      });
+
+      return { submitted: Boolean(nameInput && priceInput) };
+    };
+
+    it('omits description and sku entirely when they are blank', async () => {
+      const { submitted } = await submitNameAndPriceOnly();
+      if (!submitted) return;
+
+      await waitFor(() => expect(mockCreateProduct).toHaveBeenCalled());
+
+      const payload = mockCreateProduct.mock.calls[0][0];
+      expect(payload.name).toBe('Minimal Product');
+      expect(payload.price).toBe(499);
+      // Absent, not empty-string — an empty value is a 400 from the API.
+      expect(payload).not.toHaveProperty('description');
+      expect(payload).not.toHaveProperty('sku');
+      expect(payload).not.toHaveProperty('brand');
+    });
+
+    it('does not fire a second create while the first is still in flight', async () => {
+      await renderModal();
+
+      const nameInput = document.querySelector('[id*="modal-product-name"]') as HTMLInputElement;
+      const priceInput = Array.from(document.querySelectorAll('input')).find(
+        el => (el as HTMLInputElement).id?.toLowerCase().includes('price')
+      ) as HTMLInputElement | undefined;
+      if (!nameInput || !priceInput) return;
+
+      // Hold the request open so both clicks land during the same submission.
+      let release: (v: any) => void = () => {};
+      mockCreateProduct.mockImplementationOnce(
+        () => new Promise((resolve) => { release = resolve; })
+      );
+
+      await act(async () => {
+        fireEvent.change(nameInput, { target: { value: 'Double Click Product' } });
+        fireEvent.change(priceInput, { target: { value: '499' } });
+      });
+
+      const publishBtn = Array.from(document.querySelectorAll('button')).find(
+        btn => btn.textContent?.toLowerCase().includes('publish')
+      )!;
+
+      await act(async () => {
+        fireEvent.click(publishBtn);
+        await flushPromises();
+      });
+      await act(async () => {
+        fireEvent.click(publishBtn);
+        await flushPromises();
+      });
+
+      expect(mockCreateProduct).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        release({ id: 'prod-1' });
+        await flushPromises();
+      });
     });
   });
 });
