@@ -61,14 +61,21 @@ jobs:
             # --env-file is required: the compose file interpolates DB_PASSWORD
             # into services.postgres.environment, and compose fails the whole
             # command on a missing variable even for `exec`.
+            # Dump whatever database the container was actually initialised
+            # with, not a hardcoded guess. `pg_dump -U easymod_user easymod`
+            # exited 0 against an empty `easymod` database while the app's data
+            # lived elsewhere — a backup of nothing that looked like a success.
             docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
-              pg_dump -U easymod_user easymod | gzip > "$BACKUP_FILE"
+              sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$BACKUP_FILE"
 
             # A pg_dump that fails mid-stream still leaves a valid gzip of a
             # partial dump, so size-check the result rather than trusting exit 0.
             BACKUP_BYTES=$(wc -c < "$BACKUP_FILE")
-            if [ "$BACKUP_BYTES" -lt 10000 ]; then
-              echo "ERROR: backup is only ${BACKUP_BYTES} bytes — treating as failed"; exit 1
+            TABLE_COUNT=$(gzip -dc "$BACKUP_FILE" | grep -c '^CREATE TABLE' || true)
+            echo "Dump: ${BACKUP_BYTES} bytes gzipped, ${TABLE_COUNT} CREATE TABLE statements"
+            if [ "$BACKUP_BYTES" -lt 10000 ] || [ "$TABLE_COUNT" -lt 5 ]; then
+              echo "ERROR: dump looks empty (${BACKUP_BYTES} bytes, ${TABLE_COUNT} tables) — treating as failed"
+              exit 1
             fi
 
             echo "Backup complete: $(du -sh "$BACKUP_FILE" | cut -f1)"
