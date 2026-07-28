@@ -1,10 +1,22 @@
 /**
- * Product AI Processing Service
+ * Product Search-Metadata Service
  *
- * Processes product images with a vision LLM to generate search metadata.
- * These ai_* fields are for identification/search ONLY — never shown as
+ * Populates the ai_* columns that product-search.service.js ranks on:
+ * ai_search_text, ai_category, ai_color_primary, ai_material, ai_tags,
+ * ai_description. They are for identification/search ONLY — never shown as
  * authoritative facts to customers (prices, stock, sizes always come from
  * live DB fields).
+ *
+ * DERIVED FROM TEXT, NOT IMAGES. This used to require a vision model, which
+ * meant the columns were only ever written for products that had an image —
+ * and since no image-upload endpoint exists, they were NULL for every product
+ * in production. The full-text search that ranks on them was therefore running
+ * on name/name_bn/category alone. Text derivation closed a measured 4.1-point
+ * gap in rank-1 retrieval accuracy at zero provider cost
+ * (docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md).
+ *
+ * The vision path is retained but gated behind AI_VISION_ENABLED (default off);
+ * see vision-policy.service.js.
  *
  * Called:
  *  - After product create/update (async, non-blocking)
@@ -15,6 +27,7 @@ const Product = require('./product.entity');
 const llmService = require('../ai/llm.service');
 const { embedProduct } = require('./product-embedding.service');
 const { indexProductImage } = require('./clip-client.service');
+const { visionEnabled } = require('../ai/vision-policy.service');
 
 const ATTRIBUTE_EXTRACTION_PROMPT = `You are a product image analyzer for an e-commerce platform.
 Analyze the product image and return ONLY a JSON object (no markdown, no explanation) with these fields:
@@ -43,31 +56,16 @@ const processProduct = async (productId, shopId) => {
     // Collect image URLs (images array takes priority, fallback to image_url)
     const imageUrls = (product.images || []).filter(Boolean);
     if (!imageUrls.length && product.image_url) imageUrls.push(product.image_url);
-    if (!imageUrls.length) return false; // no images to process
-
-    // Use first image for attribute extraction (most representative)
-    const primaryImageUrl = imageUrls[0];
+    const primaryImageUrl = imageUrls[0] || null;
 
     try {
-        const { text: rawJson } = await llmService.chat({
-            systemPrompt: ATTRIBUTE_EXTRACTION_PROMPT,
-            messages: [
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'image_url', url: primaryImageUrl },
-                        {
-                            type: 'text',
-                            text: `Product name: "${product.name}". Analyze the image and return JSON attributes.`
-                        }
-                    ]
-                }
-            ],
-            preferredProvider: 'openai',  // GPT-4o for vision
-            maxTokens: 300
-        });
+        // Vision is opt-in and adds nothing the merchant's own text does not
+        // already state. When it is off — the default — attributes come from the
+        // product record, and a product with no image is still fully searchable.
+        const attrs = (visionEnabled() && primaryImageUrl)
+            ? await extractAttributesFromImage(product, primaryImageUrl)
+            : deriveAttributesFromText(product);
 
-        const attrs = parseAttributesJson(rawJson);
         if (!attrs) return false;
 
         // Build combined search text
@@ -75,6 +73,8 @@ const processProduct = async (productId, shopId) => {
             product.name,
             product.name_bn,
             product.category,
+            product.brand,
+            product.sku,
             attrs.category,
             attrs.color_primary,
             attrs.material,
@@ -101,8 +101,8 @@ const processProduct = async (productId, shopId) => {
         // Upsert enriched product into vector store for RAG-based inbox matching
         await embedProduct(productId, shopId);
 
-        // Sprint 4: Index primary image into CLIP service for Tier 1 visual matching
-        if (primaryImageUrl) {
+        // CLIP image indexing is an image-embedding path — gated with the rest.
+        if (primaryImageUrl && visionEnabled()) {
             setImmediate(() => indexProductImage(productId, shopId, primaryImageUrl).catch(() => {}));
         }
 
@@ -111,6 +111,70 @@ const processProduct = async (productId, shopId) => {
         console.error(`[ProductAI] Failed to process product ${productId}:`, err.message);
         return false;
     }
+};
+
+/**
+ * Derive search attributes from the product's own text fields. No provider call.
+ *
+ * Colour and material are read off the variant options and tags rather than
+ * guessed: a wrong colour in ai_color_primary scores 3 points in the search
+ * ranking, so inventing one is worse than leaving it null.
+ */
+const COLOR_WORDS = [
+    'black', 'white', 'off white', 'red', 'maroon', 'blue', 'navy', 'green', 'olive',
+    'yellow', 'orange', 'pink', 'purple', 'grey', 'gray', 'brown', 'beige', 'gold', 'silver',
+];
+const MATERIAL_WORDS = [
+    'cotton', 'silk', 'linen', 'georgette', 'chiffon', 'muslin', 'jamdani', 'katan',
+    'denim', 'polyester', 'viscose', 'rayon', 'leather', 'jute', 'canvas', 'velvet', 'wool',
+];
+
+const findWord = (haystack, words) => words.find((w) => haystack.includes(w)) || null;
+
+const deriveAttributesFromText = (product) => {
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const variantColor = variants.find((v) => v && (v.color || v.option === 'Color'));
+
+    const haystack = [
+        product.name, product.name_bn, product.category, product.description,
+        (product.tags || []).join(' '),
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return {
+        category: product.category || null,
+        color_primary: (variantColor && (variantColor.color || variantColor.value))
+            || findWord(haystack, COLOR_WORDS),
+        material: findWord(haystack, MATERIAL_WORDS),
+        style: null,
+        tags: product.tags || [],
+        description: product.description || null,
+        search_text: haystack,
+    };
+};
+
+/** Vision attribute extraction. Only reachable when AI_VISION_ENABLED=true. */
+const extractAttributesFromImage = async (product, primaryImageUrl) => {
+    const { text: rawJson } = await llmService.chat({
+        systemPrompt: ATTRIBUTE_EXTRACTION_PROMPT,
+        messages: [
+            {
+                role: 'user',
+                content: [
+                    { type: 'image_url', url: primaryImageUrl },
+                    {
+                        type: 'text',
+                        text: `Product name: "${product.name}". Analyze the image and return JSON attributes.`
+                    }
+                ]
+            }
+        ],
+        // Gemini is primary for every AI operation; it is multimodal, so the old
+        // preferredProvider:'openai' override here was the only path in the repo
+        // that made OpenAI a primary provider. Removed — the standard chain applies.
+        maxTokens: 300
+    });
+
+    return parseAttributesJson(rawJson);
 };
 
 /**
@@ -177,4 +241,9 @@ const parseAttributesJson = (raw) => {
     }
 };
 
-module.exports = { processProduct, queueProductProcessing, processPendingProducts };
+module.exports = {
+    processProduct,
+    queueProductProcessing,
+    processPendingProducts,
+    deriveAttributesFromText,
+};

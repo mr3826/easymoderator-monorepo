@@ -72,6 +72,13 @@ const BASE_FEATURES = Object.freeze({
     priority_support: true,
     api_access: false,
     advanced_ai: true,
+    // Routes EVERY message to the expensive Gemini model instead of using it for
+    // qualified escalation only. At ~8× the flash-lite cost per message this is
+    // loss-making against the 999 BDT flat plan (≈1,386 BDT/month of AI at the 300
+    // conversation cap), so no plan enables it. Kept as a flag rather than deleted
+    // so a future premium tier can turn it on with its own price attached.
+    // See docs/ai-cost/GEMINI_FIRST_ROUTING.md.
+    advanced_model_preset: false,
     allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
     // Canonical automation modes advertised to the client (matches the
     // MetaChannelSettings ENUM). All modes are available on every plan.
@@ -207,6 +214,20 @@ const getAllowedAutomationModes = (planCode) => {
 
 const getTopupPack = (packCode) => TOPUP_PACKS[packCode] || null;
 
+/**
+ * Does this plan grant a named feature?
+ * Unknown plan codes fall back to GROWTH, and an unknown feature is false —
+ * so a typo in a gate denies access rather than granting it.
+ *
+ * @param {string} planCode
+ * @param {string} feature
+ * @returns {boolean}
+ */
+const planHasFeature = (planCode, feature) => {
+    const tier = getTierByCode(planCode) || PRICING_TIERS[PlanCode.GROWTH];
+    return tier.features[feature] === true;
+};
+
 module.exports = {
     PlanCode,
     UNLIMITED,
@@ -223,5 +244,6 @@ module.exports = {
     getPerOrderCharge: calculatePartnerCharge,
     getAllowedLanguages,
     getAllowedAutomationModes,
-    getTopupPack
+    getTopupPack,
+    planHasFeature
 };

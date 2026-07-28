@@ -91,3 +91,6 @@ secrets-generated-*.txt
 # Local dev tools
 ngrok.exe
 start-ngrok.ps1
+
+# Retrieval-eval embedding cache (regenerable; ~3 MB of Gemini vectors)
+scripts/retrieval-eval/.embedding-cache.json

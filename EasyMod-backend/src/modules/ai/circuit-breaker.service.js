@@ -48,10 +48,15 @@ class CircuitBreaker {
             throw new CircuitOpenError(provider);
         }
 
+        // Promise.race does not cancel the loser, so the timer has to be cleared
+        // explicitly. Without this every LLM call left a 30s timer on the event
+        // loop — harmless in a long-lived worker, but it delays process exit and
+        // keeps Jest hanging after the suite finishes.
+        let timer;
         try {
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs}ms`)), timeoutMs)
-            );
+            const timeoutPromise = new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`LLM call timed out after ${timeoutMs}ms`)), timeoutMs);
+            });
             const result = await Promise.race([fn(), timeoutPromise]);
             // Success: reset failure counter
             cacheRedis.del(failKey).catch(err => console.warn('[circuit-breaker] Redis DEL failed', { error: err.message }));
@@ -77,6 +82,8 @@ class CircuitBreaker {
             }
 
             throw err;
+        } finally {
+            clearTimeout(timer);
         }
     }
 

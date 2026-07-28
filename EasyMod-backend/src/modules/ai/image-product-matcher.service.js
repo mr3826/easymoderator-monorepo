@@ -25,6 +25,7 @@ const llmService = require('./llm.service');
 const { queryData } = require('../rag/rag.service');
 const { searchByAttributes, getProductsByIds } = require('../product/product-search.service');
 const { findSimilarProduct } = require('../product/clip-client.service');
+const { visionEnabled } = require('./vision-policy.service');
 
 const RAG_THRESHOLD   = parseFloat(process.env.IMAGE_MATCH_RAG_THRESHOLD || '0.72');
 const MAX_RESULTS     = parseInt(process.env.IMAGE_MATCH_MAX_RESULTS || '3', 10);
@@ -47,6 +48,10 @@ Return ONLY a JSON object (no markdown) with these fields:
 // Tier 3: Gemini Vision description → attribute-based DB search
 // ---------------------------------------------------------------------------
 const matchViaVision = async (imageUrl, shopId) => {
+    // Image understanding is off by default — see vision-policy.service.js.
+    if (!visionEnabled()) {
+        return { products: [], method: 'vision_disabled', attrs: null };
+    }
     try {
         const { text: rawJson } = await llmService.chat({
             systemPrompt: VISION_DESCRIBE_PROMPT,
@@ -153,23 +158,26 @@ const matchImageMessage = async ({ shopId, imageUrl, text = '' }) => {
     }
 
     // --- Tier 1: CLIP image similarity (fastest — ~10ms Redis hit) ---
-    try {
-        const candidates = await searchByAttributes({ shopId, query: '', limit: 50, withImages: true });
-        if (candidates.length > 0) {
-            const clipResult = await findSimilarProduct(imageUrl, candidates);
-            if (clipResult && clipResult.matchedProductId) {
-                const matched = candidates.filter(p => p.id === clipResult.matchedProductId);
-                if (matched.length > 0) {
-                    return {
-                        products: matched,
-                        method: 'clip',
-                        confidence: clipResult.score
-                    };
+    // CLIP is an image-embedding path; skipped with the rest of vision.
+    if (visionEnabled()) {
+        try {
+            const candidates = await searchByAttributes({ shopId, query: '', limit: 50, withImages: true });
+            if (candidates.length > 0) {
+                const clipResult = await findSimilarProduct(imageUrl, candidates);
+                if (clipResult && clipResult.matchedProductId) {
+                    const matched = candidates.filter(p => p.id === clipResult.matchedProductId);
+                    if (matched.length > 0) {
+                        return {
+                            products: matched,
+                            method: 'clip',
+                            confidence: clipResult.score
+                        };
+                    }
                 }
             }
+        } catch (_) {
+            // CLIP unavailable — continue to Tier 2
         }
-    } catch (_) {
-        // CLIP unavailable — continue to Tier 2
     }
 
     // --- Tier 2: RAG (using text query, possibly enhanced by light vision) ---

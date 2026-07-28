@@ -22,6 +22,7 @@ const { incrementFaqHit } = require('../knowledge/knowledge.service');
 const { scrubPII } = require('./prompt-sanitizer.service');
 const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
+const { visionEnabled, stripImageBlocks } = require('./vision-policy.service');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -31,6 +32,20 @@ const MAX_FAQ_IN_PROMPT = parseInt(process.env.MAX_FAQ_IN_PROMPT || '50', 10);
 
 // Dedicated cache bucket for intent routing
 const intentCache = new MemoryCache();
+
+/**
+ * Is the configured embedding provider semantically meaningful?
+ * getProviderInfo() only reads env vars, so this is cheap enough to call per
+ * message. Defaults to false so a resolution failure degrades to the safer
+ * behaviour (skip vector product grounding) rather than the riskier one.
+ */
+const embeddingSemantic = () => {
+    try {
+        return require('../rag/embedding.service').getProviderInfo().semantic;
+    } catch (_) {
+        return false;
+    }
+};
 
 // Keywords that indicate the message is about a product (price, availability, order).
 // Used to skip the DB product-search on messages like "hello", "thanks", "how are you".
@@ -52,6 +67,33 @@ const PRODUCT_INTENT_KEYWORDS = [
 const hasProductIntent = (message) => {
     const lower = message.toLowerCase();
     return PRODUCT_INTENT_KEYWORDS.some(kw => lower.includes(kw));
+};
+
+// Messages that are definitely NOT about a product. Deliberately a CLOSED set
+// (greetings, thanks, farewells, bare acknowledgements) — unlike
+// PRODUCT_INTENT_KEYWORDS, which is an open-ended allowlist that can never be
+// complete and measurably blocked 10 of 49 real product queries, among them
+// "do you have the cotton jamdani saree", "what sarees do you have" and
+// "how much is the travel duffel bag". Those reached the LLM with no product
+// grounding at all, which is how a price gets invented.
+// See docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md.
+const NON_PRODUCT_CHATTER = /^(?:ok(?:ay)?|thanks?|thank\s*you|thx|tnx|dhonnobad|ধন্যবাদ|আচ্ছা|ঠিক\s*আছে|acha|thik\s*ache|bye|good\s*bye|ta\s*ta|allah\s*hafez|আল্লাহ\s*হাফেজ|hmm+|yes|no|হ্যাঁ|না|ji|জি)[\s!.,👍🙏😊❤️]*$/i;
+
+/**
+ * Should the live DB product search run for this message?
+ *
+ * Runs for everything except plain greetings and closed-set chatter. Speculative
+ * execution is safe now that the search actually filters (it returns [] when
+ * nothing matches) and costs one indexed query, p95 ≈ 13 ms. Before that fix the
+ * search returned the whole catalogue for any input, which is very likely why the
+ * keyword gate was introduced in the first place.
+ */
+const shouldSearchProducts = (message) => {
+    if (!message || typeof message !== 'string') return false;
+    const trimmed = message.trim();
+    if (!trimmed) return false;
+    if (isPlainGreeting(trimmed)) return false;
+    return !NON_PRODUCT_CHATTER.test(trimmed);
 };
 
 // ---------------------------------------------------------------------------
@@ -307,23 +349,33 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     //   Phase 3 — final LLM response grounded on DB facts (no hallucination)
     // -----------------------------------------------------------------------
     if (imageUrls.length > 0) {
-        const attrs = await _extractProductAttributes(imageUrls[0], message);
+        // Vision is off by default, so attribute extraction is skipped and the
+        // photo is matched on the customer's accompanying text alone.
+        const attrs = visionEnabled()
+            ? await _extractProductAttributes(imageUrls[0], message)
+            : null;
 
-        if (attrs && shopId) {
+        // With vision off there are no image attributes, but the customer's own
+        // words ("ei kurti ta ache?" alongside the photo) are still a usable
+        // query — so the DB search runs either way. '[image]' is the webhook's
+        // placeholder for a photo with no caption; it is not a search term.
+        const captionText = (message && message !== '[image]') ? message : '';
+        if (shopId && (attrs || (captionText && shouldSearchProducts(captionText)))) {
             const products = await productSearch.searchByAttributes({
                 shopId,
-                category: attrs.category,
-                color:    attrs.color,
-                material: attrs.material,
-                query:    attrs.query || message,
-                tags:     attrs.tags || [],
+                category: attrs?.category,
+                color:    attrs?.color,
+                material: attrs?.material,
+                query:    attrs?.query || captionText,
+                tags:     attrs?.tags || [],
                 limit: 5
             }).catch(() => []);
 
             if (products.length > 0) {
                 const productContext = productSearch.formatProductsForLlm(products);
+                const matchedOn = attrs ? 'THIS IMAGE' : "THE CUSTOMER'S MESSAGE";
                 groundedSystemPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') +
-                    `SHOP PRODUCTS MATCHING THIS IMAGE (live data — use ONLY these facts):\n${productContext}\n\n` +
+                    `SHOP PRODUCTS MATCHING ${matchedOn} (live data — use ONLY these facts):\n${productContext}\n\n` +
                     `GROUNDING RULES:\n` +
                     `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
                     `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.\n` +
@@ -337,22 +389,34 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             } else {
                 // No product match — tell LLM there is no match
                 groundedSystemPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') +
-                    `NOTE: No matching product found in the shop's catalog for this image. ` +
+                    `NOTE: No matching product was found in the shop's catalog. ` +
                     `Do not invent any product details. Ask the customer to describe the product they're looking for.`;
             }
         }
 
-        // Build vision content blocks for the final LLM call
+        // Build content blocks for the final LLM call. stripImageBlocks removes the
+        // image parts unless AI_VISION_ENABLED=true — skipping attribute extraction
+        // alone would not stop the provider billing for the image, because the
+        // bytes would still be attached here.
         const contentBlocks = imageUrls.map(url => ({ type: 'image_url', url }));
         const customerText = scrubPII((message && message !== '[image]') ? message : 'What product is this? Can you help me?');
         contentBlocks.push({ type: 'text', text: customerText });
-        llmMessages.push({ role: 'user', content: contentBlocks });
+        llmMessages.push(...stripImageBlocks([{ role: 'user', content: contentBlocks }]));
+
+        if (!visionEnabled()) {
+            // No image was analysed, so the reply must not imply one was. Without
+            // this the model happily describes a photo it never received.
+            groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
+                `NOTE: The customer sent a photo, but you CANNOT see images. Do not describe, ` +
+                `guess at, or claim to have looked at the photo. Ask them to type the product ` +
+                `name instead, and offer the matching products listed above if there are any.`;
+        }
     } else {
         llmMessages.push({ role: 'user', content: scrubPII(message) });
 
-        // Text-query product search: only run when the message looks like a product query.
-        // Skips DB lookup for greetings, thanks, and other non-product messages.
-        if (shopId && hasProductIntent(message)) {
+        // Text-query product search: runs for every message except greetings and
+        // closed-set chatter (see shouldSearchProducts).
+        if (shopId && shouldSearchProducts(message)) {
             const textProducts = await productSearch.searchByAttributes({
                 shopId,
                 query: message,
@@ -397,11 +461,20 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                 // stored product text must NOT be fed to the LLM as ground truth —
                 // doing so is a direct cause of hallucinated prices. Instead we
                 // re-fetch matched products LIVE from the DB (with current price).
+                // Vector-store PRODUCT hits become authoritative price/stock facts,
+                // so they are only trustworthy when the embedder is actually
+                // semantic. On the local n-gram hash fallback this tier measured a
+                // 60–80% false-positive rate on products the shop does not sell and
+                // pulled rank-1 accuracy down 8 points versus the SQL search alone
+                // (docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md). Knowledge chunks
+                // stay enabled — they are additive context, not quotable facts.
+                const semanticEmbeddings = embeddingSemantic();
                 const productHitIds = [];
                 const knowledgeResults = [];
                 for (const r of usedResults) {
                     const md = r.metadata || {};
                     if (md.type === 'product' && md.product_id) {
+                        if (!semanticEmbeddings) continue;
                         const id = String(md.product_id);
                         if (!injectedProductIds.has(id)) productHitIds.push(id);
                     } else if (md.type !== 'business_info' && r.content) {

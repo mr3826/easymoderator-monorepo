@@ -10,6 +10,163 @@ Companion files: [`AI_CALL_GRAPH.md`](AI_CALL_GRAPH.md) · [`AI_COST_ASSUMPTIONS
 
 ---
 
+## 0. Revision 2026-07-28b — locked architecture
+
+> **Read this section first. It supersedes the numbers in §1–§10 below.**
+>
+> §1–§10 measured the architecture *as it was*. The locked product decisions then removed
+> AI vision entirely and the routing chain changed, so every headline figure moved. The
+> generated artefacts (`AI_COST_MODEL.csv`, `AI_COST_MODEL.json`) are regenerated and
+> **are** current; the prose in §1–§10 is retained as the measurement record of the
+> pre-change system, because the token measurements it rests on are still valid inputs.
+>
+> New companions: [`AI_ARCHITECTURE_VALIDATION.md`](AI_ARCHITECTURE_VALIDATION.md) ·
+> [`RETRIEVAL_QUALITY_EVALUATION.md`](RETRIEVAL_QUALITY_EVALUATION.md) ·
+> [`GEMINI_FREE_TIER_CAPACITY.md`](GEMINI_FREE_TIER_CAPACITY.md) ·
+> [`GEMINI_FIRST_ROUTING.md`](GEMINI_FIRST_ROUTING.md) ·
+> [`PROMPT_CACHING_DECISION.md`](PROMPT_CACHING_DECISION.md) ·
+> [`PRODUCT_IMAGE_FLOW_VALIDATION.md`](PRODUCT_IMAGE_FLOW_VALIDATION.md)
+
+### What changed in the architecture
+
+1. **No AI vision, anywhere.** All four vision paths are behind `AI_VISION_ENABLED`
+   (default off). A customer photo is answered from its caption plus the DB product search;
+   image blocks are stripped before the provider call, so no image tokens are billed.
+2. **`gemini-3.1-pro-preview` is out of the automatic fallback chain.** Measured `limit=0`
+   on the free Gemini project — it cannot serve a request. Fallback is now
+   `gemini-3.1-flash-lite → gpt-4.1-mini`.
+3. **Product search metadata is derived from text**, not from a vision response, so the
+   `ai_*` ranking columns are populated for every product instead of none.
+4. **`model_preset: 'advanced'` is gated** on a plan entitlement no plan grants.
+
+### Revised headline costs
+
+| Scenario | Before (with vision) | **After (locked)** | Change |
+|---|---|---|---|
+| A — efficient 20-msg conversation | $0.005903 · ৳0.729 | **$0.003783 · ৳0.467** | −35.9% |
+| B — expected 20-msg conversation | $0.008263 · ৳1.020 | **$0.006143 · ৳0.758** | −25.7% |
+| C — heavy 20-msg conversation | $0.015659 · ৳1.932 | **$0.007290 · ৳0.900** | −53.4% |
+| One normal customer message | $0.000770 | **$0.000770** | — |
+| One photo message | $0.001846 (vision) | **$0.000782** | −57.6% |
+| One fallback message | $0.005383 (`gemini-pro`) | **$0.001089** (`gpt-4.1-mini`) | −79.8% |
+| Product upload, 5 images | $0.001369 (intended) | **$0.000000** | −100% |
+| Simple product edit | $0.000000 | **$0.000000** | — |
+
+Scenario C falls furthest because it carried both the most images *and* the `gemini-pro`
+escalation — the two things that were removed.
+
+### Revised monthly cost (expected profile, 5% fallback)
+
+| Conversations | AI variable | Total incl. infra | BDT | per conversation |
+|---|---|---|---|---|
+| 50 | $0.3187 | $0.3197 | ৳39.45 | ৳0.789 |
+| 100 | $0.6374 | $0.6394 | ৳78.90 | ৳0.789 |
+| 300 | $1.9121 | $1.9181 | ৳236.69 | ৳0.789 |
+| **350** (plan + grace) | $2.2308 | **$2.2378** | **৳276.14** | ৳0.789 |
+| 500 | $3.1868 | $3.1968 | ৳394.49 | ৳0.789 |
+| 1000 | $6.3736 | $6.3936 | ৳788.98 | ৳0.789 |
+
+### Revised gross margin at the 350-conversation ceiling
+
+Revenue ৳999 = $8.0956. Before fixed infra, then after a $1.92 attributable infra share:
+
+| Profile | 5% fallback | 10% | 25% | after infra (5%) |
+|---|---|---|---|---|
+| Efficient | **82.6%** | 82.0% | 78.6% | 58.8% |
+| **Expected** | **72.4%** | 71.4% | 68.4% | **48.6%** |
+| Heavy | **67.4%** | 66.4% | 63.4% | 43.7% |
+
+Break-even conversations per month: expected @5% **1,266** · heavy @5% **1,073** ·
+after fixed infra **965** · after PSP fees and VAT **773**. All are ≥ 2.2× the plan cap of
+350, so the plan has substantial headroom in every profile.
+
+### Top-up packs: the previous audit's #1 risk is resolved
+
+Every pack is now margin-positive for every profile, **without changing a single price**:
+
+| Pack | ৳/conv | Efficient GM | Expected GM | Heavy GM | Heavy @25% fallback |
+|---|---|---|---|---|---|
+| `TOPUP_100` | ৳1.50 | 67.0% | 47.6% | **38.1%** | 30.5% |
+| `TOPUP_250` | ৳1.40 | 64.6% | 43.8% | **33.7%** | 25.6% |
+| `TOPUP_500` | ৳1.30 | 61.9% | 39.5% | **28.6%** | 19.9% |
+| `TOPUP_1000` | ৳1.20 | 58.7% | 34.5% | **22.7%** | 13.2% |
+
+The previous audit found `TOPUP_1000` at **−63.4%** gross margin for a heavy merchant,
+because a heavy conversation then cost ৳1.93 against a ৳1.20 sale price. A heavy
+conversation now costs **৳0.90**, so the worst pack for the worst profile still clears
+**+22.7%**. The earlier recommendation to price no pack below ৳2.20/conversation is
+**withdrawn** — it was correct for the architecture it was measured on and is not correct
+for this one. **No pricing change is recommended.**
+
+`TOPUP_1000` at heavy usage *and* a 25% fallback rate is the thinnest cell at 13.2%. That is
+positive but not comfortable, and it is the cell to watch if the fallback rate rises —
+which it will if the free Gemini key is kept past ~10 merchants
+([GEMINI_FREE_TIER_CAPACITY.md](GEMINI_FREE_TIER_CAPACITY.md) §3).
+
+### Free-Gemini period vs paid-Gemini period
+
+These must not be conflated. On the current **free** key, `gemini-3.1-flash-lite` bills
+**$0** and local embeddings bill $0, so AI variable cost is *only* the OpenAI fallback
+share:
+
+| Throttled/failed turn share | Free key, per conversation | 350 conv/month | Paid key, per conversation |
+|---|---|---|---|
+| 0% | $0.000000 | $0.00 | $0.006143 |
+| 5% | $0.000762 | $0.267 · ৳33 | $0.006143 |
+| 10% | $0.001525 | $0.534 · ৳66 | $0.006143 |
+| 25% | $0.003812 | $1.334 · ৳165 | $0.006143 |
+
+**Treat the free-key column as a promotional credit, not as the business's unit economics.**
+Every plan and top-up decision above is taken against the paid column. The free tier's
+binding constraint is not cost but **15 requests/minute project-wide** — roughly 4
+concurrent conversations, platform-wide.
+
+### Revised scenario matrix (Phase 8)
+
+| Scenario | Per conversation | Note |
+|---|---|---|
+| Gemini-only, expected | $0.006143 · ৳0.758 | the normal case |
+| Gemini retry then success | $0.006143 · ৳0.758 | a failed Gemini call is **not billed**; only latency is paid |
+| Gemini quota exhaustion → OpenAI (1 turn) | $0.006462 · ৳0.797 | +5.2% |
+| Gemini outage → OpenAI (all 14 turns), cold cache | $0.010143 · ৳1.252 | +65.1% |
+| Gemini outage → OpenAI (all 14 turns), warm prompt cache | $0.004296 · ৳0.530 | **−30.1%** — see below |
+| Heavy, no vision | $0.007290 · ৳0.900 | |
+| Text-heavy catalogue (5 products + 4 chunks every turn) | $0.006143 · ৳0.758 | already the modelled default |
+| Large-catalogue retrieval, 200 products | $0.000000 | Postgres FTS + local embeddings — no provider call |
+| Current local retrieval | $0.000000 | n-gram hash |
+| Gemini semantic retrieval | $0.000002 / conv | `gemini-embedding-001`, 4 query embeddings — **not recommended** |
+| Hybrid retrieval | $0.000002 / conv | lexical + Gemini RRF — **not recommended**, no measured gain |
+
+Retrieval is a rounding error either way. The retrieval decision is a **quality** decision,
+not a cost decision — which is why it is settled in
+[RETRIEVAL_QUALITY_EVALUATION.md](RETRIEVAL_QUALITY_EVALUATION.md) on accuracy, not price.
+
+**A total Gemini outage is no longer a cost event worth planning around.** Cold, it costs
++65%; but the system prompt is identical across a merchant's messages, and OpenAI's
+automatic prompt caching was measured hitting **90% of the prefix** (`cached_tokens: 1920`
+of 2,125). Once warm, an all-OpenAI conversation costs **$0.004296 — 30% *less* than the
+Gemini primary**, because Gemini's caching does not engage at all
+([PROMPT_CACHING_DECISION.md](PROMPT_CACHING_DECISION.md)). The honest summary is that the
+fallback provider is now cheaper than the primary on sustained traffic, and the reason to
+keep Gemini primary is latency, the free tier, and not depending on a single vendor —
+not price.
+
+### Costs that are NOT AI and are now the larger line
+
+With vision gone, AI is ~$2.24/merchant/month at the plan ceiling. Bigger items:
+
+| Item | Estimate | Note |
+|---|---|---|
+| Fixed infra share | $1.92/merchant/month | $48 droplet ÷ 25 merchants [A] — the founder has not confirmed the droplet size |
+| Product image storage + egress | ~$0.04/merchant/month | only once upload exists; $5/month Spaces covers ~125 merchants |
+| PSP fee | 2.5% of ৳999 | |
+| VAT | 15% | |
+
+**Fixed infra is now ~46% of the per-merchant marginal cost.** The lever that matters at
+this scale is the droplet, not the model.
+
+---
+
 ## 1. Executive summary
 
 AI is **not** the risk to EasyModerator's unit economics. At the expected usage profile a merchant

@@ -50,6 +50,11 @@ const _redisDel = async (key) => {
 const _promptHash = (prompt) =>
     crypto.createHash('md5').update(prompt).digest('hex').slice(0, 12);
 
+// Negative cache for "this project cannot create cached content at all".
+const UNAVAILABLE_KEY = 'gemini_cache:unavailable';
+const UNAVAILABLE_TTL = parseInt(process.env.GEMINI_CACHE_BACKOFF_SECONDS || '900', 10);
+const _markUnavailable = () => _redisSetex(UNAVAILABLE_KEY, UNAVAILABLE_TTL, '1');
+
 /**
  * Create a Gemini cachedContent from a system prompt string.
  *
@@ -79,6 +84,11 @@ const _createCachedContent = async (systemPrompt, model) => {
             // 400 with "tokens less than minimum" means prompt is too short — not an error
             if (res.status === 400 && errText.includes('minimum')) return null;
             console.warn(`[GeminiCache] Create failed ${res.status}: ${errText.slice(0, 200)}`);
+            // A free Gemini project reports limit=0 for cached-content storage, so
+            // every attempt 429s. Without a negative cache that is one doomed HTTP
+            // round-trip on the critical path of EVERY customer message. Remember
+            // the refusal briefly so the reply path stops paying for it.
+            if (res.status === 429 || res.status === 403) await _markUnavailable();
             return null;
         }
 
@@ -105,7 +115,15 @@ const getOrCreate = async (shopId, systemPrompt, model) => {
     // saving is negligible on small prompts anyway.
     if (!systemPrompt || systemPrompt.length < GEMINI_MIN_CHARS) return null;
 
-    const geminiModel = model || process.env.LLM_DEFAULT_MODEL_GEMINI || 'gemini-2.0-flash';
+    // A cachedContent is bound to ONE model: a handle created for model X is
+    // unusable by a generateContent call on model Y. Defaulting to a model that
+    // is not in the failover chain (this used to read 'gemini-2.0-flash', long
+    // retired) makes caching look wired up while never producing a single hit.
+    // Default to the model that actually serves the request.
+    const geminiModel = model
+        || process.env.LLM_GEMINI_LITE_MODEL
+        || require('./llm.service').GEMINI_LITE_MODEL;
+
     const hash = _promptHash(systemPrompt);
     const redisKey = `gemini_cache:${shopId}:${hash}`;
 
@@ -113,11 +131,14 @@ const getOrCreate = async (shopId, systemPrompt, model) => {
     const cached = await _redisGet(redisKey);
     if (cached) return cached;
 
-    // 2. Create a new cachedContent via Gemini API
+    // 2. Skip entirely if the project has already refused to store cached content.
+    if (await _redisGet(UNAVAILABLE_KEY)) return null;
+
+    // 3. Create a new cachedContent via Gemini API
     const name = await _createCachedContent(systemPrompt, geminiModel);
     if (!name) return null;
 
-    // 3. Store in Redis with a margin below the Gemini TTL so we re-create
+    // 4. Store in Redis with a margin below the Gemini TTL so we re-create
     //    before the Gemini entry expires.
     const redisTtl = Math.max(60, GEMINI_CACHE_TTL - 120);
     await _redisSetex(redisKey, redisTtl, name);

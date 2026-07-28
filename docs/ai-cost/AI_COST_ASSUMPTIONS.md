@@ -1,5 +1,19 @@
 # EasyModerator AI Cost Model — Assumptions & Evidence Register
 
+> **REVISION 2026-07-28b.** The locked architecture invalidates the image-related
+> assumptions below and adds free-tier ones. Superseding entries:
+>
+> | Assumption | Now |
+> |---|---|
+> | Images per conversation (3 efficient / 3 expected / 5 heavy) | still the traffic assumption, but **image token cost is 0** — blocks are stripped before the provider call |
+> | Image tokenisation (1,064 flat on Gemini; resolution-scaled on OpenAI) | **measured and still valid**, but only applies if `AI_VISION_ENABLED=true` |
+> | Fallback lands on `gemini-3.1-pro-preview` | **wrong** — falls back to `gpt-4.1-mini`; `gemini-pro` is `limit=0` on the free project |
+> | Gemini prompt caching may engage on a paid tier | still open, but explicit caching is `limit=0` **and** implicit caching was measured not engaging at ~2,000 tokens |
+> | *(new)* Gemini free tier = 15 requests/min project-wide | **[M]** measured; it is a capacity limit, not a cost limit |
+> | *(new)* 14 Gemini requests per expected conversation | **[M]** from `AI_COST_MODEL.json` |
+> | *(new)* 12 active hours/day, 25% of volume in the peak hour, ~4 min per conversation | **[A]** capacity model only — see `GEMINI_FREE_TIER_CAPACITY.md` §3 |
+> | *(new)* Product image storage ~$0.04/merchant/month on DO Spaces | **[A]** and only once an upload flow exists |
+
 **Audit date:** 2026-07-28 · **Pricing table version:** `2026-07-28.1` · **Currency:** USD primary, BDT secondary
 
 Every number in `AI_COST_AUDIT.md`, `AI_COST_MODEL.csv` and `AI_COST_MODEL.json` traces to a row here.

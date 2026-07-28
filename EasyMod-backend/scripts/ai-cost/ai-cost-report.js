@@ -22,7 +22,7 @@ const path = require('path');
 const { calculateCost, PRICING, getFxRate } = require('../../src/modules/ai/cost.service');
 const SC = require('./scenarios');
 
-const { M, TOK, textTurn, faqBranchTurn, visionExtract, imageTurn, sentimentCall, queryEmbedding, op } = SC;
+const { M, TOK, textTurn, faqBranchTurn, sentimentCall, queryEmbedding, op } = SC;
 
 const OUT_DIR = path.resolve(__dirname, '../../../docs/ai-cost');
 const FX = getFxRate();
@@ -58,6 +58,33 @@ const ASSUMPTIONS = {
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
+ * A photo message under the LOCKED architecture (AI_VISION_ENABLED unset).
+ *
+ * The customer still sends an image, but no image bytes reach a provider:
+ * vision-policy.stripImageBlocks() removes them and the reply is grounded on the
+ * caption text plus the DB product search. So a photo message costs exactly what
+ * a text message of the same length costs — the ~1,064 image input tokens and
+ * the separate 1,215-token extraction call are both gone.
+ *
+ * The one addition is the "you cannot see images" instruction the router appends
+ * so the model does not pretend to have looked at the photo.
+ */
+const NO_VISION_NOTICE_TOKENS = 46;   // [T] countTokens on the appended block
+
+const photoMessageTurn = (tier) => {
+    const t = SC.textTurn(tier);
+    return {
+        ...t,
+        operation: `chat_reply_photo_message_${tier}`,
+        inputTokens: t.inputTokens + NO_VISION_NOTICE_TOKENS,
+        imageCount: 0,
+        notes: 'Customer sent a photo. AI_VISION_ENABLED is off, so image blocks are '
+            + 'stripped before the provider call and the reply is grounded on the caption '
+            + '+ DB product search. Zero image tokens, zero extraction call.',
+    };
+};
+
+/**
  * A 20-message conversation = 10 customer messages + 10 AI replies.
  * Only CUSTOMER messages trigger model calls, and not all of them do:
  * greetings short-circuit on the regex fast-path and order-flow turns are a
@@ -76,13 +103,13 @@ function conversationScenarios() {
             ops: [
                 op({ operation: 'greeting_regex_fastpath', model: M.LITE, requestCount: 0, measurementSource: SC.T, confidence: 'high', notes: 'intent-router.service.js:175 — zero model calls' }),
                 textTurn('efficient'), queryEmbedding(EMBED_MODEL, TOK.EMB_QUERY_SHORT),
-                visionExtract(), imageTurn('efficient', 1),
+                photoMessageTurn('efficient'),
                 textTurn('efficient'), queryEmbedding(EMBED_MODEL, TOK.EMB_QUERY_SHORT),
                 textTurn('efficient'), queryEmbedding(EMBED_MODEL, TOK.EMB_QUERY_SHORT),
-                visionExtract(), imageTurn('efficient', 1),
+                photoMessageTurn('efficient'),
                 faqBranchTurn(),
                 faqBranchTurn(),
-                visionExtract(), imageTurn('efficient', 1),
+                photoMessageTurn('efficient'),
                 op({ operation: 'order_flow_deterministic', model: M.LITE, requestCount: 0, measurementSource: SC.T, confidence: 'high', notes: 'order-flow.service.js step machine — zero model calls' }),
             ],
         },
@@ -97,13 +124,13 @@ function conversationScenarios() {
             ops: [
                 op({ operation: 'greeting_regex_fastpath', model: M.LITE, requestCount: 0, measurementSource: SC.T, confidence: 'high', notes: 'zero model calls' }),
                 textTurn('expected'), queryEmbedding(EMBED_MODEL), sentimentCall(),
-                visionExtract(), imageTurn('expected', 1),
+                photoMessageTurn('expected'),
                 textTurn('expected'), queryEmbedding(EMBED_MODEL), sentimentCall(),
                 textTurn('expected'), queryEmbedding(EMBED_MODEL), sentimentCall(),
-                visionExtract(), imageTurn('expected', 1),
+                photoMessageTurn('expected'),
                 textTurn('expected'), queryEmbedding(EMBED_MODEL), sentimentCall(),
                 faqBranchTurn(),
-                visionExtract(), imageTurn('expected', 1),
+                photoMessageTurn('expected'),
                 { ...textTurn('expected'), operation: 'chat_reply_customer_rephrase', retries: 1, notes: 'Customer rephrases after an unhelpful answer — a second full-price turn on the same question. NOTE: there is no regenerate button in the product; this models the real-world equivalent.' },
                 op({ operation: 'order_flow_deterministic', model: M.LITE, requestCount: 0, measurementSource: SC.T, confidence: 'high', notes: 'zero model calls' }),
             ],
@@ -115,17 +142,19 @@ function conversationScenarios() {
             aiReplies: 10,
             billableConversations: 1,
             imagesProcessed: 5,
-            description: '50-FAQ shop, full 10-turn history, 5 images, one gemini-lite failure escalating to gemini-pro, one duplicate webhook (deduped, free), one customer rephrase.',
+            description: '50-FAQ shop, full 10-turn history, 5 photo messages (no vision), one gemini-lite failure falling back to gpt-4.1-mini, one duplicate webhook (deduped, free), one customer rephrase.',
             ops: [
                 textTurn('heavy'), queryEmbedding(EMBED_MODEL), sentimentCall(TOK.USER_LONG),
-                visionExtract(), imageTurn('heavy', 2),
+                photoMessageTurn('heavy'),
                 textTurn('heavy'), queryEmbedding(EMBED_MODEL), sentimentCall(TOK.USER_LONG),
-                // gemini-lite 5xx (not billed) → gemini-pro answers the same turn
-                { ...textTurn('heavy', M.PRO), operation: 'chat_reply_text_heavy_FALLBACK_pro', fallbackCalls: 1, confidence: 'medium', notes: 'gemini-lite returned 5xx (unbilled) and llm.service escalated to gemini-3.1-pro-preview — 8x input, 8x output' },
+                // gemini-lite 5xx (not billed) → gpt-4.1-mini answers the same turn.
+                // gemini-pro is no longer in the automatic chain: it is limit=0 on the
+                // free Gemini project and 8x the price on a paid one.
+                { ...textTurn('heavy', M.OAI), operation: 'chat_reply_text_heavy_FALLBACK_openai', fallbackCalls: 1, confidence: 'medium', notes: 'gemini-lite returned 5xx (unbilled) and llm.service fell back to gpt-4.1-mini — 1.6x input, 1.07x output vs the primary. Cold cache assumed; a warm OpenAI prompt cache makes this CHEAPER than the primary.' },
                 queryEmbedding(EMBED_MODEL), sentimentCall(TOK.USER_LONG),
-                visionExtract(), imageTurn('heavy', 2),
+                photoMessageTurn('heavy'),
                 textTurn('heavy'), queryEmbedding(EMBED_MODEL), sentimentCall(TOK.USER_LONG),
-                visionExtract(), imageTurn('heavy', 1),
+                photoMessageTurn('heavy'),
                 faqBranchTurn(),
                 { ...textTurn('heavy'), operation: 'chat_reply_customer_rephrase', retries: 1, notes: 'Customer rephrases after an unhelpful answer — a second full-price turn' },
                 op({ operation: 'duplicate_webhook_deduped', model: M.LITE, requestCount: 0, retries: 1, measurementSource: SC.T, confidence: 'high', notes: 'message-worker.js:292 claims the dedup key BEFORE any AI call — a redelivery costs $0' }),
@@ -156,7 +185,7 @@ function messageScenarios() {
         },
         MSG_image: {
             label: 'One customer message with one image',
-            ops: [visionExtract(), imageTurn('expected', 1), sentimentCall()],
+            ops: [photoMessageTurn('expected'), sentimentCall()],
         },
         MSG_fallback_pro: {
             label: 'One customer message where gemini-lite fails and gemini-pro answers',

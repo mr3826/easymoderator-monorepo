@@ -197,6 +197,24 @@ const PROVIDERS = [
     { name: 'openai',      fn: (params) => callOpenAI(params)                     },
 ];
 
+// Should a gemini-lite failure escalate automatically to the expensive Gemini
+// model? Default NO, for two measured reasons:
+//
+//   1. On the current free Gemini project, GEMINI_PRO_MODEL returns
+//      GenerateContentInputTokensPerModelPerDay-FreeTier limit=0 — it cannot
+//      serve a single request, so the attempt is pure added latency on the path
+//      to the OpenAI fallback.
+//   2. On a paid project it costs ~8× per reply. A transient 500 or a rate-limit
+//      blip does not justify an 8× model; that is an escalation decision, not a
+//      retry strategy.
+//
+// gemini-pro stays reachable through preferredProvider:'gemini-pro' for genuine
+// escalation (low confidence, order/policy accuracy, an entitled plan).
+// Set LLM_AUTO_ESCALATE_TO_PRO=true to restore it in the automatic chain — worth
+// revisiting once the key moves to a paid project.
+// See docs/ai-cost/GEMINI_FIRST_ROUTING.md.
+const autoEscalateToPro = () => process.env.LLM_AUTO_ESCALATE_TO_PRO === 'true';
+
 /**
  * Call LLM with automatic failover: lite → pro → openai.
  *
@@ -214,6 +232,13 @@ const chat = async (params) => {
     const { preferredProvider, skipProviders = [] } = params;
 
     let providers = PROVIDERS.filter(p => !skipProviders.includes(p.name));
+
+    // Drop the expensive tier from the AUTOMATIC chain unless it was explicitly
+    // asked for. An explicit preferredProvider is an escalation decision and is
+    // always honoured.
+    if (!autoEscalateToPro() && preferredProvider !== 'gemini-pro') {
+        providers = providers.filter(p => p.name !== 'gemini-pro');
+    }
 
     if (preferredProvider) {
         const pref = providers.find(p => p.name === preferredProvider);

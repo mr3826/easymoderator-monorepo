@@ -1,5 +1,33 @@
 # AI Cost Optimization Backlog
 
+> **REVISION 2026-07-28b — read this box before the rest of the file.**
+>
+> The locked architecture (no AI vision; `gemini-pro` out of the automatic chain; text-derived
+> search metadata) changed the baseline from **$0.008263** to **$0.006143 / ৳0.758** per
+> expected conversation, and it resolved or withdrew several items below. See
+> [`AI_COST_AUDIT.md`](AI_COST_AUDIT.md) §0.
+>
+> | Item | Status now |
+> |---|---|
+> | O-1 Point the Gemini cache at the right model | **Code fixed**, but caching still yields **0%** — explicit `cachedContents` is `limit=0` on the free project and implicit caching does not engage. Measured, three ways: [`PROMPT_CACHING_DECISION.md`](PROMPT_CACHING_DECISION.md). Revisit only after the paid-key migration. |
+> | O-2 Stop re-sending every image / image savings | **Obsolete.** No image is sent at all. |
+> | O-10 Compress product images | **Withdrawn.** No images reach a provider. |
+> | Reorder the failover chain | **Done.** `gemini-pro` removed from the automatic chain; fallback message cost −79.8%. |
+> | Top-up repricing | **Withdrawn.** Every pack is margin-positive without a price change. |
+>
+> **New items, all correctness-first:**
+>
+> | # | Item | Why | Effort |
+> |---|---|---|---|
+> | N-1 | `buildEmbeddingText` does `variants.join(', ')` on objects → `sizes: [object Object]` in every product's embedded text | pollutes the vector document; needs a deliberate reindex, so not done inline | 1 h + reindex |
+> | N-2 | Raise the RAG product threshold from `0.5` to `~0.70` **at the same time** as enabling any semantic embedder | measured: 0.5 is two steps below where the embedder stops returning garbage | 15 min |
+> | N-3 | Delete `llm-tier-selection.service.js` (238 lines, zero callers, references a retired model) and `llm.service.hasVisionContent` (defined, never called) | dead code that reads as live configuration | 30 min |
+> | N-4 | BD synonym + phonetic dictionary expanded into the tsquery | the measured retrieval weakness is query normalisation (synonyms 20%, phonetic 50%), not the embedder | 1 d |
+> | N-5 | Trim the 640-token persona block and the 50-FAQ image-path dump | unconditional token win that needs no provider feature; the cheapest prompt is a smaller prompt | 3 h |
+> | N-6 | Circuit breaker is keyed per provider, not per shop — one merchant's burst opens the circuit platform-wide for 300 s | defensible for a shared quota, surprising in an incident | 2 h |
+> | N-7 | `intentCache` serves a cached reply for 30 min, so a mid-window price edit is quoted stale | pre-existing; invalidate on product update | 2 h |
+> | N-8 | `product.test.js` needs `--forceExit`; `safe-media-fetch` timeout test is order-dependent | both pre-existing test-hygiene issues found while running the suite | 2 h |
+
 **Date:** 2026-07-28 · Baseline: scenario B, **$0.008263 / ৳1.02 per conversation**
 Savings are computed by `scripts/ai-cost/ai-cost-report.js` (`sensitivity` block in
 [`AI_COST_MODEL.json`](AI_COST_MODEL.json)) by re-running the real scenario with one lever changed.
