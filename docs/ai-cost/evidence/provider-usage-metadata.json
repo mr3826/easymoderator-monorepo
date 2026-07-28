@@ -1,0 +1,100 @@
+{
+  "probedAt": "2026-07-28T03:35:16.510Z",
+  "probes": [
+    {
+      "label": "gemini_lite_text_expected_turn",
+      "model": "gemini-3.1-flash-lite",
+      "usageMetadata": {
+        "promptTokenCount": 2155,
+        "candidatesTokenCount": 42,
+        "totalTokenCount": 2197,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 2155
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "finishReason": "STOP"
+    },
+    {
+      "label": "gemini_lite_text_expected_turn_REPEAT",
+      "model": "gemini-3.1-flash-lite",
+      "usageMetadata": {
+        "promptTokenCount": 2155,
+        "candidatesTokenCount": 52,
+        "totalTokenCount": 2207,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 2155
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "finishReason": "STOP"
+    },
+    {
+      "label": "gemini_lite_vision_extraction_1image",
+      "model": "gemini-3.1-flash-lite",
+      "usageMetadata": {
+        "promptTokenCount": 1215,
+        "candidatesTokenCount": 59,
+        "totalTokenCount": 1274,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 151
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1064
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "finishReason": "STOP"
+    },
+    {
+      "label": "explicit_cache_create_configured_model",
+      "model": "gemini-2.0-flash",
+      "httpStatus": 400,
+      "ok": false,
+      "responseSnippet": "{ \"error\": { \"code\": 400, \"message\": \"Cached content is too small. total_token_count=1998, min_total_token_count=4096\", \"status\": \"INVALID_ARGUMENT\" } } "
+    },
+    {
+      "label": "explicit_cache_create_actual_primary",
+      "model": "gemini-3.1-flash-lite",
+      "httpStatus": 429,
+      "ok": false,
+      "responseSnippet": "{ \"error\": { \"code\": 429, \"message\": \"TotalCachedContentStorageTokensPerModelFreeTier limit exceeded for model gemini-3.1-flash-lite: limit=0, requested=1998\", \"status\": \"RESOURCE_EXHAUSTED\" } } "
+    },
+    {
+      "label": "explicit_cache_create_actual_fallback",
+      "model": "gemini-3.1-pro-preview",
+      "httpStatus": 429,
+      "ok": false,
+      "responseSnippet": "{ \"error\": { \"code\": 429, \"message\": \"TotalCachedContentStorageTokensPerModelFreeTier limit exceeded for model gemini-3-pro: limit=0, requested=1998\", \"status\": \"RESOURCE_EXHAUSTED\" } } "
+    },
+    {
+      "label": "openai_fallback_text_expected_turn",
+      "model": "gpt-4.1-mini",
+      "usage": {
+        "prompt_tokens": 2125,
+        "completion_tokens": 35,
+        "total_tokens": 2160,
+        "prompt_tokens_details": {
+          "cached_tokens": 1920,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      }
+    }
+  ]
+}

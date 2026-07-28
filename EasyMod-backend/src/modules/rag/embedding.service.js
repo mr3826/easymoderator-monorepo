@@ -133,6 +133,20 @@ const getOpenAiEmbedding = async (text) => {
   }
 
   const data = await response.json();
+  // Cost accounting. No-op unless AI_USAGE_ACCOUNTING=true; never throws.
+  try {
+    const { recordUsage } = require('../ai/usage-recorder.service');
+    void recordUsage({
+      operationType: 'embed',
+      provider: 'openai',
+      model,
+      usage: {
+        embeddingTokens: data?.usage?.prompt_tokens ?? data?.usage?.total_tokens ?? 0,
+        sourceOfUsage: 'provider_reported',
+      },
+    });
+  } catch (_) { /* accounting must never break retrieval */ }
+
   const vector = data?.data?.[0]?.embedding;
   return ensureVectorSize(vector);
 };

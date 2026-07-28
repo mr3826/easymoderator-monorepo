@@ -1,0 +1,239 @@
+{
+  "measuredAt": "2026-07-28T03:34:58.845Z",
+  "geminiModelUsedForCounting": "gemini-3.1-flash-lite",
+  "calibration": {
+    "calibrated": true,
+    "ratioLatin": 4.517,
+    "ratioBengali": 3.35
+  },
+  "turns": [
+    {
+      "id": "base_system_prompt",
+      "note": "Static per-shop persona + operating context, no FAQ/product/RAG",
+      "shape": {
+        "faqCount": 0,
+        "productCount": 0,
+        "ragChunks": 0,
+        "historyTurns": 0
+      },
+      "chars": {
+        "systemPrompt": 4470,
+        "groundedSystemPrompt": 4470,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 0,
+        "fullInput": 4470
+      },
+      "tokens": {
+        "systemPrompt": 1087,
+        "groundedSystemPrompt": 1087,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 0,
+        "totalInput": 1087
+      },
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "greeting_turn_no_llm",
+      "note": "Regex fast-path — never reaches an LLM",
+      "shape": {
+        "faqCount": 0,
+        "productCount": 0,
+        "ragChunks": 0,
+        "historyTurns": 0
+      },
+      "chars": {
+        "systemPrompt": 4470,
+        "groundedSystemPrompt": 4470,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 16,
+        "fullInput": 4487
+      },
+      "tokens": {
+        "systemPrompt": 1087,
+        "groundedSystemPrompt": 1087,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 5,
+        "totalInput": 1092
+      },
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "turn_efficient",
+      "note": "Short Banglish, minimal retrieval",
+      "shape": {
+        "faqCount": 3,
+        "productCount": 2,
+        "ragChunks": 2,
+        "historyTurns": 4
+      },
+      "chars": {
+        "systemPrompt": 4845,
+        "groundedSystemPrompt": 6117,
+        "dynamicGrounding": 1270,
+        "history": 227,
+        "userMessage": 17,
+        "fullInput": 6363
+      },
+      "tokens": {
+        "systemPrompt": 1187,
+        "groundedSystemPrompt": 1563,
+        "dynamicGrounding": 376,
+        "history": 75,
+        "userMessage": 6,
+        "totalInput": 1644
+      },
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "turn_expected",
+      "note": "Production defaults: 5 FAQ, 5 products, 4 RAG, 8 history turns",
+      "shape": {
+        "faqCount": 5,
+        "productCount": 5,
+        "ragChunks": 4,
+        "historyTurns": 8
+      },
+      "chars": {
+        "systemPrompt": 5042,
+        "groundedSystemPrompt": 7563,
+        "dynamicGrounding": 2519,
+        "history": 398,
+        "userMessage": 77,
+        "fullInput": 8040
+      },
+      "tokens": {
+        "systemPrompt": 1251,
+        "groundedSystemPrompt": 1997,
+        "dynamicGrounding": 746,
+        "history": 134,
+        "userMessage": 25,
+        "totalInput": 2156
+      },
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "turn_heavy",
+      "note": "Full 10-turn history, long mixed message",
+      "shape": {
+        "faqCount": 5,
+        "productCount": 5,
+        "ragChunks": 4,
+        "historyTurns": 10
+      },
+      "chars": {
+        "systemPrompt": 5042,
+        "groundedSystemPrompt": 7563,
+        "dynamicGrounding": 2519,
+        "history": 527,
+        "userMessage": 210,
+        "fullInput": 8302
+      },
+      "tokens": {
+        "systemPrompt": 1251,
+        "groundedSystemPrompt": 1997,
+        "dynamicGrounding": 746,
+        "history": 182,
+        "userMessage": 59,
+        "totalInput": 2238
+      },
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "turn_no_cache_first_faq_stage",
+      "note": "Stage-2 FAQ-hit branch: full system prompt + tiny FAQ user turn",
+      "shape": {
+        "faqCount": 0,
+        "productCount": 0,
+        "ragChunks": 0,
+        "historyTurns": 0
+      },
+      "chars": {
+        "systemPrompt": 4470,
+        "groundedSystemPrompt": 4470,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 144,
+        "fullInput": 4615
+      },
+      "tokens": {
+        "systemPrompt": 1087,
+        "groundedSystemPrompt": 1087,
+        "dynamicGrounding": 0,
+        "history": 0,
+        "userMessage": 41,
+        "totalInput": 1128
+      },
+      "measurementSource": "provider_reported"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "reply_short_bn",
+      "chars": 73,
+      "tokens": 27,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "reply_typical_mixed",
+      "chars": 212,
+      "tokens": 63,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "reply_long",
+      "chars": 403,
+      "tokens": 127,
+      "measurementSource": "provider_reported"
+    }
+  ],
+  "embeddings": [
+    {
+      "id": "rag_query_short",
+      "chars": 17,
+      "tokens": 6,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "rag_query_expected",
+      "chars": 77,
+      "tokens": 25,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "product_embed_doc",
+      "chars": 445,
+      "tokens": 106,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "faq_embed_doc",
+      "chars": 180,
+      "tokens": 60,
+      "measurementSource": "provider_reported"
+    }
+  ],
+  "auxPrompts": [
+    {
+      "id": "intent_router_extraction_prompt",
+      "chars": 457,
+      "tokens": 138,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "product_ai_extraction_prompt",
+      "chars": 657,
+      "tokens": 189,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "id": "sentiment_system_prompt",
+      "chars": 786,
+      "tokens": 176,
+      "measurementSource": "provider_reported"
+    }
+  ]
+}
