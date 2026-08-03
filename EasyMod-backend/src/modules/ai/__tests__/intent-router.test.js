@@ -170,3 +170,149 @@ describe('C — RAG product hit re-fetched live', () => {
         expect(sys).not.toContain('KNOWLEDGE BASE CONTEXT');
     });
 });
+
+// ---------------------------------------------------------------------------
+// D — customer photo → product matching
+//
+// The dominant F-commerce inbox entry point: a product screenshot plus three
+// words of Banglish. The photo reaches a model exactly once (the extraction
+// call); the reply is generated from that description plus live catalog rows.
+// ---------------------------------------------------------------------------
+describe('D — customer photo → product matching', () => {
+    const PHOTO = 'https://scontent.xx.fbcdn.net/first.jpg';
+    const ATTRS = {
+        category: 'saree',
+        color: 'red',
+        material: 'cotton',
+        query: 'red cotton saree',
+        tags: ['saree', 'red', 'cotton'],
+        description: 'a red cotton saree with a printed floral border',
+    };
+
+    // The extraction call is the one carrying an image block; everything else is
+    // the reply. Keyed on content shape rather than call index so a future extra
+    // call cannot silently make these assertions vacuous.
+    const imageCalls = () => llm.chat.mock.calls.filter(([a]) =>
+        (a.messages || []).some((m) => Array.isArray(m.content) && m.content.some((b) => b.type === 'image_url')));
+    const imageBlocks = () => imageCalls().flatMap(([a]) =>
+        a.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [])).filter((b) => b.type === 'image_url'));
+
+    beforeEach(() => {
+        delete process.env.AI_PHOTO_MATCH_ENABLED;
+        delete process.env.AI_VISION_ENABLED;
+        // Extraction returns JSON; the reply call returns prose.
+        llm.chat.mockImplementation(async ({ systemPrompt }) =>
+            /product image analyzer/i.test(systemPrompt || '')
+                ? { text: JSON.stringify(ATTRS), provider: 'gemini' }
+                : { text: 'Ji apa, eita ache.', provider: 'gemini' });
+    });
+
+    test('three photos in a burst cost exactly one image call, on the FIRST photo', async () => {
+        await route({
+            shopId: SHOP,
+            message: 'eita ache?',
+            systemPrompt: 'BASE',
+            imageUrls: [PHOTO, 'https://scontent.xx.fbcdn.net/second.jpg', 'https://scontent.xx.fbcdn.net/third.jpg'],
+        });
+
+        const blocks = imageBlocks();
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].url).toBe(PHOTO);
+        expect(JSON.stringify(llm.chat.mock.calls)).not.toContain('second.jpg');
+        expect(JSON.stringify(llm.chat.mock.calls)).not.toContain('third.jpg');
+    });
+
+    test('the customer is told only the first of several photos was examined', async () => {
+        await route({
+            shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE',
+            imageUrls: [PHOTO, 'https://scontent.xx.fbcdn.net/second.jpg'],
+        });
+        expect(lastSystemPrompt()).toContain('Only the first was examined');
+    });
+
+    test('a single photo adds no multi-photo note', async () => {
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+        expect(lastSystemPrompt()).not.toContain('Only the first was examined');
+    });
+
+    test('the reply call carries no image bytes — one image call per photo, not two', async () => {
+        await route({ shopId: SHOP, message: 'dam koto?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        expect(imageCalls()).toHaveLength(1);
+        const reply = llm.chat.mock.calls[llm.chat.mock.calls.length - 1][0];
+        expect(JSON.stringify(reply.messages)).not.toContain('image_url');
+        expect(JSON.stringify(reply.messages)).toContain('dam koto?');
+    });
+
+    test('extracted attributes drive the live catalog search', async () => {
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        expect(productSearch.searchByAttributes).toHaveBeenCalledWith(expect.objectContaining({
+            shopId: SHOP, category: 'saree', color: 'red', material: 'cotton', tags: ATTRS.tags,
+        }));
+    });
+
+    test('a match grounds the reply on live DB facts and records the source', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([{ id: 'p9', name: 'Red Cotton Saree', price: 2500 }]);
+
+        const res = await route({ shopId: SHOP, message: 'dam koto?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        const sys = lastSystemPrompt();
+        expect(sys).toContain('SHOP PRODUCTS MATCHING THIS PHOTO');
+        expect(sys).toContain('৳2500');
+        expect(sys).toContain('Never invent or guess');
+        expect(res.sourceReferences).toEqual([{ kind: 'product', id: 'p9', title: 'Red Cotton Saree' }]);
+    });
+
+    test('the photo description is passed forward so the text-only reply can discuss it', async () => {
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        const sys = lastSystemPrompt();
+        expect(sys).toContain('printed floral border');
+        expect(sys).toContain('You did not see the photo yourself');
+    });
+
+    test('no catalog match tells the customer plainly and asks for more detail', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([]);
+
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        const sys = lastSystemPrompt();
+        expect(sys).toContain('No product in this shop');
+        expect(sys).toContain('could not find it');
+        expect(sys).toMatch(/ask them for the product name/i);
+        expect(sys).toContain('do not describe the photo');
+    });
+
+    test('a failed extraction still reaches the model grounded, never on the bare prompt', async () => {
+        llm.chat.mockImplementation(async ({ systemPrompt }) =>
+            /product image analyzer/i.test(systemPrompt || '')
+                ? { text: 'sorry, I cannot do that', provider: 'gemini' }   // unparseable → attrs null
+                : { text: 'reply', provider: 'gemini' });
+
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        const sys = lastSystemPrompt();
+        expect(sys).not.toBe('BASE');
+        expect(sys).toContain('No product in this shop');
+    });
+
+    test('a caption-less photo still gets a grounding note', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([]);
+
+        await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        expect(lastSystemPrompt()).toContain('No product in this shop');
+    });
+
+    test('AI_PHOTO_MATCH_ENABLED=false skips the image call and admits it cannot see', async () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+
+        await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
+
+        expect(imageCalls()).toHaveLength(0);
+        expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
+            expect.objectContaining({ query: 'eita ache?' }));
+        expect(lastSystemPrompt()).toContain('CANNOT see images');
+    });
+});

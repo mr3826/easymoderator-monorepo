@@ -156,6 +156,16 @@ plan feature in `subscription.plans.js` and rendered on the public pricing page
 the customer to type the name. The flag was **not** changed here, because editing it edits
 the pricing page. See §6.
 
+> **RESOLVED 2026-08-03 — Option 2 was taken.** The switch is now split in two:
+> `AI_PHOTO_MATCH_ENABLED` (default **on**) analyses the customer's photo,
+> `AI_VISION_ENABLED` (default **off**) still covers merchant product-image
+> analysis and re-attaching image bytes to the reply call. The photo reaches a
+> model exactly once — extraction — and the reply is grounded on that
+> description plus live catalog rows, so the doubled image cost the paragraph
+> above warns about does not apply. `image_understanding` is now delivered.
+> Note the free-tier consequence: a photo message costs **2** of the 15
+> requests/minute.
+
 ---
 
 ## 5. Product images
@@ -179,9 +189,12 @@ So today: no image bytes are sent to any provider, and also no image bytes are s
    n-gram hash. With F-3 applied, a non-semantic embedder is now *safe* (the product tier
    is skipped) but the shop-knowledge tier still runs on it. Check
    `GET /health/detailed` → `embedding.semantic`.
-2. **The `image_understanding` pricing claim** (§4). Either drop the claim, or accept
-   vision for customer photos only and price it — the measured cost is ~1,065 input tokens
-   per image on the primary model, billed flat regardless of resolution.
+2. ~~**The `image_understanding` pricing claim** (§4).~~ **Closed 2026-08-03** — vision
+   for customer photos only was accepted and shipped on by default. The measured
+   ~1,065 input tokens per image, billed flat regardless of resolution, is now a
+   real line item. What remains open is not the claim but the **key tier**: a free
+   Gemini key allows 15 requests/minute project-wide and a photo message costs two
+   of them. Confirm the production key is paid before this carries real traffic.
 
 ---
 

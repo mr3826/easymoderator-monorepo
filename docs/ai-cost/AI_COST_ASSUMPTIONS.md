@@ -1,11 +1,20 @@
 # EasyModerator AI Cost Model — Assumptions & Evidence Register
 
+> **REVISION 2026-08-03.** Customer-photo matching shipped ON
+> (`AI_PHOTO_MATCH_ENABLED`, default true), so **image token cost is no longer
+> zero**. Each photo message now costs one extraction call carrying the image
+> (~1,065–1,090 flat input tokens) plus a text-only reply call. At 3 photo
+> messages per expected conversation that is roughly **+$0.0008, ~13% on the
+> $0.006143 total**. The merchant-side product-image vision path stays off, so
+> the product-upload figures below are unchanged. The 15 req/min free-tier
+> capacity model is the number to re-check: a photo message now costs 2 requests.
+>
 > **REVISION 2026-07-28b.** The locked architecture invalidates the image-related
 > assumptions below and adds free-tier ones. Superseding entries:
 >
 > | Assumption | Now |
 > |---|---|
-> | Images per conversation (3 efficient / 3 expected / 5 heavy) | still the traffic assumption, but **image token cost is 0** — blocks are stripped before the provider call |
+> | Images per conversation (3 efficient / 3 expected / 5 heavy) | still the traffic assumption; image token cost was 0 under the 07-28 config, **superseded 08-03** — see the revision note above |
 > | Image tokenisation (1,064 flat on Gemini; resolution-scaled on OpenAI) | **measured and still valid**, but only applies if `AI_VISION_ENABLED=true` |
 > | Fallback lands on `gemini-3.1-pro-preview` | **wrong** — falls back to `gpt-4.1-mini`; `gemini-pro` is `limit=0` on the free project |
 > | Gemini prompt caching may engage on a paid tier | still open, but explicit caching is `limit=0` **and** implicit caching was measured not engaging at ~2,000 tokens |
