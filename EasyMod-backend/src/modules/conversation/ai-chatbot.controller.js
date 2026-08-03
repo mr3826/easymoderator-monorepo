@@ -9,6 +9,37 @@ const cacheService = require('../../utils/cache.service');
 const { isTooLong } = require('../ai/prompt-sanitizer.service');
 const { SupportTicket } = require('../entities');
 const { createLogger } = require('../../utils/structured-logger');
+const { planHasFeature } = require('../subscription/subscription.plans');
+
+const presetLogger = createLogger('AiChatbotPreset');
+
+/**
+ * May this shop route every message through the expensive Gemini model?
+ *
+ * Denies on any failure: an unreadable subscription must not hand out the
+ * loss-making route. Logged at warn when a shop has the preset set but no
+ * entitlement, so it is visible rather than a silent downgrade.
+ */
+const advancedPresetAllowed = async (shopId) => {
+    try {
+        const { Subscription } = require('../entities');
+        const sub = await Subscription.findOne({
+            where: { shop_id: shopId }, attributes: ['plan_code'],
+        });
+        const allowed = planHasFeature(sub && sub.plan_code, 'advanced_model_preset');
+        if (!allowed) {
+            presetLogger.warn('model_preset=advanced ignored — plan does not include advanced_model_preset', {
+                shopId, planCode: sub ? sub.plan_code : null,
+            });
+        }
+        return allowed;
+    } catch (err) {
+        presetLogger.warn('Could not resolve plan for model_preset gate — defaulting to standard', {
+            shopId, error: err.message,
+        });
+        return false;
+    }
+};
 
 // Thin cached wrapper — delegates to the canonical shop service so there is
 // a single source of truth for AI settings (stored under shop.settings.ai).
@@ -285,10 +316,18 @@ class AIChatbotController {
                 operatingContext
             );
 
-            // Map model_preset to preferredProvider
-            // 'standard' = Gemini lite (cost-effective), 'advanced' = Gemini pro
+            // Map model_preset to preferredProvider.
+            // 'standard' = Gemini flash-lite (the sustainable default).
+            // 'advanced' = Gemini pro on EVERY message, which costs ~8× per reply
+            // and loses money on the flat 999 BDT plan. It is therefore gated on a
+            // plan entitlement no current plan grants, so setting the field by hand
+            // (it is not accepted by PUT /shop/ai-settings) cannot silently invert
+            // a shop's unit economics. Existing values are preserved and simply
+            // resolve to 'standard' until a plan enables the entitlement.
             const modelPreset = aiSettings.model_preset || 'standard';
-            const preferredProvider = modelPreset === 'advanced' ? 'gemini-pro' : 'gemini-lite';
+            const preferredProvider = (modelPreset === 'advanced' && await advancedPresetAllowed(shop_id))
+                ? 'gemini-pro'
+                : 'gemini-lite';
 
             const routerResult = await intentRouter.route({
                 shopId: shop_id,

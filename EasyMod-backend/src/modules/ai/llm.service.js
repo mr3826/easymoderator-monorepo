@@ -23,6 +23,8 @@
 
 const { circuitBreaker } = require('./circuit-breaker.service');
 const { decodeDataImage, safeFetchMedia } = require('../../utils/safe-media-fetch');
+// Cost accounting. No-op unless AI_USAGE_ACCOUNTING=true; never throws.
+const { recordUsage } = require('./usage-recorder.service');
 
 const GEMINI_LITE_MODEL = process.env.LLM_GEMINI_LITE_MODEL || 'gemini-3.1-flash-lite';
 const GEMINI_PRO_MODEL  = process.env.LLM_GEMINI_PRO_MODEL  || 'gemini-3.1-pro-preview';
@@ -76,10 +78,11 @@ const toGeminiParts = async (content) => {
 // Provider implementations
 // ---------------------------------------------------------------------------
 
-const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
+const callOpenAI = async ({ systemPrompt, messages, maxTokens, usageContext, fallbackSequence }) => {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
+    const startedAt = Date.now();
     const timeoutMs = parseInt(process.env.LLM_OPENAI_TIMEOUT_MS) || 30000;
     const oaiMessages = [];
     if (systemPrompt) oaiMessages.push({ role: 'system', content: systemPrompt });
@@ -111,6 +114,15 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
     }
 
     const data = await response.json();
+    void recordUsage({
+        ...usageContext,
+        provider: 'openai',
+        model: OPENAI_MODEL,
+        responseBody: data,
+        fallbackSequence,
+        latencyMs: Date.now() - startedAt,
+        imageCount: countImages(messages),
+    });
     return data?.choices?.[0]?.message?.content || '';
 };
 
@@ -118,10 +130,11 @@ const callOpenAI = async ({ systemPrompt, messages, maxTokens }) => {
  * Shared Gemini caller. `geminiModel` selects lite vs pro.
  * When `cachedContentName` is set, the system prompt is already server-cached.
  */
-const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName }, geminiModel) => {
+const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName, usageContext, fallbackSequence }, geminiModel) => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
+    const startedAt = Date.now();
     const timeoutMs = parseInt(process.env.LLM_GEMINI_TIMEOUT_MS) || 30000;
     const contents = await Promise.all(messages.map(async (m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -156,8 +169,23 @@ const callGemini = async ({ systemPrompt, messages, maxTokens, cachedContentName
     }
 
     const data = await response.json();
+    void recordUsage({
+        ...usageContext,
+        provider: geminiModel === GEMINI_PRO_MODEL ? 'gemini-pro' : 'gemini-lite',
+        model: geminiModel,
+        responseBody: data,
+        fallbackSequence,
+        latencyMs: Date.now() - startedAt,
+        imageCount: countImages(messages),
+    });
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 };
+
+/** Count image blocks across a messages array (for the cost ledger only). */
+const countImages = (messages = []) =>
+    messages.reduce((n, m) => n + (Array.isArray(m.content)
+        ? m.content.filter((b) => b && b.type === 'image_url').length
+        : 0), 0);
 
 // ---------------------------------------------------------------------------
 // Provider chain
@@ -168,6 +196,24 @@ const PROVIDERS = [
     { name: 'gemini-pro',  fn: (params) => callGemini(params, GEMINI_PRO_MODEL)  },
     { name: 'openai',      fn: (params) => callOpenAI(params)                     },
 ];
+
+// Should a gemini-lite failure escalate automatically to the expensive Gemini
+// model? Default NO, for two measured reasons:
+//
+//   1. On the current free Gemini project, GEMINI_PRO_MODEL returns
+//      GenerateContentInputTokensPerModelPerDay-FreeTier limit=0 — it cannot
+//      serve a single request, so the attempt is pure added latency on the path
+//      to the OpenAI fallback.
+//   2. On a paid project it costs ~8× per reply. A transient 500 or a rate-limit
+//      blip does not justify an 8× model; that is an escalation decision, not a
+//      retry strategy.
+//
+// gemini-pro stays reachable through preferredProvider:'gemini-pro' for genuine
+// escalation (low confidence, order/policy accuracy, an entitled plan).
+// Set LLM_AUTO_ESCALATE_TO_PRO=true to restore it in the automatic chain — worth
+// revisiting once the key moves to a paid project.
+// See docs/ai-cost/GEMINI_FIRST_ROUTING.md.
+const autoEscalateToPro = () => process.env.LLM_AUTO_ESCALATE_TO_PRO === 'true';
 
 /**
  * Call LLM with automatic failover: lite → pro → openai.
@@ -187,6 +233,13 @@ const chat = async (params) => {
 
     let providers = PROVIDERS.filter(p => !skipProviders.includes(p.name));
 
+    // Drop the expensive tier from the AUTOMATIC chain unless it was explicitly
+    // asked for. An explicit preferredProvider is an escalation decision and is
+    // always honoured.
+    if (!autoEscalateToPro() && preferredProvider !== 'gemini-pro') {
+        providers = providers.filter(p => p.name !== 'gemini-pro');
+    }
+
     if (preferredProvider) {
         const pref = providers.find(p => p.name === preferredProvider);
         if (pref) {
@@ -195,9 +248,9 @@ const chat = async (params) => {
     }
 
     const errors = [];
-    for (const { name, fn } of providers) {
+    for (const [fallbackSequence, { name, fn }] of providers.entries()) {
         try {
-            const text = await circuitBreaker.callWithBreaker(name, () => fn(params));
+            const text = await circuitBreaker.callWithBreaker(name, () => fn({ ...params, fallbackSequence }));
             return { text, provider: name };
         } catch (err) {
             errors.push(`${name}: ${err.message}`);

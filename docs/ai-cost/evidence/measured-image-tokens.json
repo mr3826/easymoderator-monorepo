@@ -1,0 +1,51 @@
+{
+  "measuredAt": "2026-07-28T03:35:04.162Z",
+  "model": "gemini-3.1-flash-lite",
+  "results": [
+    {
+      "label": "384x384 (Gemini single-tile ceiling)",
+      "w": 384,
+      "h": 384,
+      "pngBytes": 282292,
+      "tokens": 1090,
+      "error": null,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "label": "640x640 (compressed thumbnail)",
+      "w": 640,
+      "h": 640,
+      "pngBytes": 474584,
+      "tokens": 1090,
+      "error": null,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "label": "720x960 (Messenger typical portrait)",
+      "w": 720,
+      "h": 960,
+      "pngBytes": 713941,
+      "tokens": 1065,
+      "error": null,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "label": "1080x1440 (phone camera portrait)",
+      "w": 1080,
+      "h": 1440,
+      "pngBytes": 1082526,
+      "tokens": 1065,
+      "error": null,
+      "measurementSource": "provider_reported"
+    },
+    {
+      "label": "1600x1200 (uncompressed upload)",
+      "w": 1600,
+      "h": 1200,
+      "pngBytes": 915448,
+      "tokens": 1065,
+      "error": null,
+      "measurementSource": "provider_reported"
+    }
+  ]
+}

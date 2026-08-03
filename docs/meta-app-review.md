@@ -1,7 +1,7 @@
 # Meta App Review - Reviewer Guide
 
 **App:** Easy Moderator
-**Last updated:** 2026-06-27 (Messenger-only launch; Comment-to-DM removed)
+**Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
 **Graph API version:** v22.0
 **Login product:** Facebook Login for Business
 
@@ -34,8 +34,10 @@ Regression tests enforce that the provider:
 
 ## Reviewer Flow
 
-1. Log in to the live test instance with supplied tester credentials.
-2. Go to **Settings -> Chat Settings**.
+1. Log in to the live test instance at `https://easymod.tech/signin` with the
+   supplied tester credentials.
+2. In the left sidebar, under the **SETTINGS** heading, click **Chat**. (Direct
+   URL: `https://easymod.tech/app/manage-shop/chat-settings`.)
 3. Click **Connect Facebook Page**.
 4. Grant the three requested permissions.
 5. Select the test Page in the Page picker and connect it.
@@ -52,7 +54,7 @@ Development-mode caveat: while the Meta app is in Development mode, webhook even
 Target length: 2-3 minutes.
 
 1. Show the logged-in Easy Moderator dashboard.
-2. Open **Settings -> Chat Settings** and start Facebook Page connection.
+2. Open **Settings → Chat** and start the Facebook Page connection.
 3. Show the OAuth dialog with the three permissions.
 4. Show the Page picker after consent.
 5. Connect the test Page and show webhook active state.
@@ -62,6 +64,22 @@ Target length: 2-3 minutes.
 9. Send one manual reply.
 
 Do not demonstrate comments, Page post keywords, public comment replies, or private replies to comments. Those features are out of scope for the initial launch.
+
+## Troubleshooting For The Reviewer
+
+If a step does not behave as described, this table explains the likely cause
+before you record it as a defect. Contact: `support@easymod.tech`.
+
+| What you see | Why | What to do |
+|---|---|---|
+| The OAuth popup is blocked by the browser | The app deliberately falls back to a same-tab redirect | Continue in the same tab — the flow is unchanged |
+| The popup does not close itself, but Easy Moderator advances anyway | Cross-Origin-Opener-Policy blocks `window.close()` from the opener; the result is delivered over `BroadcastChannel` instead | Close the popup manually and continue |
+| The Page picker is empty, or your Page is missing | Facebook's granular Page selection was not granted for that Page. Easy Moderator intersects `/me/accounts` with the `debug_token` granular target IDs and refuses to show a Page you did not select | Re-run the connect flow and tick the Page on the Facebook consent screen |
+| You cancel at Facebook and see "Connection failed" | The denial branch. No channel is created | Expected — re-run and approve |
+| The Page connects, but a Messenger DM never reaches the Shared Inbox | While the app is in Development mode Meta only delivers webhook events for accounts holding an app role | Send the DM from the supplied tester **customer** account, which is on App Roles → Testers |
+| A previously connected Page still appears in the database after disconnect | Channels are retained with `status: DISCONNECTED` for the audit trail rather than hard-deleted; the UI filters them out | Expected behaviour, not a leak — no token is used or returned for a disconnected channel |
+| A "Get Started" or menu button produces no response | Messenger postbacks are not subscribed in this release; only the `messages` field is | Out of scope — use a typed text message |
+| A message sent more than 24 hours after the customer's last message is not delivered | Enforced by the policy engine; the app sends no message tags in this release | Expected — the app deliberately stays inside the standard messaging window |
 
 ## Permission Minimization
 

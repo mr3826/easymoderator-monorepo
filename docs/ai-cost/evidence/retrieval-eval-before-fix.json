@@ -1,0 +1,6940 @@
+{
+  "meta": {
+    "generatedBy": "scripts/retrieval-eval/run-eval.js",
+    "engines": [
+      "sql_fts",
+      "local_vector",
+      "production",
+      "gemini_semantic",
+      "hybrid"
+    ],
+    "topN": 5,
+    "queryCount": 86,
+    "productCount": 36,
+    "geminiEmbeddingModel": "gemini-embedding-001",
+    "geminiDimensions": 384,
+    "geminiApiCallsThisRun": 158,
+    "geminiCharsEmbeddedThisRun": 27802,
+    "geminiRateLimit429sThisRun": 0,
+    "geminiCallGapMs": 750,
+    "postgres": "scratch database, dropped after the run"
+  },
+  "states": {
+    "asShipped": {
+      "indexBytes": {
+        "local": 55296,
+        "gemini": 55296
+      },
+      "faq": {
+        "productQueries": 0,
+        "top1Accuracy": null,
+        "top3Accuracy": null,
+        "missedProductRate": null,
+        "wrongProductRate": null,
+        "irrelevantRetrievalRate": null,
+        "noneQueries": 0,
+        "falsePositiveRateOnAbsent": null,
+        "faqQueries": 10,
+        "faqCorrectRate": 0.7,
+        "latencyP50Ms": 0.29,
+        "latencyP95Ms": 3.68
+      },
+      "engines": {
+        "sql_fts": {
+          "productQueries": 71,
+          "top1Accuracy": 0.7605633802816901,
+          "top3Accuracy": 0.8169014084507042,
+          "missedProductRate": 0.18309859154929578,
+          "wrongProductRate": 0.23943661971830985,
+          "irrelevantRetrievalRate": 0.6291079812206573,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 5.49,
+          "latencyP95Ms": 10.2
+        },
+        "local_vector": {
+          "productQueries": 71,
+          "top1Accuracy": 0.36619718309859156,
+          "top3Accuracy": 0.49295774647887325,
+          "missedProductRate": 0.5070422535211268,
+          "wrongProductRate": 0.323943661971831,
+          "irrelevantRetrievalRate": 0.6323529411764706,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 0.6,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0.18,
+          "latencyP95Ms": 0.58
+        },
+        "production": {
+          "productQueries": 71,
+          "top1Accuracy": 0.6619718309859155,
+          "top3Accuracy": 0.7464788732394366,
+          "missedProductRate": 0.2535211267605634,
+          "wrongProductRate": 0.2676056338028169,
+          "irrelevantRetrievalRate": 0.6294416243654822,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0,
+          "latencyP95Ms": 0
+        },
+        "gemini_semantic": {
+          "productQueries": 71,
+          "top1Accuracy": 0.8873239436619719,
+          "top3Accuracy": 0.8873239436619719,
+          "missedProductRate": 0.11267605633802817,
+          "wrongProductRate": 0.11267605633802817,
+          "irrelevantRetrievalRate": 0.5352112676056338,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 753.39,
+          "latencyP95Ms": 829
+        },
+        "hybrid": {
+          "productQueries": 71,
+          "top1Accuracy": 0.7887323943661971,
+          "top3Accuracy": 0.9014084507042254,
+          "missedProductRate": 0.09859154929577464,
+          "wrongProductRate": 0.2112676056338028,
+          "irrelevantRetrievalRate": 0.5774647887323944,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0,
+          "latencyP95Ms": 0
+        }
+      },
+      "bySlice": {
+        "lang": {
+          "bn": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "en": {
+            "sql_fts": {
+              "n": 31,
+              "top1": 21,
+              "top3": 24
+            },
+            "local_vector": {
+              "n": 31,
+              "top1": 13,
+              "top3": 20
+            },
+            "production": {
+              "n": 31,
+              "top1": 14,
+              "top3": 19
+            },
+            "gemini_semantic": {
+              "n": 31,
+              "top1": 27,
+              "top3": 27
+            },
+            "hybrid": {
+              "n": 31,
+              "top1": 22,
+              "top3": 28
+            }
+          },
+          "banglish": {
+            "sql_fts": {
+              "n": 23,
+              "top1": 20,
+              "top3": 21
+            },
+            "local_vector": {
+              "n": 23,
+              "top1": 12,
+              "top3": 13
+            },
+            "production": {
+              "n": 23,
+              "top1": 20,
+              "top3": 21
+            },
+            "gemini_semantic": {
+              "n": 23,
+              "top1": 21,
+              "top3": 21
+            },
+            "hybrid": {
+              "n": 23,
+              "top1": 21,
+              "top3": 21
+            }
+          },
+          "phonetic": {
+            "sql_fts": {
+              "n": 6,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 6,
+              "top1": 1,
+              "top3": 2
+            },
+            "production": {
+              "n": 6,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 6,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 6,
+              "top1": 2,
+              "top3": 4
+            }
+          }
+        },
+        "trait": {
+          "direct": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 3,
+              "top3": 4
+            },
+            "production": {
+              "n": 11,
+              "top1": 10,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "price": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 5,
+              "top3": 6
+            },
+            "production": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "stock": {
+            "sql_fts": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "local_vector": {
+              "n": 7,
+              "top1": 2,
+              "top3": 5
+            },
+            "production": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "gemini_semantic": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "hybrid": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            }
+          },
+          "phonetic_none": {
+            "sql_fts": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "local_vector": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "gemini_semantic": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "hybrid": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            }
+          },
+          "phonetic_category": {
+            "sql_fts": {
+              "n": 4,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 4,
+              "top1": 1,
+              "top3": 2
+            },
+            "production": {
+              "n": 4,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 4,
+              "top1": 2,
+              "top3": 4
+            }
+          },
+          "phonetic_generic": {
+            "sql_fts": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "local_vector": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "gemini_semantic": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "hybrid": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            }
+          },
+          "typo": {
+            "sql_fts": {
+              "n": 6,
+              "top1": 3,
+              "top3": 4
+            },
+            "local_vector": {
+              "n": 6,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 6,
+              "top1": 2,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 6,
+              "top1": 6,
+              "top3": 6
+            },
+            "hybrid": {
+              "n": 6,
+              "top1": 4,
+              "top3": 6
+            }
+          },
+          "synonym": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 1,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 1,
+              "top3": 1
+            },
+            "production": {
+              "n": 5,
+              "top1": 0,
+              "top3": 1
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 2,
+              "top3": 4
+            }
+          },
+          "shortname": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 1,
+              "top3": 2
+            },
+            "production": {
+              "n": 5,
+              "top1": 2,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            }
+          },
+          "indirect": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 0,
+              "top3": 1
+            },
+            "production": {
+              "n": 5,
+              "top1": 1,
+              "top3": 1
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 2,
+              "top3": 3
+            }
+          },
+          "category": {
+            "sql_fts": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "local_vector": {
+              "n": 4,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "gemini_semantic": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            }
+          },
+          "size": {
+            "sql_fts": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 2,
+              "top1": 1,
+              "top3": 1
+            },
+            "production": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "hybrid": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            }
+          },
+          "color": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 1,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 0,
+              "top3": 1
+            },
+            "production": {
+              "n": 3,
+              "top1": 1,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 1,
+              "top3": 1
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 1,
+              "top3": 1
+            }
+          },
+          "overlap": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            }
+          },
+          "twin": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 2,
+              "top3": 3
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 3,
+              "top1": 2,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 2,
+              "top3": 3
+            }
+          }
+        }
+      },
+      "perQuery": [
+        {
+          "id": "bn-01",
+          "query": "কটন জামদানি শাড়ি আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-02",
+          "query": "কালো জর্জেট কুর্তি দাম কত?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-03",
+          "query": "সিল্ক পাঞ্জাবি দেখান",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-04",
+          "query": "ঢাকাই মসলিন শাড়ি স্টকে আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-05",
+          "query": "আনারকলি কুর্তি কত টাকা?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-06",
+          "query": "জুট টোট ব্যাগ লাগবে",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-07",
+          "query": "মেহেদি সবুজ থ্রি পিস আছে নাকি",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-08",
+          "query": "ডেনিম শার্ট এর দাম জানতে চাই",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-01",
+          "query": "do you have the cotton jamdani saree",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-02",
+          "query": "price of black georgette kurti",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-03",
+          "query": "show me silk panjabi",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-04",
+          "query": "is the dhakai muslin saree in stock",
+          "kind": "product",
+          "lang": "en",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-05",
+          "query": "i want a canvas backpack",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-06",
+          "query": "linen straight kurti available?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-07",
+          "query": "how much is the travel duffel bag",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-08",
+          "query": "half sleeve polo price please",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-01",
+          "query": "kalo georgette kurti ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-02",
+          "query": "cotton panjabi er daam koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-03",
+          "query": "silk katan saree dekhte chai",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-04",
+          "query": "jute tote bag koto taka",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 4
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-05",
+          "query": "denim kurti ta nibo",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-06",
+          "query": "clutch purse ache naki",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-07",
+          "query": "formal shirt lagbe amar",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-01",
+          "query": "lal shari ache?",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_none",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 10,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-02",
+          "query": "shari dekhao",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-03",
+          "query": "panjabi er dam koto",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-04",
+          "query": "kurti gulo dekhte chai",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-05",
+          "query": "jama kapor ki ache",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_generic",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-06",
+          "query": "byag ache?",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-01",
+          "query": "cotan jamdani sari price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-02",
+          "query": "geogette kurti",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-03",
+          "query": "panjabee available?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-04",
+          "query": "anarkoli kurti dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-05",
+          "query": "sarree koto",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-06",
+          "query": "bakpack price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-01",
+          "query": "salwar kameez set price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 10,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-02",
+          "query": "kurta for men",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-03",
+          "query": "handbag options",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-04",
+          "query": "rucksack available",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-05",
+          "query": "tee shirt ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-01",
+          "query": "nayantara ta ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-02",
+          "query": "kabli set",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-03",
+          "query": "muslin ta koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-04",
+          "query": "tangail saree",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 3
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 3,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-05",
+          "query": "karchupi",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-01",
+          "query": "something to wear at a wedding, silk",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-02",
+          "query": "looking for a light summer top for daily use",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 10,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-03",
+          "query": "need a bag i can carry a laptop in",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-04",
+          "query": "eid er jonno kichu dekhan",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 2
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 2,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-05",
+          "query": "gift for my mother, traditional",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-01",
+          "query": "what sarees do you have",
+          "kind": "product",
+          "lang": "en",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-02",
+          "query": "three piece collection dekhan",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-03",
+          "query": "শার্ট কি কি আছে",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-04",
+          "query": "bag gulo dekhte chai",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-01",
+          "query": "kabli set er price koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-02",
+          "query": "leather side bag dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-03",
+          "query": "ব্লক প্রিন্ট কটন শাড়ি মূল্য",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-01",
+          "query": "printed kurti medium size ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "size",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-02",
+          "query": "cotton panjabi xl size hobe",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "size",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-03",
+          "query": "navy colour saree ache?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-04",
+          "query": "maroon three piece",
+          "kind": "product",
+          "lang": "en",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-05",
+          "query": "সবুজ থ্রি পিস আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-01",
+          "query": "cotton jamdani saree stock ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-02",
+          "query": "denim kurti ta ki stock e ache",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-03",
+          "query": "check casual shirt paoa jabe?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-01",
+          "query": "cotton panjabi premium",
+          "kind": "product",
+          "lang": "en",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-02",
+          "query": "cotton panjabi classic er dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-03",
+          "query": "kon cotton panjabi ta sob theke kom dame",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-01",
+          "query": "soft cotton saree deluxe",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-02",
+          "query": "soft cotton saree classic price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-03",
+          "query": "which soft cotton saree has a zari border",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "no-01",
+          "query": "do you sell mobile phone",
+          "kind": "none",
+          "lang": "en",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 3,
+              "clean": false
+            },
+            "production": {
+              "returned": 3,
+              "clean": false,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-02",
+          "query": "iphone 15 er dam koto",
+          "kind": "none",
+          "lang": "banglish",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 5,
+              "clean": false
+            },
+            "production": {
+              "returned": 10,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-03",
+          "query": "বেবি ডায়াপার আছে?",
+          "kind": "none",
+          "lang": "bn",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 0,
+              "clean": true
+            },
+            "production": {
+              "returned": 5,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-04",
+          "query": "gold necklace price",
+          "kind": "none",
+          "lang": "en",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 5,
+              "clean": false
+            },
+            "production": {
+              "returned": 10,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-05",
+          "query": "football boot lagbe",
+          "kind": "none",
+          "lang": "banglish",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 0,
+              "clean": true
+            },
+            "production": {
+              "returned": 5,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "fq-01",
+          "query": "delivery charge koto",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Delivery Charge",
+            "expected": "Delivery Charge",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-02",
+          "query": "ডেলিভারি চার্জ কত টাকা",
+          "kind": "faq",
+          "lang": "bn",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Delivery Charge",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-03",
+          "query": "cash on delivery ache?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Payment Method",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-04",
+          "query": "can i pay after receiving the product",
+          "kind": "faq",
+          "lang": "en",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Payment Method",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-05",
+          "query": "return policy ki",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": false
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Return Policy",
+            "expected": "Return Policy",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-06",
+          "query": "size chart dekhte chai",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Size Chart",
+            "expected": "Size Chart",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-07",
+          "query": "কত দিনে ডেলিভারি হয়",
+          "kind": "faq",
+          "lang": "bn",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Return Policy",
+            "expected": "Delivery Charge",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-08",
+          "query": "do you deliver outside dhaka",
+          "kind": "faq",
+          "lang": "en",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Delivery Charge",
+            "expected": "Delivery Area",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-09",
+          "query": "bulk order e discount ache?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Bulk Order",
+            "expected": "Bulk Order",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-10",
+          "query": "advance payment lagbe?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Advance Payment",
+            "expected": "Advance Payment",
+            "correct": true
+          }
+        }
+      ]
+    },
+    "enriched": {
+      "indexBytes": {
+        "local": 55296,
+        "gemini": 55296
+      },
+      "faq": {
+        "productQueries": 0,
+        "top1Accuracy": null,
+        "top3Accuracy": null,
+        "missedProductRate": null,
+        "wrongProductRate": null,
+        "irrelevantRetrievalRate": null,
+        "noneQueries": 0,
+        "falsePositiveRateOnAbsent": null,
+        "faqQueries": 10,
+        "faqCorrectRate": 0.7,
+        "latencyP50Ms": 0.14,
+        "latencyP95Ms": 0.29
+      },
+      "engines": {
+        "sql_fts": {
+          "productQueries": 71,
+          "top1Accuracy": 0.8028169014084507,
+          "top3Accuracy": 0.8169014084507042,
+          "missedProductRate": 0.18309859154929578,
+          "wrongProductRate": 0.19718309859154928,
+          "irrelevantRetrievalRate": 0.6150234741784038,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 7.42,
+          "latencyP95Ms": 10.82
+        },
+        "local_vector": {
+          "productQueries": 71,
+          "top1Accuracy": 0.4225352112676056,
+          "top3Accuracy": 0.5633802816901409,
+          "missedProductRate": 0.43661971830985913,
+          "wrongProductRate": 0.29577464788732394,
+          "irrelevantRetrievalRate": 0.5985915492957746,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 0.8,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0.12,
+          "latencyP95Ms": 0.21
+        },
+        "production": {
+          "productQueries": 71,
+          "top1Accuracy": 0.7183098591549296,
+          "top3Accuracy": 0.7746478873239436,
+          "missedProductRate": 0.22535211267605634,
+          "wrongProductRate": 0.22535211267605634,
+          "irrelevantRetrievalRate": 0.6180904522613065,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0,
+          "latencyP95Ms": 0
+        },
+        "gemini_semantic": {
+          "productQueries": 71,
+          "top1Accuracy": 0.9014084507042254,
+          "top3Accuracy": 0.9154929577464789,
+          "missedProductRate": 0.08450704225352113,
+          "wrongProductRate": 0.09859154929577464,
+          "irrelevantRetrievalRate": 0.5258215962441315,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0.08,
+          "latencyP95Ms": 0.15
+        },
+        "hybrid": {
+          "productQueries": 71,
+          "top1Accuracy": 0.8169014084507042,
+          "top3Accuracy": 0.9154929577464789,
+          "missedProductRate": 0.08450704225352113,
+          "wrongProductRate": 0.18309859154929578,
+          "irrelevantRetrievalRate": 0.568075117370892,
+          "noneQueries": 5,
+          "falsePositiveRateOnAbsent": 1,
+          "faqQueries": 0,
+          "faqCorrectRate": null,
+          "latencyP50Ms": 0,
+          "latencyP95Ms": 0
+        }
+      },
+      "bySlice": {
+        "lang": {
+          "bn": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "en": {
+            "sql_fts": {
+              "n": 31,
+              "top1": 24,
+              "top3": 24
+            },
+            "local_vector": {
+              "n": 31,
+              "top1": 13,
+              "top3": 21
+            },
+            "production": {
+              "n": 31,
+              "top1": 18,
+              "top3": 21
+            },
+            "gemini_semantic": {
+              "n": 31,
+              "top1": 28,
+              "top3": 29
+            },
+            "hybrid": {
+              "n": 31,
+              "top1": 24,
+              "top3": 29
+            }
+          },
+          "banglish": {
+            "sql_fts": {
+              "n": 23,
+              "top1": 20,
+              "top3": 21
+            },
+            "local_vector": {
+              "n": 23,
+              "top1": 15,
+              "top3": 17
+            },
+            "production": {
+              "n": 23,
+              "top1": 20,
+              "top3": 21
+            },
+            "gemini_semantic": {
+              "n": 23,
+              "top1": 21,
+              "top3": 21
+            },
+            "hybrid": {
+              "n": 23,
+              "top1": 21,
+              "top3": 21
+            }
+          },
+          "phonetic": {
+            "sql_fts": {
+              "n": 6,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 6,
+              "top1": 2,
+              "top3": 2
+            },
+            "production": {
+              "n": 6,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 6,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 6,
+              "top1": 2,
+              "top3": 4
+            }
+          }
+        },
+        "trait": {
+          "direct": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 3,
+              "top3": 5
+            },
+            "production": {
+              "n": 11,
+              "top1": 10,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "price": {
+            "sql_fts": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "local_vector": {
+              "n": 11,
+              "top1": 5,
+              "top3": 6
+            },
+            "production": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "gemini_semantic": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            },
+            "hybrid": {
+              "n": 11,
+              "top1": 11,
+              "top3": 11
+            }
+          },
+          "stock": {
+            "sql_fts": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "local_vector": {
+              "n": 7,
+              "top1": 3,
+              "top3": 5
+            },
+            "production": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "gemini_semantic": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            },
+            "hybrid": {
+              "n": 7,
+              "top1": 7,
+              "top3": 7
+            }
+          },
+          "phonetic_none": {
+            "sql_fts": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "local_vector": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "gemini_semantic": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "hybrid": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            }
+          },
+          "phonetic_category": {
+            "sql_fts": {
+              "n": 4,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 4,
+              "top1": 2,
+              "top3": 2
+            },
+            "production": {
+              "n": 4,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 4,
+              "top1": 2,
+              "top3": 4
+            }
+          },
+          "phonetic_generic": {
+            "sql_fts": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "local_vector": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "production": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "gemini_semantic": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            },
+            "hybrid": {
+              "n": 1,
+              "top1": 0,
+              "top3": 0
+            }
+          },
+          "typo": {
+            "sql_fts": {
+              "n": 6,
+              "top1": 3,
+              "top3": 4
+            },
+            "local_vector": {
+              "n": 6,
+              "top1": 3,
+              "top3": 4
+            },
+            "production": {
+              "n": 6,
+              "top1": 2,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 6,
+              "top1": 6,
+              "top3": 6
+            },
+            "hybrid": {
+              "n": 6,
+              "top1": 4,
+              "top3": 6
+            }
+          },
+          "synonym": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 2,
+              "top3": 2
+            },
+            "production": {
+              "n": 5,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 2,
+              "top3": 4
+            }
+          },
+          "shortname": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 1,
+              "top3": 2
+            },
+            "production": {
+              "n": 5,
+              "top1": 2,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 5,
+              "top3": 5
+            }
+          },
+          "indirect": {
+            "sql_fts": {
+              "n": 5,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 5,
+              "top1": 0,
+              "top3": 2
+            },
+            "production": {
+              "n": 5,
+              "top1": 1,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 5,
+              "top1": 3,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 5,
+              "top1": 2,
+              "top3": 3
+            }
+          },
+          "category": {
+            "sql_fts": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "local_vector": {
+              "n": 4,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "gemini_semantic": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            },
+            "hybrid": {
+              "n": 4,
+              "top1": 4,
+              "top3": 4
+            }
+          },
+          "size": {
+            "sql_fts": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "production": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            },
+            "hybrid": {
+              "n": 2,
+              "top1": 2,
+              "top3": 2
+            }
+          },
+          "color": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 2,
+              "top3": 2
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 0,
+              "top3": 1
+            },
+            "production": {
+              "n": 3,
+              "top1": 2,
+              "top3": 2
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 2,
+              "top3": 2
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 2,
+              "top3": 2
+            }
+          },
+          "overlap": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            }
+          },
+          "twin": {
+            "sql_fts": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "local_vector": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "production": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "gemini_semantic": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            },
+            "hybrid": {
+              "n": 3,
+              "top1": 3,
+              "top3": 3
+            }
+          }
+        }
+      },
+      "perQuery": [
+        {
+          "id": "bn-01",
+          "query": "কটন জামদানি শাড়ি আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-02",
+          "query": "কালো জর্জেট কুর্তি দাম কত?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-03",
+          "query": "সিল্ক পাঞ্জাবি দেখান",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-04",
+          "query": "ঢাকাই মসলিন শাড়ি স্টকে আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-05",
+          "query": "আনারকলি কুর্তি কত টাকা?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-06",
+          "query": "জুট টোট ব্যাগ লাগবে",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-07",
+          "query": "মেহেদি সবুজ থ্রি পিস আছে নাকি",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bn-08",
+          "query": "ডেনিম শার্ট এর দাম জানতে চাই",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-01",
+          "query": "do you have the cotton jamdani saree",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-02",
+          "query": "price of black georgette kurti",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-03",
+          "query": "show me silk panjabi",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-04",
+          "query": "is the dhakai muslin saree in stock",
+          "kind": "product",
+          "lang": "en",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-05",
+          "query": "i want a canvas backpack",
+          "kind": "product",
+          "lang": "en",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-06",
+          "query": "linen straight kurti available?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-07",
+          "query": "how much is the travel duffel bag",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "en-08",
+          "query": "half sleeve polo price please",
+          "kind": "product",
+          "lang": "en",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-01",
+          "query": "kalo georgette kurti ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-02",
+          "query": "cotton panjabi er daam koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-03",
+          "query": "silk katan saree dekhte chai",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-04",
+          "query": "jute tote bag koto taka",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-05",
+          "query": "denim kurti ta nibo",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-06",
+          "query": "clutch purse ache naki",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "bl-07",
+          "query": "formal shirt lagbe amar",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "direct",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-01",
+          "query": "lal shari ache?",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_none",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 10,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-02",
+          "query": "shari dekhao",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-03",
+          "query": "panjabi er dam koto",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-04",
+          "query": "kurti gulo dekhte chai",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-05",
+          "query": "jama kapor ki ache",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_generic",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ph-06",
+          "query": "byag ache?",
+          "kind": "product",
+          "lang": "phonetic",
+          "trait": "phonetic_category",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-01",
+          "query": "cotan jamdani sari price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-02",
+          "query": "geogette kurti",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-03",
+          "query": "panjabee available?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 4
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-04",
+          "query": "anarkoli kurti dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-05",
+          "query": "sarree koto",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 2
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sp-06",
+          "query": "bakpack price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "typo",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-01",
+          "query": "salwar kameez set price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-02",
+          "query": "kurta for men",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-03",
+          "query": "handbag options",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-04",
+          "query": "rucksack available",
+          "kind": "product",
+          "lang": "en",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sy-05",
+          "query": "tee shirt ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "synonym",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-01",
+          "query": "nayantara ta ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 1
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-02",
+          "query": "kabli set",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-03",
+          "query": "muslin ta koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-04",
+          "query": "tangail saree",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 3
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 3,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sh-05",
+          "query": "karchupi",
+          "kind": "product",
+          "lang": "en",
+          "trait": "shortname",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-01",
+          "query": "something to wear at a wedding, silk",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-02",
+          "query": "looking for a light summer top for daily use",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 10,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-03",
+          "query": "need a bag i can carry a laptop in",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-04",
+          "query": "eid er jonno kichu dekhan",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 4
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 4,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "in-05",
+          "query": "gift for my mother, traditional",
+          "kind": "product",
+          "lang": "en",
+          "trait": "indirect",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-01",
+          "query": "what sarees do you have",
+          "kind": "product",
+          "lang": "en",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-02",
+          "query": "three piece collection dekhan",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-03",
+          "query": "শার্ট কি কি আছে",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ct-04",
+          "query": "bag gulo dekhte chai",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "category",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-01",
+          "query": "kabli set er price koto",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 9,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-02",
+          "query": "leather side bag dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "pr-03",
+          "query": "ব্লক প্রিন্ট কটন শাড়ি মূল্য",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "price",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-01",
+          "query": "printed kurti medium size ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "size",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-02",
+          "query": "cotton panjabi xl size hobe",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "size",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-03",
+          "query": "navy colour saree ache?",
+          "kind": "product",
+          "lang": "en",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 7,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-04",
+          "query": "maroon three piece",
+          "kind": "product",
+          "lang": "en",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "sz-05",
+          "query": "সবুজ থ্রি পিস আছে?",
+          "kind": "product",
+          "lang": "bn",
+          "trait": "color",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 0
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-01",
+          "query": "cotton jamdani saree stock ache?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-02",
+          "query": "denim kurti ta ki stock e ache",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": false,
+              "hit3": false,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "st-03",
+          "query": "check casual shirt paoa jabe?",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "stock",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-01",
+          "query": "cotton panjabi premium",
+          "kind": "product",
+          "lang": "en",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-02",
+          "query": "cotton panjabi classic er dam",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "ov-03",
+          "query": "kon cotton panjabi ta sob theke kom dame",
+          "kind": "product",
+          "lang": "banglish",
+          "trait": "overlap",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 8,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-01",
+          "query": "soft cotton saree deluxe",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-02",
+          "query": "soft cotton saree classic price",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 6,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "nd-03",
+          "query": "which soft cotton saree has a zari border",
+          "kind": "product",
+          "lang": "en",
+          "trait": "twin",
+          "engines": {
+            "sql_fts": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "local_vector": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "production": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            },
+            "hybrid": {
+              "hit1": true,
+              "hit3": true,
+              "returned": 5
+            }
+          }
+        },
+        {
+          "id": "no-01",
+          "query": "do you sell mobile phone",
+          "kind": "none",
+          "lang": "en",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 3,
+              "clean": false
+            },
+            "production": {
+              "returned": 3,
+              "clean": false,
+              "intentGated": false
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-02",
+          "query": "iphone 15 er dam koto",
+          "kind": "none",
+          "lang": "banglish",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 5,
+              "clean": false
+            },
+            "production": {
+              "returned": 10,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-03",
+          "query": "বেবি ডায়াপার আছে?",
+          "kind": "none",
+          "lang": "bn",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 0,
+              "clean": true
+            },
+            "production": {
+              "returned": 5,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-04",
+          "query": "gold necklace price",
+          "kind": "none",
+          "lang": "en",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 5,
+              "clean": false
+            },
+            "production": {
+              "returned": 10,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "no-05",
+          "query": "football boot lagbe",
+          "kind": "none",
+          "lang": "banglish",
+          "trait": "absent",
+          "engines": {
+            "sql_fts": {
+              "returned": 5,
+              "clean": false
+            },
+            "local_vector": {
+              "returned": 3,
+              "clean": false
+            },
+            "production": {
+              "returned": 8,
+              "clean": false,
+              "intentGated": true
+            },
+            "gemini_semantic": {
+              "returned": 5,
+              "clean": false
+            },
+            "hybrid": {
+              "returned": 5,
+              "clean": false
+            }
+          }
+        },
+        {
+          "id": "fq-01",
+          "query": "delivery charge koto",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Delivery Charge",
+            "expected": "Delivery Charge",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-02",
+          "query": "ডেলিভারি চার্জ কত টাকা",
+          "kind": "faq",
+          "lang": "bn",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Delivery Charge",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-03",
+          "query": "cash on delivery ache?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Payment Method",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-04",
+          "query": "can i pay after receiving the product",
+          "kind": "faq",
+          "lang": "en",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Payment Method",
+            "expected": "Payment Method",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-05",
+          "query": "return policy ki",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": false
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Return Policy",
+            "expected": "Return Policy",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-06",
+          "query": "size chart dekhte chai",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Size Chart",
+            "expected": "Size Chart",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-07",
+          "query": "কত দিনে ডেলিভারি হয়",
+          "kind": "faq",
+          "lang": "bn",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Return Policy",
+            "expected": "Delivery Charge",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-08",
+          "query": "do you deliver outside dhaka",
+          "kind": "faq",
+          "lang": "en",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Delivery Charge",
+            "expected": "Delivery Area",
+            "correct": false
+          }
+        },
+        {
+          "id": "fq-09",
+          "query": "bulk order e discount ache?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Bulk Order",
+            "expected": "Bulk Order",
+            "correct": true
+          }
+        },
+        {
+          "id": "fq-10",
+          "query": "advance payment lagbe?",
+          "kind": "faq",
+          "lang": "banglish",
+          "trait": "faq",
+          "engines": {
+            "sql_fts": {},
+            "local_vector": {},
+            "production": {
+              "intentGated": true
+            },
+            "gemini_semantic": {},
+            "hybrid": {}
+          },
+          "faq": {
+            "matched": "Advance Payment",
+            "expected": "Advance Payment",
+            "correct": true
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "$comment": "Versioned, auditable AI provider pricing. NEVER hardcode these numbers in business logic — import from cost.service.js, which reads this file. Bump `version` and `retrievedAt` whenever a provider changes prices, and keep the superseded entry in `history` so past invoices stay reproducible.",
+  "version": "2026-07-28.1",
+  "retrievedAt": "2026-07-28",
+  "currency": "USD",
+  "unit": "per_1m_tokens",
+  "fx": {
+    "USD_BDT": 123.4,
+    "asOf": "2026-07-22",
+    "source": "Bangladesh Bank / TradingEconomics spot USD-BDT, 2026-07-22 close (123.425); rounded to 123.40",
+    "note": "Interbank spot. Card/PSP settlement of a USD-denominated AI bill typically adds 1.5-3% FX margin — see AI_COST_ASSUMPTIONS.md."
+  },
+  "sources": {
+    "google": {
+      "url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "retrievedAt": "2026-07-28",
+      "pageLastUpdated": "2026-07-21"
+    },
+    "openai": {
+      "url": "https://developers.openai.com/api/docs/pricing",
+      "retrievedAt": "2026-07-28"
+    }
+  },
+  "models": {
+    "gemini-3.1-flash-lite": {
+      "provider": "google",
+      "status": "active",
+      "kind": "chat",
+      "input": 0.25,
+      "inputAudio": 0.5,
+      "cachedInput": 0.025,
+      "output": 1.5,
+      "batchInput": 0.125,
+      "batchOutput": 0.75,
+      "cacheStoragePerMillionTokenHour": 1.0,
+      "notes": "EasyModerator production PRIMARY (llm.service.js:27 default; no LLM_GEMINI_LITE_MODEL is rendered into .env.prod). Image inputs bill at the text/image/video input rate; measured 1064 tokens per image (see AI_COST_ASSUMPTIONS.md)."
+    },
+    "gemini-3.1-pro-preview": {
+      "provider": "google",
+      "status": "active",
+      "kind": "chat",
+      "input": 2.0,
+      "inputAbove200k": 4.0,
+      "cachedInput": 0.2,
+      "output": 12.0,
+      "outputAbove200k": 18.0,
+      "batchInput": 1.0,
+      "batchOutput": 6.0,
+      "cacheStoragePerMillionTokenHour": 4.5,
+      "notes": "EasyModerator production FALLBACK TIER 2 (llm.service.js:28 default). 8x the input price and 8x the output price of the primary."
+    },
+    "gemini-2.5-pro": {
+      "provider": "google",
+      "status": "active",
+      "kind": "chat",
+      "input": 1.25,
+      "inputAbove200k": 2.5,
+      "cachedInput": 0.125,
+      "output": 10.0,
+      "batchInput": 0.625,
+      "batchOutput": 5.0
+    },
+    "gemini-2.0-flash": {
+      "provider": "google",
+      "status": "retired",
+      "retiredOn": "2026-06-01",
+      "kind": "chat",
+      "input": 0.1,
+      "cachedInput": 0.025,
+      "output": 0.4,
+      "notes": "Shut down 2026-06-01. Still referenced as the DEFAULT cache model in gemini-cache.service.js:108."
+    },
+    "gemini-2.0-flash-lite": {
+      "provider": "google",
+      "status": "retired",
+      "retiredOn": "2026-06-01",
+      "kind": "chat",
+      "input": 0.075,
+      "output": 0.3,
+      "notes": "Shut down 2026-06-01. Still set as LLM_GEMINI_LITE_MODEL in the repo's .env.prod and .env.docker."
+    },
+    "gemini-embedding-001": {
+      "provider": "google",
+      "status": "active",
+      "kind": "embedding",
+      "input": 0.15,
+      "batchInput": 0.075
+    },
+    "gpt-4.1-mini": {
+      "provider": "openai",
+      "status": "active",
+      "kind": "chat",
+      "input": 0.4,
+      "cachedInput": 0.1,
+      "output": 1.6,
+      "batchInput": 0.2,
+      "batchOutput": 0.8,
+      "notes": "EasyModerator production FALLBACK TIER 3 (llm.service.js:29 default) and the FORCED provider for product-image attribute extraction (product-ai.service.js:66)."
+    },
+    "gpt-4.1": {
+      "provider": "openai",
+      "status": "active",
+      "kind": "chat",
+      "input": 2.0,
+      "cachedInput": 0.5,
+      "output": 8.0,
+      "batchInput": 1.0,
+      "batchOutput": 4.0
+    },
+    "gpt-4o-mini": {
+      "provider": "openai",
+      "status": "active",
+      "kind": "chat",
+      "input": 0.15,
+      "cachedInput": 0.075,
+      "output": 0.6,
+      "batchInput": 0.075,
+      "batchOutput": 0.3
+    },
+    "text-embedding-3-small": {
+      "provider": "openai",
+      "status": "active",
+      "kind": "embedding",
+      "input": 0.02,
+      "batchInput": 0.01,
+      "notes": "embedding.service.js:116 default when EMBEDDING_PROVIDER=openai."
+    },
+    "text-embedding-3-large": {
+      "provider": "openai",
+      "status": "active",
+      "kind": "embedding",
+      "input": 0.13,
+      "batchInput": 0.065
+    },
+    "local-ngram": {
+      "provider": "local",
+      "status": "active",
+      "kind": "embedding",
+      "input": 0.0,
+      "notes": "embedding.service.js localEmbed() character-bigram hash. Zero marginal cost and zero semantic value — resolveProvider() falls back to this for ANY EMBEDDING_PROVIDER value outside {openai, gcp, http, tei}, including 'gemini' and 'google'."
+    }
+  },
+  "history": []
+}

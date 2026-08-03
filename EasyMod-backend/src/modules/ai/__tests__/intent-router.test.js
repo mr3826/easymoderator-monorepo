@@ -72,25 +72,56 @@ describe('B — Bengali product-intent gate', () => {
         await route({ shopId: SHOP, message: 'hello', systemPrompt: 'BASE' });
         expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
     });
+
+    test('closed-set chatter does NOT trigger the product search', async () => {
+        for (const msg of ['thanks', 'ok', 'ধন্যবাদ', 'thik ache', 'hmm']) {
+            productSearch.searchByAttributes.mockClear();
+            await route({ shopId: SHOP, message: msg, systemPrompt: 'BASE' });
+            expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
+        }
+    });
+
+    // These carry no PRODUCT_INTENT_KEYWORDS token, so the old keyword gate
+    // blocked them and they reached the LLM with no product grounding at all.
+    test('product questions with no keyword still reach the live DB search', async () => {
+        for (const msg of [
+            'do you have the cotton jamdani saree',
+            'what sarees do you have',
+            'how much is the travel duffel bag',
+            'soft cotton saree deluxe',
+        ]) {
+            productSearch.searchByAttributes.mockClear();
+            await route({ shopId: SHOP, message: msg, systemPrompt: 'BASE' });
+            expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
+                expect.objectContaining({ shopId: SHOP, query: msg }),
+            );
+        }
+    });
 });
 
 describe('C — RAG product hit re-fetched live', () => {
+    // The vector-store product tier only runs on a genuinely semantic embedder;
+    // see 'F — non-semantic embedder' for the fallback behaviour.
+    const productHit = {
+        success: true,
+        results: [{
+            score: 0.78,
+            content: 'Silk Saree | red | category: saree', // price-less embedding text
+            metadata: { type: 'product', product_id: 'p-saree', shopId: SHOP, documentId: 'product:p-saree' },
+        }],
+    };
+
+    beforeEach(() => { process.env.EMBEDDING_PROVIDER = 'openai'; });
+    afterEach(() => { delete process.env.EMBEDDING_PROVIDER; });
+
     test('semantic product hit is re-fetched by product_id; price comes from DB, not embedding text', async () => {
-        rag.queryData.mockResolvedValue({
-            success: true,
-            results: [{
-                score: 0.78,
-                content: 'Silk Saree | red | category: saree', // price-less embedding text
-                metadata: { type: 'product', product_id: 'p-saree', shopId: SHOP, documentId: 'product:p-saree' },
-            }],
-        });
+        rag.queryData.mockResolvedValue(productHit);
         productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', name: 'Red Silk Saree', price: 3200 }]);
 
-        // No product-intent keyword → the DB product-search branch is skipped;
-        // only the RAG enrichment path runs.
+        // A vague follow-up: the SQL search runs but matches nothing, so the
+        // grounded facts must come from the RAG tier's live re-fetch.
         await route({ shopId: SHOP, message: 'tell me more about that one', systemPrompt: 'BASE' });
 
-        expect(productSearch.searchByAttributes).not.toHaveBeenCalled();
         expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-saree'], SHOP);
         const sys = lastSystemPrompt();
         expect(sys).toContain('RELEVANT SHOP PRODUCTS');

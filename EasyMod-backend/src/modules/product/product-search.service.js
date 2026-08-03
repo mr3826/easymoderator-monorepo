@@ -105,10 +105,17 @@ const getSearchSql = () => `
         AND p.deleted_at IS NULL
         AND p.is_active = true
         AND (
-            p.ai_category ILIKE :categoryWild
-            OR p.ai_color_primary ILIKE :colorWild
-            OR p.ai_material ILIKE :materialWild
-            OR p.category ILIKE :categoryWild
+            -- Each attribute filter MUST be gated on the attribute being present.
+            -- An absent filter becomes the wildcard '%%' (see buildQueryReplacements),
+            -- and 'anything' ILIKE '%%' is TRUE — so an ungated clause turned this
+            -- WHERE into a tautology and every free-text query matched the whole
+            -- catalogue. The chatbot then injected 5 arbitrary products as
+            -- "RELEVANT SHOP PRODUCTS ... use ONLY these facts", which is exactly
+            -- the wrong-price hallucination the grounding block exists to prevent.
+            (:category != '' AND p.ai_category ILIKE :categoryWild)
+            OR (:color != '' AND p.ai_color_primary ILIKE :colorWild)
+            OR (:material != '' AND p.ai_material ILIKE :materialWild)
+            OR (:category != '' AND p.category ILIKE :categoryWild)
             OR (
                 :tsQuery != '' AND
                 to_tsvector('english',

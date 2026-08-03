@@ -1,109 +1,135 @@
 # Data Deletion Flow
 
 **App:** Easy Moderator
-**Last updated:** 2026-05-20
-**Handler:** `EasyMod-backend/src/modules/integration/meta-webhook-gdpr.handler.js`
+**Last updated:** 2026-07-28 (rewritten — the previous version described the
+pre-Phase-1 implementation and was wrong in every material detail)
+**Route:** `EasyMod-backend/src/modules/integration/meta-webhook-gdpr.handler.js`
+**Logic:** `EasyMod-backend/src/modules/integration/meta-compliance.service.js`
+
+This is the file to answer a **Data Protection Assessment** from. Do not
+paraphrase it from memory — the details below are what the code actually does.
 
 ---
 
 ## Overview
 
-When a user removes Easy Moderator from their Facebook App Settings, Meta sends a signed POST to our Data Deletion Request Callback. The handler verifies the signature, runs the deletion cascade, and returns a confirmation code.
+When a user removes Easy Moderator from their Facebook App Settings, Meta sends
+a signed POST to the Data Deletion Request Callback. The handler validates the
+signature, resolves the Meta identity to local customer records, runs the
+deletion in one database transaction, cleans up file attachments, and returns an
+opaque confirmation code plus a status URL the user can poll.
 
----
-
-## Flow Diagram
+## Flow
 
 ```
 Meta Platform
      |
      | POST /api/webhooks/meta/data-deletion
-     | body: signed_request=<base64url-encoded-signed-payload>
-     |
+     | body: signed_request=<sig>.<payload>
      v
 meta-webhook-gdpr.handler.js
      |
-     |-- 1. Parse signed_request
-     |       Split on '.' → [encodedSig, encodedPayload]
-     |       HMAC-SHA256(encodedPayload, META_APP_SECRET)
-     |       crypto.timingSafeEqual(sig, expectedSig)
-     |       If mismatch → 403 "Invalid signed_request signature"
-     |
-     |-- 2. Extract facebook_user_id from decoded payload
-     |
-     |-- 3. Idempotency check (Redis NX, 24h TTL)
-     |       Key: gdpr:processed:deletion:{userId}:{YYYY-MM-DD}
-     |       If already processed today → return 200 + same confirmation_code (skip re-deletion)
-     |       Falls back to in-process Map if Redis is unavailable
-     |
-     |-- 4. Customer.destroy (25s timeout guard)
-     |       WHERE channel_user_id = facebook_user_id
-     |         AND channel_type IN ('messenger', 'instagram')
-     |
-     |       Sequelize CASCADE on Customer:
-     |         → conversations.customer_id       (CASCADE DELETE)
-     |         → orders.customer_id              (CASCADE DELETE or SET NULL — per FK definition)
-     |         → policy_decisions.customer_id    (SET NULL — audit row preserved, PII removed)
-     |         → meta_channel_consent_events.customer_id (SET NULL — consent audit preserved)
-     |
-     |       hooks.beforeDestroy nullifies PII fields before DELETE:
-     |         customer.phone = null
-     |         customer.email = null
-     |         customer.name  = null
-     |
-     |-- 5. Return 200
-     |       { url: "https://www.easymod.tech/privacy-policy",
-     |         confirmation_code: "DEL-{userId}-{timestamp}" }
+     |-- 1. Validate signed_request
+     |       HMAC-SHA256(payload, META_APP_SECRET), crypto.timingSafeEqual
+     |       algorithm must be HMAC-SHA256; user_id must be a string
+     |       issued_at must be <= 5 min in the future and <= 24 h old
+     |       missing  -> 400   invalid/expired -> 403   no app secret -> 503
      |
      v
-Meta Platform receives 200 + confirmation_code
-User can verify deletion status at the privacy-policy URL
+meta-compliance.service.processDeletionRequest()
+     |
+     |-- 2. Durable request record (meta_data_deletion_requests)
+     |       keyed by a fingerprint of the signed_request
+     |       stores identity_hash and confirmation_code_hash — never the raw ID
+     |       status: PENDING -> PROCESSING -> COMPLETED
+     |                             |-> FAILED
+     |                             |-> IDENTITY_NOT_RESOLVED
+     |       a repeated callback returns the same code without re-deleting
+     |       a PROCESSING row older than the stale window is re-claimed
+     |
+     |-- 3. Resolve identity  (this is the part that used to be broken)
+     |       Meta's signed_request carries an APP-scoped user ID.
+     |       Customers are stored against PAGE-scoped IDs (PSIDs).
+     |       meta_user_identities maps app_scoped_user_id -> page_scoped_user_id.
+     |       If no usable mapping exists the request is parked as
+     |       IDENTITY_NOT_RESOLVED with retryable: true — it is NOT silently
+     |       reported as a successful deletion.
+     |
+     |-- 4. Delete, in one transaction, per matched customer
+     |
+     |-- 5. Clean up server-owned attachment files (outside the transaction)
+     |
+     v
+200 { "url": "https://easymod.tech/api/webhooks/meta/data-deletion/status/<code>",
+      "confirmation_code": "<opaque>" }
 ```
 
----
+## What step 4 actually does
 
-## Key Properties
+| Data | Treatment | Why |
+|---|---|---|
+| `conversations` | **Deleted** | Conversation history belongs to the customer |
+| `messages` | **Deleted** with their conversations | Children of conversations |
+| `customers` | **Deleted** (`individualHooks: true`, so PII-nullifying hooks run) | The subject record |
+| `customer_preferences` | **Deleted** | Customer-specific |
+| `customer_delivery_stats` | **Deleted** by phone | Customer-specific |
+| `order_sessions`, `order_returns`, `support_tickets` | **Deleted** | Customer-specific |
+| `orders` | **Anonymised, not deleted** — `customer_id` nulled, `customer_name` set to "Deleted customer", phone/address/area/zone/consignment/tracking/notes/idempotency key nulled, plus `courier_data`, `tracking_id`, `metadata` | Financial and accounting records must survive under Bangladesh law; every personal field in them is scrubbed |
+| Order invoices (files) | Scrubbed; paths queued for file deletion | PII in generated documents |
+| `trx_id_logs` | `sender_phone` and `ocr_raw` nulled | Payment-proof PII |
+| `payment_transactions` | `gateway_response` nulled | May embed customer details |
+| Delivery tracking | Scrubbed | Courier payloads carry addresses |
+| Owner notifications referencing the orders | Scrubbed | PII leaks through notification text |
+| Audit records | Scrubbed of customer/order PII, **rows retained** | Compliance trail survives; PII does not |
+| `meta_channel_consent_events` | Retained, `customer_id` cleared | Consent audit must survive the deletion |
 
-### Signature Verification
+Attachment files owned by the server are collected during the transaction, then
+deleted afterwards. If any file cannot be removed, the request is marked
+`FAILED` with `ATTACHMENT_CLEANUP_FAILED` and its remaining paths are stored, so
+a retry resumes **only** the file phase rather than re-running the database work.
 
-The handler uses `crypto.timingSafeEqual` to compare the HMAC-SHA256 signature against `META_APP_SECRET`. A missing or invalid signature returns 403 before any data is touched.
+## Key properties
 
-### Idempotency
+**Fails closed.** No signature, expired signature, wrong algorithm, or missing
+`META_APP_SECRET` → 4xx/503 before any data is touched. Verified on production
+2026-07-28: `POST` with no `signed_request` → `400 {"error":"Missing signed_request"}`.
 
-Redis key with 24-hour TTL prevents double-deletion if Meta retries the callback. Falls back to an in-process Map if Redis is unavailable, maintaining idempotency within a single process lifecycle.
+**No success theatre.** If the identity cannot be resolved, or the transaction
+fails, the endpoint returns 500 with "the request is recorded for retry" and the
+row is left in a retryable state. It does not return a confirmation code for a
+deletion that did not happen. (The pre-Phase-1 implementation did exactly that,
+which was the single highest compliance risk in the 2026-07-22 audit.)
 
-### Cascade Behaviour
+**No raw identifiers at rest.** The durable record stores an HMAC
+`identity_hash` and a `confirmation_code_hash`, never the Meta user ID or the
+plaintext confirmation code.
 
-| Child Table | FK Behaviour | Why |
-|-------------|--------------|-----|
-| `conversations` | CASCADE DELETE | Conversation history belongs to the customer |
-| `messages` | CASCADE DELETE (via conversations) | Messages are children of conversations |
-| `orders` | CASCADE DELETE | Orders are tied to the customer identity |
-| `policy_decisions` | SET NULL on `customer_id` | Audit trail preserved for compliance; PII removed |
-| `meta_channel_consent_events` | SET NULL on `customer_id` | Consent audit preserved; PII removed |
+**Idempotent.** Keyed on a fingerprint of the signed request. A repeat returns
+the original confirmation code and performs no further deletion.
 
-### PII Nullification
+**Status is user-checkable.** `GET /api/webhooks/meta/data-deletion/status/:code`
+returns status, counts (`matched_customers`, `conversations_deleted`,
+`messages_deleted`, `orders_anonymized`, `attachments_deleted`), `completed_at`,
+`retryable`, and `failure_code`. Unknown code → 404.
 
-The `Customer` model's `beforeDestroy` hook sets `phone`, `email`, and `name` to `null` before the row is deleted. This ensures that even if a cascade FK references the customer row during deletion, the PII fields are already cleared.
+`GET /api/webhooks/meta/data-deletion` (no code) returns human-readable
+instructions and the contact address `privacy@easymod.tech`, for users who
+arrive at the URL directly.
 
-### Timeout Guard
+## Deauthorize callback
 
-A 25-second `Promise.race` timeout prevents the deletion from blocking the HTTP response indefinitely. If deletion times out, the error is logged and the 200 response is still returned (Meta's spec requires a 200 even if deletion is deferred). The deletion is re-attempted on the next retry from Meta.
-
-### Deauthorize Callback
-
-A separate `POST /api/webhooks/meta/deauthorize` endpoint handles the Meta Deauthorize Callback (when a user revokes the app's access token but does not trigger full data deletion). This marks the customer record with `metadata.deauthorized = true` without deleting the record.
-
----
+`POST /api/webhooks/meta/deauthorize` is separate — it fires when a user revokes
+access without requesting deletion. Same signed-request validation, then
+`meta-authorization-recovery.processDeauthorization(user_id)`. Data is **not**
+deleted; the authorization state is. The route is POST-only, so a `GET` returns
+404 by design.
 
 ## Registration
 
-The callback URL must be registered in the Meta App Dashboard under:
-**App Settings > Advanced > Data Deletion Request Callback URL**
+| Dashboard field | Value |
+|---|---|
+| App Settings → Advanced → Data Deletion Request Callback URL | `https://easymod.tech/api/webhooks/meta/data-deletion` |
+| App Settings → Advanced → Deauthorize Callback URL | `https://easymod.tech/api/webhooks/meta/deauthorize` |
 
-Value: `https://easymod.tech/api/webhooks/meta/data-deletion`
-
-The deauthorize URL:
-**App Settings > Advanced > Deauthorize Callback URL**
-
-Value: `https://easymod.tech/api/webhooks/meta/deauthorize`
+Apex domain only — `www.easymod.tech` 301-redirects, and Meta treats a redirect
+on a callback URL as a misconfiguration.

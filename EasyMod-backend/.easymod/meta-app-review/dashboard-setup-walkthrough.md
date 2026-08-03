@@ -1,7 +1,7 @@
 # Meta Dashboard Setup Walkthrough
 
 **App:** Easy Moderator
-**Last updated:** 2026-06-27 (Messenger-only launch; Comment-to-DM removed)
+**Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
 
 This walkthrough configures the Meta app for the initial launch. Easy Moderator supports Facebook Page Messenger DMs only. Do not configure comment/feed automation or Instagram products for this version.
 
@@ -37,7 +37,7 @@ Set the valid OAuth redirect URI to the production `META_OAUTH_REDIRECT_URI`.
 The reviewer flow is:
 
 1. Merchant logs in to Easy Moderator.
-2. Merchant opens **Settings -> Chat Settings**.
+2. Merchant opens **Settings → Chat** (`/app/manage-shop/chat-settings`).
 3. Merchant clicks **Connect Facebook Page**.
 4. Facebook Login requests the three permissions above.
 5. Easy Moderator lists Pages via `GET /me/accounts`.

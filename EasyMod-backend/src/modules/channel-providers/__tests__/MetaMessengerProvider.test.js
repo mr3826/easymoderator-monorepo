@@ -251,7 +251,7 @@ describe('MetaMessengerProvider', () => {
                         },
                     },
                 }),
-                { params: { access_token: 'page-token' } }
+                { params: { access_token: 'page-token', appsecret_proof: expect.any(String) } }
             );
         });
 
@@ -453,6 +453,32 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
+    describe('subscribeWebhook()', () => {
+        beforeEach(() => { process.env.META_APP_SECRET = 'test-secret'; });
+        afterEach(() => jest.resetAllMocks());
+
+        // If the App Dashboard has "Require App Secret Proof" on and this call
+        // omits the proof, Meta rejects it and the reviewer's Page connects
+        // without a live webhook — the demo then shows no inbound message.
+        test('subscribes only `messages` and signs the call with appsecret_proof', async () => {
+            axios.post.mockResolvedValueOnce({ data: { success: true } });
+            await provider.subscribeWebhook({
+                channel: { meta_asset_id: 'PAGE_1', page_access_token_ct: 'tok_page' },
+            });
+            expect(axios.post).toHaveBeenCalledWith(
+                expect.stringContaining('/PAGE_1/subscribed_apps'),
+                null,
+                expect.objectContaining({
+                    params: expect.objectContaining({
+                        access_token: 'tok_page',
+                        subscribed_fields: 'messages',
+                        appsecret_proof: expect.any(String),
+                    })
+                })
+            );
+        });
+    });
+
     describe('verifyWebhookSubscription()', () => {
         beforeEach(() => { process.env.META_APP_SECRET = 'test-secret'; });
         afterEach(() => jest.resetAllMocks());
@@ -467,7 +493,12 @@ describe('MetaMessengerProvider', () => {
             expect(res.ok).toBe(true);
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/PAGE_1/subscribed_apps'),
-                expect.objectContaining({ params: expect.objectContaining({ access_token: 'tok_page' }) })
+                expect.objectContaining({
+                    params: expect.objectContaining({
+                        access_token: 'tok_page',
+                        appsecret_proof: expect.any(String),
+                    })
+                })
             );
         });
 
