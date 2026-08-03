@@ -14,6 +14,7 @@ import type { Conversation, Message } from "@/api/types/conversation";
 import { apiClient } from "@/api";
 import { successPulse, errorShake } from "@/lib/motion";
 import { getDenyMessage } from "@/lib/policy/deny-messages";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface InboxComposerProps {
   selectedConversation: Conversation;
@@ -165,11 +166,7 @@ export function InboxComposer({
       setSendState("pulse");
       setTimeout(() => setSendState("idle"), 600);
     } catch (err: unknown) {
-      const rawMsg =
-        (err as { response?: { data?: { error?: { message?: string } } }; message?: string })
-          ?.response?.data?.error?.message ||
-        (err as { message?: string })?.message ||
-        "";
+      const rawMsg = getErrorMessage(err, "");
       const friendly = getDenyMessage(rawMsg || "error", lang as "bn" | "en");
       setSendError(friendly);
       toast.error(friendly);

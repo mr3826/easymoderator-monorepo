@@ -7,6 +7,7 @@ import { apiClient } from "@/api";
 import type { Product } from "@/api/types/product";
 import { authService } from "../lib/auth";
 import AddProduct from "./AddProduct";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 export default function ProductDetails() {
   const { t } = useTranslation();
@@ -35,7 +36,7 @@ export default function ProductDetails() {
         const fetchedProduct = await apiClient.getProduct(productId);
         setProduct(fetchedProduct);
       } catch (error: any) {
-        setError(error.response?.data?.message || t('products.detail.loadFailed'));
+        setError(getErrorMessage(error, t('products.detail.loadFailed')));
       } finally {
         setIsLoading(false);
       }
@@ -54,7 +55,7 @@ export default function ProductDetails() {
       toast.success(t('products.detail.deleteSuccess'));
       navigate('/app/products');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || t('products.detail.deleteFailed'));
+      toast.error(getErrorMessage(error, t('products.detail.deleteFailed')));
     } finally {
       setIsDeleting(false);
     }

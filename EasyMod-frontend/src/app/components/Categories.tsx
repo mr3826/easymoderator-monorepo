@@ -4,6 +4,7 @@ import { Plus, Search, Edit2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from 'react-i18next';
 import { apiClient } from "@/api";
+import { getErrorMessage } from "@shared/lib/http/errors";
 import type { CategoryDraft } from "@/api/types/product";
 
 interface Category {
@@ -25,7 +26,6 @@ export default function Categories() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [, setLoading] = useState(true);
-  const [, setError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<Category | null>(null);
 
@@ -37,11 +37,10 @@ export default function Categories() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      setError(null);
       const data = await apiClient.getCategories();
       setCategories(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load categories');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, t('categories.loadFailed')));
       console.error('Error loading categories:', err);
     } finally {
       setLoading(false);
@@ -62,8 +61,8 @@ export default function Categories() {
       setShowDeleteModal(false);
       setCategoryToDelete(null);
       toast.success(t('categories.deleteSuccess'));
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || t('categories.deleteFailed'));
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, t('categories.deleteFailed')));
     }
   };
 

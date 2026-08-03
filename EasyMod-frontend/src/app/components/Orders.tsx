@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { CheckCircle, Clock, Loader2, Package as PackageIcon, XCircle, Plus, Search, Download, ChevronDown, X, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
+import { getErrorMessage } from "@shared/lib/http/errors";
 import type { Order, DeliveryAddress } from "@/api/types/order";
 import type { Product } from "@/api/types/product";
 import bdGeography from '../../data/bd-geography.json';
@@ -61,7 +62,6 @@ export default function Orders() {
   const [products, setProducts] = useState<Product[]>([]);
   const [, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [, setError] = useState<string | null>(null);
   const [appliedSearchQuery, setAppliedSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -150,7 +150,6 @@ export default function Orders() {
     const fetchOrders = async () => {
       try {
         setIsLoading(true);
-        setError(null);
         const dateRange = resolveDateRange(dateFilter);
         const paymentStatus = filterStatus === 'completed' ? 'paid' : undefined;
         const fulfillmentStatus = filterStatus === 'cancelled' ? 'cancelled' : undefined;
@@ -165,8 +164,7 @@ export default function Orders() {
         if (!controller.signal.aborted) setOrders(fetchedOrders);
       } catch (err: unknown) {
         if (controller.signal.aborted) return;
-        const e = err as { response?: { data?: { error?: { message?: string }; message?: string } } };
-        setError(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? t('orders.errors.loadFailed'));
+        toast.error(getErrorMessage(err, t('orders.errors.loadFailed')));
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -215,7 +213,7 @@ export default function Orders() {
     try {
       const order = orders.find(o => o.id === orderId);
       if (newStatus === 'confirmed' && order?.rto_risk === 'high') {
-        setError(t('orders.errors.highRTO'));
+        toast.warning(t('orders.errors.highRTO'));
         return;
       }
       let updatedOrder: Order;
@@ -232,8 +230,7 @@ export default function Orders() {
         setSelectedOrder(updatedOrder);
       }
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: { message?: string }; message?: string } } };
-      setError(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? t('orders.errors.updateStatus'));
+      toast.error(getErrorMessage(err, t('orders.errors.updateStatus')));
     }
   };
 
@@ -423,8 +420,7 @@ export default function Orders() {
         createdBy: 'user',
       });
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: { message?: string }; message?: string } } };
-      toast.error(e?.response?.data?.error?.message ?? e?.response?.data?.message ?? t('orders.errors.createFailed'));
+      toast.error(getErrorMessage(err, t('orders.errors.createFailed')));
     } finally {
       setIsCreating(false);
     }

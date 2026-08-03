@@ -8,6 +8,7 @@ import { authService } from "../lib/auth";
 import BusinessInfoForm from "./BusinessInfoForm";
 import AISettingsForm from "./AISettingsForm";
 import { trackFunnelEvent } from "@/app/lib/funnel";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 export default function BusinessInfoSettings() {
   const { t } = useTranslation();
@@ -36,7 +37,7 @@ export default function BusinessInfoSettings() {
         }
       } catch (error: any) {
         if (!abortControllerRef.current?.signal.aborted) {
-          setLoadError(error.response?.data?.error?.message || t('manageShop.businessInfo.errorLoad'));
+          setLoadError(getErrorMessage(error, t('manageShop.businessInfo.errorLoad')));
         }
       } finally {
         if (!abortControllerRef.current?.signal.aborted) {

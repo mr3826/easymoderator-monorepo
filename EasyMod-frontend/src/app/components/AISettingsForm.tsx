@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Plus, X, ChevronDown, ChevronUp } from "lucide-react";
 import type { ShopAISettings } from "@/api/types/dashboard";
 import type { TelegramNotificationStatus } from "@/api/types/notification";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 const defaultAISettings: ShopAISettings = {
   automation_mode: "DRAFT",
@@ -149,7 +150,7 @@ export default function AISettingsForm({ initialData, onSave, telegramStatus = n
       setSavedAISettings(settingsForSave);
       showNotice("success", t('manageShop.aiSettings.saveSuccess'));
     } catch (error: any) {
-      showNotice("error", error.response?.data?.error?.message || t('manageShop.aiSettings.saveError'));
+      showNotice("error", getErrorMessage(error, t('manageShop.aiSettings.saveError')));
     } finally {
       setIsSaving(false);
     }

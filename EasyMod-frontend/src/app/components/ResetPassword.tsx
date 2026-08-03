@@ -5,6 +5,7 @@ import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { apiClient } from '@/api';
 import { getPasswordError } from '@/features/auth/validation/passwordPolicy';
+import { getErrorMessage } from '@shared/lib/http/errors';
 
 export default function ResetPassword() {
   const { t } = useTranslation();
@@ -55,12 +56,8 @@ export default function ResetPassword() {
       setSuccess(t('auth.resetPassword.successMessage'));
       setPassword('');
       setConfirmPassword('');
-    } catch (error: any) {
-      setError(
-        error.response?.data?.error?.message ||
-          error.response?.data?.message ||
-          t('auth.resetPassword.errors.failed')
-      );
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, t('auth.resetPassword.errors.failed')));
     } finally {
       setIsLoading(false);
     }

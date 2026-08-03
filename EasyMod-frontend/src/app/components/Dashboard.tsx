@@ -7,6 +7,7 @@ import { apiClient } from "@/api";
 import FirstTimeSetupDashboard from "./FirstTimeSetupDashboard";
 import { useSetupStatus } from "@/app/lib/useSetupStatus";
 import { authService } from "../lib/auth";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 const SETUP_DASHBOARD_ENABLED = import.meta.env.VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD !== "false";
 
@@ -165,7 +166,7 @@ export default function Dashboard() {
       setLastUpdatedAt(new Date());
     } catch (loadError: unknown) {
       const e = loadError as { response?: { data?: { error?: { message?: string } } } };
-      setError(e?.response?.data?.error?.message ?? t("dashboard.pulse.errorMsg"));
+      setError(getErrorMessage(e, t("dashboard.pulse.errorMsg")));
     } finally {
       if (isInitialLoad) {
         setIsLoading(false);

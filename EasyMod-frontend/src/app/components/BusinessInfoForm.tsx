@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import type { BusinessInfo, SocialLinks } from "../lib/knowledgeTypes";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 const emptyBusinessInfo: BusinessInfo = {
   shopName: "",
@@ -61,7 +62,7 @@ export default function BusinessInfoForm({ initialData, onSave, isLoading = fals
       setSavedBusinessInfo(businessInfo);
       showNotice("success", t('manageShop.businessInfo.successMsg'));
     } catch (error: any) {
-      showNotice("error", error.response?.data?.error?.message || t('manageShop.businessInfo.errorUpdate'));
+      showNotice("error", getErrorMessage(error, t('manageShop.businessInfo.errorUpdate')));
     } finally {
       setIsSaving(false);
     }

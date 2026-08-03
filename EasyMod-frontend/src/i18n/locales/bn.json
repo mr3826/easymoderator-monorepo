@@ -372,7 +372,8 @@
       "successMessage": "অ্যাকাউন্ট থাকলে রিসেট লিংক পাঠানো হয়েছে।",
       "backToSignIn": "লগইনে ফিরে যান",
       "errors": {
-        "emailRequired": "আপনার ইমেইল লিখুন"
+        "emailRequired": "আপনার ইমেইল লিখুন",
+        "requestFailed": "পাসওয়ার্ড রিসেট অনুরোধ ব্যর্থ হয়েছে"
       }
     },
     "resetPassword": {
@@ -872,6 +873,7 @@
     },
     "deleteSuccess": "ক্যাটাগরি মুছে গেছে",
     "deleteFailed": "ক্যাটাগরি মুছতে ব্যর্থ",
+    "loadFailed": "ক্যাটাগরি লোড করতে ব্যর্থ",
     "detail": {
       "breadcrumb": "ক্যাটাগরি",
       "createTitle": "ক্যাটাগরি তৈরি করুন",

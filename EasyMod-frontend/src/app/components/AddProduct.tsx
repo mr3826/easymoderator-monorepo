@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
 import type { Product } from "@/api/types/product";
 import { VALIDATION, SKU_PREFIX, SKU_LENGTH } from "../constants/product";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface AddProductProps {
   editMode?: boolean;
@@ -123,7 +124,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
           if (product.variants) setVariants(product.variants as any);
           if (product.tags) setTags(product.tags);
         } catch (err: any) {
-          const message = err.response?.data?.message || 'Failed to load product';
+          const message = getErrorMessage(err, 'Failed to load product');
           setError(message);
           toast.error(message);
         }

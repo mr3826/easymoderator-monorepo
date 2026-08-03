@@ -260,8 +260,13 @@ describe('AISettingsForm', () => {
   });
 
   it('shows error notice when save fails', async () => {
+    // The shape the axios interceptor actually throws — a NormalizedApiError,
+    // with no `.response`.
     mockOnSave.mockRejectedValue({
-      response: { data: { error: { message: 'Failed to save' } } },
+      type: 'VALIDATION_ERROR',
+      statusCode: 400,
+      message: 'Failed to save',
+      timestamp: '2026-08-02T00:00:00.000Z',
     });
     
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);

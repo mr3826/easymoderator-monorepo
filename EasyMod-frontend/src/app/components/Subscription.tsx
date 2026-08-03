@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
 import { isBkashEnabled } from "@/app/lib/config";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Invoice {
   id: string;       // invoice_number (displayed)
@@ -155,7 +156,7 @@ export default function Subscription() {
       await loadSubscriptionData();
       await loadInvoices();
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || err.message || t('subscription.paymentVerifyFailed'));
+      setError(getErrorMessage(err, t('subscription.paymentVerifyFailed')));
     } finally {
       setTimeout(() => { setSuccess(null); setError(null); }, 10000);
     }
@@ -342,7 +343,7 @@ export default function Subscription() {
         setTimeout(() => setSuccess(null), 5000);
       }
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || t('subscription.planUpdateFailed'));
+      setError(getErrorMessage(error, t('subscription.planUpdateFailed')));
       setTimeout(() => setError(null), 5000);
     } finally {
       setIsUpdatingPlan(false);
@@ -369,7 +370,7 @@ export default function Subscription() {
       }
       startBkashCheckout('topup', res.topup_id, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
+      setError(getErrorMessage(error, t('subscription.bkashStartFailed')));
       setTimeout(() => setError(null), 6000);
       setIsRequestingInvoice(false);
     }
@@ -386,7 +387,7 @@ export default function Subscription() {
       if (!res?.bkash_url) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', invoiceRawId, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
+      setError(getErrorMessage(error, t('subscription.bkashStartFailed')));
       setTimeout(() => setError(null), 6000);
       setPayingInvoiceId(null);
     }
@@ -403,7 +404,7 @@ export default function Subscription() {
       if (!res?.bkash_url || !res?.invoice_id) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', res.invoice_id, res.bkash_url);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || t('subscription.bkashStartFailed'));
+      setError(getErrorMessage(error, t('subscription.bkashStartFailed')));
       setTimeout(() => setError(null), 6000);
       setIsRenewing(false);
     }

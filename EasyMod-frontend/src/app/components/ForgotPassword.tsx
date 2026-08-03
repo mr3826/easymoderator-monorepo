@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Input } from '@/app/components/ui/input';
 import { Button } from '@/app/components/ui/button';
 import { apiClient } from '@/api';
+import { getErrorMessage } from '@shared/lib/http/errors';
 
 export default function ForgotPassword() {
   const { t } = useTranslation();
@@ -27,12 +28,8 @@ export default function ForgotPassword() {
     try {
       const result = await apiClient.forgotPassword(email.trim());
       setSuccess(result.message || t('auth.forgotPassword.successMessage'));
-    } catch (error: any) {
-      setError(
-        error.response?.data?.error?.message ||
-          error.response?.data?.message ||
-          'Failed to request password reset'
-      );
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, t('auth.forgotPassword.errors.requestFailed')));
     } finally {
       setIsLoading(false);
     }

@@ -5,6 +5,7 @@ import { apiClient } from "@/api";
 import type { Order, CourierBookingPayload } from "@/api/types/order";
 import { useTranslation } from "react-i18next";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Props {
   order: Order;
@@ -44,7 +45,7 @@ export default function CourierBookingModal({ order, onClose, onBooked }: Props)
       onBooked(result.tracking_id, result.provider);
       onClose();
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || t('courier.errors.bookingFailed'));
+      toast.error(getErrorMessage(err, t('courier.errors.bookingFailed')));
     } finally {
       setBooking(false);
     }

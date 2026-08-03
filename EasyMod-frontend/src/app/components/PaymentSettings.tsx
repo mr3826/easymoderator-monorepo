@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Wallet, DollarSign, ChevronDown, ChevronUp, Mail, Star, Loader2 } from "lucide-react";
 import { apiClient } from "@/api";
 import { authService } from "@/app/lib/auth";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface PaymentGateway {
   id: string;
@@ -73,7 +74,7 @@ export default function PaymentSettings() {
       const gw = gateways.find((g) => g.id === gatewayId);
       setSuccess(`✓ ${t('manageShop.paymentSettings.setDefaultSuccess', { name: gw?.name || gatewayId })}`);
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.paymentSettings.errors.updateDefaultFailed'));
+      setError(getErrorMessage(err, t('manageShop.paymentSettings.errors.updateDefaultFailed')));
     } finally {
       setSettingDefaultGateway(null);
     }
@@ -218,7 +219,7 @@ export default function PaymentSettings() {
       }
     } catch (error: any) {
       console.error('Failed to save gateway config:', error);
-      setError(error.response?.data?.message || t('manageShop.paymentSettings.errors.saveConfigFailed'));
+      setError(getErrorMessage(error, t('manageShop.paymentSettings.errors.saveConfigFailed')));
     } finally {
       setSavingGateway(null);
     }
@@ -260,7 +261,7 @@ export default function PaymentSettings() {
       }
     } catch (error: any) {
       console.error('Failed to toggle gateway:', error);
-      setError(error.response?.data?.message || t('manageShop.paymentSettings.errors.toggleFailed'));
+      setError(getErrorMessage(error, t('manageShop.paymentSettings.errors.toggleFailed')));
     } finally {
       setSavingGateway(null);
     }
@@ -307,7 +308,7 @@ export default function PaymentSettings() {
       setTimeout(() => setSuccess(null), 3000);
     } catch (error: any) {
       console.error('Failed to save payment settings:', error);
-      setError(error.response?.data?.message || t('manageShop.paymentSettings.errors.saveSettingsFailed'));
+      setError(getErrorMessage(error, t('manageShop.paymentSettings.errors.saveSettingsFailed')));
     } finally {
       setSavingSettings(false);
     }
