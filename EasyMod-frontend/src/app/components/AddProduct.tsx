@@ -8,6 +8,7 @@ import { apiClient } from "@/api";
 import type { Product } from "@/api/types/product";
 import { VALIDATION, SKU_PREFIX, SKU_LENGTH } from "../constants/product";
 import { getErrorMessage } from "@shared/lib/http/errors";
+import { downscaleImage } from "../lib/downscaleImage";
 
 interface AddProductProps {
   editMode?: boolean;
@@ -36,6 +37,14 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
   const [discountable, setDiscountable] = useState(false);
   const [taxable, setTaxable] = useState(false);
   const [productImages, setProductImages] = useState<File[]>([]);
+  // Uploaded URL per picked File. Keyed by the File object rather than by index
+  // so removeImage/moveImage keep working untouched — reordering the array
+  // reorders the URLs with it, and a removed File just stops being looked up.
+  const [uploadedImageUrls, setUploadedImageUrls] = useState<Map<File, string>>(new Map());
+  const [uploadingImages, setUploadingImages] = useState(0);
+  // Images already saved on the product (edit mode). Kept separate from newly
+  // picked Files so a re-save without touching the picker cannot wipe them.
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([]);
 
     // Clean up object URLs to prevent memory leaks
     useEffect(() => {
@@ -123,6 +132,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
           }
           if (product.variants) setVariants(product.variants as any);
           if (product.tags) setTags(product.tags);
+          setExistingImageUrls(product.images || (product.image_url ? [product.image_url] : []));
         } catch (err: any) {
           const message = getErrorMessage(err, 'Failed to load product');
           setError(message);
@@ -154,6 +164,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
       }
       if (editProduct.variants) setVariants(editProduct.variants as any);
       if (editProduct.tags) setTags(editProduct.tags);
+      setExistingImageUrls(editProduct.images || (editProduct.image_url ? [editProduct.image_url] : []));
     }
   }, [editMode, editProduct, isModal]);
 
@@ -177,10 +188,41 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const remainingSlots = VALIDATION.MAX_IMAGES - productImages.length;
-    const filesToAdd = files.slice(0, remainingSlots);
-    setProductImages([...productImages, ...filesToAdd]);
+    const remainingSlots = VALIDATION.MAX_IMAGES - productImages.length - existingImageUrls.length;
+    const filesToAdd = files.slice(0, Math.max(0, remainingSlots));
+    if (filesToAdd.length === 0) return;
+
+    setProductImages(prev => [...prev, ...filesToAdd]);
+
+    // Upload as soon as the file is picked, not at submit. Five sequential
+    // uploads at save time would be a 30s+ spinner on a mobile uplink with no
+    // feedback; this way it overlaps with the merchant filling in the form.
+    setUploadingImages(n => n + filesToAdd.length);
+    filesToAdd.forEach(async (file) => {
+      try {
+        const dataUrl = await downscaleImage(file);
+        const url = await apiClient.uploadProductImage(dataUrl);
+        setUploadedImageUrls(prev => new Map(prev).set(file, url));
+      } catch (err: unknown) {
+        toast.error(getErrorMessage(err, t('products.form.imageUploadFailed')));
+        // Drop it from the picker so the merchant never saves a product
+        // believing an image is attached when it is not.
+        setProductImages(prev => prev.filter(f => f !== file));
+      } finally {
+        setUploadingImages(n => n - 1);
+      }
+    });
+
+    // Let the same file be re-picked after a failure.
+    e.target.value = '';
   };
+
+  const removeExistingImage = (index: number) => {
+    setExistingImageUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const totalImages = existingImageUrls.length + productImages.length;
+  const imagesFull = totalImages >= VALIDATION.MAX_IMAGES;
 
   const removeImage = (index: number) => {
     setProductImages(productImages.filter((_, i) => i !== index));
@@ -229,6 +271,13 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
     // Guard against double submission — without this a second click while the
     // POST was in flight created a duplicate product.
     if (isSaving) return;
+
+    // Saving mid-upload would persist the product with only the images that had
+    // finished, silently dropping the rest.
+    if (uploadingImages > 0) {
+      toast.error(t('products.form.imagesStillUploading'));
+      return;
+    }
 
     try {
       setError(null);
@@ -296,6 +345,23 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
       
       if (minStockThreshold) {
         productData.low_stock_threshold = parseInt(minStockThreshold);
+      }
+
+      // Images: already-saved ones first, then newly picked files in picker
+      // order. Reading the URLs through productImages (rather than the Map's own
+      // insertion order) is what makes moveImage's reordering stick — the first
+      // entry becomes the primary image.
+      const imageUrls = [
+        ...existingImageUrls,
+        ...productImages.map(file => uploadedImageUrls.get(file)).filter((u): u is string => Boolean(u)),
+      ];
+      if (imageUrls.length > 0) {
+        productData.images = imageUrls;
+        // Both fields are required, not redundant: product-link.service selects
+        // only image_url when building the cards sent to customers, while
+        // product-ai.service prefers the images array. Set one and the other
+        // silently loses its thumbnail.
+        productData.image_url = imageUrls[0];
       }
 
       // Add other fields as needed
@@ -582,7 +648,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
                       {t('products.form.uploadImages')}
                     </p>
                     <p className="text-xs text-gray-500 mb-3">
-                      {productImages.length}/5 images • PNG, JPG up to 5MB each
+                      {totalImages}/{VALIDATION.MAX_IMAGES} images • PNG, JPG up to 5MB each
                     </p>
                     <input
                       type="file"
@@ -591,23 +657,47 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
                       onChange={handleImageUpload}
                       className="hidden"
                       id="product-images"
-                      disabled={productImages.length >= 5}
+                      disabled={imagesFull}
                     />
                     <label
                       htmlFor="product-images"
                       className={`inline-block px-4 py-2 rounded-lg cursor-pointer text-sm ${
-                        productImages.length >= 5
+                        imagesFull
                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      {productImages.length >= 5 ? t('products.form.maxImagesReached') : t('products.form.chooseFiles')}
+                      {imagesFull ? t('products.form.maxImagesReached') : t('products.form.chooseFiles')}
                     </label>
                   </div>
 
+                  {existingImageUrls.length > 0 && (
+                    <div className="grid grid-cols-5 gap-2">
+                      {existingImageUrls.map((url, index) => (
+                        <div key={url} className="relative group">
+                          <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200">
+                            <img src={url} alt={`Product ${index + 1}`} className="w-full h-full object-cover" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeExistingImage(index)}
+                            className="absolute -top-2 -right-2 p-1 bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                          {index === 0 && (
+                            <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded">
+                              Main
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {productImages.length > 0 && (
                     <div className="grid grid-cols-5 gap-2">
-                      {productImages.map((_file, index) => (
+                      {productImages.map((file, index) => (
                         <div key={index} className="relative group">
                           <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-500 transition-colors">
                             <img
@@ -616,13 +706,18 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
                               className="w-full h-full object-cover"
                             />
                           </div>
+                          {!uploadedImageUrls.has(file) && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-white/70 rounded-lg">
+                              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                            </div>
+                          )}
                           <button
                             onClick={() => removeImage(index)}
                             className="absolute -top-2 -right-2 p-1 bg-red-600 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
                           >
                             <X className="w-3 h-3" />
                           </button>
-                          {index === 0 && (
+                          {index === 0 && existingImageUrls.length === 0 && (
                             <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded">
                               Main
                             </div>

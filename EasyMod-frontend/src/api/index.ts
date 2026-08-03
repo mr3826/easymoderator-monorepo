@@ -99,6 +99,7 @@ export const apiClient = {
   createProduct: productDomain.createProduct,
   updateProduct: productDomain.updateProduct,
   deleteProduct: productDomain.deleteProduct,
+  uploadProductImage: productDomain.uploadProductImage,
   extractProductsFromUpload: productDomain.extractProductsFromUpload,
   getCategories: productDomain.getCategories,
   getCategory: productDomain.getCategory,

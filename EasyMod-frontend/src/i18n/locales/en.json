@@ -740,6 +740,8 @@
       "uploadImages": "Upload Images",
       "chooseFiles": "Choose Files",
       "maxImagesReached": "Maximum 5 images reached",
+      "imageUploadFailed": "Could not upload that image. Please try again.",
+      "imagesStillUploading": "Images are still uploading — please wait a moment.",
       "inventoryStock": "Inventory & Stock",
       "stockTracking": "Stock Tracking",
       "dontTrackInventory": "Don't track inventory",

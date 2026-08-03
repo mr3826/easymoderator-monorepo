@@ -740,6 +740,8 @@
       "uploadImages": "ছবি আপলোড করুন",
       "chooseFiles": "ফাইল বেছে নিন",
       "maxImagesReached": "সর্বোচ্চ ৫টি ছবি যোগ হয়েছে",
+      "imageUploadFailed": "ছবিটি আপলোড করা যায়নি। আবার চেষ্টা করুন।",
+      "imagesStillUploading": "ছবি আপলোড হচ্ছে — একটু অপেক্ষা করুন।",
       "inventoryStock": "ইনভেন্টরি ও স্টক",
       "stockTracking": "স্টক ট্র্যাকিং",
       "dontTrackInventory": "ইনভেন্টরি ট্র্যাক করবেন না",

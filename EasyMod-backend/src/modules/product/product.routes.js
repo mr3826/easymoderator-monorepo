@@ -17,6 +17,9 @@ router.post('/detect-mentions', productController.detectMentions);
 // B4: Bulk update products — must be before /:id to avoid param capture
 router.patch('/bulk', productController.bulkUpdateProducts);
 
+// Image upload — must be before /:id to avoid param capture
+router.post('/images', productController.uploadProductImage);
+
 // Upsell routes — must be before /:id to avoid param capture
 // POST /products/upsells — recommendations for a cart/set of products
 router.post('/upsells', productController.getUpsellsForCart);
