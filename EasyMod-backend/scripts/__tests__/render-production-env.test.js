@@ -169,3 +169,24 @@ describe('core secret / alert sink fail-closed (§10)', () => {
             .toThrow(/Missing deployment environment variables: COOKIE_DOMAIN/);
     });
 });
+
+// This file is a strict allowlist: a variable absent from it cannot be set in
+// production by any repo secret, no matter what the code default says. A kill
+// switch that silently cannot be thrown is worse than no kill switch.
+describe('image-understanding switches are settable in production', () => {
+    test('both render with their intended defaults when unset', () => {
+        const env = buildRenderedEnv(validSource());
+        expect(env.AI_PHOTO_MATCH_ENABLED).toBe('true');   // customer photos: on
+        expect(env.AI_VISION_ENABLED).toBe('false');       // merchant images: off
+    });
+
+    test('AI_PHOTO_MATCH_ENABLED=false actually reaches .env.prod', () => {
+        const env = buildRenderedEnv(validSource({ AI_PHOTO_MATCH_ENABLED: 'false' }));
+        expect(env.AI_PHOTO_MATCH_ENABLED).toBe('false');
+    });
+
+    test('vision can be turned on deliberately', () => {
+        const env = buildRenderedEnv(validSource({ AI_VISION_ENABLED: 'true' }));
+        expect(env.AI_VISION_ENABLED).toBe('true');
+    });
+});

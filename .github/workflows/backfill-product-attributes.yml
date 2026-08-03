@@ -1,0 +1,94 @@
+name: Backfill Product Attributes
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Populate the products.ai_* search columns on production.
+#
+# WHY THIS IS NEEDED, not optional: product-search ranks on ai_search_text,
+# ai_category, ai_color_primary and ai_material. Those columns were only ever
+# written for products that had an image, and until the image-upload endpoint
+# shipped no product had one — so they are NULL for effectively the entire
+# production catalogue. Customer-photo → product matching cannot return anything
+# until this has been run once. Deploying the feature without running this
+# leaves it silently dead: the extraction call fires, costs money, and matches
+# against an empty attribute set.
+#
+# Attributes are derived from the merchant's own text (name, category, brand,
+# sku, tags, description) — no vision call, no provider cost, no rate-limit
+# exposure — unless AI_VISION_ENABLED=true, which is not the production default.
+#
+# Run it:
+#   - once, right after the photo-matching release deploys
+#   - again after any bulk product import
+#   - with `all: true` if the derivation logic itself changes
+#
+# Trigger:  Actions → "Backfill Product Attributes" → Run workflow
+#           (or `gh workflow run backfill-product-attributes.yml`)
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      shop:
+        description: 'Shop UUID to limit the run to (blank = every shop)'
+        required: false
+        default: ''
+        type: string
+      all:
+        description: 'Re-derive products that were already processed (default: only ai_processed_at IS NULL)'
+        required: false
+        default: false
+        type: boolean
+      limit:
+        description: 'Max products per shop'
+        required: false
+        default: '5000'
+        type: string
+
+# One backfill at a time — concurrent runs would fight over the same rows.
+concurrency:
+  group: backfill-product-attributes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    name: Derive ai_* search columns on production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run backfill on droplet
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 60s
+          # Text derivation is fast, but a large catalogue is still thousands of
+          # row updates plus a vector upsert each — well past the 10m default.
+          command_timeout: 30m
+          # Forward inputs as named env vars so they are NOT string-interpolated
+          # into the remote shell (avoids command injection via the shop field).
+          envs: TARGET_SHOP,REDO_ALL,ROW_LIMIT
+          script: |
+            set -e
+            cd /opt/easymod
+
+            ARGS="--limit=${ROW_LIMIT}"
+            if [ -n "${TARGET_SHOP}" ]; then ARGS="$ARGS --shop=${TARGET_SHOP}"; fi
+            if [ "${REDO_ALL}" = "true" ]; then ARGS="$ARGS --all"; fi
+
+            echo "==> Backfilling product attributes ($ARGS)"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
+              node scripts/backfill-product-attributes.js $ARGS
+
+            # Expand POSTGRES_USER/DB INSIDE the container, never on the host:
+            # a hardcoded host-side guess is exactly what made the nightly backup
+            # dump the wrong database (#84). Single quotes keep the host out of it.
+            echo "==> Verifying: active products still missing ai_search_text"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+              sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT count(*) FROM products WHERE is_active = true AND deleted_at IS NULL AND ai_search_text IS NULL;"'
+        env:
+          TARGET_SHOP: ${{ inputs.shop }}
+          REDO_ALL: ${{ inputs.all }}
+          ROW_LIMIT: ${{ inputs.limit }}
