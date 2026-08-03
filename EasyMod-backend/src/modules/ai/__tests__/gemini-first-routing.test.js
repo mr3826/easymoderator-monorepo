@@ -8,7 +8,9 @@
  *   B. A free-tier 429 (quota exhausted) falls through to the next provider
  *      rather than surfacing as an error to the customer.
  *   C. No repository path makes OpenAI a primary/parallel/unconditional provider.
- *   D. Vision is off by default and no image bytes reach any provider.
+ *   D. The two image switches keep their opposite defaults: the customer's
+ *      photo is analysed (once), the merchant's product images are not, and no
+ *      image bytes ride along on the reply call.
  *   E. Gemini context caching is requested for the model that will serve the call.
  */
 
@@ -221,11 +223,34 @@ describe('C — no OpenAI-primary paths in the repository', () => {
 });
 
 describe('D — vision policy', () => {
-    beforeEach(() => { jest.resetModules(); delete process.env.AI_VISION_ENABLED; });
+    beforeEach(() => {
+        jest.resetModules();
+        delete process.env.AI_VISION_ENABLED;
+        delete process.env.AI_PHOTO_MATCH_ENABLED;
+    });
 
     test('vision is disabled by default', () => {
         const { visionEnabled } = require('src/modules/ai/vision-policy.service');
         expect(visionEnabled()).toBe(false);
+    });
+
+    test('customer-photo matching is ENABLED by default — opt out, not opt in', () => {
+        const { photoMatchEnabled } = require('src/modules/ai/vision-policy.service');
+        expect(photoMatchEnabled()).toBe(true);
+    });
+
+    test('photo matching is switchable off without touching the vision flag', () => {
+        process.env.AI_PHOTO_MATCH_ENABLED = 'false';
+        const { photoMatchEnabled, visionEnabled } = require('src/modules/ai/vision-policy.service');
+        expect(photoMatchEnabled()).toBe(false);
+        expect(visionEnabled()).toBe(false);
+    });
+
+    test('the two switches are independent — vision on does not turn photo matching off', () => {
+        process.env.AI_VISION_ENABLED = 'true';
+        const { photoMatchEnabled, visionEnabled } = require('src/modules/ai/vision-policy.service');
+        expect(visionEnabled()).toBe(true);
+        expect(photoMatchEnabled()).toBe(true);
     });
 
     test('image blocks are stripped from outgoing messages, text is kept', () => {
@@ -257,7 +282,9 @@ describe('D — vision policy', () => {
         expect(stripImageBlocks(input)).toBe(input);
     });
 
-    test('no image bytes reach a provider on the default customer-image path', async () => {
+    // The extraction call DOES send the photo — that is the point of it. What
+    // must not happen is the reply call sending it a second time.
+    test('the reply call carries no image bytes, only the text', async () => {
         process.env.GEMINI_API_KEY = 'test-gemini-key';
         const llm = require('src/modules/ai/llm.service');
         const { stripImageBlocks } = require('src/modules/ai/vision-policy.service');

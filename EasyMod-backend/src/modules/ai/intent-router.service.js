@@ -22,7 +22,7 @@ const { incrementFaqHit } = require('../knowledge/knowledge.service');
 const { scrubPII } = require('./prompt-sanitizer.service');
 const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
-const { visionEnabled, stripImageBlocks } = require('./vision-policy.service');
+const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -343,25 +343,36 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     let groundedSystemPrompt = systemPrompt;
 
     // -----------------------------------------------------------------------
-    // Vision flow: two-phase for image messages
-    //   Phase 1 — extract product attributes from image (fast, cheap, JSON)
-    //   Phase 2 — fetch live product data from DB, inject as grounded context
-    //   Phase 3 — final LLM response grounded on DB facts (no hallucination)
+    // Photo flow: the photo reaches a model exactly once.
+    //   Phase 1 — extract product attributes from the image (one call, JSON)
+    //   Phase 2 — fetch live product data from the DB on those attributes
+    //   Phase 3 — reply from the extracted description + DB rows, text-only
+    //
+    // Phase 3 carries no image bytes. The description and the matched rows
+    // already say everything the reply needs, so re-attaching the photo would
+    // double the per-photo image cost — and double the number of rate-limited
+    // calls carrying an image — to buy very little. AI_VISION_ENABLED=true
+    // re-attaches it (see vision-policy.service.js).
     // -----------------------------------------------------------------------
     if (imageUrls.length > 0) {
-        // Vision is off by default, so attribute extraction is skipped and the
-        // photo is matched on the customer's accompanying text alone.
-        const attrs = visionEnabled()
-            ? await _extractProductAttributes(imageUrls[0], message)
+        // Only the first photo is examined. A burst of photos is one shopping
+        // question, not N of them (burst-coalescer gathers one URL per message),
+        // and every extra image is another flat ~1,075-token charge for an
+        // answer the customer did not ask for.
+        const [primaryImageUrl] = imageUrls;
+
+        const attrs = photoMatchEnabled()
+            ? await _extractProductAttributes(primaryImageUrl, message)
             : null;
 
-        // With vision off there are no image attributes, but the customer's own
-        // words ("ei kurti ta ache?" alongside the photo) are still a usable
-        // query — so the DB search runs either way. '[image]' is the webhook's
-        // placeholder for a photo with no caption; it is not a search term.
+        // The customer's own words ("ei kurti ta ache?" alongside the photo) are
+        // a usable query in their own right, and the only one left if extraction
+        // is off or failed. '[image]' is the webhook's placeholder for a photo
+        // with no caption; it is not a search term.
         const captionText = (message && message !== '[image]') ? message : '';
-        if (shopId && (attrs || (captionText && shouldSearchProducts(captionText)))) {
-            const products = await productSearch.searchByAttributes({
+
+        const products = (shopId && (attrs || (captionText && shouldSearchProducts(captionText))))
+            ? await productSearch.searchByAttributes({
                 shopId,
                 category: attrs?.category,
                 color:    attrs?.color,
@@ -369,48 +380,84 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                 query:    attrs?.query || captionText,
                 tags:     attrs?.tags || [],
                 limit: 5
-            }).catch(() => []);
+            }).catch(() => [])
+            : [];
 
-            if (products.length > 0) {
-                const productContext = productSearch.formatProductsForLlm(products);
-                const matchedOn = attrs ? 'THIS IMAGE' : "THE CUSTOMER'S MESSAGE";
-                groundedSystemPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') +
-                    `SHOP PRODUCTS MATCHING ${matchedOn} (live data — use ONLY these facts):\n${productContext}\n\n` +
-                    `GROUNDING RULES:\n` +
-                    `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
-                    `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.\n` +
-                    `- If no matching product found, say you couldn't identify the exact product and ask the customer to describe it.`;
-                for (const p of products) {
-                    if (p && p.id) {
-                        injectedProductIds.add(String(p.id));
-                        sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
-                    }
-                }
-            } else {
-                // No product match — tell LLM there is no match
-                groundedSystemPrompt = (systemPrompt ? systemPrompt + '\n\n' : '') +
-                    `NOTE: No matching product was found in the shop's catalog. ` +
-                    `Do not invent any product details. Ask the customer to describe the product they're looking for.`;
-            }
+        // Every branch below appends to this, so a photo can never reach the
+        // model on the bare shop prompt. That gap is precisely the state in
+        // which a price gets invented.
+        const notes = [];
+
+        if (attrs) {
+            const facets = [
+                attrs.category && `category: ${attrs.category}`,
+                attrs.color    && `colour: ${attrs.color}`,
+                attrs.material && `material: ${attrs.material}`,
+            ].filter(Boolean).join(', ');
+            notes.push(
+                `THE CUSTOMER'S PHOTO SHOWS: ${attrs.description || attrs.query || 'a product'}` +
+                `${facets ? ` (${facets})` : ''}\n` +
+                `You did not see the photo yourself — this description was produced from it. ` +
+                `Answer their question about it using the description and the catalog data below.`
+            );
         }
 
-        // Build content blocks for the final LLM call. stripImageBlocks removes the
-        // image parts unless AI_VISION_ENABLED=true — skipping attribute extraction
-        // alone would not stop the provider billing for the image, because the
-        // bytes would still be attached here.
-        const contentBlocks = imageUrls.map(url => ({ type: 'image_url', url }));
-        const customerText = scrubPII((message && message !== '[image]') ? message : 'What product is this? Can you help me?');
-        contentBlocks.push({ type: 'text', text: customerText });
-        llmMessages.push(...stripImageBlocks([{ role: 'user', content: contentBlocks }]));
+        if (imageUrls.length > 1) {
+            notes.push(
+                `NOTE: The customer sent ${imageUrls.length} photos. Only the first was examined. ` +
+                `If your answer depends on which one they meant, say you looked at the first ` +
+                `photo and offer to check another.`
+            );
+        }
 
-        if (!visionEnabled()) {
-            // No image was analysed, so the reply must not imply one was. Without
-            // this the model happily describes a photo it never received.
-            groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
+        if (products.length > 0) {
+            const matchedOn = attrs ? 'THIS PHOTO' : "THE CUSTOMER'S MESSAGE";
+            notes.push(
+                `SHOP PRODUCTS MATCHING ${matchedOn} (live data — use ONLY these facts):\n` +
+                `${productSearch.formatProductsForLlm(products)}\n\n` +
+                `GROUNDING RULES:\n` +
+                `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
+                `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.\n` +
+                `- If none of these is actually the product in the photo, say so and ask the customer to confirm which one they mean.`
+            );
+            for (const p of products) {
+                if (p && p.id) {
+                    injectedProductIds.add(String(p.id));
+                    sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
+                }
+            }
+        } else {
+            // Deliberately not "matches the photo": when photo matching is off, or
+            // extraction failed, the search ran on the caption alone or did not run
+            // at all, and the reply must not imply the picture was examined.
+            notes.push(
+                `NOTE: No product in this shop's catalog could be matched to this message. ` +
+                `Tell the customer plainly that you could not find it — do not guess, and do ` +
+                `not describe the photo as if it were a product this shop sells. Ask them for ` +
+                `the product name, or for another photo, or where they saw it, so you can look again.`
+            );
+        }
+
+        if (!photoMatchEnabled()) {
+            // Nothing analysed the photo, so the reply must not imply otherwise.
+            // Without this the model happily describes an image it never received.
+            notes.push(
                 `NOTE: The customer sent a photo, but you CANNOT see images. Do not describe, ` +
                 `guess at, or claim to have looked at the photo. Ask them to type the product ` +
-                `name instead, and offer the matching products listed above if there are any.`;
+                `name instead, and offer the matching products listed above if there are any.`
+            );
         }
+
+        groundedSystemPrompt = [systemPrompt, ...notes].filter(Boolean).join('\n\n');
+
+        // stripImageBlocks drops the image parts unless AI_VISION_ENABLED=true.
+        // Skipping extraction alone would not stop the provider billing for the
+        // photo, because the bytes would still be attached right here.
+        const customerText = scrubPII(captionText || 'What product is this? Can you help me?');
+        llmMessages.push(...stripImageBlocks([{
+            role: 'user',
+            content: [{ type: 'image_url', url: primaryImageUrl }, { type: 'text', text: customerText }]
+        }]));
     } else {
         llmMessages.push({ role: 'user', content: scrubPII(message) });
 
@@ -576,18 +623,25 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
 
 // ---------------------------------------------------------------------------
 // Phase 1: extract product attributes from customer image
-// Returns { category, color, material, query, tags } or null on failure
+// Returns { category, color, material, query, tags, description } or null.
+//
+// This is the ONLY call that ever sees the customer's photo. `description` is
+// what lets the text-only reply call discuss the picture at all, so it carries
+// the visual detail the structured facets drop — pattern, print, neckline,
+// sleeve, occasion — not a restatement of category and colour.
 // ---------------------------------------------------------------------------
 const _extractProductAttributes = async (imageUrl, customerMessage) => {
-    const EXTRACTION_PROMPT = `You are a product image analyzer for an e-commerce platform.
+    const EXTRACTION_PROMPT = `You are a product image analyzer for a Bangladeshi e-commerce shop.
 Analyze this product image and return ONLY a JSON object (no markdown, no explanation):
 {
   "category": "product type e.g. saree/shirt/panjabi/dress/shoes/bag",
   "color": "main color e.g. blue/red/white (null if unclear)",
   "material": "fabric/material e.g. cotton/silk/polyester (null if unclear)",
   "query": "best search term to find this product",
-  "tags": ["max", "5", "search", "tags"]
-}`;
+  "tags": ["max", "5", "search", "tags"],
+  "description": "one sentence a shop assistant could say back to the customer, covering the visual details the fields above miss (pattern, print, sleeve, neckline, occasion)"
+}
+If the image is not a product at all, set category to null and say so in description.`;
 
     try {
         const { text } = await llmService.chat({
@@ -601,7 +655,7 @@ Analyze this product image and return ONLY a JSON object (no markdown, no explan
                         : 'Identify the product shown in this image.' }
                 ]
             }],
-            maxTokens: 150
+            maxTokens: 250
         });
 
         // Parse JSON response

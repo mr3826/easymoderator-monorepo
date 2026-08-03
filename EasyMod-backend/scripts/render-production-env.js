@@ -133,6 +133,14 @@ function buildRenderedEnv(source = process.env) {
         OPENAI_API_KEY: source.OPENAI_API_KEY || '',
         GEMINI_API_KEY: source.GEMINI_API_KEY || '',
         GOOGLE_GEMINI_API_KEY: source.GEMINI_API_KEY || '',
+        // Image understanding. Rendered explicitly rather than left to the code
+        // defaults so both are actually SETTABLE in production — this file is a
+        // strict allowlist, and a flag absent from it cannot be changed by any
+        // repo secret. AI_PHOTO_MATCH_ENABLED=false is the kill switch for the
+        // customer-photo path (2 Gemini calls per photo message against a
+        // 15 req/min free-tier cap); AI_VISION_ENABLED stays off.
+        AI_PHOTO_MATCH_ENABLED: source.AI_PHOTO_MATCH_ENABLED || 'true',
+        AI_VISION_ENABLED: source.AI_VISION_ENABLED || 'false',
         EMBEDDING_PROVIDER: source.EMBEDDING_PROVIDER || '',
         EMBEDDING_MODEL: source.EMBEDDING_MODEL || '',
         GEMINI_EMBEDDING_MODEL: source.GEMINI_EMBEDDING_MODEL || '',

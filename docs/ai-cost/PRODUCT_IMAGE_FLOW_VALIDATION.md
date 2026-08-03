@@ -73,7 +73,25 @@ One genuinely dead thing *was* found and is worth deleting separately:
 `llm-tier-selection.service.js` (238 lines, a whole tier→model mapping including the
 retired `gemini-2.0-flash`) has no callers at all. Both are in the backlog.
 
-## 4. The pricing-page conflict
+## 4. The pricing-page conflict — RESOLVED 2026-08-03
+
+> **Option 2 was taken.** The switch was split per path, exactly as this section
+> anticipated: `AI_PHOTO_MATCH_ENABLED` (default **on**) analyses the customer's
+> photo; `AI_VISION_ENABLED` (default **off**) still governs merchant
+> product-image analysis and re-attaching image bytes to the reply call.
+>
+> One refinement on the costing below: the photo reaches a model **once**, not
+> twice. The extraction call carries the image; the reply call is text-only,
+> grounded on the returned description plus live catalog rows. So the "+$0.0008
+> per conversation, ~13%" figure holds at 3 photo messages, and the reply call
+> adds no image tokens at all.
+>
+> §5 below is superseded by the shipped implementation — uploads landed on the
+> `backend_uploads` Docker volume rather than DO Spaces, and matching runs on
+> text-derived `ai_*` attributes, so it does **not** depend on product images
+> existing. The section is kept as the record of what was scoped.
+
+### Original analysis
 
 `subscription.plans.js` sets `image_understanding: true` in `BASE_FEATURES`, and
 `Pricing.tsx` renders it as a bullet on the public pricing page via
