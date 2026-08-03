@@ -71,6 +71,28 @@ export async function createProduct(
 }
 
 /**
+ * Upload one product image and get back its public URL.
+ *
+ * Sent as a base64 data URL rather than multipart — that is the transport the
+ * backend already uses for attachments, and it needs no extra dependency. One
+ * image per call: the request body limit is 35mb, which a batch of five would
+ * sit right on top of once base64 inflates them.
+ *
+ * The returned URL is what belongs in `images[]` / `image_url` on create or
+ * update; it is not attached to any product until you send it.
+ *
+ * @param dataUrl - `data:image/jpeg;base64,...`
+ * @returns Promise resolving to the absolute public URL of the stored image
+ */
+export async function uploadProductImage(dataUrl: string): Promise<string> {
+  const response: AxiosResponse<ApiResponse<{ url: string }>> = await httpClient.post(
+    '/api/product/images',
+    { image: dataUrl }
+  );
+  return response.data.data.url;
+}
+
+/**
  * Update existing product
  * @param productId - ID of product to update
  * @param product - Partial product data with fields to update

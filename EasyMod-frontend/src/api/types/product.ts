@@ -17,6 +17,12 @@ export interface Product {
   confidence?: number;
   stock?: boolean;
   images?: string[];
+  /**
+   * Primary image. Distinct from `images[0]`: the backend's
+   * product-link.service selects only this column when building the product
+   * cards sent to customers, so it must be kept in sync with `images[0]`.
+   */
+  image_url?: string;
   brand?: string;
   weight?: number;
   weight_unit?: string;

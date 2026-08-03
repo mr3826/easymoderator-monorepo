@@ -2,6 +2,11 @@ const productService = require('./product.service');
 const productLinkService = require('./product-link.service');
 const upsellService = require('./product-upsell.service');
 const { HTTP_STATUS } = require('../../constants/http-status');
+const { saveDataUrlImage, publicBaseUrl } = require('../../utils/image-upload.service');
+
+// Matches the "PNG, JPG up to 5MB each" copy the Add Product form shows.
+const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const PRODUCT_IMAGE_SUBDIR = 'product-images';
 
 /**
  * Helper: Returns a standard validation error response for missing shop
@@ -419,11 +424,55 @@ const getUpsellsForCart = async (req, res, next) => {
     }
 };
 
+/**
+ * Store one product image and return its public URL.
+ * POST /products/images
+ * Body: { image: "data:image/png;base64,..." }
+ *
+ * Deliberately not scoped to a product id: the Add Product form uploads while
+ * the merchant is still filling it in, before any product row exists. The
+ * returned URL is what the client then sends as `images[]` / `image_url` on
+ * create or update.
+ *
+ * ponytail: an abandoned form leaves the file on disk, as does removing an
+ * image from a product. Bounded by the per-file cap and low volume; the fix is
+ * a periodic sweep of the uploads dir against products.images, not inline
+ * refcounting.
+ */
+const uploadProductImage = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) {
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getNoShopError());
+        }
+
+        const { image } = req.body;
+        if (!image) {
+            return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('image is required'));
+        }
+
+        const { publicPath } = await saveDataUrlImage({
+            dataUrl: image,
+            shopId,
+            subdir: PRODUCT_IMAGE_SUBDIR,
+            maxBytes: PRODUCT_IMAGE_MAX_BYTES,
+        });
+
+        res.status(HTTP_STATUS.CREATED).json({
+            success: true,
+            data: { url: `${publicBaseUrl(req)}${publicPath}` },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     // RESTful methods
     getProducts,
     getProductById,
     createProductRest,
+    uploadProductImage,
     updateProductById,
     deleteProductById,
     extractProducts,
