@@ -20,7 +20,11 @@ createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={queryClient}>
     <ErrorBoundary>
       <App />
-      <Toaster position="bottom-right" richColors closeButton duration={3000} />
+      {/* top-center, not bottom-*: DashboardLayout renders a `md:hidden fixed
+          bottom-0` nav, and sonner only swaps to its mobile offset at 600px
+          while that nav is visible up to 768px. Anchoring to the top avoids the
+          collision at every width, and keeps the message out from under a thumb. */}
+      <Toaster position="top-center" richColors closeButton duration={3000} />
     </ErrorBoundary>
   </QueryClientProvider>
 );

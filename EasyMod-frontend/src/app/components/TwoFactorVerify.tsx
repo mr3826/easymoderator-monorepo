@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/app/components/ui/button';
 import { useAuth } from '@/features/auth/AuthProvider';
 import BrandLogo from './BrandLogo';
+import { getErrorMessage } from '@shared/lib/http/errors';
 
 /**
  * Two-factor authentication verification screen.
@@ -79,11 +80,7 @@ export default function TwoFactorVerify() {
       await verifyTwoFactor(code);
       navigate('/app', { replace: true });
     } catch (err: any) {
-      setError(
-        err?.response?.data?.error?.message ||
-        err?.message ||
-        'Invalid code. Please try again.'
-      );
+      setError(getErrorMessage(err, 'Invalid code. Please try again.'));
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {

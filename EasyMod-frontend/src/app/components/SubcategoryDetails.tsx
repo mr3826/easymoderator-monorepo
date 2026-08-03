@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChevronRight, Upload, Plus, Eye, Edit2, Trash2, X } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { apiClient } from "@/api";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface SubSubcategory {
   id: string;
@@ -59,7 +60,7 @@ export default function SubcategoryDetails() {
 
         setSubSubcategories(children);
       } catch (error: any) {
-        setLoadError(error.response?.data?.error?.message || 'Failed to load subcategory details');
+        setLoadError(getErrorMessage(error, 'Failed to load subcategory details'));
       } finally {
         setIsLoading(false);
       }
@@ -99,7 +100,7 @@ export default function SubcategoryDetails() {
       setSaveSuccess('Subcategory updated successfully.');
       setTimeout(() => setSaveSuccess(null), 2500);
     } catch (error: any) {
-      setSaveError(error.response?.data?.error?.message || 'Failed to update subcategory');
+      setSaveError(getErrorMessage(error, 'Failed to update subcategory'));
     } finally {
       setIsSaving(false);
     }

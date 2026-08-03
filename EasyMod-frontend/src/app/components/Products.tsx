@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { authService } from "../lib/auth";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Category {
   id: string;
@@ -226,7 +227,7 @@ export default function Products() {
       setShowReviewModal(true);
       setShowUploadModal(false);
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || t('products.errors.uploadFailed'));
+      setError(getErrorMessage(error, t('products.errors.uploadFailed')));
     } finally {
       setUploadProgress(0);
       if (e.target) {
@@ -270,7 +271,7 @@ export default function Products() {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       setAiGeneratedProducts(prev => prev.filter(p => p.id !== product.id));
     } catch (error: any) {
-      setError(error.response?.data?.error?.message || error.message || t('products.errors.approveFailed'));
+      setError(getErrorMessage(error, t('products.errors.approveFailed')));
     } finally {
       setApprovingIds(prev => prev.filter(id => id !== product.id));
     }
@@ -295,7 +296,7 @@ export default function Products() {
             setAiGeneratedProducts(prev => prev.filter(p => p.id !== product.id));
           })
           .catch(error => {
-            setError(error.response?.data?.error?.message || error.message || t('products.errors.approveNamedFailed', { name: product.name }));
+            setError(getErrorMessage(error, t('products.errors.approveNamedFailed', { name: product.name })));
           })
       )
     );
@@ -331,7 +332,7 @@ export default function Products() {
       setProductToDelete(null);
       toast.success(t('products.deleteModal.success'));
     } catch (error: any) {
-      toast.error(error.response?.data?.message || t('products.deleteModal.failed'));
+      toast.error(getErrorMessage(error, t('products.deleteModal.failed')));
       setShowDeleteConfirm(false);
       setProductToDelete(null);
     }

@@ -37,6 +37,7 @@ import {
 } from "@/api/domains/meta-channels";
 import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
 import { trackFunnelEvent } from "@/app/lib/funnel";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 // Facebook-only launch — Instagram was removed from product scope (2026-06-24).
 const FB_BRAND = "#1877F2";
@@ -100,7 +101,7 @@ export default function ChatSettings() {
       setChannels((prev) => prev.map((c) => (c.id === channelId ? updated : c)));
       toast.success(normalized ? t("channels.label.updated", { label: normalized }) : t("channels.label.cleared"));
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || t("channels.label.updateFailed");
+      const msg = getErrorMessage(error, t("channels.label.updateFailed"));
       toast.error(msg);
     } finally {
       setSavingLabelId(null);
@@ -304,7 +305,7 @@ export default function ChatSettings() {
         toast.error(t("channels.test.failed", { error: result.ping.error }), { duration: 15000 });
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? t("channels.test.error"));
+      toast.error(getErrorMessage(err, t("channels.test.error")));
     } finally {
       setTestingId(null);
     }
@@ -317,7 +318,7 @@ export default function ChatSettings() {
       toast.success(t("channels.disconnectedNamed", { name: channel.displayName }));
       await fetchChannels();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || t("channels.errors.disconnectFailed"));
+      toast.error(getErrorMessage(err, t("channels.errors.disconnectFailed")));
     } finally {
       setDisconnectingId(null);
       setConfirmDisconnect(null);
@@ -412,7 +413,7 @@ export default function ChatSettings() {
       const summary = await getMetaChannelConsentSummary(channelId);
       setConsentByChannelId((prev) => ({ ...prev, [channelId]: summary }));
     } catch (err: any) {
-      toast.error(err?.response?.data?.error?.message || t("channels.consent.loadFailed"));
+      toast.error(getErrorMessage(err, t("channels.consent.loadFailed")));
       setExpandedConsentChannelId(null);
     } finally {
       setLoadingConsentId(null);

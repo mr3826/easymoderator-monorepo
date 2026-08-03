@@ -21,6 +21,7 @@ import { apiClient } from "@/api";
 import type { ChannelType as ApiChannelType, Customer, CustomerFilters } from "@/api/types/customer";
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import RtoNetworkSettings from './RtoNetworkSettings';
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 type CustomerChannelFilter = ApiChannelType | 'all';
 
@@ -161,7 +162,7 @@ export default function Customers() {
       fetchCustomers();
       setShopStats(prev => ({ ...prev, total: prev.total + 1 }));
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || err.response?.data?.message || t('customers.errors.createFailed'));
+      toast.error(getErrorMessage(err, t('customers.errors.createFailed')));
     } finally {
       setIsSubmitting(false);
     }
@@ -177,7 +178,7 @@ export default function Customers() {
       fetchCustomers();
       setShopStats(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }));
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || t('customers.errors.deleteFailed'));
+      toast.error(getErrorMessage(err, t('customers.errors.deleteFailed')));
     } finally {
       setIsSubmitting(false);
     }
@@ -197,7 +198,7 @@ export default function Customers() {
       setSelectedCustomer(updated);
       toast.success(updated.blacklisted ? t('customers.success.blacklisted') : t('customers.success.unblacklisted'));
     } catch (err: any) {
-      toast.error(err.response?.data?.error?.message || t('customers.errors.blacklistFailed'));
+      toast.error(getErrorMessage(err, t('customers.errors.blacklistFailed')));
     } finally {
       setTogglingBlacklist(false);
     }

@@ -12,6 +12,7 @@ import { Loader2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { isBkashEnabled } from "@/app/lib/config";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 const IS_SANDBOX = import.meta.env.VITE_BKASH_SANDBOX === "true" ||
   import.meta.env.VITE_ENV === "development" ||
@@ -84,11 +85,7 @@ export function BKashCheckout({ onSuccess, onError }: BKashCheckoutProps) {
       toast.success(msg, { duration: 10000 });
       setSelectedPack(null);
     } catch (err: unknown) {
-      const errMsg =
-        (err as { response?: { data?: { error?: { message?: string } } }; message?: string })
-          ?.response?.data?.error?.message ||
-        (err as { message?: string })?.message ||
-        t("subscription.invoiceCreateFailed");
+      const errMsg = getErrorMessage(err, t("subscription.invoiceCreateFailed"));
       onError?.(errMsg);
       toast.error(errMsg);
     } finally {

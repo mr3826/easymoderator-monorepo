@@ -129,16 +129,28 @@ export function isApiError(
 }
 
 /**
- * Get user-friendly error message for display
+ * Get user-friendly error message for display.
+ *
+ * Pass a translated `fallback` at UI call sites — it is used whenever the error
+ * carries no message of its own, so the merchant sees Bangla rather than the
+ * hardcoded English default:
+ *   toast.error(getErrorMessage(err, t('orders.errors.loadFailed')))
+ *
+ * Note the argument is the error the axios interceptor threw, i.e. already a
+ * NormalizedApiError. It has no `.response` — reading `err.response.data.error.message`
+ * always yields undefined.
  */
-export function getErrorMessage(error: any): string {
+export function getErrorMessage(
+  error: any,
+  fallback = 'An unexpected error occurred'
+): string {
   if (isApiError(error)) {
-    return error.message;
+    return error.message || fallback;
   }
   if (error instanceof Error) {
-    return error.message;
+    return error.message || fallback;
   }
-  return 'An unexpected error occurred';
+  return fallback;
 }
 
 /**

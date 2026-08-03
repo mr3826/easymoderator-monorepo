@@ -372,7 +372,8 @@
       "successMessage": "If an account exists, a reset link has been sent.",
       "backToSignIn": "Back to Sign In",
       "errors": {
-        "emailRequired": "Please enter your email"
+        "emailRequired": "Please enter your email",
+        "requestFailed": "Failed to request password reset"
       }
     },
     "resetPassword": {
@@ -872,6 +873,7 @@
     },
     "deleteSuccess": "Category deleted",
     "deleteFailed": "Failed to delete category",
+    "loadFailed": "Failed to load categories",
     "detail": {
       "breadcrumb": "Categories",
       "createTitle": "Create Category",

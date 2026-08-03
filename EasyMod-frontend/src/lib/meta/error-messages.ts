@@ -55,7 +55,13 @@ export interface ExtractedApiError {
  * diagnose. Use this so the true reason reaches the screen and the console.
  */
 export function extractMetaApiError(err: unknown): ExtractedApiError {
-  const data = (err as { response?: { data?: unknown } })?.response?.data as
+  // The axios interceptor already collapsed the raw error into a
+  // NormalizedApiError, so `.response` is gone and `details` is hoisted to the
+  // top level. Read that shape first; the `.response` branch below still covers
+  // errors raised before the interceptor (or by a bare axios call).
+  const normalized = err as { details?: unknown } | undefined;
+  const data = ((err as { response?: { data?: unknown } })?.response?.data ??
+    (normalized?.details !== undefined ? { error: { details: normalized.details } } : undefined)) as
     | Record<string, unknown>
     | undefined;
 

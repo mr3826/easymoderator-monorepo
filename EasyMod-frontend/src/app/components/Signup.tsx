@@ -17,6 +17,7 @@ import { signupSchema, type SignupFormData } from '../../features/auth/validatio
 import { PasswordStrengthMeter } from '../../features/auth/components/PasswordStrengthMeter';
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { trackFunnelEvent } from "@/app/lib/funnel";
+import { getErrorMessage } from '@shared/lib/http/errors';
 
 const smoothEase = [0.22, 1, 0.36, 1] as const;
 
@@ -112,11 +113,7 @@ export default function Signup() {
       navigate("/app");
     } catch (err: any) {
       setError('root', {
-        message:
-          err.message ||
-          err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          t('auth.signup.errors.unableToCreate'),
+        message: getErrorMessage(err, t('auth.signup.errors.unableToCreate')),
       });
     }
   };

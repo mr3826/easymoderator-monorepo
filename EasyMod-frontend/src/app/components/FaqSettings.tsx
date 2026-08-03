@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
 import type { FAQ } from "@/api/types/knowledge";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 const createDraftFaq = (): FAQ => ({
   id: `draft-${Date.now()}`,
@@ -33,7 +34,7 @@ export default function FaqSettings() {
       setLoadError(null);
       setFaqs(await apiClient.listKnowledgeFaqs());
     } catch (error: any) {
-      setLoadError(error?.response?.data?.error?.message || t("manageShop.faqs.errors.load"));
+      setLoadError(getErrorMessage(error, t("manageShop.faqs.errors.load")));
     } finally {
       setIsLoading(false);
     }
@@ -59,7 +60,7 @@ export default function FaqSettings() {
       setFaqs((current) => current.map((item) => (item.id === faq.id ? updated : item)));
       toast.success(updated.active ? t("manageShop.faqs.activated") : t("manageShop.faqs.deactivated"));
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || t("manageShop.faqs.errors.update"));
+      toast.error(getErrorMessage(error, t("manageShop.faqs.errors.update")));
     } finally {
       setBusyFaqId(null);
     }
@@ -74,7 +75,7 @@ export default function FaqSettings() {
       setFaqs((current) => current.filter((item) => item.id !== faq.id));
       toast.success(t("manageShop.faqs.deleted"));
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || t("manageShop.faqs.errors.delete"));
+      toast.error(getErrorMessage(error, t("manageShop.faqs.errors.delete")));
     } finally {
       setBusyFaqId(null);
     }
@@ -109,7 +110,7 @@ export default function FaqSettings() {
       setEditingFaq(null);
       toast.success(t("manageShop.faqs.saved"));
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || t("manageShop.faqs.errors.save"));
+      toast.error(getErrorMessage(error, t("manageShop.faqs.errors.save")));
     } finally {
       setIsSaving(false);
     }

@@ -12,6 +12,7 @@ import { useAuth } from '../../features/auth/AuthProvider';
 import LanguageToggle from './LanguageToggle';
 import BrandLogo from './BrandLogo';
 import { signinSchema, type SigninFormData } from '../../features/auth/validation/schemas';
+import { getErrorMessage } from '@shared/lib/http/errors';
 
 const smoothEase = [0.22, 1, 0.36, 1] as const;
 
@@ -61,11 +62,7 @@ export default function SignIn() {
         return;
       }
       setError('root', {
-        message:
-          err.message ||
-          err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          t('auth.signin.errors.invalidCredentials'),
+        message: getErrorMessage(err, t('auth.signin.errors.invalidCredentials')),
       });
     }
   };

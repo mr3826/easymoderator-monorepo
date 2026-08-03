@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Truck, Check, X, AlertCircle, Loader2, Power, TestTube, Star } from 'lucide-react';
 import { apiClient } from '@/api';
-import type { 
+import { getErrorMessage } from '@shared/lib/http/errors';
+import type {
   DeliveryProvider, 
   DeliveryProviderStatus, 
   DeliveryShopSettings,
@@ -202,7 +203,7 @@ export default function DeliverySettings() {
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
       setSuccessMessage(t('manageShop.deliverySettings.setDefaultSuccess', { provider: config?.display_name }));
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.updateDefaultFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.updateDefaultFailed')));
     } finally {
       setSettingDefaultProvider(null);
     }
@@ -216,7 +217,7 @@ export default function DeliverySettings() {
       setProviders(settings.providers);
       setDeliverySettings(applyDefaults(settings.settings));
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.loadFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.loadFailed')));
       console.error('Failed to load delivery settings:', err);
     } finally {
       setLoading(false);
@@ -239,7 +240,7 @@ export default function DeliverySettings() {
       setDeliverySettings(applyDefaults(deliverySettings));
       setSuccessMessage(t('manageShop.deliverySettings.success.settingsSaved'));
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.saveFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.saveFailed')));
       console.error('Failed to save delivery settings:', err);
     } finally {
       setSavingSettings(false);
@@ -342,7 +343,7 @@ export default function DeliverySettings() {
       setCredentials({});
       await loadDeliverySettings();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || t('manageShop.deliverySettings.errors.connectFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.connectFailed')));
       console.error('Failed to connect provider:', err);
     } finally {
       setConnectingProvider(null);
@@ -365,7 +366,7 @@ export default function DeliverySettings() {
       setSuccessMessage(t('manageShop.deliverySettings.success.disconnected', { provider: config?.display_name }));
       await loadDeliverySettings();
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.disconnectFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.disconnectFailed')));
       console.error('Failed to disconnect provider:', err);
     } finally {
       setDisconnectingProvider(null);
@@ -386,7 +387,7 @@ export default function DeliverySettings() {
         : t('manageShop.deliverySettings.success.deactivated', { provider: config?.display_name }));
       await loadDeliverySettings();
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.toggleFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.toggleFailed')));
       console.error('Failed to toggle provider:', err);
     } finally {
       setTogglingProvider(null);
@@ -404,7 +405,7 @@ export default function DeliverySettings() {
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
       setSuccessMessage(t('manageShop.deliverySettings.success.testSuccess', { provider: config?.display_name }));
     } catch (err: any) {
-      setError(err.response?.data?.message || t('manageShop.deliverySettings.errors.testFailed'));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.testFailed')));
       console.error('Connection test failed:', err);
     } finally {
       setTestingProvider(null);

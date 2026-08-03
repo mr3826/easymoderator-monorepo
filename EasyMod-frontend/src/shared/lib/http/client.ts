@@ -25,6 +25,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { toast } from 'sonner';
 import { normalizeApiError } from './errors';
 import config from '@/app/lib/config';
 
@@ -187,9 +188,11 @@ class HttpClient {
         }
 
         // Handle CSRF token failure - clear it so it can be re-initialized
+        let isCsrfFailure = false;
         if (status === 403) {
           const responseData = error.response?.data as { error?: { message?: string } } | undefined;
           if (responseData?.error?.message === 'invalid csrf token') {
+            isCsrfFailure = true;
             this.csrfToken = null;
             // Emit custom event for CSRF error handling
             if (typeof window !== 'undefined' && window.dispatchEvent) {
@@ -238,7 +241,36 @@ class HttpClient {
           }
         }
 
-        throw normalizeApiError(error);
+        const normalized = normalizeApiError(error);
+
+        // Surface the failures no single component owns: a denied permission, a
+        // dead connection, a 5xx that already burned its retries. Components keep
+        // toasting their own domain errors; these are the ones that used to vanish
+        // whenever a caller forgot a catch block.
+        //
+        // Excluded on purpose:
+        // - 401/UNAUTHORIZED: emitUnauthorized() already redirects to sign-in, so a
+        //   toast would just flash on the way out.
+        // - signin/signup/refresh: the form shows the message next to the field, and
+        //   a 5xx there is better read inline than as a toast that auto-dismisses.
+        // - CSRF 403: internal plumbing, re-initialised transparently. "invalid csrf
+        //   token" means nothing to a merchant.
+        //
+        // The id dedupes: N parallel requests failing on one dead connection replace
+        // each other instead of stacking N identical toasts.
+        if (
+          !isCsrfFailure &&
+          !isAuthEndpoint &&
+          !isRefreshEndpoint &&
+          (normalized.type === 'FORBIDDEN' ||
+            normalized.type === 'NETWORK_ERROR' ||
+            normalized.type === 'TIMEOUT_ERROR' ||
+            normalized.type === 'SERVER_ERROR')
+        ) {
+          toast.error(normalized.message, { id: normalized.type });
+        }
+
+        throw normalized;
       }
     );
   }

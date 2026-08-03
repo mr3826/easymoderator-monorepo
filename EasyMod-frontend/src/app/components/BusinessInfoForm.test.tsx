@@ -136,8 +136,14 @@ describe('BusinessInfoForm', () => {
   });
 
   it('displays error notice when save fails', async () => {
+    // The shape the axios interceptor actually throws — a NormalizedApiError,
+    // with no `.response`. Asserting against a raw axios error here is what let
+    // the dead `err.response.data.error.message` reads survive unnoticed.
     mockOnSave.mockRejectedValue({
-      response: { data: { error: { message: 'Save failed' } } },
+      type: 'VALIDATION_ERROR',
+      statusCode: 400,
+      message: 'Save failed',
+      timestamp: '2026-08-02T00:00:00.000Z',
     });
     
     render(<BusinessInfoForm {...defaultProps} />);

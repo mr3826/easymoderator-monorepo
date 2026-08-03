@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChevronRight, Upload, Loader2, Plus, Edit2, Trash2, X } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { apiClient } from "@/api";
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Subcategory {
   id?: string;
@@ -135,9 +136,8 @@ export default function CategoryDetails() {
       }
 
       navigate("/app/categories");
-    } catch (err: any) {
-      const serverMessage = err?.response?.data?.error?.message;
-      setError(serverMessage || err.message || `Failed to ${isCreateMode ? 'create' : 'update'} category`);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, `Failed to ${isCreateMode ? 'create' : 'update'} category`));
       console.error(`Error ${isCreateMode ? 'creating' : 'updating'} category:`, err);
     } finally {
       setSaving(false);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '@/api';
 import type { AuditLog } from '@/api/types/audit';
 import { toast } from 'sonner';
+import { getErrorMessage } from "@shared/lib/http/errors";
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -19,7 +20,7 @@ export default function AuditLogs() {
       });
       setLogs(rows);
     } catch (error: any) {
-      toast.error(error?.response?.data?.error?.message || 'Failed to load audit logs.');
+      toast.error(getErrorMessage(error, 'Failed to load audit logs.'));
     } finally {
       setLoading(false);
     }
