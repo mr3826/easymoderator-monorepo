@@ -7,6 +7,16 @@ const SHOP_ONE = '11111111-1111-4111-8111-111111111111';
 const SHOP_TWO = '22222222-2222-4222-8222-222222222222';
 const mockGapCreate = jest.fn();
 const mockAuditCreate = jest.fn();
+let mockRequiredGrowthPermission = null;
+const mockRequireGrowthOsAccess = jest.fn((requiredPermission) => (req, res, next) => {
+    mockRequiredGrowthPermission = requiredPermission;
+    if (requiredPermission !== 'growth_os.reports.read_all'
+        || req.get('x-growth-permission') !== requiredPermission) {
+        return res.status(403).json({ success: false, error: { code: 'GROWTH_OS_FORBIDDEN' } });
+    }
+    req.growthOs = { role: 'FOUNDER', permissions: [requiredPermission] };
+    return next();
+});
 const mockTransaction = { id: 'security-test-transaction' };
 const mockSequelize = {
     query: jest.fn(),
@@ -32,12 +42,16 @@ jest.mock('../analytics-enhanced.service', () => ({
     getConfidenceDistribution: jest.fn(),
 }));
 jest.mock('../growth-metrics.service', () => ({ getGrowthMetrics: jest.fn() }));
+jest.mock('../../growth-os/growth-os.middleware', () => ({
+    requireGrowthOsAccess: mockRequireGrowthOsAccess,
+}));
 jest.mock('../funnel-events.service', () => ({
     ALLOWED_FUNNEL_EVENTS: new Set(),
     recordFunnelEvent: jest.fn(),
 }));
 
 const router = require('../analytics.routes');
+const growthMetrics = require('../growth-metrics.service');
 
 function app() {
     const instance = express();
@@ -91,5 +105,32 @@ describe('knowledge-gap route tenant perimeter', () => {
             }),
             { transaction: mockTransaction },
         );
+    });
+});
+
+describe('growth analytics authorization', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        growthMetrics.getGrowthMetrics.mockResolvedValue({ totals: {}, shops: [] });
+    });
+
+    test('requires the full cross-shop Growth reports permission', async () => {
+        await request(app())
+            .get('/api/analytics/growth')
+            .set('authorization', 'Bearer merchant-shop-one')
+            .expect(403);
+
+        expect(mockRequiredGrowthPermission).toBe('growth_os.reports.read_all');
+        expect(growthMetrics.getGrowthMetrics).not.toHaveBeenCalled();
+    });
+
+    test('returns metrics after the Growth reports permission guard passes', async () => {
+        await request(app())
+            .get('/api/analytics/growth')
+            .set('authorization', 'Bearer merchant-shop-one')
+            .set('x-growth-permission', 'growth_os.reports.read_all')
+            .expect(200);
+
+        expect(growthMetrics.getGrowthMetrics).toHaveBeenCalledTimes(1);
     });
 });

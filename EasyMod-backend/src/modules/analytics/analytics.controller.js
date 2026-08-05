@@ -8,6 +8,22 @@ const { sequelize } = require('../../utils/database/database-setup');
 class AnalyticsController {
     static async logFunnelEvent(req, res) {
         try {
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'VALIDATION_ERROR',
+                        message: 'Invalid funnel event payload.',
+                        details: errors.array({ onlyFirstError: true }).map(({ location, path, msg }) => ({
+                            location,
+                            path,
+                            message: msg,
+                        })),
+                    },
+                });
+            }
+
             const { event, metadata = {} } = req.body || {};
             if (!ALLOWED_FUNNEL_EVENTS.has(event)) {
                 return res.status(400).json({
@@ -22,6 +38,7 @@ class AnalyticsController {
                 shopId: req.user?.shopId || null,
                 metadata,
                 req,
+                onceKey: req.get('idempotency-key') || req.get('x-idempotency-key') || null,
             });
 
             res.status(200).json({ success: true, data: { id: row.id } });

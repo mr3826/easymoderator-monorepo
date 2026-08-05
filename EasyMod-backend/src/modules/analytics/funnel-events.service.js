@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const AuditLog = require('../audit/audit-log.entity');
 
 const ALLOWED_FUNNEL_EVENTS = new Set([
@@ -30,6 +31,16 @@ function scrubMetadata(metadata) {
     return safe;
 }
 
+function deterministicAuditId(idempotencyKey) {
+    const bytes = Buffer.from(
+        crypto.createHash('sha256').update(`easymod:funnel:${idempotencyKey}`).digest().subarray(0, 16),
+    );
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 async function recordFunnelEvent({
     event,
     userId = null,
@@ -50,7 +61,12 @@ async function recordFunnelEvent({
         if (existing) return existing;
     }
 
-    return AuditLog.create({
+    const rawPath = typeof req?.body?.path === 'string'
+        ? req.body.path
+        : typeof req?.headers?.referer === 'string'
+            ? req.headers.referer
+            : '';
+    const auditValues = {
         user_id: userId,
         shop_id: shopId,
         action: `funnel:${event}`,
@@ -58,13 +74,27 @@ async function recordFunnelEvent({
         resource_id: event,
         metadata: {
             ...scrubMetadata(metadata),
-            path: req?.body?.path || req?.headers?.referer || null,
+            path: rawPath.slice(0, 500) || null,
             session_id: typeof req?.body?.sessionId === 'string' ? req.body.sessionId.slice(0, 80) : null,
         },
-        ip_address: req?.ip || null,
+        ip_address: typeof req?.ip === 'string' ? req.ip.slice(0, 45) : null,
         user_agent: req?.headers?.['user-agent'] || null,
         idempotency_key: idempotencyKey,
+    };
+
+    if (!idempotencyKey) {
+        return AuditLog.create(auditValues);
+    }
+
+    // The audit-log idempotency column is indexed but not unique. A stable UUID
+    // lets the database primary key resolve concurrent retries atomically while
+    // the lookup above remains compatible with historical random-ID rows.
+    const id = deterministicAuditId(idempotencyKey);
+    const [row] = await AuditLog.findOrCreate({
+        where: { id },
+        defaults: { id, ...auditValues },
     });
+    return row;
 }
 
 module.exports = {
