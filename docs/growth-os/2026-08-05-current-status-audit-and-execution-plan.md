@@ -148,15 +148,15 @@ Execution branches are created only when a phase starts, each from the accepted 
 
 | Phase | Branch | Current state |
 | --- | --- | --- |
-| 0 — recovery and scope lock | `codex/growth-os-phase-0-recovery` | Create now from canonical `main` |
-| 1 — telemetry repair | `codex/growth-os-phase-1-telemetry` | Create after Phase 0 gate |
+| 0 — recovery and scope lock | `codex/growth-os-phase-0-recovery` | Completed locally from canonical `main` |
+| 1 — telemetry repair | `codex/growth-os-phase-1-telemetry` | Start now after Phase 0 gate |
 | 2 — access foundation | `codex/growth-os-phase-2-access-foundation` | Create after Phase 1 gate |
 | 3 — prospect ledger | `codex/growth-os-phase-3-prospect-ledger` | Create after Phase 2 gate |
 | 4 — follow-up loop | `codex/growth-os-phase-4-follow-up-loop` | Create after Phase 3 gate |
 | 5 — trial and customer success | `codex/growth-os-phase-5-trial-customer-success` | Create after Phase 4 gate |
 | 6 — command center | `codex/growth-os-phase-6-command-center` | Create after Phase 5 gate |
 | 7 — AI/advocacy (optional) | `codex/growth-os-phase-7-ai-advocacy` | Create only if Phase 6 proves demand |
-| 8 — staging and production | `codex/growth-os-phase-8-staging-production` | Create only after product gates pass |
+| 8 — staging and production | `codex/growth-os-phase-8-staging-production` | Create only after Phase 7 gate |
 
 No phase branch is merged to `main`, pushed, or deployed automatically. Each phase must pass its stated exit gate before the next branch is cut.
 
