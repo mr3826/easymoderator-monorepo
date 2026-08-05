@@ -17,10 +17,9 @@ function createSessionMiddleware() {
             secure: config.env === 'production', // HTTPS only in production
             httpOnly: true,
             maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-            // Cross-domain: frontend (easymod.tech) → backend (api.easymod.tech) are different origins.
-            // sameSite:'lax' blocks cookies on cross-site requests. Must be 'none' + secure:true
-            // for cookies to be sent by the browser in a cross-origin context.
-            sameSite: config.env === 'production' ? 'none' : 'lax'
+            // app.easymod.tech → api.easymod.tech is cross-origin but same-site,
+            // so Lax preserves the session without exposing it cross-site.
+            sameSite: 'lax'
         }
     };
 

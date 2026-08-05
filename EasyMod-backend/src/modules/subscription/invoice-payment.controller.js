@@ -11,6 +11,9 @@
 
 const invoicePaymentService = require('./invoice-payment.service');
 const { AppError } = require('../../utils/AppError');
+const { getOrigins, joinOrigin } = require('../../config/origins');
+
+const subscriptionCallbackUrl = () => joinOrigin(getOrigins().app, '/app/subscription');
 
 const payInvoice = async (req, res, next) => {
     try {
@@ -18,13 +21,12 @@ const payInvoice = async (req, res, next) => {
         if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
 
         const { invoiceId } = req.params;
-        const { callback_url, phone: bodyPhone, name: bodyName } = req.body;
-        if (!callback_url) throw new AppError('callback_url is required', 400);
+        const { phone: bodyPhone, name: bodyName } = req.body;
 
         const result = await invoicePaymentService.initiateInvoicePayment(shopId, invoiceId, {
             phone: bodyPhone || phone,
             name: bodyName || name,
-            callbackUrl: callback_url
+            callbackUrl: subscriptionCallbackUrl()
         });
 
         res.status(201).json({ success: true, data: result });
@@ -36,13 +38,12 @@ const renew = async (req, res, next) => {
         const { shopId, userId, phone, name } = req.user;
         if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
 
-        const { callback_url, phone: bodyPhone, name: bodyName } = req.body;
-        if (!callback_url) throw new AppError('callback_url is required', 400);
+        const { phone: bodyPhone, name: bodyName } = req.body;
 
         const result = await invoicePaymentService.initiateRenewalPayment(shopId, userId, {
             phone: bodyPhone || phone,
             name: bodyName || name,
-            callbackUrl: callback_url
+            callbackUrl: subscriptionCallbackUrl()
         });
 
         res.status(201).json({ success: true, data: result });

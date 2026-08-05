@@ -24,7 +24,6 @@ function validSource(overrides = {}) {
         DB_USER: 'easymod_user',
         DB_PASSWORD: 'a-strong-db-password',
         DB_NAME: 'easymod',
-        COOKIE_DOMAIN: 'easymod.tech',
         // core secrets
         JWT_ACCESS_SECRET: hex64('a'),
         JWT_REFRESH_SECRET: hex64('b'),
@@ -34,10 +33,14 @@ function validSource(overrides = {}) {
         DELIVERY_ENCRYPTION_KEY: hex64('2'),
         CHANNEL_ENCRYPTION_KEY: hex64('3'),
         PAYMENT_CALLBACK_HMAC_SECRET: hex64('g'),
-        CORS_ORIGINS: 'https://easymod.tech',
-        FRONTEND_URL: 'https://easymod.tech',
-        BASE_URL: 'https://easymod.tech',
-        META_OAUTH_REDIRECT_URI: 'https://easymod.tech/app/channels/oauth-callback',
+        MARKETING_URL: 'https://easymod.tech',
+        APP_URL: 'https://app.easymod.tech',
+        API_URL: 'https://api.easymod.tech',
+        PUBLIC_ASSET_URL: 'https://api.easymod.tech',
+        CORS_ORIGINS: 'https://app.easymod.tech',
+        FRONTEND_URL: 'https://app.easymod.tech',
+        BASE_URL: 'https://api.easymod.tech',
+        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',
         META_APP_ID: '1234567890',
         META_APP_SECRET: hex64('e'),
         META_WEBHOOK_VERIFY_TOKEN: hex64('f'),
@@ -165,8 +168,8 @@ describe('core secret / alert sink fail-closed (§10)', () => {
     });
 
     test('a missing render input fails before any secret work', () => {
-        expect(() => buildRenderedEnv(validSource({ COOKIE_DOMAIN: '' })))
-            .toThrow(/Missing deployment environment variables: COOKIE_DOMAIN/);
+        expect(() => buildRenderedEnv(validSource({ MARKETING_URL: '' })))
+            .toThrow(/MARKETING_URL/);
     });
 });
 

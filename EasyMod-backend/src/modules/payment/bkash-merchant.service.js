@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { PaymentConfig, Order } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const BaseMerchantService = require('./base-merchant.service');
+const { getOrigins, joinOrigin } = require('../../config/origins');
 
 class BkashMerchantService extends BaseMerchantService {
     constructor() {
@@ -65,7 +66,7 @@ class BkashMerchantService extends BaseMerchantService {
         const paymentData = {
             mode: '0011', // Checkout mode
             payerReference: orderData.customer_phone || 'N/A',
-            callbackURL: `${process.env.BASE_URL}/api/webhooks/bkash/payment-status`,
+            callbackURL: joinOrigin(getOrigins().api, '/api/webhooks/bkash/payment-status'),
             amount: orderData.total.toString(),
             currency: 'BDT',
             intent: 'sale',

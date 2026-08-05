@@ -9,6 +9,7 @@ const { RedisStore } = require('rate-limit-redis');
 const timeout = require('express-timeout-handler');
 const { csrfTokenHandler, csrfProtectionMiddleware, csrfDebugHandler } = require('./middleware/csrf-middleware');
 const config = require('./config/config');
+const { buildCorsOptions } = require('./config/cors-options');
 const routes = require('./modules/routes');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
@@ -77,24 +78,14 @@ app.use(helmet({
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
 }));
 
-// CORS with allowlist
+// CORS is intentionally asymmetric. The merchant app is the only origin that
+// may make credentialed API requests. The public website can reach three
+// explicitly public endpoints, always without credentials.
 const allowedOrigins = config.corsOrigins || [];
 if (config.env === 'production' && allowedOrigins.length === 0) {
     throw new Error('CORS_ORIGINS must be set in production');
 }
-
-const corsOptions = allowedOrigins.length > 0
-    ? {
-        origin(origin, callback) {
-            if (!origin || allowedOrigins.includes(origin)) {
-                return callback(null, true);
-            }
-            return callback(new Error('Not allowed by CORS'));
-        },
-        credentials: true
-    }
-    : { origin: true, credentials: true };
-app.use(cors(corsOptions));
+app.use(cors((req, callback) => callback(null, buildCorsOptions(req, config))));
 
 // Rate limiting (skip in test environment to avoid interference with test suites)
 // H8: Use Redis store so limits are shared across all PM2 workers/processes.
@@ -241,7 +232,7 @@ app.use('/health', healthRoutes);
 
 // Public uploaded assets used by Meta Messenger attachment delivery. Filenames
 // are generated server-side; do not expose user-provided directory paths.
-app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+app.use('/uploads', helmet.crossOriginResourcePolicy({ policy: 'cross-origin' }), express.static(path.join(__dirname, '../uploads'), {
     maxAge: config.env === 'production' ? '1h' : 0,
 }));
 

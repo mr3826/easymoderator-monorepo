@@ -24,6 +24,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const { AppError } = require('./AppError');
+const { resolvePublicAssetOrigin } = require('../config/origins');
 
 const UPLOAD_ROOT = path.resolve(__dirname, '../../uploads');
 
@@ -64,9 +65,7 @@ function parseDataUrl(value) {
  * plain HTTP, so callers that hand URLs to Meta must assert HTTPS themselves.
  */
 function publicBaseUrl(req) {
-    const configured = process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || process.env.BASE_URL;
-    const base = configured || `${req.protocol}://${req.get('host')}`;
-    return base.replace(/\/+$/, '');
+    return resolvePublicAssetOrigin(req);
 }
 
 /**

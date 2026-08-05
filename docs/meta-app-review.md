@@ -34,10 +34,10 @@ Regression tests enforce that the provider:
 
 ## Reviewer Flow
 
-1. Log in to the live test instance at `https://easymod.tech/signin` with the
+1. Log in to the live test instance at `https://app.easymod.tech/signin` with the
    supplied tester credentials.
 2. In the left sidebar, under the **SETTINGS** heading, click **Chat**. (Direct
-   URL: `https://easymod.tech/app/manage-shop/chat-settings`.)
+   URL: `https://app.easymod.tech/app/manage-shop/chat-settings`.)
 3. Click **Connect Facebook Page**.
 4. Grant the three requested permissions.
 5. Select the test Page in the Page picker and connect it.

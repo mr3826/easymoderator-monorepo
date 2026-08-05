@@ -11,6 +11,7 @@ const metaChannelService = require('../channel-providers/meta-channel.service');
 const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
+const { resolvePublicAssetOrigin } = require('../../config/origins');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
@@ -63,9 +64,7 @@ function isHttpsUrl(value) {
 }
 
 function safePublicBaseUrl(req) {
-    const configured = process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || process.env.BASE_URL;
-    const base = configured || `${req.protocol}://${req.get('host')}`;
-    return base.replace(/\/+$/, '');
+    return resolvePublicAssetOrigin(req);
 }
 
 function getAttachmentUrlFromMetadata(metadata = {}) {

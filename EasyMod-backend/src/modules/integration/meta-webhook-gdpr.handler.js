@@ -6,6 +6,7 @@ const config = require('../../config/config');
 const metaComplianceService = require('./meta-compliance.service');
 const metaAuthorizationRecovery = require('../channel-providers/meta-authorization-recovery.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { getOrigins } = require('../../config/origins');
 
 const logger = createLogger('MetaWebhookGdpr');
 const router = express.Router();
@@ -47,8 +48,7 @@ function appSecret() {
 }
 
 function publicBaseUrl() {
-    return String(process.env.BASE_URL || process.env.FRONTEND_URL || 'https://easymod.tech')
-        .replace(/\/+$/, '');
+    return getOrigins().api;
 }
 
 router.get('/data-deletion', (req, res) => {

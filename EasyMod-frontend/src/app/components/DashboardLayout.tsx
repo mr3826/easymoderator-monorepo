@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
 import LanguageToggle from "./LanguageToggle";
 import InAppNotificationCenter from "./InAppNotificationCenter";
+import { buildMarketingUrl } from "@/app/lib/config";
 
 const appBasePath = '/app';
 
@@ -190,7 +191,7 @@ export default function DashboardLayout() {
         {!collapsed && (
           <div className="px-4 pb-2 flex items-center justify-between shrink-0">
             <a
-              href="/privacy-policy"
+              href={buildMarketingUrl("/privacy-policy")}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-gray-400 hover:text-gray-600 hover:underline"

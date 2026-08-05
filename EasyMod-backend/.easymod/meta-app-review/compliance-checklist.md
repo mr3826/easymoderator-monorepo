@@ -34,7 +34,7 @@ ticket, a chat, or this repo.
 
 ```bash
 read -rs -p "verify token: " T && echo
-curl -s "https://easymod.tech/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=$T&hub.challenge=easymod_probe_12345"
+curl -s "https://api.easymod.tech/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=$T&hub.challenge=easymod_probe_12345"
 unset T
 ```
 

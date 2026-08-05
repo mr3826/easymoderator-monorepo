@@ -3,8 +3,10 @@ import { Check, Zap, ArrowRight, MessageSquare, ShoppingCart, Package, X } from 
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { subscriptionPlans, type SubscriptionPlanDefinition } from "@/app/lib/subscriptionPlans";
-import { httpClient } from "@/shared/lib/http/client";
+import { publicApiPost } from "@/shared/lib/http/public-client";
 import BrandLogo from "./BrandLogo";
+import { buildAppUrl } from "@/app/lib/config";
+import Seo from "./Seo";
 
 const FEATURE_ROWS: { labelKey: string; key: keyof SubscriptionPlanDefinition["features"] }[] = [
   { labelKey: "pricing.features.imageUnderstanding", key: "image_understanding" },
@@ -42,7 +44,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await httpClient.post("/api/partner/apply", form);
+      await publicApiPost("/api/partner/apply", form);
       setSubmitted(true);
     } catch (err: any) {
       setSubmitError(err?.message || t("pricing.partnerModal.errors.submitFailed"));
@@ -267,12 +269,17 @@ export default function Pricing() {
     if (planId === "partner") {
       setShowPartnerModal(true);
     } else {
-      navigate("/signup");
+      window.location.assign(buildAppUrl("/signup"));
     }
   };
 
   return (
     <div className="min-h-screen bg-[#f4fbf7]">
+      <Seo
+        title="EasyModerator Pricing"
+        description="Compare EasyModerator plans for Facebook Messenger automation, order capture, and customer support."
+        canonicalPath="/pricing"
+      />
       {/* Nav bar */}
       <header className="sticky top-0 z-20 border-b border-emerald-100 bg-white/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -280,19 +287,19 @@ export default function Pricing() {
             <BrandLogo size="sm" variant="dark" />
           </button>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate("/signin")}
+            <a
+              href={buildAppUrl("/signin")}
               className="text-sm font-medium text-gray-600 hover:text-gray-900"
             >
               {t("common.signIn")}
-            </button>
-            <button
-              onClick={() => navigate("/signup")}
+            </a>
+            <a
+              href={buildAppUrl("/signup")}
               className="flex items-center gap-1.5 rounded-lg bg-[#00A651] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#008040]"
             >
               <Zap className="w-3.5 h-3.5" />
               {t("landing.nav.getStarted")}
-            </button>
+            </a>
           </div>
         </div>
       </header>
@@ -378,13 +385,13 @@ export default function Pricing() {
         <div className="mt-16 rounded-2xl bg-[#0F172A] p-10 text-center text-white">
           <h2 className="text-3xl font-extrabold mb-3">{t("pricing.cta.heading")}</h2>
           <p className="mb-6 text-emerald-100">{t("pricing.cta.subheading")}</p>
-          <button
-            onClick={() => navigate("/signup")}
+          <a
+            href={buildAppUrl("/signup")}
             className="inline-flex items-center gap-2 rounded-xl bg-[#00A651] px-8 py-3 font-bold text-white transition-colors hover:bg-[#008040]"
           >
             <Zap className="w-4 h-4" />
             {t("pricing.cta.button")}
-          </button>
+          </a>
         </div>
       </main>
 

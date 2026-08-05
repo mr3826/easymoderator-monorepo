@@ -1,24 +1,93 @@
-# EasyModerator Caddyfile
-# Canonical origin: https://easymod.tech (apex)
-# www → apex 301 redirect
-# /health, /health/*, /api/*, /uploads/*, and /webhooks/* → backend
-# Everything else → SPA (frontend served inline via file_server)
+# EasyModerator canonical production origins
 #
-# Caddy auto-obtains and renews TLS certs via Let's Encrypt.
-# Requires ports 80 and 443 open on the droplet.
+#   easymod.tech      marketing and public/legal pages
+#   app.easymod.tech  merchant SaaS frontend
+#   api.easymod.tech  API, webhooks, health, and public backend assets
+#
+# Compatibility is intentional during migration:
+# - apex /api/*, /health*, and /uploads/* continue to reach the backend
+# - legacy apex merchant routes redirect to app.easymod.tech
+# - legacy /webhooks/* is rewritten internally; provider POSTs are never redirected
 
-# www → apex permanent redirect
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
 www.easymod.tech {
+	import security_headers
 	redir https://easymod.tech{uri} 301
 }
 
+api.easymod.tech {
+	import security_headers
+	# Some old provider registrations used /webhooks/* without /api. Preserve the
+	# HTTP method and request body by rewriting internally rather than redirecting.
+	@legacy_webhooks path /webhooks /webhooks/*
+	handle @legacy_webhooks {
+		rewrite * /api{uri}
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle {
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+app.easymod.tech {
+	import security_headers
+	# Public acquisition and legal content has exactly one indexable home.
+	@marketing_routes path /pricing /privacy-policy /terms
+	redir @marketing_routes https://easymod.tech{uri} 301
+
+	# The app root is an entry point, not a duplicate marketing homepage. The
+	# frontend auth loader moves an authenticated merchant onward to /app.
+	@app_root path /
+	redir @app_root /signin 302
+
+	# Authenticated/product routes must not be indexed even if a crawler reaches
+	# them without credentials.
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy frontend:8080
+
+	log {
+		output stdout
+		format json
+	}
+}
+
 easymod.tech {
-	# ── Health probes → REAL backend ─────────────────────────────────────────
-	# These MUST reach the API. Before this block existed, /health* fell through
-	# to the SPA container, which answered with a hardcoded {"status":"healthy"}
-	# stub — so the external launch gate reported PASS for a backend it had never
-	# contacted (F-05). Declared first and matched explicitly so it can never be
-	# shadowed by the catch-all again.
+	import security_headers
+	# Browser-route compatibility. Query strings are retained by {uri}, including
+	# reset tokens and the legacy Meta OAuth completion URL.
+	@legacy_app_routes path \
+ /login /signin /signup /forgot-password /reset-password /2fa-verify \
+ /app /app/* /admin /admin/* /settings/channels
+	redir @legacy_app_routes https://app.easymod.tech{uri} 302
+
+	# Keep the old backend contract alive until provider dashboards, persisted
+	# attachments, bookmarks, and launch tooling have all migrated.
 	@health path /health /health/*
 	handle @health {
 		reverse_proxy backend:3000 {
@@ -28,13 +97,11 @@ easymod.tech {
 		}
 	}
 
-	# ── Backend proxy: API + Webhooks ────────────────────────────────────────
 	handle /api/* {
 		reverse_proxy backend:3000 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
-			# Generous timeouts for SSE + long-running AI calls
 			transport http {
 				read_timeout 120s
 				write_timeout 120s
@@ -42,13 +109,16 @@ easymod.tech {
 		}
 	}
 
-	# Legacy /webhooks/* paths → 301 to canonical /api/webhooks/* so any old
-	# Meta dashboard registrations or external callers still resolve.
-	redir /webhooks/* /api{uri} 301
+	@legacy_webhooks path /webhooks /webhooks/*
+	handle @legacy_webhooks {
+		rewrite * /api{uri}
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 
-	# ── Backend-uploaded media ───────────────────────────────────────────────
-	# Shared Inbox outbound attachments are stored on the backend upload volume
-	# and must be publicly fetchable by Meta Messenger over HTTPS.
 	handle /uploads/* {
 		reverse_proxy backend:3000 {
 			header_up X-Real-IP {remote_host}
@@ -57,17 +127,11 @@ easymod.tech {
 		}
 	}
 
-	# ── SPA: serve built static files ────────────────────────────────────────
-	# The frontend image is NOT used here for Caddy deployments.
-	# Build the frontend and mount /app/dist as a Caddy volume, OR
-	# proxy to the internal nginx frontend container at port 8080.
-	#
-	# We proxy to the nginx frontend container (consistent with docker-compose).
+	# Marketing/public site.
 	handle {
 		reverse_proxy frontend:8080
 	}
 
-	# ── Logging ───────────────────────────────────────────────────────────────
 	log {
 		output stdout
 		format json

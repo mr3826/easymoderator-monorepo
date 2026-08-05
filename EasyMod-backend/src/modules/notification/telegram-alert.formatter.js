@@ -1,9 +1,10 @@
 'use strict';
 
 const { NOTIFICATION_EVENTS } = require('./notification-events');
+const { getOrigins } = require('../../config/origins');
 
 function baseAppUrl() {
-    return (process.env.FRONTEND_URL || process.env.BASE_URL || 'https://easymod.tech').replace(/\/$/, '');
+    return getOrigins().app;
 }
 
 function money(value) {
@@ -107,7 +108,7 @@ function formatTelegramAlert(eventType, payload = {}) {
                     payload.orderCount !== undefined ? `Orders: ${payload.orderCount}` : null,
                     money(payload.salesTotal) ? `Sales: ${money(payload.salesTotal)}` : null
                 ]),
-                deepLink: deepLink('/app/dashboard')
+                deepLink: deepLink('/app')
             };
         }
         case NOTIFICATION_EVENTS.TELEGRAM_TEST:
@@ -124,7 +125,7 @@ function formatTelegramAlert(eventType, payload = {}) {
             return {
                 title: payload.title || 'EasyModerator alert',
                 body: payload.body || 'Open EasyModerator to review this alert.',
-                deepLink: deepLink('/app/dashboard')
+                deepLink: deepLink('/app')
             };
     }
 }

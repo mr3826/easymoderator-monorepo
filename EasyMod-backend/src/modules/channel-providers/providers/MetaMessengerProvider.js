@@ -93,11 +93,11 @@ class MetaMessengerProvider extends ChannelProvider {
 
     get platform() { return 'facebook'; }
 
-    async buildAuthUrl({ state, scopes }) {
+    async buildAuthUrl({ state, scopes, redirectUri }) {
         const finalScopes = (scopes && scopes.length ? scopes : DEFAULT_SCOPES).join(',');
         const params = new URLSearchParams({
             client_id: config.metaAppId,
-            redirect_uri: config.metaOAuthRedirectUri,
+            redirect_uri: redirectUri || config.metaOAuthRedirectUri,
             scope: finalScopes,
             response_type: 'code',
             state

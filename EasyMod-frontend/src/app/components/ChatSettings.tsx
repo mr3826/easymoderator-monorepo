@@ -193,7 +193,7 @@ export default function ChatSettings() {
         if (data?.type === "OAUTH_SUCCESS") {
           const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          if (expectedNonce && data.state !== expectedNonce) {
+          if (!expectedNonce || data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
             setActiveOAuth(null);
             cleanup();
@@ -360,7 +360,7 @@ export default function ChatSettings() {
         if (data?.type === "OAUTH_SUCCESS") {
           const expectedNonce = sessionStorage.getItem(OAUTH_NONCE_KEY);
           sessionStorage.removeItem(OAUTH_NONCE_KEY);
-          if (expectedNonce && data.state !== expectedNonce) {
+          if (!expectedNonce || data.state !== expectedNonce) {
             toast.error(t("channels.errors.oauthStateMismatch", "OAuth validation failed — please try again"));
             setActiveOAuth(null);
             cleanup();

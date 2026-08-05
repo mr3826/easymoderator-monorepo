@@ -4,7 +4,12 @@
 jest.mock('../oauth-state.store', () => ({
     put:  jest.fn().mockResolvedValue(undefined),
     get:  jest.fn(),
-    take: jest.fn().mockResolvedValue({ userId: 'user-xyz', shopId: 'shop-abc', platform: 'facebook' }),
+    take: jest.fn().mockResolvedValue({
+        userId: 'user-xyz',
+        shopId: 'shop-abc',
+        platform: 'facebook',
+        redirectUri: 'https://app.easymod.tech/app/channels/oauth-callback',
+    }),
     TTL_SECONDS: 900,
 }));
 
@@ -117,6 +122,22 @@ describe('OAuth callback null-state guards', () => {
                 platform: 'facebook',
             }),
         );
+        expect(mockExchangeCode).toHaveBeenCalledWith({
+            code: 'auth-code',
+            redirectUri: 'https://app.easymod.tech/app/channels/oauth-callback',
+        });
+    });
+
+    test.each([
+        ['different user', { userId: 'user-other', shopId: 'shop-abc', platform: 'facebook' }],
+        ['different shop', { userId: 'user-xyz', shopId: 'shop-other', platform: 'facebook' }],
+        ['wrong platform', { userId: 'user-xyz', shopId: 'shop-abc', platform: 'instagram' }],
+    ])('rejects state bound to a %s before exchanging the code', async (_label, stored) => {
+        stateStore.take.mockResolvedValueOnce(stored);
+        await expect(
+            oauthService.handleCallback('auth-code', 'state-mismatch', 'user-xyz', 'shop-abc'),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(mockExchangeCode).not.toHaveBeenCalled();
     });
 });
 

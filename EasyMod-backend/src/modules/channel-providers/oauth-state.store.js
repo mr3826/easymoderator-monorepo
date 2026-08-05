@@ -42,12 +42,14 @@ async function get(key) {
 
 async function take(key) {
     if (useRedis) {
-        const raw = await cacheRedis.get(PREFIX + key);
+        // Atomically consume the state. Lua keeps this compatible with Redis
+        // versions that predate GETDEL while preventing callback replays.
+        const raw = await cacheRedis.eval(
+            "local v=redis.call('GET',KEYS[1]); if v then redis.call('DEL',KEYS[1]); end; return v",
+            1,
+            PREFIX + key,
+        );
         if (raw == null) return null;
-        // Single-use: must delete after reading. If del rejects (Redis degraded),
-        // we deliberately let the error propagate rather than swallow it — a
-        // surviving key could be replayed, so the OAuth flow should fail loudly.
-        await cacheRedis.del(PREFIX + key);
         try { return JSON.parse(raw); } catch { return null; }
     }
     const entry = _mem.get(key);

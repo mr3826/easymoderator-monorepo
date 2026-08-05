@@ -3,6 +3,18 @@ const crypto = require('crypto');
 const config = require('../config/config');
 const { AppError } = require('../utils/AppError');
 
+/**
+ * Cookie-issuing authentication endpoints cannot use the double-submit token
+ * before a browser session exists. In production, bind those requests to the
+ * merchant app origin instead. Browsers include Origin on cross-origin and
+ * same-origin POST requests, so a missing or sibling origin must fail closed.
+ */
+const isTrustedAuthOrigin = (
+    origin,
+    environment = config.env,
+    appOrigin = config.origins?.app
+) => environment !== 'production' || origin === appOrigin;
+
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
     getSecret: () => config.csrfSecret,
@@ -63,12 +75,39 @@ const csrfProtectionMiddleware = (req, res, next) => {
         return next();
     }
 
-    // Skip CSRF for specific paths
+    // These routes are intentionally anonymous and never read or mutate an
+    // authenticated user's state. Keep this list exact so no authenticated
+    // analytics or partner-admin route inherits the exemption.
+    const publicWritePaths = new Set([
+        '/api/analytics/funnel',
+        '/api/partner/apply',
+    ]);
+    if (publicWritePaths.has(req.path)) {
+        return next();
+    }
+
+    // Anonymous authentication flows do not act on an existing authenticated
+    // account. Keep this exact: logout, 2FA setup/enable/disable and session
+    // management remain CSRF-protected.
+    const anonymousAuthPaths = new Set([
+        '/api/auth/signup',
+        '/api/auth/signin',
+        '/api/auth/refresh',
+        '/api/auth/forgot-password',
+        '/api/auth/reset-password',
+        '/api/auth/2fa/verify',
+    ]);
+    if (anonymousAuthPaths.has(req.path)) {
+        if (!isTrustedAuthOrigin(req.get('Origin'))) {
+            return next(new AppError('Authentication requests must originate from the merchant app.', 403));
+        }
+        return next();
+    }
+
+    // Skip CSRF for provider callbacks and auth endpoints.
     const skipPaths = [
         '/webhooks',
         '/api/webhooks',
-        '/auth',
-        '/api/auth',
         '/health',
         '/csrf',
         '/api/csrf'
@@ -149,5 +188,6 @@ const csrfDebugHandler = (req, res, next) => {
 module.exports = {
     csrfTokenHandler,
     csrfProtectionMiddleware,
-    csrfDebugHandler
+    csrfDebugHandler,
+    isTrustedAuthOrigin,
 };

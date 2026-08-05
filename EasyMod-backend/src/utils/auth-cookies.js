@@ -2,9 +2,10 @@ const config = require('../config/config');
 
 const isProduction = () => config.env === 'production';
 
-// Production may run either same-origin (easymod.tech/api) or legacy API-subdomain
-// (api.easymod.tech). Keep SameSite=None in production so both topologies work.
-const SAME_SITE = () => (isProduction() ? 'none' : 'lax');
+// app.easymod.tech and api.easymod.tech are separate origins but the same
+// schemeful site. Lax cookies work for credentialed app-to-API requests while
+// withholding auth cookies from genuinely cross-site requests.
+const SAME_SITE = () => 'lax';
 
 const normalizeHostname = (host) => {
     const value = String(host || '')
@@ -25,6 +26,7 @@ const getRequestHostname = (req) => {
 };
 
 const getConfiguredCookieDomain = () => normalizeHostname(config.cookieDomain);
+const getLegacyCookieDomain = () => normalizeHostname(config.legacyCookieDomain);
 
 const resolveCookieDomain = (req) => {
     const configuredDomain = getConfiguredCookieDomain();
@@ -64,6 +66,10 @@ const COOKIE_OPTIONS_REFRESH = (req) => ({
 });
 
 const setAuthCookies = (res, accessToken, refreshToken, req) => {
+    // Expire parent-domain cookies issued by the pre-split deployment before
+    // writing the new API-host-only pair. Remove this compatibility path after
+    // the documented migration window.
+    clearLegacyAuthCookies(res, req);
     res.cookie('access_token', accessToken, COOKIE_OPTIONS_ACCESS(req));
     if (refreshToken) {
         res.cookie('refresh_token', refreshToken, COOKIE_OPTIONS_REFRESH(req));
@@ -80,11 +86,28 @@ const clearCookie = (res, name, path, req) => {
     }
 };
 
+const clearLegacyCookie = (res, name, path, req) => {
+    const legacyDomain = getLegacyCookieDomain();
+    const requestHostname = getRequestHostname(req);
+    if (!legacyDomain || !requestHostname
+        || (requestHostname !== legacyDomain && !requestHostname.endsWith(`.${legacyDomain}`))) {
+        return;
+    }
+    res.clearCookie(name, { path, domain: legacyDomain });
+};
+
+const clearLegacyAuthCookies = (res, req) => {
+    clearLegacyCookie(res, 'access_token', '/', req);
+    clearLegacyCookie(res, 'refresh_token', '/api/auth', req);
+    clearLegacyCookie(res, 'refresh_token', '/auth', req);
+};
+
 const clearAuthCookies = (res, req) => {
     clearCookie(res, 'access_token', '/', req);
     clearCookie(res, 'refresh_token', '/api/auth', req);
     // Clear legacy cookies set before the API prefix was included in the path.
     clearCookie(res, 'refresh_token', '/auth', req);
+    clearLegacyAuthCookies(res, req);
 };
 
 module.exports = {

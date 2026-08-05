@@ -47,7 +47,7 @@ Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and loc
 
 ## Architecture
 
-A client-rendered SPA served as static assets by nginx, talking to the [EasyModerator backend](../EasyMod-backend) over a JSON API. In production the SPA is **same-origin** with the API (empty `VITE_API_BASE_URL`), so cookies and CSRF work without cross-site complications.
+A client-rendered bundle served as static assets by nginx. Caddy exposes its public routes on `https://easymod.tech` and merchant routes on `https://app.easymod.tech`; API traffic goes to `https://api.easymod.tech`. The app/API origins are different but same-site, using explicit credentialed CORS, CSRF tokens, and host-only API cookies. Public marketing calls use a separate credential-omitting client.
 
 ```
 Browser
@@ -206,7 +206,9 @@ Vite exposes only `VITE_`-prefixed variables to the client. Create `.env` / `.en
 
 | Variable | Purpose |
 |---|---|
-| `VITE_API_BASE_URL` | Backend API origin. **Leave empty in production** (SPA is same-origin with the API). |
+| `VITE_API_BASE_URL` | Backend origin; `https://api.easymod.tech` in production. |
+| `VITE_APP_URL` | Merchant/auth origin; `https://app.easymod.tech` in production. |
+| `VITE_MARKETING_URL` | Marketing/legal origin; `https://easymod.tech` in production. |
 | `VITE_API_URL` | Legacy alias for the API origin (kept for compatibility). |
 | `VITE_ENV` | Environment label (`development` / `production`). |
 | `VITE_SENTRY_DSN` | Sentry DSN (optional). |
@@ -236,7 +238,7 @@ Unit specs sit beside the code in `__tests__/` folders and under `src/test/`. Th
 npm run build        # vite build → dist/
 ```
 
-CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the production `VITE_*` values, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the Digital Ocean droplet. The SPA is served same-origin with the API behind Caddy/nginx (`www → apex` 301; canonical origin `https://easymod.tech`).
+CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the canonical production `VITE_*` origins, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the DigitalOcean droplet. Caddy owns the marketing/app/API host split and temporary apex compatibility routes.
 
 > The build can emit large-chunk warnings for vendor bundles such as `react-vendor`. Tighten `manualChunks` if bundle size becomes a concern.
 

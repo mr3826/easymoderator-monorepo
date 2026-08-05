@@ -1,4 +1,4 @@
-import { httpClient } from "@/shared/lib/http/client";
+import { publicApiPost } from "@/shared/lib/http/public-client";
 
 export type FunnelEvent =
   | "landing_view"
@@ -45,7 +45,7 @@ export function trackFunnelEvent(
     // Tracking must never interrupt the user flow.
   }
 
-  httpClient.post("/api/analytics/funnel", {
+  publicApiPost("/api/analytics/funnel", {
     event,
     metadata,
     sessionId: getSessionId(),

@@ -5,6 +5,7 @@ require('dotenv').config();
 
 const env = process.env.NODE_ENV || 'development';
 const { assertProductionConfig } = require('./production-config.validator');
+const { getOrigins } = require('./origins');
 
 assertProductionConfig(process.env);
 
@@ -45,8 +46,10 @@ module.exports = {
     metaAppSecret: process.env.META_APP_SECRET,
     metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI
         || (process.env.FRONTEND_URL && `${process.env.FRONTEND_URL}/app/channels/oauth-callback`),
+    origins: getOrigins(process.env),
     // Cookie config for httpOnly token storage
     cookieDomain: process.env.COOKIE_DOMAIN || undefined,
+    legacyCookieDomain: process.env.LEGACY_COOKIE_DOMAIN || undefined,
     // Account lockout
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS, 10) || 5,
     loginLockoutMinutes: parseInt(process.env.LOGIN_LOCKOUT_MINUTES, 10) || 15,

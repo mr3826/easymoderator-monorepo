@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "March 18, 2026";
 const LAST_UPDATED = "June 27, 2026";
@@ -9,6 +10,11 @@ const COMPANY_NAME = "Hexabyte Limited";
 export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-gray-50">
+      <Seo
+        title="EasyModerator Privacy Policy"
+        description="How EasyModerator collects, uses, secures, and deletes business and Messenger data."
+        canonicalPath="/privacy-policy"
+      />
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">
@@ -458,8 +464,10 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-xl font-semibold text-gray-900 mb-4">9. Cookies and Authentication</h2>
             <p className="mb-3 leading-relaxed">
-              {APP_NAME} uses only authentication cookies. We do not use tracking, advertising, or analytics
-              cookies.
+              {APP_NAME} uses strictly necessary authentication cookies. We do not use advertising cookies
+              or third-party profiling trackers. Our public website records limited first-party funnel events
+              with a random session identifier stored in browser session storage so we can understand whether
+              onboarding works; those events are not used for cross-site advertising.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
@@ -544,7 +552,7 @@ export default function PrivacyPolicy() {
               <p className="font-semibold mb-1">Meta Data Deletion Callback URL</p>
               <p className="leading-relaxed">
                 Our app is registered with Meta to receive automatic data deletion notifications at:<br />
-                <span className="font-mono text-xs break-all">POST https://easymod.tech/api/webhooks/meta/data-deletion</span>
+                <span className="font-mono text-xs break-all">POST https://api.easymod.tech/api/webhooks/meta/data-deletion</span>
               </p>
               <p className="mt-2 leading-relaxed">
                 Confirmation codes issued upon deletion are valid for 90 days. To check the status of a

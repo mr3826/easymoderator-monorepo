@@ -60,7 +60,7 @@ meta-compliance.service.processDeletionRequest()
      |-- 5. Clean up server-owned attachment files (outside the transaction)
      |
      v
-200 { "url": "https://easymod.tech/api/webhooks/meta/data-deletion/status/<code>",
+200 { "url": "https://api.easymod.tech/api/webhooks/meta/data-deletion/status/<code>",
       "confirmation_code": "<opaque>" }
 ```
 
@@ -128,8 +128,8 @@ deleted; the authorization state is. The route is POST-only, so a `GET` returns
 
 | Dashboard field | Value |
 |---|---|
-| App Settings → Advanced → Data Deletion Request Callback URL | `https://easymod.tech/api/webhooks/meta/data-deletion` |
-| App Settings → Advanced → Deauthorize Callback URL | `https://easymod.tech/api/webhooks/meta/deauthorize` |
+| App Settings → Advanced → Data Deletion Request Callback URL | `https://api.easymod.tech/api/webhooks/meta/data-deletion` |
+| App Settings → Advanced → Deauthorize Callback URL | `https://api.easymod.tech/api/webhooks/meta/deauthorize` |
 
 Apex domain only — `www.easymod.tech` 301-redirects, and Meta treats a redirect
 on a callback URL as a misconfiguration.

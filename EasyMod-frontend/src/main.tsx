@@ -9,12 +9,18 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./app/lib/queryClient";
 import { registerServiceWorker } from "./app/lib/pushNotification";
 import { initSentry } from "./sentry";
+import { isMarketingSurface } from "./app/lib/config";
 
 // Initialise Sentry error tracking (no-op until VITE_SENTRY_DSN is set)
 initSentry();
 
-// Register service worker for push notifications (non-blocking)
-registerServiceWorker().catch(() => {});
+// The marketing site is public/acquisition-only; merchant push notifications
+// and their service worker belong exclusively to app.easymod.tech.
+if (!isMarketingSurface()) {
+  registerServiceWorker().catch(() => {});
+} else {
+  document.head.querySelector('link[rel="manifest"]')?.remove();
+}
 
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={queryClient}>
@@ -28,4 +34,3 @@ createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
   </QueryClientProvider>
 );
-  

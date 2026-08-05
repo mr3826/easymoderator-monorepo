@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const emailService = require('../../utils/email.service');
 const { passwordResetEmail } = require('../../utils/email-templates/password-reset');
 const cacheService = require('../../utils/cache.service');
+const { getOrigins, joinOrigin } = require('../../config/origins');
 
 const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
@@ -408,8 +409,10 @@ const requestPasswordReset = async (email) => {
         expires_at: expiresAt,
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
+    const resetUrl = joinOrigin(
+        getOrigins().app,
+        `/reset-password?token=${encodeURIComponent(rawToken)}`,
+    );
 
     const { subject, html, text } = passwordResetEmail(resetUrl);
     await emailService.sendEmail({ to: user.email, subject, html, text });

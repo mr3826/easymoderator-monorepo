@@ -1,10 +1,17 @@
 'use strict';
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const partnerService = require('./partner.service');
 
 const router = express.Router();
+const publicPartnerWriteLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 const validate = [
     body('businessName').trim().notEmpty().withMessage('businessName is required'),
@@ -14,7 +21,7 @@ const validate = [
     body('pageLink').trim().notEmpty().withMessage('pageLink is required'),
 ];
 
-router.post('/apply', validate, async (req, res) => {
+router.post('/apply', publicPartnerWriteLimiter, validate, async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         return res.status(422).json({ success: false, errors: errors.array() });

@@ -81,7 +81,7 @@ two review queues run independently and business verification is the long pole.
 
 1. Sign in to Easy Moderator.
 2. In the left sidebar under **SETTINGS**, click **Chat**
-   (direct URL: `https://easymod.tech/app/manage-shop/chat-settings`).
+   (direct URL: `https://app.easymod.tech/app/manage-shop/chat-settings`).
 3. Connect the supplied Facebook Page.
 4. Show the OAuth dialog requesting the three permissions.
 5. Select the Page in the picker.

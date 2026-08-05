@@ -118,7 +118,9 @@ describe('ChatSettings (Channels)', () => {
 
   // ── 2. Origin filter — wrong-origin postMessage is ignored ─────────────────
   it('ignores OAuth postMessage events from wrong origin', async () => {
-    mockInitiateMetaOAuth.mockResolvedValue({ redirectUrl: 'https://facebook.com/dialog/oauth' })
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: `https://facebook.com/dialog/oauth?state=${'s'.repeat(64)}`,
+    })
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [],
       tempToken: 't'.repeat(64),
@@ -186,7 +188,9 @@ describe('ChatSettings (Channels)', () => {
 
   // ── 4. Page-picker connect button disabled until selection ─────────────────
   it('keeps the connect button disabled until at least one Page is selected', async () => {
-    mockInitiateMetaOAuth.mockResolvedValue({ redirectUrl: 'https://facebook.com/dialog/oauth' })
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: `https://facebook.com/dialog/oauth?state=${'s'.repeat(64)}`,
+    })
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [
         { id: 'page-1', name: 'Page One', category: null, pictureUrl: null },

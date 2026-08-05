@@ -20,6 +20,7 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { getProvider } = require('./provider.registry');
 const { createLogger } = require('../../utils/structured-logger');
 const stateStore = require('./oauth-state.store');
+const config = require('../../config/config');
 
 const logger = createLogger('MetaOAuthService');
 
@@ -45,10 +46,13 @@ async function initiateOAuth(userId, shopId, platform) {
     const nonce = crypto.randomBytes(16).toString('hex');
     const state = `${platform}:${shopId}:${userId}:${nonce}`;
 
-    await stateStore.put(state, { userId, shopId, platform });
+    // Bind the exact redirect URI to this single-use state. This keeps OAuth
+    // exchanges valid if configuration changes while a Facebook dialog is open.
+    const redirectUri = config.metaOAuthRedirectUri;
+    await stateStore.put(state, { userId, shopId, platform, redirectUri });
 
     const provider = getProvider('facebook');
-    const redirectUrl = await provider.buildAuthUrl({ state, scopes: [] });
+    const redirectUrl = await provider.buildAuthUrl({ state, scopes: [], redirectUri });
 
     logger.info('OAuth initiated', { shopId, platform });
     return { redirectUrl, state };
@@ -71,11 +75,17 @@ async function handleCallback(code, state, userId, shopId) {
         throw Object.assign(new Error('Invalid or expired OAuth state token'), { status: 400 });
     }
 
+    // Bind the callback to the authenticated user and shop that initiated it.
+    // Switching shops in another tab must not retarget an in-flight flow.
+    if (stored.userId !== userId || stored.shopId !== shopId || stored.platform !== 'facebook') {
+        throw Object.assign(new Error('OAuth state does not match the initiating account'), { status: 403 });
+    }
+
     const platform = stored.platform;
     const provider = getProvider('facebook');
 
     // Exchange code for long-lived user token
-    const { userToken } = await provider.exchangeCode({ code });
+    const { userToken } = await provider.exchangeCode({ code, redirectUri: stored.redirectUri });
 
     // List pages/IG accounts this user manages
     const [pages, metaIdentity] = await Promise.all([

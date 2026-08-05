@@ -1,5 +1,7 @@
 'use strict';
 
+process.env.APP_URL = 'https://app.easymod.tech';
+
 jest.mock('../../entities', () => ({
     User: { findByPk: jest.fn() },
     Shop: { findByPk: jest.fn() }
@@ -43,7 +45,7 @@ describe('topupController.initiateTopup', () => {
             name: 'Founder Shop',
             settings: { businessInfo: { phone: '01722222222', shopName: 'Business Shop' } }
         });
-        const req = makeReq({ pack_code: 'TOPUP_100', callback_url: 'https://easymod.tech/app/subscription' });
+        const req = makeReq({ pack_code: 'TOPUP_100', callback_url: 'https://attacker.example/steal' });
         const res = makeRes();
         const next = jest.fn();
 
@@ -53,7 +55,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_100', {
             phone: '01711111111',
             name: 'Founder Owner',
-            callbackUrl: 'https://easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/app/subscription'
         });
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
@@ -66,7 +68,7 @@ describe('topupController.initiateTopup', () => {
             name: 'Fallback Shop',
             settings: { businessInfo: { phone: '01733333333', shopName: 'Saved Business Name' } }
         });
-        const req = makeReq({ pack_code: 'TOPUP_250', callback_url: 'https://easymod.tech/app/subscription' });
+        const req = makeReq({ pack_code: 'TOPUP_250' });
         const res = makeRes();
         const next = jest.fn();
 
@@ -75,7 +77,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_250', {
             phone: '01733333333',
             name: 'Saved Business Name',
-            callbackUrl: 'https://easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/app/subscription'
         });
     });
 
@@ -84,7 +86,7 @@ describe('topupController.initiateTopup', () => {
         Shop.findByPk.mockResolvedValueOnce({ shop_name: 'Founder Shop', name: 'Founder Shop', settings: {} });
         const req = makeReq({
             pack_code: 'TOPUP_500',
-            callback_url: 'https://easymod.tech/app/subscription',
+            callback_url: 'https://attacker.example/steal',
             phone: '01799999999',
             name: 'Billing Contact'
         });
@@ -96,7 +98,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_500', {
             phone: '01799999999',
             name: 'Billing Contact',
-            callbackUrl: 'https://easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/app/subscription'
         });
     });
 });

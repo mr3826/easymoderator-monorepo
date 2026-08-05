@@ -53,7 +53,7 @@ const NotFound = lazy(() => import("./components/NotFound"));
 async function protectedLoader() {
 	await authService.ensureInitialized();
 	if (!authService.isAuthenticated()) {
-		return redirect("/");
+		return redirect("/signin");
 	}
 	return null;
 }

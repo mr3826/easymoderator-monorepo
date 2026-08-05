@@ -100,7 +100,7 @@ Every document said "**Settings → Chat Settings**". The sidebar item is labell
 **"Chat"**, under a **SETTINGS** heading. A reviewer who cannot reach the
 connect screen files "unable to test the functionality", which is a rejection.
 All documents now say **Settings → Chat** and give the direct URL
-`https://easymod.tech/app/manage-shop/chat-settings`.
+`https://app.easymod.tech/app/manage-shop/chat-settings`.
 
 ### 4.3 Demo landmines now documented as intentional
 

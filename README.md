@@ -114,7 +114,7 @@ The manual workflow input `wipe_db_first=WIPE` is destructive and is reserved fo
 
 The manual workflow input `seed_admin=SEED` creates or updates the production review account from `SEED_ADMIN_*` environment values. The seed grants `SUPER_ADMIN`, ensures an owner shop, resets the configured password, and keeps that shop on an active Growth subscription paid through the next 12 months. The password is supplied by GitHub Secrets, never committed.
 
-Auth in production is intended to be same-origin through `https://easymod.tech/api`. Keep `VITE_API_BASE_URL` empty for the SPA. `COOKIE_DOMAIN` is optional; if it is set for a legacy subdomain deployment, the backend only applies it when it matches the current request host so browsers do not reject signin cookies.
+Production has three canonical origins: `https://easymod.tech` for marketing/legal pages, `https://app.easymod.tech` for merchant authentication and product routes, and `https://api.easymod.tech` for API/webhook/upload traffic. Build the SPA with `VITE_API_BASE_URL=https://api.easymod.tech`, `VITE_APP_URL=https://app.easymod.tech`, and `VITE_MARKETING_URL=https://easymod.tech`. Keep `COOKIE_DOMAIN` unset so auth cookies remain API-host-only; `LEGACY_COOKIE_DOMAIN=easymod.tech` is a temporary cleanup control for cookies issued before the split. See [Domain and Route Architecture](docs/infrastructure/DOMAIN_AND_ROUTE_ARCHITECTURE.md).
 
 ### Telegram alert bot
 

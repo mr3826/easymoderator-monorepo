@@ -7,7 +7,7 @@ import { Switch } from "@/app/components/ui/switch";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
-import { isBkashEnabled } from "@/app/lib/config";
+import { buildApiUrl, buildMarketingUrl, isBkashEnabled } from "@/app/lib/config";
 import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Invoice {
@@ -637,7 +637,7 @@ export default function Subscription() {
                     </button>
                   ) : plan.id === 'partner' ? (
                     <a
-                      href="/pricing"
+                      href={buildMarketingUrl("/pricing")}
                       className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 text-center block"
                     >
                       {t('subscription.applyNow')}
@@ -991,14 +991,14 @@ export default function Subscription() {
                         </button>
                       )}
                       <button
-                        onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
+                        onClick={() => window.open(buildApiUrl(`/api/subscription/invoices/${invoice.rawId}/pdf`), '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={t('subscription.viewInvoiceTitle')}
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
+                        onClick={() => window.open(buildApiUrl(`/api/subscription/invoices/${invoice.rawId}/pdf`), '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={t('subscription.downloadInvoiceTitle')}
                       >

@@ -1,6 +1,7 @@
 const { body, validationResult } = require('express-validator');
 const BangladeshPaymentService = require('./bangladesh-payment.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { getOrigins, joinOrigin } = require('../../config/origins');
 const logger = createLogger({ module: 'bangladesh-payment' });
 
 class BangladeshPaymentController {
@@ -23,7 +24,6 @@ class BangladeshPaymentController {
                 amount,
                 customer_name,
                 customer_phone,
-                callback_url,
                 shop_id
             } = req.body;
 
@@ -36,7 +36,10 @@ class BangladeshPaymentController {
                     amount,
                     customer_name,
                     customer_phone,
-                    callback_url,
+                    callback_url: joinOrigin(
+                        getOrigins().api,
+                        `/api/payment/bangladesh/callback/${payment_method.toLowerCase()}`,
+                    ),
                     shop_id
                 });
             } else {

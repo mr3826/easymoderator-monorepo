@@ -6,6 +6,17 @@ import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
 import { subscriptionPlans } from "@/app/lib/subscriptionPlans";
 import { trackFunnelEvent } from "@/app/lib/funnel";
+import { buildApiUrl, buildAppUrl } from "@/app/lib/config";
+import Seo from "./Seo";
+
+const LANDING_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "EasyModerator",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: "https://easymod.tech/",
+};
 
 const gradientText: React.CSSProperties = {
   background: "linear-gradient(135deg, #34D399 0%, #00A651 100%)",
@@ -72,7 +83,7 @@ export default function LandingPage() {
   } | null>(null);
   useEffect(() => {
     trackFunnelEvent("landing_view", { surface: "landing" });
-    fetch("/api/public/live-stats")
+    fetch(buildApiUrl("/api/public/live-stats"), { credentials: "omit" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j?.success && j?.data) setLiveStats(j.data); })
       .catch(() => {});
@@ -108,6 +119,12 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white" style={{ fontFamily: "'Hind Siliguri', system-ui, sans-serif" }}>
+      <Seo
+        title="EasyModerator — AI Customer Support for Facebook Shops"
+        description="Automate Messenger support, orders, delivery updates, and customer follow-up for your Facebook shop."
+        canonicalPath="/"
+        structuredData={LANDING_SCHEMA}
+      />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap');
         .hero-grid {
@@ -140,12 +157,12 @@ export default function LandingPage() {
             ))}
             <LanguageToggle variant="dark" />
           </div>
-          <Link
-            to="/signup"
+          <a
+            href={buildAppUrl("/signup")}
             className="rounded-lg bg-[#00A651] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#008040] transition-colors shadow-sm"
           >
             {t("landing.nav.getStarted")}
-          </Link>
+          </a>
         </div>
       </nav>
 
@@ -197,18 +214,18 @@ export default function LandingPage() {
           </motion.p>
 
           <motion.div variants={heroItem} className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <Link
-              to="/signup"
+            <a
+              href={buildAppUrl("/signup")}
               className="rounded-xl bg-[#00A651] px-9 py-4 text-base font-semibold text-white shadow-lg shadow-[#00A651]/30 hover:bg-[#008040] hover:shadow-[#008040]/40 hover:scale-105 transition-all duration-200"
             >
               {t("landing.hero.ctaStart")}
-            </Link>
-            <Link
-              to="/signin"
+            </a>
+            <a
+              href={buildAppUrl("/signin")}
               className="rounded-xl border border-white/20 bg-white/5 px-9 py-4 text-base font-semibold text-white hover:bg-white/10 hover:border-white/40 transition-all duration-200"
             >
               {t("landing.hero.ctaDemo")}
-            </Link>
+            </a>
           </motion.div>
 
           <motion.div
@@ -387,12 +404,12 @@ export default function LandingPage() {
             <p className="mt-5 text-center text-xs text-gray-400">{t("landing.roi.note")}</p>
 
             <div className="mt-7 text-center">
-              <Link
-                to="/signup"
+              <a
+                href={buildAppUrl("/signup")}
                 className="inline-block rounded-xl bg-[#00A651] px-9 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#00A651]/25 transition-all hover:bg-[#008040]"
               >
                 {t("landing.roi.cta")}
-              </Link>
+              </a>
             </div>
           </div>
         </div>
@@ -493,8 +510,8 @@ export default function LandingPage() {
                     {t("landing.pricing.becomePartner")}
                   </Link>
                 ) : (
-                  <Link
-                    to="/signup"
+                  <a
+                    href={buildAppUrl("/signup")}
                     className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
                       plan.popular
                         ? "bg-[#00A651] text-white shadow-lg shadow-[#00A651]/25 hover:bg-[#008040]"
@@ -502,7 +519,7 @@ export default function LandingPage() {
                     }`}
                   >
                     {t("landing.pricing.getStarted")}
-                  </Link>
+                  </a>
                 )}
               </motion.div>
             ))}
@@ -587,12 +604,12 @@ export default function LandingPage() {
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <Link
-              to="/signup"
+            <a
+              href={buildAppUrl("/signup")}
               className="inline-block rounded-xl bg-[#00A651] px-12 py-4 text-lg font-semibold text-white shadow-xl shadow-[#00A651]/30 hover:bg-[#008040] transition-all hover:shadow-[#008040]/40"
             >
               {t("landing.cta.button")}
-            </Link>
+            </a>
           </motion.div>
         </div>
       </section>
@@ -613,9 +630,9 @@ export default function LandingPage() {
               <Link to="/terms" className="text-slate-400 hover:text-white transition-colors">
                 {t("common.terms")}
               </Link>
-              <Link to="/signin" className="text-slate-400 hover:text-white transition-colors">
+              <a href={buildAppUrl("/signin")} className="text-slate-400 hover:text-white transition-colors">
                 {t("common.signIn")}
-              </Link>
+              </a>
             </div>
           </div>
           <div className="mt-8 border-t border-slate-800 pt-6 text-center text-sm text-slate-500">

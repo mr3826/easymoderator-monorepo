@@ -398,7 +398,7 @@ CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 
 The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Docker Compose is the only supported production runtime (the legacy PM2 path was retired 2026-07-23).
 
-**Required GitHub secrets:** droplet host/SSH key, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet. Leave `VITE_API_BASE_URL` empty for the canonical same-origin SPA (`https://easymod.tech/api`). `COOKIE_DOMAIN` is optional; when set for legacy subdomain auth, it must match the request host or a parent domain such as `easymod.tech`.
+**Required deployment configuration:** droplet host/SSH key, `VITE_META_APP_ID`, and the production `.env` values delivered to the droplet. The canonical origins are `easymod.tech` (marketing/legal), `app.easymod.tech` (merchant app/OAuth completion), and `api.easymod.tech` (API/webhooks/uploads). Set `VITE_API_BASE_URL=https://api.easymod.tech` and keep `COOKIE_DOMAIN` unset. `LEGACY_COOKIE_DOMAIN=easymod.tech` may be retained only for the documented cookie-cleanup window.
 
 ---
 

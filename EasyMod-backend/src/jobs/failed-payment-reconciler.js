@@ -4,6 +4,7 @@ const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
 const emailService = require('../utils/email.service');
 const cacheService = require('../utils/cache.service');
+const { getOrigins, joinOrigin } = require('../config/origins');
 
 /**
  * Failed Payment Reconciler Job
@@ -195,7 +196,7 @@ class FailedPaymentReconciler extends BaseJob {
         const dueDate = new Date(invoice.due_date).toLocaleDateString('en-BD', {
             day: 'numeric', month: 'long', year: 'numeric'
         });
-        const billingUrl = `${process.env.FRONTEND_URL}/app/subscription`;
+        const billingUrl = joinOrigin(getOrigins().app, '/app/subscription');
 
         if (!shopEmail) {
             this.logger.warn(`Shop ${invoice.shop_id} has no email — skipping dunning notification`);

@@ -365,7 +365,7 @@ export function InboxThreadDetail({
               </button>
             ) : (
               <a
-                href="/subscription"
+                href="/app/subscription"
                 title="Upgrade to unlock AI features"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
               >
