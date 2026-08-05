@@ -1,11 +1,13 @@
 # Growth OS Current Status Audit and Execution Plan
 
-Date: 2026-08-05  
-Audit branch: `easymod/growt-os-plan-review`  
-Audit HEAD: `f543f3eededc3717d2c22d5795f7f30887e72b3e`  
-Historical Growth OS commit: `8d26dd42630817de1bdf9179ad4b78b0a08081c6`  
-Canonical repository: `mr3826/easymod-backend`  
-Canonical production/main commit at audit time: `2271cb8198c998fa38db28ebc475f4bb7c286458`  
+| Field | Value |
+| --- | --- |
+| Date | 2026-08-05 |
+| Audit branch | `easymod/growt-os-plan-review` |
+| Audit HEAD | `f543f3eededc3717d2c22d5795f7f30887e72b3e` |
+| Historical Growth OS commit | `8d26dd42630817de1bdf9179ad4b78b0a08081c6` |
+| Canonical repository | `mr3826/easymod-backend` |
+| Canonical production/main commit at audit time | `2271cb8198c998fa38db28ebc475f4bb7c286458` |
 
 ## Verdict
 
