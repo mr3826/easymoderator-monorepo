@@ -150,7 +150,7 @@ Execution branches are created only when a phase starts, each from the accepted 
 | --- | --- | --- |
 | 0 — recovery and scope lock | `codex/growth-os-phase-0-recovery` | Completed locally from canonical `main` |
 | 1 — telemetry repair | `codex/growth-os-phase-1-telemetry` | Completed locally; accepted commit `c8e1f5d` |
-| 2 — access foundation | `codex/growth-os-phase-2-access-foundation` | Active locally; access slice verified, commit pending |
+| 2 — access foundation | `codex/growth-os-phase-2-access-foundation` | Active locally; access slice committed as `d6fda4d`, full exit gate pending |
 | 3 — prospect ledger | `codex/growth-os-phase-3-prospect-ledger` | Create after Phase 2 gate |
 | 4 — follow-up loop | `codex/growth-os-phase-4-follow-up-loop` | Create after Phase 3 gate |
 | 5 — trial and customer success | `codex/growth-os-phase-5-trial-customer-success` | Create after Phase 4 gate |
