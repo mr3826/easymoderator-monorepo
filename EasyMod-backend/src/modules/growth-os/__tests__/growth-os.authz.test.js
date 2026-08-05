@@ -6,6 +6,12 @@ const roleHolder = {
   frontendGuardClaim: null,
 };
 
+const mockConfig = {
+  growthOsEnabled: true,
+};
+
+jest.mock('../../../config/config', () => mockConfig);
+
 jest.mock('../../../middleware/auth.middleware', () => ({
   authenticate: (req, _res, next) => {
     if (!roleHolder.user) {
@@ -64,6 +70,7 @@ describe('Growth OS session authorization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     app = buildApp();
+    mockConfig.growthOsEnabled = true;
     roleHolder.user = null;
     roleHolder.growthRole = null;
     roleHolder.frontendGuardClaim = null;
@@ -72,6 +79,21 @@ describe('Growth OS session authorization', () => {
   it('denies unauthenticated requests', async () => {
     const res = await request(app).get('/api/internal/growth-os/session');
     expect(res.status).toBe(401);
+  });
+
+  it('fails closed without consulting the authorization store when Growth OS is disabled', async () => {
+    const cacheService = require('../../../utils/cache.service');
+    const { GrowthOsUserRole } = require('../../entities');
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech' };
+    roleHolder.growthRole = 'FOUNDER';
+    mockConfig.growthOsEnabled = false;
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('GROWTH_OS_DISABLED');
+    expect(cacheService.get).not.toHaveBeenCalled();
+    expect(GrowthOsUserRole.findAll).not.toHaveBeenCalled();
   });
 
   it('denies a merchant user with no explicit Growth OS role', async () => {
@@ -85,6 +107,21 @@ describe('Growth OS session authorization', () => {
     roleHolder.user = { userId: 'platform-admin-1', email: 'admin@easymod.tech' };
     const res = await request(app).get('/api/internal/growth-os/session');
     expect(res.status).toBe(403);
+  });
+
+  it('returns a controlled 503 when the authorization store is unavailable', async () => {
+    const { GrowthOsUserRole } = require('../../entities');
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech' };
+    GrowthOsUserRole.findAll.mockRejectedValueOnce(new Error('database connection details'));
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      code: 'GROWTH_OS_AUTHZ_UNAVAILABLE',
+      message: 'Growth OS authorization service is temporarily unavailable.',
+    });
+    expect(res.body.message).not.toContain('database connection details');
   });
 
   it('allows an authorized founder and returns safe session fields', async () => {

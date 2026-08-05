@@ -1,6 +1,7 @@
 'use strict';
 
 const { AppError } = require('../../utils/AppError');
+const config = require('../../config/config');
 const cacheService = require('../../utils/cache.service');
 const repository = require('./growth-os.repository');
 const { getPermissionsForRole, hasPermission } = require('./growth-os.permissions');
@@ -33,6 +34,10 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
         throw new AppError('Authentication required.', 401, 'AUTH_REQUIRED');
       }
 
+      if (!config.growthOsEnabled) {
+        throw new AppError('Growth OS is temporarily unavailable.', 503, 'GROWTH_OS_DISABLED');
+      }
+
       const access = await resolveGrowthOsAccess(userId);
       if (!access || !hasPermission(access.role, requiredPermission)) {
         throw new AppError('Forbidden: Growth OS access required.', 403, 'GROWTH_OS_FORBIDDEN');
@@ -41,7 +46,13 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
       req.growthOs = access;
       next();
     } catch (err) {
-      next(err instanceof AppError ? err : new AppError('Growth OS authorization failed.', 403, 'GROWTH_OS_AUTHZ_FAILED'));
+      next(err instanceof AppError
+        ? err
+        : new AppError(
+          'Growth OS authorization service is temporarily unavailable.',
+          503,
+          'GROWTH_OS_AUTHZ_UNAVAILABLE',
+        ));
     }
   };
 }

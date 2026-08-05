@@ -149,8 +149,8 @@ Execution branches are created only when a phase starts, each from the accepted 
 | Phase | Branch | Current state |
 | --- | --- | --- |
 | 0 — recovery and scope lock | `codex/growth-os-phase-0-recovery` | Completed locally from canonical `main` |
-| 1 — telemetry repair | `codex/growth-os-phase-1-telemetry` | Start now after Phase 0 gate |
-| 2 — access foundation | `codex/growth-os-phase-2-access-foundation` | Create after Phase 1 gate |
+| 1 — telemetry repair | `codex/growth-os-phase-1-telemetry` | Completed locally; accepted commit `c8e1f5d` |
+| 2 — access foundation | `codex/growth-os-phase-2-access-foundation` | Active locally; access slice verified, commit pending |
 | 3 — prospect ledger | `codex/growth-os-phase-3-prospect-ledger` | Create after Phase 2 gate |
 | 4 — follow-up loop | `codex/growth-os-phase-4-follow-up-loop` | Create after Phase 3 gate |
 | 5 — trial and customer success | `codex/growth-os-phase-5-trial-customer-success` | Create after Phase 4 gate |
@@ -159,6 +159,13 @@ Execution branches are created only when a phase starts, each from the accepted 
 | 8 — staging and production | `codex/growth-os-phase-8-staging-production` | Create only after Phase 7 gate |
 
 No phase branch is merged to `main`, pushed, or deployed automatically. Each phase must pass its stated exit gate before the next branch is cut.
+
+### Execution status as of 2026-08-05
+
+- Phase 0 is complete locally in `D:\\hexabyte\\easy-moderator\\.codex-worktrees\\growth-os-phase-0-recovery` with canonical-main recovery, CI/Compose conflict repair, and the audit report committed.
+- Phase 1 is complete locally in `D:\\hexabyte\\easy-moderator\\.codex-worktrees\\growth-os-phase-1-telemetry` at `c8e1f5d`. Focused telemetry tests passed (21/21), the backend security gate passed (153/153), and the Growth frontend typecheck/build passed.
+- Phase 2 is active locally in `D:\\hexabyte\\easy-moderator\\.codex-worktrees\\growth-os-phase-2-access-foundation`. The current slice adds the default-off feature gate, controlled authorization-store 503 behavior, CSRF/timeout-aware API calls, and the real password-to-TOTP verification flow. Focused authorization tests passed (8/8), the backend security gate passed (153/153), and the Growth frontend typecheck/build passed.
+- No phase branch has been pushed, merged, or deployed. The root worktree's existing Meta readiness edit remains outside these branches.
 
 ## Implemented Surface
 

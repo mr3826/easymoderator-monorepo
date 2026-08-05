@@ -8,6 +8,7 @@ export function LoginPage() {
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   if (auth.status === 'authenticated') {
@@ -27,6 +28,16 @@ export function LoginPage() {
     }
   }
 
+  async function onVerify(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      await auth.verifyTwoFactor(otp);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main className="login-screen">
       <section className="login-panel" aria-labelledby="login-title">
@@ -38,21 +49,36 @@ export function LoginPage() {
           </div>
         </div>
 
-        <form className="login-form" onSubmit={onSubmit}>
-          <label>
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
-          </label>
-          <label>
-            Password
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
-          </label>
-          {auth.error ? <p className="form-error">{auth.error}</p> : null}
-          <button className="primary-button" type="submit" disabled={submitting}>
-            <LogIn aria-hidden="true" />
-            <span>{submitting ? 'Signing in' : 'Sign in'}</span>
-          </button>
-        </form>
+        {auth.twoFactorRequired ? (
+          <form className="login-form" onSubmit={onVerify}>
+            <p className="state-copy">Enter the six-digit code from your authenticator app to finish signing in.</p>
+            <label>
+              Verification code
+              <input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" minLength={6} maxLength={6} required />
+            </label>
+            {auth.error ? <p className="form-error">{auth.error}</p> : null}
+            <button className="primary-button" type="submit" disabled={submitting}>
+              <LogIn aria-hidden="true" />
+              <span>{submitting ? 'Verifying' : 'Verify and sign in'}</span>
+            </button>
+          </form>
+        ) : (
+          <form className="login-form" onSubmit={onSubmit}>
+            <label>
+              Email
+              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
+            </label>
+            <label>
+              Password
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
+            </label>
+            {auth.error ? <p className="form-error">{auth.error}</p> : null}
+            <button className="primary-button" type="submit" disabled={submitting}>
+              <LogIn aria-hidden="true" />
+              <span>{submitting ? 'Signing in' : 'Sign in'}</span>
+            </button>
+          </form>
+        )}
       </section>
     </main>
   );
