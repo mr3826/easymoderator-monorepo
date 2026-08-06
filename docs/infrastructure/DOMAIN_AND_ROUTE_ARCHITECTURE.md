@@ -52,37 +52,53 @@ not fail at the same time.
 Marketing calls only these public API endpoints and always uses
 `credentials: omit`:
 
-- `GET https://api.easymod.tech/api/public/live-stats`
-- `POST https://api.easymod.tech/api/analytics/funnel`
-- `POST https://api.easymod.tech/api/partner/apply`
+- `GET https://api.easymod.tech/public/live-stats`
+- `POST https://api.easymod.tech/analytics/funnel`
+- `POST https://api.easymod.tech/partner/apply`
 
 The marketing origin is not in global credentialed `CORS_ORIGINS`.
 
 ### Merchant app origin
 
 - `/signin`, `/signup`, `/forgot-password`, `/reset-password`, `/2fa-verify`
-- `/app/channels/oauth-callback`
-- `/app/**`
+- `/channels/oauth-callback`
+- `/dashboard`, `/inbox`, `/orders`, `/products`, `/manage-shop/**`, and the
+  remaining merchant routes at the hostname root
+- `/team/users` for merchant team administration
 - `/admin/**`
 
-The app root redirects to `/signin`. Public/legal routes reached on the app host
-redirect to their marketing equivalents. App responses include
+`/admin/**` is reserved exclusively for the platform operations panel and its
+`PlatformAdminRoute`; merchant team management must remain under `/team/**`.
+
+The app root sends an authenticated merchant to `/dashboard` and an anonymous
+visitor to `/signin`. Public/legal routes reached on the app host redirect to
+their marketing equivalents. App responses include
 `X-Robots-Tag: noindex, nofollow`.
 
 ### API origin
 
-- `/api/**`
-- `/api/webhooks/**`
+- `/**` for JSON endpoints, including `/auth/**`, `/order/**`, `/version`, and SSE
+- `/webhooks/**`
 - `/health`, `/health/**`
 - `/uploads/**`
 
-`/webhooks/**` is an internal compatibility rewrite to `/api/webhooks/**`.
-Webhook POST requests must never use an HTTP redirect because methods, bodies, and
-provider signatures must be preserved.
+The API hostname is the namespace, so `/api` is not part of any canonical public
+URL. Caddy internally rewrites host-native paths to the existing Express `/api`
+mount. This is invisible to clients and preserves methods, bodies, and provider
+signatures. Temporary `api.easymod.tech/api/**` compatibility is proxied without
+an HTTP redirect for the same reason.
+
+| Legacy public URL | Canonical public URL | Migration behavior |
+|---|---|---|
+| `https://app.easymod.tech/app/channels/oauth-callback` | `https://app.easymod.tech/channels/oauth-callback` | browser redirect |
+| `https://app.easymod.tech/app/orders` | `https://app.easymod.tech/orders` | browser redirect |
+| `https://api.easymod.tech/api/webhooks/meta` | `https://api.easymod.tech/webhooks/meta` | direct proxy compatibility; no redirect |
+| `https://api.easymod.tech/api/auth/signin` | `https://api.easymod.tech/auth/signin` | direct proxy compatibility; no redirect |
 
 ## Transitional compatibility
 
-During the measured migration window, the apex continues to proxy:
+During the measured migration window, the API hostname accepts legacy `/api/**`
+without redirecting, and the apex continues to proxy:
 
 - `/api/**`
 - `/health`, `/health/**`
@@ -108,7 +124,7 @@ attachments, provider callbacks, and launch tooling no longer use the apex.
 | `BASE_URL` | compatibility alias equal to `API_URL` |
 | `PUBLIC_BASE_URL` | compatibility alias equal to `PUBLIC_ASSET_URL` |
 | `CORS_ORIGINS` | `https://app.easymod.tech` only |
-| `META_OAUTH_REDIRECT_URI` | `https://app.easymod.tech/app/channels/oauth-callback` |
+| `META_OAUTH_REDIRECT_URI` | `https://app.easymod.tech/channels/oauth-callback` |
 | `COOKIE_DOMAIN` | unset; production validation rejects it |
 | `LEGACY_COOKIE_DOMAIN` | `easymod.tech` temporarily, to expire old parent-domain cookies |
 | `VITE_API_BASE_URL` | `https://api.easymod.tech` |
@@ -149,43 +165,69 @@ Comment-to-DM, feed subscriptions, `business_management`, or Instagram scopes.
 | Privacy Policy | `https://easymod.tech/privacy-policy` |
 | Terms | `https://easymod.tech/terms` |
 | Reviewer sign-in | `https://app.easymod.tech/signin` |
-| OAuth redirect | `https://app.easymod.tech/app/channels/oauth-callback` |
-| Messenger webhook | `https://api.easymod.tech/api/webhooks/meta` |
-| Data deletion callback | `https://api.easymod.tech/api/webhooks/meta/data-deletion` |
-| Deauthorize callback | `https://api.easymod.tech/api/webhooks/meta/deauthorize` |
+| OAuth redirect | `https://app.easymod.tech/channels/oauth-callback` |
+| Messenger webhook | `https://api.easymod.tech/webhooks/meta` |
+| Data deletion callback | `https://api.easymod.tech/webhooks/meta/data-deletion` |
+| Deauthorize callback | `https://api.easymod.tech/webhooks/meta/deauthorize` |
 
 Dashboard changes must happen only after `api` and `app` TLS and routing pass.
 Old callback paths stay internally proxied during the transition.
 
 ## Staged rollout
 
-### Stage 0 — release control
+> **DNS precedes the merge. Merging first takes production down.**
+>
+> No GitHub Actions variables are set at the repository or `production` environment
+> level, so every `${{ vars.X || 'default' }}` resolves to the canonical default. A
+> deploy therefore builds a frontend image hardcoded to `https://api.easymod.tech`
+> and a backend whose `CORS_ORIGINS` is `https://app.easymod.tech` only. If either
+> hostname lacks DNS and a valid certificate at that moment, every user still
+> arriving on the apex loses the application. Create the records first, verify
+> resolution, then merge.
 
-1. Review and merge this branch only after CI and security gates pass.
-2. Disable the standalone frontend production workflow or revoke its deploy key.
-3. Keep deployment concurrency serialized and build both images on every main push.
-4. Record current immutable image SHAs, Caddyfile, Compose file, DNS records, and
-   domain configuration before deployment.
+### Stage 0 — DNS and release control
 
-### Stage 1 — compatibility deployment
+1. Create Namecheap `A app -> 139.59.249.141` with a short TTL (60s).
+   Confirm `A api -> 139.59.249.141` already exists with the same TTL.
+2. Verify both resolve from a public resolver before merging:
+   `nslookup app.easymod.tech 8.8.8.8` must not return NXDOMAIN.
+   `api.easymod.tech` TLS is expected to fail until this release deploys its vhost —
+   that is the missing Caddy site block, not a DNS fault.
+3. Disable the standalone frontend production workflow. Keep the repository as
+   read-only history unless a separate archival decision is made.
+4. Keep deployment concurrency serialized and build both images on every main push.
+5. Record current immutable image SHAs, Caddyfile, Compose file, DNS records, and
+   domain configuration before deployment. Rollback is `git revert` plus redeploy;
+   the apex compatibility blocks keep legacy URLs working in either direction.
+6. Merge only after CI and security gates pass and steps 1–5 are complete.
 
-1. Deploy Caddy blocks and application origin support while apex behavior remains.
+### Stage 1 — deployment and certificate issuance
+
+1. Deploy the Caddy blocks and application origin support. Apex behavior is
+   preserved by the compatibility proxies and redirects in the same file.
 2. Validate Caddy before reload.
-3. Do not update Meta or publish app links yet.
-4. Verify the existing apex app, API, auth, uploads, and webhooks still work.
+3. Confirm Caddy obtains valid certificates for both `api` and `app`. With Stage 0
+   DNS in place this is automatic on first start; watch the Caddy log for ACME
+   failures rather than assuming success.
+4. Verify the apex still serves marketing, `/api/**`, `/health/**`, `/uploads/**`,
+   and `/webhooks/**` exactly as before.
+5. Do not update Meta or publish app links yet.
 
-### Stage 2 — API hostname
+### Stage 2 — API hostname verification
 
-1. Keep/create Namecheap `A api -> 139.59.249.141` with a short TTL.
-2. Verify Caddy obtains a valid certificate before client traffic.
-3. Verify public readiness, version identity, uploads, webhook GET challenge and
+1. Verify public readiness, version identity, uploads, webhook GET challenge and
    signed POST behavior, CORS, cookies, CSRF, SSE, and security headers.
+2. Confirm no request to `/webhooks/**` ever answers with a 3xx — a redirect would
+   discard Meta's signed request body.
+3. Confirm legacy `api.easymod.tech/api/**` is proxied, not redirected, and carries
+   `Deprecation: true`.
 
-### Stage 3 — app hostname
+### Stage 3 — app hostname verification
 
-1. Create Namecheap `A app -> 139.59.249.141` with the same short TTL.
-2. Verify TLS, app noindex headers, sign-in/signup/reset, app-to-API credentials,
+1. Verify TLS, app noindex headers, sign-in/signup/reset, app-to-API credentials,
    logout, TOTP/session CSRF, invoice PDFs, and OAuth popup completion.
+2. Confirm `/app/**` legacy routes redirect to their clean equivalents and that the
+   `Location` header does not retain the `/app` prefix.
 3. Update Meta dashboard fields to the canonical values and reconnect the test Page.
 4. Run a real inbound Messenger DM, AI/manual reply, and attachment proof.
 
@@ -208,7 +250,7 @@ Old callback paths stay internally proxied during the transition.
 | Check | Pre-cutover expectation |
 |---|---|
 | apex marketing and legal routes | 200, canonical apex, indexable |
-| app root | 302 `/signin` |
+| app root | authenticated -> `/dashboard`; anonymous -> `/signin` |
 | app product/auth routes | SPA 200 + noindex |
 | api readiness/version | backend identity and deployed SHA |
 | app credentialed CORS | allowed with credentials |
@@ -222,7 +264,7 @@ Old callback paths stay internally proxied during the transition.
 | OAuth | exact app redirect, nonce and user/shop binding |
 | uploads/invoice PDFs | absolute API URLs and cross-origin render/download |
 | SSE | app connects to API with credentials and tenant binding |
-| legacy webhook | POST/body/signature preserved through rewrite |
+| clean and legacy webhook | POST/body/signature preserved through internal rewrite/proxy |
 | SEO | per-route title/description/canonical, OG, JSON-LD, robots, sitemap |
 | Meta Messenger | real inbound, reply, attachment, consent/deletion evidence |
 
@@ -245,10 +287,10 @@ Rollback is proxy/config first, DNS last:
 ## Cutover blockers and human-owned actions
 
 - Namecheap DNS write access is required to create `app` and confirm/fix `api`.
-- Production merge/deploy approval is required; this branch must not self-merge.
+- Production merge/deploy follows the repository landing approval gate.
 - Meta App Dashboard ownership is required for callback/OAuth/reviewer URL updates.
 - The real Facebook Page owner/tester must approve OAuth and generate Messenger proof.
-- The standalone frontend workflow must be disabled by a repository administrator.
+- The standalone frontend workflow state must be verified as disabled.
 - A confirmed bKash settlement-binding/race flaw discovered during security review is
   independent of domain routing but blocks enabling live payments and a broad public
   launch. Keep `BKASH_ENABLED=false` until it has its own reviewed fix and tests.

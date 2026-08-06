@@ -25,7 +25,7 @@ Reviewer positioning:
 Dashboard setup to verify before submission:
 
 - OAuth redirect URL matches production `META_OAUTH_REDIRECT_URI`.
-- Webhook callback URL is `https://api.easymod.tech/api/webhooks/meta`.
+- Webhook callback URL is `https://api.easymod.tech/webhooks/meta`.
 - Webhook subscription is `messages` on the `page` object only.
 - Data deletion callback is configured.
 - Deauthorize callback is configured.

@@ -30,7 +30,7 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 - Public pricing lives at `/pricing` and is the detailed Growth/Partner application page; the landing page pricing section stays the primary conversion surface.
 - Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, used in reply context immediately, and included in the scheduled business-info search index.
 - Payment and delivery defaults come from the live shop operating context; FAQs are optional shop-specific knowledge, not required starter setup.
-- FAQ management lives under `Manage Shop -> FAQs` (`/app/manage-shop/faqs`). The retired `/app/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` search record immediately so reply answers do not wait for the scheduled auto-index job. Low-confidence and unknown reply turns are captured as knowledge gaps for FAQ improvement.
+- FAQ management lives under `Manage Shop -> FAQs` (`/manage-shop/faqs`). The retired `/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` search record immediately so reply answers do not wait for the scheduled auto-index job. Low-confidence and unknown reply turns are captured as knowledge gaps for FAQ improvement.
 - Courier providers supported in the merchant delivery settings are Pathao, Steadfast, and RedX; a provider must be connected and then activated before it is used for courier booking.
 - Facebook Page reconnects use fresh Meta OAuth as the current ownership proof. Page discovery uses `/me/accounts` only and does not request `business_management`; the callback intersects those Pages with Meta `debug_token` granular permission target IDs so the app picker shows only Pages selected/authorized in Facebook. Stale legacy channel rows are released before a Page is connected to a new shop, while modern active claims from a different EasyModerator user remain blocked and webhooks route only to the active `CONNECTED` channel.
 
@@ -126,7 +126,7 @@ Required production env names:
 - `TELEGRAM_BOT_USERNAME`
 - `TELEGRAM_WEBHOOK_SECRET`
 
-Configure BotFather/setWebhook to deliver Telegram updates to `https://<api-domain>/api/webhooks/telegram` with the same `secret_token` value as `TELEGRAM_WEBHOOK_SECRET`. Do not commit token values.
+Configure BotFather/setWebhook to deliver Telegram updates to `https://api.easymod.tech/webhooks/telegram` with the same `secret_token` value as `TELEGRAM_WEBHOOK_SECRET`. The API hostname is the public namespace; do not add `/api` to provider-facing production URLs. Do not commit token values.
 
 Supported merchant alert events are new order, AI human-handoff, customer waiting too long, courier booking failure, payment/subscription issue, and daily sales summary.
 

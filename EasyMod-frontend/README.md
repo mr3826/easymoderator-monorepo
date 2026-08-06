@@ -101,7 +101,7 @@ src/
 
 ## Routes & Screens
 
-Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Authenticated app routes live under `/app/*` behind an auth guard; admin-only routes use `AdminRoute`.
+Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Authenticated app routes live under `/*` behind an auth guard; admin-only routes use `AdminRoute`.
 
 **Public / marketing**
 
@@ -110,16 +110,16 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - `/privacy-policy`, `/terms` — Legal (required for Meta App Review)
 - `/signin`, `/signup`, `/forgot-password`, `/reset-password`, 2FA verify
 
-**Dashboard (`/app/*`)**
+**Merchant app (host-native paths)**
 
-- Dashboard (KPIs / cash position)
-- Unified Inbox for Facebook Messenger DMs
-- Products, Add/Edit Product, Categories & subcategories
-- Orders
+- Dashboard (KPIs / cash position) — `/dashboard`
+- Unified Inbox for Facebook Messenger DMs — `/inbox`
+- Products, Add/Edit Product, Categories & subcategories — `/products`, `/categories`
+- Orders — `/orders`
 - Customers
 - Reports & Analytics, Audit Logs
-- Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
+- Channels (Meta OAuth connect + per-channel health) + OAuth callback at `/channels/oauth-callback`
+- Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/manage-shop/**`; `/knowledge` redirects to `/manage-shop/faqs`)
   Business Info contains the owner-editable additional info field used to ground replies. Reply Settings defaults to Draft and is the source of truth for Auto/Draft/Manual across connected Pages; channel toggles only opt a Page in or out. Telegram group alerts appear as a handoff option when notification status is loaded.
 - Subscription & billing
 - Users (admin)
@@ -137,6 +137,13 @@ dashboard · payment · subscription · meta-channels · audit · rto-shield · 
 ```
 
 The Axios instance sends credentials, attaches the CSRF token, transparently refreshes the access token on `401`, and normalises error shapes. Prefer adding new calls to the matching domain module rather than calling Axios directly from components.
+
+Domain modules may continue to name the backend's internal Express paths as
+`/api/**`. The shared client removes that prefix when calling the production API
+origin, so browsers see host-native URLs such as
+`https://api.easymod.tech/auth/me`. Local development keeps `/api/**` because
+Vite uses that prefix for its backend proxy. Provider dashboards and public
+documentation must always use the clean production form.
 
 Notification UI lives in `NotificationSettings` and `InAppNotificationCenter`. Browser push registration uses the same Axios client as the rest of the app so CSRF and cookie auth remain consistent.
 

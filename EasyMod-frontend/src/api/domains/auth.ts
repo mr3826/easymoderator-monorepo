@@ -44,7 +44,7 @@ export async function signin(credentials: SigninRequest): Promise<AuthResponse> 
   }
 
   // Refresh CSRF token for the new session — fire and forget so the caller
-  // (navigate('/app')) is not blocked waiting for the extra round-trip.
+  // (navigate('/dashboard')) is not blocked waiting for the extra round-trip.
   httpClient.clearCsrfToken();
   httpClient.initCsrfToken();
   httpClient.setSessionHint(true);

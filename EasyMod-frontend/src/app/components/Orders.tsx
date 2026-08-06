@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from "motion/react";
@@ -982,7 +982,7 @@ export default function Orders() {
                   onClick={() => {
                     setShowProductSelector(false);
                     setShowCreateOrder(false);
-                    navigate('/app/products/add');
+                    navigate('/products/add');
                   }}
                   className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >

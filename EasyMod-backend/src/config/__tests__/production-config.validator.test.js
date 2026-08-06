@@ -26,7 +26,7 @@ function validEnv(overrides = {}) {
         META_APP_ID: '123456789',
         META_APP_SECRET: secret('e'),
         META_WEBHOOK_VERIFY_TOKEN: secret('f'),
-        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',
+        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
         PAYMENT_ENCRYPTION_KEY: secret('1'),
         DELIVERY_ENCRYPTION_KEY: secret('2'),
         CHANNEL_ENCRYPTION_KEY: secret('3'),
@@ -162,5 +162,13 @@ describe('production configuration validation', () => {
             'COOKIE_DOMAIN',
             'META_OAUTH_REDIRECT_URI',
         ]));
+    });
+
+    test('rejects the obsolete /app OAuth callback on the canonical app host', () => {
+        const result = validateProductionConfig(validEnv({
+            META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',
+        }));
+
+        expect(result.invalid).toContain('META_OAUTH_REDIRECT_URI');
     });
 });

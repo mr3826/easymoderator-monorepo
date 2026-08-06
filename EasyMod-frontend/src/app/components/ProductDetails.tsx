@@ -53,7 +53,7 @@ export default function ProductDetails() {
       setIsDeleting(true);
       await apiClient.deleteProduct(product.id);
       toast.success(t('products.detail.deleteSuccess'));
-      navigate('/app/products');
+      navigate('/products');
     } catch (error: any) {
       toast.error(getErrorMessage(error, t('products.detail.deleteFailed')));
     } finally {
@@ -89,7 +89,7 @@ export default function ProductDetails() {
     return (
       <div className="p-8">
         <button
-          onClick={() => navigate('/app/products')}
+          onClick={() => navigate('/products')}
           className="text-blue-600 hover:text-blue-700 flex items-center gap-2 mb-4"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -107,7 +107,7 @@ export default function ProductDetails() {
       {/* Header */}
       <div className="mb-6 md:mb-8">
         <button
-          onClick={() => navigate('/app/products')}
+          onClick={() => navigate('/products')}
           className="text-gray-600 hover:text-gray-900 flex items-center gap-2 mb-4 text-sm"
         >
           <ArrowLeft className="w-5 h-5" />

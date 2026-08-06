@@ -64,9 +64,34 @@ export function buildMarketingUrl(path = '/'): string {
   return new URL(path, `${config.marketingUrl}/`).toString();
 }
 
+function withLeadingSlash(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+/**
+ * Translate the internal Express mount (`/api/...`) into the public URL shape.
+ * Production's API hostname already provides the namespace, while local
+ * development still uses Vite's `/api` proxy.
+ */
+export function toApiRequestPath(path = '/'): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = withLeadingSlash(path);
+  if (config.apiBaseUrl === '/api') {
+    return /^\/api(?:\/|$)/.test(normalized)
+      ? normalized
+      : `/api${normalized === '/' ? '' : normalized}`;
+  }
+
+  return normalized.replace(/^\/api(?=\/|$)/, '') || '/';
+}
+
 export function buildApiUrl(path = '/'): string {
   const base = config.apiBaseUrl === '/api' ? window.location.origin : config.apiBaseUrl;
-  return new URL(path, `${base.replace(/\/$/, '')}/`).toString();
+  return new URL(toApiRequestPath(path), `${base.replace(/\/$/, '')}/`).toString();
+}
+
+export function hasSeparateProductOrigins(): boolean {
+  return new URL(config.marketingUrl).origin !== new URL(config.appUrl).origin;
 }
 
 export function isMarketingSurface(location: Pick<Location, 'hostname'> = window.location): boolean {

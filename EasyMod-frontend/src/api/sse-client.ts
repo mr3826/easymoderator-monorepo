@@ -32,6 +32,8 @@
  */
 
 /** Shape of a parsed SSE event payload from the server. */
+import config, { toApiRequestPath } from '@/app/lib/config';
+
 export interface SSEEnvelope {
   id: number;
   event: string;
@@ -56,7 +58,7 @@ export type KnownSSEEvent =
 export interface SSEClientOptions {
   /** Shop ID — used only to isolate the local Last-Event-ID cursor. */
   shopId: string;
-  /** Override the base URL (defaults to window.location.origin). */
+  /** Override the base URL (defaults to the configured API origin). */
   baseUrl?: string;
   /** Override the SSE path (defaults to /api/conversation/events). */
   path?: string;
@@ -91,7 +93,11 @@ export class SSEClient {
 
   constructor(opts: SSEClientOptions) {
     this.shopId = opts.shopId;
-    this.baseUrl = opts.baseUrl ?? (typeof window !== 'undefined' ? window.location.origin : '');
+    this.baseUrl = opts.baseUrl ?? (
+      config.apiBaseUrl === '/api'
+        ? (typeof window !== 'undefined' ? window.location.origin : '')
+        : config.apiBaseUrl
+    );
     this.path = opts.path ?? '/api/conversation/events';
     this.initialRetryMs = opts.initialRetryMs ?? 1_000;
     this.maxRetryMs = opts.maxRetryMs ?? 30_000;
@@ -164,7 +170,7 @@ export class SSEClient {
   // ── Private helpers ─────────────────────────────────────────────────────────
 
   private _buildUrl(): string {
-    const url = new URL(this.path, this.baseUrl);
+    const url = new URL(toApiRequestPath(this.path), this.baseUrl);
 
     // Append last_event_id as a query parameter as a fallback for page-reload
     // reconnects where the browser cannot carry Last-Event-ID in the header.

@@ -65,7 +65,7 @@ function UpgradeModal({ featureLabel, requiredPlan, onClose }: UpgradeModalProps
             {t("subscription.notNow")}
           </button>
           <button
-            onClick={() => { onClose(); navigate("/app/subscription"); }}
+            onClick={() => { onClose(); navigate("/subscription"); }}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
             <Zap className="w-4 h-4" />

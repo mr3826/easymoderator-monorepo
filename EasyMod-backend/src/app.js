@@ -153,8 +153,8 @@ if (config.env !== 'test') {
 }
 
 // Webhook routes (must be before JSON parsing middleware)
-// Phase 5: only canonical /api/webhooks/meta remains.
-// Update your Meta App Dashboard webhook URL to use /api/webhooks/meta.
+// Express keeps the internal /api mount. The public Meta Dashboard URL is
+// https://api.easymod.tech/webhooks/meta; Caddy performs the internal rewrite.
 app.use('/api/webhooks/meta', metaWebhookRoutes);
 app.use('/api/webhooks/delivery', courierWebhookRoutes);
 app.use('/webhooks/delivery', courierWebhookRoutes);

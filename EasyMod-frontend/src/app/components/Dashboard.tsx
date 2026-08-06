@@ -306,7 +306,7 @@ export default function Dashboard() {
               key={card.label}
               onClick={() => {
                 if (isMissCard) {
-                  navigate("/app/inbox?tab=needs_review");
+                  navigate("/inbox?tab=needs_review");
                 }
               }}
               className={`${card.className} min-h-[112px] rounded-2xl p-4 text-left ${isMissCard ? "cursor-pointer" : "cursor-default"}`}
@@ -336,7 +336,7 @@ export default function Dashboard() {
             amount={pulseData.cashPosition?.inTransit.amount ?? 0}
             icon={Truck}
             accent="neutral"
-            onClick={() => navigate("/app/orders")}
+            onClick={() => navigate("/orders")}
             formatCurrency={formatCurrency}
           />
           <CashPositionCard
@@ -346,7 +346,7 @@ export default function Dashboard() {
             amount={pulseData.cashPosition?.atRisk.amount ?? 0}
             icon={AlertTriangle}
             accent="warning"
-            onClick={() => navigate("/app/orders")}
+            onClick={() => navigate("/orders")}
             formatCurrency={formatCurrency}
           />
         </div>
@@ -362,7 +362,7 @@ export default function Dashboard() {
             {t("dashboard.pulse.botActivity.botReplied", { count: pulseData.assistantReplies })}
           </div>
           <button
-            onClick={() => navigate("/app/inbox?tab=needs_review")}
+            onClick={() => navigate("/inbox?tab=needs_review")}
             className="min-h-12 rounded-xl bg-amber-50 p-3 text-left text-sm font-semibold text-amber-800"
             type="button"
           >
@@ -374,7 +374,7 @@ export default function Dashboard() {
       {pulseData.atRiskCount > 0 && (
         <section className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
           <button
-            onClick={() => navigate("/app/orders")}
+            onClick={() => navigate("/orders")}
             type="button"
             className="w-full text-left text-sm font-bold text-red-800"
           >
@@ -387,7 +387,7 @@ export default function Dashboard() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-bold text-card-foreground">{t("dashboard.pulse.latestOrders.title")}</h2>
           <button
-            onClick={() => navigate("/app/orders")}
+            onClick={() => navigate("/orders")}
             className="min-h-12 rounded-xl px-3 text-sm font-semibold text-green-600"
             type="button"
           >
@@ -406,7 +406,7 @@ export default function Dashboard() {
               return (
                 <button
                   key={order.id}
-                  onClick={() => navigate("/app/orders")}
+                  onClick={() => navigate("/orders")}
                   type="button"
                   className="w-full rounded-xl border border-border bg-card p-3 text-left"
                 >

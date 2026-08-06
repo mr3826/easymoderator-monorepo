@@ -95,7 +95,7 @@ async function main() {
     console.log(' Webhook Verify Token (paste into Meta App Dashboard):');
     console.log(` ${verifyToken}`);
     console.log('────────────────────────────────────────────────────────');
-    console.log(' Webhook Callback URL: https://api.easymod.tech/api/webhooks/meta');
+    console.log(' Webhook Callback URL: https://api.easymod.tech/webhooks/meta');
     console.log(' (dev/ngrok: https://<your-tunnel>/api/webhooks/meta)');
     console.log('────────────────────────────────────────────────────────');
     console.log(' After you connect a real FB Page or IG account, run:');

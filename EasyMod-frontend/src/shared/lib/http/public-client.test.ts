@@ -20,7 +20,7 @@ describe("public API client", () => {
     await publicApiPost("/api/partner/apply", { businessName: "Shop" });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.easymod.tech/api/partner/apply",
+      "https://api.easymod.tech/partner/apply",
       expect.objectContaining({ method: "POST", credentials: "omit" }),
     );
   });

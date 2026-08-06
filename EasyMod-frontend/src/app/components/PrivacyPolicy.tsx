@@ -552,7 +552,7 @@ export default function PrivacyPolicy() {
               <p className="font-semibold mb-1">Meta Data Deletion Callback URL</p>
               <p className="leading-relaxed">
                 Our app is registered with Meta to receive automatic data deletion notifications at:<br />
-                <span className="font-mono text-xs break-all">POST https://api.easymod.tech/api/webhooks/meta/data-deletion</span>
+                <span className="font-mono text-xs break-all">POST https://api.easymod.tech/webhooks/meta/data-deletion</span>
               </p>
               <p className="mt-2 leading-relaxed">
                 Confirmation codes issued upon deletion are valid for 90 days. To check the status of a

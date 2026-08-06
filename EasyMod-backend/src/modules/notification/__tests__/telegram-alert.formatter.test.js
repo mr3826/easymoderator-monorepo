@@ -20,7 +20,7 @@ describe('telegram-alert.formatter', () => {
         expect(alert.title).toBe('New order received');
         expect(alert.body).toContain('Order: #EM-42');
         expect(alert.body).toContain('Customer: Sapna');
-        expect(alert.deepLink).toBe('https://app.easymod.tech/app/orders?orderId=order-1');
+        expect(alert.deepLink).toBe('https://app.easymod.tech/orders?orderId=order-1');
     });
 
     it('formats courier failure alerts without exposing customer messages', () => {
@@ -32,7 +32,7 @@ describe('telegram-alert.formatter', () => {
 
         expect(alert.body).toContain('Courier: pathao');
         expect(alert.body).toContain('Invalid city');
-        expect(alert.deepLink).toBe('https://app.easymod.tech/app/orders');
+        expect(alert.deepLink).toBe('https://app.easymod.tech/orders');
     });
 
     it('converts an alert into a browser push payload', () => {
@@ -40,6 +40,6 @@ describe('telegram-alert.formatter', () => {
 
         expect(payload.title).toBe('AI needs human help');
         expect(payload.icon).toBe('/icon-512.png');
-        expect(payload.data.deepLink).toContain('/app/inbox?conversationId=conv-1');
+        expect(payload.data.deepLink).toContain('/inbox?conversationId=conv-1');
     });
 });

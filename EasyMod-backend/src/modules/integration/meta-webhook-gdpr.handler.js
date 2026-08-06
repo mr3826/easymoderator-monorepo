@@ -97,7 +97,7 @@ router.post('/data-deletion', express.urlencoded({ extended: false }), async (re
             appSecret: secret,
         });
         return res.status(200).json({
-            url: `${publicBaseUrl()}/api/webhooks/meta/data-deletion/status/${result.confirmationCode}`,
+            url: `${publicBaseUrl()}/webhooks/meta/data-deletion/status/${result.confirmationCode}`,
             confirmation_code: result.confirmationCode,
         });
     } catch (err) {

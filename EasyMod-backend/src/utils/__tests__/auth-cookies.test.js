@@ -92,6 +92,8 @@ describe('auth cookie domain resolution', () => {
         expect(cleared).toEqual([
             { name: 'access_token', options: { path: '/' } },
             { name: 'access_token', options: { path: '/', domain: 'easymod.tech' } },
+            { name: 'refresh_token', options: { path: '/' } },
+            { name: 'refresh_token', options: { path: '/', domain: 'easymod.tech' } },
             { name: 'refresh_token', options: { path: '/api/auth' } },
             { name: 'refresh_token', options: { path: '/api/auth', domain: 'easymod.tech' } },
             { name: 'refresh_token', options: { path: '/auth' } },
@@ -117,7 +119,9 @@ describe('auth cookie domain resolution', () => {
         }
         expect(cleared).toEqual(expect.arrayContaining([
             { name: 'access_token', options: { path: '/', domain: 'easymod.tech' } },
+            { name: 'refresh_token', options: { path: '/', domain: 'easymod.tech' } },
             { name: 'refresh_token', options: { path: '/api/auth', domain: 'easymod.tech' } },
         ]));
+        expect(cookies.find(({ name }) => name === 'refresh_token')?.options.path).toBe('/');
     });
 });

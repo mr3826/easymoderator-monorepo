@@ -189,9 +189,9 @@ test.skip('channel settings expose Messenger only', async ({ page }) => {
   // opening the modal in CI. Followup: rewrite this E2E against the new card-based UI.
   await mockAuthenticatedMetaApi(page);
 
-  await page.goto('/app/manage-shop/chat-settings');
+  await page.goto('/manage-shop/chat-settings');
 
-  await expect(page).toHaveURL(/\/app\/manage-shop\/chat-settings$/);
+  await expect(page).toHaveURL(/\/manage-shop\/chat-settings$/);
   await page.getByRole('button', { name: /connect channel|চ্যানেল যোগ করুন/i }).first().click();
 
   await expect(page.getByRole('button', { name: /messenger/i }).first()).toBeVisible();
@@ -202,9 +202,9 @@ test.skip('channel settings expose Messenger only', async ({ page }) => {
 test('inbox enforces Meta 24h lock for expired messenger conversation', async ({ page }) => {
   await mockAuthenticatedMetaApi(page, { conversationChannel: 'messenger', hoursAgo: 25 });
 
-  await page.goto('/app/inbox');
+  await page.goto('/inbox');
 
-  await expect(page).toHaveURL(/\/app\/inbox$/);
+  await expect(page).toHaveURL(/\/inbox$/);
   await expect(page.getByText(/messaging window expired|মেসেজিং উইন্ডো শেষ হয়ে গেছে/i)).toBeVisible();
 
   const composerInput = page.locator('input[type="text"]').last();

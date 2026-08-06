@@ -55,7 +55,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_100', {
             phone: '01711111111',
             name: 'Founder Owner',
-            callbackUrl: 'https://app.easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/subscription'
         });
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
@@ -77,7 +77,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_250', {
             phone: '01733333333',
             name: 'Saved Business Name',
-            callbackUrl: 'https://app.easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/subscription'
         });
     });
 
@@ -98,7 +98,7 @@ describe('topupController.initiateTopup', () => {
         expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_500', {
             phone: '01799999999',
             name: 'Billing Contact',
-            callbackUrl: 'https://app.easymod.tech/app/subscription'
+            callbackUrl: 'https://app.easymod.tech/subscription'
         });
     });
 });

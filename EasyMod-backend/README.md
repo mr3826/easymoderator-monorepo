@@ -335,7 +335,7 @@ CHANNEL_ENCRYPTION_KEY=...            # 64-hex (32 bytes) — encrypts Meta toke
 # Meta (Facebook)
 META_APP_ID=...
 META_APP_SECRET=...
-META_OAUTH_REDIRECT_URI=http://localhost:5173/app/channels/oauth-callback
+META_OAUTH_REDIRECT_URI=http://localhost:5173/channels/oauth-callback
 META_WEBHOOK_VERIFY_TOKEN=...         # App Dashboard webhook handshake
 META_APP_SECRET=...                   # OAuth and HMAC signature secret from Meta App Settings
 

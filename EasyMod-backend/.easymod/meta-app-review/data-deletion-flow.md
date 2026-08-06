@@ -24,7 +24,7 @@ opaque confirmation code plus a status URL the user can poll.
 ```
 Meta Platform
      |
-     | POST /api/webhooks/meta/data-deletion
+| POST /webhooks/meta/data-deletion
      | body: signed_request=<sig>.<payload>
      v
 meta-webhook-gdpr.handler.js
@@ -60,7 +60,7 @@ meta-compliance.service.processDeletionRequest()
      |-- 5. Clean up server-owned attachment files (outside the transaction)
      |
      v
-200 { "url": "https://api.easymod.tech/api/webhooks/meta/data-deletion/status/<code>",
+200 { "url": "https://api.easymod.tech/webhooks/meta/data-deletion/status/<code>",
       "confirmation_code": "<opaque>" }
 ```
 
@@ -107,18 +107,18 @@ plaintext confirmation code.
 **Idempotent.** Keyed on a fingerprint of the signed request. A repeat returns
 the original confirmation code and performs no further deletion.
 
-**Status is user-checkable.** `GET /api/webhooks/meta/data-deletion/status/:code`
+**Status is user-checkable.** `GET /webhooks/meta/data-deletion/status/:code`
 returns status, counts (`matched_customers`, `conversations_deleted`,
 `messages_deleted`, `orders_anonymized`, `attachments_deleted`), `completed_at`,
 `retryable`, and `failure_code`. Unknown code → 404.
 
-`GET /api/webhooks/meta/data-deletion` (no code) returns human-readable
+`GET /webhooks/meta/data-deletion` (no code) returns human-readable
 instructions and the contact address `privacy@easymod.tech`, for users who
 arrive at the URL directly.
 
 ## Deauthorize callback
 
-`POST /api/webhooks/meta/deauthorize` is separate — it fires when a user revokes
+`POST /webhooks/meta/deauthorize` is separate — it fires when a user revokes
 access without requesting deletion. Same signed-request validation, then
 `meta-authorization-recovery.processDeauthorization(user_id)`. Data is **not**
 deleted; the authorization state is. The route is POST-only, so a `GET` returns
@@ -128,8 +128,8 @@ deleted; the authorization state is. The route is POST-only, so a `GET` returns
 
 | Dashboard field | Value |
 |---|---|
-| App Settings → Advanced → Data Deletion Request Callback URL | `https://api.easymod.tech/api/webhooks/meta/data-deletion` |
-| App Settings → Advanced → Deauthorize Callback URL | `https://api.easymod.tech/api/webhooks/meta/deauthorize` |
+| App Settings → Advanced → Data Deletion Request Callback URL | `https://api.easymod.tech/webhooks/meta/data-deletion` |
+| App Settings → Advanced → Deauthorize Callback URL | `https://api.easymod.tech/webhooks/meta/deauthorize` |
 
 Apex domain only — `www.easymod.tech` 301-redirects, and Meta treats a redirect
 on a callback URL as a misconfiguration.

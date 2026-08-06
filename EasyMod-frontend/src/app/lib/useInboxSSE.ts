@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { authService } from './auth';
-import config from './config';
-import { normalizeApiBaseUrl } from '@/api';
+import { buildApiUrl } from './config';
 import type { Message } from '@/api/types/conversation';
 
 interface SSECallbacks {
@@ -39,10 +38,9 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onMessageDeliveryUpda
         function connect() {
             if (destroyed) return;
 
-            const apiOrigin = config.apiBaseUrl.startsWith('http') ? normalizeApiBaseUrl(config.apiBaseUrl) : '';
             // The backend binds the tenant exclusively from the authenticated
             // session. A query selector is intentionally forbidden.
-            const url = `${apiOrigin}/api/conversation/events`;
+            const url = buildApiUrl('/api/conversation/events');
             es = new EventSource(url, { withCredentials: true });
 
             es.addEventListener('new_message', (e: MessageEvent) => {

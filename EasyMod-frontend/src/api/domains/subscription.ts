@@ -236,17 +236,17 @@ export interface BkashCheckout {
 
 /**
  * Start a bKash checkout for a specific outstanding invoice.
- * Redirect the browser to the returned `bkash_url`; bKash returns to `callbackUrl`
- * with `paymentID` + `status`, which you settle via {@link completeInvoicePayment}.
+ * Redirect the browser to the returned `bkash_url`; the backend supplies the
+ * canonical return URL. Settle the returned `paymentID` + `status` via
+ * {@link completeInvoicePayment}.
  */
 export async function payInvoice(
   invoiceId: string,
-  callbackUrl: string,
   extra?: { phone?: string; name?: string }
 ): Promise<BkashCheckout> {
   const response: AxiosResponse<ApiResponse<BkashCheckout>> = await httpClient.post(
     `/api/subscription/invoices/${invoiceId}/pay`,
-    { callback_url: callbackUrl, ...extra }
+    extra
   );
   return response.data.data;
 }
@@ -256,12 +256,11 @@ export async function payInvoice(
  * Used by the "Activate / Renew with bKash" CTA for trial/lapsed shops.
  */
 export async function renewSubscription(
-  callbackUrl: string,
   extra?: { phone?: string; name?: string }
 ): Promise<BkashCheckout> {
   const response: AxiosResponse<ApiResponse<BkashCheckout>> = await httpClient.post(
     '/api/subscription/renew',
-    { callback_url: callbackUrl, ...extra }
+    extra
   );
   return response.data.data;
 }
@@ -302,12 +301,11 @@ export async function getTopupPacks(): Promise<TopupPack[]> {
  */
 export async function initiateTopup(
   packCode: string,
-  callbackUrl: string,
   extra?: { phone?: string; name?: string }
 ): Promise<{ topup_id: string; bkash_url: string; payment_id: string; invoice_number?: string }> {
   const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
     '/api/subscription/topup/initiate',
-    { pack_code: packCode, callback_url: callbackUrl, ...extra }
+    { pack_code: packCode, ...extra }
   );
   return response.data.data;
 }

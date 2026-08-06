@@ -111,7 +111,7 @@ export default function Signup() {
         })
       );
 
-      navigate("/app");
+      navigate("/dashboard");
     } catch (err: any) {
       setError('root', {
         message: getErrorMessage(err, t('auth.signup.errors.unableToCreate')),

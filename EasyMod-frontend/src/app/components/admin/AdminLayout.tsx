@@ -23,7 +23,7 @@ export default function AdminLayout() {
               {l.label}
             </NavLink>
           ))}
-          <NavLink to="/app" className="block rounded px-3 py-2 text-sm text-gray-400 hover:bg-gray-100">
+          <NavLink to="/dashboard" className="block rounded px-3 py-2 text-sm text-gray-400 hover:bg-gray-100">
             ← Back to app
           </NavLink>
         </nav>

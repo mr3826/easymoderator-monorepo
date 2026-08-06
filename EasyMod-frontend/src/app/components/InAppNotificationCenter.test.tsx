@@ -69,7 +69,7 @@ describe('InAppNotificationCenter', () => {
     expect(screen.queryByLabelText('Mark notification read')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
       'href',
-      '/app/orders?orderId=order-9',
+      '/orders?orderId=order-9',
     );
     expect(mockMarkInAppNotificationRead).not.toHaveBeenCalled();
   });

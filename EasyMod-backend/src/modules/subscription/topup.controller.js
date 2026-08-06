@@ -50,7 +50,7 @@ const initiateTopup = async (req, res, next) => {
         const result = await topupService.initiateTopup(shopId, pack_code, {
             phone: contact.phone,
             name: contact.name,
-            callbackUrl: joinOrigin(getOrigins().app, '/app/subscription')
+            callbackUrl: joinOrigin(getOrigins().app, '/subscription')
         });
 
         res.status(201).json({ success: true, data: result });

@@ -136,7 +136,7 @@ describe('Dashboard — cash position section', () => {
           status: 'incomplete',
           required: true,
           ctaLabel: 'Manage channel',
-          href: '/app/manage-shop/chat-settings',
+          href: '/manage-shop/chat-settings',
           missing: [],
           warnings: [],
           meta: {},

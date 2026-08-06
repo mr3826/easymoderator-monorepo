@@ -131,17 +131,17 @@ async function mockAuthenticatedApi(page: Page) {
 
 test('authenticated user can load products page', async ({ page }) => {
   await mockAuthenticatedApi(page);
-  await page.goto('/app/products');
+  await page.goto('/products');
 
-  await expect(page).toHaveURL(/\/app\/products$/);
+  await expect(page).toHaveURL(/\/products$/);
   await expect(page.getByText('Demo Hoodie')).toBeVisible();
 });
 
 test('authenticated user can load orders page', async ({ page }) => {
   await mockAuthenticatedApi(page);
-  await page.goto('/app/orders');
+  await page.goto('/orders');
 
-  await expect(page).toHaveURL(/\/app\/orders$/);
+  await expect(page).toHaveURL(/\/orders$/);
   await expect(page.getByText('ORD-1001')).toBeVisible();
   await expect(page.getByText('Alice Rahman')).toBeVisible();
 });

@@ -37,7 +37,7 @@ describe('telegram.provider', () => {
         const result = await provider.sendMessage({
             chatId: '-1001',
             text: 'New order',
-            deepLink: 'https://app.easymod.tech/app/orders'
+            deepLink: 'https://app.easymod.tech/orders'
         });
 
         expect(result).toEqual({ sent: true, messageId: 77 });

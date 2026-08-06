@@ -15,7 +15,7 @@ import LanguageToggle from "./LanguageToggle";
 import InAppNotificationCenter from "./InAppNotificationCenter";
 import { buildMarketingUrl } from "@/app/lib/config";
 
-const appBasePath = '/app';
+const dashboardPath = '/dashboard';
 
 export default function DashboardLayout() {
   const location = useLocation();
@@ -23,24 +23,24 @@ export default function DashboardLayout() {
   const { t } = useTranslation();
 
   const navigation = [
-    { name: t('nav.home'), path: appBasePath, icon: Home },
-    { name: t('nav.orders'), path: `${appBasePath}/orders`, icon: ShoppingBag },
-    { name: t('nav.messages'), path: `${appBasePath}/inbox`, icon: MessageCircle },
-    { name: t('nav.products'), path: `${appBasePath}/products`, icon: Grid3X3 },
+    { name: t('nav.home'), path: dashboardPath, icon: Home },
+    { name: t('nav.orders'), path: '/orders', icon: ShoppingBag },
+    { name: t('nav.messages'), path: '/inbox', icon: MessageCircle },
+    { name: t('nav.products'), path: '/products', icon: Grid3X3 },
   ];
 
   const settingsNavigation = [
-    { name: t('nav.businessInfo'), path: `${appBasePath}/manage-shop/business-info`, icon: Building2 },
-    { name: t('nav.chat'), path: `${appBasePath}/manage-shop/chat-settings`, icon: MessageSquare },
-    { name: t('nav.delivery'), path: `${appBasePath}/manage-shop/delivery-settings`, icon: Truck },
-    { name: t('nav.payment'), path: `${appBasePath}/manage-shop/payment-settings`, icon: CreditCard },
-    { name: t('nav.notifications'), path: `${appBasePath}/manage-shop/notifications`, icon: Bell },
-    { name: t('nav.faqs'), path: `${appBasePath}/manage-shop/faqs`, icon: BookOpen },
+    { name: t('nav.businessInfo'), path: '/manage-shop/business-info', icon: Building2 },
+    { name: t('nav.chat'), path: '/manage-shop/chat-settings', icon: MessageSquare },
+    { name: t('nav.delivery'), path: '/manage-shop/delivery-settings', icon: Truck },
+    { name: t('nav.payment'), path: '/manage-shop/payment-settings', icon: CreditCard },
+    { name: t('nav.notifications'), path: '/manage-shop/notifications', icon: Bell },
+    { name: t('nav.faqs'), path: '/manage-shop/faqs', icon: BookOpen },
   ];
 
   const mobileNavigation = [
     ...navigation,
-    { name: t('nav.settings'), path: `${appBasePath}/manage-shop`, icon: Settings },
+    { name: t('nav.settings'), path: '/manage-shop', icon: Settings },
   ];
 
   const { user, currentShop, logout } = useAuth();
@@ -50,16 +50,16 @@ export default function DashboardLayout() {
 
   const activeShopName = currentShop?.shop_name || currentShop?.unique_code || currentShop?.id;
 
-  const subscriptionItem = { name: t('nav.subscription'), path: `${appBasePath}/subscription`, icon: CreditCard };
+  const subscriptionItem = { name: t('nav.subscription'), path: '/subscription', icon: CreditCard };
 
   // Derive page title from current route (check settings group first — more specific paths)
   const allNavItems = [...settingsNavigation, ...navigation, subscriptionItem];
   const activeNav = allNavItems.find(item =>
     item.path === location.pathname ||
-    (item.path !== appBasePath && location.pathname.startsWith(item.path))
+    (item.path !== dashboardPath && location.pathname.startsWith(item.path))
   );
   const pageTitle = activeNav?.name
-    ?? (location.pathname.startsWith(`${appBasePath}/manage-shop`) ? t('nav.settings') : 'EasyModerator');
+    ?? (location.pathname.startsWith('/manage-shop') ? t('nav.settings') : 'EasyModerator');
 
   const handleLogout = async () => {
     await logout();
@@ -96,7 +96,7 @@ export default function DashboardLayout() {
               const Icon = item.icon;
               const isActive =
                 location.pathname === item.path ||
-                (item.path !== appBasePath && location.pathname.startsWith(item.path));
+                (item.path !== dashboardPath && location.pathname.startsWith(item.path));
 
               return (
                 <Link
@@ -248,7 +248,7 @@ export default function DashboardLayout() {
                   {/* Navigation links */}
                   <div className="py-1">
                     <button
-                      onClick={() => { setShowShopPanel(false); navigate(`${appBasePath}/manage-shop`); }}
+                      onClick={() => { setShowShopPanel(false); navigate('/manage-shop'); }}
                       className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       <Store className="w-4 h-4 text-gray-400" />
@@ -284,7 +284,7 @@ export default function DashboardLayout() {
             const Icon = item.icon;
             const isActive =
               location.pathname === item.path ||
-              (item.path !== appBasePath && location.pathname.startsWith(item.path));
+              (item.path !== dashboardPath && location.pathname.startsWith(item.path));
 
             return (
               <li key={`mobile-${item.path}`}>

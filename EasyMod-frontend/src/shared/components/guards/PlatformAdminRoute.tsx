@@ -11,6 +11,6 @@ export function PlatformAdminRoute({ children }: { children: ReactNode }) {
   if (loading) {
     return <div className="flex h-screen items-center justify-center text-gray-500">Loading…</div>;
   }
-  if (!role) return <Navigate to="/app" replace />;
+  if (!role) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }

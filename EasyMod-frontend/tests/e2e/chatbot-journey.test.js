@@ -366,8 +366,8 @@ test.describe('Group 5: Branding Rules', () => {
   test('owner can still reach products view as part of settings journey', async ({ page }) => {
     await setupMockApi(page);
     await login(page);
-    await page.goto('/app/products');
-    await expect(page).toHaveURL(/\/app\/products$/);
+    await page.goto('/products');
+    await expect(page).toHaveURL(/\/products$/);
     await expect(page.getByText('Demo Hoodie')).toBeVisible();
   });
 });

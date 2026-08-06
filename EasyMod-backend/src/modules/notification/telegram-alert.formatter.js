@@ -30,8 +30,8 @@ function formatTelegramAlert(eventType, payload = {}) {
     switch (eventType) {
         case NOTIFICATION_EVENTS.NEW_ORDER: {
             const url = payload.orderId
-                ? deepLink(`/app/orders?orderId=${encodeURIComponent(payload.orderId)}`)
-                : deepLink('/app/orders');
+                ? deepLink(`/orders?orderId=${encodeURIComponent(payload.orderId)}`)
+                : deepLink('/orders');
             return {
                 title: 'New order received',
                 body: compactLines([
@@ -46,8 +46,8 @@ function formatTelegramAlert(eventType, payload = {}) {
         }
         case NOTIFICATION_EVENTS.AI_HITL: {
             const url = payload.conversationId
-                ? deepLink(`/app/inbox?conversationId=${encodeURIComponent(payload.conversationId)}`)
-                : deepLink('/app/inbox');
+                ? deepLink(`/inbox?conversationId=${encodeURIComponent(payload.conversationId)}`)
+                : deepLink('/inbox');
             return {
                 title: 'AI needs human help',
                 body: compactLines([
@@ -61,8 +61,8 @@ function formatTelegramAlert(eventType, payload = {}) {
         }
         case NOTIFICATION_EVENTS.CUSTOMER_WAITING_TOO_LONG: {
             const url = payload.conversationId
-                ? deepLink(`/app/inbox?conversationId=${encodeURIComponent(payload.conversationId)}`)
-                : deepLink('/app/inbox');
+                ? deepLink(`/inbox?conversationId=${encodeURIComponent(payload.conversationId)}`)
+                : deepLink('/inbox');
             return {
                 title: 'Customer waiting too long',
                 body: compactLines([
@@ -75,8 +75,8 @@ function formatTelegramAlert(eventType, payload = {}) {
         }
         case NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED: {
             const url = payload.orderId
-                ? deepLink(`/app/orders?orderId=${encodeURIComponent(payload.orderId)}`)
-                : deepLink('/app/orders');
+                ? deepLink(`/orders?orderId=${encodeURIComponent(payload.orderId)}`)
+                : deepLink('/orders');
             return {
                 title: 'Courier booking failed',
                 body: compactLines([
@@ -96,7 +96,7 @@ function formatTelegramAlert(eventType, payload = {}) {
                     payload.issue ? `Issue: ${payload.issue}` : null,
                     payload.invoiceNumber ? `Invoice: ${payload.invoiceNumber}` : null
                 ]),
-                deepLink: deepLink('/app/subscription')
+                deepLink: deepLink('/subscription')
             };
         }
         case NOTIFICATION_EVENTS.DAILY_SALES_SUMMARY: {
@@ -108,7 +108,7 @@ function formatTelegramAlert(eventType, payload = {}) {
                     payload.orderCount !== undefined ? `Orders: ${payload.orderCount}` : null,
                     money(payload.salesTotal) ? `Sales: ${money(payload.salesTotal)}` : null
                 ]),
-                deepLink: deepLink('/app')
+                deepLink: deepLink('/dashboard')
             };
         }
         case NOTIFICATION_EVENTS.TELEGRAM_TEST:
@@ -119,13 +119,13 @@ function formatTelegramAlert(eventType, payload = {}) {
                     'বাংলা টেস্ট এলার্ট',
                     'Telegram alerts are connected for this shop.'
                 ]),
-                deepLink: deepLink('/app/manage-shop/notifications')
+                deepLink: deepLink('/manage-shop/notifications')
             };
         default:
             return {
                 title: payload.title || 'EasyModerator alert',
                 body: payload.body || 'Open EasyModerator to review this alert.',
-                deepLink: deepLink('/app')
+                deepLink: deepLink('/dashboard')
             };
     }
 }

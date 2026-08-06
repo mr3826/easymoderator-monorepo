@@ -60,7 +60,11 @@ const COOKIE_OPTIONS_REFRESH = (req) => ({
     httpOnly: true,
     secure: isProduction(),
     sameSite: SAME_SITE(),
-    path: '/api/auth',
+    // The public API hostname uses clean /auth/* paths while the legacy
+    // /api/auth/* compatibility proxy remains available during migration.
+    // Cookie Path matching happens in the browser before Caddy rewrites, so
+    // '/' is the only single scope that supports both URL shapes.
+    path: '/',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     ...cookieDomainOption(req)
 });
@@ -98,14 +102,17 @@ const clearLegacyCookie = (res, name, path, req) => {
 
 const clearLegacyAuthCookies = (res, req) => {
     clearLegacyCookie(res, 'access_token', '/', req);
+    clearLegacyCookie(res, 'refresh_token', '/', req);
     clearLegacyCookie(res, 'refresh_token', '/api/auth', req);
     clearLegacyCookie(res, 'refresh_token', '/auth', req);
 };
 
 const clearAuthCookies = (res, req) => {
     clearCookie(res, 'access_token', '/', req);
+    clearCookie(res, 'refresh_token', '/', req);
+    // Clear both historical path-scoped variants during the compatibility
+    // window so an older cookie cannot shadow the canonical root-scoped one.
     clearCookie(res, 'refresh_token', '/api/auth', req);
-    // Clear legacy cookies set before the API prefix was included in the path.
     clearCookie(res, 'refresh_token', '/auth', req);
     clearLegacyAuthCookies(res, req);
 };

@@ -24,7 +24,7 @@ Do not request:
 
 Configure the `page` object callback:
 
-- Callback URL: `https://api.easymod.tech/api/webhooks/meta`
+- Callback URL: `https://api.easymod.tech/webhooks/meta`
 - Verify token: production `META_WEBHOOK_VERIFY_TOKEN`
 - Subscribed field: `messages`
 

@@ -4,10 +4,12 @@
 #   app.easymod.tech  merchant SaaS frontend
 #   api.easymod.tech  API, webhooks, health, and public backend assets
 #
-# Compatibility is intentional during migration:
-# - apex /api/*, /health*, and /uploads/* continue to reach the backend
-# - legacy apex merchant routes redirect to app.easymod.tech
-# - legacy /webhooks/* is rewritten internally; provider POSTs are never redirected
+# Public paths are host-native: app routes do not carry /app and API routes do
+# not carry /api. Express keeps its internal /api mount; Caddy translates at
+# the edge. Compatibility is intentional during migration:
+# - api.easymod.tech/api/* and apex /api/* still reach the same backend routes
+# - legacy /app/* browser routes redirect to clean app paths
+# - provider/API requests are rewritten internally so methods and bodies survive
 
 (security_headers) {
 	header {
@@ -25,11 +27,10 @@ www.easymod.tech {
 
 api.easymod.tech {
 	import security_headers
-	# Some old provider registrations used /webhooks/* without /api. Preserve the
-	# HTTP method and request body by rewriting internally rather than redirecting.
-	@legacy_webhooks path /webhooks /webhooks/*
-	handle @legacy_webhooks {
-		rewrite * /api{uri}
+	# Health and uploaded assets are mounted outside Express's internal /api
+	# router and therefore pass through unchanged.
+	@health path /health /health/*
+	handle @health {
 		reverse_proxy backend:3000 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}
@@ -37,7 +38,35 @@ api.easymod.tech {
 		}
 	}
 
+	@uploads path /uploads /uploads/*
+	handle @uploads {
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Temporary compatibility for clients and provider dashboards that still
+	# send /api/*. Never redirect non-GET requests during this window.
+	@legacy_api path /api /api/*
+	handle @legacy_api {
+		header Deprecation "true"
+		reverse_proxy backend:3000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			transport http {
+				read_timeout 120s
+				write_timeout 120s
+			}
+		}
+	}
+
+	# Canonical public API: /webhooks/meta, /auth/signin, /order, /version, etc.
+	# Rewrite only inside the proxy; the browser/provider never sees /api.
 	handle {
+		rewrite * /api{uri}
 		reverse_proxy backend:3000 {
 			header_up X-Real-IP {remote_host}
 			header_up X-Forwarded-For {remote_host}
@@ -61,13 +90,26 @@ app.easymod.tech {
 	@marketing_routes path /pricing /privacy-policy /terms
 	redir @marketing_routes https://easymod.tech{uri} 301
 
-	# The app root is an entry point, not a duplicate marketing homepage. The
-	# frontend auth loader moves an authenticated merchant onward to /app.
-	@app_root path /
-	redir @app_root /signin 302
+	@legacy_settings path /settings/channels
+	redir @legacy_settings /manage-shop/chat-settings 308
+
+	@legacy_app_root path /app
+	redir @legacy_app_root /dashboard 308
+
+	@legacy_merchant_users path /app/admin/users
+	redir @legacy_merchant_users /team/users 308
+
+	@legacy_app_prefixed path /app/*
+	handle @legacy_app_prefixed {
+		route {
+			uri strip_prefix /app
+			redir {uri} 308
+		}
+	}
 
 	# Authenticated/product routes must not be indexed even if a crawler reaches
-	# them without credentials.
+	# them without credentials. The frontend root loader sends authenticated
+	# merchants to /dashboard and anonymous visitors to /signin.
 	header X-Robots-Tag "noindex, nofollow"
 	reverse_proxy frontend:8080
 
@@ -79,12 +121,33 @@ app.easymod.tech {
 
 easymod.tech {
 	import security_headers
-	# Browser-route compatibility. Query strings are retained by {uri}, including
-	# reset tokens and the legacy Meta OAuth completion URL.
-	@legacy_app_routes path \
- /login /signin /signup /forgot-password /reset-password /2fa-verify \
- /app /app/* /admin /admin/* /settings/channels
-	redir @legacy_app_routes https://app.easymod.tech{uri} 302
+	@legacy_login path /login
+	redir @legacy_login https://app.easymod.tech/signin 302
+
+	@legacy_settings path /settings/channels
+	redir @legacy_settings https://app.easymod.tech/manage-shop/chat-settings 302
+
+	@legacy_app_root path /app
+	redir @legacy_app_root https://app.easymod.tech/dashboard 302
+
+	@legacy_merchant_users path /app/admin/users
+	redir @legacy_merchant_users https://app.easymod.tech/team/users 302
+
+	# Strip the obsolete /app namespace while keeping the suffix and query.
+	@legacy_app_prefixed path /app/*
+	handle @legacy_app_prefixed {
+		route {
+			uri strip_prefix /app
+			redir https://app.easymod.tech{uri} 302
+		}
+	}
+
+	# Clean merchant paths have one owner even if an old bookmark reaches the
+	# marketing hostname.
+	@merchant_routes {
+		path /signin /signup /forgot-password /reset-password /2fa-verify /dashboard /inbox /channels /channels/* /manage-shop /manage-shop/* /products /products/* /categories /categories/* /orders /orders/* /customers /customers/* /knowledge /reports /audit-logs /subscription /team /team/* /admin /admin/*
+	}
+	redir @merchant_routes https://app.easymod.tech{uri} 302
 
 	# Keep the old backend contract alive until provider dashboards, persisted
 	# attachments, bookmarks, and launch tooling have all migrated.

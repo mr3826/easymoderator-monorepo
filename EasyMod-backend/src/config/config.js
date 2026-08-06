@@ -45,7 +45,7 @@ module.exports = {
     metaAppId: process.env.META_APP_ID,
     metaAppSecret: process.env.META_APP_SECRET,
     metaOAuthRedirectUri: process.env.META_OAUTH_REDIRECT_URI
-        || (process.env.FRONTEND_URL && `${process.env.FRONTEND_URL}/app/channels/oauth-callback`),
+        || (process.env.FRONTEND_URL && `${process.env.FRONTEND_URL}/channels/oauth-callback`),
     origins: getOrigins(process.env),
     // Cookie config for httpOnly token storage
     cookieDomain: process.env.COOKIE_DOMAIN || undefined,

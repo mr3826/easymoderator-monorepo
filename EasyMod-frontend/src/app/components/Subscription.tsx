@@ -363,8 +363,7 @@ export default function Subscription() {
       const pack = conversationPacks.find(p => p.amount === selectedConversationPack);
       if (!pack) return;
 
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.initiateTopup(pack.code, callbackUrl);
+      const res = await apiClient.initiateTopup(pack.code);
       if (!res?.bkash_url || !res?.topup_id) {
         throw new Error(t('subscription.bkashStartFailed'));
       }
@@ -382,8 +381,7 @@ export default function Subscription() {
     try {
       setPayingInvoiceId(invoiceRawId);
       setError(null);
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.payInvoice(invoiceRawId, callbackUrl);
+      const res = await apiClient.payInvoice(invoiceRawId);
       if (!res?.bkash_url) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', invoiceRawId, res.bkash_url);
     } catch (error: any) {
@@ -399,8 +397,7 @@ export default function Subscription() {
     try {
       setIsRenewing(true);
       setError(null);
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.renewSubscription(callbackUrl);
+      const res = await apiClient.renewSubscription();
       if (!res?.bkash_url || !res?.invoice_id) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', res.invoice_id, res.bkash_url);
     } catch (error: any) {

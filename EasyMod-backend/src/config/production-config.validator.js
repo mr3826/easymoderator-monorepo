@@ -152,7 +152,7 @@ function validateProductionConfig(env = process.env) {
         try {
             const callback = new URL(env.META_OAUTH_REDIRECT_URI);
             if (callback.origin !== new URL(env.APP_URL).origin
-                || callback.pathname !== '/app/channels/oauth-callback') {
+                || callback.pathname !== '/channels/oauth-callback') {
                 invalid.push('META_OAUTH_REDIRECT_URI');
             }
         } catch (_) {

@@ -13,7 +13,7 @@ const invoicePaymentService = require('./invoice-payment.service');
 const { AppError } = require('../../utils/AppError');
 const { getOrigins, joinOrigin } = require('../../config/origins');
 
-const subscriptionCallbackUrl = () => joinOrigin(getOrigins().app, '/app/subscription');
+const subscriptionCallbackUrl = () => joinOrigin(getOrigins().app, '/subscription');
 
 const payInvoice = async (req, res, next) => {
     try {

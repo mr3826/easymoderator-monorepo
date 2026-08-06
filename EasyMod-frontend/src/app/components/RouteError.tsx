@@ -20,7 +20,7 @@ export default function RouteError() {
         <h1 className="text-xl font-semibold text-gray-900 mb-2">{title}</h1>
         <p className="text-gray-600 mb-6">{message}</p>
         <button
-          onClick={() => window.location.assign(buildAppUrl("/app"))}
+          onClick={() => window.location.assign(buildAppUrl("/dashboard"))}
           className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
         >
           Back to app

@@ -8,7 +8,7 @@ jest.mock('../oauth-state.store', () => ({
         userId: 'user-xyz',
         shopId: 'shop-abc',
         platform: 'facebook',
-        redirectUri: 'https://app.easymod.tech/app/channels/oauth-callback',
+        redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
     }),
     TTL_SECONDS: 900,
 }));
@@ -124,7 +124,7 @@ describe('OAuth callback null-state guards', () => {
         );
         expect(mockExchangeCode).toHaveBeenCalledWith({
             code: 'auth-code',
-            redirectUri: 'https://app.easymod.tech/app/channels/oauth-callback',
+            redirectUri: 'https://app.easymod.tech/channels/oauth-callback',
         });
     });
 

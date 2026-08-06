@@ -40,7 +40,7 @@ function validSource(overrides = {}) {
         CORS_ORIGINS: 'https://app.easymod.tech',
         FRONTEND_URL: 'https://app.easymod.tech',
         BASE_URL: 'https://api.easymod.tech',
-        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',
+        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
         META_APP_ID: '1234567890',
         META_APP_SECRET: hex64('e'),
         META_WEBHOOK_VERIFY_TOKEN: hex64('f'),

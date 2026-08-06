@@ -133,7 +133,7 @@ export default function SubcategoryDetails() {
     <div className="p-4 md:p-8">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-600 mb-6 flex-wrap">
-        <button onClick={() => navigate("/app/categories")} className="hover:text-gray-900">
+        <button onClick={() => navigate("/categories")} className="hover:text-gray-900">
           {t('categories.subcategoryDetail.breadcrumb')}
         </button>
         <ChevronRight className="w-4 h-4" />
