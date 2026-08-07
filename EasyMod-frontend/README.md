@@ -47,7 +47,7 @@ Built with **React 18 + Vite 6 + TypeScript**, installable as a **PWA**, and loc
 
 ## Architecture
 
-A client-rendered SPA served as static assets by nginx, talking to the [EasyModerator backend](../EasyMod-backend) over a JSON API. In production the SPA is **same-origin** with the API (empty `VITE_API_BASE_URL`), so cookies and CSRF work without cross-site complications.
+A client-rendered bundle served as static assets by nginx. Caddy exposes its public routes on `https://easymod.tech` and merchant routes on `https://app.easymod.tech`; API traffic goes to `https://api.easymod.tech`. The app/API origins are different but same-site, using explicit credentialed CORS, CSRF tokens, and host-only API cookies. Public marketing calls use a separate credential-omitting client.
 
 ```
 Browser
@@ -101,7 +101,7 @@ src/
 
 ## Routes & Screens
 
-Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Authenticated app routes live under `/app/*` behind an auth guard; admin-only routes use `AdminRoute`.
+Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Authenticated app routes live under `/*` behind an auth guard; admin-only routes use `AdminRoute`.
 
 **Public / marketing**
 
@@ -110,16 +110,16 @@ Routes are defined in `src/app/routes.ts` and lazy-loaded for code-splitting. Au
 - `/privacy-policy`, `/terms` — Legal (required for Meta App Review)
 - `/signin`, `/signup`, `/forgot-password`, `/reset-password`, 2FA verify
 
-**Dashboard (`/app/*`)**
+**Merchant app (host-native paths)**
 
-- Dashboard (KPIs / cash position)
-- Unified Inbox for Facebook Messenger DMs
-- Products, Add/Edit Product, Categories & subcategories
-- Orders
+- Dashboard (KPIs / cash position) — `/dashboard`
+- Unified Inbox for Facebook Messenger DMs — `/inbox`
+- Products, Add/Edit Product, Categories & subcategories — `/products`, `/categories`
+- Orders — `/orders`
 - Customers
 - Reports & Analytics, Audit Logs
-- Channels (Meta OAuth connect + per-channel health) + OAuth callback
-- Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/app/manage-shop/faqs`; `/app/knowledge` redirects here)
+- Channels (Meta OAuth connect + per-channel health) + OAuth callback at `/channels/oauth-callback`
+- Settings hub: Reply Settings, Delivery, Payment, Notifications, Business Info, FAQs (`/manage-shop/**`; `/knowledge` redirects to `/manage-shop/faqs`)
   Business Info contains the owner-editable additional info field used to ground replies. Reply Settings defaults to Draft and is the source of truth for Auto/Draft/Manual across connected Pages; channel toggles only opt a Page in or out. Telegram group alerts appear as a handoff option when notification status is loaded.
 - Subscription & billing
 - Users (admin)
@@ -137,6 +137,13 @@ dashboard · payment · subscription · meta-channels · audit · rto-shield · 
 ```
 
 The Axios instance sends credentials, attaches the CSRF token, transparently refreshes the access token on `401`, and normalises error shapes. Prefer adding new calls to the matching domain module rather than calling Axios directly from components.
+
+Domain modules may continue to name the backend's internal Express paths as
+`/api/**`. The shared client removes that prefix when calling the production API
+origin, so browsers see host-native URLs such as
+`https://api.easymod.tech/auth/me`. Local development keeps `/api/**` because
+Vite uses that prefix for its backend proxy. Provider dashboards and public
+documentation must always use the clean production form.
 
 Notification UI lives in `NotificationSettings` and `InAppNotificationCenter`. Browser push registration uses the same Axios client as the rest of the app so CSRF and cookie auth remain consistent.
 
@@ -206,7 +213,9 @@ Vite exposes only `VITE_`-prefixed variables to the client. Create `.env` / `.en
 
 | Variable | Purpose |
 |---|---|
-| `VITE_API_BASE_URL` | Backend API origin. **Leave empty in production** (SPA is same-origin with the API). |
+| `VITE_API_BASE_URL` | Backend origin; `https://api.easymod.tech` in production. |
+| `VITE_APP_URL` | Merchant/auth origin; `https://app.easymod.tech` in production. |
+| `VITE_MARKETING_URL` | Marketing/legal origin; `https://easymod.tech` in production. |
 | `VITE_API_URL` | Legacy alias for the API origin (kept for compatibility). |
 | `VITE_ENV` | Environment label (`development` / `production`). |
 | `VITE_SENTRY_DSN` | Sentry DSN (optional). |
@@ -236,7 +245,7 @@ Unit specs sit beside the code in `__tests__/` folders and under `src/test/`. Th
 npm run build        # vite build → dist/
 ```
 
-CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the production `VITE_*` values, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the Digital Ocean droplet. The SPA is served same-origin with the API behind Caddy/nginx (`www → apex` 301; canonical origin `https://easymod.tech`).
+CI/CD (GitHub Actions, repo root `.github/workflows/ci-cd.yml`) builds the SPA with the canonical production `VITE_*` origins, packages it into an nginx Docker image, pushes to GHCR, and deploys it alongside the backend on the DigitalOcean droplet. Caddy owns the marketing/app/API host split and temporary apex compatibility routes.
 
 > The build can emit large-chunk warnings for vendor bundles such as `react-vendor`. Tighten `manualChunks` if bundle size becomes a concern.
 

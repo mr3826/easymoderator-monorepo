@@ -306,7 +306,7 @@ export default function Products() {
   };
 
   const handleEditProduct = (product: Product) => {
-    navigate(`/app/products/${product.id}/edit`);
+    navigate(`/products/${product.id}/edit`);
   };
 
   const handleRejectProduct = (productId: string) => {
@@ -430,7 +430,7 @@ export default function Products() {
               {t('products.uploadFile')}
             </button>
             <button
-              onClick={() => navigate('/app/products/add')}
+              onClick={() => navigate('/products/add')}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               <Plus className="w-5 h-5" />
@@ -462,7 +462,7 @@ export default function Products() {
                 </button>
               </div>
               <button
-                onClick={() => navigate('/app/products/add')}
+                onClick={() => navigate('/products/add')}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 <Plus className="w-5 h-5" />

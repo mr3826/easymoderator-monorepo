@@ -135,7 +135,7 @@ export default function CategoryDetails() {
         await apiClient.updateCategory(categoryId!, categoryData);
       }
 
-      navigate("/app/categories");
+      navigate("/categories");
     } catch (err: unknown) {
       setError(getErrorMessage(err, `Failed to ${isCreateMode ? 'create' : 'update'} category`));
       console.error(`Error ${isCreateMode ? 'creating' : 'updating'} category:`, err);
@@ -148,7 +148,7 @@ export default function CategoryDetails() {
     <div className="p-4 md:p-8">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-600 mb-6">
-        <button onClick={() => navigate("/app/categories")} className="hover:text-gray-900">
+        <button onClick={() => navigate("/categories")} className="hover:text-gray-900">
           {t('categories.detail.breadcrumb')}
         </button>
         <ChevronRight className="w-4 h-4" />

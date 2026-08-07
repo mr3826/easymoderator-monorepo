@@ -13,6 +13,7 @@
 const topupService = require('./topup.service');
 const { AppError } = require('../../utils/AppError');
 const { User, Shop } = require('../entities');
+const { getOrigins, joinOrigin } = require('../../config/origins');
 
 const readBusinessInfo = (shop) => {
     const settings = shop?.settings || {};
@@ -41,16 +42,15 @@ const getPacks = async (req, res, next) => {
 const initiateTopup = async (req, res, next) => {
     try {
         const { shopId } = req.user;
-        const { pack_code, phone, name, callback_url } = req.body;
+        const { pack_code, phone, name } = req.body;
 
         if (!pack_code) throw new AppError('pack_code is required', 400);
-        if (!callback_url) throw new AppError('callback_url is required', 400);
         const contact = await resolvePaymentContact(req, { phone, name });
 
         const result = await topupService.initiateTopup(shopId, pack_code, {
             phone: contact.phone,
             name: contact.name,
-            callbackUrl: callback_url
+            callbackUrl: joinOrigin(getOrigins().app, '/subscription')
         });
 
         res.status(201).json({ success: true, data: result });

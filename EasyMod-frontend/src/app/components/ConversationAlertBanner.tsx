@@ -85,7 +85,7 @@ export default function ConversationAlertBanner() {
       </div>
       <div className="flex items-center gap-2">
         <button
-          onClick={() => navigate('/app/subscription')}
+          onClick={() => navigate('/subscription')}
           className={`flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30 ${config.text} transition-colors`}
         >
           Top Up <ArrowUpRight className="w-3 h-3" />

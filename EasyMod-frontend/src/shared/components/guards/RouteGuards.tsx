@@ -48,7 +48,7 @@ export function withRouteGuard(
       requiredRole,
       requiredAction,
       requiredResource,
-      redirectTo = '/app',
+      redirectTo = '/dashboard',
     } = options;
 
     // Still loading auth
@@ -96,7 +96,7 @@ export function withRouteGuard(
  */
 export function AdminRoute({
   children,
-  redirectTo = '/app',
+  redirectTo = '/dashboard',
 }: {
   children: ReactNode;
   redirectTo?: string;
@@ -127,7 +127,7 @@ export function AdminRoute({
  */
 export function ModeratorRoute({
   children,
-  redirectTo = '/app',
+  redirectTo = '/dashboard',
 }: {
   children: ReactNode;
   redirectTo?: string;
@@ -160,7 +160,7 @@ export function PermissionRoute({
   action,
   resource,
   children,
-  redirectTo = '/app',
+  redirectTo = '/dashboard',
 }: {
   action: string;
   resource: string;
@@ -212,7 +212,7 @@ function UnauthorizedScreen() {
         <p className="text-xl text-gray-600 mb-6">Unauthorized</p>
         <p className="text-gray-500 mb-8">You don't have permission to access this page.</p>
         <button
-          onClick={() => navigate('/app')}
+          onClick={() => navigate('/dashboard')}
           className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           Back to Dashboard

@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { OrderInvoice, Order, Shop, Customer } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
+const { getOrigins, joinOrigin } = require('../../config/origins');
 
 class InvoiceService {
     constructor() {
@@ -194,7 +195,7 @@ class InvoiceService {
             await fs.writeFile(filePath, pdfBuffer);
 
             // Return public URL
-            return `${process.env.BASE_URL}/uploads/invoices/${fileName}`;
+            return joinOrigin(getOrigins().publicAssets, `/uploads/invoices/${fileName}`);
 
         } catch (error) {
             this.logger.error('PDF generation failed', { error: error.message });

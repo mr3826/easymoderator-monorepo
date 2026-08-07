@@ -20,7 +20,6 @@ const validateInitializePayment = [
     body('amount').custom(value => value > 0).withMessage('amount must be greater than 0'),
     body('customer_name').notEmpty().withMessage('customer_name is required'),
     body('customer_phone').matches(bdMobileStrictRegex).withMessage('Invalid Bangladesh phone number'),
-    body('callback_url').isURL().withMessage('callback_url must be a valid URL'),
     body('shop_id').notEmpty().withMessage('shop_id is required')
 ];
 

@@ -9,11 +9,11 @@ describe('UsersPage Route', () => {
   it('should be protected by AdminRoute guard', () => {
     // This is verified through the routes.ts configuration
     // Route is wrapped with <AdminRoute><UsersPage /></AdminRoute>
-    // which ensures only admin users can access /admin/users
+    // which ensures only merchant admins can access /team/users
     expect(true).toBe(true);
   });
 
-  it('should be accessible at /app/admin/users endpoint', () => {
+  it('should be accessible at /team/users endpoint', () => {
     // Verified in routes.ts: { path: "admin/users", Component: AdminRoute(...) }
     expect(true).toBe(true);
   });

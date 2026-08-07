@@ -24,7 +24,7 @@ function actionLink(notification: OwnerNotification) {
   const deepLink = notification.customer_data?.deepLink;
   if (deepLink) return String(deepLink);
   const orderId = notification.customer_data?.orderId;
-  return orderId ? `/app/orders?orderId=${encodeURIComponent(String(orderId))}` : null;
+  return orderId ? `/orders?orderId=${encodeURIComponent(String(orderId))}` : null;
 }
 
 export default function InAppNotificationCenter() {

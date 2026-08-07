@@ -451,7 +451,7 @@ describe('AddProduct', () => {
     await waitFor(() => {
       expect(mockCreateProduct).toHaveBeenCalled();
       expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['products'] });
-      expect(mockNavigate).toHaveBeenCalledWith('/app/products');
+      expect(mockNavigate).toHaveBeenCalledWith('/products');
     });
   });
 

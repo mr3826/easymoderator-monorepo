@@ -87,7 +87,7 @@ describe('AddProduct', () => {
           price: 99.99,
         })
       )
-      expect(mockNavigate).toHaveBeenCalledWith('/app/products')
+      expect(mockNavigate).toHaveBeenCalledWith('/products')
     })
   })
 })

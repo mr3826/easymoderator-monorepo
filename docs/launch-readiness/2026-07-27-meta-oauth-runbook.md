@@ -18,8 +18,8 @@
 
 | Piece | Location |
 |---|---|
-| Connection screen | `https://easymod.tech/app/manage-shop/chat-settings` |
-| OAuth popup callback | `/app/channels/oauth-callback` (standalone route, outside the auth shell) |
+| Connection screen | `https://app.easymod.tech/manage-shop/chat-settings` |
+| OAuth popup callback | `/channels/oauth-callback` (standalone route, outside the auth shell) |
 | Initiate | `POST /api/channels/meta/oauth/initiate` |
 | Callback exchange | `POST /api/channels/meta/oauth/callback` |
 | Persist selection | `POST /api/channels/meta/oauth/connect-asset` |
@@ -32,8 +32,8 @@
 
 ### Step 1 — Reach the connection screen
 
-1. Sign in at `https://easymod.tech/signin`.
-2. Navigate to **Manage Shop → Chat Settings** (or go straight to `/app/manage-shop/chat-settings`).
+1. Sign in at `https://app.easymod.tech/signin`.
+2. Navigate to **Manage Shop → Chat Settings** (or go straight to `/manage-shop/chat-settings`).
 3. Open DevTools (`F12`) → **Console** and **Network** tabs before continuing. Leave them open for the whole run.
 
 **Expect:** a Facebook card with a **Connect** button, and no already-connected Page listed.

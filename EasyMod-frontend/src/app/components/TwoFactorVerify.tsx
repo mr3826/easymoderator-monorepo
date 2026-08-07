@@ -78,7 +78,7 @@ export default function TwoFactorVerify() {
     setError('');
     try {
       await verifyTwoFactor(code);
-      navigate('/app', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err: any) {
       setError(getErrorMessage(err, 'Invalid code. Please try again.'));
       setDigits(['', '', '', '', '', '']);

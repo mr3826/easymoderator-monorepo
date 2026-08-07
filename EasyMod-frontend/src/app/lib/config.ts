@@ -4,6 +4,8 @@ type Environment = (typeof validEnvironments)[number];
 
 interface Config {
   apiBaseUrl: string;
+  appUrl: string;
+  marketingUrl: string;
   environment: Environment;
   bkashEnabled: boolean;
 }
@@ -21,7 +23,26 @@ export function isBkashEnabled(): boolean {
   return import.meta.env.VITE_BKASH_ENABLED === 'true';
 }
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '/api';
+const productionDefaults = {
+  apiBaseUrl: 'https://api.easymod.tech',
+  appUrl: 'https://app.easymod.tech',
+  marketingUrl: 'https://easymod.tech',
+};
+const developmentDefaults = {
+  apiBaseUrl: '/api',
+  appUrl: 'http://localhost:5173',
+  marketingUrl: 'http://localhost:5173',
+};
+const defaults = import.meta.env.PROD ? productionDefaults : developmentDefaults;
+
+function normalizeOrigin(value: string): string {
+  const url = new URL(value);
+  return url.origin;
+}
+
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || defaults.apiBaseUrl;
+const appUrl = normalizeOrigin(import.meta.env.VITE_APP_URL || defaults.appUrl);
+const marketingUrl = normalizeOrigin(import.meta.env.VITE_MARKETING_URL || defaults.marketingUrl);
 const modeEnvironment = import.meta.env.MODE === 'test' ? 'development' : import.meta.env.MODE;
 const environment = import.meta.env.VITE_ENV || modeEnvironment || 'development';
 
@@ -33,6 +54,50 @@ if (!isEnvironment(environment)) {
   throw new Error(`Invalid VITE_ENV: ${environment}. Must be one of: ${validEnvironments.join(', ')}`);
 }
 
-const config: Config = { apiBaseUrl, environment, bkashEnabled: isBkashEnabled() };
+const config: Config = { apiBaseUrl, appUrl, marketingUrl, environment, bkashEnabled: isBkashEnabled() };
+
+export function buildAppUrl(path = '/'): string {
+  return new URL(path, `${config.appUrl}/`).toString();
+}
+
+export function buildMarketingUrl(path = '/'): string {
+  return new URL(path, `${config.marketingUrl}/`).toString();
+}
+
+function withLeadingSlash(path: string): string {
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+/**
+ * Translate the internal Express mount (`/api/...`) into the public URL shape.
+ * Production's API hostname already provides the namespace, while local
+ * development still uses Vite's `/api` proxy.
+ */
+export function toApiRequestPath(path = '/'): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = withLeadingSlash(path);
+  if (config.apiBaseUrl === '/api') {
+    return /^\/api(?:\/|$)/.test(normalized)
+      ? normalized
+      : `/api${normalized === '/' ? '' : normalized}`;
+  }
+
+  return normalized.replace(/^\/api(?=\/|$)/, '') || '/';
+}
+
+export function buildApiUrl(path = '/'): string {
+  const base = config.apiBaseUrl === '/api' ? window.location.origin : config.apiBaseUrl;
+  return new URL(toApiRequestPath(path), `${base.replace(/\/$/, '')}/`).toString();
+}
+
+export function hasSeparateProductOrigins(): boolean {
+  return new URL(config.marketingUrl).origin !== new URL(config.appUrl).origin;
+}
+
+export function isMarketingSurface(location: Pick<Location, 'hostname'> = window.location): boolean {
+  const marketingHost = new URL(config.marketingUrl).hostname;
+  const appHost = new URL(config.appUrl).hostname;
+  return marketingHost !== appHost && location.hostname === marketingHost;
+}
 
 export default config;

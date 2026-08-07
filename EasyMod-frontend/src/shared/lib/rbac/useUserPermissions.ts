@@ -94,7 +94,7 @@ export function useUserPermissions(): UserPermissionResult {
   const { user, currentShop } = useAuth();
   // The app standardized on AuthProvider; <ShopProvider> is never mounted, so the
   // old useShopRole() (which calls useShop()) threw "useShop must be used within
-  // <ShopProvider>" and crashed every page that uses this hook (e.g. /app/admin/users).
+  // <ShopProvider>" and crashed every page that uses this hook (e.g. /team/users).
   // The shop role already lives on the authenticated shop — read it from there.
   const currentShopRole = normalizeShopRole(currentShop?.role);
   const currentUserRole = normalizeUserRole(user?.role);

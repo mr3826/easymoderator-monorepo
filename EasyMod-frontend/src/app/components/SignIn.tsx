@@ -53,7 +53,7 @@ export default function SignIn() {
     sessionStorage.setItem('rememberMe', data.rememberMe ? 'true' : 'false');
     try {
       await signin({ email: data.email.trim().toLowerCase(), password: data.password });
-      navigate('/app');
+      navigate('/dashboard');
     } catch (err: any) {
       // 2FA required — authService already stored the tempToken in pendingTwoFactor.
       // Navigate without setting an error so the sign-in form doesn't show a failure.

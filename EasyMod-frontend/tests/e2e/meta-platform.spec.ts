@@ -184,27 +184,27 @@ async function mockAuthenticatedMetaApi(
   });
 }
 
-test.skip('channels modal exposes only Messenger and Instagram (WhatsApp removed)', async ({ page }) => {
+test.skip('channel settings expose Messenger only', async ({ page }) => {
   // Skipped: Phase D Channels.tsx revamp changed the connect-modal flow; locator times out
   // opening the modal in CI. Followup: rewrite this E2E against the new card-based UI.
   await mockAuthenticatedMetaApi(page);
 
-  await page.goto('/app/channels');
+  await page.goto('/manage-shop/chat-settings');
 
-  await expect(page).toHaveURL(/\/app\/channels$/);
+  await expect(page).toHaveURL(/\/manage-shop\/chat-settings$/);
   await page.getByRole('button', { name: /connect channel|চ্যানেল যোগ করুন/i }).first().click();
 
   await expect(page.getByRole('button', { name: /messenger/i }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /instagram/i }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /instagram/i })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /whatsapp/i })).toHaveCount(0);
 });
 
 test('inbox enforces Meta 24h lock for expired messenger conversation', async ({ page }) => {
   await mockAuthenticatedMetaApi(page, { conversationChannel: 'messenger', hoursAgo: 25 });
 
-  await page.goto('/app/inbox');
+  await page.goto('/inbox');
 
-  await expect(page).toHaveURL(/\/app\/inbox$/);
+  await expect(page).toHaveURL(/\/inbox$/);
   await expect(page.getByText(/messaging window expired|মেসেজিং উইন্ডো শেষ হয়ে গেছে/i)).toBeVisible();
 
   const composerInput = page.locator('input[type="text"]').last();

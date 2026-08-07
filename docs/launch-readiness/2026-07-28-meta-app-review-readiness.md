@@ -38,7 +38,7 @@ The permissions story — the part a reviewer scores hardest — holds up.
 - Live on production 2026-07-28: `/privacy-policy` 200, `/terms` 200,
   `/api/webhooks/meta/data-deletion` 200 (GET) / 400 (POST, unsigned),
   `/api/webhooks/meta/deauthorize` 400 (POST, unsigned),
-  `/app/channels/oauth-callback` 200.
+  `/channels/oauth-callback` 200.
 - Webhook verification fails closed: wrong token 403, missing params 403,
   POST with a bad signature 403.
 - The privacy policy page itself lists exactly the three permissions
@@ -100,7 +100,7 @@ Every document said "**Settings → Chat Settings**". The sidebar item is labell
 **"Chat"**, under a **SETTINGS** heading. A reviewer who cannot reach the
 connect screen files "unable to test the functionality", which is a rejection.
 All documents now say **Settings → Chat** and give the direct URL
-`https://easymod.tech/app/manage-shop/chat-settings`.
+`https://app.easymod.tech/manage-shop/chat-settings`.
 
 ### 4.3 Demo landmines now documented as intentional
 

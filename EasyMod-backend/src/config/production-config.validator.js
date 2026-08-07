@@ -10,6 +10,10 @@ const CORE_REQUIRED = [
     'SESSION_SECRET',
     'CSRF_SECRET',
     'CORS_ORIGINS',
+    'MARKETING_URL',
+    'APP_URL',
+    'API_URL',
+    'PUBLIC_ASSET_URL',
     'FRONTEND_URL',
     'BASE_URL',
     'META_APP_ID',
@@ -106,14 +110,66 @@ function validateProductionConfig(env = process.env) {
     for (const name of ENCRYPTION_KEYS) {
         if (env[name] && !/^[a-f0-9]{64}$/i.test(env[name])) invalid.push(name);
     }
-    for (const name of ['FRONTEND_URL', 'BASE_URL', 'META_OAUTH_REDIRECT_URI']) {
+    const originNames = [
+        'MARKETING_URL',
+        'APP_URL',
+        'API_URL',
+        'PUBLIC_ASSET_URL',
+        'PUBLIC_BASE_URL',
+        'FRONTEND_URL',
+        'BASE_URL',
+    ];
+    for (const name of [...originNames, 'META_OAUTH_REDIRECT_URI']) {
         if (!env[name]) continue;
         try {
-            if (new URL(env[name]).protocol !== 'https:') invalid.push(name);
+            const parsed = new URL(env[name]);
+            if (parsed.protocol !== 'https:') invalid.push(name);
+            if (originNames.includes(name)
+                && (parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.username || parsed.password)) {
+                invalid.push(name);
+            }
         } catch (_) {
             invalid.push(name);
         }
     }
+    if (env.APP_URL && env.FRONTEND_URL && env.APP_URL !== env.FRONTEND_URL) {
+        invalid.push('FRONTEND_URL');
+    }
+    if (env.API_URL && env.BASE_URL && env.API_URL !== env.BASE_URL) {
+        invalid.push('BASE_URL');
+    }
+    if (env.PUBLIC_ASSET_URL && env.PUBLIC_BASE_URL
+        && env.PUBLIC_ASSET_URL !== env.PUBLIC_BASE_URL) {
+        invalid.push('PUBLIC_BASE_URL');
+    }
+    if (env.MARKETING_URL && env.APP_URL && env.MARKETING_URL === env.APP_URL) {
+        invalid.push('APP_URL');
+    }
+    if (env.APP_URL && env.API_URL && env.APP_URL === env.API_URL) {
+        invalid.push('API_URL');
+    }
+    if (env.APP_URL && env.META_OAUTH_REDIRECT_URI) {
+        try {
+            const callback = new URL(env.META_OAUTH_REDIRECT_URI);
+            if (callback.origin !== new URL(env.APP_URL).origin
+                || callback.pathname !== '/channels/oauth-callback') {
+                invalid.push('META_OAUTH_REDIRECT_URI');
+            }
+        } catch (_) {
+            invalid.push('META_OAUTH_REDIRECT_URI');
+        }
+    }
+    if (env.APP_URL && env.CORS_ORIGINS) {
+        const allowedOrigins = env.CORS_ORIGINS.split(',').map((value) => value.trim());
+        if (!allowedOrigins.includes(env.APP_URL)) invalid.push('CORS_ORIGINS');
+        // The marketing site is deliberately excluded from the global
+        // credentialed allowlist. Its public endpoints use route-local CORS.
+        if (env.MARKETING_URL && allowedOrigins.includes(env.MARKETING_URL)) invalid.push('CORS_ORIGINS');
+        if (allowedOrigins.includes('*')) invalid.push('CORS_ORIGINS');
+    }
+    // The canonical app/API split does not need parent-domain cookies. Keeping
+    // auth cookies host-only to api.easymod.tech limits cross-subdomain impact.
+    if (env.COOKIE_DOMAIN) invalid.push('COOKIE_DOMAIN');
     if (env.BKASH_SANDBOX && !['true', 'false'].includes(env.BKASH_SANDBOX)) {
         invalid.push('BKASH_SANDBOX');
     }

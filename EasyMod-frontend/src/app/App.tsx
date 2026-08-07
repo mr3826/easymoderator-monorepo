@@ -5,6 +5,7 @@ import { apiClient } from "@/api";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider } from "../features/auth/AuthProvider";
 import { useAuthHttpShopId } from "@/shared/lib/http";
+import { isMarketingSurface } from "./lib/config";
 
 function AppContent() {
   useAuthHttpShopId();
@@ -16,10 +17,22 @@ function AppContent() {
   );
 }
 
+function PublicContent() {
+  return (
+    <ErrorBoundary>
+      <RouterProvider router={router} />
+    </ErrorBoundary>
+  );
+}
+
 export default function App() {
+  const marketingSurface = isMarketingSurface();
+
   useEffect(() => {
-    void apiClient.initCsrfToken();
-  }, []);
+    if (!marketingSurface) void apiClient.initCsrfToken();
+  }, [marketingSurface]);
+
+  if (marketingSurface) return <PublicContent />;
 
   return (
     <AuthProvider>

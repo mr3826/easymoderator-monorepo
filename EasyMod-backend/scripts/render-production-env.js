@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { assertProductionConfig } = require('../src/config/production-config.validator');
 
-const RENDER_INPUT_REQUIRED = ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'COOKIE_DOMAIN'];
+const RENDER_INPUT_REQUIRED = ['DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 
 function encode(value) {
     return JSON.stringify(String(value ?? ''));
@@ -64,6 +64,10 @@ function normalizePaymentEncryptionKey(raw, source = process.env) {
  */
 function buildRenderedEnv(source = process.env) {
     const required = (name) => source[name] || '';
+    const marketingUrl = required('MARKETING_URL');
+    const appUrl = required('APP_URL') || required('FRONTEND_URL');
+    const apiUrl = required('API_URL') || required('BASE_URL');
+    const publicAssetUrl = required('PUBLIC_ASSET_URL') || source.PUBLIC_BASE_URL || apiUrl;
 
     const missingRenderInputs = RENDER_INPUT_REQUIRED.filter((name) => !source[name]);
     if (missingRenderInputs.length) {
@@ -112,11 +116,16 @@ function buildRenderedEnv(source = process.env) {
         DELIVERY_ENCRYPTION_KEY: required('DELIVERY_ENCRYPTION_KEY'),
         CHANNEL_ENCRYPTION_KEY: required('CHANNEL_ENCRYPTION_KEY'),
         PAYMENT_CALLBACK_HMAC_SECRET: required('PAYMENT_CALLBACK_HMAC_SECRET'),
+        MARKETING_URL: marketingUrl,
+        APP_URL: appUrl,
+        API_URL: apiUrl,
+        PUBLIC_ASSET_URL: publicAssetUrl,
         CORS_ORIGINS: required('CORS_ORIGINS'),
-        FRONTEND_URL: required('FRONTEND_URL'),
-        BASE_URL: required('BASE_URL'),
-        PUBLIC_BASE_URL: source.PUBLIC_BASE_URL || required('BASE_URL'),
-        COOKIE_DOMAIN: required('COOKIE_DOMAIN'),
+        FRONTEND_URL: appUrl,
+        BASE_URL: apiUrl,
+        PUBLIC_BASE_URL: publicAssetUrl,
+        ...(source.COOKIE_DOMAIN ? { COOKIE_DOMAIN: source.COOKIE_DOMAIN } : {}),
+        ...(source.LEGACY_COOKIE_DOMAIN ? { LEGACY_COOKIE_DOMAIN: source.LEGACY_COOKIE_DOMAIN } : {}),
         META_OAUTH_REDIRECT_URI: required('META_OAUTH_REDIRECT_URI'),
         META_APP_ID: required('META_APP_ID'),
         META_APP_SECRET: required('META_APP_SECRET'),

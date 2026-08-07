@@ -27,7 +27,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'sonner';
 import { normalizeApiError } from './errors';
-import config from '@/app/lib/config';
+import config, { toApiRequestPath } from '@/app/lib/config';
 
 // Extend axios config to track retry count, CSRF init, and shopId injection
 export interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -104,6 +104,7 @@ class HttpClient {
     // Request interceptor - Add CSRF token for mutations, shop ID, auth header
     this.client.interceptors.request.use(
       async (config: ExtendedAxiosRequestConfig) => {
+        if (config.url) config.url = toApiRequestPath(config.url);
         const method = (config.method || 'get').toUpperCase();
         const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
 
@@ -158,11 +159,20 @@ class HttpClient {
         // Never attempt refresh for /api/csrf — that endpoint is public; if it 401s,
         // treating it as expired-token creates the same CSRF-refresh circular deadlock
         // described in the request interceptor above.
+        // Mirrors the backend's anonymousAuthPaths set in csrf-middleware.js. Those
+        // endpoints are exempt from the double-submit token and instead bound to the
+        // exact merchant-app Origin, so they answer 403 with an operator-facing
+        // message ("Authentication requests must originate from the merchant app")
+        // whenever a stale apex-origin tab posts to them during the domain migration.
+        // Keeping the two lists aligned stops that internal message from reaching a
+        // merchant as a global toast — each form renders its own inline error.
         const isRefreshEndpoint = config.url?.includes('/auth/refresh');
         const isAuthEndpoint = config.url?.includes('/auth/signin') ||
           config.url?.includes('/auth/signup') ||
+          config.url?.includes('/auth/forgot-password') ||
+          config.url?.includes('/auth/reset-password') ||
           config.url?.includes('/auth/2fa/verify');
-        const isCsrfEndpoint = config.url?.includes('/api/csrf');
+        const isCsrfEndpoint = /\/(?:api\/)?csrf(?:$|\?)/.test(config.url || '');
         // Skip the refresh entirely when this browser has never held a session —
         // there is nothing to refresh, and the attempt would burn shared per-IP
         // auth rate-limit budget that real sign-ins need. See SESSION_HINT_KEY.

@@ -1,11 +1,12 @@
 'use strict';
 
 describe('auth cookie domain resolution', () => {
-    const loadAuthCookies = (cookieDomain) => {
+    const loadAuthCookies = (cookieDomain, legacyCookieDomain) => {
         jest.resetModules();
         jest.doMock('../../config/config', () => ({
             env: 'production',
-            cookieDomain
+            cookieDomain,
+            legacyCookieDomain,
         }));
         return require('../auth-cookies');
     };
@@ -25,7 +26,8 @@ describe('auth cookie domain resolution', () => {
         const req = requestForHost('easymod.tech');
         const cookies = [];
         const res = {
-            cookie: (name, value, options) => cookies.push({ name, value, options })
+            cookie: (name, value, options) => cookies.push({ name, value, options }),
+            clearCookie: jest.fn(),
         };
 
         expect(resolveCookieDomain(req)).toBeUndefined();
@@ -44,7 +46,8 @@ describe('auth cookie domain resolution', () => {
         const req = requestForHost('api.easymod.tech');
         const cookies = [];
         const res = {
-            cookie: (name, value, options) => cookies.push({ name, value, options })
+            cookie: (name, value, options) => cookies.push({ name, value, options }),
+            clearCookie: jest.fn(),
         };
 
         expect(resolveCookieDomain(req)).toBe('easymod.tech');
@@ -89,10 +92,36 @@ describe('auth cookie domain resolution', () => {
         expect(cleared).toEqual([
             { name: 'access_token', options: { path: '/' } },
             { name: 'access_token', options: { path: '/', domain: 'easymod.tech' } },
+            { name: 'refresh_token', options: { path: '/' } },
+            { name: 'refresh_token', options: { path: '/', domain: 'easymod.tech' } },
             { name: 'refresh_token', options: { path: '/api/auth' } },
             { name: 'refresh_token', options: { path: '/api/auth', domain: 'easymod.tech' } },
             { name: 'refresh_token', options: { path: '/auth' } },
             { name: 'refresh_token', options: { path: '/auth', domain: 'easymod.tech' } }
         ]);
+    });
+
+    test('sets Secure SameSite=Lax host-only cookies and clears the legacy parent domain', () => {
+        const { setAuthCookies } = loadAuthCookies(undefined, 'easymod.tech');
+        const cookies = [];
+        const cleared = [];
+        const res = {
+            cookie: (name, value, options) => cookies.push({ name, value, options }),
+            clearCookie: (name, options) => cleared.push({ name, options }),
+        };
+
+        setAuthCookies(res, 'access-token', 'refresh-token', requestForHost('api.easymod.tech'));
+
+        expect(cookies).toHaveLength(2);
+        for (const cookie of cookies) {
+            expect(cookie.options).toMatchObject({ httpOnly: true, secure: true, sameSite: 'lax' });
+            expect(cookie.options.domain).toBeUndefined();
+        }
+        expect(cleared).toEqual(expect.arrayContaining([
+            { name: 'access_token', options: { path: '/', domain: 'easymod.tech' } },
+            { name: 'refresh_token', options: { path: '/', domain: 'easymod.tech' } },
+            { name: 'refresh_token', options: { path: '/api/auth', domain: 'easymod.tech' } },
+        ]));
+        expect(cookies.find(({ name }) => name === 'refresh_token')?.options.path).toBe('/');
     });
 });

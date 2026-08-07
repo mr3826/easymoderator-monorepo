@@ -34,7 +34,7 @@ export default function OAuthCallbackPage() {
       // being stranded on the spinner.
       setTimeout(() => {
         if (!window.closed) {
-          window.location.href = '/app/manage-shop/chat-settings';
+          window.location.href = '/manage-shop/chat-settings';
         }
       }, 120);
     };
@@ -87,7 +87,7 @@ export default function OAuthCallbackPage() {
           <h1 className="text-lg font-semibold text-gray-900">{t('oauthCallback.errorTitle')}</h1>
           <p className="mt-2 text-sm text-gray-600">{errorMessage}</p>
           <Link
-            to="/app/manage-shop/chat-settings"
+            to="/manage-shop/chat-settings"
             className="mt-5 inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
             {t('oauthCallback.retry')}

@@ -15,13 +15,18 @@ function validEnv(overrides = {}) {
         JWT_REFRESH_SECRET: secret('b'),
         SESSION_SECRET: secret('c'),
         CSRF_SECRET: secret('d'),
-        CORS_ORIGINS: 'https://easymod.tech',
-        FRONTEND_URL: 'https://easymod.tech',
-        BASE_URL: 'https://easymod.tech',
+        MARKETING_URL: 'https://easymod.tech',
+        APP_URL: 'https://app.easymod.tech',
+        API_URL: 'https://api.easymod.tech',
+        PUBLIC_ASSET_URL: 'https://api.easymod.tech',
+        CORS_ORIGINS: 'https://app.easymod.tech',
+        FRONTEND_URL: 'https://app.easymod.tech',
+        BASE_URL: 'https://api.easymod.tech',
+        PUBLIC_BASE_URL: 'https://api.easymod.tech',
         META_APP_ID: '123456789',
         META_APP_SECRET: secret('e'),
         META_WEBHOOK_VERIFY_TOKEN: secret('f'),
-        META_OAUTH_REDIRECT_URI: 'https://easymod.tech/app/channels/oauth-callback',
+        META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
         PAYMENT_ENCRYPTION_KEY: secret('1'),
         DELIVERY_ENCRYPTION_KEY: secret('2'),
         CHANNEL_ENCRYPTION_KEY: secret('3'),
@@ -139,5 +144,31 @@ describe('production configuration validation', () => {
 
     test('does not make development or tests require production secrets', () => {
         expect(validateProductionConfig({ NODE_ENV: 'test' })).toMatchObject({ valid: true });
+    });
+
+    test('rejects marketing in the credentialed CORS allowlist', () => {
+        const result = validateProductionConfig(validEnv({
+            CORS_ORIGINS: 'https://app.easymod.tech,https://easymod.tech',
+        }));
+        expect(result.invalid).toContain('CORS_ORIGINS');
+    });
+
+    test('rejects parent-domain auth cookies and mismatched OAuth origins', () => {
+        const result = validateProductionConfig(validEnv({
+            COOKIE_DOMAIN: 'easymod.tech',
+            META_OAUTH_REDIRECT_URI: 'https://easymod.tech/app/channels/oauth-callback',
+        }));
+        expect(result.invalid).toEqual(expect.arrayContaining([
+            'COOKIE_DOMAIN',
+            'META_OAUTH_REDIRECT_URI',
+        ]));
+    });
+
+    test('rejects the obsolete /app OAuth callback on the canonical app host', () => {
+        const result = validateProductionConfig(validEnv({
+            META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/app/channels/oauth-callback',
+        }));
+
+        expect(result.invalid).toContain('META_OAUTH_REDIRECT_URI');
     });
 });

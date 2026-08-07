@@ -4,13 +4,16 @@ name: CI / CD
 # Required GitHub secrets (Settings → Secrets → Actions):
 #   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
 #   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
-#   VITE_API_BASE_URL    — leave empty for same-origin SPA (easymod.tech)
+# Public origin settings are repository variables, not secrets:
+#   VITE_API_BASE_URL    — https://api.easymod.tech
+#   VITE_APP_URL         — https://app.easymod.tech
+#   VITE_MARKETING_URL   — https://easymod.tech
 #   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
 #   VITE_SENTRY_DSN      — Sentry DSN (optional)
 #   TELEGRAM_BOT_TOKEN   — global EasyModerator merchant-alert bot token
 #   TELEGRAM_BOT_USERNAME — bot username without @ (shown in connect command)
 #   TELEGRAM_WEBHOOK_SECRET — Telegram setWebhook secret_token
-#   BASE_URL             — https://easymod.tech (public backend origin for uploads)
+#   API_URL / BASE_URL   — https://api.easymod.tech (API + public uploads)
 #   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
 #
 # The droplet must have:
@@ -47,7 +50,9 @@ on:
 
 concurrency:
   group: ci-cd-${{ github.ref }}
-  cancel-in-progress: true
+  # A cancelled main run can contain cumulative changes that a later one-commit
+  # path diff cannot see. Serialize production deploys so no image is skipped.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -67,8 +72,8 @@ jobs:
     name: Detect changed services
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend') || steps.filter.outputs.backend == 'true' }}
-      frontend: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend') || steps.filter.outputs.frontend == 'true' }}
+      backend: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend') || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend') || steps.filter.outputs.frontend == 'true' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -122,7 +127,9 @@ jobs:
           npm ci
           npm run build
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
+          VITE_APP_URL: ${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
+          VITE_MARKETING_URL: ${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
           VITE_META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_ENV: production
@@ -201,7 +208,9 @@ jobs:
             ${{ steps.meta.outputs.frontend_tag }}
             ${{ env.GHCR_FRONTEND }}:latest
           build-args: |
-            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
+            VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
+            VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
             VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
             VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
             VITE_ENV=production
@@ -235,12 +244,19 @@ jobs:
           DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
           CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          BASE_URL: ${{ secrets.BASE_URL || 'https://easymod.tech' }}
-          PUBLIC_BASE_URL: ${{ secrets.BASE_URL || 'https://easymod.tech' }}
-          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
-          META_OAUTH_REDIRECT_URI: ${{ secrets.META_OAUTH_REDIRECT_URI }}
+          MARKETING_URL: ${{ vars.MARKETING_URL || 'https://easymod.tech' }}
+          APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_ASSET_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech' }}
+          FRONTEND_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          BASE_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          # Deliberately unset by default: host-only API cookies minimize the
+          # blast radius of an XSS on another easymod.tech subdomain.
+          COOKIE_DOMAIN: ${{ vars.COOKIE_DOMAIN }}
+          LEGACY_COOKIE_DOMAIN: ${{ vars.LEGACY_COOKIE_DOMAIN || 'easymod.tech' }}
+          META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}

@@ -15,8 +15,8 @@ carried-forward row to Meta as though it were freshly proven.
 |---|------|--------|----------|
 | 1 | Privacy Policy live at `/privacy-policy` | **PASS** (re-verified 2026-07-28) | `https://easymod.tech/privacy-policy` → 200, renders without auth. Names Hexabyte Limited and lists exactly the three permissions (`PrivacyPolicy.tsx:200-208`). |
 | 2 | Terms of Service live at `/terms` | **PASS** (re-verified 2026-07-28) | `https://easymod.tech/terms` → 200. **The URL is `/terms`, not `/terms-of-service`** — the latter 404s. |
-| 3 | Data Deletion Callback live | **PASS** (re-verified 2026-07-28) | `POST /api/webhooks/meta/data-deletion` → 400 `{"error":"Missing signed_request"}` without a signed request; `GET` → 200 with human-readable instructions. Fails closed on a bad HMAC (403). App-scoped→page-scoped ID resolution goes through `MetaUserIdentity` (`meta-compliance.service.js:454-471`) — the 2026-07-22 finding M1 ("deletes nothing") is **resolved**. |
-| 4 | Deauthorize callback live | **PASS** (re-verified 2026-07-28) | `POST /api/webhooks/meta/deauthorize` → 400 without a signed request, 403 on bad HMAC. `GET` returns 404 by design — the route is POST-only, which is all Meta calls. |
+| 3 | Data Deletion Callback live | **PASS** (re-verified 2026-07-28) | `POST /webhooks/meta/data-deletion` → 400 `{"error":"Missing signed_request"}` without a signed request; `GET` → 200 with human-readable instructions. Fails closed on a bad HMAC (403). App-scoped→page-scoped ID resolution goes through `MetaUserIdentity` (`meta-compliance.service.js:454-471`) — the 2026-07-22 finding M1 ("deletes nothing") is **resolved**. |
+| 4 | Deauthorize callback live | **PASS** (re-verified 2026-07-28) | `POST /webhooks/meta/deauthorize` → 400 without a signed request, 403 on bad HMAC. `GET` returns 404 by design — the route is POST-only, which is all Meta calls. |
 | 5 | Webhook verification (`hub.challenge`) | **PASS, with one founder step** | Negative paths proven on production 2026-07-28: wrong token → 403, missing params → 403, `POST` with a bad signature → 403. Timing-safe compare at `meta-webhook.routes.js:79-88`. `META_WEBHOOK_VERIFY_TOKEN` is in `CORE_REQUIRED` **and** `LONG_SECRETS` in `production-config.validator.js:17,51`, so the deploy could not have succeeded with it unset or placeholder — it is set to a real value in production. **The positive challenge cannot be proven without the token value.** See "Founder self-check" below. |
 | 6 | Permission justifications written | **PASS** (re-verified 2026-07-28) | `permissions-justification.md` — three permissions, each with use case, screen, Graph call and retention. Matches `DEFAULT_SCOPES` in `MetaMessengerProvider.js:27-31` exactly. |
 | 7 | App icon available | **PASS** (new, 2026-07-28) | `EasyMod-frontend/public/icon-1024.png` (1024×1024) and `icon-512.png`. Previously flagged absent by finding F-10; the asset exists, it just had not been recorded here. Still needs uploading in the App Dashboard. |
@@ -34,7 +34,7 @@ ticket, a chat, or this repo.
 
 ```bash
 read -rs -p "verify token: " T && echo
-curl -s "https://easymod.tech/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=$T&hub.challenge=easymod_probe_12345"
+curl -s "https://api.easymod.tech/webhooks/meta?hub.mode=subscribe&hub.verify_token=$T&hub.challenge=easymod_probe_12345"
 unset T
 ```
 

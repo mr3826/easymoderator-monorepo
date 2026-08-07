@@ -1,6 +1,7 @@
 import { lazy, createElement, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import { createBrowserRouter, redirect } from "react-router-dom";
 import { authService } from "./lib/auth";
+import { hasSeparateProductOrigins, isMarketingSurface } from "./lib/config";
 import { AdminRoute } from "@/shared/components/guards";
 import { PlatformAdminRoute } from "@/shared/components/guards/PlatformAdminRoute";
 import PageLoader from "./components/PageLoader";
@@ -53,7 +54,7 @@ const NotFound = lazy(() => import("./components/NotFound"));
 async function protectedLoader() {
 	await authService.ensureInitialized();
 	if (!authService.isAuthenticated()) {
-		return redirect("/");
+		return redirect("/signin");
 	}
 	return null;
 }
@@ -61,9 +62,28 @@ async function protectedLoader() {
 async function publicLoader() {
 	await authService.ensureInitialized();
 	if (authService.isAuthenticated()) {
-		return redirect("/app");
+		return redirect("/dashboard");
 	}
 	return null;
+}
+
+async function rootLoader() {
+	// A single localhost origin still serves the marketing homepage during
+	// development. In production, the app hostname owns `/`, so authenticated
+	// merchants go straight to the dashboard and everyone else goes to sign-in.
+	if (!hasSeparateProductOrigins() || isMarketingSurface()) return null;
+	await authService.ensureInitialized();
+	return redirect(authService.isAuthenticated() ? "/dashboard" : "/signin");
+}
+
+function legacyAppPathLoader({ request }: { request: Request }) {
+	const url = new URL(request.url);
+	const cleanPath = url.pathname === "/app"
+		? "/dashboard"
+		: url.pathname === "/app/admin/users"
+			? "/team/users"
+			: url.pathname.replace(/^\/app(?=\/)/, "");
+	return redirect(`${cleanPath}${url.search}`);
 }
 
 type RoutableComponent<P extends object = Record<string, never>> =
@@ -120,6 +140,7 @@ export const router = createBrowserRouter([
 	{
 		path: "/",
 		Component: withSuspense(LandingPage),
+		loader: rootLoader,
 		errorElement: createElement(RouteError),
 	},
 	{
@@ -131,20 +152,19 @@ export const router = createBrowserRouter([
 	{
 		// Standalone — must NOT be inside DashboardLayout so the popup loads only the
 		// spinner + postMessage handler, not the full authenticated app shell.
-		path: "/app/channels/oauth-callback",
+		path: "/channels/oauth-callback",
 		Component: withSuspense(OAuthCallbackPage),
 	},
 	{
-		path: "/app",
 		Component: withSuspense(DashboardLayout),
 		loader: protectedLoader,
 		errorElement: createElement(RouteError),
 		children: [
-			{ index: true, Component: withSuspense(Dashboard) },
-			{ path: "inbox", Component: withSuspense(UnifiedInbox) },
-			{ path: "channels", loader: () => redirect("/app/manage-shop/chat-settings") },
+			{ path: "/dashboard", Component: withSuspense(Dashboard) },
+			{ path: "/inbox", Component: withSuspense(UnifiedInbox) },
+			{ path: "/channels", loader: () => redirect("/manage-shop/chat-settings") },
 			{
-				path: "manage-shop",
+				path: "/manage-shop",
 				Component: withSuspense(ManageShop),
 				children: [
 					{ index: true, Component: withSuspense(SettingsHub) },
@@ -156,23 +176,23 @@ export const router = createBrowserRouter([
 					{ path: "faqs", Component: withSuspense(FaqSettings) },
 				],
 			},
-			{ path: "products", Component: withSuspense(Products) },
-			{ path: "products/add", Component: withSuspense(AddProduct) },
-			{ path: "products/:productId", Component: withSuspense(ProductDetails) },
-			{ path: "products/:productId/edit", Component: withSuspense(AddProduct) },
-			{ path: "categories", Component: withSuspense(Categories) },
-			{ path: "categories/create", Component: withSuspense(CategoryDetails) },
-			{ path: "categories/:categoryId", Component: withSuspense(CategoryDetails) },
-			{ path: "categories/:categoryId/edit", Component: withSuspense(CategoryDetails) },
-			{ path: "categories/:categoryId/:subcategoryId", Component: withSuspense(SubcategoryDetails) },
-			{ path: "orders", Component: withSuspense(Orders) },
-			{ path: "customers", Component: withSuspense(Customers) },
-			{ path: "knowledge", loader: () => redirect("/app/manage-shop/faqs") },
-			{ path: "reports", Component: withSuspense(Reports) },
-			{ path: "audit-logs", Component: withSuspense(AuditLogs) },
-			{ path: "subscription", Component: withSuspense(Subscription) },
+			{ path: "/products", Component: withSuspense(Products) },
+			{ path: "/products/add", Component: withSuspense(AddProduct) },
+			{ path: "/products/:productId", Component: withSuspense(ProductDetails) },
+			{ path: "/products/:productId/edit", Component: withSuspense(AddProduct) },
+			{ path: "/categories", Component: withSuspense(Categories) },
+			{ path: "/categories/create", Component: withSuspense(CategoryDetails) },
+			{ path: "/categories/:categoryId", Component: withSuspense(CategoryDetails) },
+			{ path: "/categories/:categoryId/edit", Component: withSuspense(CategoryDetails) },
+			{ path: "/categories/:categoryId/:subcategoryId", Component: withSuspense(SubcategoryDetails) },
+			{ path: "/orders", Component: withSuspense(Orders) },
+			{ path: "/customers", Component: withSuspense(Customers) },
+			{ path: "/knowledge", loader: () => redirect("/manage-shop/faqs") },
+			{ path: "/reports", Component: withSuspense(Reports) },
+			{ path: "/audit-logs", Component: withSuspense(AuditLogs) },
+			{ path: "/subscription", Component: withSuspense(Subscription) },
 			{
-				path: "admin/users",
+				path: "/team/users",
 				Component: withSuspense((props: Record<string, never>) =>
 					createElement(AdminRoute, null, createElement(UsersPage, props))
 				),
@@ -181,7 +201,15 @@ export const router = createBrowserRouter([
 	},
 	{
 		path: "/settings/channels",
-		loader: () => redirect("/app/manage-shop/chat-settings"),
+		loader: () => redirect("/manage-shop/chat-settings"),
+	},
+	{
+		path: "/app",
+		loader: legacyAppPathLoader,
+	},
+	{
+		path: "/app/*",
+		loader: legacyAppPathLoader,
 	},
 	{
 		// EasyModerator operations admin panel. Must be logged in (protectedLoader)

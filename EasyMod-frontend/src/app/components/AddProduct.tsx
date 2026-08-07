@@ -380,14 +380,14 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
         if (onClose) {
           onClose();
         } else {
-          navigate("/app/products");
+          navigate("/products");
         }
       } else {
         // Create new product
         await apiClient.createProduct(productData);
         await queryClient.invalidateQueries({ queryKey: ["products"] });
         console.log("Creating product as:", action);
-        navigate("/app/products");
+        navigate("/products");
       }
     } catch (error: any) {
       // httpClient normalises every axios failure via normalizeApiError, which
@@ -531,7 +531,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
       {/* Page Header */}
       <div className="mb-6 md:mb-8">
         <button
-          onClick={() => navigate("/app/products")}
+          onClick={() => navigate("/products")}
           className="text-gray-600 hover:text-gray-900 flex items-center gap-2 mb-4 text-sm"
         >
           ← {t('products.detail.backToProducts')}
@@ -1442,7 +1442,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
           actions into ~100px on a 360px phone and pushed them off-screen. */}
       <div className="fixed bottom-0 left-0 md:left-64 right-0 bg-white border-t border-gray-200 px-4 md:px-8 py-4 flex justify-end gap-3 z-10">
         <button
-          onClick={() => navigate('/app/products')}
+          onClick={() => navigate('/products')}
           disabled={isSaving}
           className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
         >
@@ -1545,7 +1545,7 @@ export default function AddProduct({ editMode = false, editProduct = null, onClo
                 <button
                   onClick={() => {
                     setShowCategoryModal(false);
-                    navigate("/app/categories/create");
+                    navigate("/categories/create");
                   }}
                   className="w-full px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >

@@ -91,7 +91,7 @@ export default function Categories() {
             />
           </div>
           <button
-            onClick={() => navigate("/app/categories/create")}
+            onClick={() => navigate("/categories/create")}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap"
           >
             <Plus className="w-5 h-5" />
@@ -176,7 +176,7 @@ export default function Categories() {
               </p>
               {!searchQuery && (
                 <button
-                  onClick={() => navigate("/app/categories/create")}
+                  onClick={() => navigate("/categories/create")}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   <Plus className="w-5 h-5" />

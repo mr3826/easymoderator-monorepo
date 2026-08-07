@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "April 24, 2026";
 const LAST_UPDATED = "May 20, 2026";
@@ -10,6 +11,11 @@ const PRIVACY_EMAIL = "privacy@easymod.tech";
 export default function TermsOfService() {
   return (
     <div className="min-h-screen bg-gray-50">
+      <Seo
+        title="EasyModerator Terms of Service"
+        description="Terms governing use of the EasyModerator merchant automation service."
+        canonicalPath="/terms"
+      />
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="mx-auto max-w-4xl px-6 py-4 flex items-center justify-between">

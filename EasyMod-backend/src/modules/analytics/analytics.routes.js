@@ -14,6 +14,12 @@ const knowledgeGapWriteLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+const publicFunnelWriteLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Validation middleware
 const validateKnowledgeGap = [
@@ -29,7 +35,7 @@ const validateKnowledgeGap = [
 // Routes
 
 // POST /api/analytics/funnel — first-party launch funnel instrumentation.
-router.post('/funnel', AnalyticsController.logFunnelEvent);
+router.post('/funnel', publicFunnelWriteLimiter, AnalyticsController.logFunnelEvent);
 
 /**
  * GET /api/analytics — summary payload (total_messages, llm_calls, cache_hits, keyword_matches, cost_estimate)

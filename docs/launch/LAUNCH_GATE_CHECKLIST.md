@@ -8,7 +8,7 @@ Run the automated gates any time with:
 
 ```bash
 # from EasyMod-backend/
-BASE_URL=https://easymod.tech ADMIN_TOKEN=<admin-jwt> ACTIVATION_TARGET=10 \
+BASE_URL=https://api.easymod.tech ADMIN_TOKEN=<admin-jwt> ACTIVATION_TARGET=10 \
   node scripts/launch-readiness.js
 # or: npm run launch:check   (reads the same env vars)
 ```
@@ -74,7 +74,7 @@ docker system df
 
 Expected:
 - `backend_uploads` exists as a Docker named volume.
-- Backend has `BASE_URL=https://easymod.tech` and `BODY_SIZE_LIMIT=35mb` in `/opt/easymod/.env.prod`.
+- Backend has `BASE_URL=https://api.easymod.tech`, `APP_URL=https://app.easymod.tech`, and `BODY_SIZE_LIMIT=35mb` in `/opt/easymod/.env.prod`.
 - Droplet disk has enough free space for launch testing and pilot-shop attachments.
 - Daily backup workflow archives both Postgres and `easymod-uploads-*.tar.gz`.
 

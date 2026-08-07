@@ -7,7 +7,7 @@ import { Switch } from "@/app/components/ui/switch";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
 import { subscriptionPlans, getPlanPrice, findPlanByName, type BillingCycle } from "@/app/lib/subscriptionPlans";
-import { isBkashEnabled } from "@/app/lib/config";
+import { buildApiUrl, buildMarketingUrl, isBkashEnabled } from "@/app/lib/config";
 import { getErrorMessage } from "@shared/lib/http/errors";
 
 interface Invoice {
@@ -363,8 +363,7 @@ export default function Subscription() {
       const pack = conversationPacks.find(p => p.amount === selectedConversationPack);
       if (!pack) return;
 
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.initiateTopup(pack.code, callbackUrl);
+      const res = await apiClient.initiateTopup(pack.code);
       if (!res?.bkash_url || !res?.topup_id) {
         throw new Error(t('subscription.bkashStartFailed'));
       }
@@ -382,8 +381,7 @@ export default function Subscription() {
     try {
       setPayingInvoiceId(invoiceRawId);
       setError(null);
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.payInvoice(invoiceRawId, callbackUrl);
+      const res = await apiClient.payInvoice(invoiceRawId);
       if (!res?.bkash_url) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', invoiceRawId, res.bkash_url);
     } catch (error: any) {
@@ -399,8 +397,7 @@ export default function Subscription() {
     try {
       setIsRenewing(true);
       setError(null);
-      const callbackUrl = `${window.location.origin}/app/subscription`;
-      const res = await apiClient.renewSubscription(callbackUrl);
+      const res = await apiClient.renewSubscription();
       if (!res?.bkash_url || !res?.invoice_id) throw new Error(t('subscription.bkashStartFailed'));
       startBkashCheckout('invoice', res.invoice_id, res.bkash_url);
     } catch (error: any) {
@@ -637,7 +634,7 @@ export default function Subscription() {
                     </button>
                   ) : plan.id === 'partner' ? (
                     <a
-                      href="/pricing"
+                      href={buildMarketingUrl("/pricing")}
                       className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 text-center block"
                     >
                       {t('subscription.applyNow')}
@@ -991,14 +988,14 @@ export default function Subscription() {
                         </button>
                       )}
                       <button
-                        onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
+                        onClick={() => window.open(buildApiUrl(`/api/subscription/invoices/${invoice.rawId}/pdf`), '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={t('subscription.viewInvoiceTitle')}
                       >
                         <Eye className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => window.open(`/api/subscription/invoices/${invoice.rawId}/pdf`, '_blank')}
+                        onClick={() => window.open(buildApiUrl(`/api/subscription/invoices/${invoice.rawId}/pdf`), '_blank')}
                         className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                         title={t('subscription.downloadInvoiceTitle')}
                       >

@@ -191,7 +191,7 @@ export default function FirstTimeSetupDashboard({
                 type="button"
                 onClick={() => {
                   onDismissCompletion?.();
-                  navigate('/app/manage-shop/business-info');
+                  navigate('/manage-shop/business-info');
                 }}
                 className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border bg-card px-5 text-sm font-bold text-foreground hover:bg-gray-50"
               >

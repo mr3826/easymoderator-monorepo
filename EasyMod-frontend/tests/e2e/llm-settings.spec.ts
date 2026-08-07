@@ -41,7 +41,7 @@ async function setupRoutes(page: any) {
 }
 
 async function loginAndGo(page: any, path = '/settings/ai') {
-    await page.goto('/login');
+    await page.goto('/signin');
     await page.fill('input[type="email"]', 'owner@shop.bd');
     await page.fill('input[type="password"]', 'password123');
     await page.click('button[type="submit"]');

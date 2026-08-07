@@ -18,6 +18,7 @@ import { PasswordStrengthMeter } from '../../features/auth/components/PasswordSt
 import { BDPhoneInput } from '@/shared/components/BDPhoneInput';
 import { trackFunnelEvent } from "@/app/lib/funnel";
 import { getErrorMessage } from '@shared/lib/http/errors';
+import { buildMarketingUrl } from '@/app/lib/config';
 
 const smoothEase = [0.22, 1, 0.36, 1] as const;
 
@@ -110,7 +111,7 @@ export default function Signup() {
         })
       );
 
-      navigate("/app");
+      navigate("/dashboard");
     } catch (err: any) {
       setError('root', {
         message: getErrorMessage(err, t('auth.signup.errors.unableToCreate')),
@@ -366,11 +367,11 @@ export default function Signup() {
                   />
                   <label htmlFor="terms" className="text-xs text-gray-600 leading-relaxed">
                     {t('auth.signup.agreePrefix')}{' '}
-                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
+                    <a href={buildMarketingUrl("/privacy-policy")} target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
                       {t('auth.signup.privacyPolicy')}
                     </a>{' '}
                     {t('auth.signup.agreeSuffix')}{' '}
-                    <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
+                    <a href={buildMarketingUrl("/terms")} target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
                       Terms of Service
                     </a>
                   </label>

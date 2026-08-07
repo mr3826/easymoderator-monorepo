@@ -16,25 +16,25 @@ const TASK_DEFINITIONS = Object.freeze({
         title: 'Connect Facebook Page',
         description: 'Connect at least one Facebook page so EasyModerator can receive and reply to customer messages.',
         ctaLabel: 'Manage channel',
-        href: '/app/manage-shop/chat-settings',
+        href: '/manage-shop/chat-settings',
     },
     [TASK_KEYS.SHOP_PROFILE]: {
         title: 'Complete shop profile',
         description: 'Add the basic shop name, support contact, delivery info, and payment methods customers need.',
         ctaLabel: 'Edit profile',
-        href: '/app/manage-shop/business-info',
+        href: '/manage-shop/business-info',
     },
     [TASK_KEYS.FIRST_PRODUCT]: {
         title: 'Add first product',
         description: 'Publish at least one active product. Three or more products are recommended before launch.',
         ctaLabel: 'Add product',
-        href: '/app/products/add',
+        href: '/products/add',
     },
     [TASK_KEYS.AI_SETTINGS]: {
         title: 'Configure AI reply settings',
         description: 'Keep AI replies in draft mode with a confidence threshold until the shop is ready for automation.',
         ctaLabel: 'Review AI settings',
-        href: '/app/manage-shop/business-info',
+        href: '/manage-shop/business-info',
     },
 });
 
