@@ -26,8 +26,29 @@
       <meta name="apple-mobile-web-app-capable" content="yes" />
       <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       <meta name="apple-mobile-web-app-title" content="EasyModerator" />
-      <link rel="apple-touch-icon" href="/icon-512.png" />
-      <link rel="icon" type="image/png" href="/icon-512.png" />
+      <!--
+        The ?v= query busts two caches at once: nginx serves *.png with
+        max-age=2592000 (nginx.conf), and sw.js is cache-first for png/svg.
+        index.html itself is no-cache, so a new ?v= propagates on first load.
+        Bump it (and CACHE_VERSION in sw.js) whenever the icons change.
+      -->
+      <link rel="apple-touch-icon" href="/icon-512.png?v=2" />
+      <!-- SVG mark first: stays crisp at 16px where the full logo blurs. PNG is the Safari fallback. -->
+      <link rel="icon" type="image/svg+xml" href="/brand/mark.svg?v=2" />
+      <link rel="icon" type="image/png" href="/icon-512.png?v=2" />
+
+      <!-- Link previews (Messenger / WhatsApp / Twitter). Copy mirrors manifest.webmanifest. -->
+      <meta property="og:type" content="website" />
+      <meta property="og:url" content="https://easymod.tech/" />
+      <meta property="og:title" content="EasyModerator" />
+      <meta property="og:description" content="Bangla AI manager for your Facebook &amp; Instagram shop — block fake orders, capture live orders, sell more." />
+      <meta property="og:image" content="https://easymod.tech/brand/og-card.png?v=2" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="EasyModerator" />
+      <meta name="twitter:description" content="Bangla AI manager for your Facebook &amp; Instagram shop — block fake orders, capture live orders, sell more." />
+      <meta name="twitter:image" content="https://easymod.tech/brand/og-card.png?v=2" />
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">

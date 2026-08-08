@@ -10,8 +10,12 @@
  * API calls (/api/*) and cross-origin requests are never intercepted.
  */
 
-const CACHE_VERSION = 'easymod-v1';
-const APP_SHELL = ['/', '/app', '/manifest.webmanifest', '/icon-512.png'];
+// Bump CACHE_VERSION on any icon/shell change. The fetch handler below is
+// cache-first for png/svg, so without a bump an installed PWA keeps serving the
+// old icon from this cache even after nginx is already serving the new bytes.
+// `activate` deletes every cache whose key !== CACHE_VERSION, which clears it.
+const CACHE_VERSION = 'easymod-v2';
+const APP_SHELL = ['/', '/app', '/manifest.webmanifest', '/brand/mark.svg?v=2', '/icon-512.png?v=2'];
 
 // ── Install: precache the app shell ────────────────────────────────────────
 self.addEventListener('install', (event) => {
@@ -89,13 +93,13 @@ self.addEventListener('push', (event) => {
     payload = { title: 'EasyMod', body: event.data.text() };
   }
 
-  const { title = 'EasyMod', body = '', icon = '/icon-512.png', data = {} } = payload;
+  const { title = 'EasyMod', body = '', icon = '/icon-512.png?v=2', data = {} } = payload;
 
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon,
-      badge: '/icon-512.png',
+      badge: '/icon-512.png?v=2',
       data,
       vibrate: [200, 100, 200]
     })

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="EasyModerator">
+  <title>EasyModerator</title>
+  <!--
+    Small-size mark: the full logo (cyclist, taka symbol, ring) is unreadable
+    below ~40px, so this keeps only its two carrying shapes — the chat bubble
+    and the rising arrow. Filled, not stroked: solid shapes survive a 16px
+    favicon where thin outlines turn to mush.
+  -->
+  <path fill="#00A651" d="M14 6h36a10 10 0 0 1 10 10v20a10 10 0 0 1-10 10H28L14 58V46A10 10 0 0 1 4 36V16A10 10 0 0 1 14 6Z"/>
+  <g fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 36 43 16"/>
+    <path d="M32 16h11v11"/>
+  </g>
+</svg>

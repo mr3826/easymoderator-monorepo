@@ -9,6 +9,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import InstallPrompt from "./InstallPrompt";
+import BrandLogo from "./BrandLogo";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../../features/auth/AuthProvider";
 import LanguageToggle from "./LanguageToggle";
@@ -79,13 +80,8 @@ export default function DashboardLayout() {
       >
         {/* Logo */}
         <div className="h-14 flex items-center px-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg shrink-0 flex items-center justify-center">
-              <span className="text-white text-xs font-bold">EM</span>
-            </div>
-            {!collapsed && (
-              <span className="text-base font-bold text-gray-900 whitespace-nowrap">EasyModerator</span>
-            )}
+          <div className="flex items-center overflow-hidden">
+            <BrandLogo size="sm" iconOnly={collapsed} />
           </div>
         </div>
 

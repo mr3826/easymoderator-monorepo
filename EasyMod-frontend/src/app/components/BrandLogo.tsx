@@ -4,6 +4,8 @@ interface BrandLogoProps {
   size?: "sm" | "md" | "lg";
   variant?: "light" | "dark";
   animated?: boolean;
+  /** Hide the wordmark and render the mark alone — for the collapsed sidebar rail. */
+  iconOnly?: boolean;
 }
 
 const sizeMap = {
@@ -12,39 +14,68 @@ const sizeMap = {
   lg: { icon: 48, text: "text-2xl" },
 };
 
-export default function BrandLogo({ size = "md", variant = "dark", animated = false }: BrandLogoProps) {
+/**
+ * Below this the full logo (cyclist, taka symbol, ring) is an indistinct green
+ * blob, so we swap to the simplified bubble-and-arrow mark. Tune here — it is
+ * the one number worth revisiting once the logo is live.
+ */
+const FULL_LOGO_MIN_PX = 40;
+
+// ?v= matches index.html. nginx serves .svg as immutable/1y and .png for 30d
+// (nginx.conf), so a future logo change needs this bumped or nobody sees it.
+const FULL_LOGO_SRC = "/brand/logo-192.png?v=2";
+const MARK_SRC = "/brand/mark.svg?v=2";
+
+export default function BrandLogo({
+  size = "md",
+  variant = "dark",
+  animated = false,
+  iconOnly = false,
+}: BrandLogoProps) {
   const { icon, text } = sizeMap[size];
   const textColor = variant === "light" ? "text-white" : "text-gray-900";
 
   const iconEl = (
-    <svg width={icon} height={icon} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="brand-grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#008040" />
-          <stop offset="100%" stopColor="#00A651" />
-        </linearGradient>
-      </defs>
-      <rect width="40" height="40" rx="10" fill="url(#brand-grad)" />
-      <path d="M10 13h20M10 20h13M10 27h20" stroke="white" strokeWidth="3" strokeLinecap="round" />
-    </svg>
+    <img
+      src={icon >= FULL_LOGO_MIN_PX ? FULL_LOGO_SRC : MARK_SRC}
+      width={icon}
+      height={icon}
+      alt=""
+      aria-hidden="true"
+      className="shrink-0"
+      style={{ width: icon, height: icon }}
+    />
   );
 
-  const wrapper = animated ? (
+  // `light` means the logo sits on a coloured surface — the green sign-in hero
+  // and the navy landing footer. The mark is green, so on the green panel it
+  // vanishes into the background; the white plate is what keeps it readable.
+  const platedIcon =
+    variant === "light" ? (
+      <span className="shrink-0 rounded-full bg-white p-1">{iconEl}</span>
+    ) : (
+      iconEl
+    );
+
+  const contents = (
+    <>
+      {platedIcon}
+      {!iconOnly && (
+        <span className={`font-bold tracking-tight ${text} ${textColor}`}>EasyModerator</span>
+      )}
+    </>
+  );
+
+  return animated ? (
     <motion.div
       className="flex items-center gap-2.5 select-none"
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
     >
-      {iconEl}
-      <span className={`font-bold tracking-tight ${text} ${textColor}`}>EasyModerator</span>
+      {contents}
     </motion.div>
   ) : (
-    <div className="flex items-center gap-2.5 select-none">
-      {iconEl}
-      <span className={`font-bold tracking-tight ${text} ${textColor}`}>EasyModerator</span>
-    </div>
+    <div className="flex items-center gap-2.5 select-none">{contents}</div>
   );
-
-  return wrapper;
 }
