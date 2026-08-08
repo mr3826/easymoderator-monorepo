@@ -1,7 +1,9 @@
 # EasyModerator Domain and Route Architecture
 
-Status: implementation branch; production cutover not yet approved
-Last verified: 2026-08-05 (Asia/Dhaka)
+Status: cut over and live in production
+Last verified: 2026-08-08 (Asia/Dhaka) — all three origins serve their documented
+owner, `api.easymod.tech/health` reports commit `f15ed8e` (PR #92 merge), and
+`www` 301s to the apex.
 Branch: `easymod/domain-route-architecture-migration`
 Authoritative repository: `mr3826/easymod-backend`
 

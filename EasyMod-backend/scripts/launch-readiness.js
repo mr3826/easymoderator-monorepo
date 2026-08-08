@@ -31,7 +31,7 @@
  *     which counts as FAIL. Nothing unknown is ever reported as green.
  *
  * Usage:
- *   BASE_URL=https://easymod.tech ADMIN_TOKEN=<jwt> node scripts/launch-readiness.js
+ *   BASE_URL=https://api.easymod.tech ADMIN_TOKEN=<jwt> node scripts/launch-readiness.js
  *   # optional: ACTIVATION_TARGET=10 (default 10)
  *
  * Exit code 0 = all hard gates pass; 1 = at least one failed (CI/automation-friendly).

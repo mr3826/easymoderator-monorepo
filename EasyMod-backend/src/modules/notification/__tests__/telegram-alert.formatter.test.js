@@ -4,8 +4,22 @@ const { formatTelegramAlert, toPushPayload } = require('../telegram-alert.format
 const { NOTIFICATION_EVENTS } = require('../notification-events');
 
 describe('telegram-alert.formatter', () => {
+    const previousAppUrl = process.env.APP_URL;
+    const previousFrontendUrl = process.env.FRONTEND_URL;
+
     beforeEach(() => {
+        // getOrigins() reads APP_URL before the FRONTEND_URL alias, so stubbing
+        // only the alias let an ambient APP_URL from the developer's shell
+        // decide these assertions. Pin the canonical variable.
+        process.env.APP_URL = 'https://app.easymod.tech';
         process.env.FRONTEND_URL = 'https://app.easymod.tech';
+    });
+
+    afterAll(() => {
+        if (previousAppUrl === undefined) delete process.env.APP_URL;
+        else process.env.APP_URL = previousAppUrl;
+        if (previousFrontendUrl === undefined) delete process.env.FRONTEND_URL;
+        else process.env.FRONTEND_URL = previousFrontendUrl;
     });
 
     it('formats new order alerts with a deep link', () => {

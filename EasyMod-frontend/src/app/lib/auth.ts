@@ -2,6 +2,7 @@ import { apiClient } from '@/api';
 import { httpClient } from '@/shared/lib/http/client';
 import type { User, Shop, SigninRequest, SignupRequest, CreateShopRequest } from '@/api/types';
 import { queryClient } from './queryClient';
+import { isMarketingSurface } from './config';
 
 // Auth state interface
 export interface AuthState {
@@ -32,6 +33,16 @@ export class AuthService {
   }
 
   private async initializeAuth() {
+    // This constructor runs at module import, before any route loader or
+    // surface guard. The marketing origin is deliberately excluded from the
+    // credentialed CORS allowlist and has no merchant session to restore, so
+    // probing /auth/me from there only yields a blocked cross-origin request
+    // and a console error on every public page view.
+    if (isMarketingSurface()) {
+      this.setAuthState({ isLoading: false });
+      return;
+    }
+
     // Cap the entire initialization to 8 seconds. Without this bound,
     // a slow backend (cold-start, Redis reconnect) can hold the
     // initializeAuth() promise pending indefinitely, which causes every
