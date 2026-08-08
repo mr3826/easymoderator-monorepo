@@ -242,7 +242,7 @@ Platform administrators can identify that work by age:
 
 ```bash
 curl -H "Authorization: Bearer <platform-admin-token>" \
-  "https://easymod.tech/api/admin/payment-processing-reconciliation?olderThanMinutes=15&limit=100"
+  "https://api.easymod.tech/admin/payment-processing-reconciliation?olderThanMinutes=15&limit=100"
 ```
 
 The report includes internal payment, shop, and order IDs, gateway, update time,

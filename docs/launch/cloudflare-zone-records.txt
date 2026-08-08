@@ -1,0 +1,51 @@
+easymod.tech - complete zone to build at Cloudflare
+Source of truth captured 2026-08-07 17:24 from dns1.registrar-servers.com
+Resend rows added 2026-08-07 from the Resend API (domain a8e52662-bce5-4772-bf94-b2f1deef5209)
+ALL RECORDS MUST BE "DNS only" (grey cloud). Never proxied - Caddy owns TLS/ACME on the droplet.
+
+STATUS: LIVE. Cloudflare zone 249e02c98e660449093f4ef708bbbc91 holds all 12 rows below,
+verified from the droplet against both nameservers. The Namecheap NS field has since been
+pointed at Cloudflare: as of 2026-08-08 the authoritative SOA is tom.ns.cloudflare.com and
+all four A records (@, www, api, app) resolve to 139.59.249.141 with valid TLS.
+
+TYPE  NAME                  VALUE
+----  --------------------  -----
+A     @                     139.59.249.141
+A     www                   139.59.249.141
+A     api                   139.59.249.141
+A     app                   139.59.249.141          <-- the record that unblocks the migration
+MX    @                     mx1.privateemail.com    priority 10
+MX    @                     mx2.privateemail.com    priority 10
+TXT   @                     v=spf1 include:spf.privateemail.com ~all
+TXT   _dmarc                v=DMARC1; p=none;
+TXT   default._domainkey    v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsJIcYKKtIhZaO9CyEGzzjLwCwLxL36eftI21W7A6FRPJKETfnHxZc2k82fzzigfuvO0YH/+qVLVD9P9tpzRQjbOnYpmlYj+0wNvy+Wij5BBwm/1bzjf8jyXiZ4BPUadE2tcBDuI5lNgON2qGjZShrjfMiNxaoNI/qGUHfSIC4pXXR2KUacyErLDyECetXC512EkMqcKEAh02R4TarqZVzKCcxXnbMLKLscd8golf3yUK1IgakEAxwPX2JCYHILbaTIDuP1YbrHZUeXhcKN87VtAz/DNgWFdWJHfXDRoTGYLvzADhUfPtgUQEw6hdY+eIWdQDgJ8GJdMoaoGNV4/8PQIDAQAB
+
+RESEND - transactional app mail (no-reply@easymod.tech). Omit these and password resets
+and every other app email stop working the moment the nameservers switch.
+
+TYPE  NAME                  VALUE
+----  --------------------  -----
+MX    send                  feedback-smtp.ap-northeast-1.amazonses.com    priority 10
+TXT   send                  v=spf1 include:amazonses.com ~all
+TXT   resend._domainkey     p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC46EF9fdcaYbODaNbdAxFaB/6387iX6L0OHOoxSmxXIcKBjzgV1Rmdw6Bn7YzXH1t9l3lPGQmjspRj+PKGIVCBPutDQF6T0vap/QGRwX7qR0JIklHTKK95MUOrVoH3uiV/VGSUIGJUS0o1HX3c4JxTdsb37rK+yKHlwySaEsmUPQIDAQAB
+
+Note the resend._domainkey value starts at "p=" - there is no "v=DKIM1;k=rsa;" prefix.
+That is what Resend issues and what the live zone serves. Do not add one.
+
+Do NOT add include:amazonses.com to the apex SPF. Resend uses the "send" subdomain as its
+return-path, and SPF and DKIM already align on the organizational domain. Apex SPF stays
+PrivateEmail-only.
+
+Do NOT recreate: chatbot, n8n (services retired; their records were already lost).
+
+Verified 2026-08-07 from the droplet: every row above matches what dns1.registrar-servers.com
+still serves, except three intended additions the frozen Namecheap zone had already lost -
+A app, MX @, TXT @ (SPF). A name-by-name sweep of ~30 candidate hostnames plus CAA and SRV
+found nothing else live, so the Cloudflare zone is a strict superset.
+
+Assigned nameservers, verified authoritative (SOA tom.ns.cloudflare.com. dns.cloudflare.com.):
+  tom.ns.cloudflare.com
+  ursula.ns.cloudflare.com
+
+Founder step, now COMPLETE: the Namecheap nameserver field points at those two, confirmed
+authoritative on 2026-08-08.

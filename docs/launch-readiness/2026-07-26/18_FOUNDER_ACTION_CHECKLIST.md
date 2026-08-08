@@ -104,9 +104,21 @@ replacement.
 
 ### Step 5 — Meta App Dashboard configuration
 
+> ⚠️ **SUPERSEDED — do not enter the values in this table.** They predate the
+> 2026-08 domain split (`easymod.tech` marketing / `app.easymod.tech` app /
+> `api.easymod.tech` API) and are preserved only as the 2026-07-26 record.
+> The OAuth redirect below is now actively rejected: production config
+> validation refuses any `META_OAUTH_REDIRECT_URI` outside
+> `https://app.easymod.tech/channels/oauth-callback`, and the old apex URL only
+> 302-redirects — which Meta does not accept for a redirect URI.
+>
+> **Use the current values in
+> [`docs/meta-app-review-submission.md`](../../meta-app-review-submission.md)
+> and [`docs/infrastructure/DOMAIN_AND_ROUTE_ARCHITECTURE.md`](../../infrastructure/DOMAIN_AND_ROUTE_ARCHITECTURE.md).**
+
 **Where:** developers.facebook.com → your app
 
-| Field | Exact value |
+| Field | Exact value (2026-07-26 — SUPERSEDED) |
 |---|---|
 | App Domains | `easymod.tech` |
 | Privacy Policy URL | `https://easymod.tech/privacy-policy` |
