@@ -286,9 +286,19 @@ Rollback is proxy/config first, DNS last:
 7. Do not use the destructive `wipe_db_first` workflow input.
 8. Re-run apex readiness/version/auth/webhook checks and confirm the exact deployed SHA.
 
+## Live DNS
+
+The zone moved off the frozen Namecheap panel during the cutover. `easymod.tech` is now
+served by Cloudflare (`tom.ns.cloudflare.com`, `ursula.ns.cloudflare.com`), DNS-only /
+grey-cloud on every row so Caddy keeps ownership of TLS and ACME. All four A records
+(`@`, `www`, `api`, `app`) point at `139.59.249.141`. The full 12-row zone — including the
+PrivateEmail and Resend rows that carry password-reset mail — is recorded in
+[`docs/launch/cloudflare-zone-records.txt`](../launch/cloudflare-zone-records.txt).
+
 ## Cutover blockers and human-owned actions
 
-- Namecheap DNS write access is required to create `app` and confirm/fix `api`.
+- ~~Namecheap DNS write access is required to create `app` and confirm/fix `api`.~~
+  Done — the zone now lives at Cloudflare and all four A records resolve (2026-08-08).
 - Production merge/deploy follows the repository landing approval gate.
 - Meta App Dashboard ownership is required for callback/OAuth/reviewer URL updates.
 - The real Facebook Page owner/tester must approve OAuth and generate Messenger proof.

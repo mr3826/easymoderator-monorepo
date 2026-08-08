@@ -3,8 +3,10 @@ Source of truth captured 2026-08-07 17:24 from dns1.registrar-servers.com
 Resend rows added 2026-08-07 from the Resend API (domain a8e52662-bce5-4772-bf94-b2f1deef5209)
 ALL RECORDS MUST BE "DNS only" (grey cloud). Never proxied - Caddy owns TLS/ACME on the droplet.
 
-STATUS: BUILT. Cloudflare zone 249e02c98e660449093f4ef708bbbc91 holds all 12 rows below,
-verified from the droplet against both nameservers. Namecheap NS field NOT yet changed.
+STATUS: LIVE. Cloudflare zone 249e02c98e660449093f4ef708bbbc91 holds all 12 rows below,
+verified from the droplet against both nameservers. The Namecheap NS field has since been
+pointed at Cloudflare: as of 2026-08-08 the authoritative SOA is tom.ns.cloudflare.com and
+all four A records (@, www, api, app) resolve to 139.59.249.141 with valid TLS.
 
 TYPE  NAME                  VALUE
 ----  --------------------  -----
@@ -45,4 +47,5 @@ Assigned nameservers, verified authoritative (SOA tom.ns.cloudflare.com. dns.clo
   tom.ns.cloudflare.com
   ursula.ns.cloudflare.com
 
-Remaining step, founder-owned: point the Namecheap nameserver field at those two.
+Founder step, now COMPLETE: the Namecheap nameserver field points at those two, confirmed
+authoritative on 2026-08-08.
