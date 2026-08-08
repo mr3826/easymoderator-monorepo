@@ -4,7 +4,7 @@
 
 ## Meta Scope
 
-Easy Moderator supports Facebook Page Messenger DMs only for initial launch.
+EasyModerator supports Facebook Page Messenger DMs only for initial launch.
 
 Required permissions:
 

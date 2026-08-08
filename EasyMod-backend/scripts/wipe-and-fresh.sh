@@ -23,7 +23,7 @@ if [ -z "$DATABASE_URL" ]; then
     exit 1
 fi
 
-echo "=== Easy Moderator — Fresh Deploy Wipe ==="
+echo "=== EasyModerator — Fresh Deploy Wipe ==="
 echo ""
 echo "⚠️  This will DELETE ALL DATA from the database and Redis."
 echo "    Target DB: $(echo $DATABASE_URL | sed 's|:.*@|:****@|')"

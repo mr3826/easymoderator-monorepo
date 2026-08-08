@@ -1,9 +1,9 @@
 # Permissions Justification
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
 
-Easy Moderator requests three Facebook Page permissions for the initial launch:
+EasyModerator requests three Facebook Page permissions for the initial launch:
 
 - `pages_show_list`
 - `pages_messaging`
@@ -50,7 +50,7 @@ The app does not request `pages_read_engagement`, `pages_manage_engagement`, `bu
 
 ## Data Minimization Statement
 
-Easy Moderator stores only the data necessary to operate Facebook Messenger DM conversations, AI replies, order creation, customer records, and billing usage metering.
+EasyModerator stores only the data necessary to operate Facebook Messenger DM conversations, AI replies, order creation, customer records, and billing usage metering.
 
 The app does not:
 

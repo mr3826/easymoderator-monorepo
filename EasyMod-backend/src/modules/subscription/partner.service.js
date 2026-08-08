@@ -35,7 +35,7 @@ const applyForPartner = async ({ businessName, phone, pageLink, shopId = null })
         status: 'pending'
     });
 
-    const adminEmail = process.env.ADMIN_EMAIL || 'hello@hexabyte.co';
+    const adminEmail = process.env.ADMIN_EMAIL || 'support@easymod.tech';
     emailService.sendEmail({
         to: adminEmail,
         subject: `[EasyModerator] New Partner Application - ${businessName}`,

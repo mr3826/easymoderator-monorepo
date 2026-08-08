@@ -1,11 +1,11 @@
 # Meta App Review - Reviewer Guide
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
 **Graph API version:** v22.0
 **Login product:** Facebook Login for Business
 
-Easy Moderator launches as a Facebook Page Messenger inbox with AI-assisted replies and order support. Customers must message the Page directly. The app does not read, process, reply to, or trigger workflows from Facebook post comments.
+EasyModerator launches as a Facebook Page Messenger inbox with AI-assisted replies and order support. Customers must message the Page directly. The app does not read, process, reply to, or trigger workflows from Facebook post comments.
 
 ## Requested Permissions
 
@@ -15,7 +15,7 @@ Final requested set: `pages_show_list`, `pages_messaging`, `pages_manage_metadat
 
 | # | Permission | Feature it powers | Key Graph API call(s) | Webhook field | Reviewer proof |
 |---|------------|-------------------|------------------------|---------------|----------------|
-| 1 | `pages_show_list` | Shows the merchant the Facebook Pages they selected/authorized for Easy Moderator | `GET /me/accounts` intersected with `debug_token` granular target IDs | - | After OAuth, the Page picker lists only the tester-selected Page(s) |
+| 1 | `pages_show_list` | Shows the merchant the Facebook Pages they selected/authorized for EasyModerator | `GET /me/accounts` intersected with `debug_token` granular target IDs | - | After OAuth, the Page picker lists only the tester-selected Page(s) |
 | 2 | `pages_messaging` | Receives direct Messenger DMs and sends AI/manual replies | `POST /me/messages` | `messages` | Tester DMs the Page; message appears in Shared Inbox; AI/manual reply is delivered |
 | 3 | `pages_manage_metadata` | Subscribes/verifies/unsubscribes the Page Messenger webhook | `POST` / `GET` / `DELETE /{page-id}/subscribed_apps` | - | Connected channel card shows webhook active after server-side verification |
 
@@ -53,7 +53,7 @@ Development-mode caveat: while the Meta app is in Development mode, webhook even
 
 Target length: 2-3 minutes.
 
-1. Show the logged-in Easy Moderator dashboard.
+1. Show the logged-in EasyModerator dashboard.
 2. Open **Settings → Chat** and start the Facebook Page connection.
 3. Show the OAuth dialog with the three permissions.
 4. Show the Page picker after consent.
@@ -73,8 +73,8 @@ before you record it as a defect. Contact: `support@easymod.tech`.
 | What you see | Why | What to do |
 |---|---|---|
 | The OAuth popup is blocked by the browser | The app deliberately falls back to a same-tab redirect | Continue in the same tab — the flow is unchanged |
-| The popup does not close itself, but Easy Moderator advances anyway | Cross-Origin-Opener-Policy blocks `window.close()` from the opener; the result is delivered over `BroadcastChannel` instead | Close the popup manually and continue |
-| The Page picker is empty, or your Page is missing | Facebook's granular Page selection was not granted for that Page. Easy Moderator intersects `/me/accounts` with the `debug_token` granular target IDs and refuses to show a Page you did not select | Re-run the connect flow and tick the Page on the Facebook consent screen |
+| The popup does not close itself, but EasyModerator advances anyway | Cross-Origin-Opener-Policy blocks `window.close()` from the opener; the result is delivered over `BroadcastChannel` instead | Close the popup manually and continue |
+| The Page picker is empty, or your Page is missing | Facebook's granular Page selection was not granted for that Page. EasyModerator intersects `/me/accounts` with the `debug_token` granular target IDs and refuses to show a Page you did not select | Re-run the connect flow and tick the Page on the Facebook consent screen |
 | You cancel at Facebook and see "Connection failed" | The denial branch. No channel is created | Expected — re-run and approve |
 | The Page connects, but a Messenger DM never reaches the Shared Inbox | While the app is in Development mode Meta only delivers webhook events for accounts holding an app role | Send the DM from the supplied tester **customer** account, which is on App Roles → Testers |
 | A previously connected Page still appears in the database after disconnect | Channels are retained with `status: DISCONNECTED` for the audit trail rather than hard-deleted; the UI filters them out | Expected behaviour, not a leak — no token is used or returned for a disconnected channel |
@@ -83,7 +83,7 @@ before you record it as a defect. Contact: `support@easymod.tech`.
 
 ## Permission Minimization
 
-Easy Moderator intentionally removed Comment-to-DM for launch. That removed the need for:
+EasyModerator intentionally removed Comment-to-DM for launch. That removed the need for:
 
 - `pages_read_engagement`
 - `pages_manage_engagement`

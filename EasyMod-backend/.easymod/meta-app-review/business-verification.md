@@ -1,7 +1,7 @@
 # Meta Business Verification — Bangladesh Procedure
 
-**App:** Easy Moderator
-**Legal entity:** Hexabyte Limited (registered in Bangladesh)
+**App:** EasyModerator
+**Legal entity:** Hexabyte Technologies (registered in Bangladesh) — <https://hexabyte.tech>
 **Last updated:** 2026-07-28
 
 This is the step that gates everything else. **App Review cannot grant Advanced
@@ -74,7 +74,7 @@ company these are the ones normally accepted:
 2. **Business info** → confirm: legal name, address, phone, website.
    - This is the screen whose values must match the Trade License **character
      for character**. Fix it here *before* uploading anything.
-3. Confirm the **Easy Moderator app** is listed under **Accounts → Apps**. If
+3. Confirm the **EasyModerator app** is listed under **Accounts → Apps**. If
    the app was created under a personal account, add it to the business
    portfolio now — an app outside the portfolio does not inherit its
    verification.
@@ -125,7 +125,10 @@ while the document review is pending.
   re-upload the same document hoping for a different reviewer. Read the stated
   reason, fix the actual mismatch, then resubmit.
 - The two rejection reasons that dominate: **name mismatch** (e.g. dashboard
-  says "Hexabyte Ltd", licence says "Hexabyte Limited") and **address mismatch**.
+  says "Hexabyte Tech", licence says "Hexabyte Technologies") and **address
+  mismatch**. Enter the entity name exactly as the trade licence spells it —
+  if the licence and this file ever disagree, the licence wins and this file
+  is what needs correcting.
 
 ---
 
@@ -138,7 +141,7 @@ being a surprise mid-launch.
 |---|---|---|
 | **Data Protection Assessment (DPA)** | A questionnaire about how you store, share and secure Platform data. Apps handling Page/messaging data are routinely selected. | Usually after App Review approval; you get a deadline. Missing it suspends the app. |
 | **Data Use Checkup** | Annual re-attestation that your permission use is still accurate. | Annually, from the App Dashboard. |
-| **Tech Provider status** | Meta classifies apps that manage assets *on behalf of other businesses* — which is exactly what Easy Moderator does with merchant Pages. If the dashboard offers/requires a Tech Provider business type, it requires verification too. | Check during setup; confirm in the dashboard. |
+| **Tech Provider status** | Meta classifies apps that manage assets *on behalf of other businesses* — which is exactly what EasyModerator does with merchant Pages. If the dashboard offers/requires a Tech Provider business type, it requires verification too. | Check during setup; confirm in the dashboard. |
 
 For the DPA, the answers are already documented — `permissions-justification.md`
 (what each scope does and its retention) and `data-deletion-flow.md` (deletion
@@ -168,7 +171,7 @@ Submitting App Review before verification completes is fine and saves a week.
 - [ ] Trade License located, unexpired, full-page scan
 - [ ] Business info in Business Manager matches the licence character for character
 - [ ] `easymod.tech` domain verified (TXT record confirmed via `dig`)
-- [ ] Easy Moderator app is inside the business portfolio
+- [ ] EasyModerator app is inside the business portfolio
 - [ ] Business email on `@easymod.tech` exists and is reachable
 - [ ] Business phone reachable for SMS/call
 - [ ] Verification submitted; date submitted: ____________

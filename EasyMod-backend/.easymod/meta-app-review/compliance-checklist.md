@@ -1,6 +1,6 @@
 # App Review Readiness Checklist
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Last updated:** 2026-07-28 (re-verified against deployed code and production)
 
 Statuses below distinguish **re-verified 2026-07-28** from **carried forward**
@@ -13,7 +13,7 @@ carried-forward row to Meta as though it were freshly proven.
 
 | # | Item | Status | Evidence |
 |---|------|--------|----------|
-| 1 | Privacy Policy live at `/privacy-policy` | **PASS** (re-verified 2026-07-28) | `https://easymod.tech/privacy-policy` → 200, renders without auth. Names Hexabyte Limited and lists exactly the three permissions (`PrivacyPolicy.tsx:200-208`). |
+| 1 | Privacy Policy live at `/privacy-policy` | **PASS** (re-verified 2026-07-28) | `https://easymod.tech/privacy-policy` → 200, renders without auth. Names Hexabyte Technologies (linked to hexabyte.tech) and lists exactly the three permissions (`PrivacyPolicy.tsx:200-208`). |
 | 2 | Terms of Service live at `/terms` | **PASS** (re-verified 2026-07-28) | `https://easymod.tech/terms` → 200. **The URL is `/terms`, not `/terms-of-service`** — the latter 404s. |
 | 3 | Data Deletion Callback live | **PASS** (re-verified 2026-07-28) | `POST /webhooks/meta/data-deletion` → 400 `{"error":"Missing signed_request"}` without a signed request; `GET` → 200 with human-readable instructions. Fails closed on a bad HMAC (403). App-scoped→page-scoped ID resolution goes through `MetaUserIdentity` (`meta-compliance.service.js:454-471`) — the 2026-07-22 finding M1 ("deletes nothing") is **resolved**. |
 | 4 | Deauthorize callback live | **PASS** (re-verified 2026-07-28) | `POST /webhooks/meta/deauthorize` → 400 without a signed request, 403 on bad HMAC. `GET` returns 404 by design — the route is POST-only, which is all Meta calls. |

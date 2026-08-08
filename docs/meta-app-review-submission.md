@@ -1,6 +1,6 @@
 # Meta App Review - Submission Sheet
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Graph API:** v22.0
 **Login product:** Facebook Login for Business
 **Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
@@ -38,19 +38,19 @@ and Save" fail with no useful error.
 
 **1. `pages_show_list`**
 
-> Easy Moderator uses this permission after Facebook Login to call `GET /me/accounts`, then intersects the returned Pages with Meta `debug_token` granular permission target IDs. The merchant sees and can connect only the Facebook Page(s) they selected/authorized in Facebook. Pages not selected in Facebook are not shown and are rejected by the connect endpoint.
+> EasyModerator uses this permission after Facebook Login to call `GET /me/accounts`, then intersects the returned Pages with Meta `debug_token` granular permission target IDs. The merchant sees and can connect only the Facebook Page(s) they selected/authorized in Facebook. Pages not selected in Facebook are not shown and are rejected by the connect endpoint.
 
 **2. `pages_messaging`**
 
-> Easy Moderator uses this permission to operate a shared Facebook Messenger inbox for the connected Page. We receive direct customer DMs through the `messages` webhook and send AI-assisted or human replies through `POST /me/messages` with the Page token. We do not use this permission for comments or public-comment automation.
+> EasyModerator uses this permission to operate a shared Facebook Messenger inbox for the connected Page. We receive direct customer DMs through the `messages` webhook and send AI-assisted or human replies through `POST /me/messages` with the Page token. We do not use this permission for comments or public-comment automation.
 
 **3. `pages_manage_metadata`**
 
-> Easy Moderator uses this permission to subscribe, verify, and unsubscribe the connected Page's webhook subscription through `/{page-id}/subscribed_apps`. The app subscribes only to the `messages` field so direct Messenger DMs can arrive in real time.
+> EasyModerator uses this permission to subscribe, verify, and unsubscribe the connected Page's webhook subscription through `/{page-id}/subscribed_apps`. The app subscribes only to the `messages` field so direct Messenger DMs can arrive in real time.
 
 ## Notes To Reviewer
 
-> Easy Moderator is a Facebook Page Messenger inbox with AI-assisted customer replies and order support, built for small retailers in Bangladesh. Sign in to the test instance at `https://app.easymod.tech/signin` with the supplied credentials, then in the left sidebar under **SETTINGS** click **Chat** (direct URL: `https://app.easymod.tech/manage-shop/chat-settings`). Connect the provided Facebook Page, then send a direct Messenger DM to that Page from the supplied tester customer account. The message appears in the Shared Inbox and receives an AI reply through Messenger; you can also type a manual reply and see it delivered to the customer. Comment-to-DM, Page post keyword automation, public comment replies, and comment-triggered DMs are not part of this launch and are not requested in App Review.
+> EasyModerator is a Facebook Page Messenger inbox with AI-assisted customer replies and order support, built for small retailers in Bangladesh. Sign in to the test instance at `https://app.easymod.tech/signin` with the supplied credentials, then in the left sidebar under **SETTINGS** click **Chat** (direct URL: `https://app.easymod.tech/manage-shop/chat-settings`). Connect the provided Facebook Page, then send a direct Messenger DM to that Page from the supplied tester customer account. The message appears in the Shared Inbox and receives an AI reply through Messenger; you can also type a manual reply and see it delivered to the customer. Comment-to-DM, Page post keyword automation, public comment replies, and comment-triggered DMs are not part of this launch and are not requested in App Review.
 >
 > While the app is in Development mode, Meta only delivers webhook events from users with an app role. Please use the provided customer tester account to send the inbound message.
 >

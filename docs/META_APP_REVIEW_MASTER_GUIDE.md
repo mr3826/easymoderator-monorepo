@@ -1,10 +1,10 @@
 # Meta App Review Master Guide
 
-**App:** Easy Moderator
-**Legal entity:** Hexabyte Limited (Bangladesh)
+**App:** EasyModerator
+**Legal entity:** Hexabyte Technologies (Bangladesh) — <https://hexabyte.tech>
 **Last updated:** 2026-07-28
 
-Easy Moderator launches with Facebook Page Messenger DMs only. Customers must
+EasyModerator launches with Facebook Page Messenger DMs only. Customers must
 message the Page directly. The app does not read Page post comments, subscribe
 to `feed`, send public comment replies, or trigger workflows from comments.
 
@@ -79,7 +79,7 @@ two review queues run independently and business verification is the long pole.
 
 ## Reviewer Demo
 
-1. Sign in to Easy Moderator.
+1. Sign in to EasyModerator.
 2. In the left sidebar under **SETTINGS**, click **Chat**
    (direct URL: `https://app.easymod.tech/manage-shop/chat-settings`).
 3. Connect the supplied Facebook Page.

@@ -2,10 +2,11 @@ import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "March 18, 2026";
-const LAST_UPDATED = "June 27, 2026";
+const LAST_UPDATED = "August 8, 2026";
 const CONTACT_EMAIL = "privacy@easymod.tech";
 const APP_NAME = "EasyModerator";
-const COMPANY_NAME = "Hexabyte Limited";
+const COMPANY_NAME = "Hexabyte Technologies";
+const COMPANY_URL = "https://hexabyte.tech";
 
 export default function PrivacyPolicy() {
   return (
@@ -33,7 +34,11 @@ export default function PrivacyPolicy() {
           <p className="mt-2 text-sm text-gray-500">Effective date: {EFFECTIVE_DATE} &nbsp;·&nbsp; Last updated: {LAST_UPDATED}</p>
           <p className="mt-4 text-gray-600 leading-relaxed">
             This Privacy Policy describes how <strong>{APP_NAME}</strong> ("we", "us", or "our"), a product
-            of <strong>{COMPANY_NAME}</strong> (registered in Bangladesh), collects, uses, stores, and shares
+            of <strong>{COMPANY_NAME}</strong> (registered in Bangladesh — see{" "}
+            <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+              hexabyte.tech
+            </a>{" "}
+            for more about the parent company), collects, uses, stores, and shares
             information when you use our e-commerce moderation platform, including our web application and
             integrations with Meta platforms (Facebook Messenger) and
             other third-party services.
@@ -43,6 +48,38 @@ export default function PrivacyPolicy() {
             a business using {APP_NAME} to manage customer interactions, you are responsible for ensuring your
             customers are informed about how their data is handled through your use of our platform.
           </p>
+
+          {/* Current service status — this policy describes what is actually running
+              today, not the full roadmap. Integrations that are not yet switched on
+              process no data at all, so they are called out explicitly. */}
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="text-base font-semibold text-amber-950">Current service status</h2>
+            <p className="mt-2 text-sm leading-relaxed text-amber-900">
+              {APP_NAME} is operating in a limited pre-general-availability phase while our Meta App Review
+              is being completed. This policy describes the data handling that is <strong>active today</strong>.
+              Where an integration is not yet enabled, it processes no data and is marked below.
+            </p>
+            <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-amber-900">
+              <li>
+                <strong>Active:</strong> Facebook Messenger via connected Pages, reply generation, order
+                capture, courier booking (Pathao, Steadfast, RedX), and merchant analytics.
+              </li>
+              <li>
+                <strong>Not enabled:</strong> the bKash and Nagad online payment gateways. No payment-gateway
+                credentials are configured and no customer data is sent to those providers. Orders currently
+                settle by cash on delivery or by merchant-verified mobile-money transfer, where the transaction
+                reference stays inside {APP_NAME}.
+              </li>
+              <li>
+                <strong>Retired:</strong> the Make.com and n8n event-forwarding integrations. {APP_NAME} no
+                longer forwards event data to external workflow automation tools.
+              </li>
+            </ul>
+            <p className="mt-3 text-sm leading-relaxed text-amber-900">
+              We update this section when an integration is switched on or off, alongside the "Last updated"
+              date above.
+            </p>
+          </div>
         </div>
 
         <div className="space-y-10 text-gray-700">
@@ -87,8 +124,8 @@ export default function PrivacyPolicy() {
               <li>Business name, timezone, and operating hours</li>
               <li>Hashed passwords (we never store plain-text passwords)</li>
               <li>Meta platform access tokens (encrypted at rest using AES-256-GCM)</li>
-              <li>Payment gateway credentials (bKash — encrypted at rest)</li>
-              <li>Delivery provider credentials (Pathao, Steadfast — encrypted at rest)</li>
+              <li>Payment gateway credentials, encrypted at rest — collected only if and when the bKash gateway is enabled for your shop, which is not currently the case</li>
+              <li>Delivery provider credentials (Pathao, Steadfast, RedX — encrypted at rest)</li>
               <li>IP address and browser/device information (for security audit logs)</li>
               <li>Session tokens stored as httpOnly, secure cookies</li>
             </ul>
@@ -125,7 +162,6 @@ export default function PrivacyPolicy() {
               <li>Send transactional emails (account verification, password reset, invoices)</li>
               <li>Maintain security audit logs for fraud prevention and compliance</li>
               <li>Provide analytics dashboards to business users (message counts, reply usage, costs)</li>
-              <li>Forward events to workflow automation tools chosen by the business (Make.com, n8n)</li>
             </ul>
             <p className="mt-3 text-sm leading-relaxed">
               We do <strong>not</strong> use customer data for advertising, sell data to third parties, or use
@@ -298,7 +334,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">6. Third-Party Service Providers</h2>
             <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-blue-950">
               Most merchants only need to know this: we use Meta for Messenger, secure cloud hosting for the app,
-              payment and courier providers when you enable them, and reply providers only to prepare customer replies.
+              courier providers when you enable them, and reply providers only to prepare customer replies.
               Customer conversation data is not used to train provider models.
             </div>
             <p className="mb-4 leading-relaxed">
@@ -313,6 +349,7 @@ export default function PrivacyPolicy() {
                     <th className="text-left px-4 py-3 font-medium text-gray-700 border-b border-gray-200">Category</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-700 border-b border-gray-200">Data Shared</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-700 border-b border-gray-200">Purpose</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-700 border-b border-gray-200">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -321,60 +358,70 @@ export default function PrivacyPolicy() {
                     <td className="px-4 py-3 text-gray-600">Communication Platform</td>
                     <td className="px-4 py-3 text-gray-600">Message content, user IDs</td>
                     <td className="px-4 py-3 text-gray-600">Webhook message delivery</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Google (Gemini)</td>
                     <td className="px-4 py-3 text-gray-600">Reply provider</td>
                     <td className="px-4 py-3 text-gray-600">Conversation text (not used for training)</td>
                     <td className="px-4 py-3 text-gray-600">Primary reply generation</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">OpenAI</td>
                     <td className="px-4 py-3 text-gray-600">Reply provider</td>
                     <td className="px-4 py-3 text-gray-600">Conversation text and private search signals (not used for training)</td>
                     <td className="px-4 py-3 text-gray-600">Fallback reply generation and FAQ search</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Qdrant (self-hosted)</td>
                     <td className="px-4 py-3 text-gray-600">Private search index</td>
                     <td className="px-4 py-3 text-gray-600">Private search signals for FAQs and shop answers</td>
                     <td className="px-4 py-3 text-gray-600">FAQ and shop-answer search on our own infrastructure</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">bKash</td>
-                    <td className="px-4 py-3 text-gray-600">Payment Gateway</td>
-                    <td className="px-4 py-3 text-gray-600">Customer phone number, order amount</td>
-                    <td className="px-4 py-3 text-gray-600">Mobile payment processing</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Pathao</td>
                     <td className="px-4 py-3 text-gray-600">Delivery Provider</td>
                     <td className="px-4 py-3 text-gray-600">Customer name, phone, delivery address</td>
                     <td className="px-4 py-3 text-gray-600">Courier delivery</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">Steadfast</td>
                     <td className="px-4 py-3 text-gray-600">Delivery Provider</td>
                     <td className="px-4 py-3 text-gray-600">Customer name, phone, delivery address, COD amount</td>
                     <td className="px-4 py-3 text-gray-600">Courier delivery</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">RedX</td>
                     <td className="px-4 py-3 text-gray-600">Delivery Provider</td>
                     <td className="px-4 py-3 text-gray-600">Customer name, phone, delivery address, COD amount</td>
                     <td className="px-4 py-3 text-gray-600">Courier delivery</td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 font-medium text-gray-900">Make.com / n8n (optional)</td>
-                    <td className="px-4 py-3 text-gray-600">Workflow Automation</td>
-                    <td className="px-4 py-3 text-gray-600">Event data (configured by business)</td>
-                    <td className="px-4 py-3 text-gray-600">Business workflow automation (opt-in)</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
                   </tr>
                   <tr>
                     <td className="px-4 py-3 font-medium text-gray-900">DigitalOcean</td>
                     <td className="px-4 py-3 text-gray-600">Cloud Infrastructure</td>
                     <td className="px-4 py-3 text-gray-600">All application data</td>
                     <td className="px-4 py-3 text-gray-600">Hosting and storage</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-3 font-medium text-gray-900">Resend</td>
+                    <td className="px-4 py-3 text-gray-600">Transactional Email</td>
+                    <td className="px-4 py-3 text-gray-600">Business user email address and message content</td>
+                    <td className="px-4 py-3 text-gray-600">Account verification, password reset, invoices</td>
+                    <td className="px-4 py-3 text-emerald-700">Active</td>
+                  </tr>
+                  <tr className="bg-gray-50/60">
+                    <td className="px-4 py-3 font-medium text-gray-900">bKash / Nagad</td>
+                    <td className="px-4 py-3 text-gray-600">Payment Gateway</td>
+                    <td className="px-4 py-3 text-gray-600">Customer phone number, order amount</td>
+                    <td className="px-4 py-3 text-gray-600">Mobile payment processing</td>
+                    <td className="px-4 py-3 text-gray-500">Not enabled — no data shared</td>
                   </tr>
                 </tbody>
               </table>
@@ -383,8 +430,8 @@ export default function PrivacyPolicy() {
               Reply providers receive conversation text only to prepare customer service replies.
               <strong> We do not permit any provider to use your data for training their models.</strong>
               We isolate each business's private search data so one business cannot retrieve another
-              business's information. Automation forwarding is entirely opt-in and controlled by the
-              business owner.
+              business's information. {APP_NAME} no longer forwards event data to external workflow
+              automation tools such as Make.com or n8n; that integration has been retired.
             </p>
           </section>
 
@@ -606,6 +653,12 @@ export default function PrivacyPolicy() {
             <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm space-y-1">
               <p className="font-semibold text-gray-900">{COMPANY_NAME}</p>
               <p className="text-gray-600">
+                Parent company:{" "}
+                <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  hexabyte.tech
+                </a>
+              </p>
+              <p className="text-gray-600">
                 Privacy &amp; Data:{" "}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="text-blue-600 hover:underline">
                   {CONTACT_EMAIL}
@@ -619,7 +672,13 @@ export default function PrivacyPolicy() {
 
         {/* Back to top / footer */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500">
-          <span>© {new Date().getFullYear()} {COMPANY_NAME}. All rights reserved.</span>
+          <span>
+            © {new Date().getFullYear()}{" "}
+            <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              {COMPANY_NAME}
+            </a>
+            . All rights reserved.
+          </span>
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="text-blue-600 hover:underline"

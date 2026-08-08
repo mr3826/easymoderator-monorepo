@@ -1,6 +1,6 @@
 # Data Deletion Flow
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Last updated:** 2026-07-28 (rewritten — the previous version described the
 pre-Phase-1 implementation and was wrong in every material detail)
 **Route:** `EasyMod-backend/src/modules/integration/meta-webhook-gdpr.handler.js`
@@ -13,7 +13,7 @@ paraphrase it from memory — the details below are what the code actually does.
 
 ## Overview
 
-When a user removes Easy Moderator from their Facebook App Settings, Meta sends
+When a user removes EasyModerator from their Facebook App Settings, Meta sends
 a signed POST to the Data Deletion Request Callback. The handler validates the
 signature, resolves the Meta identity to local customer records, runs the
 deletion in one database transaction, cleans up file attachments, and returns an

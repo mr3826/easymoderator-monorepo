@@ -1,6 +1,6 @@
 # Meta App Review Screencast — Storyboard and Narration Script
 
-**App:** Easy Moderator
+**App:** EasyModerator
 **Last updated:** 2026-07-28
 **Target length:** 3–4 minutes
 **Deliverable:** one continuous unedited screen recording, uploaded to the App
@@ -21,7 +21,7 @@ Meta rejects on these more than on anything else, so read this list twice.
    in that order, in the same take. This is the proof for `pages_messaging` and
    there is no substitute — an image/attachment demo does not count.
 4. **Show both sides.** Split the screen, or alternate between the Messenger
-   window (customer) and Easy Moderator (merchant). The reviewer must see that
+   window (customer) and EasyModerator (merchant). The reviewer must see that
    the message the customer typed is the message that arrived, and that the
    reply the merchant typed is the reply the customer received.
 5. **Screen recording only** — no phone filmed with another phone.
@@ -50,7 +50,7 @@ Meta rejects on these more than on anything else, so read this list twice.
       non-tester's DM never fires the webhook and the demo dies on camera.
 - [ ] Log in as the reviewer merchant account, and **disconnect** any Page —
       the video must start from the disconnected state.
-- [ ] Both windows arranged: Easy Moderator left, Messenger right.
+- [ ] Both windows arranged: EasyModerator left, Messenger right.
 - [ ] Notifications silenced. Clean browser profile, no extra tabs.
 - [ ] Do a full dry run. Confirm the round trip actually works *today* before
       you record it.
@@ -65,9 +65,9 @@ scoring.
 
 ### Shot 1 — Identify the product (0:00–0:15)
 
-**Screen:** Easy Moderator dashboard, logged in as the reviewer merchant account.
+**Screen:** EasyModerator dashboard, logged in as the reviewer merchant account.
 
-> "This is Easy Moderator, a shared Facebook Messenger inbox for small
+> "This is EasyModerator, a shared Facebook Messenger inbox for small
 > businesses in Bangladesh. Merchants use it to answer customer messages sent
 > directly to their Facebook Page, with optional AI-assisted replies. It does
 > not read or reply to Page post comments."
@@ -98,9 +98,9 @@ Select **only the test Page**, then continue.
 
 ### Shot 4 — Page picker and `pages_show_list` (1:00–1:20)
 
-**Screen:** Easy Moderator's Page picker after consent.
+**Screen:** EasyModerator's Page picker after consent.
 
-> "Using `pages_show_list`, Easy Moderator calls `/me/accounts` and cross-checks
+> "Using `pages_show_list`, EasyModerator calls `/me/accounts` and cross-checks
 > it against the granular permission target IDs Facebook returned. Only the
 > Pages the merchant actually selected in Facebook appear here. Any other Page
 > is neither shown nor connectable."
@@ -112,7 +112,7 @@ Select the test Page and confirm.
 **Screen:** The connected channel card — Page name, picture, connected status,
 webhook active.
 
-> "The Page is connected. Using `pages_manage_metadata`, Easy Moderator
+> "The Page is connected. Using `pages_manage_metadata`, EasyModerator
 > subscribed the Page to the `messages` webhook field only, then read the
 > subscription back to confirm it. That is what the webhook-active state here
 > reports. We do not subscribe to `feed` or to any comment field."
@@ -134,7 +134,7 @@ Send it. Leave the sent message visible on screen.
 
 ### Shot 7 — Message arrives in the Shared Inbox (2:00–2:20)
 
-**Screen:** Back to Easy Moderator → **Shared Inbox**.
+**Screen:** Back to EasyModerator → **Shared Inbox**.
 
 > "The message arrives in the merchant's Shared Inbox in real time through the
 > `messages` webhook. This is `pages_messaging` on the receive side."
@@ -145,7 +145,7 @@ Point at the thread. The text must be readable and identical to Shot 6.
 
 **Screen:** Same thread. The AI reply appears.
 
-> "Easy Moderator can draft and send an AI-assisted reply. Every conversation's
+> "EasyModerator can draft and send an AI-assisted reply. Every conversation's
 > first automated reply carries a clear disclosure that the customer is talking
 > to an automated assistant — the merchant cannot switch that disclosure off."
 
@@ -163,7 +163,7 @@ Type exactly:
 
 > `Yes, the blue kurti is in stock in size M. It is 1,450 taka.`
 
-> "The merchant types a reply and sends it through Easy Moderator. This is
+> "The merchant types a reply and sends it through EasyModerator. This is
 > `pages_messaging` on the send side, using the Page access token."
 
 Send it.
@@ -184,7 +184,7 @@ important frame in the video.** If it is not there, the submission fails on
 
 **Screen:** Back to **Settings → Chat**. Click **Disconnect**, confirm.
 
-> "When a merchant disconnects, Easy Moderator unsubscribes the Page webhook and
+> "When a merchant disconnects, EasyModerator unsubscribes the Page webhook and
 > stops all access. The merchant can reconnect at any time."
 
 Show the card back in its disconnected state.
@@ -192,7 +192,7 @@ Show the card back in its disconnected state.
 ### Shot 12 — Close (3:40–end)
 
 > "That is the complete flow: connect a Page, receive a direct Messenger
-> message, reply, and disconnect. Easy Moderator uses only `pages_show_list`,
+> message, reply, and disconnect. EasyModerator uses only `pages_show_list`,
 > `pages_messaging`, and `pages_manage_metadata`, and subscribes only to the
 > `messages` webhook field."
 
@@ -211,7 +211,7 @@ actually recorded before uploading.
 | 2 | Page connection flow opened | 2 | ☐ |
 | 3 | **Meta authorization screen shown** | 3 | ☐ |
 | 4 | Merchant selects the intended Page | 3–4 | ☐ |
-| 5 | Connected Page appears in Easy Moderator | 5 | ☐ |
+| 5 | Connected Page appears in EasyModerator | 5 | ☐ |
 | 6 | **Tester sends a real Messenger text message** | 6 | ☐ |
 | 7 | Message appears in the Shared Inbox | 7 | ☐ |
 | 8 | Merchant sends a text reply | 9 | ☐ |

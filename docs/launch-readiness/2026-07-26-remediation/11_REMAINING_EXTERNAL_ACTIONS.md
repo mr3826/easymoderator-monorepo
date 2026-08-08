@@ -12,7 +12,7 @@ None of these can be performed by the engineering agent; each needs a credential
 ## Required before Meta App Review submission
 
 5. **Test Page + tester account + reviewer credentials** — provision and add to `docs/meta-app-review-submission.md`. (F-02 is now fixed, so a reviewer's Page landing unmapped no longer silently drops their DM — it is durably held and retried.)
-6. **App icon (1024×1024) + Business Verification** for Hexabyte Limited.
+6. **App icon (1024×1024) + Business Verification** for Hexabyte Technologies.
 7. **Screencast** — the mandatory text round-trip (sign in → Page connect → Meta auth screen → Page selected → tester sends a Messenger text → appears in Shared Inbox → merchant replies → tester receives the exact reply). Record only after the hardened deploy and a real text round-trip pass.
 
 ## Optional (only if going live on payments during the pilot)

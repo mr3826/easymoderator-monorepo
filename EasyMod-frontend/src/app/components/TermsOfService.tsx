@@ -2,8 +2,9 @@ import { Link } from "react-router-dom";
 import Seo from "./Seo";
 
 const EFFECTIVE_DATE = "April 24, 2026";
-const LAST_UPDATED = "May 20, 2026";
-const COMPANY_NAME = "Hexabyte Limited";
+const LAST_UPDATED = "August 8, 2026";
+const COMPANY_NAME = "Hexabyte Technologies";
+const COMPANY_URL = "https://hexabyte.tech";
 const APP_NAME = "EasyModerator";
 const SUPPORT_EMAIL = "support@easymod.tech";
 const PRIVACY_EMAIL = "privacy@easymod.tech";
@@ -34,13 +35,43 @@ export default function TermsOfService() {
           <p className="mt-2 text-sm text-gray-500">Effective date: {EFFECTIVE_DATE} &nbsp;·&nbsp; Last updated: {LAST_UPDATED}</p>
           <p className="mt-4 text-gray-600 leading-relaxed">
             These Terms of Service ("Terms") govern your access to and use of <strong>{APP_NAME}</strong>, a
-            product of <strong>{COMPANY_NAME}</strong> ("we", "us", or "our"). By creating an account or
+            product of <strong>{COMPANY_NAME}</strong> ("we", "us", or "our") — see{" "}
+            <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+              hexabyte.tech
+            </a>{" "}
+            for more about the parent company. By creating an account or
             using the {APP_NAME} platform, you agree to be bound by these Terms and our{" "}
             <Link to="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
           </p>
           <p className="mt-3 text-gray-600 leading-relaxed">
             If you do not agree to these Terms, you may not access or use the {APP_NAME} service.
           </p>
+
+          {/* Current service status — mirrors the Privacy Policy panel. Keep both in
+              step whenever an integration is switched on or off. */}
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <h2 className="text-base font-semibold text-amber-950">Current service status</h2>
+            <p className="mt-2 text-sm leading-relaxed text-amber-900">
+              {APP_NAME} is operating in a limited pre-general-availability phase while our Meta App Review is
+              being completed. Features, plan limits, and pricing may change during this period, and we will
+              give reasonable notice of changes that materially affect your use of the service.
+            </p>
+            <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-amber-900">
+              <li>
+                <strong>Available now:</strong> a shared Facebook Messenger inbox for connected Pages, with
+                AI-assisted replies, order capture, courier booking, and merchant analytics.
+              </li>
+              <li>
+                <strong>Not enabled:</strong> the bKash and Nagad online payment gateways. Orders settle by
+                cash on delivery or by merchant-verified mobile-money transfer. Nothing in these Terms should
+                be read as us currently processing card or mobile-wallet payments on your behalf.
+              </li>
+              <li>
+                <strong>Out of scope for this release:</strong> Facebook comment automation, comment-to-DM,
+                and public comment replies. {APP_NAME} handles direct Messenger conversations only.
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div className="space-y-10 text-gray-700">
@@ -61,8 +92,15 @@ export default function TermsOfService() {
             <h2 className="text-xl font-semibold text-gray-900 mb-4">2. Description of Service</h2>
             <p className="mb-3 leading-relaxed">
               {APP_NAME} is a SaaS e-commerce moderation platform that allows businesses to manage customer
-              conversations, automate replies using AI, process orders, and connect with messaging channels
-              including Meta platforms (Facebook Messenger).
+              conversations, automate replies using AI, process orders, and connect with messaging channels.
+              In this release the only connected channel is <strong>Facebook Messenger</strong>, through a
+              Facebook Page you authorise. Customers must message your Page directly; {APP_NAME} does not
+              read, reply to, or trigger workflows from Facebook post comments.
+            </p>
+            <p className="mb-3 leading-relaxed">
+              Order fulfilment features include courier booking with Pathao, Steadfast, and RedX, and
+              cash-on-delivery risk review. Online payment gateways are not currently enabled — see the
+              service status note above.
             </p>
             <p className="leading-relaxed">
               We reserve the right to modify, suspend, or discontinue any part of the service at any time
@@ -312,6 +350,12 @@ export default function TermsOfService() {
             <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm space-y-2">
               <p className="font-semibold text-gray-900">{COMPANY_NAME}</p>
               <p className="text-gray-600">
+                Parent company:{" "}
+                <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  hexabyte.tech
+                </a>
+              </p>
+              <p className="text-gray-600">
                 General Support:{" "}
                 <a href={`mailto:${SUPPORT_EMAIL}`} className="text-blue-600 hover:underline">{SUPPORT_EMAIL}</a>
               </p>
@@ -330,7 +374,13 @@ export default function TermsOfService() {
 
         {/* Footer */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500">
-          <span>© {new Date().getFullYear()} {COMPANY_NAME}. All rights reserved.</span>
+          <span>
+            © {new Date().getFullYear()}{" "}
+            <a href={COMPANY_URL} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              {COMPANY_NAME}
+            </a>
+            . All rights reserved.
+          </span>
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="text-blue-600 hover:underline"

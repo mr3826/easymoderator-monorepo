@@ -338,12 +338,13 @@ export default function Pricing() {
         {/* Partner plan teaser */}
         <p className="mb-16 text-center text-sm text-gray-500">
           {t("pricing.partnerTeaser.question")}{" "}
-          <a
-            href="mailto:hello@hexabyte.co?subject=Partner Plan Inquiry"
+          <button
+            type="button"
+            onClick={() => setShowPartnerModal(true)}
             className="text-[#00A651] underline hover:text-[#008040]"
           >
             {t("pricing.partnerTeaser.link")}
-          </a>
+          </button>
         </p>
 
         {/* Everything included — Growth bundles every feature at one price. */}

@@ -1,7 +1,7 @@
 {
-  "name": "Easy Moderator",
+  "name": "EasyModerator",
   "short_name": "EasyMod",
-  "description": "Bangla AI manager for your Facebook & Instagram shop — block fake orders, capture live orders, sell more.",
+  "description": "Bangla AI manager for your Facebook shop — block fake orders, capture live orders, sell more.",
   "lang": "bn",
   "dir": "ltr",
   "start_url": "/app",
