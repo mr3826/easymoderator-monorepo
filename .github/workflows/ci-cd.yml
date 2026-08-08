@@ -170,6 +170,13 @@ jobs:
         run: |
           SHA="${{ github.sha }}"
           SHORT="${SHA::8}"
+          # BUILD_TIME used to come from the repository's last-metadata-change
+          # stamp rather than this build. It ran *behind* the commit it labelled
+          # (bc9c8ca reported builtAt 03:53:04Z for code authored 04:09:23Z) and
+          # two pushes could share one value, collapsing two releases onto a
+          # single Sentry `dist` marker. Stamp the build itself.
+          # A guard test pins this line — see workflow-deploy-guard.test.js.
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
             echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHORT}" >> $GITHUB_OUTPUT
           else
@@ -193,7 +200,7 @@ jobs:
             ${{ env.GHCR_BACKEND }}:latest
           build-args: |
             GIT_SHA=${{ github.sha }}
-            BUILD_TIME=${{ github.event.repository.updated_at }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
           cache-from: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache,mode=max
 

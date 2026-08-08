@@ -23,6 +23,16 @@ describe('production workflow branch safety', () => {
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
     });
 
+    // BUILD_TIME lands in the image as ENV and is read back by /health, /version
+    // and Sentry's `dist`. It was github.event.repository.updated_at — the repo's
+    // last-metadata-change time, which ran behind the commit it labelled and could
+    // repeat across two pushes, collapsing two releases onto one dist marker.
+    test('stamps BUILD_TIME from the build itself, not repository metadata', () => {
+        expect(workflow).not.toContain('repository.updated_at');
+        expect(workflow).toContain('BUILD_TIME=${{ steps.meta.outputs.build_time }}');
+        expect(workflow).toMatch(/echo "build_time=\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)" >> \$GITHUB_OUTPUT/);
+    });
+
     test('migrates the candidate backend image before replacing running services', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
         const candidateMigration =

@@ -1,5 +1,7 @@
 'use strict';
 
+const { AppError } = require('../utils/AppError');
+
 const PUBLIC_CROSS_ORIGIN_PATHS = new Set([
     '/api/public/live-stats',
     '/api/analytics/funnel',
@@ -15,7 +17,13 @@ function buildCorsOptions(req, config) {
     return {
         origin(origin, callback) {
             if (!origin || routeOrigins.includes(origin)) return callback(null, true);
-            return callback(new Error('Not allowed by CORS'));
+            // A denied origin is a policy decision, not a server fault. A bare
+            // Error reached globalErrorHandler as a 500, so every stale
+            // apex-origin tab and every drive-by scanner booked a server error
+            // in Sentry and logged at error level. 403 keeps the same refusal
+            // (cors still emits no ACAO, and the route never runs) while
+            // logging as a client error.
+            return callback(new AppError('Not allowed by CORS', 403, 'CORS_ORIGIN_DENIED'));
         },
         credentials: !isPublicSurface,
     };
