@@ -10,6 +10,7 @@ const { isTooLong } = require('../ai/prompt-sanitizer.service');
 const { SupportTicket } = require('../entities');
 const { createLogger } = require('../../utils/structured-logger');
 const { planHasFeature } = require('../subscription/subscription.plans');
+const grounding = require('../ai/grounding');
 
 const presetLogger = createLogger('AiChatbotPreset');
 
@@ -199,8 +200,28 @@ class AIChatbotController {
                     ingestionResult,
                     imageUrls
                 );
-                response = intentResult.response;
-                confidence = intentResult.confidence;
+                // Same gate as the Messenger worker — this HTTP entry point must
+                // not be a way around the trust boundary.
+                const verdict = grounding.evaluateCandidate({
+                    candidate: intentResult.response,
+                    evidence: intentResult.grounding,
+                    language: detectedLanguage,
+                    modelGenerated: grounding.isModelGenerated(intentResult.source),
+                });
+                grounding.logGroundingDecision({
+                    shopId: shop_id,
+                    conversationId: conversation_id,
+                    messageId: message_id,
+                    provider: intentResult.provider,
+                    decision: verdict.decision,
+                    reasonCode: verdict.reasonCode,
+                    evidence: intentResult.grounding,
+                    violations: verdict.violations,
+                });
+                response = verdict.text ?? intentResult.response;
+                confidence = verdict.reasonCode === grounding.ReasonCode.RETRIEVAL_FAILED
+                    ? 0
+                    : intentResult.confidence;
                 sourceReferences = intentResult.sourceReferences || null;
             }
 
@@ -343,10 +364,19 @@ class AIChatbotController {
                 confidenceThreshold: aiSettings.confidence_threshold
             });
 
+            const evidence = routerResult.grounding || grounding.emptyEvidence(shop_id);
             return {
                 response: routerResult.response,
                 confidence: routerResult.confidence,
                 sourceReferences: routerResult.sourceReferences || null,
+                grounding: evidence,
+                source: routerResult.source || null,
+                provider: routerResult.provider || null,
+                // A product photo is attached only when a verified product of THIS
+                // shop owns it; the outbound gate re-checks provenance before send.
+                attachments: evidence.mediaStatus === grounding.MediaStatus.AVAILABLE
+                    ? [{ type: 'image', url: evidence.mediaUrl, productId: evidence.mediaProductId }]
+                    : [],
             };
         } catch (llmError) {
             // LLM/router unavailable — fall through to keyword matching

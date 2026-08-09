@@ -111,7 +111,11 @@ describe('vector-store product grounding requires a semantic embedder', () => {
 
     test('the RAG product tier is gated on embeddingSemantic()', () => {
         expect(ROUTER_SRC).toContain('const semanticEmbeddings = embeddingSemantic();');
-        expect(ROUTER_SRC).toContain('if (!semanticEmbeddings) continue;');
+        // Vector product hits are collected only when the embedder is genuinely
+        // semantic; on the n-gram fallback they are dropped before they can
+        // become candidates. (See grounding-boundary.test.js for the behavioural
+        // assertion that a vector hit alone never verifies a product.)
+        expect(ROUTER_SRC).toContain('if (semanticEmbeddings) productIds.push(String(md.product_id));');
     });
 
     test('the local n-gram fallback is not classed as semantic', () => {

@@ -32,6 +32,7 @@ const policyEngine = require('../modules/policy/policy.engine');
 const metaChannelService = require('../modules/channel-providers/meta-channel.service');
 const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
 const Customer = require('../modules/customer/customer.entity');
+const grounding = require('../modules/ai/grounding');
 const { Op } = require('sequelize');
 
 // Lazy imports to avoid circular dependency issues at module load
@@ -402,6 +403,10 @@ async function processMessageJob(job) {
     // (Without this, the bot collects name/phone/address as chat but never makes
     // an order — see order-flow.service.js.)
     let rawResponse, confidence, sourceReferences;
+    let groundingEvidence = grounding.emptyEvidence(shopId);
+    let replySource = null;
+    let replyProvider = null;
+    let proposedAttachments = [];
     let orderFlow = { handled: false };
     let knowledgeGapCaptured = false;
     let fallbackKnowledgeGapSource = null;
@@ -438,9 +443,14 @@ async function processMessageJob(job) {
         sourceReferences = orderFlow.sourceReferences || null;
     } else {
         try {
-            ({ response: rawResponse, confidence, sourceReferences } = await AIChatbotController.processNewIntent(
+            const intentResult = await AIChatbotController.processNewIntent(
                 effMessage, history, entities, detectedLanguage, aiSettings, ingestionResult, effImageUrls
-            ));
+            );
+            ({ response: rawResponse, confidence, sourceReferences } = intentResult);
+            groundingEvidence = intentResult.grounding || groundingEvidence;
+            replySource = intentResult.source || null;
+            replyProvider = intentResult.provider || null;
+            proposedAttachments = intentResult.attachments || [];
         } catch (aiErr) {
             console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
             // Stage alert (warning): the customer still gets a reply, but it's the
@@ -459,6 +469,49 @@ async function processMessageJob(job) {
         }
     }
 
+    // ── Grounding gate: EasyModerator owns the SEND decision ────────────────
+    // The last point at which merchant facts can still be withdrawn. Runs on
+    // every reply regardless of which provider (or cache tier) produced it, so
+    // a provider swap or a fallback cannot route around it.
+    const groundingVerdict = grounding.evaluateCandidate({
+        candidate: rawResponse,
+        evidence: groundingEvidence,
+        language: detectedLanguage,
+        attachments: proposedAttachments,
+        modelGenerated: !orderFlow.handled && grounding.isModelGenerated(replySource),
+    });
+    grounding.logGroundingDecision({
+        shopId,
+        conversationId,
+        messageId: effExternalId,
+        provider: replyProvider,
+        decision: groundingVerdict.decision,
+        reasonCode: groundingVerdict.reasonCode,
+        evidence: groundingEvidence,
+        violations: groundingVerdict.violations,
+    });
+
+    if (groundingVerdict.decision === grounding.GroundingDecision.SUPPRESS) {
+        // Nothing truthful can be said. Silence plus a human beats a guess.
+        const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
+        await escalateToHuman({
+            conversation, shopId, conversationId,
+            platform, recipientId, channel: jobChannel, reason: 'grounding_suppressed',
+        });
+        return {
+            success: true, conversationId, sent: false,
+            reason: 'grounding_suppressed', reasonCode: groundingVerdict.reasonCode, handoff: true,
+        };
+    }
+
+    if (groundingVerdict.decision === grounding.GroundingDecision.SAFE_FALLBACK) {
+        rawResponse = groundingVerdict.text;
+        // A retrieval outage is not an answer: drop confidence so the existing
+        // low-confidence gate below holds the turn and pulls in a human.
+        if (groundingVerdict.reasonCode === grounding.ReasonCode.RETRIEVAL_FAILED) confidence = 0;
+    }
+    const outboundAttachments = groundingVerdict.attachments;
+
     let repliedText = rawResponse;
     let disclosureApplied = false;
     const storeAiResponse = (content, aiDisclosureApplied) => ConversationStateService.storeAIResponse(conversationId, content, {
@@ -468,6 +521,9 @@ async function processMessageJob(job) {
         ai_disclosure_applied: aiDisclosureApplied,
         order_flow: orderFlow.meta || null,
         sourceReferences: sourceReferences || null,
+        grounding_decision: groundingVerdict.decision,
+        grounding_reason: groundingVerdict.reasonCode,
+        grounding_product_status: groundingEvidence.productStatus,
     });
 
     // ── Confidence gate: hold + hand off when the AI is unsure ──────────────
@@ -629,7 +685,9 @@ async function processMessageJob(job) {
             recipientId: String(recipientId),
             normalizedMessage: {
                 text: finalText,
-                attachments: [],
+                // Only media the grounding gate accepted: a verified product of
+                // THIS shop, owning this exact URL.
+                attachments: outboundAttachments,
                 platform: policyChannelTypeForSend,
                 direction: 'outbound',
                 senderRole: 'ai',

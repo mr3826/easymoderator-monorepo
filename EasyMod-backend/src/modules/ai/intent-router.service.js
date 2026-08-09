@@ -23,6 +23,7 @@ const { scrubPII } = require('./prompt-sanitizer.service');
 const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
+const grounding = require('./grounding');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -103,6 +104,36 @@ const shouldSearchProducts = (message) => {
 const normalisedKey = (shopId, message) =>
     `intent:${shopId}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`;
 
+/**
+ * A cached reply is replayed straight to a customer, so it must carry the
+ * authoritative text that justified it — otherwise the outbound gate sees a
+ * figure with no source and rejects a reply that was perfectly grounded when it
+ * was generated. Stored as JSON; a legacy plain-string entry still reads fine.
+ */
+const encodeCacheEntry = (response, sourceText) =>
+    JSON.stringify({ r: response, s: sourceText || '' });
+
+const decodeCacheEntry = (raw) => {
+    if (typeof raw !== 'string') return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.r === 'string') return { response: parsed.r, sourceText: parsed.s || '' };
+    } catch { /* legacy entry — plain response text */ }
+    return { response: raw, sourceText: '' };
+};
+
+/** Evidence for a reply built entirely from one authoritative string. */
+const evidenceFromSource = (shopId, sourceText) =>
+    grounding.withSourceText(grounding.emptyEvidence(shopId), sourceText);
+
+/**
+ * A reply may only be cached when it carries no product facts. Prices and stock
+ * change; a hallucination that slips through must not be served for 30 minutes;
+ * and a NOT_FOUND answer must be re-derived once the merchant adds the product.
+ */
+const isCacheable = (evidence) =>
+    evidence.productStatus === grounding.ProductEvidenceStatus.NONE;
+
 // Warm BD-market greeting responses (no LLM needed for simple hellos)
 const GREETING_REPLIES = {
     bn:    'আসসালামু আলাইকুম! কেমন আছেন? কিভাবে সাহায্য করতে পারি? 😊',
@@ -174,9 +205,14 @@ const route = async ({
     // ------------------------------------------------------------------
     const cacheKey = imageUrls.length > 0 ? null : normalisedKey(shopId, message);
     if (cacheKey) {
-        const cachedResponse = await intentCache.get(cacheKey);
-        if (cachedResponse) {
-            return { response: cachedResponse, confidence: 1.0, source: 'cache' };
+        const cached = decodeCacheEntry(await intentCache.get(cacheKey));
+        if (cached) {
+            return {
+                response: cached.response,
+                confidence: 1.0,
+                source: 'cache',
+                grounding: evidenceFromSource(shopId, cached.sourceText),
+            };
         }
     }
 
@@ -202,8 +238,13 @@ const route = async ({
                         order.delivery_status ? `Delivery: ${order.delivery_status}` : null,
                         order.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
                     ].filter(Boolean).join(' | ');
-                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, statusLine);
-                    return { response: statusLine, confidence: 1.0, source: 'exact_match' };
+                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(statusLine, statusLine));
+                    return {
+                        response: statusLine,
+                        confidence: 1.0,
+                        source: 'exact_match',
+                        grounding: evidenceFromSource(shopId, statusLine),
+                    };
                 }
             } catch (_) { /* DB unavailable — fall through */ }
         }
@@ -216,8 +257,13 @@ const route = async ({
     // ------------------------------------------------------------------
     if (!imageUrls.length && isPlainGreeting(message)) {
         const greetingResponse = _greetingReply(language);
-        if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, greetingResponse);
-        return { response: greetingResponse, confidence: 0.95, source: 'greeting_fastpath' };
+        if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(greetingResponse, ''));
+        return {
+            response: greetingResponse,
+            confidence: 0.95,
+            source: 'greeting_fastpath',
+            grounding: grounding.emptyEvidence(shopId),
+        };
     }
 
     // ------------------------------------------------------------------
@@ -230,8 +276,13 @@ const route = async ({
         if (bertResult && bertResult.confidence >= 0.85) {
             if (bertResult.primaryIntent === 'greeting') {
                 const greetingResponse = _greetingReply(language);
-                if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, greetingResponse);
-                return { response: greetingResponse, confidence: 0.9, source: 'bert' };
+                if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(greetingResponse, ''));
+                return {
+                    response: greetingResponse,
+                    confidence: 0.9,
+                    source: 'bert',
+                    grounding: grounding.emptyEvidence(shopId),
+                };
             }
         }
     }
@@ -294,12 +345,20 @@ const route = async ({
                     // Fix #16: Track FAQ hit — best-effort, non-blocking
                     incrementFaqHit(best.faq.id);
 
-                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, answer);
+                    // The FAQ text is this reply's authoritative source: figures it
+                    // contains (delivery charge, return window) are quotable, and
+                    // nothing else is.
+                    const faqEvidence = evidenceFromSource(shopId, faqContent);
+                    faqEvidence.knowledgeIds = [String(best.faq.id)];
+                    faqEvidence.knowledgeFound = true;
+
+                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(answer, faqContent));
                     return {
                         response: answer,
                         confidence: best.score,
                         source: 'faq',
                         provider,
+                        grounding: faqEvidence,
                         sourceReferences: [{
                             kind: 'faq',
                             id: String(best.faq.id),
@@ -320,6 +379,107 @@ const route = async ({
     return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls });
 };
 
+/**
+ * Retrieve shop-scoped product candidates for a query.
+ *
+ * Returns `failed: true` rather than an empty list when the DB errors: an
+ * outage must become RETRIEVAL_FAILED (we do not know) and never NOT_FOUND
+ * (we know the shop does not sell it). Collapsing the two is fail-open.
+ */
+const _findProductCandidates = async (params) => {
+    try {
+        const products = await productSearch.searchByAttributes(params);
+        return { products: Array.isArray(products) ? products.filter(p => p && p.name) : [], failed: false };
+    } catch (err) {
+        console.warn(`[intent-router] product retrieval failed for shop ${params.shopId}: ${err.message}`);
+        return { products: [], failed: true };
+    }
+};
+
+/**
+ * Knowledge-base retrieval. Returns the quotable snippets, their references and
+ * any product IDs the vector store matched (which are candidates, never facts).
+ */
+const _retrieveKnowledge = async (shopId, message) => {
+    const empty = { snippets: '', references: [], productIds: [], knowledgeIds: [] };
+    try {
+        const { queryData } = require('../rag/rag.service');
+        const ragResult = await queryData({ query: message, limit: 4, shopId });
+        if (!ragResult.success || !ragResult.results.length) return empty;
+
+        const usedResults = ragResult.results.filter(r => r.score > 0.5);
+
+        // Product embeddings deliberately EXCLUDE price and stock (they change too
+        // often), so the stored product text must never be quoted as ground truth.
+        // Vector product hits are re-fetched live below. On the local n-gram hash
+        // fallback the embedder is not semantic at all and this tier measured a
+        // 60–80% false-positive rate on products the shop does not sell
+        // (docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md), so it is skipped entirely.
+        const semanticEmbeddings = embeddingSemantic();
+        const productIds = [];
+        const knowledgeResults = [];
+        for (const r of usedResults) {
+            const md = r.metadata || {};
+            if (md.type === 'product' && md.product_id) {
+                if (semanticEmbeddings) productIds.push(String(md.product_id));
+            } else if (md.type !== 'business_info' && r.content) {
+                knowledgeResults.push(r);
+            }
+        }
+
+        return {
+            snippets: knowledgeResults.map(r => r.content.trim()).join('\n---\n'),
+            references: knowledgeResults.map(r => {
+                const md = r.metadata || {};
+                return {
+                    kind: 'rag',
+                    id: md.documentId || md.id || null,
+                    title: md.title || md.source || md.kind || null,
+                    score: typeof r.score === 'number' ? Number(r.score.toFixed(3)) : null,
+                };
+            }),
+            productIds,
+            knowledgeIds: knowledgeResults
+                .map(r => (r.metadata || {}).documentId || (r.metadata || {}).id)
+                .filter(Boolean)
+                .map(String),
+        };
+    } catch (err) {
+        // Knowledge is additive context. Its absence weakens the answer but does
+        // not license a merchant claim — product truth is decided independently.
+        console.warn(`[intent-router] knowledge retrieval unavailable: ${err.message}`);
+        return empty;
+    }
+};
+
+/**
+ * Re-fetch the products this conversation already grounded, LIVE and under this
+ * shop's scope. Re-reading matters: the IDs come from an earlier turn, and price
+ * or stock may have moved since. Scoping matters more — it is what makes a
+ * conversation carried across shops (or a tampered reference) impossible.
+ */
+const _loadContextProducts = async (shopId, history) => {
+    const ids = grounding.contextProductIds(history);
+    if (!ids.length) return { products: [], failed: false };
+    try {
+        const products = await productSearch.getProductsByIds(ids, shopId);
+        return { products: (products || []).filter(p => p && p.name), failed: false };
+    } catch (err) {
+        console.warn(`[intent-router] context product lookup failed for shop ${shopId}: ${err.message}`);
+        return { products: [], failed: true };
+    }
+};
+
+/** Merge live rows for vector-store product hits into the candidate set. */
+const _mergeVectorProductCandidates = async (candidates, productIds, shopId) => {
+    const seen = new Set(candidates.map(p => String(p.id)));
+    const missing = productIds.filter(id => !seen.has(id));
+    if (!missing.length) return candidates;
+
+    const live = await productSearch.getProductsByIds(missing, shopId).catch(() => []);
+    return [...candidates, ...live.filter(p => p && p.name)];
+};
+
 const _callLlm = async ({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, cacheKey, imageUrls = [] }) => {
     const recentTurns = history.slice(-CONTEXT_WINDOW);
 
@@ -328,10 +488,6 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // to the worker so agents reviewing the AI message in the inbox can see
     // which knowledge drove the answer (architect §16).
     const sourceReferences = [];
-    // Product IDs already injected as live grounded facts — prevents the RAG
-    // tier from re-injecting (or worse, dumping the price-less embedding text of)
-    // a product the DB product-search already grounded.
-    const injectedProductIds = new Set();
 
     for (const turn of recentTurns) {
         llmMessages.push({
@@ -341,6 +497,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     }
 
     let groundedSystemPrompt = systemPrompt;
+    const notes = [];
 
     // -----------------------------------------------------------------------
     // Photo flow: the photo reaches a model exactly once.
@@ -354,6 +511,12 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     // calls carrying an image — to buy very little. AI_VISION_ENABLED=true
     // re-attaches it (see vision-policy.service.js).
     // -----------------------------------------------------------------------
+    let attrs = null;
+    let searchOutcome = { products: [], failed: false };
+    let knowledge = { snippets: '', references: [], productIds: [], knowledgeIds: [] };
+    let groundingQuery = message;
+    let attributeFollowUp = false;
+
     if (imageUrls.length > 0) {
         // Only the first photo is examined. A burst of photos is one shopping
         // question, not N of them (burst-coalescer gathers one URL per message),
@@ -361,7 +524,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         // answer the customer did not ask for.
         const [primaryImageUrl] = imageUrls;
 
-        const attrs = photoMatchEnabled()
+        attrs = photoMatchEnabled()
             ? await _extractProductAttributes(primaryImageUrl, message)
             : null;
 
@@ -371,22 +534,22 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         // with no caption; it is not a search term.
         const captionText = (message && message !== '[image]') ? message : '';
 
-        const products = (shopId && (attrs || (captionText && shouldSearchProducts(captionText))))
-            ? await productSearch.searchByAttributes({
+        // Attributes read off the photo are the identifying terms for a photo
+        // turn — the customer supplied a picture, not words.
+        groundingQuery = [attrs?.category, attrs?.color, attrs?.material, captionText]
+            .filter(Boolean).join(' ') || captionText;
+
+        if (shopId && (attrs || (captionText && shouldSearchProducts(captionText)))) {
+            searchOutcome = await _findProductCandidates({
                 shopId,
                 category: attrs?.category,
-                color:    attrs?.color,
+                color: attrs?.color,
                 material: attrs?.material,
-                query:    attrs?.query || captionText,
-                tags:     attrs?.tags || [],
-                limit: 5
-            }).catch(() => [])
-            : [];
-
-        // Every branch below appends to this, so a photo can never reach the
-        // model on the bare shop prompt. That gap is precisely the state in
-        // which a price gets invented.
-        const notes = [];
+                query: attrs?.query || captionText,
+                tags: attrs?.tags || [],
+                limit: 5,
+            });
+        }
 
         if (attrs) {
             const facets = [
@@ -398,7 +561,8 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                 `THE CUSTOMER'S PHOTO SHOWS: ${attrs.description || attrs.query || 'a product'}` +
                 `${facets ? ` (${facets})` : ''}\n` +
                 `You did not see the photo yourself — this description was produced from it. ` +
-                `Answer their question about it using the description and the catalog data below.`
+                `It describes the CUSTOMER'S picture, not a product this shop sells; only the ` +
+                `catalog evidence below says what this shop actually has.`
             );
         }
 
@@ -407,34 +571,6 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
                 `NOTE: The customer sent ${imageUrls.length} photos. Only the first was examined. ` +
                 `If your answer depends on which one they meant, say you looked at the first ` +
                 `photo and offer to check another.`
-            );
-        }
-
-        if (products.length > 0) {
-            const matchedOn = attrs ? 'THIS PHOTO' : "THE CUSTOMER'S MESSAGE";
-            notes.push(
-                `SHOP PRODUCTS MATCHING ${matchedOn} (live data — use ONLY these facts):\n` +
-                `${productSearch.formatProductsForLlm(products)}\n\n` +
-                `GROUNDING RULES:\n` +
-                `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
-                `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.\n` +
-                `- If none of these is actually the product in the photo, say so and ask the customer to confirm which one they mean.`
-            );
-            for (const p of products) {
-                if (p && p.id) {
-                    injectedProductIds.add(String(p.id));
-                    sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
-                }
-            }
-        } else {
-            // Deliberately not "matches the photo": when photo matching is off, or
-            // extraction failed, the search ran on the caption alone or did not run
-            // at all, and the reply must not imply the picture was examined.
-            notes.push(
-                `NOTE: No product in this shop's catalog could be matched to this message. ` +
-                `Tell the customer plainly that you could not find it — do not guess, and do ` +
-                `not describe the photo as if it were a product this shop sells. Ask them for ` +
-                `the product name, or for another photo, or where they saw it, so you can look again.`
             );
         }
 
@@ -448,8 +584,6 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             );
         }
 
-        groundedSystemPrompt = [systemPrompt, ...notes].filter(Boolean).join('\n\n');
-
         // stripImageBlocks drops the image parts unless AI_VISION_ENABLED=true.
         // Skipping extraction alone would not stop the provider billing for the
         // photo, because the bytes would still be attached right here.
@@ -461,115 +595,119 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
     } else {
         llmMessages.push({ role: 'user', content: scrubPII(message) });
 
-        // Text-query product search: runs for every message except greetings and
-        // closed-set chatter (see shouldSearchProducts).
-        if (shopId && shouldSearchProducts(message)) {
-            const textProducts = await productSearch.searchByAttributes({
-                shopId,
-                query: message,
-                limit: 5
-            }).catch(() => []);
+        // An attribute follow-up ("eta chiffon?") names no product — the noun is
+        // in the previous turn — so it is resolved against the products this
+        // conversation already grounded, not by searching the catalog again.
+        attributeFollowUp = shopId && grounding.isAttributeOnlyQuery(message);
 
-            // Guard: only inject if we have at least one product with a real name.
-            // Prevents injecting malformed rows from mock/stub returns.
-            const validProducts = textProducts.filter(p => p.name);
-            if (validProducts.length > 0) {
-                const productContext = productSearch.formatProductsForLlm(validProducts);
-                groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
-                    `RELEVANT SHOP PRODUCTS (live data — use ONLY these facts):\n${productContext}\n\n` +
-                    `GROUNDING RULES:\n` +
-                    `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
-                    `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
-                for (const p of validProducts) {
-                    if (p && p.id) {
-                        injectedProductIds.add(String(p.id));
-                        sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
-                    }
-                }
-            }
-        }
+        // Product search and knowledge retrieval are independent reads — running
+        // them together keeps the added grounding work off the critical path.
+        [searchOutcome, knowledge] = await Promise.all([
+            attributeFollowUp
+                ? _loadContextProducts(shopId, history)
+                : (shopId && shouldSearchProducts(message)
+                    ? _findProductCandidates({ shopId, query: message, limit: 5 })
+                    : Promise.resolve({ products: [], failed: false })),
+            shopId ? _retrieveKnowledge(shopId, message) : Promise.resolve(knowledge),
+        ]);
     }
 
     // -----------------------------------------------------------------------
-    // RAG knowledge base injection
-    // Inject top-K non-analytics knowledge chunks (FAQ, delivery, policies, etc.)
-    // for all queries that don't have direct DB answers.
-    // Analytics (order status) already returned early via Stage 1.
+    // Authoritative evidence for this turn. One resolution over the union of
+    // every candidate source, so SQL search and vector search cannot disagree
+    // about whether a product exists.
     // -----------------------------------------------------------------------
-    if (shopId && !imageUrls.length) {
-        try {
-            const { queryData } = require('../rag/rag.service');
-            const ragResult = await queryData({ query: message, limit: 4, shopId });
-            if (ragResult.success && ragResult.results.length > 0) {
-                const usedResults = ragResult.results.filter(r => r.score > 0.5);
+    const candidates = knowledge.productIds.length
+        ? await _mergeVectorProductCandidates(searchOutcome.products, knowledge.productIds, shopId)
+        : searchOutcome.products;
 
-                // Split product-type hits from knowledge hits. Product embeddings
-                // deliberately EXCLUDE price/stock (they change too often), so the
-                // stored product text must NOT be fed to the LLM as ground truth —
-                // doing so is a direct cause of hallucinated prices. Instead we
-                // re-fetch matched products LIVE from the DB (with current price).
-                // Vector-store PRODUCT hits become authoritative price/stock facts,
-                // so they are only trustworthy when the embedder is actually
-                // semantic. On the local n-gram hash fallback this tier measured a
-                // 60–80% false-positive rate on products the shop does not sell and
-                // pulled rank-1 accuracy down 8 points versus the SQL search alone
-                // (docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md). Knowledge chunks
-                // stay enabled — they are additive context, not quotable facts.
-                const semanticEmbeddings = embeddingSemantic();
-                const productHitIds = [];
-                const knowledgeResults = [];
-                for (const r of usedResults) {
-                    const md = r.metadata || {};
-                    if (md.type === 'product' && md.product_id) {
-                        if (!semanticEmbeddings) continue;
-                        const id = String(md.product_id);
-                        if (!injectedProductIds.has(id)) productHitIds.push(id);
-                    } else if (md.type !== 'business_info' && r.content) {
-                        knowledgeResults.push(r);
-                    }
-                }
+    const evidence = attributeFollowUp
+        ? grounding.resolveContextualAttributeEvidence({
+            shopId,
+            message,
+            contextProducts: candidates,
+            retrievalFailed: searchOutcome.failed,
+        })
+        : grounding.resolveProductEvidence({
+            shopId,
+            message: groundingQuery,
+            candidates,
+            retrievalFailed: searchOutcome.failed,
+        });
+    evidence.knowledgeIds = knowledge.knowledgeIds;
+    evidence.knowledgeFound = Boolean(knowledge.snippets);
 
-                const ragSnippets = knowledgeResults.map(r => r.content.trim()).join('\n---\n');
-                if (ragSnippets) {
-                    groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
-                        `KNOWLEDGE BASE CONTEXT (use this to answer customer questions about the shop, delivery, products, and policies):\n${ragSnippets}\n\n` +
-                        `IMPORTANT: Only use the knowledge above. If the answer is not in the context, say you don't know or ask the customer to contact support.`;
+    for (const product of [...evidence.verifiedProducts, ...evidence.relatedProducts]) {
+        sourceReferences.push({ kind: 'product', id: product.id, title: product.name });
+    }
+    sourceReferences.push(...knowledge.references);
 
-                    for (const r of knowledgeResults) {
-                        const md = r.metadata || {};
-                        sourceReferences.push({
-                            kind: 'rag',
-                            id: md.documentId || md.id || null,
-                            title: md.title || md.source || md.kind || null,
-                            score: typeof r.score === 'number' ? Number(r.score.toFixed(3)) : null,
-                        });
-                    }
-                }
+    // -----------------------------------------------------------------------
+    // Deterministic short-circuit. When the catalog answers the question, the
+    // model has nothing to add and every reason to embellish: a NOT_FOUND turn
+    // is answered from written copy, with real alternatives when we have them.
+    // This is what makes "chiffon saree ache?" safe by construction rather than
+    // by instruction — and it costs zero tokens.
+    // -----------------------------------------------------------------------
+    // "delivery charge koto?" leaves identifying terms behind ("charge") that no
+    // product matches, but it is a policy question, not a product-existence one.
+    // Answering it with "we don't sell that" would be a different — and wrong —
+    // claim, so the written not-found reply is reserved for turns that really are
+    // asking whether a product exists.
+    // Photo turns are excluded: the customer sent a picture and deserves a reply
+    // that acknowledges it. The NOT_FOUND evidence block already forbids claiming
+    // the item exists, and the outbound gate still polices prices and URLs.
+    const productQuestion = !imageUrls.length && !knowledge.snippets && (
+        evidence.relatedProducts.length > 0
+        || hasProductIntent(groundingQuery)
+        || grounding.isMediaRequest(message)
+    );
 
-                // Convert semantic product hits into LIVE grounded facts (price, stock,
-                // sizes from the DB). This is what stops "what's the price of X?" from
-                // hallucinating when X was matched via the vector store rather than the
-                // SQL product-search above.
-                if (productHitIds.length) {
-                    const liveProducts = await productSearch
-                        .getProductsByIds(productHitIds, shopId)
-                        .catch(() => []);
-                    const validLive = liveProducts.filter(p => p && p.name);
-                    if (validLive.length) {
-                        const productContext = productSearch.formatProductsForLlm(validLive);
-                        groundedSystemPrompt = (groundedSystemPrompt ? groundedSystemPrompt + '\n\n' : '') +
-                            `RELEVANT SHOP PRODUCTS (live data — use ONLY these facts):\n${productContext}\n\n` +
-                            `GROUNDING RULES:\n` +
-                            `- Only state prices, stock, and sizes listed above. Never invent or guess.\n` +
-                            `- If a product is OUT OF STOCK, say so clearly and do not offer to process an order.`;
-                        for (const p of validLive) {
-                            injectedProductIds.add(String(p.id));
-                            sourceReferences.push({ kind: 'product', id: String(p.id), title: p.name || null });
-                        }
-                    }
-                }
-            }
-        } catch (_) { /* RAG unavailable — continue without it */ }
+    const deterministic = _deterministicProductReply(evidence, language, {
+        attributeFollowUp,
+        productQuestion,
+    });
+    if (deterministic) {
+        return {
+            response: deterministic.response,
+            confidence: deterministic.confidence,
+            source: deterministic.source,
+            grounding: evidence,
+            sourceReferences: sourceReferences.length ? sourceReferences : null,
+        };
+    }
+
+    const evidenceBlock = grounding.renderEvidenceBlock(evidence);
+    if (evidenceBlock) {
+        notes.push(evidenceBlock);
+        grounding.withSourceText(evidence, evidenceBlock);
+    }
+
+    if (knowledge.snippets) {
+        notes.push(
+            `KNOWLEDGE BASE CONTEXT (the shop's own answers about delivery, policies and services):\n${knowledge.snippets}\n\n` +
+            `IMPORTANT: Only use the knowledge above. If the answer is not in it, say you do not have that ` +
+            `information and offer to check with the shop — never invent a shop policy, charge or timeline.`
+        );
+        grounding.withSourceText(evidence, knowledge.snippets);
+    }
+
+    groundedSystemPrompt = [systemPrompt, ...notes].filter(Boolean).join('\n\n');
+
+    // The shop's own configured facts (payment methods, delivery charges) are
+    // already inside systemPrompt via shop-operating-context; record them so the
+    // outbound gate recognises the figures they contain as sourced.
+    grounding.withSourceText(evidence, systemPrompt);
+
+    // Links the merchant configured (shop page, socials) are authoritative and may
+    // be shared — but never as a stand-in for a product photo. Once a photo has
+    // been asked for, the media rules own every URL in the reply, which is what
+    // stops "here's our Facebook Page" from answering "send the real picture".
+    if (evidence.mediaStatus === grounding.MediaStatus.NOT_REQUESTED) {
+        evidence.allowedUrls.push(
+            ...grounding.extractUrls(systemPrompt),
+            ...grounding.extractUrls(knowledge.snippets),
+        );
     }
 
     const effectiveProvider = preferredProvider;
@@ -608,8 +746,8 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         maxTokens:         768
     });
 
-    if (cacheKey) {
-        await intentCache.setex(cacheKey, CACHE_TTL, response);
+    if (cacheKey && isCacheable(evidence)) {
+        await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(response, evidence.sourceText));
     }
 
     return {
@@ -617,8 +755,76 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         confidence: 0.9,
         source: 'llm',
         provider,
+        grounding: evidence,
         sourceReferences: sourceReferences.length ? sourceReferences : null,
     };
+};
+
+/**
+ * The written reply for turns whose answer is already settled by the catalog.
+ * Returns null when the model still has useful work to do.
+ *
+ * NOT_FOUND and RETRIEVAL_FAILED are answered here because both are cases where
+ * generation can only make the answer worse — and because a customer applying
+ * pressure ("are you sure?", "abar check koren") re-enters this same code path
+ * and gets the same answer, which is exactly the property the incident lacked.
+ */
+const _deterministicProductReply = (evidence, language, { attributeFollowUp = false, productQuestion = true } = {}) => {
+    const { ProductEvidenceStatus, MediaStatus } = grounding;
+
+    if (attributeFollowUp && evidence.productStatus === ProductEvidenceStatus.NONE) {
+        // They asked about a fabric/colour but nothing in this conversation is
+        // grounded to a product. Asking which one is the only honest answer —
+        // and it is what stops an earlier hallucinated "chiffon saree" from
+        // being treated as the product under discussion.
+        return {
+            response: grounding.whichProductReply(language),
+            confidence: 1.0,
+            source: 'grounding_needs_product',
+        };
+    }
+
+    if (evidence.productStatus === ProductEvidenceStatus.RETRIEVAL_FAILED) {
+        return {
+            response: grounding.retrievalFailedReply(language),
+            // Zero confidence routes this through the existing low-confidence
+            // gate: the reply is held and a human is pulled in, rather than the
+            // customer being left with a non-answer.
+            confidence: 0,
+            source: 'grounding_retrieval_failed',
+        };
+    }
+
+    if (evidence.productStatus === ProductEvidenceStatus.NOT_FOUND && productQuestion) {
+        const base = evidence.mediaStatus === MediaStatus.NO_PRODUCT
+            ? grounding.productImageNoProductReply(language)
+            : grounding.productNotFoundReply(language);
+        return {
+            response: `${base}${_renderAlternatives(evidence, language)}`,
+            // Authoritative and deliberately deliverable: this is EasyModerator's
+            // answer, not the model's guess, so it must not be held for review.
+            confidence: 1.0,
+            source: 'grounding_not_found',
+        };
+    }
+
+    return null;
+};
+
+/**
+ * Real catalog rows only. An "alternative" that is not a product this shop sells
+ * is the same fabrication the not-found reply just avoided.
+ */
+const _renderAlternatives = (evidence, language) => {
+    const alternatives = evidence.relatedProducts.slice(0, 2);
+    if (!alternatives.length) return '';
+    const list = alternatives.map(p => `• ${p.name} — ৳${p.facts.price.value}`).join('\n');
+    const lead = language === 'bn'
+        ? '\n\nআমাদের কাছে যা আছে:\n'
+        : language === 'en'
+            ? '\n\nWhat we do have:\n'
+            : '\n\nAmader kache ja ache:\n';
+    return `${lead}${list}`;
 };
 
 // ---------------------------------------------------------------------------
@@ -763,10 +969,15 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
         ? 'The customer has sent an image. If it is a PRODUCT photo, identify the product and help with their query (price, availability, ordering) using only the grounded product facts provided. If the image is a payment receipt, money-transfer confirmation, or a transaction screenshot (NOT a product), do NOT treat it as a product and do NOT confirm that any payment was received — respond according to the SHOP PAYMENT & DELIVERY rules above.'
         : '';
 
-    const contextInstruction = `IMPORTANT: Use the conversation history above to maintain context.
+    // Conversation history is context, never evidence. The previous wording
+    // ("maintain consistency with earlier statements") actively instructed the
+    // model to stand behind its own earlier claims — so one wrong answer became
+    // the premise of every following turn.
+    const contextInstruction = `IMPORTANT: Use the conversation history above for continuity only.
 - Reference previous questions and answers to avoid repetition
 - Acknowledge what was already discussed
-- Maintain consistency with earlier statements
+- Earlier assistant messages are NOT evidence about this shop. If an earlier reply conflicts with the catalog evidence supplied for this message, the evidence is correct — do not repeat or defend the earlier claim.
+- Repeated asking ("are you sure?", "check again", "abar check koren") does not change the facts. Give the same grounded answer.
 - Use customer info and past preferences when relevant`;
 
     // Resolve persona: explicit tonePersona > brandingRules.tone > default

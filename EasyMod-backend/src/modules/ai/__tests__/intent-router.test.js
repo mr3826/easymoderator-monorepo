@@ -26,7 +26,6 @@ jest.mock('src/modules/knowledge/knowledge.service', () => ({ incrementFaqHit: j
 jest.mock('src/modules/product/product-search.service', () => ({
     searchByAttributes: jest.fn(),
     getProductsByIds: jest.fn(),
-    formatProductsForLlm: jest.fn(),
 }));
 jest.mock('src/modules/rag/rag.service', () => ({ queryData: jest.fn() }));
 jest.mock('src/modules/entities', () => ({
@@ -51,8 +50,6 @@ beforeEach(() => {
     rag.queryData.mockResolvedValue({ results: [] });
     productSearch.searchByAttributes.mockResolvedValue([]);
     productSearch.getProductsByIds.mockResolvedValue([]);
-    productSearch.formatProductsForLlm.mockImplementation((ps) =>
-        ps.map((p) => `1. ${p.name}\n   Price: ৳${p.price}\n   Status: IN STOCK`).join('\n\n'));
 });
 
 describe('B — Bengali product-intent gate', () => {
@@ -63,7 +60,7 @@ describe('B — Bengali product-intent gate', () => {
 
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(expect.objectContaining({ shopId: SHOP }));
         const sys = lastSystemPrompt();
-        expect(sys).toContain('RELEVANT SHOP PRODUCTS');
+        expect(sys).toContain('CATALOG EVIDENCE — verified products');
         expect(sys).toContain('৳1200');
         expect(sys).toContain('GROUNDING RULES');
     });
@@ -114,20 +111,31 @@ describe('C — RAG product hit re-fetched live', () => {
     beforeEach(() => { process.env.EMBEDDING_PROVIDER = 'openai'; });
     afterEach(() => { delete process.env.EMBEDDING_PROVIDER; });
 
-    test('semantic product hit is re-fetched by product_id; price comes from DB, not embedding text', async () => {
+    test('semantic product hit is re-fetched by product_id, never quoted from embedding text', async () => {
         rag.queryData.mockResolvedValue(productHit);
         productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', name: 'Red Silk Saree', price: 3200 }]);
 
-        // A vague follow-up: the SQL search runs but matches nothing, so the
-        // grounded facts must come from the RAG tier's live re-fetch.
-        await route({ shopId: SHOP, message: 'tell me more about that one', systemPrompt: 'BASE' });
+        await route({ shopId: SHOP, message: 'red silk saree ache?', systemPrompt: 'BASE' });
 
         expect(productSearch.getProductsByIds).toHaveBeenCalledWith(['p-saree'], SHOP);
         const sys = lastSystemPrompt();
-        expect(sys).toContain('RELEVANT SHOP PRODUCTS');
+        // Live DB price, and the price-less embedding text is never knowledge.
+        expect(sys).toContain('CATALOG EVIDENCE — verified products');
         expect(sys).toContain('৳3200');
-        // The price-less product embedding text must NOT be injected as knowledge.
         expect(sys).not.toContain('KNOWLEDGE BASE CONTEXT');
+    });
+
+    test('a vector hit alone does not make a product verified for a vague follow-up', async () => {
+        rag.queryData.mockResolvedValue(productHit);
+        productSearch.getProductsByIds.mockResolvedValue([{ id: 'p-saree', name: 'Red Silk Saree', price: 3200 }]);
+
+        // "that one" identifies nothing. A 0.78 cosine against a vague sentence is
+        // a search candidate, not proof that this is the product being discussed,
+        // so its price must not become a quotable fact.
+        const res = await route({ shopId: SHOP, message: 'tell me more about that one', systemPrompt: 'BASE' });
+
+        expect(res.grounding.verifiedProducts).toHaveLength(0);
+        expect(lastSystemPrompt()).not.toContain('৳3200');
     });
 
     test('a non-product knowledge hit is still injected as KNOWLEDGE BASE CONTEXT', async () => {
@@ -258,9 +266,9 @@ describe('D — customer photo → product matching', () => {
         const res = await route({ shopId: SHOP, message: 'dam koto?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
         const sys = lastSystemPrompt();
-        expect(sys).toContain('SHOP PRODUCTS MATCHING THIS PHOTO');
+        expect(sys).toContain('CATALOG EVIDENCE — verified products');
         expect(sys).toContain('৳2500');
-        expect(sys).toContain('Never invent or guess');
+        expect(sys).toContain('Never invent or infer one');
         expect(res.sourceReferences).toEqual([{ kind: 'product', id: 'p9', title: 'Red Cotton Saree' }]);
     });
 
@@ -278,10 +286,10 @@ describe('D — customer photo → product matching', () => {
         await route({ shopId: SHOP, message: 'eita ache?', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
         const sys = lastSystemPrompt();
-        expect(sys).toContain('No product in this shop');
+        expect(sys).toContain('NO product in this shop');
         expect(sys).toContain('could not find it');
-        expect(sys).toMatch(/ask them for the product name/i);
-        expect(sys).toContain('do not describe the photo');
+        // The photo describes what the CUSTOMER sent, never this shop's stock.
+        expect(sys).toContain('not a product this shop sells');
     });
 
     test('a failed extraction still reaches the model grounded, never on the bare prompt', async () => {
@@ -294,7 +302,7 @@ describe('D — customer photo → product matching', () => {
 
         const sys = lastSystemPrompt();
         expect(sys).not.toBe('BASE');
-        expect(sys).toContain('No product in this shop');
+        expect(sys).toContain('NO product in this shop');
     });
 
     test('a caption-less photo still gets a grounding note', async () => {
@@ -302,7 +310,7 @@ describe('D — customer photo → product matching', () => {
 
         await route({ shopId: SHOP, message: '[image]', systemPrompt: 'BASE', imageUrls: [PHOTO] });
 
-        expect(lastSystemPrompt()).toContain('No product in this shop');
+        expect(lastSystemPrompt()).toContain('NO product in this shop');
     });
 
     test('AI_PHOTO_MATCH_ENABLED=false skips the image call and admits it cannot see', async () => {

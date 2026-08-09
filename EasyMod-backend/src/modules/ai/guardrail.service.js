@@ -3,7 +3,6 @@
 const { createLogger } = require('../../utils/structured-logger');
 const rtoShieldService = require('../rto-shield/rto-shield.service');
 const promptSanitizerService = require('./prompt-sanitizer.service');
-const hallucinationDetectorService = require('./hallucination-detector.service');
 const opsAlertService = require('./ops-alert.service');
 
 const logger = createLogger('GuardrailService');
@@ -61,32 +60,12 @@ class GuardrailService {
             logger.error('Prompt injection check failed', { error: error.message });
         }
 
-        // Guard 3: Hallucination Detection
-        try {
-            logger.debug('[Guard 3] Running hallucination detection');
-            const hallucCheck = await hallucinationDetectorService.detect(
-                aiResponse,
-                originalMessage,
-                conversationId
-            );
-            if (hallucCheck.likelyHallucination) {
-                violations.push({
-                    type: 'HALLUCINATION_LIKELY',
-                    severity: 'MEDIUM',
-                    confidence: hallucCheck.confidence,
-                    reason: hallucCheck.description,
-                    guardType: 'HALLUCINATION_DETECTOR'
-                });
-                logger.warn('Likely hallucination detected', {
-                    conversationId,
-                    confidence: hallucCheck.confidence,
-                    reason: hallucCheck.description
-                });
-            }
-        } catch (error) {
-            logger.error('Hallucination check failed', { error: error.message });
-        }
-
+        // Grounding is NOT checked here. It is enforced by the AI grounding
+        // boundary (modules/ai/grounding) at generation time and again by the
+        // outbound gate immediately before the Meta send, against authoritative
+        // catalog evidence. The heuristic stub that used to live here reported
+        // "no hallucination detected" for every real case and only served to
+        // make the gap look covered.
         // Guard 4: Response Coherence & Length Check
         try {
             logger.debug('[Guard 4] Running response coherence check');
@@ -146,7 +125,7 @@ class GuardrailService {
             violations,
             maxSeverity,
             requiresEscalation: violations.some(v => v.severity === 'HIGH'),
-            checksRun: 5,
+            checksRun: 4,
             executionTimeMs: Date.now() - startTime
         };
 

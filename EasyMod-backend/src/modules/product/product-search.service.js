@@ -267,61 +267,6 @@ const sanitizeTsQuery = (q) => {
 };
 
 /**
- * Format product data as a grounded context block for the LLM system prompt.
- * Never include costs, margins, or internal IDs.
- */
-const formatProductsForLlm = (products) => {
-    if (!products.length) return '';
-
-    return products.map((p, i) => {
-        const lines = [`${i + 1}. ${p.name}${p.name_bn ? ` / ${p.name_bn}` : ''}`];
-
-        // Live facts — always from DB
-        lines.push(`   Price: ৳${p.price}${p.compare_at_price ? ` (was ৳${p.compare_at_price})` : ''}`);
-
-        // Stock status
-        if (!p.is_active) {
-            lines.push('   Status: DISCONTINUED — not available for order');
-        } else if (!p.in_stock || p.quantity === 0) {
-            lines.push('   Status: OUT OF STOCK — cannot be ordered');
-        } else {
-            lines.push(`   Status: IN STOCK (${p.quantity} available)`);
-        }
-
-        // Variants / sizes
-        if (p.variants && p.variants.length > 0) {
-            const sizes = extractSizes(p.variants);
-            if (sizes.length) lines.push(`   Sizes: ${sizes.join(', ')}`);
-            const colors = extractColors(p.variants);
-            if (colors.length) lines.push(`   Colors: ${colors.join(', ')}`);
-        }
-
-        if (p.brand) lines.push(`   Brand: ${p.brand}`);
-        if (p.category) lines.push(`   Category: ${p.category}`);
-
-        return lines.join('\n');
-    }).join('\n\n');
-};
-
-const extractSizes = (variants) => {
-    const sizes = new Set();
-    for (const v of variants) {
-        if (v.size) sizes.add(v.size);
-        if (v.option === 'Size' && v.value) sizes.add(v.value);
-    }
-    return [...sizes];
-};
-
-const extractColors = (variants) => {
-    const colors = new Set();
-    for (const v of variants) {
-        if (v.color) colors.add(v.color);
-        if (v.option === 'Color' && v.value) colors.add(v.value);
-    }
-    return [...colors];
-};
-
-/**
  * Fetch live product records by a list of IDs.
  * Used by the RAG tier to convert vector-store hits (product_id metadata)
  * into full DB records with current price, stock, and variants.
@@ -396,6 +341,5 @@ module.exports = {
     searchForOrder,
     getProductsByIds,
     getProductLive,
-    checkStock,
-    formatProductsForLlm
+    checkStock
 };
