@@ -263,7 +263,7 @@ const verifyNonexistent = async (shopId, query) => {
               || ' ' || coalesce(ai_category,'') || ' ' || coalesce(ai_search_text,'')
               || ' ' || coalesce(tags::text,'') || ' ' || coalesce(aliases::text,'')
               || ' ' || coalesce(variants::text,'') || ' ' || coalesce(ai_tags::text,'')
-                ) ILIKE ANY (:patterns)`,
+                ) ILIKE ANY (ARRAY[:patterns])`,
         { replacements: { shopId, patterns: terms.map(t => `%${t}%`) } },
     );
     return { ok: rows[0].n === 0, matches: rows[0].n, terms };
