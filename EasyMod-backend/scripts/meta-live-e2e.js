@@ -158,39 +158,44 @@ const discoverChannel = async (shopId) => {
 };
 
 /**
- * Resolve the tester conversation from real inbound Messenger history.
+ * Resolve the tester CUSTOMER from real inbound Messenger history.
+ *
+ * Deliberately a customer, not a conversation: EasyModerator opens a fresh
+ * conversation when a customer returns after an idle gap, so a run pinned to a
+ * conversation id waits forever on the second day. The stable identity across
+ * that boundary is the customer row — and the run follows whichever
+ * conversation each inbound actually lands in.
  *
  * The PSID is page-scoped: the same human messaging two Pages of the same shop
  * produces two different customer rows. Scoping by meta_channel_id — not just
  * by shop — is what keeps a stale Page's customer out of this run.
  */
-const discoverConversation = async (shopId, channelId) => {
+const discoverCustomer = async (shopId, channelId) => {
     const { sequelize } = db();
     const [rows] = await sequelize.query(
-        `SELECT c.id                AS conversation_id,
-                cu.id               AS customer_id,
+        `SELECT cu.id               AS customer_id,
                 cu.channel_user_id  AS psid,
                 cu.name             AS customer_name,
                 max(m.created_at)   AS last_inbound_at,
-                count(m.id)         AS inbound_count
+                count(m.id)         AS inbound_count,
+                count(DISTINCT c.id) AS conversation_count
            FROM conversations c
            JOIN customers cu ON cu.id = c.customer_id
-           LEFT JOIN messages m ON m.conversation_id = c.id AND m.sender = 'customer'
+           JOIN messages m ON m.conversation_id = c.id AND m.sender = 'customer'
           WHERE c.shop_id = :shopId
             AND c.meta_channel_id = :channelId
             AND (:psid = '' OR cu.channel_user_id = :psid)
-          GROUP BY c.id, cu.id, cu.channel_user_id, cu.name
-         HAVING count(m.id) > 0
+          GROUP BY cu.id, cu.channel_user_id, cu.name
           ORDER BY max(m.created_at) DESC`,
         { replacements: { shopId, channelId, psid: process.env.META_E2E_CUSTOMER_PSID || '' } },
     );
 
     if (rows.length === 1) {
-        return { binding: rows[0], source: 'the only conversation with real inbound history on this channel' };
+        return { binding: rows[0], source: 'the only customer with real inbound history on this channel' };
     }
     if (rows.length === 0) return { binding: null, source: null };
     throw new Ambiguous(
-        `${rows.length} tester conversations on this channel `
+        `${rows.length} tester customers on this channel `
         + `(${rows.map(r => `${r.customer_name || 'unnamed'} psid=…${String(r.psid).slice(-4)}`).join(', ')}); `
         + 'set META_E2E_CUSTOMER_PSID',
     );
@@ -301,17 +306,28 @@ const waitForMarker = async (shopId, channelId, marker, since) => {
     return null;
 };
 
-/** Wait for the next inbound customer message in a known conversation. */
-const waitForInbound = async (conversationId, since) => {
-    const { Message } = db();
-    const { Op } = require('sequelize');
+/**
+ * Wait for the tester's next inbound message anywhere on this channel, and
+ * report which conversation it landed in — a returning customer may be given a
+ * new one at any point.
+ */
+const waitForInbound = async (customerId, channelId, since) => {
+    const { sequelize } = db();
     const deadline = Date.now() + TIMEOUT_MS;
     while (Date.now() < deadline) {
-        const message = await Message.findOne({
-            where: { conversation_id: conversationId, sender: 'customer', created_at: { [Op.gt]: since } },
-            order: [['created_at', 'ASC']],
-        });
-        if (message) return message;
+        const [rows] = await sequelize.query(
+            `SELECT m.id, m.conversation_id, m.external_id, m.created_at
+               FROM messages m
+               JOIN conversations c ON c.id = m.conversation_id
+              WHERE c.customer_id = :customerId
+                AND c.meta_channel_id = :channelId
+                AND m.sender = 'customer'
+                AND m.created_at > :since
+              ORDER BY m.created_at ASC
+              LIMIT 1`,
+            { replacements: { customerId, channelId, since } },
+        );
+        if (rows.length) return rows[0];
         await sleep(POLL_MS);
     }
     return null;
@@ -590,18 +606,39 @@ const main = async () => {
         return 2;
     }
 
-    // ── Bind to the tester conversation ──────────────────────────────────────
-    const { binding, source: bindingSource } = await discoverConversation(shop.id, channel.id);
-    let conversationId;
+    // The worker's billing gate runs BEFORE any AI work, so a blocked
+    // subscription produces a stored inbound and total silence — which is
+    // indistinguishable from a broken queue unless you say so here.
+    const { Subscription } = require('../src/modules/entities');
+    const { isAiActive } = require('../src/modules/subscription/subscription.access');
+    const billing = await Subscription.findOne({ where: { shop_id: shop.id }, attributes: ['status', 'plan_code'] });
+    if (!isAiActive(billing)) {
+        line(`Billing:    AI PAUSED — subscription status=${billing.status} (plan ${billing.plan_code})`);
+        line('');
+        line('The worker withholds automated replies for this shop before it does any AI work,');
+        line('so every step below would time out with no reply. This is the billing gate doing');
+        line('its job, not a pipeline fault. Settle the outstanding invoice, or reactivate the');
+        line('shop from admin, then re-run.');
+        line('');
+        line('FINAL: FAIL — blocked by billing, no scenario attempted');
+        return 2;
+    }
+    line(`Billing:    AI ACTIVE — subscription status=${billing ? billing.status : 'no row (fails open)'}`);
+
+    // ── Bind to the tester customer ──────────────────────────────────────────
+    const { binding, source: bindingSource } = await discoverCustomer(shop.id, channel.id);
+    let customerId;
+    let conversationId = null;
     let cursor;
 
     if (binding) {
-        conversationId = binding.conversation_id;
+        customerId = binding.customer_id;
         cursor = new Date();
         check('Customer PSID discovery', PASS,
-            `psid …${String(binding.psid).slice(-4)} (page-scoped) · ${binding.inbound_count} prior inbound · learned from real Messenger webhooks`);
+            `psid …${String(binding.psid).slice(-4)} (page-scoped) · ${binding.inbound_count} prior inbound`
+            + ` across ${binding.conversation_count} conversation(s) · learned from real Messenger webhooks`);
         line(`  ← ${bindingSource}`);
-        line(`  Conversation: ${conversationId}`);
+        line(`  Customer: ${customerId}`);
     } else {
         line('No prior inbound Messenger history on this channel — binding a new conversation.');
         line('');
@@ -620,9 +657,10 @@ const main = async () => {
             return 1;
         }
         conversationId = bound.conversation.id;
+        customerId = bound.conversation.customer_id;
         cursor = bound.message.created_at;
         const { Customer } = db();
-        const customer = await Customer.findByPk(bound.conversation.customer_id);
+        const customer = await Customer.findByPk(customerId);
         check('Customer PSID discovery', PASS,
             `psid …${String(customer?.channel_user_id).slice(-4)} learned from the webhook's sender.id`);
     }
@@ -724,15 +762,18 @@ const main = async () => {
         }
 
         line(`  → send now:  ${step.message}`);
-        const inbound = await waitForInbound(conversationId, cursor);
+        const inbound = await waitForInbound(customerId, channel.id, cursor);
         if (!inbound) {
             check('Inbound received', FAIL, `timed out after ${TIMEOUT_MS / 1000}s`);
             summary.push({ step: step.name, status: FAIL, detail: 'inbound timeout' });
             allPassed = false;
             break;
         }
+        const movedConversation = conversationId && conversationId !== inbound.conversation_id;
+        conversationId = inbound.conversation_id;
         check('Real Meta webhook → inbound stored', PASS,
-            `message ${inbound.id} (mid ${inbound.external_id ? 'recorded' : 'MISSING'})`);
+            `message ${inbound.id} (mid ${inbound.external_id ? 'recorded' : 'MISSING'})`
+            + `${movedConversation ? ` · new conversation ${conversationId}` : ''}`);
         cursor = inbound.created_at;
 
         const replies = await waitForReplies(conversationId, cursor);
@@ -755,7 +796,7 @@ const main = async () => {
 
     // ── DLQ ──────────────────────────────────────────────────────────────────
     line('');
-    const dlq = await dlqEntriesFor(conversationId);
+    const dlq = conversationId ? await dlqEntriesFor(conversationId) : [];
     if (Array.isArray(dlq)) {
         check('DLQ empty for this conversation', dlq.length === 0 ? PASS : FAIL, `${dlq.length} dead-lettered job(s)`);
         if (dlq.length) allPassed = false;
