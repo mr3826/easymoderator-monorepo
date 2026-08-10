@@ -285,4 +285,7 @@ on the stored `Message.metadata`, so a specific reply in the inbox can be explai
    only one of them will drift.
 
 Regression coverage: `src/modules/ai/grounding/__tests__/grounding-boundary.test.js` (service
-boundary) and `src/jobs/__tests__/message-worker.grounding.test.js` (what actually reaches Meta).
+boundary), `src/jobs/__tests__/message-worker.grounding.test.js` (what actually reaches Meta),
+and `tests/meta-e2e/` — the full production-shaped path from a signed Meta webhook to the Graph
+Send API, with only the two outermost network transports captured. Setup, fixtures and the
+real-Meta smoke procedure: `docs/testing/META_E2E_TEST_SETUP.md`.

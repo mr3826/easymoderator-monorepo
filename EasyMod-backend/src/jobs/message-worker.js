@@ -216,11 +216,18 @@ function isShopManualKillSwitch(settings = {}) {
  * The SSE emit moved here (from immediately after storeAIResponse) so connected
  * agent tabs receive the message with its final delivery flag already set.
  */
-async function finalizeAiMessage(aiMessage, shopId, conversationId, { delivered, heldReason = null }) {
+async function finalizeAiMessage(aiMessage, shopId, conversationId, { delivered, heldReason = null, providerMessageId = null }) {
     if (aiMessage) {
         try {
             await aiMessage.update({
-                metadata: { ...(aiMessage.metadata || {}), delivered, held_reason: heldReason },
+                metadata: {
+                    ...(aiMessage.metadata || {}),
+                    delivered,
+                    held_reason: heldReason,
+                    // Meta's own mid for the reply — the only durable link
+                    // between our row and what the customer actually received.
+                    provider_message_id: providerMessageId,
+                },
             });
         } catch (err) {
             console.warn(`[worker] Failed to stamp delivery flag on AI message: ${err.message}`);
@@ -524,6 +531,17 @@ async function processMessageJob(job) {
         grounding_decision: groundingVerdict.decision,
         grounding_reason: groundingVerdict.reasonCode,
         grounding_product_status: groundingEvidence.productStatus,
+        // The rest of the decision's evidence, durable on the row rather than
+        // only in a rotating container log: an incident review (and the live
+        // Meta certification) has to be able to answer "which product was this
+        // grounded on, and what exactly went out" months later.
+        grounding_media_status: groundingEvidence.mediaStatus,
+        grounding_media_product_id: groundingEvidence.mediaProductId,
+        grounding_verified_product_ids: groundingEvidence.verifiedProducts.map(p => p.id),
+        grounding_knowledge_ids: groundingEvidence.knowledgeIds,
+        grounding_violations: groundingVerdict.violations,
+        grounding_provider: replyProvider,
+        grounding_attachment_urls: outboundAttachments.map(a => a.url),
     });
 
     // ── Confidence gate: hold + hand off when the AI is unsure ──────────────
@@ -675,12 +693,13 @@ async function processMessageJob(job) {
     // ── Send to Meta via provider registry ─────────────────────────────────
     const finalText = decision.transform?.text || response;
     const policyChannelTypeForSend = platform === 'messenger' ? 'facebook' : platform;
+    let sendResult = null;
     try {
         if (!channel) {
             throw new Error(`No MetaChannel found for shop ${shopId} platform ${policyChannelTypeForSend}`);
         }
         const provider = getProvider(policyChannelTypeForSend);
-        await provider.sendMessage({
+        sendResult = await provider.sendMessage({
             channel,
             recipientId: String(recipientId),
             normalizedMessage: {
@@ -709,7 +728,11 @@ async function processMessageJob(job) {
     }
 
     // Mark the reply delivered (no suggestion panel) and emit to agent tabs.
-    await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: true, heldReason: null });
+    await finalizeAiMessage(aiMessage, shopId, conversationId, {
+        delivered: true,
+        heldReason: null,
+        providerMessageId: sendResult?.providerMessageId || null,
+    });
 
     // Activation tracking: the first successful AI reply activates the shop.
     // Fire-and-forget + Redis NX-gated, so it runs once and never blocks the reply.

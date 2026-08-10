@@ -140,11 +140,68 @@ jobs:
         working-directory: ./EasyMod-frontend
         run: npm run test:unit
 
+  # ── 2b. Meta-shaped E2E — the AI trust boundary, asserted at the send ───────
+  # Enters through the REAL signed Meta webhook route and runs the real queue,
+  # worker, retrieval, grounding gate and Meta provider; only the Graph API
+  # transport and the LLM transport are captured (tests/meta-e2e/transport.js).
+  # No Meta credential is involved: the suite signs its payloads with an
+  # isolated test App Secret. The REAL-Meta smoke test is deliberately NOT here
+  # — it needs a human to send the first Messenger message and access to the
+  # deployed stores. See docs/testing/META_E2E_TEST_SETUP.md §11.
+  meta-e2e:
+    name: Meta-shaped E2E (AI trust boundary)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    # Same condition as `test` so the deploy graph stays simple; the heavy steps
+    # below are skipped when only the frontend changed.
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: easymod_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        if: needs.changes.outputs.backend == 'true'
+        with:
+          node-version: '20'
+
+      - name: Backend — install
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        run: npm ci
+
+      - name: Meta-shaped E2E suite
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_e2e
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:meta:e2e
+
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [changes, test]
+    needs: [changes, test, meta-e2e]
     if: |
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&

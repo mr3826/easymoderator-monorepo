@@ -14,14 +14,18 @@ class MemoryCache {
     async get(key) {
         const item = this.cache.get(key);
         if (!item) return null;
-        
+
         // Check TTL
         if (item.expiresAt && Date.now() > item.expiresAt) {
+            // There is no separate `ttls` map — expiry lives on the entry itself.
+            // Touching one here threw on EVERY expired read, which is a live
+            // failure: intent-router's response cache calls this on the hot path,
+            // so the first message to arrive after an entry aged out took down
+            // route() and fell through to the keyword responder.
             this.cache.delete(key);
-            this.ttls.delete(key);
             return null;
         }
-        
+
         return item.value;
     }
 
@@ -80,10 +84,9 @@ class MemoryCache {
         // Check TTL
         if (item.expiresAt && Date.now() > item.expiresAt) {
             this.cache.delete(key);
-            this.ttls.delete(key);
             return 0;
         }
-        
+
         return 1;
     }
 

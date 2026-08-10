@@ -3,6 +3,10 @@ module.exports = {
     testMatch: ['**/__tests__/**/*.test.js', '**/*.test.js'],
     testPathIgnorePatterns: [
         '/node_modules/',
+        // Meta-shaped E2E suite — needs PostgreSQL + Redis and the REAL message
+        // queue (which the moduleNameMapper below deliberately stubs out here).
+        // Runs under jest.meta-e2e.config.js via `npm run test:meta:e2e`.
+        'tests/meta-e2e/',
         // ── Pre-existing broken tests (never ran in CI — paths-filter workflow skipped them)
         // These need dedicated fixes and are tracked separately.
         // Integration tests that require a real database connection
