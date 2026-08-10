@@ -306,28 +306,40 @@ const waitForMarker = async (shopId, channelId, marker, since) => {
     return null;
 };
 
+/** Loose text equality: punctuation and spacing are the tester's, not the test's. */
+const normalise = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
 /**
  * Wait for the tester's next inbound message anywhere on this channel, and
  * report which conversation it landed in — a returning customer may be given a
  * new one at any point.
+ *
+ * `expected` is not decoration. Without it a typo, an autocorrect or a message
+ * sent out of order silently shifts every later turn onto the wrong reply, and
+ * the run grades scenario N against scenario N-1's evidence. Non-matching
+ * inbounds are skipped, loudly.
  */
-const waitForInbound = async (customerId, channelId, since) => {
+const waitForInbound = async (customerId, channelId, since, expected, onSkip) => {
     const { sequelize } = db();
     const deadline = Date.now() + TIMEOUT_MS;
+    let cursor = since;
     while (Date.now() < deadline) {
         const [rows] = await sequelize.query(
-            `SELECT m.id, m.conversation_id, m.external_id, m.created_at
+            `SELECT m.id, m.conversation_id, m.external_id, m.content, m.created_at
                FROM messages m
                JOIN conversations c ON c.id = m.conversation_id
               WHERE c.customer_id = :customerId
                 AND c.meta_channel_id = :channelId
                 AND m.sender = 'customer'
                 AND m.created_at > :since
-              ORDER BY m.created_at ASC
-              LIMIT 1`,
-            { replacements: { customerId, channelId, since } },
+              ORDER BY m.created_at ASC`,
+            { replacements: { customerId, channelId, since: cursor } },
         );
-        if (rows.length) return rows[0];
+        for (const row of rows) {
+            cursor = row.created_at;
+            if (!expected || normalise(row.content) === normalise(expected)) return row;
+            if (onSkip) onSkip(row);
+        }
         await sleep(POLL_MS);
     }
     return null;
@@ -762,9 +774,12 @@ const main = async () => {
         }
 
         line(`  → send now:  ${step.message}`);
-        const inbound = await waitForInbound(customerId, channel.id, cursor);
+        const inbound = await waitForInbound(
+            customerId, channel.id, cursor, step.message,
+            (row) => line(`  · ignored an unexpected inbound ("${String(row.content).slice(0, 40)}") — still waiting for this step's message`),
+        );
         if (!inbound) {
-            check('Inbound received', FAIL, `timed out after ${TIMEOUT_MS / 1000}s`);
+            check('Inbound received', FAIL, `timed out after ${TIMEOUT_MS / 1000}s waiting for exactly "${step.message}"`);
             summary.push({ step: step.name, status: FAIL, detail: 'inbound timeout' });
             allPassed = false;
             break;

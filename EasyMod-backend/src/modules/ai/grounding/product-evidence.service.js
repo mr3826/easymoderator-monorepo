@@ -44,7 +44,16 @@ const INTENT_STOPWORDS = new Set([
     'pics', 'image', 'images', 'there', 'got', 'can', 'could', 'would', 'will', 'be',
     'ok', 'okay', 'yes', 'no', 'sure', 'again', 'check', 'try', 'really', 'still',
     'delivery', 'shipping', 'discount', 'offer', 'product', 'products', 'item', 'items',
+    // Attribute NAMES. Asking "what colour is it?" names the question, not the
+    // product — "panjabi er color ki?" identifies a panjabi, not a "color".
+    // Attribute VALUES ("black", "cotton") stay identifying, so "red saree"
+    // is still matched conjunctively.
+    'color', 'colour', 'material', 'fabric', 'size', 'sizes', 'weight', 'length',
     // Banglish
+    // 'er'/'ar'/'r' are genitive particles ("panjabi ER color") — grammar, not
+    // identity. Left in, they made every possessive phrasing report NOT_FOUND
+    // for a product the shop plainly sells.
+    'er', 'ar', 'kapor', 'kapod', 'rong', 'rang', 'maap',
     'ache', 'achhe', 'ase', 'ashe', 'nai', 'nei', 'ki', 'kina', 'koto', 'kotto',
     'daam', 'dam', 'taka', 'takar', 'lagbe', 'nibo', 'niba', 'chai', 'dekhao',
     'dekhan', 'den', 'den', 'pabo', 'paoa', 'pawa', 'ei', 'eta', 'ota', 'ta', 'ti',
@@ -56,6 +65,7 @@ const INTENT_STOPWORDS = new Set([
     'আমার', 'আপনার', 'আপনি', 'আমি', 'ছবি', 'ছবিটা', 'দিন', 'দেন', 'করেন', 'আবার',
     'একটা', 'একটি', 'কোন', 'কোনো', 'হবে', 'হয়', 'এবং', 'ও', 'তো', 'না', 'জন্য',
     'পাব', 'পাবো', 'নিব', 'নিবো', 'স্টক', 'ডেলিভারি', 'ছাড়', 'অফার', 'প্রোডাক্ট',
+    'রং', 'রঙ', 'কাপড়', 'সাইজ', 'মাপ',
 ]);
 
 /**
@@ -224,12 +234,23 @@ const buildFacts = (product) => {
     return {
         name: known(product.name),
         price: Number.isFinite(product.price) ? known(product.price) : unknown(),
-        // Mirrors product-search.formatProduct: an absent in_stock column means
-        // "not tracked as out of stock", not "out of stock".
+        // quantity decides stock ONLY where the merchant counts stock. Most BD
+        // shops add products without ever setting a count, which leaves
+        // quantity at 0 with track_quantity false — reading that as "sold out"
+        // told real customers every in-stock product was unavailable.
         stock: product.is_active === false
             ? known('DISCONTINUED')
-            : known(product.in_stock !== false && product.quantity !== 0 ? 'IN_STOCK' : 'OUT_OF_STOCK'),
-        quantity: Number.isFinite(product.quantity) ? known(product.quantity) : unknown(),
+            : known(
+                product.in_stock === false
+                || (product.track_quantity === true && Number(product.quantity) === 0)
+                    ? 'OUT_OF_STOCK'
+                    : 'IN_STOCK',
+            ),
+        // An untracked count is not a count. Printing "Quantity: 0" into the
+        // prompt is what the model was reasoning from.
+        quantity: product.track_quantity === true && Number.isFinite(product.quantity)
+            ? known(product.quantity)
+            : unknown(),
         material: product.ai_material ? known(product.ai_material) : unknown(),
         color: product.ai_color ? known(product.ai_color) : (colors.length ? known(colors.join(', ')) : unknown()),
         sizes: sizes.length ? known(sizes.join(', ')) : unknown(),

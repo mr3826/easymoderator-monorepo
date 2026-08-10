@@ -409,6 +409,75 @@ describe('real product conversations remain useful', () => {
         expect(result.source).toBe('greeting_fastpath');
         expect(gate(result).decision).toBe(grounding.GroundingDecision.SEND);
     });
+
+    // Found on the real Meta transport: "<product> er color ki?" reported
+    // NOT_FOUND for a product the shop plainly sells, because the genitive
+    // particle "er" and the attribute NAME "color" were being treated as
+    // identifying claims the catalog row had to satisfy.
+    test.each([
+        'Cotton Saree er color ki?',
+        'Cotton Saree er material ki?',
+        'Cotton Saree er picture den',
+        'cotton saree ér size ki',
+    ])('a possessive attribute question still verifies the product: %s', async (message) => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+        const result = await routeMessage(message);
+
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.VERIFIED);
+        expect(result.grounding.verifiedProducts.map(p => p.id)).toEqual(['p-cotton']);
+    });
+
+    test('dropping those words does not make a nonexistent product verifiable', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+
+        for (const message of ['chiffon saree er color ki?', 'chiffon saree ache?']) {
+            const result = await routeMessage(message);
+            expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+            expect(result.grounding.verifiedProducts).toEqual([]);
+        }
+    });
+
+    test('an attribute VALUE is still an identifying claim', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([COTTON_SAREE]);
+        const result = await routeMessage('red saree ache?');
+        expect(result.grounding.productStatus).toBe(grounding.ProductEvidenceStatus.NOT_FOUND);
+    });
+});
+
+// ── Stock is a merchant fact, and quantity is not always the source of it ────
+describe('stock for shops that do not count inventory', () => {
+    // The BD default: a merchant adds a product, never sets a count, and
+    // leaves track_quantity off. quantity stays 0. Reading that as "sold out"
+    // told real customers an in-stock product was unavailable.
+    const UNTRACKED = product({
+        id: 'p-untracked', name: 'Premium Black Panjabi', category: 'panjabi',
+        price: 2500, quantity: 0, track_quantity: false, in_stock: true,
+    });
+
+    test('quantity 0 with tracking off is IN_STOCK', () => {
+        expect(grounding.buildFacts(UNTRACKED).stock.value).toBe('IN_STOCK');
+    });
+
+    test('an untracked count is reported as unknown, not as zero', () => {
+        expect(grounding.buildFacts(UNTRACKED).quantity.state).toBe(grounding.FactState.UNKNOWN);
+    });
+
+    test('quantity 0 with tracking ON is still OUT_OF_STOCK', () => {
+        const tracked = product({ quantity: 0, track_quantity: true, in_stock: true });
+        expect(grounding.buildFacts(tracked).stock.value).toBe('OUT_OF_STOCK');
+    });
+
+    test('in_stock false always wins', () => {
+        const off = product({ quantity: 99, track_quantity: false, in_stock: false });
+        expect(grounding.buildFacts(off).stock.value).toBe('OUT_OF_STOCK');
+    });
+
+    test('the prompt never shows a stock line the catalog contradicts', async () => {
+        productSearch.searchByAttributes.mockResolvedValue([UNTRACKED]);
+        await routeMessage('black panjabi ache?');
+        expect(lastSystemPrompt()).toContain('IN_STOCK');
+        expect(lastSystemPrompt()).not.toContain('OUT_OF_STOCK');
+    });
 });
 
 // ── Test 10 — unknown merchant policy ────────────────────────────────────────

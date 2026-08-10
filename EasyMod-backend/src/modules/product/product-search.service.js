@@ -65,6 +65,7 @@ const getSearchSql = () => `
         p.price,
         p.compare_at_price,
         p.quantity,
+        p.track_quantity,
         p.in_stock,
         p.is_active,
         p.variants,
@@ -176,7 +177,7 @@ const searchByAttributes = async (params) => {
 const getProductLive = async (productId, shopId) => {
     const results = await sequelize.query(`
         SELECT id, name, name_bn, price, compare_at_price,
-               quantity, in_stock, is_active, variants,
+               quantity, track_quantity, in_stock, is_active, variants,
                images, image_url, category, ai_category
         FROM products
         WHERE id = :productId AND shop_id = :shopId AND deleted_at IS NULL
@@ -211,7 +212,7 @@ const checkStock = async (productId, shopId, requestedQty = 1) => {
 const fallbackSearch = async (shopId, limit) => {
     const results = await sequelize.query(`
         SELECT id, name, name_bn, price, compare_at_price,
-               quantity, in_stock, is_active, variants, images, image_url,
+               quantity, track_quantity, in_stock, is_active, variants, images, image_url,
                tags, brand, description, ai_description, ai_tags,
                ai_category, ai_color_primary, ai_material, ai_attributes
         FROM products
@@ -230,6 +231,10 @@ const formatProduct = (row) => ({
     price:            parseFloat(row.price) || 0,
     compare_at_price: row.compare_at_price ? parseFloat(row.compare_at_price) : null,
     quantity:         row.quantity || 0,
+    // Only meaningful when the merchant actually counts stock. Defaults to
+    // false: a caller that did not select the column must not be allowed to
+    // read quantity 0 as "sold out" for a shop that never tracked quantity.
+    track_quantity:   row.track_quantity === true,
     in_stock:         row.in_stock !== false,
     is_active:        row.is_active !== false,
     variants:         parseJson(row.variants, []),
@@ -280,7 +285,7 @@ const getProductsByIds = async (productIds, shopId) => {
     const results = await sequelize.query(`
         SELECT
             id, name, name_bn, category, price, compare_at_price,
-            quantity, in_stock, is_active, variants, images, image_url,
+            quantity, track_quantity, in_stock, is_active, variants, images, image_url,
             tags, brand, description, ai_description, ai_tags,
             ai_category, ai_color_primary, ai_material, ai_attributes
         FROM products
