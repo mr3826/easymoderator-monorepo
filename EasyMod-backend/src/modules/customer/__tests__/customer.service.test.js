@@ -64,49 +64,82 @@ describe('CustomerService', () => {
         cust = makeCustomer();
     });
 
-    // ── getOrCreateCustomer ───────────────────────────────────────────────────
+    // ── findOrCreateCustomerByChannel ─────────────────────────────────────────
+    // Named getOrCreateCustomer(shopId, data) when this suite was written, and
+    // it returned the customer. It now takes userId first (every entry point
+    // verifies shop access) and returns { customer, isNew }.
 
-    describe('getOrCreateCustomer', () => {
+    describe('findOrCreateCustomerByChannel', () => {
+        beforeEach(() => {
+            UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+        });
+
         it('returns existing customer when found by channel_user_id', async () => {
             Customer.findOrCreate.mockResolvedValue([cust, false]);
-            const result = await customerService.getOrCreateCustomer('shop-1', {
+            const result = await customerService.findOrCreateCustomerByChannel('user-1', 'shop-1', {
                 channel_type: 'messenger',
                 channel_user_id: 'psid-abc',
-                display_name: 'Test Customer'
+                name: 'Test Customer'
             });
-            expect(result.id).toBe('cust-1');
+            expect(result.customer.id).toBe('cust-1');
+            expect(result.isNew).toBe(false);
         });
 
         it('creates customer when not found', async () => {
             const newCustomer = makeCustomer({ id: 'cust-new' });
             Customer.findOrCreate.mockResolvedValue([newCustomer, true]);
-            const result = await customerService.getOrCreateCustomer('shop-1', {
+            const result = await customerService.findOrCreateCustomerByChannel('user-1', 'shop-1', {
                 channel_type: 'instagram',
                 channel_user_id: 'igid-xyz'
             });
-            expect(result.id).toBe('cust-new');
+            expect(result.customer.id).toBe('cust-new');
+            expect(result.isNew).toBe(true);
         });
 
-        it('creates with correct shop_id', async () => {
+        it('scopes the lookup to the shop, so two shops never share a customer row', async () => {
             Customer.findOrCreate.mockResolvedValue([cust, true]);
-            await customerService.getOrCreateCustomer('shop-99', {
+            await customerService.findOrCreateCustomerByChannel('user-1', 'shop-99', {
                 channel_type: 'messenger',
                 channel_user_id: 'psid-new'
             });
+            // shop_id belongs in `where`, not `defaults`: in `defaults` it would
+            // only apply on create, and an existing row for the same PSID under
+            // another shop would be returned to this one.
             expect(Customer.findOrCreate).toHaveBeenCalledWith(expect.objectContaining({
-                defaults: expect.objectContaining({ shop_id: 'shop-99' })
+                where: expect.objectContaining({
+                    shop_id: 'shop-99',
+                    channel_type: 'messenger',
+                    channel_user_id: 'psid-new'
+                })
             }));
+        });
+
+        it('refuses when the user has no access to the shop', async () => {
+            UserShop.findOne.mockResolvedValue(null);
+            await expect(
+                customerService.findOrCreateCustomerByChannel('user-1', 'shop-not-mine', {
+                    channel_type: 'messenger',
+                    channel_user_id: 'psid-abc'
+                })
+            ).rejects.toMatchObject({ statusCode: 403 });
+            expect(Customer.findOrCreate).not.toHaveBeenCalled();
         });
     });
 
-    // ── getCustomers ──────────────────────────────────────────────────────────
+    // ── listCustomers ─────────────────────────────────────────────────────────
+    // Named getCustomers(shopId, filters) when this suite was written, and it
+    // returned Sequelize's raw { rows, count }.
 
-    describe('getCustomers', () => {
+    describe('listCustomers', () => {
+        beforeEach(() => {
+            UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', is_active: true });
+        });
+
         it('returns paginated customer list for the shop', async () => {
             Customer.findAndCountAll.mockResolvedValue({ rows: [cust], count: 1 });
-            const result = await customerService.getCustomers('shop-1', { page: 1, limit: 20 });
-            expect(result.rows).toHaveLength(1);
-            expect(result.count).toBe(1);
+            const result = await customerService.listCustomers('user-1', 'shop-1', { page: 1, pageSize: 20 });
+            expect(result.data).toHaveLength(1);
+            expect(result.total).toBe(1);
             expect(Customer.findAndCountAll).toHaveBeenCalledWith(expect.objectContaining({
                 where: expect.objectContaining({ shop_id: 'shop-1' })
             }));
@@ -114,8 +147,16 @@ describe('CustomerService', () => {
 
         it('returns empty list when no customers', async () => {
             Customer.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
-            const result = await customerService.getCustomers('shop-1', {});
-            expect(result.rows).toEqual([]);
+            const result = await customerService.listCustomers('user-1', 'shop-1', {});
+            expect(result.data).toEqual([]);
+        });
+
+        it('caps pageSize so one request cannot read the whole customer table', async () => {
+            Customer.findAndCountAll.mockResolvedValue({ rows: [], count: 0 });
+            await customerService.listCustomers('user-1', 'shop-1', { pageSize: 10000 });
+            expect(Customer.findAndCountAll).toHaveBeenCalledWith(
+                expect.objectContaining({ limit: 100 })
+            );
         });
     });
 

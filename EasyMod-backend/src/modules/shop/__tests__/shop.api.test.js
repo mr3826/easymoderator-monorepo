@@ -56,13 +56,28 @@ jest.mock('../../entities', () => ({
     Tenant: { findByPk: jest.fn() },
 }));
 
+// `define` is not optional: entity modules reached through the router call it
+// at IMPORT time (knowledge-gap.entity.js is the one this suite pulls in), so a
+// stub without it throws before the first request is ever made.
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
+        define: jest.fn(() => ({
+            findOne: jest.fn(), findByPk: jest.fn(), findAll: jest.fn(() => Promise.resolve([])),
+            findAndCountAll: jest.fn(() => Promise.resolve({ rows: [], count: 0 })),
+            create: jest.fn(), update: jest.fn(), destroy: jest.fn(), count: jest.fn(),
+            belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+            addScope: jest.fn(), scope: jest.fn(function () { return this; })
+        })),
         transaction: jest.fn(async (cb) => {
             const t = { commit: jest.fn(), rollback: jest.fn() };
             if (typeof cb === 'function') return cb(t);
             return t;
-        })
+        }),
+        authenticate: jest.fn(() => Promise.resolve()),
+        sync: jest.fn(() => Promise.resolve()),
+        literal: jest.fn((s) => s),
+        query: jest.fn(() => Promise.resolve([[]])),
+        getDialect: jest.fn(() => 'postgres')
     }
 }));
 
@@ -83,8 +98,10 @@ jest.mock('../../../middleware/auth.middleware', () => ({
         if (!auth.startsWith('Bearer ')) {
             return _res.status(401).json({ success: false, error: 'Unauthorized' });
         }
-        req.userId = 'user-1';
-        req.shopId = 'shop-1';
+        // The real middleware sets req.user, and every controller reads
+        // req.user.userId / req.user.shopId. Setting the flat req.userId that
+        // an older middleware exposed makes each handler throw on undefined.
+        req.user = { userId: 'user-1', shopId: 'shop-1' };
         next();
     }
 }));
@@ -93,7 +110,14 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const express = require('express');
 
-const validToken = jwt.sign({ id: 'user-1', shopId: 'shop-1' }, 'test-access-secret', { expiresIn: '1h' });
+// auth.middleware requires userId + tokenVersion: the token-version revocation
+// check (added with password-reset invalidation) rejects the older { id } shape
+// with 401 before the route is ever reached.
+const validToken = jwt.sign(
+    { userId: 'user-1', shopId: 'shop-1', tokenVersion: 0 },
+    'test-access-secret',
+    { expiresIn: '1h' },
+);
 const authHeader = `Bearer ${validToken}`;
 
 let app;

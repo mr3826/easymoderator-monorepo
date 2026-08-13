@@ -20,7 +20,7 @@ jest.mock('../../../utils/structured-logger', () => ({
 
 // ── Entity mocks ──────────────────────────────────────────────────────────────
 const mockProductData = {
-    id: 'prod-1',
+    id: '11111111-1111-4111-8111-111111111111',
     shop_id: 'shop-1',
     name: 'Blue T-Shirt',
     sku: 'TSHIRT-BLUE-M',
@@ -101,9 +101,11 @@ jest.mock('../stock-status-guard.service', () => ({
     invalidateStock: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('../../../constants/http-status', () => ({
-    HTTP_STATUS: { NOT_FOUND: 404, FORBIDDEN: 403, BAD_REQUEST: 400, INTERNAL_SERVER_ERROR: 500 }
-}));
+// constants/http-status is NOT mocked. It is a frozen table of numbers with no
+// I/O, so stubbing it buys nothing and costs correctness: the stub listed only
+// HTTP_STATUS, so product.validator.js — which also imports VALIDATION and
+// PAGINATION — threw on `VALIDATION.MAX_NAME_LENGTH` at import time and took
+// every test in this file with it.
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 jest.mock('../../../middleware/auth.middleware', () => ({
@@ -112,8 +114,10 @@ jest.mock('../../../middleware/auth.middleware', () => ({
         if (!auth.startsWith('Bearer ')) {
             return _res.status(401).json({ success: false, error: 'Unauthorized' });
         }
-        req.userId = 'user-1';
-        req.shopId = 'shop-1';
+        // The real middleware sets req.user, and every controller destructures
+        // req.user. The flat req.userId an older middleware exposed makes each
+        // handler throw on undefined.
+        req.user = { userId: 'user-1', shopId: 'shop-1' };
         next();
     }
 }));
@@ -122,7 +126,14 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const express = require('express');
 
-const validToken = jwt.sign({ id: 'user-1', shopId: 'shop-1' }, 'test-access-secret', { expiresIn: '1h' });
+// auth.middleware requires userId + tokenVersion: the token-version revocation
+// check (added with password-reset invalidation) rejects the older { id } shape
+// with 401 before the route is ever reached.
+const validToken = jwt.sign(
+    { userId: 'user-1', shopId: 'shop-1', tokenVersion: 0 },
+    'test-access-secret',
+    { expiresIn: '1h' },
+);
 const authHeader = `Bearer ${validToken}`;
 
 let app;
@@ -130,7 +141,7 @@ beforeAll(() => {
     app = express();
     app.use(express.json());
     const productRoutes = require('src/modules/product/product.routes');
-    app.use('/api/products', productRoutes);
+    app.use('/api/product', productRoutes);
 });
 
 beforeEach(() => {
@@ -139,17 +150,17 @@ beforeEach(() => {
     Product.findAll.mockResolvedValue([{ ...mockProductData }]);
     Product.findByPk.mockResolvedValue({ ...mockProductData });
     Product.findOne.mockResolvedValue({ ...mockProductData });
-    Product.create.mockResolvedValue({ ...mockProductData, id: 'prod-new' });
+    Product.create.mockResolvedValue({ ...mockProductData, id: '22222222-2222-4222-8222-222222222222' });
     Product.destroy.mockResolvedValue(1);
     UserShop.findOne.mockResolvedValue({ user_id: 'user-1', shop_id: 'shop-1', role: 'owner', is_active: true });
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('GET /api/products', () => {
+describe('GET /api/product', () => {
     it('returns 200 with product list', async () => {
         const res = await request(app)
-            .get('/api/products')
+            .get('/api/product')
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(200);
@@ -157,14 +168,14 @@ describe('GET /api/products', () => {
     });
 
     it('returns 401 without auth token', async () => {
-        const res = await request(app).get('/api/products');
+        const res = await request(app).get('/api/product');
         expect(res.status).toBe(401);
     });
 
     it('scopes products to the authenticated shop', async () => {
         const { Product } = require('../../entities');
         await request(app)
-            .get('/api/products')
+            .get('/api/product')
             .set('Authorization', authHeader);
 
         // Product.findAll should be called with shop_id filter
@@ -175,10 +186,10 @@ describe('GET /api/products', () => {
     });
 });
 
-describe('GET /api/products/:id', () => {
+describe('GET /api/product/:id', () => {
     it('returns 200 with product details', async () => {
         const res = await request(app)
-            .get('/api/products/prod-1')
+            .get('/api/product/11111111-1111-4111-8111-111111111111')
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(200);
@@ -191,22 +202,22 @@ describe('GET /api/products/:id', () => {
         Product.findOne.mockResolvedValueOnce(null);
 
         const res = await request(app)
-            .get('/api/products/prod-nonexistent')
+            .get('/api/product/44444444-4444-4444-8444-444444444444')
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(404);
     });
 
     it('returns 401 without auth token', async () => {
-        const res = await request(app).get('/api/products/prod-1');
+        const res = await request(app).get('/api/product/11111111-1111-4111-8111-111111111111');
         expect(res.status).toBe(401);
     });
 });
 
-describe('POST /api/products', () => {
+describe('POST /api/product', () => {
     it('creates a product and returns 200 or 201', async () => {
         const res = await request(app)
-            .post('/api/products')
+            .post('/api/product')
             .set('Authorization', authHeader)
             .send({ name: 'Red Hijab', price: 400, quantity: 20, track_quantity: true });
 
@@ -216,7 +227,7 @@ describe('POST /api/products', () => {
 
     it('returns 400 when name is missing', async () => {
         const res = await request(app)
-            .post('/api/products')
+            .post('/api/product')
             .set('Authorization', authHeader)
             .send({ price: 400 });
 
@@ -225,7 +236,7 @@ describe('POST /api/products', () => {
 
     it('returns 400 when price is missing', async () => {
         const res = await request(app)
-            .post('/api/products')
+            .post('/api/product')
             .set('Authorization', authHeader)
             .send({ name: 'Test Product' });
 
@@ -234,7 +245,7 @@ describe('POST /api/products', () => {
 
     it('returns 401 without auth token', async () => {
         const res = await request(app)
-            .post('/api/products')
+            .post('/api/product')
             .send({ name: 'Test', price: 100 });
 
         expect(res.status).toBe(401);
@@ -245,22 +256,25 @@ describe('POST /api/products', () => {
         Category.findOne.mockResolvedValueOnce(null);
 
         const res = await request(app)
-            .post('/api/products')
+            .post('/api/product')
             .set('Authorization', authHeader)
-            .send({ name: 'Test', price: 100, category_id: 'cat-nonexistent' });
+            // A well-formed but absent category. 'cat-nonexistent' is rejected
+            // as a malformed UUID at the validator, which returns 400 and never
+            // reaches the lookup this test exists to cover.
+            .send({ name: 'Test', price: 100, category_id: '99999999-9999-4999-8999-999999999999' });
 
         expect(res.status).toBe(404);
     });
 });
 
-describe('PATCH /api/products/:id', () => {
+describe('PATCH /api/product/:id', () => {
     it('updates a product and returns 200', async () => {
         const productWithUpdate = { ...mockProductData, update: jest.fn().mockResolvedValue(true) };
         const { Product } = require('../../entities');
         Product.findByPk.mockResolvedValueOnce(productWithUpdate);
 
         const res = await request(app)
-            .patch('/api/products/prod-1')
+            .patch('/api/product/11111111-1111-4111-8111-111111111111')
             .set('Authorization', authHeader)
             .send({ price: 800 });
 
@@ -274,7 +288,7 @@ describe('PATCH /api/products/:id', () => {
         Product.findOne.mockResolvedValueOnce(null);
 
         const res = await request(app)
-            .patch('/api/products/prod-gone')
+            .patch('/api/product/33333333-3333-4333-8333-333333333333')
             .set('Authorization', authHeader)
             .send({ price: 800 });
 
@@ -282,15 +296,17 @@ describe('PATCH /api/products/:id', () => {
     });
 });
 
-describe('DELETE /api/products/:id', () => {
+describe('DELETE /api/product/:id', () => {
     it('deletes a product and returns 200', async () => {
-        const productWithDestroy = { ...mockProductData };
+        // The service deletes through the INSTANCE (`product.destroy()`), not
+        // the model, so a fixture without its own destroy() 500s.
+        const productWithDestroy = { ...mockProductData, destroy: jest.fn().mockResolvedValue(true) };
         const { Product } = require('../../entities');
         Product.findByPk.mockResolvedValueOnce(productWithDestroy);
-        Product.destroy.mockResolvedValueOnce(1);
+        Product.findOne.mockResolvedValueOnce(productWithDestroy);
 
         const res = await request(app)
-            .delete('/api/products/prod-1')
+            .delete('/api/product/11111111-1111-4111-8111-111111111111')
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(200);
@@ -303,14 +319,14 @@ describe('DELETE /api/products/:id', () => {
         Product.findOne.mockResolvedValueOnce(null);
 
         const res = await request(app)
-            .delete('/api/products/prod-gone')
+            .delete('/api/product/33333333-3333-4333-8333-333333333333')
             .set('Authorization', authHeader);
 
         expect(res.status).toBe(404);
     });
 
     it('returns 401 without auth token', async () => {
-        const res = await request(app).delete('/api/products/prod-1');
+        const res = await request(app).delete('/api/product/11111111-1111-4111-8111-111111111111');
         expect(res.status).toBe(401);
     });
 });

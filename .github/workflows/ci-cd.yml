@@ -197,11 +197,67 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
         run: npm run test:meta:e2e
 
+  # ── 2c. Backend integration — the suites that need a real database ─────────
+  # `npm test` stubs the message queue and never opens a socket, so anything
+  # asserting real transaction, isolation or constraint behaviour cannot run
+  # there. Those suites are named *.integration.test.js and run here, against a
+  # throwaway Postgres. They used to be excluded from jest.config.js instead,
+  # which made them invisible rather than deferred.
+  #
+  # The database name must contain "test" or "e2e" as a whole word or the suite
+  # refuses to start — see EasyMod-backend/tests/helpers/disposable-database.js.
+  integration:
+    name: Backend integration (PostgreSQL + Redis)
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: easymod_integration_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        if: needs.changes.outputs.backend == 'true'
+        with:
+          node-version: '20'
+
+      - name: Backend — install
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        run: npm ci
+
+      - name: Backend integration suite
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
+          REDIS_URL: redis://127.0.0.1:6379
+        run: npm run test:integration
+
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [changes, test, meta-e2e]
+    needs: [changes, test, integration, meta-e2e]
     if: |
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&

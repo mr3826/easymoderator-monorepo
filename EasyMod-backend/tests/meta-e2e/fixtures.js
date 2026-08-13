@@ -101,18 +101,15 @@ const E2E_PAGE_TOKEN = 'EAAE2E-not-a-real-page-token';
  *
  * This suite truncates tables. A mistyped DATABASE_URL must abort, not delete a
  * merchant catalog.
+ *
+ * The check itself lives in tests/helpers/disposable-database.js so this suite
+ * and the integration suite cannot drift apart — and so it can be tested
+ * against production-like names without provisioning a database. The local
+ * copy this replaced used /e2e|test/i, which accepts "latest_snapshot".
  */
-const assertDisposableDatabase = () => {
-    const url = process.env.DATABASE_URL || '';
-    let name = '';
-    try { name = new URL(url).pathname.replace(/^\//, ''); } catch { /* handled below */ }
-    if (!/e2e|test/i.test(name)) {
-        throw new Error(
-            `meta-e2e refuses to run against database "${name || url}". `
-            + 'DATABASE_URL must name a disposable database containing "e2e" or "test".',
-        );
-    }
-};
+const { assertDisposableDatabase: assertDisposable } = require('../helpers/disposable-database');
+
+const assertDisposableDatabase = () => assertDisposable(process.env.DATABASE_URL, 'meta-e2e');
 
 /**
  * Build the schema the way production does, in the same order:
