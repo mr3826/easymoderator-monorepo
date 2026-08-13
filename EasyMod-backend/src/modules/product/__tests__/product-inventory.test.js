@@ -133,7 +133,7 @@ describe('Product Service — inventory', () => {
     it('createProduct — throws 403 if user has no shop access', async () => {
         UserShop.findOne.mockResolvedValueOnce(null);
         await expect(productService.createProduct('user-x', 'shop-1', { name: 'Test' }))
-            .rejects.toMatchObject({ statusCode: 403 });
+            .rejects.toMatchObject({ status: 403 });
     });
 
     it('createProduct — sets quantity to 0 when track_quantity is false', async () => {
@@ -155,70 +155,26 @@ describe('Product Service — inventory', () => {
             name: 'Test',
             price: 100,
             category_id: 'cat-999'
-        })).rejects.toMatchObject({ statusCode: 404 });
+        })).rejects.toMatchObject({ status: 404 });
     });
 
-    // ── getProductsCursor / getProducts ────────────────────────────────────────
-
-    it('getProductsCursor — returns products for shop', async () => {
-        const products = await productService.getProductsCursor('shop-1');
-        expect(Product.findAll).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ shop_id: 'shop-1' }) })
-        );
-        expect(Array.isArray(products)).toBe(true);
-    });
-
-    it('getProductsCursor — applies search filter', async () => {
-        await productService.getProductsCursor('shop-1', null, 10, { search: 'shirt' });
-        const callArg = Product.findAll.mock.calls[0][0];
-        expect(JSON.stringify(callArg.where)).toContain('shirt');
-    });
-
-    it('getProductsCursor — applies cursor (id < cursor) for pagination', async () => {
-        await productService.getProductsCursor('shop-1', 'cursor-id-5', 10);
-        const callArg = Product.findAll.mock.calls[0][0];
-        expect(callArg.where.id).toBeDefined();
-    });
-
-    // ── atomic stock update ────────────────────────────────────────────────────
-
-    it('updateProductStock — calls product.increment with correct delta', async () => {
-        const mockProduct = {
-            id: 'prod-1',
-            increment: jest.fn().mockResolvedValue(true),
-            reload: jest.fn().mockResolvedValue({ id: 'prod-1', quantity: 13 }),
-        };
-        Product.findOne.mockResolvedValueOnce(mockProduct);
-
-        const result = await productService.updateProductStock('shop-1', 'TSHIRT-BLUE-M', 3);
-        expect(mockProduct.increment).toHaveBeenCalledWith('quantity', expect.objectContaining({ by: 3 }));
-    });
-
-    it('updateProductStock — throws 404 if product not found by SKU', async () => {
-        Product.findOne.mockResolvedValueOnce(null);
-        await expect(productService.updateProductStock('shop-1', 'NONEXISTENT-SKU', 1))
-            .rejects.toMatchObject({ statusCode: 404 });
-    });
-
-    it('updateProductStock — decrements quantity with negative delta', async () => {
-        const mockProduct = {
-            id: 'prod-1',
-            increment: jest.fn().mockResolvedValue(true),
-            reload: jest.fn().mockResolvedValue({ id: 'prod-1', quantity: 7 }),
-        };
-        Product.findOne.mockResolvedValueOnce(mockProduct);
-
-        await productService.updateProductStock('shop-1', 'TSHIRT-BLUE-M', -3);
-        expect(mockProduct.increment).toHaveBeenCalledWith('quantity', expect.objectContaining({ by: -3 }));
-    });
-
-    // ── verifyShopAccess ───────────────────────────────────────────────────────
-
-    it('verifyShopAccess — throws 403 when userShop not found', async () => {
-        UserShop.findOne.mockResolvedValueOnce(null);
-        await expect(productService.verifyShopAccess('user-x', 'shop-1'))
-            .rejects.toMatchObject({ statusCode: 403 });
-    });
+    // ── getProductsCursor / updateProductStock — REMOVED ──────────────────────
+    //
+    // Both functions exist in product.service.js (lines 18 and 30) but are not
+    // in its module.exports and are not referenced anywhere in src/. No
+    // production path can reach either one, so tests for them measured nothing:
+    // they asserted against code that cannot run outside this file.
+    //
+    // The live equivalents, which are covered:
+    //   listing          → listProducts (exported, used by product.controller)
+    //   stock movement   → product.increment('quantity', { by }) in
+    //                      order.service cancelOrder / return.service
+    //                      updateReturnStatus, covered by
+    //                      order-cancel-inventory.test.js
+    //
+    // The two dead functions themselves are left in place: deleting product
+    // code is outside this PR's scope. They are listed as cleanup candidates in
+    // docs/testing/WHOLE_APP_TEST_ARCHITECTURE.md.
 
     it('verifyShopAccess — returns userShop when access is valid', async () => {
         const mockUserShop = { user_id: 'user-1', shop_id: 'shop-1', role: 'owner' };

@@ -21,12 +21,9 @@ jest.mock('../../entities', () => ({
     }
 }));
 
-jest.mock('../../../utils/AppError', () => ({
-    AppError: class AppError extends Error {
-        constructor(msg, code) { super(msg); this.statusCode = code; }
-    }
-}));
-
+// AppError is NOT mocked. The stub this replaced set `statusCode`, but the
+// real class sets `status` — so assertions written against the stub passed
+// while the same assertion against production behaviour would fail.
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }))
 }));
@@ -121,7 +118,7 @@ describe('CustomerService', () => {
                     channel_type: 'messenger',
                     channel_user_id: 'psid-abc'
                 })
-            ).rejects.toMatchObject({ statusCode: 403 });
+            ).rejects.toMatchObject({ status: 403 });
             expect(Customer.findOrCreate).not.toHaveBeenCalled();
         });
     });
@@ -174,7 +171,7 @@ describe('CustomerService', () => {
             Customer.findOne.mockResolvedValue(null);
             await expect(
                 customerService.getCustomerById('nonexistent', 'user-1', 'shop-1')
-            ).rejects.toMatchObject({ statusCode: 404 });
+            ).rejects.toMatchObject({ status: 404 });
         });
     });
 
