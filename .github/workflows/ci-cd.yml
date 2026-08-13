@@ -204,8 +204,8 @@ jobs:
         run: npm run test:integration
 
   # ── 2c. Non-deploy deployment contract dry run ─────────────────────────────
-  # This job validates Compose interpolation and the renderer with synthetic
-  # values only. It never receives production secrets and never opens SSH.
+  # This job validates Compose interpolation plus the repository's production
+  # secret-backed renderer. It never opens SSH or changes the droplet.
   deployment-config:
     name: Deployment configuration dry run
     runs-on: ubuntu-latest
@@ -241,6 +241,83 @@ jobs:
           cp _tmp/.env.prod .env.prod
           trap 'rm -f .env.prod' EXIT
           docker compose --env-file _tmp/.env.prod -f docker-compose.prod.yml config --quiet
+
+      - name: Validate production secret and deployment contracts without SSH
+        # Never expose repository secrets to forked pull requests; the
+        # synthetic contract step above remains the PR-safe validation.
+        if: github.event_name != 'pull_request'
+        env:
+          DB_USER: ${{ secrets.POSTGRES_USER }}
+          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME: ${{ secrets.POSTGRES_DB }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
+          PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          MARKETING_URL: ${{ vars.MARKETING_URL || 'https://easymod.tech' }}
+          APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_ASSET_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech' }}
+          FRONTEND_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          BASE_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          LEGACY_COOKIE_DOMAIN: ${{ vars.LEGACY_COOKIE_DOMAIN || 'easymod.tech' }}
+          META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
+          META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
+          BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
+          BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
+          BKASH_PASSWORD: ${{ secrets.BKASH_PASSWORD }}
+          BKASH_APP_KEY: ${{ secrets.BKASH_APP_KEY }}
+          BKASH_APP_SECRET: ${{ secrets.BKASH_APP_SECRET }}
+          BKASH_WEBHOOK_SECRET: ${{ secrets.BKASH_WEBHOOK_SECRET }}
+          BKASH_SANDBOX: "false"
+          TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
+          EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+          SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
+          BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
+          MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p _tmp
+          trap 'rm -f _tmp/.env.prod.real' EXIT
+          test -n "$DEPLOY_HOST"
+          test -n "$DO_SSH_PRIVATE_KEY"
+          node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod.real
+          test -s _tmp/.env.prod.real
+          grep -q '^CSRF_SECRET=' _tmp/.env.prod.real
+          grep -q '^PAYMENT_CALLBACK_HMAC_SECRET=' _tmp/.env.prod.real
+          grep -q '^QDRANT_URL=' _tmp/.env.prod.real
+          grep -q '^QDRANT_COLLECTION=' _tmp/.env.prod.real
+          grep -q '^QDRANT_API_KEY=' _tmp/.env.prod.real
+          grep -q '^SLACK_ALERT_WEBHOOK_URL=' _tmp/.env.prod.real
+          echo 'secret-backed-render=PASS'
 
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
@@ -381,10 +458,6 @@ jobs:
           BKASH_APP_SECRET: ${{ secrets.BKASH_APP_SECRET }}
           BKASH_WEBHOOK_SECRET: ${{ secrets.BKASH_WEBHOOK_SECRET }}
           BKASH_SANDBOX: "false"
-          PATHAO_CLIENT_ID: ${{ secrets.PATHAO_CLIENT_ID }}
-          PATHAO_CLIENT_SECRET: ${{ secrets.PATHAO_CLIENT_SECRET }}
-          STEADFAST_API_KEY: ${{ secrets.STEADFAST_API_KEY }}
-          STEADFAST_SECRET_KEY: ${{ secrets.STEADFAST_SECRET_KEY }}
           # Facebook/Messenger is the cutover scope. Telegram is opt-in via a
           # repository variable and is disabled when the variable is absent.
           TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
