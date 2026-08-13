@@ -110,6 +110,23 @@ describe('FailedPaymentReconciler.run', () => {
         );
     });
 
+    // BILLING-YEARLY-005: deferring annual dunning must not exempt annual
+    // subscribers from it. Once a yearly renewal is genuinely past due — which
+    // can only happen after the entitlement has expired, since the generator
+    // writes no invoice before then — it suspends like any other renewal.
+    it('suspends for a yearly renewal that is genuinely past due', async () => {
+        const inv = makeInvoice({ invoice_type: 'yearly_subscription', amount: 11988 });
+        Invoice.findAll.mockResolvedValueOnce([inv]);
+
+        const job = new FailedPaymentReconciler();
+        const res = await job.run({ dryRun: false, runDate: new Date() });
+
+        expect(inv.subscription.update).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'suspended' })
+        );
+        expect(res.subscriptionsSuspended).toBe(1);
+    });
+
     it('dry-run makes no writes and sends no email', async () => {
         const inv = makeInvoice({ invoice_type: 'monthly_subscription' });
         Invoice.findAll.mockResolvedValueOnce([inv]);

@@ -18,7 +18,7 @@ const { getOrigins, joinOrigin } = require('../config/origins');
  * Billing policy (founder spec): a recurring subscription invoice is issued on
  * the renewal date with a 3-day "due threshold" (due_date = issue + 3 days).
  * Once that window passes unpaid, the AI assistant must stop. So:
- * - Recurring invoice (monthly_subscription / partner_per_order) past due
+ * - Recurring invoice (monthly / yearly subscription, partner_per_order) past due
  *     → suspend the subscription (isAiActive=false → AI auto-pauses; the manual
  *       inbox stays usable). Paying the invoice reactivates it.
  * - Optional one-off invoices (add-on packs, proration) NEVER suspend AI — they
@@ -29,7 +29,7 @@ const { getOrigins, joinOrigin } = require('../config/origins');
  *   await job.execute({ dryRun: true });
  *   await job.execute({ dryRun: false });
  */
-const RECURRING_INVOICE_TYPES = ['monthly_subscription', 'partner_per_order'];
+const { RECURRING_INVOICE_TYPES } = require('../modules/subscription/subscription.plans');
 
 class FailedPaymentReconciler extends BaseJob {
     constructor() {

@@ -14,7 +14,9 @@ const {
     getTierByCode,
     getTierByPlanName,
     isPerOrderBilling,
-    getPerOrderCharge
+    getPerOrderCharge,
+    RECURRING_INVOICE_TYPES,
+    recurringInvoiceTypeFor
 } = require('./subscription.plans');
 
 /**
@@ -748,8 +750,10 @@ const BD_VAT_RATE = 0;
  *
  * Flips a non-active subscription (suspended / past_due / trial_expired / inactive)
  * back to `active` so the AI assistant resumes (see subscription.access.isAiActive)
- * and anchors a fresh access window from the payment date (used for display +
- * proration; the calendar-month cron is what actually triggers the next invoice).
+ * and anchors a fresh access window from the payment date. That window is what
+ * schedules the next charge: the invoice-generator bills a subscription only once
+ * `next_billing_date` has passed, so paying a yearly invoice defers the next
+ * renewal by a year rather than by a calendar month.
  * Safe to call on an already-active subscription — it simply refreshes the window.
  *
  * @param {Object} subscription - Subscription Sequelize instance
@@ -809,11 +813,14 @@ const ensureRenewalInvoice = async (shopId, userId) => {
         throw new AppError('Partner (per-order) plans are billed per delivered order, not by renewal', 400);
     }
 
-    // Reuse any already-open monthly invoice so the owner pays it instead of stacking a new one.
+    // Reuse any already-open recurring invoice so the owner pays it instead of
+    // stacking a new one. Matching the whole recurring set, not just the monthly
+    // type — a yearly subscriber with an open annual renewal must be handed that
+    // invoice rather than issued a second one alongside it.
     const existing = await Invoice.findOne({
         where: {
             subscription_id: subscription.id,
-            invoice_type: 'monthly_subscription',
+            invoice_type: { [Op.in]: RECURRING_INVOICE_TYPES },
             status: { [Op.in]: ['pending', 'overdue'] }
         },
         order: [['created_at', 'DESC']]
@@ -843,7 +850,7 @@ const ensureRenewalInvoice = async (shopId, userId) => {
         subscription_id: subscription.id,
         shop_id: shopId,
         invoice_number: invoiceNumber,
-        invoice_type: 'monthly_subscription',
+        invoice_type: recurringInvoiceTypeFor(subscription.billing_cycle),
         amount: totalAmount,
         base_amount: baseAmount,
         extra_usage_amount: 0,

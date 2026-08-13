@@ -3,6 +3,7 @@ const { Subscription, Invoice, Shop } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
 const crypto = require('crypto');
+const { recurringInvoiceTypeFor } = require('../modules/subscription/subscription.plans');
 
 /**
  * Invoice Generator Job
@@ -73,17 +74,26 @@ class InvoiceGenerator extends BaseJob {
                         continue;
                     }
 
-                    // Yearly subscriptions: generate one invoice per year, not every month
-                    if (subscription.billing_cycle === 'yearly') {
-                        const yearlyInvoiceExists = await this.checkExistingYearlyInvoice(subscription, runDate);
-                        if (yearlyInvoiceExists) {
-                            results.invoicesSkipped++;
-                            continue;
-                        }
+                    // A subscription is billed when its paid period ends, not when
+                    // the calendar month turns. Without this the monthly cron billed
+                    // every active subscription on the 1st, so a yearly subscriber was
+                    // charged the full annual amount a month into a year they had
+                    // already paid for — and suspended three days later.
+                    if (!this.isRenewalDue(subscription, runDate)) {
+                        results.invoicesSkipped++;
+                        continue;
                     }
 
-                    const existingInvoice = await this.checkExistingInvoice(subscription, runDate);
-                    if (existingInvoice && !dryRun) {
+                    const invoiceData = await this.calculateInvoice(subscription, runDate);
+
+                    // Idempotency is keyed to the period being billed, so re-running
+                    // the job for the same boundary finds the same invoice. (The old
+                    // check was keyed to the calendar month, which let a yearly
+                    // subscriber be re-invoiced every time the year rolled over.)
+                    const existingInvoice = await this.checkExistingInvoice(
+                        subscription, invoiceData.billingPeriodStart,
+                    );
+                    if (existingInvoice) {
                         this.logger.info(`Invoice already exists for this period`, {
                             shopId: subscription.shop_id,
                             invoiceId: existingInvoice.id,
@@ -92,8 +102,6 @@ class InvoiceGenerator extends BaseJob {
                         results.invoicesSkipped++;
                         continue;
                     }
-
-                    const invoiceData = await this.calculateInvoice(subscription, runDate);
 
                     // Skip per-order Partner shops with no billable deliveries this
                     // period — no point issuing a ৳0 invoice (and it would suspend
@@ -127,44 +135,34 @@ class InvoiceGenerator extends BaseJob {
     }
 
     /**
-     * Check if invoice already exists for this period
-     * @param {Object} subscription 
-     * @param {Date} runDate 
+     * Whether the subscription's paid period has ended, so a renewal is owed.
+     *
+     * This is the domain rule the billing cycle actually turns on. `next_billing_date`
+     * is maintained on every plan change and on every paid invoice
+     * (subscription.service: updatePlan / activateFromPaidInvoice), for both cycles.
+     * A subscription with no period recorded at all is billed rather than skipped —
+     * failing closed here would silently stop invoicing a real customer.
      */
-    /**
-     * Check if a yearly invoice already exists for the current calendar year.
-     * Prevents 12 monthly invoices being generated for yearly subscribers.
-     */
-    async checkExistingYearlyInvoice(subscription, runDate) {
-        const startOfYear = new Date(runDate.getFullYear(), 0, 1);
-        const endOfYear = new Date(runDate.getFullYear(), 11, 31, 23, 59, 59);
+    isRenewalDue(subscription, runDate) {
+        const dueAt = subscription.next_billing_date || subscription.current_period_end;
+        if (!dueAt) return true;
+        return new Date(dueAt).getTime() <= runDate.getTime();
+    }
 
+    /**
+     * The invoice already covering this exact period, if one was written.
+     *
+     * Keyed on the period start rather than the calendar month: the period comes
+     * deterministically from the subscription, so re-running the job for the same
+     * boundary matches the same row and cannot double-bill.
+     */
+    async checkExistingInvoice(subscription, billingPeriodStart) {
         return Invoice.findOne({
             where: {
                 subscription_id: subscription.id,
-                billing_period_start: { [Op.gte]: startOfYear },
-                billing_period_end: { [Op.lte]: endOfYear }
+                billing_period_start: billingPeriodStart
             }
         });
-    }
-
-    async checkExistingInvoice(subscription, runDate) {
-        const startOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 1);
-        const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth() + 1, 0);
-
-        const existingInvoice = await Invoice.findOne({
-            where: {
-                subscription_id: subscription.id,
-                billing_period_start: {
-                    [Op.gte]: startOfMonth
-                },
-                billing_period_end: {
-                    [Op.lte]: endOfMonth
-                }
-            }
-        });
-
-        return existingInvoice;
     }
 
     /**
@@ -173,17 +171,30 @@ class InvoiceGenerator extends BaseJob {
      * @param {Date} runDate 
      */
     async calculateInvoice(subscription, runDate) {
-        // Previous month's usage (before reset)
+        // Previous month's usage (before reset) — also the window per-order
+        // Partner deliveries are counted over.
         const startOfMonth = new Date(runDate.getFullYear(), runDate.getMonth() - 1, 1);
         const endOfMonth = new Date(runDate.getFullYear(), runDate.getMonth(), 0, 23, 59, 59);
+
+        // The invoice covers the entitlement that just ended, which for a yearly
+        // subscription is a year — not the previous calendar month. Per-order
+        // Partner plans keep the monthly window they are actually metered over.
+        const hasRecordedPeriod = subscription.billing_model !== 'per_order'
+            && subscription.current_period_start
+            && subscription.current_period_end;
+
+        const billingPeriodStart = hasRecordedPeriod
+            ? new Date(subscription.current_period_start) : startOfMonth;
+        const billingPeriodEnd = hasRecordedPeriod
+            ? new Date(subscription.current_period_end) : endOfMonth;
 
         const invoiceData = {
             shopId: subscription.shop_id,
             shopName: subscription.shop?.name || 'Unknown',
             planName: subscription.plan_name,
             billingCycle: subscription.billing_cycle,
-            billingPeriodStart: startOfMonth,
-            billingPeriodEnd: endOfMonth,
+            billingPeriodStart,
+            billingPeriodEnd,
 
             // Base subscription amount (0 for per-order Partner plans)
             baseAmount: parseFloat(subscription.plan_price),
@@ -252,7 +263,7 @@ class InvoiceGenerator extends BaseJob {
             subscription_id: subscription.id,
             shop_id: subscription.shop_id,
             invoice_number: invoiceNumber,
-            invoice_type: invoiceData.billingCycle === 'per_order' ? 'partner_per_order' : 'monthly_subscription',
+            invoice_type: recurringInvoiceTypeFor(invoiceData.billingCycle),
             amount: invoiceData.totalAmount,
             base_amount: invoiceData.baseAmount,
             // Partner per-order charge + any conversation extras are usage-based.

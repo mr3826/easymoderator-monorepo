@@ -228,11 +228,47 @@ const planHasFeature = (planCode, feature) => {
     return tier.features[feature] === true;
 };
 
+/**
+ * Invoice types for recurring charges, one per billing cycle.
+ *
+ * `yearly_subscription` exists because the type is what the dunning path reads:
+ * the reconciler suspends a shop whose *recurring* invoice is past due, and
+ * typing a yearly renewal as `monthly_subscription` made an annual charge look
+ * like a monthly one. The definition lives here, once, because three call sites
+ * used to keep their own copy of the recurring set and a new type had to be
+ * added to all of them to be honoured.
+ */
+const InvoiceType = Object.freeze({
+    MONTHLY_SUBSCRIPTION: 'monthly_subscription',
+    YEARLY_SUBSCRIPTION: 'yearly_subscription',
+    PARTNER_PER_ORDER: 'partner_per_order',
+});
+
+/**
+ * Invoice types that gate AI when overdue. Discretionary one-offs (add-on packs,
+ * proration) are deliberately absent — they only earn a reminder.
+ */
+const RECURRING_INVOICE_TYPES = Object.freeze([
+    InvoiceType.MONTHLY_SUBSCRIPTION,
+    InvoiceType.YEARLY_SUBSCRIPTION,
+    InvoiceType.PARTNER_PER_ORDER,
+]);
+
+/** The recurring invoice type a subscription's billing cycle should produce. */
+const recurringInvoiceTypeFor = (billingCycle) => {
+    if (billingCycle === 'per_order') return InvoiceType.PARTNER_PER_ORDER;
+    if (billingCycle === 'yearly') return InvoiceType.YEARLY_SUBSCRIPTION;
+    return InvoiceType.MONTHLY_SUBSCRIPTION;
+};
+
 module.exports = {
     PlanCode,
     UNLIMITED,
     THRESHOLD_BUFFER,
     PRICING_TIERS,
+    InvoiceType,
+    RECURRING_INVOICE_TYPES,
+    recurringInvoiceTypeFor,
     PARTNER_ORDER_TIERS,
     TOPUP_PACKS,
     isUnlimitedLimit,

@@ -28,7 +28,7 @@ const bdPayment = new BangladeshPaymentService();
 
 // Invoice.status ENUM is ('pending','paid','cancelled','overdue') — these two are payable.
 const PAYABLE_STATUSES = ['pending', 'overdue'];
-const RECURRING_INVOICE_TYPES = ['monthly_subscription', 'partner_per_order'];
+const { RECURRING_INVOICE_TYPES } = require('./subscription.plans');
 
 /**
  * Load an invoice that belongs to the shop and is in a payable state.
