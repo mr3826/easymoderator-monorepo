@@ -253,6 +253,16 @@ jobs:
           REDIS_URL: redis://127.0.0.1:6379
         run: npm run test:integration
 
+      # Known-broken tracked tests (EasyMod-backend/tests/quarantine.json). These
+      # do NOT count as coverage and do NOT gate the build — they are run so the
+      # debt is visible on every build instead of rotting inside an ignore list.
+      # `npm test` already fails if this list grows past its ceiling.
+      - name: Backend quarantine (reported, not gating)
+        if: needs.changes.outputs.backend == 'true'
+        continue-on-error: true
+        working-directory: ./EasyMod-backend
+        run: npm run test:quarantine
+
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images

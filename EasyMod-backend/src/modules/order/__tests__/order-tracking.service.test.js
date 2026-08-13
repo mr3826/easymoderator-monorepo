@@ -1,213 +1,150 @@
 /**
- * Order Tracking Service Tests
- * Tests delivery tracking and status updates
+ * Order Tracking Notification Service — Unit Tests
+ *
+ * REPLACES an earlier suite that tested trackOrder / updateTrackingStatus /
+ * syncTrackingStatus / batchSyncTracking against this module. None of those
+ * functions has ever existed here: order-tracking.service.js is the B2 shipping
+ * NOTIFICATION service, and exports exactly two things —
+ * formatTrackingMessage and sendTrackingNotification.
+ *
+ * Courier tracking itself lives in delivery/delivery-tracking.service.js and is
+ * covered by delivery-tracking.tenant-and-replay.test.js in the security gate.
+ *
+ * The three cases that "passed" in the old suite asserted on an array of
+ * provider names declared inside the test file, touching no product code at
+ * all — the exact shape of coverage that reports green and guards nothing.
  */
 
+'use strict';
+
+jest.mock('../../../utils/structured-logger', () => ({
+    createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() })
+}));
+
+jest.mock('../../webhook/webhook.service', () => ({
+    sendToCustomer: jest.fn()
+}));
+
+jest.mock('../../entities', () => ({
+    Order: { findOne: jest.fn() }
+}));
+
 const trackingService = require('../order-tracking.service');
+const webhookService = require('../../webhook/webhook.service');
 const { Order } = require('../../entities');
-const deliveryService = require('../../delivery/delivery.service');
 
-jest.mock('../../entities');
-jest.mock('../../delivery/delivery.service');
+const makeOrder = (overrides = {}) => ({
+    id: 'order-1',
+    order_number: 'ORD-001',
+    shop_id: 'shop-1',
+    customer_id: 'cust-1',
+    delivery_tracking_code: 'TRACK123',
+    ...overrides
+});
 
-describe('Order Tracking Service', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
+beforeEach(() => {
+    jest.clearAllMocks();
+    webhookService.sendToCustomer.mockResolvedValue({ sent: true, channelType: 'messenger' });
+});
+
+describe('formatTrackingMessage', () => {
+    it('includes the order number and tracking code', () => {
+        const msg = trackingService.formatTrackingMessage(makeOrder(), { trackingNumber: 'SF-99' });
+        expect(msg).toContain('ORD-001');
+        expect(msg).toContain('SF-99');
     });
 
-    describe('trackOrder', () => {
-        it('should fetch tracking info for valid order', async () => {
-            const mockOrder = {
-                id: 'order-1',
-                order_number: 'ORD-001',
-                tracking_number: 'TRACK123',
-                delivery_provider: 'steadfast'
-            };
-
-            const mockTrackingInfo = {
-                status: 'in_transit',
-                estimated_delivery: '2024-12-31',
-                current_location: 'Dhaka Hub'
-            };
-
-            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
-            deliveryService.getTracking = jest.fn().mockResolvedValue(mockTrackingInfo);
-
-            const result = await trackingService.trackOrder('order-1', 'shop-1');
-
-            expect(result).toHaveProperty('order');
-            expect(result).toHaveProperty('tracking');
-            expect(result.tracking).toEqual(mockTrackingInfo);
-        });
-
-        it('should return null tracking for orders without tracking number', async () => {
-            const mockOrder = {
-                id: 'order-1',
-                order_number: 'ORD-001',
-                tracking_number: null,
-                delivery_provider: null
-            };
-
-            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
-
-            const result = await trackingService.trackOrder('order-1', 'shop-1');
-
-            expect(result.tracking).toBeNull();
-        });
-
-        it('should throw error when order not found', async () => {
-            Order.findOne = jest.fn().mockResolvedValue(null);
-
-            await expect(trackingService.trackOrder('nonexistent', 'shop-1'))
-                .rejects
-                .toThrow('Order not found');
-        });
+    it('falls back to the order id when there is no order number', () => {
+        const msg = trackingService.formatTrackingMessage(makeOrder({ order_number: null }), {});
+        expect(msg).toContain('order-1');
     });
 
-    describe('updateTrackingStatus', () => {
-        it('should update order with tracking information', async () => {
-            const mockOrder = {
-                id: 'order-1',
-                tracking_number: null,
-                fulfillment_status: 'unfulfilled',
-                save: jest.fn().mockResolvedValue(true)
-            };
-
-            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
-
-            const trackingData = {
-                tracking_number: 'TRACK123',
-                delivery_provider: 'steadfast',
-                status: 'shipped'
-            };
-
-            const result = await trackingService.updateTrackingStatus('order-1', 'shop-1', trackingData);
-
-            expect(mockOrder.tracking_number).toBe('TRACK123');
-            expect(mockOrder.delivery_provider).toBe('steadfast');
-            expect(mockOrder.save).toHaveBeenCalled();
-        });
-
-        it('should validate tracking number format', async () => {
-            // Test various tracking number formats
-            const validTrackingNumbers = [
-                'TRACK123456',
-                'ST-12345678',
-                'SF1234567890'
-            ];
-
-            const invalidTrackingNumbers = [
-                '',
-                '   ',
-                null,
-                undefined
-            ];
-
-            validTrackingNumbers.forEach(num => {
-                expect(num && num.trim().length > 0).toBe(true);
-            });
-
-            invalidTrackingNumbers.forEach(num => {
-                expect(!num || num.trim().length === 0).toBe(true);
-            });
-        });
+    it('falls back to the tracking code stored on the order', () => {
+        const msg = trackingService.formatTrackingMessage(makeOrder(), {});
+        expect(msg).toContain('TRACK123');
     });
 
-    describe('syncTrackingStatus', () => {
-        it('should sync status from delivery provider', async () => {
-            const mockOrder = {
-                id: 'order-1',
-                tracking_number: 'TRACK123',
-                delivery_provider: 'steadfast',
-                fulfillment_status: 'unfulfilled',
-                save: jest.fn().mockResolvedValue(true)
-            };
-
-            const providerStatus = {
-                status: 'delivered',
-                delivered_at: '2024-12-31T10:00:00Z'
-            };
-
-            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
-            deliveryService.syncStatus = jest.fn().mockResolvedValue(providerStatus);
-
-            const result = await trackingService.syncTrackingStatus('order-1', 'shop-1');
-
-            expect(deliveryService.syncStatus).toHaveBeenCalledWith('steadfast', 'TRACK123');
-            expect(result).toHaveProperty('synced', true);
-        });
-
-        it('should handle sync failures gracefully', async () => {
-            const mockOrder = {
-                id: 'order-1',
-                tracking_number: 'TRACK123',
-                delivery_provider: 'steadfast'
-            };
-
-            Order.findOne = jest.fn().mockResolvedValue(mockOrder);
-            deliveryService.syncStatus = jest.fn().mockRejectedValue(new Error('API Error'));
-
-            await expect(trackingService.syncTrackingStatus('order-1', 'shop-1'))
-                .rejects
-                .toThrow('Failed to sync tracking status');
-        });
+    it('says N/A rather than "undefined" when nothing is known', () => {
+        const msg = trackingService.formatTrackingMessage(
+            makeOrder({ delivery_tracking_code: null }), {}
+        );
+        expect(msg).toContain('N/A');
+        expect(msg).not.toContain('undefined');
     });
 
-    describe('batchSyncTracking', () => {
-        it('should sync all pending orders', async () => {
-            const pendingOrders = [
-                { id: 'order-1', tracking_number: 'TRACK1', delivery_provider: 'steadfast' },
-                { id: 'order-2', tracking_number: 'TRACK2', delivery_provider: 'steadfast' }
-            ];
-
-            Order.findAll = jest.fn().mockResolvedValue(pendingOrders);
-            deliveryService.syncStatus = jest.fn()
-                .mockResolvedValueOnce({ status: 'delivered' })
-                .mockResolvedValueOnce({ status: 'in_transit' });
-
-            const results = await trackingService.batchSyncTracking('shop-1');
-
-            expect(results).toHaveLength(2);
-            expect(results[0]).toHaveProperty('orderId', 'order-1');
-            expect(results[1]).toHaveProperty('orderId', 'order-2');
-        });
-
-        it('should handle partial failures in batch sync', async () => {
-            const pendingOrders = [
-                { id: 'order-1', tracking_number: 'TRACK1', delivery_provider: 'steadfast' },
-                { id: 'order-2', tracking_number: 'TRACK2', delivery_provider: 'steadfast' }
-            ];
-
-            Order.findAll = jest.fn().mockResolvedValue(pendingOrders);
-            deliveryService.syncStatus = jest.fn()
-                .mockResolvedValueOnce({ status: 'delivered' })
-                .mockRejectedValueOnce(new Error('API Error'));
-
-            const results = await trackingService.batchSyncTracking('shop-1');
-
-            expect(results[0]).toHaveProperty('success', true);
-            expect(results[1]).toHaveProperty('success', false);
-            expect(results[1]).toHaveProperty('error');
-        });
+    it('mentions the courier only when one is given', () => {
+        expect(trackingService.formatTrackingMessage(makeOrder(), { courier: 'Steadfast' }))
+            .toContain('Steadfast');
+        expect(trackingService.formatTrackingMessage(makeOrder(), {}))
+            .not.toContain('কুরিয়ার');
     });
 
-    describe('Provider Support', () => {
-        const supportedProviders = ['steadfast', 'pathao', 'chaldal', 'redx', 'paperfly'];
+    it('mentions the estimated date only when one is given', () => {
+        expect(trackingService.formatTrackingMessage(makeOrder(), { estimatedDate: '2026-08-20' }))
+            .toContain('2026-08-20');
+        expect(trackingService.formatTrackingMessage(makeOrder(), {}))
+            .not.toContain('আনুমানিক');
+    });
+});
 
-        it('should support major Bangladesh delivery providers', () => {
-            supportedProviders.forEach(provider => {
-                expect(provider).toBeTruthy();
-                expect(typeof provider).toBe('string');
-            });
+describe('sendTrackingNotification', () => {
+    it('sends the formatted message to the order customer', async () => {
+        const result = await trackingService.sendTrackingNotification(makeOrder(), 'shop-1', {
+            trackingNumber: 'SF-99',
+            courier: 'Steadfast'
         });
 
-        it('should validate provider before tracking', () => {
-            const isValidProvider = (provider) => supportedProviders.includes(provider);
+        expect(webhookService.sendToCustomer).toHaveBeenCalledWith(expect.objectContaining({
+            shopId: 'shop-1',
+            customerId: 'cust-1',
+            message: expect.stringContaining('SF-99')
+        }));
+        expect(result.sent).toBe(true);
+        expect(result.orderNumber).toBe('ORD-001');
+    });
 
-            expect(isValidProvider('steadfast')).toBe(true);
-            expect(isValidProvider('pathao')).toBe(true);
-            expect(isValidProvider('unknown')).toBe(false);
-            expect(isValidProvider('')).toBe(false);
+    it('loads the order when given an id instead of an instance', async () => {
+        Order.findOne.mockResolvedValue(makeOrder());
+
+        await trackingService.sendTrackingNotification('order-1', 'shop-1', {});
+
+        expect(Order.findOne).toHaveBeenCalledWith({
+            where: { id: 'order-1', shop_id: 'shop-1' }
         });
+        expect(webhookService.sendToCustomer).toHaveBeenCalled();
+    });
+
+    it('scopes the lookup to the shop, so one shop cannot notify another shop\'s order', async () => {
+        Order.findOne.mockResolvedValue(null);
+
+        await expect(trackingService.sendTrackingNotification('order-1', 'other-shop', {}))
+            .rejects.toMatchObject({ status: 404 });
+        expect(webhookService.sendToCustomer).not.toHaveBeenCalled();
+    });
+
+    it('does not attempt a send when the order has no customer', async () => {
+        const result = await trackingService.sendTrackingNotification(
+            makeOrder({ customer_id: null }), 'shop-1', {}
+        );
+
+        expect(webhookService.sendToCustomer).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ sent: false, reason: 'no_customer' });
+    });
+
+    it('reports the reason when the channel declines to deliver', async () => {
+        webhookService.sendToCustomer.mockResolvedValue({ sent: false, reason: 'no_channel' });
+
+        const result = await trackingService.sendTrackingNotification(makeOrder(), 'shop-1', {});
+
+        expect(result).toMatchObject({ sent: false, reason: 'no_channel' });
+    });
+
+    it('does not throw when the send fails — a shipped order still ships', async () => {
+        webhookService.sendToCustomer.mockRejectedValue(new Error('Meta returned 500'));
+
+        const result = await trackingService.sendTrackingNotification(makeOrder(), 'shop-1', {});
+
+        expect(result).toMatchObject({ sent: false, reason: 'send_error' });
+        expect(result.message).toContain('ORD-001');
     });
 });

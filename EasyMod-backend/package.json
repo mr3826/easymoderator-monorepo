@@ -12,6 +12,7 @@
     "test:watch": "jest --watch",
     "test:integration": "jest --config jest.integration.config.js --runInBand --forceExit",
     "test:discovery": "node scripts/check-test-discovery.js",
+    "test:quarantine": "jest --config jest.quarantine.config.js --runInBand --forceExit",
     "test:meta:e2e": "jest --config jest.meta-e2e.config.js --runInBand --forceExit",
     "test:meta:live": "node scripts/meta-live-e2e.js",
     "db:sync": "node src/utils/database/sync.js",

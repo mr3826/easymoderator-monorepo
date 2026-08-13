@@ -67,7 +67,20 @@ const SUITES = [
         ciJob: 'Meta-shaped E2E (AI trust boundary)',
         ciRequired: true,
     },
+    {
+        // Tracked, real, and NOT YET REPAIRED. Runs in CI for visibility only.
+        // A file here has a home but does NOT count as coverage — which is the
+        // whole distinction this script exists to keep honest.
+        name: 'quarantine',
+        config: 'jest.quarantine.config.js',
+        command: 'npm run test:quarantine',
+        ciJob: 'Backend quarantine (reported, not gating)',
+        ciRequired: false,
+        isCoverage: false,
+    },
 ];
+
+const QUARANTINE = require('../tests/quarantine.json');
 
 /** Matches a disabled test at its call site, not the word "skip" in prose. */
 const SKIP_CALL = /(?:^|[^.\w])(?:x(?:it|test|describe)|(?:it|test|describe)\.(?:skip|todo))\s*\(/;
@@ -150,6 +163,20 @@ const analyse = () => {
     const untracked = onDisk.filter((f) => !trackedSet.has(f));
     const emptySuites = suites.filter((s) => s.files.length === 0).map((s) => s.name);
 
+    // Quarantined files have a home but are not coverage. The ceiling is the
+    // ratchet: it may be lowered as files are repaired, never quietly raised.
+    const quarantined = QUARANTINE.files.map((f) => f.file);
+    const quarantineOverCeiling = quarantined.length > QUARANTINE.ceiling;
+    const quarantineUndocumented = QUARANTINE.files
+        .filter((f) => !f.cause || !f.repair)
+        .map((f) => f.file);
+    const quarantineMissing = quarantined.filter((f) => !trackedSet.has(f));
+
+    const coverageSuites = new Set(
+        SUITES.filter((s) => s.isCoverage !== false).map((s) => s.name),
+    );
+    const counted = tracked.filter((f) => homesOf(f).some((n) => coverageSuites.has(n)));
+
     // A test disabled inside a suite that DOES run is the other half of the
     // same lie: discovered, reported as a suite, asserting nothing.
     const skipped = [];
@@ -163,6 +190,8 @@ const analyse = () => {
 
     return {
         tracked, onDisk, suites, orphans, duplicates, untracked, emptySuites, skipped,
+        counted, quarantined, quarantineOverCeiling, quarantineUndocumented,
+        quarantineMissing, quarantineCeiling: QUARANTINE.ceiling,
     };
 };
 
@@ -184,17 +213,39 @@ const violations = (result) => {
     for (const s of result.skipped) {
         out.push(`SKIPPED           ${s}`);
     }
+    if (result.quarantineOverCeiling) {
+        out.push(
+            `QUARANTINE_GREW   ${result.quarantined.length} files vs ceiling `
+            + `${result.quarantineCeiling}. The ceiling only goes down — repair the `
+            + 'test rather than raising it.',
+        );
+    }
+    for (const f of result.quarantineUndocumented) {
+        out.push(`QUARANTINE_VAGUE  ${f} — needs both a "cause" and a "repair".`);
+    }
+    for (const f of result.quarantineMissing) {
+        out.push(`QUARANTINE_STALE  ${f} — listed in quarantine.json but not tracked in git.`);
+    }
     return out;
 };
 
 const report = (result) => {
     const lines = ['', 'Test discovery', ''];
     for (const s of result.suites) {
-        lines.push(`  ${s.name.padEnd(12)} ${String(s.files.length).padStart(3)} files  ${s.command}`);
+        const note = s.isCoverage === false ? '  (NOT coverage)' : '';
+        lines.push(
+            `  ${s.name.padEnd(12)} ${String(s.files.length).padStart(3)} files  `
+            + `${s.command}${note}`,
+        );
     }
     lines.push('');
-    lines.push(`  tracked test files: ${result.tracked.length}`);
-    lines.push(`  with a home:        ${result.tracked.length - result.orphans.length}`);
+    lines.push(`  tracked test files:  ${result.tracked.length}`);
+    lines.push(`  with a home:         ${result.tracked.length - result.orphans.length}`);
+    lines.push(`  counted as coverage: ${result.counted.length}`);
+    lines.push(
+        `  quarantined (debt):  ${result.quarantined.length} `
+        + `of ${result.quarantineCeiling} allowed`,
+    );
     lines.push('');
     return lines.join('\n');
 };

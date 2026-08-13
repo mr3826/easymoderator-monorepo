@@ -57,13 +57,43 @@ describe('test discovery', () => {
 
     it('checks every suite a backend test can belong to', () => {
         expect(SUITES.map((s) => s.name).sort())
-            .toEqual(['integration', 'meta-e2e', 'unit']);
+            .toEqual(['integration', 'meta-e2e', 'quarantine', 'unit']);
     });
 
-    it('requires every suite to be a CI gate', () => {
+    it('requires every coverage-bearing suite to be a CI gate', () => {
         // If a suite stops blocking the build, a failure in it stops mattering,
-        // and the tests it holds are back to being decoration.
-        expect(SUITES.filter((s) => !s.ciRequired)).toEqual([]);
+        // and the tests it holds are back to being decoration. Quarantine is the
+        // deliberate exception: it does not gate because it does not count.
+        const notGating = SUITES.filter((s) => s.isCoverage !== false && !s.ciRequired);
+        expect(notGating).toEqual([]);
+    });
+
+    describe('quarantine', () => {
+        it('never counts a quarantined file as coverage', () => {
+            for (const file of result.quarantined) {
+                expect(result.counted).not.toContain(file);
+            }
+        });
+
+        it('stays within its ceiling — the number only goes down', () => {
+            expect(result.quarantineOverCeiling).toBe(false);
+        });
+
+        it('states a cause and a repair for every entry', () => {
+            // Without both, this is an ignore list with extra steps.
+            expect(result.quarantineUndocumented).toEqual([]);
+        });
+
+        it('lists only files that still exist in git', () => {
+            expect(result.quarantineMissing).toEqual([]);
+        });
+
+        it('keeps a quarantined file out of the unit gate', () => {
+            const unit = result.suites.find((s) => s.name === 'unit');
+            for (const file of result.quarantined) {
+                expect(unit.files).not.toContain(file);
+            }
+        });
     });
 
     describe('the skip detector', () => {

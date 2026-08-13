@@ -16,6 +16,7 @@ const {
     UsageEvent,
     AuditLog,
     Shop,
+    Tenant,
     User,
     UserShop
 } = require('../../entities');
@@ -32,8 +33,15 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
             password: 'test123'
         });
 
+        // tenant_id, unique_code and shop_name are all NOT NULL on the shops
+        // table; a fixture with only `name` fails validation before the first
+        // assertion runs.
+        tenant = await Tenant.create({ name: `usage-test-${uuidv4().slice(0, 8)}` });
         shop = await Shop.create({
             name: 'Test Shop',
+            shop_name: 'Test Shop',
+            unique_code: `EMTEST-${uuidv4().slice(0, 8)}`,
+            tenant_id: tenant.id,
             user_id: user.id
         });
 
@@ -578,7 +586,7 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
  * Integration Test: End-to-End Usage Tracking Flow
  */
 describe('End-to-End: Complete Usage Tracking Flow', () => {
-    let shop, user, subscription;
+    let shop, user, subscription, tenant;
 
     beforeAll(async () => {
         user = await User.create({
@@ -586,8 +594,12 @@ describe('End-to-End: Complete Usage Tracking Flow', () => {
             password: 'test123'
         });
 
+        tenant = await Tenant.create({ name: `usage-e2e-${uuidv4().slice(0, 8)}` });
         shop = await Shop.create({
             name: 'E2E Test Shop',
+            shop_name: 'E2E Test Shop',
+            unique_code: `EME2E-${uuidv4().slice(0, 8)}`,
+            tenant_id: tenant.id,
             user_id: user.id
         });
 
@@ -608,6 +620,7 @@ describe('End-to-End: Complete Usage Tracking Flow', () => {
         await Subscription.destroy({ where: { shop_id: shop.id } });
         await Shop.destroy({ where: { id: shop.id } });
         await User.destroy({ where: { id: user.id } });
+        if (tenant) await Tenant.destroy({ where: { id: tenant.id } });
     });
 
     test('Complete workflow: Create → Track → Verify → Audit', async () => {

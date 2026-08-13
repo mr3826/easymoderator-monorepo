@@ -14,8 +14,15 @@
  * Membership is by filename, not by exclusion:
  *   *.integration.test.js   → npm run test:integration (real Postgres/Redis)
  *   tests/meta-e2e/*        → npm run test:meta:e2e
+ *   tests/quarantine.json   → npm run test:quarantine (known-broken, NOT coverage)
  *   everything else         → here
  */
+
+// The known-broken list lives in tests/quarantine.json, not in this array, so
+// there is one place to look and every entry carries its cause and its repair.
+// It is a debt register with a ceiling that only goes down — see that file.
+const quarantined = require('./tests/quarantine.json').files.map((f) => f.file);
+
 module.exports = {
     testEnvironment: 'node',
     testMatch: ['**/__tests__/**/*.test.js', '**/*.test.js'],
@@ -28,6 +35,7 @@ module.exports = {
         // Needs a real PostgreSQL. Runs under jest.integration.config.js via
         // `npm run test:integration`, which CI provisions a database for.
         '\\.integration\\.test\\.js$',
+        ...quarantined,
     ],
     moduleNameMapper: {
         '^src/(.*)$': '<rootDir>/src/$1',
