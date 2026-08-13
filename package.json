@@ -1,0 +1,25 @@
+{
+  "name": "easymoderator-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "EasyModerator backend, frontend, and Growth OS monorepo",
+  "workspaces": [
+    "EasyMod-backend",
+    "EasyMod-frontend",
+    "GrowthOS"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspaces",
+    "test:backend": "npm test --workspace=easymod-backend",
+    "test:frontend": "npm run test:unit --workspace=easymod-frontend",
+    "test:growthos": "npm run test --workspace=growth-os-frontend",
+    "test:all": "npm run test:backend && npm run test:frontend && npm run test:growthos",
+    "build:backend": "npm run build --workspace=easymod-backend",
+    "build:frontend": "npm run build --workspace=easymod-frontend",
+    "build:growthos": "npm run build --workspace=growth-os-frontend",
+    "build:all": "npm run build:backend && npm run build:frontend && npm run build:growthos"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

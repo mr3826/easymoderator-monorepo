@@ -86,11 +86,15 @@ jobs:
             backend:
               - 'EasyMod-backend/**'
               - 'docker-compose.prod.yml'
-              - '.github/workflows/ci-cd.yml'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/**'
             frontend:
               - 'EasyMod-frontend/**'
               - 'Caddyfile'
-              - '.github/workflows/ci-cd.yml'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/**'
 
   # ── 2. Test gate — must pass before any image is built or deployed ──────────
   # This is the gate that makes the silent-failure bug class (job-not-enqueued /

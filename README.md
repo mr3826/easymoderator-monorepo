@@ -12,10 +12,12 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 |---|---|
 | `EasyMod-backend/` | Express API, worker, scheduler, Sequelize models/migrations, Meta webhook handling, AI/order services. |
 | `EasyMod-frontend/` | React/Vite merchant dashboard, marketing pages, inbox, products, orders, first-time setup, and legal pages. |
-| `.github/workflows/ci-cd.yml` | Canonical CI/CD pipeline for test, image build, GitHub Container Registry push, and production deploy. |
+| `GrowthOS/` | Independent React/Vite platform-operations frontend using the `/api/internal/growth-os/*` namespace. |
+| `.github/workflows/` | Canonical CI/CD, GrowthOS publish, backup, administration, purge, and load-testing workflows. |
 | `docker-compose.prod.yml` | Production service composition used on the DigitalOcean droplet. |
 | `Caddyfile` | Production reverse proxy/static serving configuration. |
 | `docs/` | Launch, App Review, operational, and audit documentation. |
+| `package.json` | Root npm workspace orchestration; module package manifests remain authoritative for dependencies. |
 
 ---
 
@@ -74,6 +76,11 @@ npm run test:unit
 npm run build
 npm run dev
 ```
+
+From the repository root, the workspace provides `npm run install:all`,
+`npm run test:all`, and `npm run build:all`, plus module-specific test/build
+commands. See [Monorepo Architecture](docs/infrastructure/MONOREPO_ARCHITECTURE.md)
+for the boundary and rollback rules.
 
 See [EasyMod-backend/README.md](EasyMod-backend/README.md) and [EasyMod-frontend/README.md](EasyMod-frontend/README.md) for module-specific setup, environment variables, testing, and architecture.
 
