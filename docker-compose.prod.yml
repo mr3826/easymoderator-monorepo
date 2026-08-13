@@ -124,7 +124,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # noeviction, not allkeys-lru: this Redis backs BullMQ, and the eviction
+    # policy is server-wide even though the queues are isolated in db3. Under LRU
+    # a burst of session writes in db0 can evict a job key in db3, and the job
+    # disappears with no error anywhere — a customer message that is simply never
+    # replied to. Failing writes is the safe failure; losing queued work is not.
+    #
+    # Safe because the memory is bounded: every session key carries a TTL, BullMQ
+    # retention is capped (removeOnComplete/removeOnFail counts), and production
+    # peaked at 16 MB of the 256 MB cap with evicted_keys=0 — the LRU policy has
+    # never once been needed. Headroom and used_memory are reported by
+    # GET /health/detailed so the ceiling is visible before it is reached.
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     networks:

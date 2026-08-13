@@ -62,6 +62,40 @@ router.get('/ready', async (req, res) => {
 });
 
 /**
+ * Headroom and eviction policy from a Redis `INFO memory` payload.
+ *
+ * Reports unknown as null rather than as a number. An uncapped instance has no
+ * headroom to report, and a fabricated 0% reads as "almost empty" on a dashboard
+ * when the truth is that the ceiling is unknown.
+ */
+const parseRedisMemory = (info) => {
+    const field = (name) => {
+        const match = String(info).match(new RegExp(`^${name}:(.*)$`, 'm'));
+        return match ? match[1].trim() : null;
+    };
+    // Number(null) is 0, not NaN — a missing field must not be reported as
+    // "0 bytes used", which reads as a healthy, nearly-empty instance.
+    const num = (name) => {
+        const raw = field(name);
+        if (raw === null || raw === '') return null;
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+    const used = num('used_memory');
+    const max = num('maxmemory');
+
+    return {
+        usedBytes: used,
+        maxBytes: max,
+        peakBytes: num('used_memory_peak'),
+        policy: field('maxmemory_policy'),
+        usedPercent: used !== null && max !== null && max > 0
+            ? Math.round((used / max) * 1000) / 10
+            : null,
+    };
+};
+
+/**
  * P2-6: Detailed health — DB, Redis, queue depths, Vector DB (authenticated)
  */
 router.get('/detailed', authenticate, async (req, res) => {
@@ -93,6 +127,16 @@ router.get('/detailed', authenticate, async (req, res) => {
         checks.redis = Object.values(redisStatus).some(status => status) ? 'connected' : 'not_configured';
     } catch (_) {
         checks.redis = 'disconnected';
+    }
+
+    // Redis runs `noeviction` because it backs BullMQ, so exhausting maxmemory
+    // fails writes rather than silently dropping queued jobs. That trade is only
+    // safe while there is headroom, so the headroom has to be visible.
+    try {
+        const { cacheRedis } = require('../config/redis');
+        checks.redis_memory = parseRedisMemory(await cacheRedis.info('memory'));
+    } catch (_) {
+        checks.redis_memory = { error: 'unavailable' };
     }
 
     try {
@@ -230,3 +274,4 @@ router.get('/health', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.parseRedisMemory = parseRedisMemory;
