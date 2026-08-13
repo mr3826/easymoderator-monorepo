@@ -428,13 +428,38 @@ const dlqEntriesFor = async (conversationId) => {
 
 // ── Step validation ──────────────────────────────────────────────────────────
 
-/** Price-shaped claims: currency-marked, or a bare 3–6 digit run. */
-const priceClaims = (text) => String(text).match(/(?:৳|tk\.?\s*|taka\s*)?\b\d{3,6}\b/gi) || [];
+// The gate's own digit normalisation, not a second copy of it: if production
+// ever learns another rendering, the validator must not be left behind.
+const { normaliseNumber } = require('../src/modules/ai/grounding/outbound-grounding.gate');
 
-const statesPrice = (text, price) => {
-    const n = Math.round(Number(price));
-    return String(text).includes(String(n)) || String(text).includes(n.toLocaleString('en-US'));
-};
+/**
+ * Every figure in a reply that a customer would read as an amount, normalised
+ * by the gate's own normaliser so the validator and production agree on what
+ * a number is.
+ *
+ * Bengali numerals count. The model writes "৳২৫০০", the gate's PRICE_CLAIM_PATTERN
+ * matches both digit sets, so a validator that only sees ASCII scores a correct
+ * reply as a miss — and, far worse, reads a hallucinated "৳৩০০০" as no price
+ * claimed at all, turning the negative scenarios into false passes.
+ *
+ * \b cannot delimit these runs: Bengali digits are not JS word characters, so
+ * \b never fires next to one. Runs are bounded by an explicit "not a digit".
+ */
+const PRICE_SHAPED = /(?<![\d০-৯])[\d০-৯][\d০-৯,]*[\d০-৯](?![\d০-৯])/g;
+
+const priceFigures = (text) => (String(text).match(PRICE_SHAPED) || [])
+    .map(normaliseNumber)
+    .filter((n) => /^\d{3,6}$/.test(n));
+
+const priceClaims = priceFigures;
+
+/**
+ * The exact catalog amount, in any rendering production can emit: 2500, 2,500,
+ * ৳2500, ৳2,500, ২৫০০, ৳২৫০০. Compared as a normalised whole figure, never as a
+ * substring — "৳12500" must not satisfy an expected 2500.
+ */
+const statesPrice = (text, price) =>
+    priceFigures(text).includes(normaliseNumber(String(Math.round(Number(price)))));
 
 /**
  * Validate one turn against its expectations.
@@ -876,20 +901,26 @@ const main = async () => {
     return allPassed ? 0 : 1;
 };
 
-main()
-    .then(async (code) => {
-        try {
-            if (models) await models.sequelize.close();
-            const redis = require('../src/config/redis');
-            if (typeof redis.closeAllRedis === 'function') await redis.closeAllRedis();
-        } catch (_) { /* shutting down anyway */ }
-        process.exit(code);
-    })
-    .catch(async (err) => {
-        line('');
-        line(err instanceof Ambiguous
-            ? `FINAL: FAIL — ambiguous configuration: ${err.message}`
-            : `FINAL: FAIL — ${err.message}`);
-        try { if (models) await models.sequelize.close(); } catch (_) { /* shutting down */ }
-        process.exit(1);
-    });
+// The grading helpers are unit-tested; only the CLI entrypoint runs the live
+// sequence, which needs a human, the deployed stores and the real Meta transport.
+module.exports = { statesPrice, priceClaims };
+
+if (require.main === module) {
+    main()
+        .then(async (code) => {
+            try {
+                if (models) await models.sequelize.close();
+                const redis = require('../src/config/redis');
+                if (typeof redis.closeAllRedis === 'function') await redis.closeAllRedis();
+            } catch (_) { /* shutting down anyway */ }
+            process.exit(code);
+        })
+        .catch(async (err) => {
+            line('');
+            line(err instanceof Ambiguous
+                ? `FINAL: FAIL — ambiguous configuration: ${err.message}`
+                : `FINAL: FAIL — ${err.message}`);
+            try { if (models) await models.sequelize.close(); } catch (_) { /* shutting down */ }
+            process.exit(1);
+        });
+}
