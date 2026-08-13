@@ -59,6 +59,49 @@ Covered by `src/jobs/__tests__/invoice-generator.test.js` (BILLING-YEARLY-002…
 BILLING-MONTHLY-REGRESSION, BILLING-IDEMPOTENCY) and
 `src/modules/subscription/__tests__/annual-billing.test.js` (BILLING-YEARLY-001).
 
+## Production verification receipt
+
+Locked-account Messenger smoke test, **2026-08-13T11:43:34Z**, commit `d5b8f55`,
+merchant `admin@easymod.tech` / shop `Easy Style Fashion`, customer
+`EasyModerator Tester`. Run because the billing-paused work modified the
+production message worker.
+
+One real Messenger turn — `Premium Black Panjabi ache?` — end to end:
+
+| layer | evidence |
+| --- | --- |
+| Meta webhook | receipt `0d038f06`, `page_id 1213925798474895`, `event_type message`, `status PROCESSED`, `retry_count 0` |
+| resolution | shop `458b6a78…`, channel `77091ba8…`, customer `9cd4521d…` — resolved in 79 ms |
+| inbound | message `702242db…` persisted |
+| worker | `burstflush_03c2e7d9…_slow3s done`, confidence 0.9 |
+| billing guard | **did not fire** — `ai_skipped_reason` null; zero skipped rows shop-wide that day |
+| grounding | `SEND` / `GROUNDED` / `VERIFIED`, product `65f0d40d…`, violations `[]` |
+| delivery | `delivered = true`, Meta mid `m_oujFD86…` |
+| duplicate sends | **0** — 1 AI row, 1 delivered, 1 distinct mid |
+| DLQ / queues | empty; `message-processing` and `message-dlq` both 0/0/0/0/0 |
+| Redis | `maxmemory-policy = noeviction`, `evicted_keys 0` |
+| health | `/health` ok, `/health/ready` ready, DB + Redis connected |
+
+Subscription state at the time of the turn, unmodified:
+
+```
+GROWTH / yearly / active   ৳11,988
+current_period  2026-08-10T11:40:39Z → 2027-08-10T11:40:39Z   (365 days)
+next_billing    2027-08-10T11:40:39Z
+MONTHLY_RENEWAL_PENDING = false     (invoice-generator dry run: 0 generated)
+MONTHLY_DUNNING_ACTIVE  = false     (reconciler dry run: 0 overdue, 0 suspended)
+AI_ALLOWED              = true
+open/overdue invoices   = none
+```
+
+Noted during the smoke test, **unrelated to billing and pre-existing**: the worker
+logged `handleOrderFlow failed … relation "order_sessions" does not exist`. The
+table is genuinely absent from production (51 public tables, `to_regclass` null),
+so the deterministic order-capture step-machine cannot run there. It is caught and
+does not block the AI reply — this turn was answered normally — but order capture
+via chat is silently inoperative. Tracked separately; no billing PR touches the
+order module.
+
 ## When billing pauses the AI
 
 Pausing automated replies when billing lapses is correct. Leaving nobody aware of
