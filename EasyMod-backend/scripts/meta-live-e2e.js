@@ -31,7 +31,15 @@
  *   META_E2E_CUSTOMER_PSID      — pin the tester conversation
  *   META_E2E_NONEXISTENT_QUERY  — defaults to "chiffon saree ache?"
  *   META_E2E_TIMEOUT_SECONDS    — per-step wait for a human + Meta (default 600)
+ *   META_E2E_LOOKBACK_MINUTES   — score a conversation that already happened
+ *                                 instead of watching for one (default 0 = live)
  *   META_E2E_RUN_ID             — re-attach to an interrupted run
+ *
+ * Two ways to run it:
+ *   live    — start the runner, then send the messages it prints as it waits.
+ *   after   — send all nine messages whenever suits you, then run with
+ *             META_E2E_LOOKBACK_MINUTES=120 and it scores them from history.
+ *             Same assertions; the grounding evidence is durable on the row.
  *
  * Discovery never picks silently from an ambiguous set: it names the candidates
  * and tells you which override resolves it.
@@ -46,6 +54,12 @@ const SKIP = 'SKIP';
 
 const TIMEOUT_MS = (parseInt(process.env.META_E2E_TIMEOUT_SECONDS || '600', 10)) * 1000;
 const POLL_MS = 2000;
+/**
+ * How far back to look for the scripted messages. 0 = watch live. Non-zero
+ * scores a conversation that already happened, so nobody has to keep a terminal
+ * open while a human types into Messenger.
+ */
+const LOOKBACK_MS = (parseInt(process.env.META_E2E_LOOKBACK_MINUTES || '0', 10)) * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -319,11 +333,13 @@ const normalise = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/g
  * the run grades scenario N against scenario N-1's evidence. Non-matching
  * inbounds are skipped, loudly.
  */
-const waitForInbound = async (customerId, channelId, since, expected, onSkip) => {
+const waitForInbound = async (customerId, channelId, since, expected, onSkip, preferLatest = false) => {
     const { sequelize } = db();
     const deadline = Date.now() + TIMEOUT_MS;
     let cursor = since;
-    while (Date.now() < deadline) {
+    let lastMatch = null;
+    // Scoring history: the message either happened or it did not — one pass.
+    do {
         const [rows] = await sequelize.query(
             `SELECT m.id, m.conversation_id, m.external_id, m.content, m.created_at
                FROM messages m
@@ -337,12 +353,19 @@ const waitForInbound = async (customerId, channelId, since, expected, onSkip) =>
         );
         for (const row of rows) {
             cursor = row.created_at;
-            if (!expected || normalise(row.content) === normalise(expected)) return row;
+            if (!expected || normalise(row.content) === normalise(expected)) {
+                // Anchoring the run: an old failed attempt of the same script is
+                // still in history, so take the newest occurrence, not the first.
+                if (!preferLatest) return row;
+                lastMatch = row;
+                continue;
+            }
             if (onSkip) onSkip(row);
         }
+        if (LOOKBACK_MS) return lastMatch;
         await sleep(POLL_MS);
-    }
-    return null;
+    } while (Date.now() < deadline);
+    return lastMatch;
 };
 
 /**
@@ -351,24 +374,41 @@ const waitForInbound = async (customerId, channelId, since, expected, onSkip) =>
  * would be a duplicate send, which is itself a finding.
  */
 const waitForReplies = async (conversationId, since) => {
-    const { Message } = db();
-    const { Op } = require('sequelize');
-    const query = {
-        where: { conversation_id: conversationId, sender: 'ai', created_at: { [Op.gt]: since } },
-        order: [['created_at', 'ASC']],
+    const { sequelize } = db();
+    // Bounded by the customer's NEXT message, so scoring history attributes each
+    // reply to the turn that caused it instead of swallowing the rest of the
+    // conversation. Live, there is no later inbound yet and the bound is a no-op.
+    const fetch = async () => {
+        const [rows] = await sequelize.query(
+            `SELECT m.id, m.content, m.metadata, m.source_references, m.created_at
+               FROM messages m
+              WHERE m.conversation_id = :cid
+                AND m.sender = 'ai'
+                AND m.created_at > :since
+                AND m.created_at < coalesce((
+                      SELECT min(x.created_at) FROM messages x
+                       WHERE x.conversation_id = :cid
+                         AND x.sender = 'customer'
+                         AND x.created_at > :since), 'infinity')
+              ORDER BY m.created_at ASC`,
+            { replacements: { cid: conversationId, since } },
+        );
+        return rows;
     };
+
     const deadline = Date.now() + TIMEOUT_MS;
-    while (Date.now() < deadline) {
-        const replies = await Message.findAll(query);
+    do {
+        const replies = await fetch();
+        if (LOOKBACK_MS) return replies;
         // metadata.delivered is stamped only after provider.sendMessage resolved,
         // so an unstamped row means the send is still in flight.
         if (replies.some(r => r.metadata && r.metadata.delivered !== undefined)) {
             // Give a duplicate one poll to show up before declaring the turn done.
             await sleep(POLL_MS);
-            return Message.findAll(query);
+            return fetch();
         }
         await sleep(POLL_MS);
-    }
+    } while (Date.now() < deadline);
     return [];
 };
 
@@ -645,7 +685,12 @@ const main = async () => {
 
     if (binding) {
         customerId = binding.customer_id;
-        cursor = new Date();
+        // Validation does not have to be synchronous: the grounding evidence is
+        // durable on the row. With a lookback the tester sends the nine messages
+        // whenever suits them and the run is scored afterwards from history,
+        // which removes the only real coordination cost of a live run.
+        cursor = new Date(Date.now() - LOOKBACK_MS);
+        if (LOOKBACK_MS) line(`Mode:       scoring from history — last ${LOOKBACK_MS / 60000} minutes`);
         check('Customer PSID discovery', PASS,
             `psid …${String(binding.psid).slice(-4)} (page-scoped) · ${binding.inbound_count} prior inbound`
             + ` across ${binding.conversation_count} conversation(s) · learned from real Messenger webhooks`);
@@ -777,6 +822,7 @@ const main = async () => {
         const inbound = await waitForInbound(
             customerId, channel.id, cursor, step.message,
             (row) => line(`  · ignored an unexpected inbound ("${String(row.content).slice(0, 40)}") — still waiting for this step's message`),
+            Boolean(LOOKBACK_MS) && summary.length === 0,
         );
         if (!inbound) {
             check('Inbound received', FAIL, `timed out after ${TIMEOUT_MS / 1000}s waiting for exactly "${step.message}"`);

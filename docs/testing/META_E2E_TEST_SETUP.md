@@ -14,8 +14,12 @@ IMPLEMENTATION_STATUS = COMPLETE (both layers)
 LIVE_META_READY       = READY
 MISSING_INPUTS        = none — every value is discovered from the deployed
                         database at run time
-FOUNDER_ACTION        = send the messages the runner prints, from the tester
-                        customer account (§10)
+CERTIFICATION_STATUS  = NOT_CERTIFIED — safety half proven on the real
+                        transport (A + B, 5/5); positive half (C) failed on
+                        2026-08-10, was root-caused and fixed, and needs one
+                        confirming run
+FOUNDER_ACTION        = send the nine messages in §11 from the tester customer
+                        account, any time; then score the run
 ```
 
 Layer 1 (automated, CI) is complete and green: 31 assertions across
@@ -27,7 +31,45 @@ Layer 2 (real Meta) is complete. The runner discovers the shop, the connected
 Page, the channel, the tester conversation, the customer PSID and the positive
 product fixture from the deployment's own records, and refuses to guess when any
 of them is ambiguous. The only manual step left is the one Meta gives no
-server-side API for: a real person sending a real Messenger message.
+server-side API for: a real person sending a real Messenger message — and that
+no longer has to happen while the runner watches (§11).
+
+### What the real transport has already proven
+
+Run `EME2E-MSN6UZLB`, 2026-08-10, against the deployed build, over real Meta
+Messenger with the real tester Page and tester customer:
+
+| Scenario | Result |
+| --- | --- |
+| A · nonexistent product (`chiffon saree ache?`) | **PASS** — `NOT_FOUND`, no verified product, no price, no attachment, no URL, delivered |
+| B · four turns of pressure | **PASS ×4** — nothing became true; no product verified, no media, no price, no URL |
+| C · real product, price / attribute / photo | **FAIL** — see below |
+
+**The historical incident does not reproduce.** The exact message that produced
+"Ji, chiffon er black saree stock e ache" on 2026-08-09 now returns the written
+not-found reply, and four turns of escalating pressure did not move it.
+
+The C failures were real defects in the product path, found by this run and
+fixed in `f921bc9`:
+
+1. **Stock.** `buildFacts` read `quantity !== 0` unconditionally, so a product
+   with `quantity = 0` and `track_quantity = false` — the default for a merchant
+   who never counts inventory — was printed to the model as
+   `Stock: OUT_OF_STOCK`. The reply said "স্টক আউট" about an in-stock product.
+   The model was not hallucinating; the evidence was wrong.
+2. **Identifying terms.** `er` (a genitive particle) and the attribute *names*
+   `color` / `material` were treated as identifying claims, so
+   `Premium Black Panjabi er color ki?` failed conjunctive matching and returned
+   `NOT_FOUND` for a product the shop sells — and then listed it underneath.
+
+Both are fixed and re-verified against the live catalog through the deployed
+build: all four C queries now resolve `VERIFIED`, `IN_STOCK`, price 2500,
+colour `black` KNOWN, material UNKNOWN, and the photo request resolves
+`media AVAILABLE` owned by the right product — while `chiffon saree ache?`
+still resolves `NOT_FOUND`. A mutation reverting either fix fails 5 tests.
+
+**What remains for certification:** one fresh set of the nine messages, scored
+against the fixed build. Nothing to configure.
 
 ---
 
@@ -454,21 +496,36 @@ and nothing ever will.
 # 1. Confirm the deployment is running the build you want to test
 curl -s https://api.easymod.tech/health | head -c 200
 
-# 2. Run the live harness where the deployed stores are reachable.
-#    No arguments: it discovers the shop, Page, channel, tester conversation
-#    and product itself, and refuses to guess if any of them is ambiguous.
+# 2a. PREFERRED — send first, score afterwards. Nothing to keep open.
+#     Send the nine messages below from the tester customer account, waiting
+#     for each reply, then:
 ssh root@$DEPLOY_HOST
-cd /opt/easymod
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
+docker exec -e META_E2E_LOOKBACK_MINUTES=120 -w /app easymod-backend-1 \
   npm run test:meta:live
+
+# 2b. Or watch it live: start the runner first, then send as it prints.
+docker exec -w /app easymod-backend-1 npm run test:meta:live
 ```
 
-3. The runner prints what it discovered, then the full ordered list of messages.
-4. Send them from the tester **customer** account, one at a time, waiting for
-   each reply. Nothing to press on the runner side.
-5. Everything after each send is validated automatically, against
-   EasyModerator's own records — never against model phrasing alone. The run
-   ends with `FINAL: PASS` or `FINAL: FAIL` plus a `RESULT_JSON` line.
+Both modes run the identical assertions — the grounding evidence is durable on
+the message row, so scoring does not have to be synchronous. Neither takes any
+arguments: the runner discovers the shop, Page, channel, tester conversation and
+product itself, and refuses to guess if any of them is ambiguous.
+
+The nine messages, in order, from the tester **customer** account:
+
+```
+1. chiffon saree ache?          6. Premium Black Panjabi ache? dam koto?
+2. picture den                  7. Premium Black Panjabi er color ki?
+3. try koren                    8. Premium Black Panjabi er material ki?
+4. abar check koren             9. Premium Black Panjabi er picture den
+5. are you sure?
+```
+
+Send each only after the previous reply arrives, and send them as written — the
+runner matches on message text and skips anything else, precisely so a typo or
+an out-of-order send cannot shift every later turn onto the wrong reply. The run
+ends with `FINAL: PASS` / `FINAL: FAIL` plus a `RESULT_JSON` line.
 
 Scenarios, in the order they run:
 
@@ -605,3 +662,41 @@ by running the pipeline end to end.
    against. Every incident-shaped vector — price, URL, photo, attachment — is
    blocked, which is what META-E2E-002 asserts. Flagged as a residual risk
    rather than silently assumed away.
+
+### Found by the real-Meta run on 2026-08-10
+
+6. **Every product of a shop that does not count inventory was reported sold
+   out.** `quantity = 0` with `track_quantity = false` is the default for a
+   merchant who adds products without setting a count, and `buildFacts` read it
+   as OUT_OF_STOCK. `product-search` never selected `track_quantity` at all, so
+   the evidence layer could not have known better. **Fixed** in `f921bc9`.
+
+7. **Possessive attribute questions reported a real product as missing.**
+   `<product> er color ki?` → `NOT_FOUND`, with the product listed underneath in
+   the same reply. `er` is grammar and `color`/`material` name the question, not
+   the product. **Fixed** in `f921bc9`.
+
+8. **A billing-paused shop is indistinguishable from a dead queue.** The
+   worker's subscription gate runs before any AI work and returns
+   `subscription_inactive`, so the inbound is stored, the inbox shows it, and
+   the customer gets nothing at all. Correct behaviour, invisible symptom. The
+   live runner now checks `isAiActive()` up front and refuses to start with the
+   reason; production still has no operator-facing signal for it.
+
+9. **A yearly subscription was billed monthly, and that suspended the shop.**
+   The tester shop is `GROWTH`, `billing_cycle = yearly`, period to 2027-07-26,
+   `next_billing_date` 2027-07-26 — yet a `monthly_subscription` invoice for the
+   full yearly amount was issued 2026-08-01, went unpaid, and the daily
+   reconciler suspended the shop on 2026-08-10. If the invoice generator treats
+   every subscription as monthly, real yearly customers will be dunned and
+   AI-paused mid-term. **Not investigated further — outside this work.**
+
+10. **`safe-media-fetch.test.js` is flaky.** It asserts `/timed out/` but its
+    per-connection and total timeout budgets race; a slow runner trips
+    "Media fetch total timeout exceeded" first. It failed a `main` deploy and
+    passed on re-run. **Not fixed here.**
+
+11. **Production Redis runs `maxmemory-policy allkeys-lru`.** BullMQ warns on
+    every worker boot that it must be `noeviction`: under memory pressure Redis
+    can evict queue keys and drop jobs silently. **Not changed here** — it is a
+    live infrastructure setting, not a code change.
