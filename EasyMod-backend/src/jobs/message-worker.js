@@ -237,6 +237,83 @@ async function finalizeAiMessage(aiMessage, shopId, conversationId, { delivered,
 }
 
 /**
+ * Make a billing pause visible to the merchant, without telling the customer.
+ *
+ * Pausing the AI when billing lapses is correct; leaving nobody aware of it is
+ * not. The customer's message is stored and the inbox still works, but before
+ * this the only trace was a console line: the merchant saw a message arrive and
+ * no reply, with nothing anywhere saying why. The one job that alerts on a
+ * waiting customer (customer-waiting-notifier) only scans conversations flagged
+ * `hitl`, which these never are, so it could not see them either.
+ *
+ * Deliberately merchant-only. Nothing is sent to the customer: a suspended shop
+ * may have churned, so an automated "the shop will reply shortly" is a promise
+ * we cannot keep, and it would spend Send API calls on a shop that is not paying.
+ * The customer is never told anything about the merchant's billing.
+ *
+ * Deliberately does NOT set `hitl`. The HITL guard runs *before* this one, so
+ * flagging the conversation would outlive the pause — paying the invoice would
+ * restore billing but the AI would stay silent on every conversation touched
+ * while suspended, until a human cleared each one by hand.
+ *
+ * Best-effort throughout: the reply is already being withheld, and a failure to
+ * announce that must not also fail the job and send it to the DLQ.
+ */
+async function signalBillingPause({ shopId, conversationId, messageId, status, platform }) {
+    // Why the AI stayed silent, on the message itself — a container log rotates,
+    // and "why did my customer get no answer on the 3rd?" is asked much later.
+    try {
+        if (messageId) {
+            const inbound = await Message.findByPk(messageId);
+            if (inbound) {
+                await inbound.update({
+                    metadata: {
+                        ...(inbound.metadata || {}),
+                        ai_skipped_reason: 'subscription_inactive',
+                        ai_skipped_at: new Date().toISOString(),
+                        subscription_status: status || null,
+                    },
+                });
+            }
+        }
+    } catch (err) {
+        console.warn(`[worker] Could not record billing pause on message ${messageId}: ${err.message}`);
+    }
+
+    // One alert per shop per day, however many customers write in. The merchant
+    // needs to know they have customers waiting, not one notification each.
+    try {
+        const merchantNotificationService = require('../modules/notification/merchant-notification.service');
+        const { NOTIFICATION_EVENTS } = require('../modules/notification/notification-events');
+        await merchantNotificationService.notifyShop(
+            shopId,
+            NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+            {
+                issue: 'AI replies are paused because your subscription needs attention. '
+                    + 'Customer messages are arriving and waiting for a manual reply.',
+                subscriptionStatus: status || 'unknown',
+                conversationId,
+                platform,
+            },
+            {
+                dedupeKey: `billing_paused:${shopId}:${new Date().toISOString().split('T')[0]}`,
+                dedupeTtlSeconds: 24 * 60 * 60,
+            },
+        );
+    } catch (err) {
+        console.warn(`[worker] Could not queue billing-pause alert for shop ${shopId}: ${err.message}`);
+    }
+
+    // Open dashboards reflect it immediately rather than at the next poll.
+    try {
+        sseManager.emit(shopId, 'ai_paused', {
+            conversation_id: conversationId,
+            reason: 'subscription_inactive',
+        });
+    } catch (_) { /* SSE is a convenience, never a requirement */ }
+}
+
+/**
  * Core job handler. Called by the BullMQ worker for each message job.
  *
  * Expected job.data shape:
@@ -353,6 +430,13 @@ async function processMessageJob(job) {
         }).catch(() => null);
         if (!isAiActive(billingSub)) {
             console.log(`[worker] AI paused for shop ${shopId}: subscription status=${billingSub?.status}`);
+            await signalBillingPause({
+                shopId,
+                conversationId,
+                messageId,
+                status: billingSub?.status,
+                platform,
+            });
             return { skipped: true, reason: 'subscription_inactive', status: billingSub?.status || null };
         }
     }
@@ -832,5 +916,6 @@ module.exports = {
         normalizeAutomationMode,
         resolveEffectiveAiSettings,
         isShopManualKillSwitch,
+        signalBillingPause,
     },
 };

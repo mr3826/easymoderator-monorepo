@@ -59,6 +59,47 @@ Covered by `src/jobs/__tests__/invoice-generator.test.js` (BILLING-YEARLY-002…
 BILLING-MONTHLY-REGRESSION, BILLING-IDEMPOTENCY) and
 `src/modules/subscription/__tests__/annual-billing.test.js` (BILLING-YEARLY-001).
 
+## When billing pauses the AI
+
+Pausing automated replies when billing lapses is correct. Leaving nobody aware of
+it is not.
+
+```
+customer message arrives
+  → inbound persists as normal
+  → AI is skipped  (reason: subscription_inactive)
+  → the reason is written to the inbound message's metadata
+  → the merchant is alerted, once per shop per day
+  → the Shared Inbox still shows the message and can still reply by hand
+  → the customer is told nothing
+```
+
+**The customer receives no automated reply.** This is deliberate. A suspended
+shop may have churned, so "the shop will respond shortly" is a promise the
+product cannot keep; it would also spend Meta Send API calls on a shop that is
+not paying. The customer is never told anything about the merchant's billing.
+
+**The conversation is not flagged `hitl`.** The HITL guard runs *before* the
+billing guard, so flagging it would outlive the pause: paying the invoice would
+restore billing while the AI stayed silent on every conversation touched during
+the suspension, until a human cleared each one by hand.
+
+A consequence worth knowing: `customer-waiting-notifier` only scans conversations
+with `hitl = true`, so it does not see billing-paused conversations. That is why
+the alert is raised directly from the worker rather than left to that job.
+
+**Alert volume.** One notification per shop per day, keyed
+`billing_paused:<shopId>:<YYYY-MM-DD>` with a 24-hour TTL, however many customers
+write in. `PAYMENT_SUBSCRIPTION_ISSUE` is the event; merchant notification
+preferences and rate limiting apply as they do for any other alert.
+
+**Diagnosing a silence after the fact.** The inbound message carries
+`metadata.ai_skipped_reason = 'subscription_inactive'`, `ai_skipped_at` and
+`subscription_status`. A container log rotates; "why did my customer get no answer
+on the 3rd?" is asked much later than that.
+
+Covered by `src/jobs/__tests__/message-worker.billing-pause.test.js`.
+
 ## Test reconciliation and revenue
 
 The founder-controlled tester merchant (`Easy Style Fashion`) is settled without
