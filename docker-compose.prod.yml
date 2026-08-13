@@ -49,7 +49,7 @@ services:
 
   # ── Backend: Express API ──────────────────────────────────────────────────
   backend:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymod-backend:latest}
+    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymoderator-backend:latest}
     restart: unless-stopped
     command: ["node", "server.js"]
     env_file:
@@ -76,7 +76,7 @@ services:
 
   # ── Worker: BullMQ background jobs ────────────────────────────────────────
   worker:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymod-backend:latest}
+    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymoderator-backend:latest}
     restart: unless-stopped
     command: ["node", "src/jobs/worker.js"]
     env_file:
@@ -93,7 +93,7 @@ services:
 
   # ── Frontend: nginx serving built SPA ─────────────────────────────────────
   frontend:
-    image: ${GHCR_IMAGE_FRONTEND:-ghcr.io/mr3826/easymod-frontend:latest}
+    image: ${GHCR_IMAGE_FRONTEND:-ghcr.io/mr3826/easymoderator-frontend:latest}
     restart: unless-stopped
     networks:
       - internal

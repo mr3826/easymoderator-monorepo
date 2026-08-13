@@ -52,3 +52,5 @@ The new repository does not silently change production deployment. Existing prod
 - `growth-os.yml` independently verifies and publishes the GrowthOS image from `GrowthOS/`.
 - Backup, administrative, purge, and backend load-testing workflows live only under root `.github/workflows/`.
 - Module-local `.github/workflows` directories are not active GitHub workflow locations and are not retained as duplicate configuration.
+
+The monorepo publishes its own GHCR images (`easymoderator-backend`, `easymoderator-frontend`, and `easymoderator-growth-os`) so a new repository cannot overwrite packages owned by a source repository. The production deploy job is additionally gated by the `PRODUCTION_DEPLOY_ENABLED` repository variable; it remains disabled until deploy credentials, the production environment, and rollback evidence are explicitly configured.

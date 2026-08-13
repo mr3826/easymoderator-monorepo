@@ -26,7 +26,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/growth-os
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/easymoderator-growth-os
   VITE_APP_DOMAIN: growth.easymod.tech
   VITE_APP_API_BASE: https://api.easymod.tech/api/internal/growth-os
 

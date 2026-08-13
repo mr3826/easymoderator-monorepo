@@ -63,8 +63,8 @@ permissions:
   pull-requests: read
 
 env:
-  GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymod-backend
-  GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymod-frontend
+  GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
+  GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymoderator-frontend
 
 jobs:
   # ── 1. Detect which services changed ────────────────────────────────────────
@@ -291,7 +291,11 @@ jobs:
     name: Deploy to DO Droplet
     runs-on: ubuntu-latest
     needs: [changes, build]
-    if: github.ref == 'refs/heads/main'
+    # A new monorepo must not switch the live droplet merely because its
+    # default branch was populated. Enable this repository variable only after
+    # deploy secrets, the production environment, and a rollback rehearsal are
+    # explicitly verified.
+    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v6
