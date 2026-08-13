@@ -234,6 +234,8 @@ jobs:
           DB_PASSWORD=synthetic-dry-run-password
           DB_NAME=easymod_dry_run
           EOF
+          cp _tmp/.env.prod .env.prod
+          trap 'rm -f .env.prod' EXIT
           docker compose --env-file _tmp/.env.prod -f docker-compose.prod.yml config --quiet
 
   # ── 3. Build & push Docker images ──────────────────────────────────────────
