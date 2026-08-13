@@ -228,7 +228,9 @@ Supported Telegram event preferences:
 
 Operational requirements:
 
-- Set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and `TELEGRAM_WEBHOOK_SECRET` in production.
+- Telegram is disabled by default. Set `TELEGRAM_ENABLED=true` and provide
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, and `TELEGRAM_WEBHOOK_SECRET`
+  only when the optional alert integration is intentionally enabled.
 - Configure Telegram `setWebhook` to `https://<api-domain>/api/webhooks/telegram` with `secret_token` equal to `TELEGRAM_WEBHOOK_SECRET`.
 - Merchant connect flow is Settings → Notifications → Connect Telegram group. The backend creates a short-lived one-time command, stores only its hash, and binds the Telegram `chat_id` after Telegram sends the command to the webhook.
 - The `notifications` BullMQ queue fans out event jobs to browser push and Telegram. In-app notification records are created before queue fan-out so the header bell remains useful even if an external provider is unavailable.
@@ -393,7 +395,7 @@ CI/CD via GitHub Actions (`.github/workflows/ci-cd.yml`):
 
 1. **Detect changes** — only rebuild the package that changed.
 2. **Test** — backend Jest suite against a Redis service container.
-3. **Build & push** — Docker images to GHCR, tagged with the commit SHA + `:latest`.
+3. **Build & push** — Docker images to GHCR, tagged with the commit SHA only.
 4. **Deploy** — SSH into the droplet, pull images, `docker compose up -d`, run `npm run migrate`, health-check `/health/ready`.
 
 The droplet runs `docker-compose.prod.yml` with the `api`, `worker`, `scheduler`, `frontend`, `postgres`, and `redis` services from a single backend image. The backend `Dockerfile` is multi-stage on Node 20 alpine. Docker Compose is the only supported production runtime (the legacy PM2 path was retired 2026-07-23).

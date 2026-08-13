@@ -91,6 +91,19 @@ function buildRenderedEnv(source = process.env) {
         }
         : { BKASH_ENABLED: 'false' };
 
+    // Telegram is an optional integration. Facebook/Messenger is the launch
+    // path, so an unset flag must not turn a historical Telegram credential
+    // requirement into a production cutover blocker. When explicitly enabled,
+    // fail closed until all three Telegram values are supplied.
+    const telegramSection = enabledFlag(source.TELEGRAM_ENABLED)
+        ? {
+            TELEGRAM_ENABLED: 'true',
+            TELEGRAM_BOT_TOKEN: required('TELEGRAM_BOT_TOKEN'),
+            TELEGRAM_BOT_USERNAME: required('TELEGRAM_BOT_USERNAME'),
+            TELEGRAM_WEBHOOK_SECRET: required('TELEGRAM_WEBHOOK_SECRET'),
+        }
+        : { TELEGRAM_ENABLED: 'false' };
+
     const rendered = {
         NODE_ENV: 'production',
         PORT: source.PORT || '3000',
@@ -135,10 +148,7 @@ function buildRenderedEnv(source = process.env) {
         PATHAO_CLIENT_SECRET: source.PATHAO_CLIENT_SECRET || '',
         STEADFAST_API_KEY: source.STEADFAST_API_KEY || '',
         STEADFAST_SECRET_KEY: source.STEADFAST_SECRET_KEY || '',
-        TELEGRAM_ENABLED: source.TELEGRAM_ENABLED || 'true',
-        TELEGRAM_BOT_TOKEN: required('TELEGRAM_BOT_TOKEN'),
-        TELEGRAM_BOT_USERNAME: required('TELEGRAM_BOT_USERNAME'),
-        TELEGRAM_WEBHOOK_SECRET: required('TELEGRAM_WEBHOOK_SECRET'),
+        ...telegramSection,
         OPENAI_API_KEY: source.OPENAI_API_KEY || '',
         GEMINI_API_KEY: source.GEMINI_API_KEY || '',
         GOOGLE_GEMINI_API_KEY: source.GEMINI_API_KEY || '',

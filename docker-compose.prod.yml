@@ -49,7 +49,7 @@ services:
 
   # ── Backend: Express API ──────────────────────────────────────────────────
   backend:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymoderator-backend:latest}
+    image: ${GHCR_IMAGE_BACKEND:?GHCR_IMAGE_BACKEND must be set to an immutable image reference}
     restart: unless-stopped
     command: ["node", "server.js"]
     env_file:
@@ -76,7 +76,7 @@ services:
 
   # ── Worker: BullMQ background jobs ────────────────────────────────────────
   worker:
-    image: ${GHCR_IMAGE_BACKEND:-ghcr.io/mr3826/easymoderator-backend:latest}
+    image: ${GHCR_IMAGE_BACKEND:?GHCR_IMAGE_BACKEND must be set to an immutable image reference}
     restart: unless-stopped
     command: ["node", "src/jobs/worker.js"]
     env_file:
@@ -93,7 +93,7 @@ services:
 
   # ── Frontend: nginx serving built SPA ─────────────────────────────────────
   frontend:
-    image: ${GHCR_IMAGE_FRONTEND:-ghcr.io/mr3826/easymoderator-frontend:latest}
+    image: ${GHCR_IMAGE_FRONTEND:?GHCR_IMAGE_FRONTEND must be set to an immutable image reference}
     restart: unless-stopped
     networks:
       - internal
@@ -148,7 +148,7 @@ services:
 
   # ── Qdrant: Vector DB for RAG ─────────────────────────────────────────────
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage

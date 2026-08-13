@@ -10,9 +10,9 @@ name: CI / CD
 #   VITE_MARKETING_URL   — https://easymod.tech
 #   VITE_META_APP_ID     — Meta App ID (public, used for OAuth popup)
 #   VITE_SENTRY_DSN      — Sentry DSN (optional)
-#   TELEGRAM_BOT_TOKEN   — global EasyModerator merchant-alert bot token
-#   TELEGRAM_BOT_USERNAME — bot username without @ (shown in connect command)
-#   TELEGRAM_WEBHOOK_SECRET — Telegram setWebhook secret_token
+#   TELEGRAM_BOT_TOKEN   — optional; required only when TELEGRAM_ENABLED=true
+#   TELEGRAM_BOT_USERNAME — optional; bot username without @
+#   TELEGRAM_WEBHOOK_SECRET — optional; required only when Telegram is enabled
 #   API_URL / BASE_URL   — https://api.easymod.tech (API + public uploads)
 #   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
 #
@@ -75,11 +75,11 @@ jobs:
       backend: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'backend') || steps.filter.outputs.backend == 'true' }}
       frontend: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && (github.event.inputs.target == 'all' || github.event.inputs.target == 'frontend') || steps.filter.outputs.frontend == 'true' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 2
 
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         with:
           filters: |
@@ -106,9 +106,9 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '20'
 
@@ -181,9 +181,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: needs.changes.outputs.backend == 'true'
         with:
           node-version: '20'
@@ -199,13 +199,48 @@ jobs:
         env:
           DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_e2e
           REDIS_URL: redis://127.0.0.1:6379
-        run: npm run test:meta:e2e
+        run: npm run test:integration
+
+  # ── 2c. Non-deploy deployment contract dry run ─────────────────────────────
+  # This job validates Compose interpolation and the renderer with synthetic
+  # values only. It never receives production secrets and never opens SSH.
+  deployment-config:
+    name: Deployment configuration dry run
+    runs-on: ubuntu-latest
+    needs: [changes, test, meta-e2e]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+
+      - name: Validate renderer syntax and production contract tests
+        working-directory: ./EasyMod-backend
+        run: |
+          npm ci
+          node --check scripts/render-production-env.js
+          npx jest scripts/__tests__/render-production-env.test.js --runInBand
+
+      - name: Validate production Compose without SSH or production values
+        env:
+          GHCR_IMAGE_BACKEND: ghcr.io/mr3826/easymoderator-backend:dry-run
+          GHCR_IMAGE_FRONTEND: ghcr.io/mr3826/easymoderator-frontend:dry-run
+        run: |
+          mkdir -p _tmp
+          cat > _tmp/.env.prod <<'EOF'
+          DB_USER=e2e
+          DB_PASSWORD=synthetic-dry-run-password
+          DB_NAME=easymod_dry_run
+          EOF
+          docker compose --env-file _tmp/.env.prod -f docker-compose.prod.yml config --quiet
 
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images
     runs-on: ubuntu-latest
-    needs: [changes, test, meta-e2e]
+    needs: [changes, test, meta-e2e, deployment-config]
     if: |
       github.event_name != 'pull_request' &&
       github.ref == 'refs/heads/main' &&
@@ -214,13 +249,13 @@ jobs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -251,14 +286,12 @@ jobs:
 
       - name: Build & push backend image
         if: needs.changes.outputs.backend == 'true'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: ./EasyMod-backend
           file: ./EasyMod-backend/Dockerfile
           push: true
-          tags: |
-            ${{ steps.meta.outputs.backend_tag }}
-            ${{ env.GHCR_BACKEND }}:latest
+          tags: ${{ steps.meta.outputs.backend_tag }}
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
@@ -267,14 +300,12 @@ jobs:
 
       - name: Build & push frontend image
         if: needs.changes.outputs.frontend == 'true'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: ./EasyMod-frontend
           file: ./EasyMod-frontend/Dockerfile
           push: true
-          tags: |
-            ${{ steps.meta.outputs.frontend_tag }}
-            ${{ env.GHCR_FRONTEND }}:latest
+          tags: ${{ steps.meta.outputs.frontend_tag }}
           build-args: |
             VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
             VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
@@ -298,7 +329,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
     environment: production
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Render and validate .env.prod without shell interpolation
         run: node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod
@@ -349,7 +380,9 @@ jobs:
           PATHAO_CLIENT_SECRET: ${{ secrets.PATHAO_CLIENT_SECRET }}
           STEADFAST_API_KEY: ${{ secrets.STEADFAST_API_KEY }}
           STEADFAST_SECRET_KEY: ${{ secrets.STEADFAST_SECRET_KEY }}
-          TELEGRAM_ENABLED: "true"
+          # Facebook/Messenger is the cutover scope. Telegram is opt-in via a
+          # repository variable and is disabled when the variable is absent.
+          TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
@@ -392,7 +425,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
@@ -402,8 +435,26 @@ jobs:
           script: |
             set -e
 
-            export GHCR_IMAGE_BACKEND="$GHCR_BACKEND:latest"
-            export GHCR_IMAGE_FRONTEND="$GHCR_FRONTEND:latest"
+            # Capture the running digests before any replacement. A no-change
+            # service keeps its current image; a changed service uses the
+            # immutable SHA tag produced by the build job. This makes compose
+            # independent of mutable :latest aliases and gives rollback a
+            # concrete image reference.
+            previous_backend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-backend-1 2>/dev/null || true)
+            previous_frontend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-frontend-1 2>/dev/null || true)
+            if [ -z "$previous_backend_image" ]; then
+              previous_backend_image=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
+            fi
+            if [ -z "$previous_frontend_image" ]; then
+              previous_frontend_image=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
+            fi
+
+            export GHCR_IMAGE_BACKEND="${BACKEND_TAG:-$previous_backend_image}"
+            export GHCR_IMAGE_FRONTEND="${FRONTEND_TAG:-$previous_frontend_image}"
+            if [ -z "$GHCR_IMAGE_BACKEND" ] || [ -z "$GHCR_IMAGE_FRONTEND" ]; then
+              echo "ERROR: no immutable candidate or running image is available for rollback-safe deployment"
+              exit 1
+            fi
 
             cd /opt/easymod
 
@@ -464,19 +515,30 @@ jobs:
             if [ -n "$BACKEND_TAG" ]; then
               echo "Pulling backend: $BACKEND_TAG"
               docker pull "$BACKEND_TAG"
-              docker tag "$BACKEND_TAG" "$GHCR_BACKEND:latest"
             fi
 
             if [ -n "$FRONTEND_TAG" ]; then
               echo "Pulling frontend: $FRONTEND_TAG"
               docker pull "$FRONTEND_TAG"
-              docker tag "$FRONTEND_TAG" "$GHCR_FRONTEND:latest"
             fi
 
             # Validate the rendered environment with the candidate backend image
             # before replacing any running container.
-            docker run --rm --env-file .env.prod "$GHCR_BACKEND:latest" \
+            docker run --rm --env-file .env.prod "$GHCR_IMAGE_BACKEND" \
               node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
+
+            rollback() {
+              echo "ERROR: candidate deployment failed; restoring previous image references"
+              if [ -n "$previous_backend_image" ] && [ -n "$previous_frontend_image" ]; then
+                export GHCR_IMAGE_BACKEND="$previous_backend_image"
+                export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
+                docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans || true
+              else
+                echo "ERROR: previous image references were unavailable; manual recovery is required"
+              fi
+            }
+            deploy_succeeded=false
+            trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$deploy_succeeded" != "true" ]; then rollback; fi' EXIT
 
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
             if [ "$WIPE_DB" = "WIPE" ]; then
@@ -569,7 +631,7 @@ jobs:
                 -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
             fi
 
-            # Restart services with latest images
+            # Restart services with immutable image references
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans
 
             # The Caddyfile is bind-mounted read-only, so `up -d` will NOT restart
@@ -605,6 +667,7 @@ jobs:
 
             # Clean up dangling images
             docker image prune -f
+            deploy_succeeded=true
 
         env:
           GHCR_BACKEND: ${{ env.GHCR_BACKEND }}

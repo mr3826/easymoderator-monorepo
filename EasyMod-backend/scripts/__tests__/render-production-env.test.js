@@ -9,6 +9,8 @@
  *     AES key and never emits the raw value.
  *   - bKash credentials are required only when enabled, and never rendered when
  *     disabled.
+ *   - Telegram remains disabled unless explicitly enabled, and its credentials
+ *     are required only for that opt-in integration.
  *   - Core secrets, alert sink, empty and placeholder values all fail closed.
  */
 
@@ -137,6 +139,45 @@ describe('bKash provider posture (§6)', () => {
         }));
         expect(rendered.BKASH_ENABLED).toBe('true');
         expect(rendered.BKASH_APP_KEY).toBe('app-key');
+    });
+});
+
+describe('Telegram provider posture', () => {
+    test('unset or false keeps Telegram disabled without Telegram secrets', () => {
+        const rendered = buildRenderedEnv(validSource({
+            TELEGRAM_ENABLED: undefined,
+            TELEGRAM_BOT_TOKEN: '',
+            TELEGRAM_BOT_USERNAME: '',
+            TELEGRAM_WEBHOOK_SECRET: '',
+        }));
+
+        expect(rendered.TELEGRAM_ENABLED).toBe('false');
+        expect(rendered).not.toHaveProperty('TELEGRAM_BOT_TOKEN');
+        expect(rendered).not.toHaveProperty('TELEGRAM_BOT_USERNAME');
+        expect(rendered).not.toHaveProperty('TELEGRAM_WEBHOOK_SECRET');
+    });
+
+    test('explicit enablement requires every Telegram credential', () => {
+        expect(() => buildRenderedEnv(validSource({
+            TELEGRAM_ENABLED: 'true',
+            TELEGRAM_BOT_TOKEN: '',
+            TELEGRAM_BOT_USERNAME: 'easymod_bot',
+            TELEGRAM_WEBHOOK_SECRET: 'secret',
+        }))).toThrow(/TELEGRAM_BOT_TOKEN/);
+    });
+
+    test('explicit enablement renders the complete Telegram section', () => {
+        const rendered = buildRenderedEnv(validSource({
+            TELEGRAM_ENABLED: 'true',
+            TELEGRAM_BOT_TOKEN: 'bot-token',
+            TELEGRAM_BOT_USERNAME: 'easymod_bot',
+            TELEGRAM_WEBHOOK_SECRET: hex64('h'),
+        }));
+
+        expect(rendered.TELEGRAM_ENABLED).toBe('true');
+        expect(rendered.TELEGRAM_BOT_TOKEN).toBe('bot-token');
+        expect(rendered.TELEGRAM_BOT_USERNAME).toBe('easymod_bot');
+        expect(rendered.TELEGRAM_WEBHOOK_SECRET).toBe(hex64('h'));
     });
 });
 

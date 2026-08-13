@@ -11,6 +11,7 @@
   "scripts": {
     "install:all": "npm install --workspaces",
     "test:backend": "npm test --workspace=easymod-backend",
+    "test:backend:integration": "npm run test:integration --workspace=easymod-backend",
     "test:frontend": "npm run test:unit --workspace=easymod-frontend",
     "test:growthos": "npm run test --workspace=growth-os-frontend",
     "test:all": "npm run test:backend && npm run test:frontend && npm run test:growthos",
@@ -20,6 +21,6 @@
     "build:all": "npm run build:backend && npm run build:frontend && npm run build:growthos"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   }
 }

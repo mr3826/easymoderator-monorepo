@@ -127,7 +127,9 @@ Production has three canonical origins: `https://easymod.tech` for marketing/leg
 
 Telegram is notification-only. It is not a customer inbox, AI reply surface, or second support channel.
 
-Required production env names:
+Telegram is disabled by default for the Facebook-first cutover. Set the
+repository variable `TELEGRAM_ENABLED=true` before configuring these optional
+production secrets:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_BOT_USERNAME`
