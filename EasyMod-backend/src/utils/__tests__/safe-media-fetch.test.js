@@ -162,6 +162,12 @@ describe('safe external media fetch policy', () => {
             env,
             lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
             timeoutMs: 1,
+            // Put the total deadline out of reach so only the socket timeout can
+            // fire. Sharing one budget made this a race between a setImmediate
+            // and a 1 ms timer, and timers run before check in an event-loop
+            // iteration — so under CI load the total deadline won and this
+            // asserted on whichever timer happened to get there first.
+            totalTimeoutMs: 60_000,
             requestImpl: timeoutRequest,
         })).rejects.toThrow(/timed out/);
     });
@@ -185,7 +191,37 @@ describe('safe external media fetch policy', () => {
         await expect(safeFetchMedia('https://media.easymod.tech/a.png', {
             env,
             lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
-            timeoutMs: 5,
+            // The socket timeout is stubbed out entirely (setTimeout is a no-op
+            // above), so the total deadline is the only thing that can end this
+            // request — the response stream never completes.
+            timeoutMs: 60_000,
+            totalTimeoutMs: 1,
+            requestImpl: hangingRequest,
+        })).rejects.toThrow(/total timeout/);
+    });
+
+    // Both budgets default to the same value, so production behaviour is
+    // unchanged by making the deadline injectable.
+    test('the total deadline defaults to the connection timeout', async () => {
+        const hangingRequest = (_url, _options, callback) => {
+            const request = new EventEmitter();
+            request.setTimeout = jest.fn();
+            request.destroy = (error) => request.emit('error', error);
+            request.end = () => {
+                const stream = new EventEmitter();
+                stream.statusCode = 200;
+                stream.headers = { 'content-type': 'image/png' };
+                stream.resume = jest.fn();
+                stream.destroy = (error) => stream.emit('error', error);
+                callback(stream);
+            };
+            return request;
+        };
+
+        await expect(safeFetchMedia('https://media.easymod.tech/a.png', {
+            env,
+            lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+            timeoutMs: 1,
             requestImpl: hangingRequest,
         })).rejects.toThrow(/total timeout/);
     });

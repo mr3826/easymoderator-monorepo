@@ -165,6 +165,13 @@ async function resolvePublicAddress(hostname, lookup = dns.lookup) {
 function requestOnce(url, resolved, {
     maxBytes,
     timeoutMs,
+    // The whole-request deadline, separate from the per-socket timeout above it.
+    // They default to the same budget, which means in production they can expire
+    // at the same instant and either one may destroy the request first. Both
+    // outcomes are correct — the fetch fails bounded either way — but *which*
+    // error surfaces is then a coin flip, so a caller that needs to observe one
+    // specific path (the tests do) sets them apart rather than racing them.
+    totalTimeoutMs = timeoutMs,
     requestImpl = https.request,
 }) {
     return new Promise((resolve, reject) => {
@@ -232,7 +239,7 @@ function requestOnce(url, resolved, {
         req.setTimeout(timeoutMs, () => req.destroy(new Error('Media fetch connection timed out')));
         totalTimer = setTimeout(
             () => req.destroy(new Error('Media fetch total timeout exceeded')),
-            timeoutMs,
+            totalTimeoutMs,
         );
         req.on('error', (error) => finish(reject, error));
         req.end();
@@ -250,6 +257,7 @@ async function safeFetchMedia(value, options = {}) {
         const result = await requestOnce(current, resolved, {
             maxBytes,
             timeoutMs,
+            totalTimeoutMs: options.totalTimeoutMs,
             requestImpl: options.requestImpl,
         });
         if (!result.redirect) return result;
