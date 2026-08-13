@@ -51,41 +51,56 @@ describe('TOTP Service Security', () => {
     });
 
     describe('Encryption Key', () => {
-        it('should throw error when APP_SECRET and JWT_SECRET are missing', () => {
-            const originalAppSecret = process.env.APP_SECRET;
-            const originalJwtSecret = process.env.JWT_SECRET;
-
-            // Clear secrets
+        it('should throw error when every encryption secret is missing', async () => {
+            // JWT_ACCESS_SECRET is a third accepted source (totp.service.js:18).
+            // Leaving it set meant the module resolved a key and did not throw.
+            const saved = {
+                APP_SECRET: process.env.APP_SECRET,
+                JWT_SECRET: process.env.JWT_SECRET,
+                JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
+            };
             delete process.env.APP_SECRET;
             delete process.env.JWT_SECRET;
+            delete process.env.JWT_ACCESS_SECRET;
 
-            // Should throw when trying to get encryption key
-            expect(() => {
-                // Force re-require to pick up new env
+            try {
+                // getEncryptionKey() is called lazily, at first use — importing
+                // the module never touched it, so the old `expect(require(...))`
+                // could not have thrown no matter which secrets were unset.
                 jest.resetModules();
-                require('src/modules/auth/totp.service');
-            }).toThrow();
-
-            // Restore
-            process.env.APP_SECRET = originalAppSecret;
-            process.env.JWT_SECRET = originalJwtSecret;
+                const service = require('src/modules/auth/totp.service');
+                await expect(service.generateTotpSecret('user-1'))
+                    .rejects.toThrow(/required for TOTP encryption/);
+            } finally {
+                // Restore in a finally: a bare assignment after the assertion is
+                // skipped when it fails, and every later test in this file then
+                // dies on the missing secret instead of reporting its own result.
+                Object.entries(saved).forEach(([k, v]) => {
+                    if (v === undefined) delete process.env[k];
+                    else process.env[k] = v;
+                });
+                jest.resetModules();
+            }
         });
     });
 
     describe('TOTP Token Replay Protection', () => {
         it('should mark TOTP token as used after successful verification', async () => {
             const userId = 'user-1';
-            const token = '123456';
 
-            // Setup pending TOTP
-            mockUser.settings.totp_pending = null; // Already enabled
+            // totp_secret is stored ENCRYPTED (iv:tag:ciphertext). Assigning a
+            // raw base32 string made decryptSecret split on ':' and hand
+            // Buffer.from an undefined tag. Take the encrypted form from the
+            // service's own setup path instead.
+            const { secret } = await totpService.generateTotpSecret(userId);
+            mockUser.settings.totp_secret = mockUser.settings.totp_pending;
+            mockUser.settings.totp_pending = null;
             mockUser.settings.totp_enabled = true;
-            mockUser.settings.totp_secret = 'JBSWY3DPEHPK3PXP'; // Base32 secret
 
-            // First verification should work
-            // Note: We can't actually verify TOTP without real crypto, but we can test the Redis usage marking
+            // Marking-as-used only happens after a code actually verifies, so
+            // this needs a real one, from the service's own implementation.
+            const token = totpService.hotp(secret, Math.floor(Date.now() / 1000 / 30));
 
-            // Check that markTokenUsed was called
             await totpService.verifyTotpToken(userId, token);
 
             // The implementation should have marked the token as used in Redis
