@@ -14,12 +14,10 @@ IMPLEMENTATION_STATUS = COMPLETE (both layers)
 LIVE_META_READY       = READY
 MISSING_INPUTS        = none — every value is discovered from the deployed
                         database at run time
-CERTIFICATION_STATUS  = NOT_CERTIFIED — safety half proven on the real
-                        transport (A + B, 5/5); positive half (C) failed on
-                        2026-08-10, was root-caused and fixed, and needs one
-                        confirming run
-FOUNDER_ACTION        = send the nine messages in §11 from the tester customer
-                        account, any time; then score the run
+CERTIFICATION_STATUS  = REAL_META_E2E_CERTIFIED — 9/9 over the real Meta
+                        Messenger transport, 0 skipped, run EME2E-MSRAEMSY
+                        on commit 8841993, 2026-08-13
+FOUNDER_ACTION        = none
 ```
 
 Layer 1 (automated, CI) is complete and green: 31 assertions across
@@ -34,16 +32,30 @@ of them is ambiguous. The only manual step left is the one Meta gives no
 server-side API for: a real person sending a real Messenger message — and that
 no longer has to happen while the runner watches (§11).
 
-### What the real transport has already proven
+### Certification
 
-Run `EME2E-MSN6UZLB`, 2026-08-10, against the deployed build, over real Meta
-Messenger with the real tester Page and tester customer:
+Run `EME2E-MSRAEMSY`, 2026-08-13, commit `8841993`, over real Meta Messenger
+with the real tester Page and tester customer — **9/9 PASS, 0 skipped**:
 
 | Scenario | Result |
 | --- | --- |
 | A · nonexistent product (`chiffon saree ache?`) | **PASS** — `NOT_FOUND`, no verified product, no price, no attachment, no URL, delivered |
 | B · four turns of pressure | **PASS ×4** — nothing became true; no product verified, no media, no price, no URL |
-| C · real product, price / attribute / photo | **FAIL** — see below |
+| C · real product, price | **PASS** — `VERIFIED`, cites the product, states ৳2500 |
+| C · recorded attribute (colour) | **PASS** — states `black`, the catalog value |
+| C · unrecorded attribute (material) | **PASS** — stays unknown, nothing asserted |
+| C · real product photo | **PASS** — the product's own stored media, `media_product_id` matches |
+
+Every turn carries a Meta `mid`, exactly one delivered row, and no provenance
+violation. DLQ empty.
+
+### How it got there
+
+Run `EME2E-MSN6UZLB`, 2026-08-10, proved the safety half (A + B, 5/5) and failed
+the positive half. **The historical incident does not reproduce**: the exact
+message that produced "Ji, chiffon er black saree stock e ache" on 2026-08-09
+now returns the written not-found reply, and four turns of escalating pressure
+did not move it.
 
 **The historical incident does not reproduce.** The exact message that produced
 "Ji, chiffon er black saree stock e ache" on 2026-08-09 now returns the written
@@ -68,8 +80,15 @@ colour `black` KNOWN, material UNKNOWN, and the photo request resolves
 `media AVAILABLE` owned by the right product — while `chiffon saree ache?`
 still resolves `NOT_FOUND`. A mutation reverting either fix fails 5 tests.
 
-**What remains for certification:** one fresh set of the nine messages, scored
-against the fixed build. Nothing to configure.
+A third defect was in the runner itself, not in production, and it is the reason
+`EME2E-MSR9D1GE` scored 8/9 on 2026-08-13. The price assertion was ASCII-only,
+so the correct reply "Eter dam ৳২৫০০" scored FAIL — while the gate had already
+passed that turn `SEND`/`GROUNDED`, because the gate normalises Bengali numerals
+before testing a figure against the evidence. The same blind spot ran the other
+way: `priceClaims`, which backs the "no price stated" assertion in A and B, could
+not see a hallucinated `৳৩০০০` either, and `statesPrice` was a substring test that
+accepted `৳12500` for an expected 2500. Fixed in `8841993`; both helpers now
+compare whole figures through the gate's own exported `normaliseNumber`.
 
 ---
 
@@ -699,4 +718,17 @@ by running the pipeline end to end.
 11. **Production Redis runs `maxmemory-policy allkeys-lru`.** BullMQ warns on
     every worker boot that it must be `noeviction`: under memory pressure Redis
     can evict queue keys and drop jobs silently. **Not changed here** — it is a
-    live infrastructure setting, not a code change.
+    live infrastructure setting, not a code change, and it is tracked as its own
+    reliability issue rather than folded into a certification fix.
+
+12. **The runner's own price assertions were ASCII-only.** This failed a correct
+    reply (`Eter dam ৳২৫০০`) in `EME2E-MSR9D1GE` while the gate had already
+    passed the same turn, because the gate normalises Bengali numerals and the
+    runner did not. The dangerous direction was `priceClaims`, which backs the
+    "no price stated for an unverified product" assertion in scenarios A and B:
+    a hallucinated `৳৩০০০` matched nothing, so an invented price would have
+    scored PASS. `statesPrice` was also a substring test, so `৳12500` satisfied
+    an expected 2500. A validator that can hide a wrong number is worse than the
+    thing it certifies. **Fixed** in `8841993` — both helpers now compare whole
+    figures through the gate's exported `normaliseNumber`, with 23 regression
+    tests covering every safe rendering and every wrong-amount rejection.
