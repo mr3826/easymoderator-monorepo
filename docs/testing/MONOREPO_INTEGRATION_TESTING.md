@@ -16,18 +16,22 @@ cd easymoderator-monorepo
 npm ci
 ```
 
-Start disposable services with Docker or Podman. PostgreSQL must expose a
-database named `easymod_e2e`; Redis must listen on `6379`:
+Run the repository-owned disposable stack. It starts PostgreSQL 16 and Redis 7,
+waits for both health checks, runs the suite, and always tears the stack down:
 
 ```bash
-docker run --rm --name easymod-e2e-postgres \
-  -e POSTGRES_USER=e2e -e POSTGRES_PASSWORD=e2e -e POSTGRES_DB=easymod_e2e \
-  -p 5432:5432 postgres:16-alpine
-
-docker run --rm --name easymod-e2e-redis -p 6379:6379 redis:7-alpine
+npm run test:backend:integration:docker
 ```
 
-In a second shell, run:
+The runner uses an isolated `easymod_e2e` database and Redis instance, never
+reads production credentials, and removes its Compose project and volumes in a
+`finally` block. If the default ports are occupied, set
+`TEST_POSTGRES_PORT` and `TEST_REDIS_PORT`; the runner derives both connection
+URLs from those values. Docker Desktop, Docker Engine, or a compatible
+`docker compose` implementation is required.
+
+To run against services started by CI or an existing disposable environment,
+the underlying test command remains available:
 
 ```bash
 $env:DATABASE_URL='postgres://e2e:e2e@127.0.0.1:5432/easymod_e2e'

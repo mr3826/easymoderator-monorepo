@@ -33,7 +33,7 @@ The safe dry run must not use SSH and must not alter the live droplet:
 
 ```bash
 npm ci
-npm run test:backend:integration
+npm run test:backend:integration:docker  # disposable Postgres 16 + Redis 7; Docker required
 npm run test:backend
 npm run test:frontend
 npm run test:growthos
@@ -46,6 +46,11 @@ the immutable image references supplied by the deployment job:
 does not run when `PRODUCTION_DEPLOY_ENABLED` is false. It renders and validates
 the environment before SSH only when the operator later enables the guarded
 deployment path.
+
+When Docker is unavailable, CI is the authoritative integration execution: the
+`meta-e2e` job provisions the same disposable PostgreSQL 16 and Redis 7 services
+and runs `npm run test:integration` at Node 20. The integration suite deliberately
+does not start Qdrant; it verifies the documented safe-empty vector degradation.
 
 ## Image and migration rules
 
@@ -77,6 +82,16 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build 
 curl --fail https://api.easymod.tech/health/ready
 curl --fail https://api.easymod.tech/health
 ```
+
+The rollback rehearsal is non-production and must use a disposable Compose
+project or a shell-level contract harness. It must prove that captured
+`previous_backend_image` and `previous_frontend_image` values are restored by
+the `docker compose ... up -d --no-build --remove-orphans` command, followed by
+both health checks. It must not run `migrate:down`: application rollback can
+restore images, while a schema change requires a reviewed forward migration or
+an isolated database restore. The current production source and its tags remain
+the operator's rollback inputs; this repository must not be required to boot in
+order to execute that recovery.
 
 The placeholders above are operator inputs, not credentials and must never be
 replaced in committed documentation.

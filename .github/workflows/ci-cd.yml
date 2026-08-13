@@ -86,6 +86,8 @@ jobs:
             backend:
               - 'EasyMod-backend/**'
               - 'docker-compose.prod.yml'
+              - 'docker-compose.test.yml'
+              - 'scripts/run-backend-integration.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/**'
@@ -221,7 +223,9 @@ jobs:
         run: |
           npm ci
           node --check scripts/render-production-env.js
+          node --check scripts/validate-rollback-contract.js
           npx jest scripts/__tests__/render-production-env.test.js --runInBand
+          node scripts/validate-rollback-contract.js
 
       - name: Validate production Compose without SSH or production values
         env:
@@ -267,7 +271,6 @@ jobs:
         id: meta
         run: |
           SHA="${{ github.sha }}"
-          SHORT="${SHA::8}"
           # BUILD_TIME used to come from the repository's last-metadata-change
           # stamp rather than this build. It ran *behind* the commit it labelled
           # (bc9c8ca reported builtAt 03:53:04Z for code authored 04:09:23Z) and
@@ -276,12 +279,12 @@ jobs:
           # A guard test pins this line — see workflow-deploy-guard.test.js.
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
-            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHORT}" >> $GITHUB_OUTPUT
+            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHA}" >> $GITHUB_OUTPUT
           else
             echo "backend_tag=" >> $GITHUB_OUTPUT
           fi
           if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
-            echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHORT}" >> $GITHUB_OUTPUT
+            echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHA}" >> $GITHUB_OUTPUT
           else
             echo "frontend_tag=" >> $GITHUB_OUTPUT
           fi

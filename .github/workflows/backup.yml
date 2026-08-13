@@ -8,7 +8,7 @@ on:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Required GitHub secrets:
-#   DO_HOST            — Droplet IP or hostname
+#   DEPLOY_HOST       — Droplet IP or hostname (canonical deployment host)
 #   DO_SSH_PRIVATE_KEY — SSH private key with root access to the droplet
 #
 # Local backups are written to /opt/easymod/backups/ (7-day retention).
@@ -40,7 +40,7 @@ jobs:
           BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
           OFFSITE_RETENTION_DAYS: ${{ vars.OFFSITE_RETENTION_DAYS || '30' }}
         with:
-          host: ${{ secrets.DO_HOST }}
+          host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 300s

@@ -8,7 +8,7 @@ Update the "Current production state" table on every production deploy.
 1. `origin/main` is the only deployable source of truth. Production deploys happen **only** via `.github/workflows/ci-cd.yml` on push to `main` (or manual `workflow_dispatch` from `main`).
 2. No manual code changes on the droplet. `/opt/easymod` holds only `docker-compose.prod.yml`, `Caddyfile`, and `.env` — all rendered by CI.
 3. `docker-compose.prod.yml` is the single production process definition. The PM2 path (`ecosystem.config.js`, `commerce-ai.service`) is retired — Docker Compose services (`backend`, `worker`, `frontend`, `postgres`, `redis`, `qdrant`, `caddy`) are the only supported runtime.
-4. Image tags are the version identity: CI tags every image with the commit short SHA (`ghcr.io/mr3826/easymod-{backend,frontend}:<short-sha>`) plus `:latest`. Backend and worker share one image (different commands), so worker version == backend image tag. Frontend build version == frontend image tag.
+4. Image tags are the version identity: CI tags every changed image with the full commit SHA (`ghcr.io/mr3826/easymod-{backend,frontend}:<full-sha>`). Backend and worker share one image (different commands), so worker version == backend image tag. Frontend build version == frontend image tag. Production deployment must not use `:latest`.
 
 ## Current production state
 
