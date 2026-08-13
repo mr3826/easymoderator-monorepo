@@ -1,0 +1,31 @@
+title = "EasyModerator historical secret scan policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed public DNS TXT records; DKIM values are intentionally published DNS data."
+paths = [
+  '''^docs/launch/cloudflare-zone-records\.txt$''',
+]
+
+[[allowlists]]
+description = "Reviewed deterministic JWT fixture used only by the legacy voice-processing test."
+paths = [
+  '''(^|/)tests/features/voice-processing\.test\.js$''',
+]
+
+[[allowlists]]
+description = "Reviewed retired documentation and sample-code paths; none are part of the production runtime."
+paths = [
+  '''^AWS_DEPLOYMENT_GUIDE\.md$''',
+  '''^ecosystem\.config\.js$''',
+  '''^\.windsurf/skills/api-design-reviewer/SKILL\.md$''',
+  '''^\.windsurf/skills/code-reviewer/references/common_antipatterns\.md$''',
+  '''^\.windsurf/skills/senior-secops/SKILL\.md$''',
+  '''^\.windsurf/skills/senior-secops/references/security_standards\.md$''',
+  '''^\.windsurf/skills/senior-secops/scripts/secret_scanner\.py$''',
+  '''^\.windsurf/skills/senior-secops/references/security-architecture-patterns\.md$''',
+  '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/frontend\.js$''',
+  '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/user_service\.py$''',
+]

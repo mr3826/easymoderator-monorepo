@@ -23,8 +23,8 @@ jobs:
         run: >-
           docker run --rm
           -v "$GITHUB_WORKSPACE:/repo"
-          zricethezav/gitleaks:v8.28.0
-          detect --source=/repo --redact --verbose --log-opts="--all"
+          zricethezav/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 # v8.28.0
+          detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose --log-opts="--all"
 
   production-dependency-audit:
     name: Production dependency audit
