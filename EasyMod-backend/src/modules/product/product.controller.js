@@ -335,12 +335,12 @@ const listProducts = async (req, res, next) => {
 /**
  * Detect product mentions in AI response text and return product cards.
  * POST /products/detect-mentions
- * Body: { text, shopId? }
+ * Body: { text }
  */
 const detectMentions = async (req, res, next) => {
     try {
-        const { text, shopId: bodyShopId } = req.body;
-        const shopId = bodyShopId || req.user.shopId;
+        const { text } = req.body;
+        const shopId = req.user?.shopId;
 
         if (!text) {
             return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('text is required'));

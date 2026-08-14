@@ -178,6 +178,19 @@ describe('Product API', () => {
         sequelize.transaction.mockReset().mockResolvedValue(mockTx);
     });
 
+    describe('POST /product/detect-mentions', () => {
+        it('uses the authenticated shop even when the body supplies another shopId', async () => {
+            const res = await request(app)
+                .post('/api/product/detect-mentions')
+                .send({ text: 'Test T-Shirt', shopId: 'other-shop' });
+
+            expect(res.status).toBe(200);
+            expect(Product.findAll).toHaveBeenCalledWith(expect.objectContaining({
+                where: { shop_id: SHOP_ID, is_active: true },
+            }));
+        });
+    });
+
     // ── GET /product ──────────────────────────────────────────────────────
 
     describe('GET /product', () => {
