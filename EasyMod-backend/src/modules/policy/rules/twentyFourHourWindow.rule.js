@@ -1,20 +1,30 @@
 /**
  * twentyFourHourWindow rule
  *
- * Meta Platform Policy: outside the 24-hour standard messaging window, do not
- * send customer messages until a Meta-compliant template/messaging path is
- * implemented and approved for production use. Legacy Messenger message tags
- * are deprecated and must not be passed through to the provider.
+ * Meta Platform Policy: outside the 24-hour standard messaging window, a send
+ * requires a valid message tag (Send API `tag` field) or Meta will not
+ * deliver it. This rule sets `augment.within_window`, and — when outside the
+ * window — `augment.message_tag` too, for templateRequired (validation) and
+ * MetaMessengerProvider (puts it on the wire) to consume.
  *
- * This rule is INFORMATIONAL — it does NOT hard-deny by itself. It sets
- * `augment.within_window` for the templateRequired rule to consume.
+ * This rule never hard-denies by itself; templateRequired owns the deny.
  */
 
 'use strict';
 
 const consentService = require('../../consent/consent.service');
+const { ALLOWED_TAGS, DEFAULT_TAG } = require('./templateRequired.rule');
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// A caller may request a specific valid tag via message.policy.messageTag
+// (e.g. ACCOUNT_UPDATE for a shipping-address change); anything else falls
+// back to DEFAULT_TAG rather than sending untagged.
+function outsideWindowAugment(message) {
+    const requested = message?.policy?.messageTag;
+    const message_tag = requested && ALLOWED_TAGS.has(requested) ? requested : DEFAULT_TAG;
+    return { within_window: false, message_tag };
+}
 
 module.exports = {
     name: 'twentyFourHourWindow',
@@ -25,7 +35,7 @@ module.exports = {
         const lastInbound = consentService.getLastInboundAt({ customer, platform });
         if (!lastInbound) {
             // No inbound ever -> not within 24h window.
-            return { allow: true, reason: 'NO_INBOUND', augment: { within_window: false } };
+            return { allow: true, reason: 'NO_INBOUND', augment: outsideWindowAugment(message) };
         }
 
         const elapsedMs = Date.now() - lastInbound.getTime();
@@ -33,6 +43,6 @@ module.exports = {
             return { allow: true, reason: 'WITHIN_WINDOW', augment: { within_window: true } };
         }
 
-        return { allow: true, reason: 'OUTSIDE_WINDOW', augment: { within_window: false } };
+        return { allow: true, reason: 'OUTSIDE_WINDOW', augment: outsideWindowAugment(message) };
     },
 };

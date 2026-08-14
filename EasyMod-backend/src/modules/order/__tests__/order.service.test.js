@@ -714,7 +714,7 @@ describe('Order Service', () => {
             Order.findOne = jest.fn().mockResolvedValue(mockOrder);
             UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
             OrderItem.findAll = jest.fn().mockResolvedValue([{ product_id: 'prod-1', quantity: 2 }]);
-            Product.findByPk = jest.fn().mockResolvedValue(prod);
+            Product.findOne = jest.fn().mockResolvedValue(prod);
             sequelize.transaction = jest.fn(async (cb) => cb({ commit: jest.fn(), rollback: jest.fn() }));
 
             await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'cancelled' });
@@ -727,12 +727,11 @@ describe('Order Service', () => {
             const mockOrder = createMockOrder({ order_status: 'confirmed', metadata: {} });
             Order.findOne = jest.fn().mockResolvedValue(mockOrder);
             UserShop.findOne = jest.fn().mockResolvedValue({ id: 'user-shop-1' });
-            Product.findByPk = jest.fn();
 
             await orderService.updateOrder('order-1', 'user-1', 'shop-1', { order_status: 'processing' });
 
             expect(mockOrder.update).toHaveBeenCalledWith(expect.objectContaining({ order_status: 'processing' }));
-            expect(Product.findByPk).not.toHaveBeenCalled();
+            expect(Product.findOne).not.toHaveBeenCalled();
         });
     });
 

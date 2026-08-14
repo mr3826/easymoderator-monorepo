@@ -43,6 +43,48 @@ jest.mock('src/modules/entities', () => ({
 const { User } = require('src/modules/entities');
 const totpService = require('src/modules/auth/totp.service');
 
+const decodeBase32 = (base32Secret) => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = '';
+    for (const character of base32Secret.toUpperCase().replace(/=+$/, '')) {
+        const value = alphabet.indexOf(character);
+        if (value >= 0) bits += value.toString(2).padStart(5, '0');
+    }
+
+    const bytes = [];
+    for (let index = 0; index + 8 <= bits.length; index += 8) {
+        bytes.push(parseInt(bits.slice(index, index + 8), 2));
+    }
+    return Buffer.from(bytes);
+};
+
+const currentTotpToken = (base32Secret, now = Date.now()) => {
+    const counter = Math.floor(now / 1000 / 30);
+    const counterBuffer = Buffer.alloc(8);
+    counterBuffer.writeBigUInt64BE(BigInt(counter));
+    const digest = crypto.createHmac('sha1', decodeBase32(base32Secret))
+        .update(counterBuffer)
+        .digest();
+    const offset = digest[digest.length - 1] & 0x0f;
+    const code = ((digest[offset] & 0x7f) << 24)
+        | ((digest[offset + 1] & 0xff) << 16)
+        | ((digest[offset + 2] & 0xff) << 8)
+        | (digest[offset + 3] & 0xff);
+    return String(code % 1000000).padStart(6, '0');
+};
+
+const enableTestTotp = async (userId = 'user-1') => {
+    const { secret } = await totpService.generateTotpSecret(userId);
+    const encryptedSecret = mockUser.settings.totp_pending;
+    mockUser.settings = {
+        ...mockUser.settings,
+        totp_pending: null,
+        totp_secret: encryptedSecret,
+        totp_enabled: true
+    };
+    return secret;
+};
+
 describe('TOTP Service Security', () => {
     beforeEach(() => {
         Object.keys(redisStore).forEach(k => delete redisStore[k]);
@@ -51,7 +93,7 @@ describe('TOTP Service Security', () => {
     });
 
     describe('Encryption Key', () => {
-        it('should throw error when APP_SECRET and JWT_SECRET are missing', () => {
+        it('should throw error when TOTP encryption secrets are missing', async () => {
             const originalAppSecret = process.env.APP_SECRET;
             const originalJwtSecret = process.env.JWT_SECRET;
 
@@ -59,12 +101,9 @@ describe('TOTP Service Security', () => {
             delete process.env.APP_SECRET;
             delete process.env.JWT_SECRET;
 
-            // Should throw when trying to get encryption key
-            expect(() => {
-                // Force re-require to pick up new env
-                jest.resetModules();
-                require('src/modules/auth/totp.service');
-            }).toThrow();
+            await expect(totpService.generateTotpSecret('user-1'))
+                .rejects
+                .toThrow(/APP_SECRET, JWT_SECRET, or JWT_ACCESS_SECRET/);
 
             // Restore
             process.env.APP_SECRET = originalAppSecret;
@@ -75,17 +114,9 @@ describe('TOTP Service Security', () => {
     describe('TOTP Token Replay Protection', () => {
         it('should mark TOTP token as used after successful verification', async () => {
             const userId = 'user-1';
-            const token = '123456';
+            const secret = await enableTestTotp(userId);
+            const token = currentTotpToken(secret);
 
-            // Setup pending TOTP
-            mockUser.settings.totp_pending = null; // Already enabled
-            mockUser.settings.totp_enabled = true;
-            mockUser.settings.totp_secret = 'JBSWY3DPEHPK3PXP'; // Base32 secret
-
-            // First verification should work
-            // Note: We can't actually verify TOTP without real crypto, but we can test the Redis usage marking
-
-            // Check that markTokenUsed was called
             await totpService.verifyTotpToken(userId, token);
 
             // The implementation should have marked the token as used in Redis
@@ -98,10 +129,8 @@ describe('TOTP Service Security', () => {
 
         it('should reject reused TOTP tokens', async () => {
             const userId = 'user-1';
-            const token = '123456';
-
-            mockUser.settings.totp_enabled = true;
-            mockUser.settings.totp_secret = 'JBSWY3DPEHPK3PXP';
+            const secret = await enableTestTotp(userId);
+            const token = currentTotpToken(secret);
 
             // Mark token as already used
             redisStore[`totp_used:${userId}:${token}`] = '1';

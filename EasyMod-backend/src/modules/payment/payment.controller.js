@@ -1,6 +1,16 @@
 const paymentService = require('./payment.service');
 const { AppError } = require('../../utils/AppError');
 
+// PaymentConfig decrypts credentials through its Sequelize getter. Never
+// serialize that getter's value into an API response: the UI only needs the
+// configuration metadata and whether credentials have been stored.
+const sanitizePaymentConfig = (config) => {
+    if (!config) return config;
+    const plain = typeof config.toJSON === 'function' ? config.toJSON() : { ...config };
+    const { credentials: _credentials, ...safe } = plain;
+    return safe;
+};
+
 /**
  * Confirm COD payment
  */
@@ -80,7 +90,7 @@ async function savePaymentConfig(req, res, next) {
         res.status(200).json({
             success: true,
             message: 'Payment configuration saved successfully',
-            data: savedConfig
+            data: sanitizePaymentConfig(savedConfig)
         });
     } catch (error) {
         next(error);

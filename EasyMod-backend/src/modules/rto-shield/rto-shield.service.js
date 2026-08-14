@@ -144,20 +144,28 @@ class RtoShieldService {
   }
 
   /**
-   * Add a phone number to the blacklist.
+   * Add a phone number to a shop's own blacklist.
+   *
+   * Always shop-scoped: `is_global` is intentionally not accepted here. A global entry
+   * (visible to every tenant and able to block orders platform-wide) is a system-computed
+   * signal — the only path to one is automatic cross-shop promotion in
+   * evaluateNetworkPromotion(). No merchant-facing caller may set is_global; accepting it
+   * from request input let any shop declare a global fraud signal for a phone it doesn't
+   * even do business with, and block COD orders for that phone at every other shop.
    */
-  static async addToBlacklist({ phone, reason, risk_score = 80, is_global = false, shop_id, added_by, notes }) {
+  static async addToBlacklist({ phone, reason, risk_score = 80, shop_id, added_by, notes }) {
     const normalized = normalizePhone(phone);
     if (!normalized || !isValidBdPhone(normalized)) {
       throw new Error(`Invalid Bangladeshi phone number: ${phone}`);
     }
+    if (!shop_id) throw new Error('shop_id is required to add a shop-scoped blacklist entry');
 
     // Upsert: if phone + shop_id combo exists, update it.
     // Exclude whitelist (appeal) sentinels so an allow-override and a block can coexist.
     const existing = await RtoBlacklist.findOne({
       where: {
         phone: normalized,
-        shop_id: shop_id || null,
+        shop_id,
         reason: { [Op.ne]: WHITELIST_REASON }
       }
     });
@@ -172,8 +180,8 @@ class RtoShieldService {
       phone: normalized,
       reason,
       risk_score,
-      is_global: Boolean(is_global),
-      shop_id: shop_id || null,
+      is_global: false,
+      shop_id,
       added_by: added_by || null,
       notes: notes || null
     });

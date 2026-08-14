@@ -3,6 +3,8 @@
 const fs = require('fs/promises');
 const path = require('path');
 
+process.env.EASYMOD_UPLOAD_ROOT = path.resolve(__dirname, '../../../..', '.test-uploads');
+
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(async () => ({

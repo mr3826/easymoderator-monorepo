@@ -137,6 +137,48 @@ describe('checkPhone tiers', () => {
   });
 });
 
+describe('addToBlacklist', () => {
+  it('ignores a merchant-submitted is_global:true — entry is always tenant-scoped', async () => {
+    mockBlacklistFindOne.mockResolvedValueOnce(null); // no existing entry for shop-A
+    const created = await RtoShieldService.addToBlacklist({
+      phone: PHONE,
+      reason: 'shop A says this customer is fraud',
+      risk_score: 100,
+      is_global: true, // attacker-controlled input from shop A's request body
+      shop_id: 'shop-A'
+    });
+    expect(created.is_global).toBe(false);
+    expect(created.shop_id).toBe('shop-A');
+  });
+
+  it('requires a shop_id (no path to an unscoped/global write via this method)', async () => {
+    await expect(RtoShieldService.addToBlacklist({ phone: PHONE, reason: 'x' }))
+      .rejects.toThrow(/shop_id/);
+  });
+
+  it("shop A's blacklist entry does not affect shop B's checkPhone result", async () => {
+    // Shop A blacklists the phone (attempting is_global:true, which is now ignored).
+    mockBlacklistFindOne.mockResolvedValueOnce(null);
+    await RtoShieldService.addToBlacklist({
+      phone: PHONE, reason: 'fraud', risk_score: 100, is_global: true, shop_id: 'shop-A'
+    });
+    const shopAEntry = mockBlacklistCreate.mock.calls[0][0];
+    expect(shopAEntry.is_global).toBe(false);
+
+    // Shop B checks the same phone. Its blacklist query can only match rows that are
+    // either is_global:true or shop_id === 'shop-B' — shop A's row is neither.
+    mockBlacklistFindOne.mockReset();
+    mockBlacklistFindOne
+      .mockResolvedValueOnce(null) // whitelist lookup
+      .mockResolvedValueOnce(null); // no entry visible to shop B
+    mockStatsFindOne.mockResolvedValueOnce({ id: 'local-record' });
+    mockStatsFindOne.mockResolvedValueOnce({ shops_reported: '1', total_attempts: '1', total_rtos: '0' });
+    const resultForShopB = await RtoShieldService.checkPhone(PHONE, 'shop-B');
+    expect(resultForShopB.tier).toBe(TIERS.TIER_CLEAR);
+    expect(resultForShopB.flagged).toBe(false);
+  });
+});
+
 describe('whitelistPhone', () => {
   it('creates a sentinel appeal entry for the shop', async () => {
     mockBlacklistFindOne.mockResolvedValueOnce(null);

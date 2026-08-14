@@ -1,18 +1,31 @@
 /**
  * templateRequired rule
  *
- * Pairs with twentyFourHourWindow: if we're outside the 24h messaging window,
- * hard-deny. Legacy Messenger message tags are disabled for the BD launch until
- * a current Meta-compliant template/messaging path is implemented and approved
- * for production use.
+ * Pairs with twentyFourHourWindow: outside the 24h messaging window, Meta
+ * requires a valid message tag on every send (Send API `tag` field) or the
+ * message is rejected/undelivered. twentyFourHourWindow attaches a tag to
+ * `augment.message_tag` for exactly this case — this rule just validates it
+ * against Meta's current tag set (2020 consolidation; see
+ * src/database/migrations/archive/20260320_004_add_hitl_and_message_tag.js)
+ * and denies only when no valid tag is present.
  *
  * Reads the running augment object that prior rules contributed to (the engine
- * merges augment per step). within_window=false = DENY.
+ * merges augment per step). within_window=false + no valid tag = DENY.
  */
 
 'use strict';
 
-const ALLOWED_TAGS = new Set();
+const ALLOWED_TAGS = new Set([
+    'CONFIRMED_EVENT_UPDATE',
+    'POST_PURCHASE_UPDATE',
+    'ACCOUNT_UPDATE',
+    'HUMAN_AGENT',
+]);
+
+// Applied by twentyFourHourWindow.rule when the caller doesn't request a
+// specific (valid) tag. EasyModerator's out-of-window sends are order/support
+// follow-ups, which POST_PURCHASE_UPDATE covers.
+const DEFAULT_TAG = 'POST_PURCHASE_UPDATE';
 
 module.exports = {
     name: 'templateRequired',
@@ -22,8 +35,13 @@ module.exports = {
         const withinWindow = augment.within_window !== false ? true : false;
         if (withinWindow) return { allow: true, reason: 'WITHIN_WINDOW' };
 
+        if (augment.message_tag && ALLOWED_TAGS.has(augment.message_tag)) {
+            return { allow: true, reason: 'OUTSIDE_WINDOW_TAGGED' };
+        }
+
         return { allow: false, reason: 'OUTSIDE_24H_TEMPLATES_DISABLED' };
     },
 };
 
 module.exports.ALLOWED_TAGS = ALLOWED_TAGS;
+module.exports.DEFAULT_TAG = DEFAULT_TAG;

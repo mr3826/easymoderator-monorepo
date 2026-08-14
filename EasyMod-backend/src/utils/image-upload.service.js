@@ -26,7 +26,11 @@ const crypto = require('crypto');
 const { AppError } = require('./AppError');
 const { resolvePublicAssetOrigin } = require('../config/origins');
 
-const UPLOAD_ROOT = path.resolve(__dirname, '../../uploads');
+// Tests can point this at a disposable workspace directory without touching
+// the production uploads volume. Production keeps the existing default.
+const UPLOAD_ROOT = path.resolve(
+    process.env.EASYMOD_UPLOAD_ROOT || path.resolve(__dirname, '../../uploads')
+);
 
 // Deliberately narrow: `data:<mime>;base64,<payload>`. A data URL with
 // parameters (`;charset=`) or URL-encoding rather than base64 is rejected

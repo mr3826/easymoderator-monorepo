@@ -145,6 +145,7 @@ jest.mock('src/modules/entities', () => ({
     },
     PasswordResetToken: {
         findOne: jest.fn(),
+        update: jest.fn(),
         destroy: jest.fn(),
         create: jest.fn(),
     }
@@ -199,8 +200,32 @@ describe('Auth Security Fixes', () => {
             const accessToken = cookies.find(c => c.startsWith('access_token='))?.split(';')[0]?.replace('access_token=', '');
             expect(cookies.some(c => c.startsWith('refresh_token=') && c.includes('Path=/'))).toBe(true);
 
-            // 2. Simulate password reset (increment token_version)
-            mockUser.token_version = 2; // Incremented after password reset
+            // 2. Exercise the real password-reset path. The reset service must
+            // consume the one-time token, clear refresh state, increment the
+            // token version, and invalidate its cache entry.
+            const resetRecord = { id: 'reset-1', user_id: mockUser.id };
+            PasswordResetToken.findOne.mockResolvedValue(resetRecord);
+            PasswordResetToken.update.mockResolvedValue([1]);
+            User.findByPk.mockResolvedValue(mockUser);
+            mockUser.update.mockImplementation(async (attributes) => {
+                const { token_version: _tokenVersion, ...rest } = attributes;
+                if (_tokenVersion) mockUser.token_version = 2;
+                Object.assign(mockUser, rest);
+            });
+            const resetRes = await request(app)
+                .post('/api/auth/reset-password')
+                .send({ token: 'raw-reset-token', password: 'New-password-123!' });
+
+            expect(resetRes.status).toBe(200);
+            expect(PasswordResetToken.update).toHaveBeenCalledWith(
+                expect.objectContaining({ used_at: expect.any(Date) }),
+                expect.objectContaining({ transaction: expect.any(Object) }),
+            );
+            expect(mockUser.update).toHaveBeenCalledWith(
+                expect.objectContaining({ refresh_token: null, token_version: expect.anything() }),
+                expect.objectContaining({ transaction: expect.any(Object) }),
+            );
+            expect(mockCacheService.delete).toHaveBeenCalledWith(`user:${mockUser.id}:token_version`);
 
             // 3. Try to use the old access token - should be rejected
             User.findByPk.mockResolvedValue(mockUser);
@@ -211,6 +236,35 @@ describe('Auth Security Fixes', () => {
             // Should fail because token_version in JWT (1) != token_version in DB (2)
             expect(res.status).toBe(401);
             expect(res.body.error?.message || res.body.message).toContain('invalidated');
+        });
+
+        it('rejects a concurrent replay when the atomic token claim loses the race', async () => {
+            const resetRecord = { id: 'reset-race', user_id: mockUser.id };
+            PasswordResetToken.findOne.mockResolvedValue(resetRecord);
+            let claimAttempts = 0;
+            PasswordResetToken.update.mockImplementation(async () => {
+                claimAttempts += 1;
+                return [claimAttempts === 1 ? 1 : 0];
+            });
+            User.findByPk.mockResolvedValue(mockUser);
+            mockUser.update.mockImplementation(async (attributes) => {
+                const { token_version: _tokenVersion, ...rest } = attributes;
+                if (_tokenVersion) mockUser.token_version += 1;
+                Object.assign(mockUser, rest);
+            });
+
+            const responses = await Promise.all([
+                request(app)
+                    .post('/api/auth/reset-password')
+                    .send({ token: 'replayed-token', password: 'New-password-123!' }),
+                request(app)
+                    .post('/api/auth/reset-password')
+                    .send({ token: 'replayed-token', password: 'New-password-123!' }),
+            ]);
+
+            expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
+            expect(PasswordResetToken.update).toHaveBeenCalledTimes(2);
+            expect(mockUser.update).toHaveBeenCalledTimes(1);
         });
 
         it('should allow access with new token after password reset', async () => {

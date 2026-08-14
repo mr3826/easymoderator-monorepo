@@ -15,19 +15,11 @@ module.exports = {
         'tests/smart-payment-detection.test.js',
         // Long-running E2E test (>5min) — requires live infrastructure
         'tests/features/voice-processing.test.js',
-        // customer-intelligence controller/service not yet implemented
-        'tests/features/customer-intelligence.test.js',
+        // customer-intelligence.test.js is not present in this checkout.
         // Full app integration tests — require live DB + Redis + running server
         'src/modules/ai/__tests__/chatbot-rag.test.js',
-        // Auth tests have ordering/isolation bugs needing investigation
-        'src/modules/auth/__tests__/auth.test.js',
-        'src/modules/auth/__tests__/totp.service.test.js',
-        // Dead tests deleted in Phase 5 Step 2 (these files no longer exist):
-        // tests/meta-integration.test.js, tests/webhooks/meta-webhook.test.js,
-        // src/modules/integration/__tests__/meta.service.test.js
-        // Campaign module tests — module deleted in active branch
-        'src/jobs/__tests__/campaign-sender.job.test.js',
-        'src/modules/campaign/__tests__/campaign.api.integration.test.js',
+        // Auth HTTP and TOTP suites are hermetic after their cache/queue
+        // fixtures were isolated and run in the default Jest gate.
         // Order/Product/Shop tests — require full app context + DB
         'src/modules/order/__tests__/order.controller.test.js',
         'src/modules/order/__tests__/order.api.integration.test.js',

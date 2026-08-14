@@ -68,14 +68,33 @@ describe('messengerOptedOut.rule', () => {
 
 describe('twentyFourHourWindow.rule', () => {
     const rule = require('src/modules/policy/rules/twentyFourHourWindow.rule');
-    test('ignores caller-provided legacy messageTag for BD launch', async () => {
+    test('defaults to POST_PURCHASE_UPDATE when outside window and no caller tag', async () => {
+        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r.allow).toBe(true);
+        expect(r.augment.within_window).toBe(false);
+        expect(r.augment.message_tag).toBe('POST_PURCHASE_UPDATE');
+    });
+    test('honours a valid caller-provided messageTag outside window', async () => {
         const r = await rule.evaluate(
-            { policy: { messageTag: 'POST_PURCHASE_UPDATE' } },
+            { policy: { messageTag: 'ACCOUNT_UPDATE' } },
             { customer: { id: 'c1' }, platform: 'facebook' },
         );
         expect(r.allow).toBe(true);
-        expect(r.augment.message_tag).toBeUndefined();
+        expect(r.augment.message_tag).toBe('ACCOUNT_UPDATE');
         expect(r.augment.within_window).toBe(false);
+    });
+    test('falls back to default tag when caller messageTag is not a real Meta tag', async () => {
+        const r = await rule.evaluate(
+            { policy: { messageTag: 'NOT_A_REAL_TAG' } },
+            { customer: { id: 'c1' }, platform: 'facebook' },
+        );
+        expect(r.augment.message_tag).toBe('POST_PURCHASE_UPDATE');
+    });
+    test('does not set message_tag when within window', async () => {
+        consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 2 * 3600 * 1000));
+        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r.augment.within_window).toBe(true);
+        expect(r.augment.message_tag).toBeUndefined();
     });
     test('within_window=true when last inbound was <24h ago', async () => {
         consentService.getLastInboundAt.mockReturnValue(new Date(Date.now() - 2 * 3600 * 1000));
@@ -100,12 +119,12 @@ describe('templateRequired.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
-    test('denies when outside window with legacy tag', async () => {
+    test('allows outside window with a valid Meta message tag', async () => {
         const r = await rule.evaluate({}, {
             runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
         });
-        expect(r.allow).toBe(false);
-        expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
+        expect(r.allow).toBe(true);
+        expect(r.reason).toBe('OUTSIDE_WINDOW_TAGGED');
     });
     test('denies with un-approved tag', async () => {
         const r = await rule.evaluate({}, {
@@ -193,11 +212,11 @@ describe('rateLimit.rule', () => {
         expect(r.reason).toBe('RATE_LIMIT');
         expect(r.retryAfterMs).toBeGreaterThan(0);
     });
-    test('falls open on Redis error', async () => {
+    test('fails closed on Redis error', async () => {
         cacheRedis.zcard.mockRejectedValue(new Error('redis down'));
         const r = await rule.evaluate({}, { channel: { meta_asset_id: 'PAGE_1' } });
-        expect(r.allow).toBe(true);
-        expect(r.reason).toBe('REDIS_UNAVAILABLE');
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('RATE_LIMIT_UNAVAILABLE');
     });
 });
 
