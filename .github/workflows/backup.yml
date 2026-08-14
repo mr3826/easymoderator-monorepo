@@ -114,9 +114,13 @@ jobs:
 
             # Product uploads are quota-bounded at request time. Sweep
             # abandoned files after the backup so a failed product save or
-            # abandoned form cannot retain storage indefinitely.
+            # abandoned form cannot retain storage indefinitely. Best-effort:
+            # the deployed backend image can legitimately lag the repo while
+            # production deploys are gated off, so a missing script here must
+            # not abort the backup that this whole job exists to produce.
             docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml run \
-              --rm --no-deps --user root --entrypoint node backend /app/scripts/cleanup-product-media.js
+              --rm --no-deps --user root --entrypoint node backend /app/scripts/cleanup-product-media.js \
+              || echo "::warning::cleanup-product-media.js unavailable in the currently deployed backend image — orphan sweep skipped this run"
 
             # ── Off-site upload (F-04) ────────────────────────────────────────
             # All-or-nothing guard: every off-site secret must be present. A
