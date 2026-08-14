@@ -391,6 +391,26 @@ describe('MetaMessengerProvider', () => {
             expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL1'))).toBe(1);
         });
 
+        test('a text+attachment message reserves two separate slots, one per real Graph API call', async () => {
+            const channel = { id: 'c-rl-multi', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL_MULTI' };
+            axios.post
+                .mockResolvedValueOnce({ data: { message_id: 'mid_text' } })
+                .mockResolvedValueOnce({ data: { message_id: 'mid_file' } });
+
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL_MULTI',
+                normalizedMessage: {
+                    text: 'Invoice attached',
+                    attachments: [{ type: 'file', url: 'https://cdn.example.com/invoice.pdf' }],
+                },
+                decision: { allow: true },
+            });
+
+            expect(axios.post).toHaveBeenCalledTimes(2);
+            expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL_MULTI'))).toBe(2);
+        });
+
         test('a burst past META_SEND_LIMIT is rejected mid-send with retryAfterMs', async () => {
             const channel = { id: 'c-rl2', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL2' };
             for (let i = 0; i < rateLimitRule.META_SEND_LIMIT; i++) {
