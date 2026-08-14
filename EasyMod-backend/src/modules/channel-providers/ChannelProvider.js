@@ -229,8 +229,8 @@ class ChannelProvider {
     /**
      * Send a message to a recipient via the Send API.
      * A PolicyDecision MUST be provided and MUST have allow === true.
-     * Honors decision.augment.message_tag only when a policy-approved template
-     * path adds it. Legacy Messenger tags are blocked by policy for BD launch.
+     * Honors decision.augment.message_tag when set (out-of-24h-window sends
+     * — see twentyFourHourWindow.rule / templateRequired.rule).
      *
      * @param {object} params
      * @param {object} params.channel              - MetaChannel instance

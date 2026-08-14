@@ -41,7 +41,7 @@
 ### Step 2 — Start authorization *(you must do this part)*
 
 1. Click **Connect**.
-2. A popup opens on `facebook.com`. If your browser blocks it, the app falls back to a same-tab redirect — that is expected behaviour, not a failure.
+2. A popup opens on `facebook.com`. There is **no same-tab fallback** — if your browser blocks the popup, the card sits on "Log in to Meta in the pop-up…" indefinitely. Allow pop-ups for the app origin, click **Cancel**, and retry.
 3. Sign in to Facebook **with the tester account**.
 4. On the permissions screen, keep the default scopes and choose **only the dedicated test Page** when Facebook asks which Pages to grant access to.
 5. Click **Continue / Save**.
@@ -131,7 +131,7 @@ I can verify steps 3, 5, 8, 9, 10 and 11 directly from the network responses onc
 
 | What you see | Why |
 |---|---|
-| Popup blocked, flow continues in the same tab | Deliberate `closeOrRedirect` fallback. |
-| Popup does not auto-close, but the app advances | COOP blocks `window.close()` from the opener; `BroadcastChannel` delivers the result instead. |
+| Popup does not auto-close, but the app advances | COOP blocks `window.close()` from the opener; `BroadcastChannel` delivers the result instead. The callback page's `closeOrRedirect` then lands the stranded popup on Chat Settings. |
+| Popup blocked → card stuck on "Log in to Meta in the pop-up…" | **Not a known-good mode.** There is no same-tab fallback at initiation. Allow pop-ups and retry. |
 | Cancelling at Facebook shows "Connection failed" | The denial branch. No channel is created. |
 | Disconnected Page still exists in the database | Rows are kept as `DISCONNECTED` for the audit trail rather than deleted. |

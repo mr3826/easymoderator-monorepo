@@ -1,7 +1,7 @@
 # Meta App Review - Reviewer Guide
 
-**App:** EasyModerator
-**Last updated:** 2026-07-28 (Messenger-only launch; Comment-to-DM removed)
+**App:** EasyModerator · **App ID:** `1609451646619088`
+**Last updated:** 2026-08-14 (Messenger-only launch; Facebook only; Business Verification complete)
 **Graph API version:** v22.0
 **Login product:** Facebook Login for Business
 
@@ -41,27 +41,25 @@ Regression tests enforce that the provider:
 3. Click **Connect Facebook Page**.
 4. Grant the three requested permissions.
 5. Select the test Page in the Page picker and connect it.
-6. Confirm the channel card shows connected status and webhook active status.
+6. Confirm the channel card shows connected status and webhook active status. The
+   **Test** button on the card re-verifies the webhook subscription on demand.
 7. From a separate tester account, send a direct Messenger DM to the Page.
-8. Confirm the DM appears in the Shared Inbox.
-9. Confirm the AI auto-reply is sent through Messenger and includes the automated-assistant disclosure.
+8. Confirm the DM appears in the shared inbox (**Messages** in the sidebar).
+9. Confirm the assistant's reply. In the product's default **"Review first"** mode
+   the reply appears as a draft for the merchant to approve, and carries no
+   automated-assistant disclosure because nothing was auto-sent. In
+   **"Send automatically"** mode the reply is delivered by the app, and the first
+   automated reply of each conversation carries the automated-assistant
+   disclosure. Reply mode is set at **Settings → Business Info → Reply Settings**.
 10. Send a manual reply from the inbox to confirm the human reply path.
 
 Development-mode caveat: while the Meta app is in Development mode, webhook events only arrive for users who have an app role. Use the supplied App Roles tester account for the inbound DM.
 
 ## Screencast Script
 
-Target length: 2-3 minutes.
-
-1. Show the logged-in EasyModerator dashboard.
-2. Open **Settings → Chat** and start the Facebook Page connection.
-3. Show the OAuth dialog with the three permissions.
-4. Show the Page picker after consent.
-5. Connect the test Page and show webhook active state.
-6. Send a direct DM from the tester account.
-7. Show the message in Shared Inbox.
-8. Show AI auto-reply and the required automated-assistant disclosure.
-9. Send one manual reply.
+The shot-by-shot script, narration, and capture rules live in
+`EasyMod-backend/.easymod/meta-app-review/screencast-storyboards.md`. It is the
+only copy — do not maintain a second one here.
 
 Do not demonstrate comments, Page post keywords, public comment replies, or private replies to comments. Those features are out of scope for the initial launch.
 
@@ -72,14 +70,14 @@ before you record it as a defect. Contact: `support@easymod.tech`.
 
 | What you see | Why | What to do |
 |---|---|---|
-| The OAuth popup is blocked by the browser | The app deliberately falls back to a same-tab redirect | Continue in the same tab — the flow is unchanged |
+| The OAuth popup is blocked by the browser | The connect flow opens Facebook Login in a 600×700 popup and waits for it. A blocked popup leaves the card on "Log in to Meta in the pop-up…" | Allow pop-ups for `app.easymod.tech`, click **Cancel** on the card, and click **Connect Facebook Page** again |
 | The popup does not close itself, but EasyModerator advances anyway | Cross-Origin-Opener-Policy blocks `window.close()` from the opener; the result is delivered over `BroadcastChannel` instead | Close the popup manually and continue |
 | The Page picker is empty, or your Page is missing | Facebook's granular Page selection was not granted for that Page. EasyModerator intersects `/me/accounts` with the `debug_token` granular target IDs and refuses to show a Page you did not select | Re-run the connect flow and tick the Page on the Facebook consent screen |
 | You cancel at Facebook and see "Connection failed" | The denial branch. No channel is created | Expected — re-run and approve |
 | The Page connects, but a Messenger DM never reaches the Shared Inbox | While the app is in Development mode Meta only delivers webhook events for accounts holding an app role | Send the DM from the supplied tester **customer** account, which is on App Roles → Testers |
 | A previously connected Page still appears in the database after disconnect | Channels are retained with `status: DISCONNECTED` for the audit trail rather than hard-deleted; the UI filters them out | Expected behaviour, not a leak — no token is used or returned for a disconnected channel |
 | A "Get Started" or menu button produces no response | Messenger postbacks are not subscribed in this release; only the `messages` field is | Out of scope — use a typed text message |
-| A message sent more than 24 hours after the customer's last message is not delivered | Enforced by the policy engine; the app sends no message tags in this release | Expected — the app deliberately stays inside the standard messaging window |
+| An out-of-window order/support message is held or rejected without an allowed tag | The current policy path attaches `POST_PURCHASE_UPDATE` to the supported order/support follow-up path; other messages remain blocked by the 24-hour guard | Do not use this as live-review evidence until a real Page send is verified |
 
 ## Permission Minimization
 

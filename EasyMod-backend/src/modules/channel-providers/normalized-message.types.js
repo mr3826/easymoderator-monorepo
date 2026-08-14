@@ -67,7 +67,7 @@
  * @property {string}  [decisionId]   - UUID of the policy_decisions row
  * @property {boolean} allowed
  * @property {string}  [reason]       - e.g. 'OK', 'OPTED_OUT', 'OUTSIDE_24H'
- * @property {string}  [messageTag]   - Reserved for future approved template/tag paths; legacy tags disabled
+ * @property {string}  [messageTag]   - Meta Send API tag for out-of-24h-window sends (see templateRequired.rule.ALLOWED_TAGS); auto-filled by twentyFourHourWindow.rule when unset
  * @property {boolean} withinWindow   - true if within 24-hour messaging window
  */
 

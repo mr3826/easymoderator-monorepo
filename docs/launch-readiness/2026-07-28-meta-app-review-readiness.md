@@ -67,8 +67,8 @@ attestation to Meta.
 
 | Claim | Reality | Fixed in |
 |---|---|---|
-| "170 DMs/hour leaky bucket per pageId in `message-worker.js` Guard 5, Redis key `rate:meta:dm:{pageId}`" | No such key, no such guard. The real rule reads `meta:sends:{pageId}` with `zcard` — and **nothing writes that ZSET**. `meta-send.service.checkAndRecord`, named in the rule's own header, does not exist. The count is always 0, so the limit never triggers. | `compliance-checklist.md` policy check 6 |
-| "`POST_PURCHASE_UPDATE` tag used for order confirmations outside window" | No code path sets `decision.augment.message_tag`. The branch that reads it is unreachable; out-of-window messages are dropped. | `compliance-checklist.md` policy check 7 |
+| "170 DMs/hour leaky bucket per pageId in `message-worker.js` Guard 5, Redis key `rate:meta:dm:{pageId}`" | No such key or guard exists. The current rule reads `meta:sends:{pageId}` and the provider records one event after each accepted Graph send. Atomic/concurrent enforcement and live Redis evidence remain unverified. | `compliance-checklist.md` policy check 6 |
+| "`POST_PURCHASE_UPDATE` tag used for order confirmations outside window" | The current policy path sets `decision.augment.message_tag=POST_PURCHASE_UPDATE`, and the provider sends it on the wire. Live Meta acceptance/delivery remains unverified. | `compliance-checklist.md` policy check 7 |
 | Deletion matches `channel_user_id = facebook_user_id` from the signed request | Meta sends an **app-scoped** ID; customers key on **page-scoped** PSIDs. Resolution now runs through `meta_user_identities`, and an unresolvable identity parks as `IDENTITY_NOT_RESOLVED` instead of reporting a fake success. | `data-deletion-flow.md` rewritten |
 | Deletion cascades `orders` | Orders are **anonymised**, not deleted — accounting records are retained with every personal field scrubbed. | `data-deletion-flow.md` rewritten |
 | Response is `{url: privacy-policy, confirmation_code: "DEL-{userId}-{ts}"}` | Response is a status URL plus an **opaque** code; the durable record stores only HMAC hashes, never the raw Meta ID. | `data-deletion-flow.md` rewritten |
@@ -144,9 +144,10 @@ assets, and the answer needs to be accurate.
 Recorded so they are not lost, and explicitly **not** fixed in this pass because
 neither affects App Review:
 
-1. **The Messenger send-rate limit is not enforced.** `meta:sends:{pageId}` is
-   read but never written, so the 170/hour rule always passes. Not something a
-   reviewer exercises, but a live Page-restriction risk at volume.
-2. **No message tags are ever attached**, so order and delivery updates outside
-   the 24-hour window are silently dropped. Product limitation, correctly
-   disclosed to the reviewer rather than hidden.
+1. **The Messenger send-rate limit still needs live/atomic proof.** `meta:sends:{pageId}`
+   is recorded after accepted Graph sends, but concurrent reservation and live
+   Redis behavior are not proven. Not something a reviewer exercises, but a
+   live Page-restriction risk at volume.
+2. **Out-of-window order/support follow-ups are tagged** with
+   `POST_PURCHASE_UPDATE`; successful Meta acceptance/delivery is not yet live-
+   verified and must not be presented as completed evidence.

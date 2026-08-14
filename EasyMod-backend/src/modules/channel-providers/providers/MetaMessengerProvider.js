@@ -5,9 +5,12 @@
  * Talks to the Meta Graph API on behalf of a connected Page.
  *
  * All outbound sends MUST receive a PolicyDecision with allow=true.
- * The provider can attach decision.augment.message_tag only if a future
- * policy-approved template/tag path supplies it. Legacy Messenger tags are
- * blocked by policy for the BD launch.
+ * When decision.augment.message_tag is set (twentyFourHourWindow rule, for
+ * out-of-24h-window sends), it is put on the wire as the Send API `tag`.
+ *
+ * Every successful Graph API send also records itself into the
+ * `meta:sends:{pageId}` ZSET that rateLimit.rule reads — see
+ * recordSendForRateLimit() below.
  */
 
 'use strict';
@@ -18,6 +21,8 @@ const ChannelProvider = require('../ChannelProvider');
 const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
+const { cacheRedis } = require('../../../config/redis');
+const { keyFor: rateLimitKeyFor } = require('../../policy/rules/rateLimit.rule');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -67,6 +72,20 @@ function metaError(err, context) {
         isTransient: meta.is_transient === true,
     };
     return appError;
+}
+
+// Write side of the send-rate limit: rateLimit.rule only ever reads this
+// ZSET, so without this the check always sees zero sends. One ZADD per real
+// Graph API call, scored by send time (ms epoch) — same key + scoring scheme
+// rateLimit.rule prunes/zcards against. Best-effort: a Redis blip must never
+// fail a send that Meta already accepted.
+async function recordSendForRateLimit(pageId) {
+    if (!pageId) return;
+    try {
+        await cacheRedis.zadd(rateLimitKeyFor(pageId), Date.now(), `${Date.now()}-${crypto.randomUUID()}`);
+    } catch (err) {
+        logger.warn('sendMessage: failed to record rate-limit send event', { error: err.message, pageId });
+    }
 }
 
 function intersectSets(sets) {
@@ -493,6 +512,7 @@ class MetaMessengerProvider extends ChannelProvider {
                     { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
                 );
                 providerMessageIds.push(resp.data.message_id || null);
+                await recordSendForRateLimit(channel.meta_asset_id);
             }
             return {
                 providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,

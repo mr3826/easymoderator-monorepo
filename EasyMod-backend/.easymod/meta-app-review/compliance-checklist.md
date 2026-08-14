@@ -24,7 +24,7 @@ carried-forward row to Meta as though it were freshly proven.
 | 9 | Screencast recorded | **PENDING** | Storyboard and word-for-word narration ready in `screencast-storyboards.md` (12-point coverage table). Recording is founder-owned and blocked on item 8. |
 | 10 | No test/sandbox data in production screenshots | **PENDING** | Production carries no seeded test data; the QA account was purged 2026-07-27. Depends on the recording being made with the accounts in `test-user-credentials.md`. |
 | 11 | App mode is LIVE (not Development) | **PENDING — founder** | Verify in the App Dashboard. Keep it in Development until the screencast is recorded (Dev mode restricts webhooks to app-role accounts, which is what makes tester recording predictable), then switch to Live. |
-| 12 | Business Verification completed | **PENDING — founder, longest lead time** | Full Bangladesh procedure, including the Trade License document rules, in `business-verification.md`. **Start this first.** |
+| 12 | Business Verification completed | **DONE (2026-08)** | Verified in the Meta Business Manager. Procedure retained in `business-verification.md` for the record. No longer a blocker. |
 
 ### Founder self-check for item 5
 
@@ -53,8 +53,8 @@ Expected output is exactly `easymod_probe_12345`. Anything else — empty, or a
 | 3 | No fake engagement | PASS (carried forward) | No auto-like, auto-follow or auto-share anywhere in the codebase. |
 | 4 | Consent recorded | PASS (carried forward) | `consentService.recordInbound()` on every inbound event. |
 | 5 | Opt-out honoured | PASS (carried forward) | `policy.engine.js` checks `messaging_consent.{platform}.opted_out_at` before every outbound. |
-| 6 | Send rate limited | **FAIL — corrected 2026-07-28** | The previous "170 DMs/hour leaky bucket, key `rate:meta:dm:{pageId}`" claim was **false**. The real rule is `rateLimit.rule.js`, which reads `meta:sends:{pageId}` with `zcard`. **Nothing writes that ZSET** — `meta-send.service.checkAndRecord`, named in its own header comment, does not exist. The count is therefore always 0 and the rule always allows. Not an App Review blocker (a reviewer sends one message), but a live Page-restriction risk at volume. Tracked as an open engineering item. |
-| 7 | 24-hour window enforced | PASS, but **no message tags** | The 24-hour window guard is real and HITL escalation pauses AI replies. The previous claim that `POST_PURCHASE_UPDATE` is "used for order confirmations outside the window" was **false**: no code path ever sets `decision.augment.message_tag`, so the branch at `MetaMessengerProvider.js:479-481` is unreachable and out-of-window transactional messages are simply dropped. Keep this out of the screencast. |
+| 6 | Send rate limited | **PARTIAL — code path present; live/atomic proof pending** | `rateLimit.rule.js` reads `meta:sends:{pageId}` with `zcard`, and `MetaMessengerProvider` records one event after each accepted Graph send. Redis failure is fail-closed at the policy gate. Atomic reservation under concurrent workers and live Redis evidence remain unverified. |
+| 7 | 24-hour window enforced | **PARTIAL — tag path present; live Meta proof pending** | The 24-hour window guard attaches `POST_PURCHASE_UPDATE` for default order/support follow-ups and `MetaMessengerProvider` puts it on the Send API request. Do not claim successful out-of-window delivery until a real connected Page is verified. |
 | 8 | Content appropriate | PASS (carried forward) | Guardrail service, hallucination detector and quality-score gate on all AI replies. |
 | 9 | Page ownership | PASS (re-verified 2026-07-28) | Pages are intersected against `debug_token` granular target IDs, so only Pages the merchant selected in Facebook are connectable (`MetaMessengerProvider.js:71-83`). |
 | 10 | Deduplication | PASS (carried forward) | `external_id` storage guard plus a Redis NX idempotency guard prevent duplicate replies. |
@@ -67,7 +67,7 @@ Expected output is exactly `easymod_probe_12345`. Anything else — empty, or a
 
 **Founder:**
 
-1. Complete **Meta Business Verification** — `business-verification.md`. Longest lead time; start first.
+1. ~~Complete **Meta Business Verification**~~ — done, verified 2026-08.
 2. Create the **tester customer account** and accept its App Roles → Testers invite — `test-user-credentials.md`.
 3. **Record the screencast** — `screencast-storyboards.md`.
 4. Enter reviewer credentials in the App Dashboard fields.
@@ -78,5 +78,5 @@ Expected output is exactly `easymod_probe_12345`. Anything else — empty, or a
 
 **Engineering (not review blockers):**
 
-9. Nothing writes `meta:sends:{pageId}` — the 170/hour Messenger send limit is unenforced (policy check 6).
-10. `decision.augment.message_tag` is never set, so out-of-window transactional messages are silently dropped (policy check 7).
+9. `MetaMessengerProvider` records `meta:sends:{pageId}` after each accepted Graph send; atomic/concurrent enforcement and live Redis evidence remain unverified (policy check 6).
+10. The default out-of-window path sets `decision.augment.message_tag=POST_PURCHASE_UPDATE`; live Meta acceptance/delivery is not established by repository tests.
