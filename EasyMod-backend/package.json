@@ -31,6 +31,8 @@
     "backup:create": "node scripts/backup-database.js create",
     "backup:list": "node scripts/backup-database.js list",
     "backup:restore": "node scripts/backup-database.js restore",
+    "backup:media:restore": "node scripts/restore-media.js restore",
+    "backup:media:verify": "node scripts/restore-media.js verify",
     "setup:monitoring": "node scripts/setup-monitoring.js",
     "launch:check": "node scripts/launch-readiness.js",
     "test:csrf": "node scripts/test-csrf.js",

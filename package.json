@@ -19,7 +19,8 @@
     "build:backend": "npm run build --workspace=easymod-backend",
     "build:frontend": "npm run build --workspace=easymod-frontend",
     "build:growthos": "npm run build --workspace=growth-os-frontend",
-    "build:all": "npm run build:backend && npm run build:frontend && npm run build:growthos"
+    "build:all": "npm run build:backend && npm run build:frontend && npm run build:growthos",
+    "recovery:gate": "node scripts/recovery-gate/index.js"
   },
   "engines": {
     "node": "20.x"

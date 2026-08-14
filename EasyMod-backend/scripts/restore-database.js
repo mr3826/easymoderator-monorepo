@@ -15,6 +15,24 @@ class DatabaseRestore {
     this.backupDir = '/backups';
   }
 
+  parseDatabaseUrl(dbUrl) {
+    let parsed;
+    try {
+      parsed = new URL(dbUrl);
+    } catch (_) {
+      throw new Error('Invalid RECOVERY_DATABASE_URL format');
+    }
+    if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !parsed.hostname || !parsed.pathname.slice(1)) {
+      throw new Error('Invalid RECOVERY_DATABASE_URL format');
+    }
+    return {
+      user: decodeURIComponent(parsed.username),
+      host: parsed.hostname,
+      port: parsed.port || '5432',
+      database: decodeURIComponent(parsed.pathname.slice(1)),
+    };
+  }
+
   databaseArgs(user, host, port, database) {
     return ['-h', host, '-p', port, '-U', user, '-d', database];
   }
@@ -82,22 +100,20 @@ class DatabaseRestore {
         throw new Error(`Backup file not found: ${backupFile}`);
       }
 
-      const dbUrl = process.env.DATABASE_URL;
+      if (process.env.RECOVERY_TARGET !== 'isolated') {
+        throw new Error('RECOVERY_TARGET=isolated is required; production restore is disabled');
+      }
+
+      const dbUrl = process.env.RECOVERY_DATABASE_URL;
       if (!dbUrl) {
-        throw new Error('DATABASE_URL environment variable not set');
+        throw new Error('RECOVERY_DATABASE_URL environment variable not set');
       }
 
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
-      }
-
-      const [, user, , host, port, database] = dbUrlMatch;
-      const password = process.env.DB_PASSWORD;
+      const { user, host, port, database } = this.parseDatabaseUrl(dbUrl);
+      const password = process.env.RECOVERY_DB_PASSWORD;
       
       if (!password) {
-        throw new Error('DB_PASSWORD environment variable not set');
+        throw new Error('RECOVERY_DB_PASSWORD environment variable not set');
       }
 
       // Verify backup file integrity
@@ -108,7 +124,7 @@ class DatabaseRestore {
       console.log(`💾 Size: ${sizeInMB} MB`);
       console.log(`📅 Modified: ${stats.mtime}`);
 
-      console.log('⚠️  WARNING: This will overwrite current database!');
+      console.log('ℹ️  Restoring only into the explicitly isolated recovery target.');
       console.log('🔄 Executing restore command...');
 
       const databaseArgs = this.databaseArgs(user, host, port, database);
@@ -121,7 +137,7 @@ class DatabaseRestore {
       console.log('✅ Database restored successfully!');
       
       // Verify restore
-      await this.verifyRestore();
+      await this.verifyRestore({ user, host, port, database }, password);
       
     } catch (error) {
       console.error('❌ Restore failed:', error.message);
@@ -129,24 +145,21 @@ class DatabaseRestore {
     }
   }
 
-  async verifyRestore() {
+  async verifyRestore(connection, password) {
     console.log('🔍 Verifying database restore...');
     
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
-      }
-
-      const [, user, , host, port, database] = dbUrlMatch;
-      const password = process.env.DB_PASSWORD;
-      
-      // Test database connection
-      const testCommand = `PGPASSWORD="${password}" psql -h ${host} -p ${port} -U ${user} -d ${database} -c "SELECT COUNT(*) FROM information_schema.tables;"`;
-      
-      execSync(testCommand, { stdio: 'pipe' });
+      const result = spawnSync('psql', [
+        ...this.databaseArgs(connection.user, connection.host, connection.port, connection.database),
+        '-v', 'ON_ERROR_STOP=1',
+        '-c', 'SELECT COUNT(*) FROM information_schema.tables;',
+      ], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PGPASSWORD: password },
+        encoding: 'utf8',
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`psql verification exited with status ${result.status}`);
       
       console.log('✅ Database restore verified successfully!');
       

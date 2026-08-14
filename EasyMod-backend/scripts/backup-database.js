@@ -9,12 +9,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
-const config = require('../src/config/config');
+const { spawnSync } = require('child_process');
 
 class DatabaseBackup {
   constructor() {
-    this.backupDir = path.join(__dirname, '..', 'backups');
+    this.backupDir = process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups');
     this.timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     this.ensureBackupDirectory();
   }
@@ -26,6 +25,25 @@ class DatabaseBackup {
     }
   }
 
+  parseDatabaseUrl(dbUrl, errorName = 'DATABASE_URL') {
+    let parsed;
+    try {
+      parsed = new URL(dbUrl);
+    } catch (_) {
+      throw new Error(`Invalid ${errorName} format`);
+    }
+    if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !parsed.hostname || !parsed.pathname.slice(1)) {
+      throw new Error(`Invalid ${errorName} format`);
+    }
+    return {
+      user: decodeURIComponent(parsed.username),
+      host: parsed.hostname,
+      port: parsed.port || '5432',
+      database: decodeURIComponent(parsed.pathname.slice(1)),
+      password: decodeURIComponent(parsed.password || ''),
+    };
+  }
+
   async createBackup() {
     console.log('🗄️ Starting database backup...');
     
@@ -33,24 +51,38 @@ class DatabaseBackup {
       const backupFile = path.join(this.backupDir, `backup-${this.timestamp}.dump`);
       
       // Extract database connection info
-      const dbUrl = config.databaseUrl;
+      const dbUrl = process.env.DATABASE_URL;
       if (!dbUrl) {
         throw new Error('DATABASE_URL environment variable not set');
       }
 
-      // Parse database URL for pg_dump
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
-      }
+      const connection = this.parseDatabaseUrl(dbUrl);
+      const password = process.env.DB_PASSWORD || connection.password;
+      if (!password) throw new Error('DB_PASSWORD environment variable not set');
 
-      const [, user, , host, port, database] = dbUrlMatch;
-      
-      // Create backup command
-      const backupCommand = `PGPASSWORD="${process.env.DB_PASSWORD || ''}" pg_dump -h ${host} -p ${port} -U ${user} -d ${database} --no-password --clean --if-exists --format=custom --compress=9 > "${backupFile}"`;
-      
       console.log('📦 Executing backup command...');
-      execSync(backupCommand, { stdio: 'inherit' });
+      const output = fs.openSync(backupFile, 'w');
+      try {
+        const result = spawnSync('pg_dump', [
+          '-h', connection.host,
+          '-p', connection.port,
+          '-U', connection.user,
+          '-d', connection.database,
+          '--no-password',
+          '--clean',
+          '--if-exists',
+          '--format=custom',
+          '--compress=9',
+        ], {
+          stdio: ['ignore', output, 'inherit'],
+          env: { ...process.env, PGPASSWORD: password },
+          windowsHide: true,
+        });
+        if (result.error) throw result.error;
+        if (result.status !== 0) throw new Error(`pg_dump exited with status ${result.status}`);
+      } finally {
+        fs.closeSync(output);
+      }
       
       // Verify backup was created
       const stats = fs.statSync(backupFile);
@@ -89,7 +121,7 @@ class DatabaseBackup {
       timestamp: this.timestamp,
       filename: path.basename(backupFile),
       size: size,
-      environment: config.env,
+      environment: process.env.NODE_ENV || 'development',
       database: this.extractDatabaseName(),
       created: new Date().toISOString()
     };
@@ -125,9 +157,12 @@ class DatabaseBackup {
   }
 
   extractDatabaseName() {
-    const dbUrl = config.databaseUrl;
-    const match = dbUrl.match(/postgresql:\/\/[^\/]+\/(.+)/);
-    return match ? match[1] : 'unknown';
+    const dbUrl = process.env.DATABASE_URL;
+    try {
+      return this.parseDatabaseUrl(dbUrl).database;
+    } catch (_) {
+      return 'unknown';
+    }
   }
 
   async notifyBackupFailure(error) {
@@ -135,7 +170,7 @@ class DatabaseBackup {
     console.log('🚨 BACKUP FAILURE NOTIFICATION:');
     console.log(`   Error: ${error.message}`);
     console.log(`   Time: ${new Date().toISOString()}`);
-    console.log(`   Environment: ${config.env}`);
+    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     
     // Could integrate with notification service here
     // await notificationService.sendAlert('Database backup failed', error.message);
@@ -168,25 +203,37 @@ class DatabaseBackup {
     console.log(`🔄 Restoring from backup: ${backupFile}`);
     
     try {
-      const dbUrl = config.databaseUrl;
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
+      if (process.env.RECOVERY_TARGET !== 'isolated') {
+        throw new Error('RECOVERY_TARGET=isolated is required; production restore is disabled');
+      }
+      const dbUrl = process.env.RECOVERY_DATABASE_URL;
+      if (!dbUrl) throw new Error('RECOVERY_DATABASE_URL environment variable not set');
+      const connection = this.parseDatabaseUrl(dbUrl, 'RECOVERY_DATABASE_URL');
+      const password = process.env.RECOVERY_DB_PASSWORD;
+      if (!password) throw new Error('RECOVERY_DB_PASSWORD environment variable not set');
+      const backupRoot = path.resolve(this.backupDir);
+      const backupPath = path.resolve(backupRoot, backupFile);
+      if (!backupPath.startsWith(`${backupRoot}${path.sep}`) || !fs.existsSync(backupPath)) {
+        throw new Error('Backup file must exist inside the backup directory');
       }
 
-      const [, user, , host, port, database] = dbUrlMatch;
-      
       // The backup is PostgreSQL custom format; restore it with pg_restore.
       // psql cannot consume a custom-format archive even when the file is
       // named with a SQL-like extension.
-      const restoreCommand = `PGPASSWORD="${process.env.DB_PASSWORD || ''}" pg_restore --clean --if-exists --no-owner --no-privileges -h ${host} -p ${port} -U ${user} -d ${database} "${backupFile}"`;
-      
-      console.log('⚠️  WARNING: This will overwrite the current database!');
+      const result = spawnSync('pg_restore', [
+        '--clean', '--if-exists', '--no-owner', '--no-privileges',
+        '-h', connection.host, '-p', connection.port, '-U', connection.user,
+        '-d', connection.database, backupPath,
+      ], {
+        stdio: 'inherit',
+        env: { ...process.env, PGPASSWORD: password },
+        windowsHide: true,
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`pg_restore exited with status ${result.status}`);
+
+      console.log('ℹ️  Restore completed only against the explicitly isolated recovery target.');
       console.log('🔄 Executing restore command...');
-      
-      execSync(restoreCommand, { stdio: 'inherit' });
-      
       console.log('✅ Database restored successfully!');
       
     } catch (error) {
