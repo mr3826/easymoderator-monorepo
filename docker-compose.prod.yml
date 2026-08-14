@@ -29,7 +29,7 @@ volumes:
 services:
   # ── Caddy: TLS + reverse proxy ────────────────────────────────────────────
   caddy:
-    image: caddy:2-alpine
+    image: caddy@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
     restart: unless-stopped
     ports:
       - "80:80"
@@ -101,7 +101,7 @@ services:
 
   # ── PostgreSQL 15 ─────────────────────────────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    image: postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a
     restart: unless-stopped
     env_file:
       - .env.prod
@@ -122,7 +122,7 @@ services:
 
   # ── Redis 7 ───────────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     restart: unless-stopped
     # noeviction, not allkeys-lru: this Redis backs BullMQ, and the eviction
     # policy is server-wide even though the queues are isolated in db3. Under LRU
@@ -148,7 +148,7 @@ services:
 
   # ── Qdrant: Vector DB for RAG ─────────────────────────────────────────────
   qdrant:
-    image: qdrant/qdrant@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
+    image: qdrant/qdrant@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage

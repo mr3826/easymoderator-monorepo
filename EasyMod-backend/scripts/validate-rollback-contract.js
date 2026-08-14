@@ -20,7 +20,10 @@ const required = [
     ['previous frontend capture', 'previous_frontend_image=$(resolve_container_digest easymod-frontend-1'],
     ['RepoDigest capture', "{{index .RepoDigests 0}}"],
     ['running digest guard', 'running services are not backed by content-addressed images'],
-    ['candidate digest resolver', 'resolve_image_digest() {'],
+    ['candidate digest outputs', 'backend_digest: ${{ steps.backend_image.outputs.digest }}'],
+    ['candidate immutable assertion', 'assert_immutable_ref() {'],
+    ['rendered compose image guard', 'config --images'],
+    ['deployment metadata', 'deployment-metadata.json'],
     ['rollback function', 'rollback() {'],
     ['rollback image verification', 'verify_rollback() {'],
     ['previous backend restore', 'export GHCR_IMAGE_BACKEND="$previous_backend_image"'],
@@ -46,6 +49,21 @@ if (missing.length) {
 if (/^\s*[^#\n]*:(latest|dev)\b/m.test(workflow)
     || /GHCR_IMAGE_(BACKEND|FRONTEND).*latest/.test(compose)) {
     throw new Error('Rollback contract permits a mutable production image tag.');
+}
+
+if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"')
+    || !workflow.includes('candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"')
+    || !workflow.includes('assert_immutable_ref "$candidate_backend_image"')
+    || !workflow.includes('assert_immutable_ref "$candidate_frontend_image"')) {
+    throw new Error('Production deployment does not fail closed on digest-pinned candidate references.');
+}
+
+if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)
+    || !compose.includes('image: caddy@sha256:')
+    || !compose.includes('image: postgres@sha256:')
+    || !compose.includes('image: redis@sha256:')
+    || !compose.includes('image: qdrant/qdrant@sha256:')) {
+    throw new Error('Production Compose contains mutable or unpinned infrastructure images.');
 }
 
 // Synthetic rehearsal of the state transition. This deliberately does not call

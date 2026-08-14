@@ -132,6 +132,8 @@ async function saveDataUrlImage({ dataUrl, shopId, subdir, allowedTypes = IMAGE_
         publicPath: `/uploads/${subdir}/${shopId}/${fileName}`,
         mimeType: parsed.mimeType,
         bytes: parsed.buffer.length,
+        // Internal cleanup handle. Callers should never expose this path.
+        absolutePath,
     };
 }
 

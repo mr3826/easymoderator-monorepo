@@ -6,7 +6,7 @@
  * Used by backup-runner container for database restoration
  */
 
-const { execSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -15,11 +15,67 @@ class DatabaseRestore {
     this.backupDir = '/backups';
   }
 
+  databaseArgs(user, host, port, database) {
+    return ['-h', host, '-p', port, '-U', user, '-d', database];
+  }
+
+  runCustomRestore(backupPath, databaseArgs, password) {
+    const result = spawnSync(
+      'pg_restore',
+      ['--clean', '--if-exists', '--exit-on-error', '--no-owner', '--no-privileges', ...databaseArgs, backupPath],
+      { stdio: 'inherit', env: { ...process.env, PGPASSWORD: password } },
+    );
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`pg_restore exited with status ${result.status}`);
+  }
+
+  runSqlRestore(backupPath, databaseArgs, password) {
+    return new Promise((resolve, reject) => {
+      const psql = spawn('psql', ['--set', 'ON_ERROR_STOP=1', ...databaseArgs], {
+        stdio: ['pipe', 'inherit', 'inherit'],
+        env: { ...process.env, PGPASSWORD: password },
+      });
+      const source = backupPath.endsWith('.gz')
+        ? spawn('gzip', ['-dc', backupPath], { stdio: ['ignore', 'pipe', 'inherit'] })
+        : fs.createReadStream(backupPath);
+      const sourceOutput = source.stdout || source;
+      let sourceStatus = null;
+      let psqlStatus = null;
+      let settled = false;
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        if (psql.exitCode === null) psql.kill();
+        if (source.kill && source.exitCode === null) source.kill();
+        reject(error);
+      };
+      const finish = () => {
+        if (settled || sourceStatus === null || psqlStatus === null) return;
+        if (sourceStatus !== 0) return fail(new Error(`gzip exited with status ${sourceStatus}`));
+        if (psqlStatus !== 0) return fail(new Error(`psql exited with status ${psqlStatus}`));
+        settled = true;
+        resolve();
+      };
+
+      sourceOutput.on('error', fail);
+      source.on('error', fail);
+      psql.on('error', fail);
+      source.on('close', (code) => { sourceStatus = code ?? 0; finish(); });
+      psql.on('close', (code) => { psqlStatus = code ?? 0; finish(); });
+      sourceOutput.pipe(psql.stdin);
+    });
+  }
+
   async restoreDatabase(backupFile) {
     console.log(`🔄 Restoring from backup: ${backupFile}`);
     
     try {
-      const backupPath = path.join(this.backupDir, backupFile);
+      const backupRoot = path.resolve(this.backupDir);
+      const backupPath = path.resolve(backupRoot, backupFile);
+      if (!backupPath.startsWith(`${backupRoot}${path.sep}`)) {
+        throw new Error('Backup file must remain inside the backup directory');
+      }
       
       // Check if backup file exists
       if (!fs.existsSync(backupPath)) {
@@ -52,13 +108,15 @@ class DatabaseRestore {
       console.log(`💾 Size: ${sizeInMB} MB`);
       console.log(`📅 Modified: ${stats.mtime}`);
 
-      // Create restore command
-      const restoreCommand = `PGPASSWORD="${password}" psql -h ${host} -p ${port} -U ${user} -d ${database} < "${backupPath}"`;
-      
       console.log('⚠️  WARNING: This will overwrite current database!');
       console.log('🔄 Executing restore command...');
-      
-      execSync(restoreCommand, { stdio: 'inherit' });
+
+      const databaseArgs = this.databaseArgs(user, host, port, database);
+      if (backupPath.endsWith('.dump')) {
+        this.runCustomRestore(backupPath, databaseArgs, password);
+      } else {
+        await this.runSqlRestore(backupPath, databaseArgs, password);
+      }
       
       console.log('✅ Database restored successfully!');
       
@@ -108,7 +166,7 @@ class DatabaseRestore {
       }
 
       const files = fs.readdirSync(this.backupDir)
-        .filter(file => file.endsWith('.sql'))
+        .filter(file => file.endsWith('.sql') || file.endsWith('.dump') || file.endsWith('.sql.gz'))
         .map(file => {
           const filePath = path.join(this.backupDir, file);
           const stats = fs.statSync(filePath);
@@ -169,7 +227,7 @@ async function main() {
         console.log('  restore   - Restore from backup file');
         console.log('  list      - List available backups');
         console.log('\nExamples:');
-        console.log('  node restore-database.js restore backup-2023-05-06T15-30-00-000Z.sql');
+        console.log('  node restore-database.js restore backup-2023-05-06T15-30-00-000Z.dump');
         console.log('  node restore-database.js list');
         break;
     }

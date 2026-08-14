@@ -30,7 +30,7 @@ class DatabaseBackup {
     console.log('🗄️ Starting database backup...');
     
     try {
-      const backupFile = path.join(this.backupDir, `backup-${this.timestamp}.sql`);
+      const backupFile = path.join(this.backupDir, `backup-${this.timestamp}.dump`);
       
       // Extract database connection info
       const dbUrl = config.databaseUrl;
@@ -94,7 +94,7 @@ class DatabaseBackup {
       created: new Date().toISOString()
     };
 
-    const metadataFile = backupFile.replace('.sql', '.meta.json');
+    const metadataFile = backupFile.replace(/\.(?:sql|dump)$/, '.meta.json');
     fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2));
     
     console.log('📋 Backup metadata created');
@@ -147,7 +147,7 @@ class DatabaseBackup {
     }
 
     const files = fs.readdirSync(this.backupDir)
-      .filter(file => file.endsWith('.sql'))
+      .filter(file => file.endsWith('.dump') || file.endsWith('.sql'))
       .map(file => {
         const filePath = path.join(this.backupDir, file);
         const stats = fs.statSync(filePath);
@@ -177,8 +177,10 @@ class DatabaseBackup {
 
       const [, user, , host, port, database] = dbUrlMatch;
       
-      // Create restore command
-      const restoreCommand = `PGPASSWORD="${process.env.DB_PASSWORD || ''}" psql -h ${host} -p ${port} -U ${user} -d ${database} < "${backupFile}"`;
+      // The backup is PostgreSQL custom format; restore it with pg_restore.
+      // psql cannot consume a custom-format archive even when the file is
+      // named with a SQL-like extension.
+      const restoreCommand = `PGPASSWORD="${process.env.DB_PASSWORD || ''}" pg_restore --clean --if-exists --no-owner --no-privileges -h ${host} -p ${port} -U ${user} -d ${database} "${backupFile}"`;
       
       console.log('⚠️  WARNING: This will overwrite the current database!');
       console.log('🔄 Executing restore command...');
@@ -238,7 +240,7 @@ async function main() {
         console.log('\nExamples:');
         console.log('  node backup-database.js create');
         console.log('  node backup-database.js list');
-        console.log('  node backup-database.js restore backup-2023-05-06T15-30-00-000Z.sql');
+        console.log('  node backup-database.js restore backup-2023-05-06T15-30-00-000Z.dump');
         break;
     }
   } catch (error) {

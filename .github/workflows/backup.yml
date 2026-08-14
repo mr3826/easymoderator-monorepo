@@ -20,7 +20,7 @@ on:
 #   SPACES_SECRET_ACCESS_KEY  — DO Spaces / S3 secret key      (EXTERNAL)
 #   SPACES_ENDPOINT           — e.g. https://blr1.digitaloceanspaces.com
 #   BACKUP_BUCKET             — bucket/space name
-# Until the EXTERNAL Spaces credentials exist, off-site upload is skipped with a
+# Until the EXTERNAL Spaces credentials exist, this job fails closed with a
 # clear message and F-04 remains BLOCKED_EXTERNAL_CREDENTIAL. A backup that sits
 # only on the droplet it protects does not satisfy the pilot DR requirement.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -86,6 +86,12 @@ jobs:
               -c "cd /app/uploads && tar czf /backup/$UPLOADS_BACKUP_FILE ."
             echo "Uploads backup complete: $(du -sh "$BACKUP_DIR/$UPLOADS_BACKUP_FILE" | cut -f1)"
 
+            # Product uploads are quota-bounded at request time. Sweep
+            # abandoned files after the backup so a failed product save or
+            # abandoned form cannot retain storage indefinitely.
+            docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml run \
+              --rm --no-deps --user root --entrypoint node backend /app/scripts/cleanup-product-media.js
+
             # ── Off-site upload (F-04) ────────────────────────────────────────
             # All-or-nothing guard: every off-site secret must be present. A
             # partial config is treated as "not configured" so we never upload
@@ -136,7 +142,8 @@ jobs:
               upload_one "$BACKUP_DIR/$UPLOADS_BACKUP_FILE" "uploads"
               echo "Off-site upload complete."
             else
-              echo "::warning::Off-site backup upload SKIPPED — object-storage credentials not configured (F-04 BLOCKED_EXTERNAL_CREDENTIAL). Backups exist ONLY on the droplet."
+              echo "::error::Off-site backup upload BLOCKED — object-storage credentials not configured (F-04 BLOCKED_EXTERNAL_CREDENTIAL). Backups exist ONLY on the droplet."
+              exit 1
             fi
 
             # Retain only the last 7 days of LOCAL copies

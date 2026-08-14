@@ -175,6 +175,7 @@ function buildRenderedEnv(source = process.env) {
         SEED_ADMIN_PAID_MONTHS: '12',
         ALLOW_SELF_SIGNED_TLS: source.ALLOW_SELF_SIGNED_TLS || 'false',
         BODY_SIZE_LIMIT: source.BODY_SIZE_LIMIT || '35mb',
+        PRODUCT_IMAGE_QUOTA_BYTES: source.PRODUCT_IMAGE_QUOTA_BYTES || '104857600',
         MEDIA_FETCH_ALLOWED_HOSTS: source.MEDIA_FETCH_ALLOWED_HOSTS || '',
         START_EMBEDDED_WORKERS: 'false',
         RUN_MIGRATIONS_ON_STARTUP: 'false',
