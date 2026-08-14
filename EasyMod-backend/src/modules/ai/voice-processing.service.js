@@ -20,6 +20,7 @@ const path = require('path');
 const { Message, Conversation, Customer } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
+const { MAX_AUDIO_BYTES } = require('./voice-processing.limits');
 
 const logger = createLogger('VoiceProcessing');
 
@@ -155,6 +156,9 @@ async function transcribeWithGemini(audioBuffer, language = 'auto') {
     if (!GEMINI_API_KEY) {
       throw new Error('GEMINI_API_KEY not configured');
     }
+    if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0 || audioBuffer.length > MAX_AUDIO_BYTES) {
+      throw new AppError('Audio payload is empty or exceeds the 10 MB limit', 413);
+    }
 
     // Convert buffer to base64
     const base64Audio = audioBuffer.toString('base64');
@@ -196,6 +200,9 @@ Please transcribe the audio and return ONLY the transcribed text without any add
         headers: {
           'Content-Type': 'application/json'
         },
+        timeout: 30000,
+        maxBodyLength: 16 * 1024 * 1024,
+        maxContentLength: 1024 * 1024,
         params: {
           key: GEMINI_API_KEY
         }
@@ -216,6 +223,7 @@ Please transcribe the audio and return ONLY the transcribed text without any add
     return transcript.trim();
   } catch (error) {
     logger.error('Error calling Gemini API', { error, language });
+    if (error instanceof AppError) throw error;
     throw new AppError(`Transcription failed: ${error.message}`, 500);
   }
 }

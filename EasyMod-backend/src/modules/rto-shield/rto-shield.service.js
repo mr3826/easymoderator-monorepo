@@ -50,10 +50,25 @@ class RtoShieldService {
    * shops carries a signal none of them could see alone. No PII beyond the phone is shared.
    * @returns {{ shops_reported:number, total_attempts:number, total_rtos:number, rto_rate:number }}
    */
-  static async getNetworkStats(phone) {
+  static async getNetworkStats(phone, requestingShopId = null) {
     const normalized = normalizePhone(phone);
     if (!normalized || !isValidBdPhone(normalized)) {
       return { shops_reported: 0, total_attempts: 0, total_rtos: 0, rto_rate: 0 };
+    }
+
+    // A tenant may only ask for a network signal for a phone already present
+    // in that tenant's own delivery history. This keeps the cross-shop
+    // aggregate useful for an active order while preventing arbitrary phone
+    // number probing through the authenticated endpoint.
+    if (requestingShopId) {
+      const localRecord = await CustomerDeliveryStats.findOne({
+        where: { phone: normalized, shop_id: requestingShopId },
+        attributes: ['id'],
+        raw: true,
+      });
+      if (!localRecord) {
+        return { shops_reported: 0, total_attempts: 0, total_rtos: 0, rto_rate: 0 };
+      }
     }
 
     const row = await CustomerDeliveryStats.findOne({
@@ -101,7 +116,7 @@ class RtoShieldService {
       where: { phone: normalized, shop_id: shopId, reason: WHITELIST_REASON }
     });
     if (whitelisted) {
-      return { ...empty, network: enforceNetwork ? await RtoShieldService.getNetworkStats(normalized) : null };
+      return { ...empty, network: enforceNetwork ? await RtoShieldService.getNetworkStats(normalized, shopId) : null };
     }
 
     // Blacklist entries: always the shop's own; global only when the shop enforces the network.
@@ -114,7 +129,7 @@ class RtoShieldService {
       order: [['risk_score', 'DESC']] // Return highest risk entry
     });
 
-    const network = enforceNetwork ? await RtoShieldService.getNetworkStats(normalized) : null;
+    const network = enforceNetwork ? await RtoShieldService.getNetworkStats(normalized, shopId) : null;
     const riskScore = entry ? entry.risk_score : 0;
     const tier = classifyTier(riskScore, network);
 

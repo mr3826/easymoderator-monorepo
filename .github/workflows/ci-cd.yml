@@ -4,6 +4,7 @@ name: CI / CD
 # Required GitHub secrets (Settings → Secrets → Actions):
 #   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
 #   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
+#   DO_SSH_KNOWN_HOSTS   — pinned SSH host keys for DEPLOY_HOST
 # Public origin settings are repository variables, not secrets:
 #   VITE_API_BASE_URL    — https://api.easymod.tech
 #   VITE_APP_URL         — https://app.easymod.tech
@@ -303,12 +304,14 @@ jobs:
           MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           mkdir -p _tmp
           trap 'rm -f _tmp/.env.prod.real' EXIT
           test -n "$DEPLOY_HOST"
           test -n "$DO_SSH_PRIVATE_KEY"
+          test -n "$DO_SSH_KNOWN_HOSTS"
           node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod.real
           test -s _tmp/.env.prod.real
           grep -q '^CSRF_SECRET=' _tmp/.env.prod.real
@@ -533,21 +536,26 @@ jobs:
           MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
 
       - name: Copy .env.prod and deploy config to droplet
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
-          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/.env.prod
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
+          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@"$DEPLOY_HOST":/opt/easymod/.env.prod
           # Sync compose + Caddy config straight from the runner's checkout. The
           # droplet has no GitHub auth, so its `git fetch` (in the deploy script)
           # silently failed and left STALE config on disk — which is why the F-05
           # `/health* -> backend` routing never reached production. scp makes the
           # runner the single source of truth for these two files.
-          scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/docker-compose.prod.yml
-          scp -i ~/.ssh/deploy_key Caddyfile root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/Caddyfile
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
+          scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@"$DEPLOY_HOST":/opt/easymod/docker-compose.prod.yml
+          scp -i ~/.ssh/deploy_key Caddyfile root@"$DEPLOY_HOST":/opt/easymod/Caddyfile
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
@@ -560,24 +568,37 @@ jobs:
           script: |
             set -e
 
-            # Capture the running digests before any replacement. A no-change
-            # service keeps its current image; a changed service uses the
-            # immutable SHA tag produced by the build job. This makes compose
-            # independent of mutable :latest aliases and gives rollback a
-            # concrete image reference.
-            previous_backend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-backend-1 2>/dev/null || true)
-            previous_frontend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-frontend-1 2>/dev/null || true)
-            if [ -z "$previous_backend_image" ]; then
-              previous_backend_image=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
-            fi
-            if [ -z "$previous_frontend_image" ]; then
-              previous_frontend_image=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
-            fi
+            # Capture the running content-addressed images before any
+            # replacement. A no-change service keeps its current digest; a
+            # changed service is resolved to the digest returned by the
+            # registry after pulling its full-SHA candidate tag.
+            resolve_image_digest() {
+              local image_ref="$1"
+              local digest
+              digest=$(docker image inspect -f '{{index .RepoDigests 0}}' "$image_ref" 2>/dev/null || true)
+              case "$digest" in
+                *@sha256:*) printf '%s' "$digest" ;;
+                *) echo "ERROR: image has no content digest: $image_ref" >&2; return 1 ;;
+              esac
+            }
+
+            resolve_container_digest() {
+              local container="$1"
+              local digest
+              digest=$(docker inspect -f '{{index .RepoDigests 0}}' "$container" 2>/dev/null || true)
+              case "$digest" in
+                *@sha256:*) printf '%s' "$digest" ;;
+                *) return 1 ;;
+              esac
+            }
+
+            previous_backend_image=$(resolve_container_digest easymod-backend-1 2>/dev/null || true)
+            previous_frontend_image=$(resolve_container_digest easymod-frontend-1 2>/dev/null || true)
 
             export GHCR_IMAGE_BACKEND="${BACKEND_TAG:-$previous_backend_image}"
             export GHCR_IMAGE_FRONTEND="${FRONTEND_TAG:-$previous_frontend_image}"
-            if [ -z "$GHCR_IMAGE_BACKEND" ] || [ -z "$GHCR_IMAGE_FRONTEND" ]; then
-              echo "ERROR: no immutable candidate or running image is available for rollback-safe deployment"
+            if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
+              echo "ERROR: running services are not backed by content-addressed images; manual digest pinning is required before cutover"
               exit 1
             fi
 
@@ -647,23 +668,55 @@ jobs:
               docker pull "$FRONTEND_TAG"
             fi
 
+            if [ -n "$BACKEND_TAG" ]; then
+              export GHCR_IMAGE_BACKEND="$(resolve_image_digest "$BACKEND_TAG")"
+            fi
+            if [ -n "$FRONTEND_TAG" ]; then
+              export GHCR_IMAGE_FRONTEND="$(resolve_image_digest "$FRONTEND_TAG")"
+            fi
+
             # Validate the rendered environment with the candidate backend image
             # before replacing any running container.
             docker run --rm --env-file .env.prod "$GHCR_IMAGE_BACKEND" \
               node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
 
+            verify_rollback() {
+              local restored_backend restored_frontend
+              restored_backend=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
+              restored_frontend=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
+              if [ "$restored_backend" != "$previous_backend_image" ] || [ "$restored_frontend" != "$previous_frontend_image" ]; then
+                echo "ERROR: rollback image references were not restored"
+                return 1
+              fi
+              for i in $(seq 1 20); do
+                local status
+                status=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
+                if [ "$status" = "200" ]; then
+                  echo "Rollback health check passed on attempt $i"
+                  return 0
+                fi
+                sleep 5
+              done
+              echo "ERROR: rollback health check failed after 100s"
+              return 1
+            }
+
             rollback() {
               echo "ERROR: candidate deployment failed; restoring previous image references"
-              if [ -n "$previous_backend_image" ] && [ -n "$previous_frontend_image" ]; then
-                export GHCR_IMAGE_BACKEND="$previous_backend_image"
-                export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
-                docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans || true
-              else
+              if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
                 echo "ERROR: previous image references were unavailable; manual recovery is required"
+                return 1
               fi
+              export GHCR_IMAGE_BACKEND="$previous_backend_image"
+              export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
+              if ! docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans; then
+                echo "ERROR: rollback compose restore failed"
+                return 1
+              fi
+              verify_rollback
             }
             deploy_succeeded=false
-            trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$deploy_succeeded" != "true" ]; then rollback; fi' EXIT
+            trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$deploy_succeeded" != "true" ]; then rollback || rc=70; fi; exit "$rc"' EXIT
 
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
             if [ "$WIPE_DB" = "WIPE" ]; then

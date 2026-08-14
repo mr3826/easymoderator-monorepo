@@ -78,7 +78,8 @@ const authenticate = async (req, res, next) => {
 /**
  * Block API access for suspended shops.
  * Caches subscription status for 60 seconds to avoid a DB hit on every request.
- * Fails open (next()) on DB/cache errors — never block users due to infrastructure issues.
+ * Fails closed on DB/cache errors so an unavailable authorization store cannot
+ * silently restore access to a suspended shop.
  */
 const checkSubscriptionStatus = async (req, res, next) => {
     try {
@@ -108,8 +109,10 @@ const checkSubscriptionStatus = async (req, res, next) => {
 
         next();
     } catch (err) {
-        // Fail open — infrastructure errors (Redis/DB down) must not block active users.
-        next();
+        // Authorization state is security-sensitive. Return a temporary failure
+        // and let the caller retry instead of treating an unavailable store as
+        // proof that the shop is active.
+        next(new AppError('Subscription status is temporarily unavailable. Please retry.', 503));
     }
 };
 

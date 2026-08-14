@@ -5,6 +5,9 @@ const mockIsTokenBlacklisted = jest.fn();
 const mockUserFindByPk = jest.fn();
 const mockCacheGet = jest.fn();
 const mockCacheSet = jest.fn();
+const mockCacheGetForShop = jest.fn();
+const mockCacheSetForShop = jest.fn();
+const mockSubscriptionFindOne = jest.fn();
 
 jest.mock('../../utils/jwt.util', () => ({
     verifyAccessToken: mockVerifyAccessToken,
@@ -14,13 +17,16 @@ jest.mock('../../modules/auth/auth.service', () => ({
 }));
 jest.mock('../../modules/entities', () => ({
     User: { findByPk: mockUserFindByPk },
+    Subscription: { findOne: mockSubscriptionFindOne },
 }));
 jest.mock('../../utils/cache.service', () => ({
     get: mockCacheGet,
     set: mockCacheSet,
+    getForShop: mockCacheGetForShop,
+    setForShop: mockCacheSetForShop,
 }));
 
-const { authenticate } = require('../auth.middleware');
+const { authenticate, checkSubscriptionStatus } = require('../auth.middleware');
 
 function runAuthenticate() {
     const req = {
@@ -38,6 +44,8 @@ describe('access-token revocation state', () => {
         mockIsTokenBlacklisted.mockResolvedValue(false);
         mockCacheGet.mockResolvedValue(null);
         mockCacheSet.mockResolvedValue(undefined);
+        mockCacheGetForShop.mockResolvedValue(null);
+        mockCacheSetForShop.mockResolvedValue(undefined);
     });
 
     test('rejects a signed token that omits tokenVersion instead of bypassing revocation', async () => {
@@ -71,5 +79,20 @@ describe('access-token revocation state', () => {
             attributes: ['token_version'],
         });
         expect(req.user).toMatchObject({ userId: 'user-1', shopId: 'shop-1' });
+    });
+
+    test('fails closed when subscription state cannot be read', async () => {
+        mockCacheGetForShop.mockRejectedValue(new Error('redis unavailable'));
+
+        const result = await new Promise((resolve) => {
+            checkSubscriptionStatus(
+                { user: { shopId: 'shop-1' } },
+                {},
+                (error) => resolve({ error }),
+            );
+        });
+
+        expect(result.error).toMatchObject({ status: 503 });
+        expect(result.error.message).toMatch(/temporarily unavailable/);
     });
 });

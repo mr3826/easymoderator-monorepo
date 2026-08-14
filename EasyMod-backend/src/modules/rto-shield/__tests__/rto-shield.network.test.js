@@ -91,6 +91,7 @@ describe('checkPhone tiers', () => {
     mockBlacklistFindOne
       .mockResolvedValueOnce(null) // whitelist lookup
       .mockResolvedValueOnce({ risk_score: 85, reason: 'fraud', toJSON: () => ({ risk_score: 85 }) }); // entry
+    mockStatsFindOne.mockResolvedValueOnce({ id: 'local-record' });
     mockStatsFindOne.mockResolvedValueOnce({ shops_reported: '1', total_attempts: '2', total_rtos: '2' });
     const res = await RtoShieldService.checkPhone(PHONE, 'shop-1');
     expect(res.tier).toBe(TIERS.TIER_BLOCK);
@@ -101,6 +102,7 @@ describe('checkPhone tiers', () => {
     mockBlacklistFindOne
       .mockResolvedValueOnce(null) // whitelist
       .mockResolvedValueOnce(null); // no entry
+    mockStatsFindOne.mockResolvedValueOnce({ id: 'local-record' });
     mockStatsFindOne.mockResolvedValueOnce({ shops_reported: '3', total_attempts: '6', total_rtos: '4' }); // 66%
     const res = await RtoShieldService.checkPhone(PHONE, 'shop-1');
     expect(res.tier).toBe(TIERS.TIER_VERIFY);
@@ -109,6 +111,7 @@ describe('checkPhone tiers', () => {
 
   it('returns CLEAR tier for a clean phone', async () => {
     mockBlacklistFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    mockStatsFindOne.mockResolvedValueOnce({ id: 'local-record' });
     mockStatsFindOne.mockResolvedValueOnce({ shops_reported: '1', total_attempts: '3', total_rtos: '0' });
     const res = await RtoShieldService.checkPhone(PHONE, 'shop-1');
     expect(res.tier).toBe(TIERS.TIER_CLEAR);
@@ -116,6 +119,7 @@ describe('checkPhone tiers', () => {
 
   it('honors a per-shop whitelist override (returns clear)', async () => {
     mockBlacklistFindOne.mockResolvedValueOnce({ reason: WHITELIST_REASON }); // whitelist hit
+    mockStatsFindOne.mockResolvedValueOnce({ id: 'local-record' });
     mockStatsFindOne.mockResolvedValueOnce({ shops_reported: '3', total_attempts: '6', total_rtos: '5' });
     const res = await RtoShieldService.checkPhone(PHONE, 'shop-1');
     expect(res.flagged).toBe(false);

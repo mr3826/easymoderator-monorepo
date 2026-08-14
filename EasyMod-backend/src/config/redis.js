@@ -18,7 +18,7 @@ const forceMemoryStore = (config.env === 'staging' || config.env === 'developmen
 
 // DEBUG
 if (config.env === 'staging' || config.env === 'development') {
-    console.log(`[REDIS DEBUG] env=${config.env}, REDIS_URL=${process.env.REDIS_URL}, redisHost=${config.redisHost}, hasRedisConfig=${hasRedisConfig}, forceMemoryStore=${forceMemoryStore}`);
+    console.log(`[REDIS DEBUG] env=${config.env}, redisHost=${config.redisHost}, hasRedisConfig=${hasRedisConfig}, forceMemoryStore=${forceMemoryStore}`);
 }
 
 let sessionRedis, cacheRedis, rateLimitRedis, legacyRedis;

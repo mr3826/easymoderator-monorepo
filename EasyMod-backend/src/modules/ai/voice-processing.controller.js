@@ -7,6 +7,7 @@
  */
 
 const voiceProcessingService = require('./voice-processing.service');
+const { decodeAudioBase64 } = require('./voice-processing.limits');
 
 class VoiceProcessingController {
   /**
@@ -28,8 +29,9 @@ class VoiceProcessingController {
         });
       }
 
-      // Convert base64 to buffer
-      const audioBuffer = Buffer.from(audioBase64, 'base64');
+      // Decode only canonical, bounded base64. Buffer.from alone is permissive
+      // and can silently accept malformed input or allocate oversized buffers.
+      const audioBuffer = decodeAudioBase64(audioBase64);
 
       const result = await voiceProcessingService.transcribeWithGemini(
         audioBuffer,

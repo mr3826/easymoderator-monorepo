@@ -1,6 +1,7 @@
 const AuditLog = require('./audit-log.entity');
 const IdempotencyKey = require('./idempotency-key.entity');
 const crypto = require('crypto');
+const { AppError } = require('../../utils/AppError');
 
 /**
  * Audit service for logging operations and handling idempotency
@@ -168,10 +169,15 @@ class AuditService {
      * Get audit logs for a resource
      */
     static async getAuditLogs(resourceType, resourceId, options = {}) {
-        const { limit = 50, offset = 0 } = options;
+        const { limit = 50, offset = 0, shopId } = options;
+
+        if (!shopId) {
+            throw new AppError('Shop scope is required for resource audit logs', 400);
+        }
 
         return await AuditLog.findAll({
             where: {
+                shop_id: shopId,
                 resource_type: resourceType,
                 resource_id: resourceId
             },

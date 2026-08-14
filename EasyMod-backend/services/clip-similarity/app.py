@@ -34,6 +34,10 @@ import json
 import logging
 import hashlib
 import asyncio
+import ipaddress
+import socket
+from io import BytesIO
+from urllib.parse import urlparse
 from typing import Optional
 import numpy as np
 from fastapi import FastAPI, HTTPException
@@ -48,6 +52,13 @@ MODEL_NAME = os.getenv("MODEL_NAME", "openai/clip-vit-base-patch32")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 PORT = int(os.getenv("PORT", "8002"))
 HASH_TTL = int(os.getenv("HASH_TTL", "86400"))
+MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
+MAX_IMAGE_PIXELS = int(os.getenv("MAX_IMAGE_PIXELS", str(20_000_000)))
+ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv("CLIP_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+}
 
 _model = None
 _processor = None
@@ -83,14 +94,79 @@ async def get_redis():
     return _redis
 
 
-def embed_image_url(image_url: str) -> list[float]:
+def _validate_image_url(image_url: str):
+    if not isinstance(image_url, str) or len(image_url) > 2048:
+        raise ValueError("image URL is invalid or too long")
+
+    parsed = urlparse(image_url)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
+        raise ValueError("image URL must be an HTTPS URL without credentials")
+    if ALLOWED_HOSTS and hostname not in ALLOWED_HOSTS:
+        raise ValueError("image host is not allowed")
+
+    try:
+        addresses = {
+            result[4][0]
+            for result in socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
+        }
+    except OSError as exc:
+        raise ValueError("image host could not be resolved") from exc
+
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise ValueError("image host resolves to a non-public address")
+    return parsed
+
+
+def _download_image(image_url: str) -> bytes:
     import requests
+
+    _validate_image_url(image_url)
+    response = requests.get(
+        image_url,
+        timeout=(3, 5),
+        stream=True,
+        allow_redirects=False,
+    )
+    if 300 <= response.status_code < 400:
+        raise ValueError("image redirects are not allowed")
+    response.raise_for_status()
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_IMAGE_BYTES:
+                raise ValueError("image response exceeds the size limit")
+        except ValueError as exc:
+            if str(exc) == "image response exceeds the size limit":
+                raise
+            raise ValueError("image response has an invalid length") from exc
+
+    chunks = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            raise ValueError("image response exceeds the size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def embed_image_url(image_url: str) -> list[float]:
     from PIL import Image
     import torch
-    resp = requests.get(image_url, timeout=5)
-    resp.raise_for_status()
-    from io import BytesIO
-    image = Image.open(BytesIO(resp.content)).convert("RGB")
+
+    Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+    image_bytes = _download_image(image_url)
+    image = Image.open(BytesIO(image_bytes))
+    image.load()
+    if image.width * image.height > MAX_IMAGE_PIXELS:
+        raise ValueError("image dimensions exceed the pixel limit")
+    image = image.convert("RGB")
     inputs = _processor(images=image, return_tensors="pt")
     with torch.no_grad():
         embedding = _model.get_image_features(**inputs)
@@ -192,13 +268,16 @@ def embed_image(req: EmbedImageRequest):
         embedding = embed_image_url(req.image_url)
         return {"embedding": embedding, "model": MODEL_NAME, "dims": len(embedding)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("CLIP image embedding rejected", exc_info=e)
+        raise HTTPException(status_code=400, detail="image could not be safely fetched or decoded")
 
 
 @app.post("/embed_text")
 def embed_text(req: EmbedTextRequest):
     if _model is None:
         raise HTTPException(status_code=503, detail="CLIP model not loaded")
+    if not req.text or len(req.text) > 2000:
+        raise HTTPException(status_code=400, detail="text exceeds the 2000 character limit")
     try:
         embedding = embed_text_str(req.text)
         return {"embedding": embedding, "dims": len(embedding)}
@@ -210,6 +289,10 @@ def embed_text(req: EmbedTextRequest):
 def similarity(req: SimilarityRequest):
     if _model is None:
         raise HTTPException(status_code=503, detail="CLIP model not loaded")
+    if len(req.candidate_embeddings) > 200:
+        raise HTTPException(status_code=413, detail="too many candidate embeddings")
+    if not 0 <= req.threshold <= 1:
+        raise HTTPException(status_code=400, detail="threshold must be between 0 and 1")
     try:
         query_embedding = embed_image_url(req.image_url)
         matches = []
@@ -224,7 +307,8 @@ def similarity(req: SimilarityRequest):
             "query_dims": len(query_embedding)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("CLIP similarity request rejected", exc_info=e)
+        raise HTTPException(status_code=400, detail="image could not be safely fetched or decoded")
 
 
 @app.post("/upsert_product")
@@ -236,7 +320,8 @@ async def upsert_product(req: UpsertProductRequest):
         await set_cached_embedding(req.product_id, req.shop_id, embedding)
         return {"product_id": req.product_id, "cached": True, "dims": len(embedding)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("CLIP product image rejected", exc_info=e)
+        raise HTTPException(status_code=400, detail="image could not be safely fetched or decoded")
 
 
 @app.delete("/product/{shop_id}/{product_id}")

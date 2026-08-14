@@ -60,4 +60,12 @@ describe('production workflow branch safety', () => {
         expect(replacementIndex).toBeGreaterThan(-1);
         expect(migrationIndex).toBeLessThan(replacementIndex);
     });
+
+    test('rollback verifies restored images and health before returning', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('verify_rollback() {');
+        expect(deployBlock).toContain('rollback health check failed after 100s');
+        expect(deployBlock).toContain('rollback || rc=70');
+    });
 });
