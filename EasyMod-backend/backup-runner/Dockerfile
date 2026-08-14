@@ -1,7 +1,12 @@
-FROM node:20-alpine
+FROM node:20-alpine3.19
 
-# Install PostgreSQL client for database backups
-RUN apk add --no-cache postgresql-client
+# Install a PostgreSQL client matching production's server major version
+# (PostgreSQL 15). An unpinned `postgresql-client` drifts with whatever
+# Alpine's rolling repo currently carries — a newer pg_restore issues SET
+# statements for GUCs the PG15 server doesn't recognize (e.g.
+# transaction_timeout, added in PG17), failing every restore even though the
+# backup itself is fine.
+RUN apk add --no-cache postgresql15-client
 
 WORKDIR /app
 
