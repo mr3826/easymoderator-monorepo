@@ -89,9 +89,15 @@ jobs:
 
             # A pg_dump that fails mid-stream still leaves a valid gzip of a
             # partial dump, so size-check the result rather than trusting exit 0.
+            # pg_restore's custom-format reader needs a seekable file, not a
+            # pipe — `pg_restore -l -` fails with "could not open input file
+            # "-"" even though it accepts the flag syntactically, so the dump
+            # is copied into the container as a real file first.
             BACKUP_BYTES=$(wc -c < "$BACKUP_FILE")
+            docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
+              sh -c 'cat > /tmp/backup-verify.dump' < "$BACKUP_FILE"
             TABLE_COUNT=$(docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
-              pg_restore -l - < "$BACKUP_FILE" | grep -c 'TABLE ' || true)
+              sh -c 'pg_restore -l /tmp/backup-verify.dump | grep -c "TABLE "; rm -f /tmp/backup-verify.dump' || true)
             echo "Dump: ${BACKUP_BYTES} bytes custom format, ${TABLE_COUNT} table entries"
             if [ "$BACKUP_BYTES" -lt 10000 ] || [ "$TABLE_COUNT" -lt 5 ]; then
               echo "ERROR: dump looks empty (${BACKUP_BYTES} bytes, ${TABLE_COUNT} tables) — treating as failed"
