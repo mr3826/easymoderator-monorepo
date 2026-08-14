@@ -224,11 +224,13 @@ The rules that decide pass/fail:
    [meta-app-review-submission.md §Permission Use Text](meta-app-review-submission.md)
    verbatim, appending the timestamp where that permission is exercised (table
    at the end of the storyboard doc).
-3. Paste the **Notes to Reviewer** block from the same file. It pre-empts the two
-   behaviours that otherwise read as defects: unsubscribed postbacks, and
-  attaches `POST_PURCHASE_UPDATE` to out-of-window order/support follow-ups.
-  This code path still requires live Page verification before it is presented as
-  delivery evidence.
+3. Paste the **Notes to Reviewer** block from the same file. It pre-empts the
+   three behaviours that otherwise read as defects: unsubscribed postbacks;
+   `POST_PURCHASE_UPDATE` attached to out-of-window AI/system order-support
+   follow-ups (still requires live Page verification before it is presented as
+   delivery evidence); and out-of-window manual/agent replies being blocked
+   outright rather than tagged, pending a separate `HUMAN_AGENT` permission
+   request this app has not made.
 4. Final acceptance sweep (§7).
 5. Submit. Then leave the app in Development mode until approval lands — the
    tester accounts keep working.

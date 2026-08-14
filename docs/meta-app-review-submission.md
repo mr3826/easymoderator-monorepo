@@ -57,7 +57,7 @@ and Save" fail with no useful error.
 >
 > While the app is in Development mode, Meta only delivers webhook events from users with an app role. Please use the provided customer tester account to send the inbound message.
 >
-> Two behaviours are intentional and are not defects: Messenger postbacks (for example a "Get Started" button) are not subscribed, because this release subscribes only to the `messages` field; and out-of-window order/support follow-ups use the `POST_PURCHASE_UPDATE` Send API tag. Live Meta delivery for that path is still a verification item, so it is not part of the screencast claim.
+> Three behaviours are intentional and are not defects: Messenger postbacks (for example a "Get Started" button) are not subscribed, because this release subscribes only to the `messages` field; out-of-window AI/system order-support follow-ups use the `POST_PURCHASE_UPDATE` Send API tag (live Meta delivery for that path is still a verification item, so it is not part of the screencast claim); and out-of-window manual/agent replies are blocked outright rather than tagged, since the correct tag for that case (`HUMAN_AGENT`) requires a separate Meta permission this app has not requested.
 
 ## Pre-Submit Checklist
 

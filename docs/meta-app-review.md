@@ -77,7 +77,8 @@ before you record it as a defect. Contact: `support@easymod.tech`.
 | The Page connects, but a Messenger DM never reaches the Shared Inbox | While the app is in Development mode Meta only delivers webhook events for accounts holding an app role | Send the DM from the supplied tester **customer** account, which is on App Roles → Testers |
 | A previously connected Page still appears in the database after disconnect | Channels are retained with `status: DISCONNECTED` for the audit trail rather than hard-deleted; the UI filters them out | Expected behaviour, not a leak — no token is used or returned for a disconnected channel |
 | A "Get Started" or menu button produces no response | Messenger postbacks are not subscribed in this release; only the `messages` field is | Out of scope — use a typed text message |
-| An out-of-window order/support message is held or rejected without an allowed tag | The current policy path attaches `POST_PURCHASE_UPDATE` to the supported order/support follow-up path; other messages remain blocked by the 24-hour guard | Do not use this as live-review evidence until a real Page send is verified |
+| An out-of-window AI/system order-support follow-up is held or rejected | The policy path attaches `POST_PURCHASE_UPDATE` to AI/system-initiated out-of-window follow-ups | Do not use this as live-review evidence until a real Page send is verified |
+| An out-of-window manual/agent reply is blocked entirely, even though the composer never opened | Correct behaviour, not a defect. `HUMAN_AGENT` is Meta's tag for this case, but this app has not requested/received that permission — the backend blocks the send outright rather than mis-tagging a free-form reply as a purchase update | Wait for the window to reopen (a fresh inbound DM), or request `HUMAN_AGENT` before demoing this path live |
 
 ## Permission Minimization
 

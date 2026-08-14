@@ -8,9 +8,10 @@
  * When decision.augment.message_tag is set (twentyFourHourWindow rule, for
  * out-of-24h-window sends), it is put on the wire as the Send API `tag`.
  *
- * Every successful Graph API send also records itself into the
- * `meta:sends:{pageId}` ZSET that rateLimit.rule reads — see
- * recordSendForRateLimit() below.
+ * Every Graph API call atomically reserves its rate-limit slot immediately
+ * beforehand via rateLimit.rule's reserveSendSlot() — see the send loop
+ * below — and releases it if the send itself fails, so a slot Meta never
+ * actually consumed doesn't count against the window.
  */
 
 'use strict';
@@ -21,8 +22,7 @@ const ChannelProvider = require('../ChannelProvider');
 const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
-const { cacheRedis } = require('../../../config/redis');
-const { keyFor: rateLimitKeyFor } = require('../../policy/rules/rateLimit.rule');
+const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -72,20 +72,6 @@ function metaError(err, context) {
         isTransient: meta.is_transient === true,
     };
     return appError;
-}
-
-// Write side of the send-rate limit: rateLimit.rule only ever reads this
-// ZSET, so without this the check always sees zero sends. One ZADD per real
-// Graph API call, scored by send time (ms epoch) — same key + scoring scheme
-// rateLimit.rule prunes/zcards against. Best-effort: a Redis blip must never
-// fail a send that Meta already accepted.
-async function recordSendForRateLimit(pageId) {
-    if (!pageId) return;
-    try {
-        await cacheRedis.zadd(rateLimitKeyFor(pageId), Date.now(), `${Date.now()}-${crypto.randomUUID()}`);
-    } catch (err) {
-        logger.warn('sendMessage: failed to record rate-limit send event', { error: err.message, pageId });
-    }
 }
 
 function intersectSets(sets) {
@@ -506,19 +492,33 @@ class MetaMessengerProvider extends ChannelProvider {
         try {
             const providerMessageIds = [];
             for (const body of bodies) {
-                const resp = await axios.post(
-                    `${GRAPH_BASE}/me/messages`,
-                    body,
-                    { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
-                );
-                providerMessageIds.push(resp.data.message_id || null);
-                await recordSendForRateLimit(channel.meta_asset_id);
+                const reservation = await reserveSendSlot(channel.meta_asset_id);
+                if (!reservation.allowed) {
+                    const rateLimitError = new Error('Meta send rate limit reached');
+                    rateLimitError.code = 'META_RATE_LIMIT';
+                    rateLimitError.retryAfterMs = reservation.retryAfterMs;
+                    throw rateLimitError;
+                }
+                try {
+                    const resp = await axios.post(
+                        `${GRAPH_BASE}/me/messages`,
+                        body,
+                        { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
+                    );
+                    providerMessageIds.push(resp.data.message_id || null);
+                } catch (sendErr) {
+                    await releaseSendSlot(channel.meta_asset_id, reservation.member);
+                    throw sendErr;
+                }
             }
             return {
                 providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,
                 providerMessageIds,
             };
         } catch (err) {
+            if (err.code === 'META_RATE_LIMIT') {
+                throw err;
+            }
             const normalized = metaError(err, 'sendMessage');
             if ([102, 190].includes(Number(normalized.details?.metaCode))) {
                 try {

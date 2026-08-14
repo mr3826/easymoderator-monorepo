@@ -9,6 +9,14 @@
  * src/database/migrations/archive/20260320_004_add_hitl_and_message_tag.js)
  * and denies only when no valid tag is present.
  *
+ * Human-agent replies (message.senderRole === 'agent') are blocked outright
+ * outside the window, rather than tagged POST_PURCHASE_UPDATE like AI/system
+ * sends: Meta ties tags to actual message content, and a free-form agent
+ * chat reply isn't a purchase update. The correct tag for this case,
+ * HUMAN_AGENT, requires a separate Meta permission this app has not
+ * requested/received — see docs/meta-app-review.md. Once that's approved,
+ * this can route to HUMAN_AGENT instead of blocking.
+ *
  * Reads the running augment object that prior rules contributed to (the engine
  * merges augment per step). within_window=false + no valid tag = DENY.
  */
@@ -30,10 +38,14 @@ const DEFAULT_TAG = 'POST_PURCHASE_UPDATE';
 module.exports = {
     name: 'templateRequired',
 
-    async evaluate(_message, ctx) {
+    async evaluate(message, ctx) {
         const augment = ctx.runningAugment || {};
         const withinWindow = augment.within_window !== false ? true : false;
         if (withinWindow) return { allow: true, reason: 'WITHIN_WINDOW' };
+
+        if (message?.senderRole === 'agent') {
+            return { allow: false, reason: 'HUMAN_AGENT_OUTSIDE_WINDOW_BLOCKED' };
+        }
 
         if (augment.message_tag && ALLOWED_TAGS.has(augment.message_tag)) {
             return { allow: true, reason: 'OUTSIDE_WINDOW_TAGGED' };

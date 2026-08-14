@@ -329,10 +329,12 @@ describe('MetaMessengerProvider', () => {
 
     describe('sendMessage() rate-limit + message_tag wiring', () => {
         // The real (memory-fallback in test env) cacheRedis singleton, shared by
-        // MetaMessengerProvider.sendMessage (write side) and rateLimit.rule
-        // (read side) — patched here with a tiny in-memory ZSET so the test
-        // proves both sides actually agree on key format, not just that each
-        // mock was called with *something*.
+        // MetaMessengerProvider.sendMessage (via rateLimit.rule's reserveSendSlot/
+        // releaseSendSlot) and rateLimit.rule's own evaluate() peek — patched here
+        // with a tiny in-memory ZSET plus an eval() that reproduces the Lua
+        // script's atomic prune+count+conditional-add, so the test proves both
+        // sides actually agree on key format and the real reserve/release control
+        // flow, not just that each mock was called with *something*.
         const { cacheRedis } = require('src/config/redis');
         const rateLimitRule = require('src/modules/policy/rules/rateLimit.rule');
         let zsets;
@@ -340,9 +342,20 @@ describe('MetaMessengerProvider', () => {
         beforeEach(() => {
             zsets = new Map(); // key -> Map(member -> score)
             axios.post.mockResolvedValue({ data: { message_id: 'mid_rl' } });
-            cacheRedis.zadd = jest.fn(async (key, score, member) => {
+            cacheRedis.eval = jest.fn(async (_script, _numKeys, key, now, windowMs, limit, member) => {
                 if (!zsets.has(key)) zsets.set(key, new Map());
-                zsets.get(key).set(member, score);
+                const m = zsets.get(key);
+                for (const [mem, score] of [...m.entries()]) {
+                    if (score < Number(now) - Number(windowMs)) m.delete(mem);
+                }
+                if (m.size < Number(limit)) {
+                    m.set(member, Number(now));
+                    return 1;
+                }
+                return 0;
+            });
+            cacheRedis.zrem = jest.fn(async (key, member) => {
+                zsets.get(key)?.delete(member);
                 return 1;
             });
             cacheRedis.zcard = jest.fn(async (key) => zsets.get(key)?.size || 0);
@@ -378,7 +391,7 @@ describe('MetaMessengerProvider', () => {
             expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL1'))).toBe(1);
         });
 
-        test('a burst past META_SEND_LIMIT is rejected by rateLimit.rule', async () => {
+        test('a burst past META_SEND_LIMIT is rejected mid-send with retryAfterMs', async () => {
             const channel = { id: 'c-rl2', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL2' };
             for (let i = 0; i < rateLimitRule.META_SEND_LIMIT; i++) {
                 await provider.sendMessage({
@@ -388,22 +401,48 @@ describe('MetaMessengerProvider', () => {
                     decision: { allow: true },
                 });
             }
-            // The rule's own read-side peek must now see the limit as reached.
+            // The next real send is denied at the atomic reservation itself —
+            // not just at the read-side peek — proving the gate that matters is
+            // the one immediately guarding the Graph API call.
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL2',
+                normalizedMessage: { text: 'one too many', attachments: [] },
+                decision: { allow: true },
+            })).rejects.toMatchObject({ code: 'META_RATE_LIMIT', retryAfterMs: expect.any(Number) });
+            expect(axios.post).toHaveBeenCalledTimes(rateLimitRule.META_SEND_LIMIT);
+
             const result = await rateLimitRule.evaluate({}, { channel });
             expect(result.allow).toBe(false);
             expect(result.reason).toBe('RATE_LIMIT');
         });
 
-        test('does not fail the send when Redis is unavailable', async () => {
-            cacheRedis.zadd = jest.fn().mockRejectedValue(new Error('redis down'));
+        test('releases the reservation and bubbles the original error when the Graph API call fails', async () => {
+            const channel = { id: 'c-rl-fail', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL_FAIL' };
+            axios.post.mockRejectedValueOnce({ response: { status: 500, data: {} } });
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL_FAIL',
+                normalizedMessage: { text: 'will fail', attachments: [] },
+                decision: { allow: true },
+            })).rejects.toMatchObject({ code: 'META_API_ERROR' });
+
+            // The failed send's reservation was released, so a fresh send has
+            // the full quota available rather than one slot already burned.
+            expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL_FAIL'))).toBe(0);
+        });
+
+        test('fails closed (does not send) when the rate-limit reservation is unavailable', async () => {
+            cacheRedis.eval = jest.fn().mockRejectedValue(new Error('redis down'));
             const channel = { id: 'c-rl3', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL3' };
-            const result = await provider.sendMessage({
+            await expect(provider.sendMessage({
                 channel,
                 recipientId: 'PSID_RL3',
-                normalizedMessage: { text: 'still sends', attachments: [] },
+                normalizedMessage: { text: 'must not send', attachments: [] },
                 decision: { allow: true },
-            });
-            expect(result.providerMessageId).toBe('mid_rl');
+            })).rejects.toMatchObject({ code: 'META_RATE_LIMIT' });
+            expect(axios.post).not.toHaveBeenCalled();
         });
 
         test('includes messaging_type MESSAGE_TAG and tag when decision carries an out-of-window message_tag', async () => {

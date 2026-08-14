@@ -20,6 +20,8 @@ jest.mock('src/config/redis', () => ({
         zremrangebyscore: jest.fn().mockResolvedValue(0),
         zcard: jest.fn().mockResolvedValue(0),
         zrange: jest.fn().mockResolvedValue([]),
+        eval: jest.fn(),
+        zrem: jest.fn(),
     },
 }));
 
@@ -133,6 +135,27 @@ describe('templateRequired.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('OUTSIDE_24H_TEMPLATES_DISABLED');
     });
+    test('blocks a human-agent reply outside the window even with a valid tag', async () => {
+        const r = await rule.evaluate({ senderRole: 'agent' }, {
+            runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
+        });
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('HUMAN_AGENT_OUTSIDE_WINDOW_BLOCKED');
+    });
+    test('allows a human-agent reply within the window', async () => {
+        const r = await rule.evaluate({ senderRole: 'agent' }, {
+            runningAugment: { within_window: true },
+        });
+        expect(r.allow).toBe(true);
+        expect(r.reason).toBe('WITHIN_WINDOW');
+    });
+    test('AI/system sends outside the window are unaffected — still tagged POST_PURCHASE_UPDATE', async () => {
+        const r = await rule.evaluate({ senderRole: 'ai' }, {
+            runningAugment: { within_window: false, message_tag: 'POST_PURCHASE_UPDATE' },
+        });
+        expect(r.allow).toBe(true);
+        expect(r.reason).toBe('OUTSIDE_WINDOW_TAGGED');
+    });
 });
 
 describe('contentSanitizer.rule', () => {
@@ -217,6 +240,117 @@ describe('rateLimit.rule', () => {
         const r = await rule.evaluate({}, { channel: { meta_asset_id: 'PAGE_1' } });
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('RATE_LIMIT_UNAVAILABLE');
+    });
+});
+
+describe('rateLimit.rule — reserveSendSlot / releaseSendSlot (atomic reservation)', () => {
+    const rule = require('src/modules/policy/rules/rateLimit.rule');
+
+    // A minimal in-memory ZSET the mocked eval/zrem/zrange operate on. The
+    // eval mock yields once (simulating a real network round trip) and then
+    // runs prune+count+conditional-add synchronously in one stretch — the
+    // same shape a real Redis Lua script has (latency before execution,
+    // uninterruptible once it starts). That's what makes a concurrent
+    // Promise.all against this mock a real test of the calling code: it can
+    // only stay under the limit if reserveSendSlot issues one atomic call
+    // per attempt rather than a separate check-then-write pair.
+    let store;
+    beforeEach(() => {
+        store = new Map();
+        cacheRedis.eval.mockImplementation(async (_script, _numKeys, key, now, windowMs, limit, member) => {
+            await Promise.resolve();
+            if (!store.has(key)) store.set(key, new Map());
+            const zset = store.get(key);
+            for (const [m, score] of zset) {
+                if (score < now - windowMs) zset.delete(m);
+            }
+            if (zset.size < limit) {
+                zset.set(member, now);
+                return 1;
+            }
+            return 0;
+        });
+        cacheRedis.zrem.mockImplementation(async (key, member) => {
+            store.get(key)?.delete(member);
+            return 1;
+        });
+        cacheRedis.zrange.mockImplementation(async (key) => {
+            const zset = store.get(key);
+            if (!zset || zset.size === 0) return [];
+            const [member, score] = [...zset.entries()][0];
+            return [member, String(score)];
+        });
+    });
+
+    test('single request is allowed and reserves a slot', async () => {
+        const r = await rule.reserveSendSlot('PAGE_1');
+        expect(r.allowed).toBe(true);
+        expect(r.member).toBeTruthy();
+    });
+
+    test('no-op allow (no reservation) when pageId is missing, matching evaluate()\'s NO_CHANNEL passthrough', async () => {
+        const r = await rule.reserveSendSlot(undefined);
+        expect(r.allowed).toBe(true);
+        expect(r.member).toBeUndefined();
+        expect(cacheRedis.eval).not.toHaveBeenCalled();
+    });
+
+    test('boundary: exactly META_SEND_LIMIT reservations succeed, the next is denied', async () => {
+        for (let i = 0; i < rule.META_SEND_LIMIT; i++) {
+            const r = await rule.reserveSendSlot('PAGE_2');
+            expect(r.allowed).toBe(true);
+        }
+        const denied = await rule.reserveSendSlot('PAGE_2');
+        expect(denied.allowed).toBe(false);
+        expect(denied.retryAfterMs).toBeGreaterThan(0);
+    });
+
+    test('concurrent requests at the boundary never exceed the limit', async () => {
+        const attempts = rule.META_SEND_LIMIT + 50;
+        const results = await Promise.all(
+            Array.from({ length: attempts }, () => rule.reserveSendSlot('PAGE_3')),
+        );
+        const allowedCount = results.filter((r) => r.allowed).length;
+        expect(allowedCount).toBe(rule.META_SEND_LIMIT);
+    });
+
+    test('provider failure after reservation releases the slot for a later request', async () => {
+        const reservations = [];
+        for (let i = 0; i < rule.META_SEND_LIMIT; i++) {
+            reservations.push(await rule.reserveSendSlot('PAGE_4'));
+        }
+        expect(reservations.every((r) => r.allowed)).toBe(true);
+        const denied = await rule.reserveSendSlot('PAGE_4');
+        expect(denied.allowed).toBe(false);
+
+        // Simulate the provider's send failing for one reservation and releasing it.
+        await rule.releaseSendSlot('PAGE_4', reservations[0].member);
+        const afterRelease = await rule.reserveSendSlot('PAGE_4');
+        expect(afterRelease.allowed).toBe(true);
+    });
+
+    test('tenant isolation: two pageIds never share a quota window', async () => {
+        for (let i = 0; i < rule.META_SEND_LIMIT; i++) {
+            const r = await rule.reserveSendSlot('PAGE_TENANT_A');
+            expect(r.allowed).toBe(true);
+        }
+        const deniedA = await rule.reserveSendSlot('PAGE_TENANT_A');
+        expect(deniedA.allowed).toBe(false);
+
+        const stillAllowedB = await rule.reserveSendSlot('PAGE_TENANT_B');
+        expect(stillAllowedB.allowed).toBe(true);
+    });
+
+    test('fails closed with a retry hint when Redis eval throws', async () => {
+        cacheRedis.eval.mockRejectedValueOnce(new Error('redis down'));
+        const r = await rule.reserveSendSlot('PAGE_5');
+        expect(r.allowed).toBe(false);
+        expect(r.retryAfterMs).toBeGreaterThan(0);
+    });
+
+    test('releaseSendSlot is a no-op when given no member (nothing to release)', async () => {
+        await expect(rule.releaseSendSlot('PAGE_6', undefined)).resolves.toBeUndefined();
+        expect(cacheRedis.zrem).not.toHaveBeenCalled();
     });
 });
 
