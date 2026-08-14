@@ -224,7 +224,7 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
  * and delegates to the provider registry for transport.
  * Best-effort: never throws. Emits SSE `delivery_failed` on failure.
  */
-async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage) {
+async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage, senderRole = 'agent') {
     let isMetaChannel = false;
     let failureReason = null;
     let deliveryResult = null;
@@ -276,7 +276,7 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
             attachments,
             platform,
             direction: 'outbound',
-            senderRole: 'agent',
+            senderRole,
         };
         const policyCtx = {
             shopId,
@@ -535,7 +535,9 @@ class ConversationController {
                     const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId);
                     if (autoReplyMsg) {
                         sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content);
+                        // Automated escalation holding message, not a human-typed reply —
+                        // must not be blocked by the human-agent outside-window policy gate.
+                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content, 'ai');
                     }
                 } catch (err) {
                     // Non-fatal: HITL is already set; log and surface to the agent via SSE
@@ -793,5 +795,7 @@ class ConversationController {
 
 const conversationController = new ConversationController();
 conversationController.serveConversationAttachment = serveConversationAttachment;
+// Exposed for unit testing only — not part of the route surface.
+conversationController._deliverViaMetaIfApplicable = deliverViaMetaIfApplicable;
 
 module.exports = conversationController;
