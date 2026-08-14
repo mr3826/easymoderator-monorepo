@@ -23,6 +23,20 @@ describe('production workflow branch safety', () => {
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
     });
 
+    test('every branch validates both production Docker build contexts without publishing', () => {
+        const validationBlock = workflow.match(
+            /\n  docker-build-validation:\n([\s\S]*?)\n  # ── 3\./,
+        )?.[1];
+        const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
+
+        expect(validationBlock).toContain('Docker build validation (no push)');
+        expect(validationBlock).toContain('context: ./EasyMod-backend');
+        expect(validationBlock).toContain('context: ./EasyMod-frontend');
+        expect(validationBlock.match(/push: false/g)).toHaveLength(2);
+        expect(validationBlock.match(/load: true/g)).toHaveLength(2);
+        expect(buildBlock).toContain('docker-build-validation');
+    });
+
     // BUILD_TIME lands in the image as ENV and is read back by /health, /version
     // and Sentry's `dist`. It was github.event.repository.updated_at — the repo's
     // last-metadata-change time, which ran behind the commit it labelled and could
