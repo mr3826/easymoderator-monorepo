@@ -3,7 +3,7 @@ const customerController = require('./customer.controller');
 const customerValidator = require('./customer.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
-const { idempotencyMiddleware, storeIdempotencyResult } = require('../audit/idempotency.middleware');
+const { idempotencyMiddleware } = require('../audit/idempotency.middleware');
 const { auditLogMiddleware } = require('../audit/audit.middleware');
 
 const router = express.Router();
@@ -42,7 +42,6 @@ router.post(
     idempotencyMiddleware,
     validate({ body: customerValidator.createCustomer }),
     customerController.createCustomer,
-    storeIdempotencyResult(201),
     auditLogMiddleware('CREATE', 'CUSTOMER')
 );
 
@@ -52,7 +51,6 @@ router.post(
     idempotencyMiddleware,
     validate({ body: customerValidator.updateCustomer }),
     customerController.updateCustomer,
-    storeIdempotencyResult(200),
     auditLogMiddleware('UPDATE', 'CUSTOMER')
 );
 
@@ -69,16 +67,14 @@ router.post(
     '/external',
     idempotencyMiddleware,
     validate({ body: customerValidator.createCustomerExternal }),
-    customerController.createCustomerExternal,
-    storeIdempotencyResult(201)
+    customerController.createCustomerExternal
 );
 
 router.patch(
     '/external/:customerId',
     idempotencyMiddleware,
     validate({ body: customerValidator.updateCustomerExternal }),
-    customerController.updateCustomerExternal,
-    storeIdempotencyResult(200)
+    customerController.updateCustomerExternal
 );
 
 // ─── RESTful routes ────────────────────────────────────────────────────────────
@@ -100,7 +96,6 @@ router.post(
     idempotencyMiddleware,
     validate({ body: customerValidator.createCustomer }),
     customerController.createCustomerRest,
-    storeIdempotencyResult(201),
     auditLogMiddleware('CREATE', 'CUSTOMER')
 );
 
@@ -109,7 +104,6 @@ router.patch(
     idempotencyMiddleware,
     validate({ body: customerValidator.updateCustomerById }),
     customerController.updateCustomerById,
-    storeIdempotencyResult(200),
     auditLogMiddleware('UPDATE', 'CUSTOMER')
 );
 
@@ -118,7 +112,6 @@ router.delete(
     idempotencyMiddleware,
     validate({ params: customerValidator.deleteCustomerById }),
     customerController.deleteCustomerById,
-    storeIdempotencyResult(200),
     auditLogMiddleware('DELETE', 'CUSTOMER')
 );
 
