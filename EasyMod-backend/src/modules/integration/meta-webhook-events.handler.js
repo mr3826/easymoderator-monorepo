@@ -412,7 +412,10 @@ async function storeIncomingMessage(event) {
                     shop_id,
                     'conversations',
                     1,
-                    `conv:${storedMessage.conversation_id}`,
+                    // Bare conversation id — usage_events.request_id is a uuid column, so a
+                    // prefixed key ("conv:<uuid>") makes Postgres reject every insert.
+                    // resource_type already namespaces this against orders/products.
+                    storedMessage.conversation_id,
                     { resourceId: storedMessage.conversation_id, channel: channelType }
                 );
             } catch (usageErr) {
