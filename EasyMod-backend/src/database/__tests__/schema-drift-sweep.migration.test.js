@@ -114,10 +114,4 @@ describe('order-number SQL ↔ schema alignment', () => {
         expect(serviceSrc).toMatch(/INSERT INTO order_sequences \(shop_id, next_number\)/);
         expect(serviceSrc).not.toMatch(/order_sequences[^\n]*\bcounter\b/);
     });
-
-    test('conversation-limit middleware upsert key matches the unique index', () => {
-        const mwSrc = fs.readFileSync(
-            path.join(__dirname, '..', '..', 'middleware', 'conversation-limit.middleware.js'), 'utf8');
-        expect(mwSrc).toMatch(/ON CONFLICT \(shop_id, conversation_id, billing_period\)/);
-    });
 });

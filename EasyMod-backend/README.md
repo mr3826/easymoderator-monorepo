@@ -199,7 +199,7 @@ Source of truth: `src/modules/subscription/subscription.plans.js`.
 
 **Top-up packs** (bKash): `TOPUP_100` ৳150, `TOPUP_250` ৳350, `TOPUP_500` ৳650, `TOPUP_1000` ৳1,200.
 
-Conversation limits are enforced by `conversation-limit.middleware.js` across all connected channels. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
+Conversation-limit billing is tracked at the webhook chokepoint in `meta-webhook-events.handler.js`, which calls `subscriptionService.trackUsage(shopId, 'conversations', 1, 'conv:<id>')` exactly once per new conversation. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
 
 **Payments: bKash only.** No other gateway is wired. Adding one requires implementing its full tokenized-checkout + webhook-verification path.
 
@@ -250,7 +250,6 @@ Operational requirements:
 | `meta-token-refresh.job.js` | Cron | Re-auth Meta tokens nearing expiry |
 | `trial-expiry.job.js` | Cron | End trials + send ending nudges |
 | `monthly-usage-reset.js` | Cron | Reset conversation counters on the 1st |
-| `conversation-usage-notifier.js` | Cron | Push notifications at usage thresholds |
 | `daily-overage-calculator.js` | Cron | Compute Partner-plan per-order charges |
 | `invoice-generator.js` | Cron | Generate subscription/partner invoices (PDF) |
 | `failed-payment-reconciler.js` | Cron | Retry/flag failed bKash payments |
