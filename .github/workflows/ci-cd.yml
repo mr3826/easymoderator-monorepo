@@ -364,7 +364,7 @@ jobs:
                  docker exec easymod-postgres-1 sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"\\l\""
                fi'
             ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
-              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/tmp/production-db-auth-probe.js:ro' \"\$image_id\" node /tmp/production-db-auth-probe.js"
+              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/app/production-db-auth-probe.js:ro' \"\$image_id\" node /app/production-db-auth-probe.js"
           fi
 
   # ── 2d. Non-publishing Docker build validation ────────────────────────────
@@ -616,7 +616,7 @@ jobs:
           scp -i ~/.ssh/deploy_key EasyMod-backend/scripts/production-db-auth-probe.js \
             root@"$DEPLOY_HOST":"$probe_script_path"
           ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
-            "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/tmp/production-db-auth-probe.js:ro' \"\$image_id\" node /tmp/production-db-auth-probe.js"
+            "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/app/production-db-auth-probe.js:ro' \"\$image_id\" node /app/production-db-auth-probe.js"
 
       - name: Copy .env.prod and deploy config to droplet
         env:
