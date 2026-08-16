@@ -17,6 +17,7 @@ const {
     normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
 const { Client } = require('pg');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const QDRANT_WORKFLOW_PATH = path.resolve(__dirname, '../../.github/workflows/qdrant-migration.yml');
 
 describe('Qdrant migration proof safety helpers', () => {
@@ -115,5 +116,18 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
+    });
+
+    it('keeps active embedding configuration templates on the approved contract', () => {
+        const templates = [
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'generate-secrets.ps1'),
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'generate-secrets.sh'),
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'github-secrets-checklist.txt'),
+        ].map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+        expect(templates).toContain('EMBEDDING_PROVIDER=gemini');
+        expect(templates).toContain('EMBEDDING_MODEL=text-embedding-3-small');
+        expect(templates).toContain('GEMINI_EMBEDDING_MODEL=gemini-embedding-2');
+        expect(templates).toContain('QDRANT_VECTOR_SIZE=384');
+        expect(templates).not.toContain('text-embedding-004');
     });
 });

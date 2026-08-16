@@ -166,10 +166,8 @@ const getOpenAiEmbedding = async (text) => {
   return ensureVectorSize(vector);
 };
 
-// Gemini embeddings. `outputDimensionality` truncates the vector to the Qdrant
-// collection size, and gemini-embedding-2 returns an already L2-normalised
-// vector at every dimension (gemini-embedding-001 does NOT below 3072 — it
-// returns norms ~0.46 at 384 — so it is not a safe default here).
+// Gemini embeddings. `outputDimensionality` requests the Qdrant collection
+// size; the returned vector is still checked by ensureVectorSize() below.
 // ponytail: one taskType for both indexing and querying. Gemini's asymmetric
 // RETRIEVAL_QUERY/RETRIEVAL_DOCUMENT split would lift recall, but getEmbedding()
 // has no doc-vs-query argument and mixing the two inconsistently is worse than
