@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 // These tests exercise pure safety helpers and verify that source-count reads are
 // delegated to the shared PostgreSQL contract rather than hand-written against a
 // Qdrant collection name.
@@ -14,6 +17,7 @@ const {
     normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
 const { Client } = require('pg');
+const QDRANT_WORKFLOW_PATH = path.resolve(__dirname, '../../.github/workflows/qdrant-migration.yml');
 
 describe('Qdrant migration proof safety helpers', () => {
     describe('URL contract', () => {
@@ -90,5 +94,18 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(collectSourceStats).toHaveBeenCalledWith(expect.any(Function));
         expect(client.connect).toHaveBeenCalledTimes(1);
         expect(client.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses an OpenAI model that exists and supports the proof vector size', () => {
+        const workflow = fs.readFileSync(QDRANT_WORKFLOW_PATH, 'utf8');
+
+        expect(workflow).toMatch(
+            /run_reindex openai text-embedding-3-small text-embedding-3-small/,
+        );
+        expect(workflow).toMatch(
+            /run_provider_proof openai text-embedding-3-small text-embedding-3-small/,
+        );
+        expect(workflow).toContain('-e EMBEDDING_MODEL=text-embedding-3-small');
+        expect(workflow).not.toMatch(/run_(?:reindex|provider_proof) openai text-embedding-004/);
     });
 });

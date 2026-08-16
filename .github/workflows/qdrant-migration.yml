@@ -261,11 +261,11 @@ jobs:
             live_count=$(awk -F= '$1 == "LIVE_COUNT" { print $2 }' "$RUN_DIR/inspect.log" | tail -1)
             test "$live_count" = "$EXPECTED_LIVE_COUNT"
 
-            run_reindex openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
-            run_provider_proof openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" \
+            run_reindex openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
+            run_provider_proof openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" \
               validate "--collection=$OPENAI_ROLLBACK_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/openai-validate.log"
 
-            run_provider_proof openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" \
+            run_provider_proof openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" \
               snapshot "--collection=$OPENAI_ROLLBACK_COLLECTION" "--path=$SNAPSHOT_FILE" \
               | tee "$RUN_DIR/openai-snapshot.log"
             snapshot_name=$(awk -F= '$1 == "SNAPSHOT_NAME" { print $2 }' "$RUN_DIR/openai-snapshot.log" | tail -1)
@@ -292,7 +292,7 @@ jobs:
               -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
               -e QDRANT_PER_TENANT=false \
               -e EMBEDDING_PROVIDER=openai \
-              -e EMBEDDING_MODEL=text-embedding-004 \
+              -e EMBEDDING_MODEL=text-embedding-3-small \
               -e GEMINI_EMBEDDING_MODEL=text-embedding-004 \
               -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
               "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js validate \
