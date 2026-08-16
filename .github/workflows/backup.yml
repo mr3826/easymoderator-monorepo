@@ -70,6 +70,31 @@ jobs:
             BACKUP_DIR=/opt/easymod/backups
             mkdir -p "$BACKUP_DIR"
 
+            # The production compose contract requires immutable image
+            # references even for read-only commands such as `exec`. Resolve
+            # the exact refs already running on the host so backup never
+            # falls back to a mutable tag or accidentally targets a different
+            # application release.
+            RUNNING_BACKEND_IMAGE=$(docker inspect easymod-backend-1 --format '{{.Config.Image}}')
+            RUNNING_WORKER_IMAGE=$(docker inspect easymod-worker-1 --format '{{.Config.Image}}')
+            RUNNING_FRONTEND_IMAGE=$(docker inspect easymod-frontend-1 --format '{{.Config.Image}}')
+
+            if [ "$RUNNING_BACKEND_IMAGE" != "$RUNNING_WORKER_IMAGE" ]; then
+              echo "::error::BACKUP_IMAGE_CONTRACT_FAILED backend-and-worker-images-differ"
+              exit 1
+            fi
+
+            for IMAGE_REF in "$RUNNING_BACKEND_IMAGE" "$RUNNING_FRONTEND_IMAGE"; do
+              if ! printf '%s' "$IMAGE_REF" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'; then
+                echo "::error::BACKUP_IMAGE_CONTRACT_FAILED image-is-not-digest-pinned"
+                exit 1
+              fi
+            done
+
+            export GHCR_IMAGE_BACKEND="$RUNNING_BACKEND_IMAGE"
+            export GHCR_IMAGE_FRONTEND="$RUNNING_FRONTEND_IMAGE"
+            echo "Immutable compose image contract verified for running release"
+
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}.dump"
             UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}.tar.gz"
