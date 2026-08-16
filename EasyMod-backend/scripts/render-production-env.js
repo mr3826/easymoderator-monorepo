@@ -162,6 +162,7 @@ function buildRenderedEnv(source = process.env) {
         QDRANT_URL: source.QDRANT_URL || 'http://qdrant:6333',
         QDRANT_API_KEY: source.QDRANT_API_KEY || '',
         QDRANT_COLLECTION: source.QDRANT_COLLECTION || '',
+        QDRANT_VECTOR_SIZE: source.QDRANT_VECTOR_SIZE || '384',
         SENTRY_DSN: source.SENTRY_DSN || '',
         SLACK_ALERT_WEBHOOK_URL: source.SLACK_ALERT_WEBHOOK_URL || '',
         RESEND_API_KEY: required('RESEND_API_KEY'),

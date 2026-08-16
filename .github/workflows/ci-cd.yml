@@ -295,6 +295,7 @@ jobs:
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
+          QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
           SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -534,6 +535,7 @@ jobs:
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
+          QDRANT_VECTOR_SIZE: ${{ vars.QDRANT_VECTOR_SIZE || '384' }}
           # Backend alerting (finding F-06). The backend reads SENTRY_DSN, a
           # separate name from the frontend's VITE_SENTRY_DSN. Fall back to the
           # frontend DSN so ops alerts have a sink even before a dedicated
