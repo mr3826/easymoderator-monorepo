@@ -15,6 +15,8 @@
  */
 
 module.exports = {
+    name: '20260816_002_default_channel_automation_draft',
+
     up: async (sequelize) => {
         await sequelize.query(`
             ALTER TABLE meta_channel_settings
