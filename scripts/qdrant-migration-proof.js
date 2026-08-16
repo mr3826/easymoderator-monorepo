@@ -286,6 +286,72 @@ function loadEmbeddingService() {
     return require(candidate);
 }
 
+async function providerFallback() {
+    if (!process.env.GEMINI_API_KEY || !process.env.OPENAI_API_KEY) {
+        throw new Error('provider fallback proof requires both embedding providers');
+    }
+
+    const originalFetch = global.fetch;
+    const originalProvider = process.env.EMBEDDING_PROVIDER;
+    const originalRetries = process.env.EMBEDDING_HTTP_MAX_RETRIES;
+    const calls = [];
+    process.env.EMBEDDING_PROVIDER = 'gemini';
+    process.env.EMBEDDING_HTTP_MAX_RETRIES = '0';
+
+    global.fetch = async (url, init = {}) => {
+        const endpoint = String(url);
+        if (endpoint.includes('generativelanguage.googleapis.com')) {
+            calls.push('gemini');
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({ embedding: { values: [0.1] } }),
+            };
+        }
+        if (endpoint.includes('api.openai.com')) {
+            calls.push('openai');
+            const body = JSON.parse(init.body || '{}');
+            if (body.model !== (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')) {
+                throw new Error('OpenAI fallback model contract failed');
+            }
+            if (body.dimensions !== VECTOR_SIZE) {
+                throw new Error('OpenAI fallback vector-size contract failed');
+            }
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({ data: [{ embedding: new Array(VECTOR_SIZE).fill(0.2) }] }),
+            };
+        }
+        throw new Error('unexpected provider endpoint in fallback proof');
+    };
+
+    try {
+        const { getEmbedding, getProviderInfo } = loadEmbeddingService();
+        const info = getProviderInfo();
+        if (info.effective !== 'gemini' || info.fallbackProvider !== 'openai') {
+            throw new Error('Gemini primary/OpenAI fallback contract is not active');
+        }
+        const vector = await getEmbedding('provider fallback proof');
+        if (!Array.isArray(vector) || vector.length !== VECTOR_SIZE) {
+            throw new Error('provider fallback returned an incompatible vector');
+        }
+        if (calls.join(',') !== 'gemini,openai') {
+            throw new Error('provider fallback call order was not Gemini then OpenAI');
+        }
+        console.log('GEMINI_PRIMARY=PASS');
+        console.log('OPENAI_FALLBACK=PASS');
+        console.log('PRIMARY_TO_FALLBACK_TEST=PASS');
+        console.log(`OPENAI_FALLBACK_VECTOR_SIZE=${vector.length}`);
+    } finally {
+        global.fetch = originalFetch;
+        if (originalProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+        else process.env.EMBEDDING_PROVIDER = originalProvider;
+        if (originalRetries === undefined) delete process.env.EMBEDDING_HTTP_MAX_RETRIES;
+        else process.env.EMBEDDING_HTTP_MAX_RETRIES = originalRetries;
+    }
+}
+
 async function searchPoints(name, vector, filter) {
     const result = await qdrantJson(`${collectionPath(name)}/points/search`, {
         method: 'POST',
@@ -443,7 +509,8 @@ async function main() {
     if (mode === 'validate') return validate(option('collection'), Number(option('expected-count', EXPECTED_SOURCE_COUNT)));
     if (mode === 'snapshot') return createSnapshot(option('collection'), option('path'));
     if (mode === 'postflight') return postflight();
-    throw new Error('usage: inspect | validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight');
+    if (mode === 'provider-fallback') return providerFallback();
+    throw new Error('usage: inspect | validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight | provider-fallback');
 }
 
 if (require.main === module) {

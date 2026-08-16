@@ -96,16 +96,24 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(client.end).toHaveBeenCalledTimes(1);
     });
 
-    it('uses an OpenAI model that exists and supports the proof vector size', () => {
+    it('proves Gemini primary, OpenAI fallback, and provider-compatible dimensions', () => {
         const workflow = fs.readFileSync(QDRANT_WORKFLOW_PATH, 'utf8');
 
+        expect(workflow).toContain('OPENAI_FALLBACK_MODEL=text-embedding-3-small');
+        expect(workflow).toContain('GEMINI_MODEL="${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}"');
+        expect(workflow).toContain('run_provider_fallback');
+        expect(workflow).toContain('provider-fallback');
+        expect(workflow.indexOf('run_reindex gemini')).toBeLessThan(workflow.indexOf('run_reindex openai'));
         expect(workflow).toMatch(
-            /run_reindex openai text-embedding-3-small text-embedding-3-small/,
+            /run_reindex openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
         );
         expect(workflow).toMatch(
-            /run_provider_proof openai text-embedding-3-small text-embedding-3-small/,
+            /run_provider_proof openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
         );
-        expect(workflow).toContain('-e EMBEDDING_MODEL=text-embedding-3-small');
-        expect(workflow).not.toMatch(/run_(?:reindex|provider_proof) openai text-embedding-004/);
+        expect(workflow).toContain('QDRANT_VECTOR_COMPATIBILITY=PASS');
+        expect(workflow).toContain('OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"');
+        expect(workflow).not.toContain('text-embedding-004');
+        expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
+        expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
     });
 });

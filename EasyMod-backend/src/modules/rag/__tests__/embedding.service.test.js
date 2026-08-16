@@ -10,7 +10,8 @@ const svc = require('../embedding.service');
 
 const ENV_KEYS = [
     'EMBEDDING_PROVIDER', 'EMBEDDING_API_URL', 'OPENAI_API_KEY',
-    'GEMINI_API_KEY', 'GEMINI_EMBEDDING_MODEL',
+    'EMBEDDING_MODEL', 'GEMINI_API_KEY', 'GEMINI_EMBEDDING_MODEL',
+    'NODE_ENV',
 ];
 const saved = {};
 beforeEach(() => { ENV_KEYS.forEach(k => { saved[k] = process.env[k]; }); });
@@ -27,6 +28,20 @@ describe('getProviderInfo', () => {
         const info = svc.getProviderInfo();
         expect(info.effective).toBe('local');
         expect(info.semantic).toBe(false);
+    });
+
+    test('production defaults to Gemini as the primary provider', () => {
+        process.env.NODE_ENV = 'production';
+        delete process.env.EMBEDDING_PROVIDER;
+        const info = svc.getProviderInfo();
+        expect(info).toMatchObject({
+            configured: 'gemini',
+            effective: 'gemini',
+            semantic: true,
+            model: 'gemini-embedding-2',
+            fallbackProvider: 'openai',
+            fallbackModel: 'text-embedding-3-small',
+        });
     });
 
     test("'http' is a valid alias for the HTTP embedding client (semantic)", () => {
@@ -113,6 +128,82 @@ describe('probe', () => {
             expect(JSON.parse(init.body).outputDimensionality).toBe(vectorSize);
         } finally {
             global.fetch = realFetch;
+        }
+    });
+
+    test('Gemini failure uses the OpenAI fallback with the configured vector size', async () => {
+        process.env.NODE_ENV = 'production';
+        process.env.EMBEDDING_PROVIDER = 'gemini';
+        process.env.GEMINI_API_KEY = 'AIza-test-primary';
+        process.env.OPENAI_API_KEY = 'sk-test-fallback';
+        process.env.EMBEDDING_MODEL = 'text-embedding-3-small';
+        const { vectorSize } = svc.getProviderInfo();
+        const calls = [];
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const realFetch = global.fetch;
+        global.fetch = jest.fn(async (url) => {
+            calls.push(String(url).includes('generativelanguage') ? 'gemini' : 'openai');
+            if (String(url).includes('generativelanguage')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ embedding: { values: [0.1] } }),
+                };
+            }
+            return {
+                ok: true,
+                status: 200,
+                json: async () => ({ data: [{ embedding: new Array(vectorSize).fill(0.2) }] }),
+            };
+        });
+        try {
+            const vector = await svc.getEmbedding('fallback test');
+            expect(vector).toHaveLength(vectorSize);
+            expect(calls).toEqual(['gemini', 'openai']);
+            expect(warning).toHaveBeenCalledWith(expect.stringContaining('gemini -> openai'));
+            expect(warning.mock.calls[0][0]).not.toContain('AIza-test-primary');
+            expect(warning.mock.calls[0][0]).not.toContain('sk-test-fallback');
+        } finally {
+            global.fetch = realFetch;
+            warning.mockRestore();
+        }
+    });
+
+    test('failed OpenAI fallback surfaces a sanitized terminal error', async () => {
+        process.env.NODE_ENV = 'production';
+        process.env.EMBEDDING_PROVIDER = 'gemini';
+        process.env.GEMINI_API_KEY = 'AIza-test-primary';
+        process.env.OPENAI_API_KEY = 'sk-test-fallback';
+        const realFetch = global.fetch;
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        global.fetch = jest.fn(async (url) => {
+            if (String(url).includes('generativelanguage')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({ embedding: { values: [0.1] } }),
+                };
+            }
+            return {
+                ok: false,
+                status: 401,
+                text: async () => `invalid key ${process.env.OPENAI_API_KEY}`,
+            };
+        });
+        try {
+            let error;
+            try {
+                await svc.getEmbedding('terminal failure test');
+            } catch (caught) {
+                error = caught;
+            }
+            expect(error).toMatchObject({ name: 'EmbeddingFallbackError' });
+            expect(error.message).toContain('OpenAI fallback failed');
+            expect(error.message).not.toContain('AIza-test-primary');
+            expect(error.message).not.toContain('sk-test-fallback');
+        } finally {
+            global.fetch = realFetch;
+            warning.mockRestore();
         }
     });
 });

@@ -1,6 +1,7 @@
 const vectorSize = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const EMBEDDING_HTTP_MAX_RETRIES = Number.parseInt(process.env.EMBEDDING_HTTP_MAX_RETRIES || '3', 10);
 const EMBEDDING_RETRY_BACKOFF_MS = Number.parseInt(process.env.EMBEDDING_RETRY_BACKOFF_MS || '1200', 10);
+const OPENAI_FALLBACK_MODEL = 'text-embedding-3-small';
 
 const normalizeText = (text) => (text || '').toString().trim();
 
@@ -47,6 +48,20 @@ const ensureVectorSize = (vector) => {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const sanitizeProviderError = (error) => {
+  let summary = String(error?.message || error || 'unknown error')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/([?&](?:key|token|api[-_]?key|apikey)=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+  for (const secret of [process.env.GEMINI_API_KEY, process.env.OPENAI_API_KEY]) {
+    if (secret) summary = summary.split(secret).join('[redacted]');
+  }
+
+  return summary.slice(0, 240) || 'unknown error';
+};
 
 const shouldRetryStatus = (status) => [408, 429, 500, 502, 503, 504].includes(status);
 
@@ -113,7 +128,7 @@ const getOpenAiEmbedding = async (text) => {
     throw new Error('OPENAI_API_KEY is not set');
   }
 
-  const model = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+  const model = process.env.EMBEDDING_MODEL || OPENAI_FALLBACK_MODEL;
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
@@ -129,7 +144,7 @@ const getOpenAiEmbedding = async (text) => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`OpenAI embeddings failed: ${errorText}`);
+    throw new Error(`OpenAI embeddings failed: ${sanitizeProviderError(errorText)}`);
   }
 
   const data = await response.json();
@@ -167,19 +182,26 @@ const getGeminiEmbedding = async (text) => {
 
   const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
 
-  const response = await fetchWithRetries(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: `models/${model}`,
-        content: { parts: [{ text }] },
-        outputDimensionality: vectorSize,
-        taskType: 'RETRIEVAL_DOCUMENT'
-      })
-    }
-  );
+  let response;
+  try {
+    response = await fetchWithRetries(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: `models/${model}`,
+          content: { parts: [{ text }] },
+          outputDimensionality: vectorSize,
+          taskType: 'RETRIEVAL_DOCUMENT'
+        })
+      }
+    );
+  } catch (error) {
+    const safeError = new Error(`Gemini embeddings failed: ${sanitizeProviderError(error)}`);
+    safeError.name = error?.name || 'GeminiEmbeddingError';
+    throw safeError;
+  }
 
   const data = await response.json();
   // Cost accounting. No-op unless AI_USAGE_ACCOUNTING=true; never throws.
@@ -268,6 +290,10 @@ const getGcpEmbedding = async (text) => {
 // retrieval quality — getProviderInfo().semantic surfaces that to health checks.
 const SEMANTIC_PROVIDERS = new Set(['gemini', 'openai', 'gcp']);
 
+const configuredProvider = () => (process.env.EMBEDDING_PROVIDER
+  || (process.env.NODE_ENV === 'production' ? 'gemini' : 'local'))
+  .toString().trim().toLowerCase();
+
 /**
  * Resolve the raw EMBEDDING_PROVIDER env value to a canonical provider.
  * 'http' and 'tei' are accepted aliases for the HTTP embedding client
@@ -278,7 +304,7 @@ const SEMANTIC_PROVIDERS = new Set(['gemini', 'openai', 'gcp']);
  * Anything unrecognised (incl. 'anthropic', which has no embeddings API) → local.
  */
 const resolveProvider = (raw) => {
-  const p = (raw == null ? (process.env.EMBEDDING_PROVIDER || 'local') : raw)
+  const p = (raw == null ? configuredProvider() : raw)
     .toString().trim().toLowerCase();
   if (p === 'gemini' || p === 'google') return 'gemini';
   if (p === 'openai') return 'openai';
@@ -287,7 +313,7 @@ const resolveProvider = (raw) => {
 };
 
 const getEmbedding = async (text) => {
-  const rawProvider = (process.env.EMBEDDING_PROVIDER || 'local').toLowerCase();
+  const rawProvider = configuredProvider();
   const provider = resolveProvider(rawProvider);
   const content = normalizeText(text);
   if (!content) {
@@ -295,7 +321,24 @@ const getEmbedding = async (text) => {
   }
 
   if (provider === 'gemini') {
-    return getGeminiEmbedding(content);
+    try {
+      return await getGeminiEmbedding(content);
+    } catch (primaryError) {
+      if (!process.env.OPENAI_API_KEY) throw primaryError;
+
+      console.warn(
+        `Embedding provider fallback: gemini -> openai (${sanitizeProviderError(primaryError)})`,
+      );
+      try {
+        return await getOpenAiEmbedding(content);
+      } catch (fallbackError) {
+        const error = new Error(
+          `Gemini embedding failed; OpenAI fallback failed: ${sanitizeProviderError(fallbackError)}`,
+        );
+        error.name = 'EmbeddingFallbackError';
+        throw error;
+      }
+    }
   }
 
   if (provider === 'openai') {
@@ -326,10 +369,12 @@ const getEmbedding = async (text) => {
  * the chatbot hallucinating because RAG retrieval returns near-random matches.
  *
  * @returns {{configured:string, effective:string, semantic:boolean,
- *            keyPresent:boolean|null, vectorSize:number, model:string|null}}
+ *            keyPresent:boolean|null, vectorSize:number, model:string|null,
+ *            fallbackProvider:string|null, fallbackKeyPresent:boolean|null,
+ *            fallbackModel:string|null}}
  */
 const getProviderInfo = () => {
-  const configured = (process.env.EMBEDDING_PROVIDER || 'local').toLowerCase();
+  const configured = configuredProvider();
   const effective = resolveProvider(configured);
   const semantic = SEMANTIC_PROVIDERS.has(effective);
 
@@ -345,6 +390,11 @@ const getProviderInfo = () => {
     semantic,
     keyPresent,
     vectorSize,
+    fallbackProvider: effective === 'gemini' ? 'openai' : null,
+    fallbackKeyPresent: effective === 'gemini' ? Boolean(process.env.OPENAI_API_KEY) : null,
+    fallbackModel: effective === 'gemini'
+      ? (process.env.EMBEDDING_MODEL || OPENAI_FALLBACK_MODEL)
+      : null,
     model: effective === 'gemini'
       ? (process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2')
       : effective === 'openai'

@@ -10,11 +10,12 @@ The workflow:
 
 - reads the production PostgreSQL and Qdrant services through the existing
   production network;
-- creates or reuses only these isolated, fixed-name targets after proving they
-  are absent or empty:
-  - `knowledge_documents_openai_rollback_20260816`
-  - `knowledge_documents_gemini_20260816`
+- creates or reuses only run-specific isolated targets after proving they are
+  absent or empty. Their names are derived from the workflow run ID:
+  - `knowledge_documents_openai_rollback_20260816_<run-id>`
+  - `knowledge_documents_gemini_20260816_<run-id>`
 - reindexes active source data into each target with vector size `384`;
+- proves Gemini is the primary embedding provider and OpenAI is the fallback;
 - validates payload integrity, Bangla, English, cross-lingual, negative-query,
   semantic, and tenant-filter behavior;
 - snapshots the OpenAI rollback collection, records its SHA-256, and restores
@@ -60,6 +61,10 @@ version. See the [Qdrant snapshot documentation](https://qdrant.tech/documentati
 
 4. Retain the workflow log and the host evidence directory
    `/opt/easymod/qdrant-migration/<run-id>/`.
+
+The proof receives the authorized `OPENAI_API_KEY` and Gemini key through the
+workflow secret path for the isolated candidate containers. It does not alter
+the production `.env.prod` or restart any production service.
 
 The workflow fails closed if a required source relation is missing, PostgreSQL
 reports no indexable source rows or not exactly two sources for this migration,
