@@ -4,6 +4,7 @@ const {
     assertProductionConfig,
     validateProductionConfig,
 } = require('../production-config.validator');
+const { normalizeRenderedEnvironment } = require('../rendered-env');
 
 function validEnv(overrides = {}) {
     const secret = (letter) => letter.repeat(64);
@@ -44,6 +45,15 @@ function validEnv(overrides = {}) {
 describe('production configuration validation', () => {
     test('accepts a safe core launch configuration', () => {
         expect(validateProductionConfig(validEnv())).toMatchObject({ valid: true });
+    });
+
+    test('accepts legacy JSON-quoted values after runtime environment decoding', () => {
+        const serialized = Object.fromEntries(
+            Object.entries(validEnv()).map(([name, value]) => [name, JSON.stringify(value)]),
+        );
+
+        expect(validateProductionConfig(normalizeRenderedEnvironment(serialized)))
+            .toMatchObject({ valid: true });
     });
 
     test('fails with variable names only when required security values are missing', () => {

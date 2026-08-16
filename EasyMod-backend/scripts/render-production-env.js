@@ -4,12 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { assertProductionConfig } = require('../src/config/production-config.validator');
+const { serializeRenderedEnvValue } = require('../src/config/rendered-env');
 
 const RENDER_INPUT_REQUIRED = ['DB_USER', 'DB_PASSWORD', 'DB_NAME'];
-
-function encode(value) {
-    return JSON.stringify(String(value ?? ''));
-}
 
 function enabledFlag(value) {
     return String(value || '').toLowerCase() === 'true';
@@ -194,7 +191,7 @@ function renderToFile(outputPath, source = process.env) {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(
         outputPath,
-        `${Object.entries(rendered).map(([name, value]) => `${name}=${encode(value)}`).join('\n')}\n`,
+        `${Object.entries(rendered).map(([name, value]) => `${name}=${serializeRenderedEnvValue(value, name)}`).join('\n')}\n`,
         { mode: 0o600 },
     );
     return rendered;

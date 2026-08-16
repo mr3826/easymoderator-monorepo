@@ -15,7 +15,14 @@
  */
 
 const crypto = require('crypto');
-const { buildRenderedEnv, normalizePaymentEncryptionKey } = require('../render-production-env');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const {
+    buildRenderedEnv,
+    normalizePaymentEncryptionKey,
+    renderToFile,
+} = require('../render-production-env');
 
 const hex64 = (letter) => letter.repeat(64);
 
@@ -92,6 +99,36 @@ describe('PAYMENT_ENCRYPTION_KEY normalization (F-01)', () => {
     test('a missing payment key fails the preflight', () => {
         expect(() => buildRenderedEnv(validSource({ PAYMENT_ENCRYPTION_KEY: '' })))
             .toThrow(/PAYMENT_ENCRYPTION_KEY/);
+    });
+});
+
+describe('Docker production env-file serialization', () => {
+    test('writes raw KEY=value lines instead of literal JSON quote delimiters', async () => {
+        const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'easymod-env-'));
+        const outputPath = path.join(tempDir, '.env.prod');
+
+        try {
+            renderToFile(outputPath, validSource());
+            const content = await fs.promises.readFile(outputPath, 'utf8');
+
+            expect(content).toContain('API_URL=https://api.easymod.tech');
+            expect(content).toContain('EMAIL_FROM=EasyModerator <no-reply@easymod.tech>');
+            expect(content).not.toContain('API_URL="https://api.easymod.tech"');
+        } finally {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+        }
+    });
+
+    test('rejects newline-containing values before writing an env file', async () => {
+        const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'easymod-env-'));
+        const outputPath = path.join(tempDir, '.env.prod');
+
+        try {
+            expect(() => renderToFile(outputPath, validSource({ EMAIL_FROM: 'bad\nvalue' })))
+                .toThrow(/EMAIL_FROM cannot contain newlines/);
+        } finally {
+            await fs.promises.rm(tempDir, { recursive: true, force: true });
+        }
     });
 });
 

@@ -47,6 +47,11 @@ does not run when `PRODUCTION_DEPLOY_ENABLED` is false. It renders and validates
 the environment before SSH only when the operator later enables the guarded
 deployment path.
 
+`scripts/render-production-env.js` writes Docker-native `KEY=value` lines and
+rejects newline/NUL injection. The runtime decodes legacy JSON-quoted values
+before production validation so an older `.env.prod` fails safely only when its
+underlying value is actually invalid; malformed quoting remains rejected.
+
 When Docker is unavailable, CI is the authoritative integration execution: the
 `meta-e2e` job provisions the same disposable PostgreSQL 16 and Redis 7 services
 and runs `npm run test:integration` at Node 20. The integration suite deliberately
