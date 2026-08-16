@@ -229,7 +229,7 @@ const cosine = (a, b) => {
     return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
 };
 
-const GEMINI_EMBED_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001';
+const GEMINI_EMBED_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
 const GEMINI_DIMS = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 
 let cache = {};
@@ -286,8 +286,8 @@ const geminiEmbed = async (text, taskType) => {
     const values = body?.embedding?.values;
     if (!Array.isArray(values)) throw new Error('Gemini embed returned no vector');
 
-    // gemini-embedding-001 only returns unit-normalised vectors at full 3072 dims;
-    // truncated outputs must be re-normalised before cosine comparison.
+    // Normalize provider output before cosine comparison so configured dimensions
+    // remain comparable across the evaluation corpus.
     const norm = Math.sqrt(values.reduce((s, v) => s + v * v, 0)) || 1;
     const unit = values.map((v) => v / norm);
 

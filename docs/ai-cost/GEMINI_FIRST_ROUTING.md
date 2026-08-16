@@ -97,15 +97,18 @@ Guarded by a repo-wide scan in `gemini-first-routing.test.js` §C, which fails i
 **No parallel calls, no unconditional secondary calls.** `chat()` is a strictly sequential
 `for` loop that returns on the first success.
 
-### The embedding exception
+### Embedding routing
 
 `EMBEDDING_PROVIDER=openai` would make OpenAI the **normal** embedding provider, which the
 locked decisions rule out.
 
-**Resolved 2026-08-16.** `embedding.service.js` now implements `EMBEDDING_PROVIDER=gemini`
-(`getGeminiEmbedding`), so the `GEMINI_EMBEDDING_MODEL` secret that has existed since
-2026-03-13 is finally read by code. `.env.prod.example` defaults to it, keeping embeddings
-on the same Gemini key as the LLM chain — $0 on the free tier.
+**Resolved 2026-08-16.** `embedding.service.js` now implements Gemini as the production
+primary and OpenAI as an observable fallback. `EMBEDDING_PROVIDER=gemini` calls
+`getGeminiEmbedding` first and invokes OpenAI only after that request fails. The
+`GEMINI_EMBEDDING_MODEL` secret that has existed since 2026-03-13 is now read by code, and
+`.env.prod.example` defaults to it. The explicit `openai` provider remains available for
+isolated migration proof and controlled rollback validation; it is not the production
+default.
 
 The model is **`gemini-embedding-2`**, not the `gemini-embedding-001` that
 [RETRIEVAL_QUALITY_EVALUATION.md](RETRIEVAL_QUALITY_EVALUATION.md) suggested. Measured
@@ -117,7 +120,9 @@ worth having at all: cos("লাল সুতির শাড়ি", "red cotto
 cos("লাল সুতির শাড়ি", "motorcycle engine oil") = 0.44.
 
 Switching provider changes the vector space — run `node src/scripts/reindex-qdrant.js`
-after the cutover or existing points stay unmatchable.
+against a separately validated collection after the cutover or existing points stay
+unmatchable. The migration proof therefore validates Gemini and OpenAI in separate
+collections and never mixes provider vectors into the live collection.
 
 ## 4. `model_preset: 'advanced'`
 

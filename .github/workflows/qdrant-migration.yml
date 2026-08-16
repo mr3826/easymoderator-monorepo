@@ -22,8 +22,8 @@ permissions:
 env:
   GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
   ACTIVE_COLLECTION: knowledge_documents
-  OPENAI_ROLLBACK_COLLECTION: knowledge_documents_openai_rollback_20260816
-  GEMINI_COLLECTION: knowledge_documents_gemini_20260816
+  OPENAI_ROLLBACK_COLLECTION_BASE: knowledge_documents_openai_rollback_20260816
+  GEMINI_COLLECTION_BASE: knowledge_documents_gemini_20260816
   EXPECTED_SOURCE_COUNT: '2'
   EXPECTED_LIVE_COUNT: '1'
   VECTOR_SIZE: '384'
@@ -44,6 +44,9 @@ jobs:
       CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
       CONFIRMATION: ${{ inputs.confirmation }}
       PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED || 'false' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+      GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
       PROOF_SCRIPT_PATH: /opt/easymod/qdrant-migration-proof-${{ github.run_id }}.js
     steps:
       - name: Check out proof runner
@@ -98,8 +101,8 @@ jobs:
           CANDIDATE_IMAGE: ${{ steps.candidate.outputs.candidate_image }}
           GHCR_BACKEND: ${{ env.GHCR_BACKEND }}
           ACTIVE_COLLECTION: ${{ env.ACTIVE_COLLECTION }}
-          OPENAI_ROLLBACK_COLLECTION: ${{ env.OPENAI_ROLLBACK_COLLECTION }}
-          GEMINI_COLLECTION: ${{ env.GEMINI_COLLECTION }}
+          OPENAI_ROLLBACK_COLLECTION_BASE: ${{ env.OPENAI_ROLLBACK_COLLECTION_BASE }}
+          GEMINI_COLLECTION_BASE: ${{ env.GEMINI_COLLECTION_BASE }}
           EXPECTED_SOURCE_COUNT: ${{ env.EXPECTED_SOURCE_COUNT }}
           EXPECTED_LIVE_COUNT: ${{ env.EXPECTED_LIVE_COUNT }}
           VECTOR_SIZE: ${{ env.VECTOR_SIZE }}
@@ -107,12 +110,15 @@ jobs:
           PROOF_SCRIPT_PATH: ${{ env.PROOF_SCRIPT_PATH }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           PRODUCTION_DEPLOY_ENABLED: ${{ env.PRODUCTION_DEPLOY_ENABLED }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ env.GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL: ${{ env.GEMINI_EMBEDDING_MODEL }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 1800s
-          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION,GEMINI_COLLECTION,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED
+          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
           script: |
             set -euo pipefail
             umask 077
@@ -120,6 +126,10 @@ jobs:
             ENV_PATH=/opt/easymod/.env.prod
             NETWORK=easymod_internal
             RUN_DIR="/opt/easymod/qdrant-migration/${WORKFLOW_RUN_ID}"
+            OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
+            GEMINI_COLLECTION="${GEMINI_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
+            OPENAI_FALLBACK_MODEL=text-embedding-3-small
+            GEMINI_MODEL="${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}"
             RESTORE_CONTAINER="easymod-qdrant-restore-${WORKFLOW_RUN_ID}"
             RESTORE_HOST="$RESTORE_CONTAINER"
             RESTORE_COLLECTION="${OPENAI_ROLLBACK_COLLECTION}_restored"
@@ -148,6 +158,9 @@ jobs:
             for required_name in DATABASE_URL QDRANT_URL QDRANT_COLLECTION OPENAI_API_KEY GEMINI_API_KEY; do
               grep -q "^${required_name}=" "$ENV_PATH"
             done
+            test -n "$OPENAI_API_KEY"
+            test -n "$GEMINI_API_KEY"
+            printf '%s' "$GEMINI_MODEL" | grep -Eq '^gemini-embedding-[A-Za-z0-9.-]+$'
             configured_collection=$(awk -F= '$1 == "QDRANT_COLLECTION" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_PATH")
             configured_collection="${configured_collection#\"}"
             configured_collection="${configured_collection%\"}"
@@ -185,6 +198,8 @@ jobs:
                 -e EXPECTED_LIVE_COUNT="$EXPECTED_LIVE_COUNT" \
                 -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
                 -e QDRANT_PER_TENANT=false \
+                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e OPENAI_ROLLBACK_COLLECTION="$OPENAI_ROLLBACK_COLLECTION" \
                 -e GEMINI_COLLECTION="$GEMINI_COLLECTION" \
                 -e SNAPSHOT_DIR=/tmp/migration \
@@ -208,6 +223,8 @@ jobs:
                 -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
                 -e QDRANT_PER_TENANT=false \
                 -e QDRANT_COLLECTION="$collection" \
+                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e EMBEDDING_PROVIDER="$provider" \
                 -e EMBEDDING_MODEL="$embedding_model" \
                 -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
@@ -226,9 +243,12 @@ jobs:
               set +e
               docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
                 -e NODE_ENV=production \
+                -e NODE_PATH=/app/node_modules \
                 -e QDRANT_COLLECTION="$ACTIVE_COLLECTION" \
                 -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
                 -e QDRANT_PER_TENANT=false \
+                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e EMBEDDING_PROVIDER="$provider" \
                 -e EMBEDDING_MODEL="$embedding_model" \
                 -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
@@ -257,15 +277,35 @@ jobs:
               fi
             }
 
+            run_provider_fallback() {
+              docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+                -e NODE_ENV=production \
+                -e NODE_PATH=/app/node_modules \
+                -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+                -e EMBEDDING_MODEL="$OPENAI_FALLBACK_MODEL" \
+                -e GEMINI_EMBEDDING_MODEL="$GEMINI_MODEL" \
+                -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js provider-fallback
+            }
+
             run_proof inspect | tee "$RUN_DIR/inspect.log"
             live_count=$(awk -F= '$1 == "LIVE_COUNT" { print $2 }' "$RUN_DIR/inspect.log" | tail -1)
             test "$live_count" = "$EXPECTED_LIVE_COUNT"
 
-            run_reindex openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
-            run_provider_proof openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" \
+            run_reindex gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_COLLECTION" "$RUN_DIR/gemini-reindex.log"
+            run_provider_proof gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_COLLECTION" \
+              validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/gemini-validate.log"
+
+            run_provider_fallback | tee "$RUN_DIR/provider-fallback.log"
+            test "$(awk -F= '$1 == "PRIMARY_TO_FALLBACK_TEST" { print $2 }' "$RUN_DIR/provider-fallback.log" | tail -1)" = PASS
+
+            run_reindex openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
+            run_provider_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" \
               validate "--collection=$OPENAI_ROLLBACK_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/openai-validate.log"
 
-            run_provider_proof openai text-embedding-3-small text-embedding-3-small "$OPENAI_ROLLBACK_COLLECTION" \
+            run_provider_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" \
               snapshot "--collection=$OPENAI_ROLLBACK_COLLECTION" "--path=$SNAPSHOT_FILE" \
               | tee "$RUN_DIR/openai-snapshot.log"
             snapshot_name=$(awk -F= '$1 == "SNAPSHOT_NAME" { print $2 }' "$RUN_DIR/openai-snapshot.log" | tail -1)
@@ -291,25 +331,26 @@ jobs:
               -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
               -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
               -e QDRANT_PER_TENANT=false \
+              -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+              -e GEMINI_API_KEY="$GEMINI_API_KEY" \
               -e EMBEDDING_PROVIDER=openai \
-              -e EMBEDDING_MODEL=text-embedding-3-small \
-              -e GEMINI_EMBEDDING_MODEL=text-embedding-004 \
+              -e EMBEDDING_MODEL="$OPENAI_FALLBACK_MODEL" \
+              -e GEMINI_EMBEDDING_MODEL="$GEMINI_MODEL" \
               -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
               "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js validate \
               "--collection=$RESTORE_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" \
               | tee "$RUN_DIR/restore-validate.log"
             echo "OPENAI_ROLLBACK_RESTORE=PASS"
 
-            run_reindex gemini text-embedding-004 gemini-embedding-2 "$GEMINI_COLLECTION" "$RUN_DIR/gemini-reindex.log"
-            run_provider_proof gemini text-embedding-004 gemini-embedding-2 "$GEMINI_COLLECTION" \
-              validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" \
-              | tee "$RUN_DIR/gemini-validate.log"
-
             run_proof postflight | tee "$RUN_DIR/postflight.log"
             test "$(awk -F= '$1 == "LIVE_COLLECTION_UNTOUCHED" { print $2 }' "$RUN_DIR/postflight.log" | tail -1)" = PASS
 
             openai_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/openai-validate.log" | tail -1)
             gemini_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
+            openai_vector_size=$(awk -F= '$1 == "VECTOR_SIZE" { print $2 }' "$RUN_DIR/openai-validate.log" | tail -1)
+            gemini_vector_size=$(awk -F= '$1 == "VECTOR_SIZE" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
+            test "$openai_vector_size" = "$VECTOR_SIZE"
+            test "$gemini_vector_size" = "$VECTOR_SIZE"
             for result_name in BANGLA_SEARCH ENGLISH_SEARCH CROSS_LINGUAL_SEARCH NEGATIVE_SEARCH TENANT_ISOLATION; do
               result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
               echo "$result_name=$result_value"
@@ -318,13 +359,18 @@ jobs:
             semantic_search=$(awk -F= '$1 == "SEMANTIC_SEARCH" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
             echo "SEMANTIC_SEARCH=$semantic_search"
             test "$semantic_search" = PASS
+            echo "GEMINI_PRIMARY=PASS"
+            echo "OPENAI_FALLBACK=PASS"
+            echo "PRIMARY_TO_FALLBACK_TEST=PASS"
+            echo "QDRANT_VECTOR_COMPATIBILITY=PASS"
+            echo "OPENAI_FALLBACK_PROOF=PASS"
             echo "FINAL_STATUS=QDRANT_MIGRATION_READY_FOR_CUTOVER"
             echo "OPENAI_ROLLBACK_COLLECTION=$OPENAI_ROLLBACK_COLLECTION"
             echo "OPENAI_ROLLBACK_COUNT=$openai_count"
             echo "GEMINI_COLLECTION=$GEMINI_COLLECTION"
             echo "GEMINI_SOURCE_COUNT=$EXPECTED_SOURCE_COUNT"
             echo "GEMINI_QDRANT_COUNT=$gemini_count"
-            echo "GEMINI_VECTOR_SIZE=$VECTOR_SIZE"
+            echo "GEMINI_VECTOR_SIZE=$gemini_vector_size"
             echo "GEMINI_REINDEX=PASS"
             echo "APPLICATION_ROLLBACK_PLAN=restore the captured immutable backend/frontend digests; no application deployment executed"
             echo "QDRANT_ROLLBACK_PLAN=switch configuration to $OPENAI_ROLLBACK_COLLECTION in a separately approved deployment"

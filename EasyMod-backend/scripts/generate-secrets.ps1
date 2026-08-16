@@ -141,9 +141,10 @@ BODY_SIZE_LIMIT=10mb
 ALLOW_SELF_SIGNED_TLS=false
 JWT_ACCESS_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
-EMBEDDING_PROVIDER=google
-EMBEDDING_MODEL=text-embedding-004
-GEMINI_EMBEDDING_MODEL=text-embedding-004
+EMBEDDING_PROVIDER=gemini
+EMBEDDING_MODEL=text-embedding-3-small
+GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+QDRANT_VECTOR_SIZE=384
 
 ========================================
 OPTIONAL (Leave blank if not using)

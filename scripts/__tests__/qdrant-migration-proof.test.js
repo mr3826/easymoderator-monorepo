@@ -17,6 +17,7 @@ const {
     normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
 const { Client } = require('pg');
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const QDRANT_WORKFLOW_PATH = path.resolve(__dirname, '../../.github/workflows/qdrant-migration.yml');
 
 describe('Qdrant migration proof safety helpers', () => {
@@ -96,16 +97,37 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(client.end).toHaveBeenCalledTimes(1);
     });
 
-    it('uses an OpenAI model that exists and supports the proof vector size', () => {
+    it('proves Gemini primary, OpenAI fallback, and provider-compatible dimensions', () => {
         const workflow = fs.readFileSync(QDRANT_WORKFLOW_PATH, 'utf8');
 
+        expect(workflow).toContain('OPENAI_FALLBACK_MODEL=text-embedding-3-small');
+        expect(workflow).toContain('GEMINI_MODEL="${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}"');
+        expect(workflow).toContain('run_provider_fallback');
+        expect(workflow).toContain('provider-fallback');
+        expect(workflow.indexOf('run_reindex gemini')).toBeLessThan(workflow.indexOf('run_reindex openai'));
         expect(workflow).toMatch(
-            /run_reindex openai text-embedding-3-small text-embedding-3-small/,
+            /run_reindex openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
         );
         expect(workflow).toMatch(
-            /run_provider_proof openai text-embedding-3-small text-embedding-3-small/,
+            /run_provider_proof openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
         );
-        expect(workflow).toContain('-e EMBEDDING_MODEL=text-embedding-3-small');
-        expect(workflow).not.toMatch(/run_(?:reindex|provider_proof) openai text-embedding-004/);
+        expect(workflow).toContain('QDRANT_VECTOR_COMPATIBILITY=PASS');
+        expect(workflow).toContain('OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"');
+        expect(workflow).not.toContain('text-embedding-004');
+        expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
+        expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
+    });
+
+    it('keeps active embedding configuration templates on the approved contract', () => {
+        const templates = [
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'generate-secrets.ps1'),
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'generate-secrets.sh'),
+            path.join(REPO_ROOT, 'EasyMod-backend', 'scripts', 'github-secrets-checklist.txt'),
+        ].map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+        expect(templates).toContain('EMBEDDING_PROVIDER=gemini');
+        expect(templates).toContain('EMBEDDING_MODEL=text-embedding-3-small');
+        expect(templates).toContain('GEMINI_EMBEDDING_MODEL=gemini-embedding-2');
+        expect(templates).toContain('QDRANT_VECTOR_SIZE=384');
+        expect(templates).not.toContain('text-embedding-004');
     });
 });
