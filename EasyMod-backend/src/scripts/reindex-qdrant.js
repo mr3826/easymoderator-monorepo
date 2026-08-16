@@ -18,8 +18,13 @@
  * (those are pruned at write time via deletePoint).
  *
  * Usage (on the droplet, inside the api/worker container):
- *   npm run reindex:qdrant                # all active shops
- *   npm run reindex:qdrant -- --shop=<id> # one shop
+ *   npm run reindex:qdrant -- --collection=<new-name>             # all active shops into an isolated collection
+ *   npm run reindex:qdrant -- --collection=<new-name> --shop=<id> # one shop into an isolated collection
+ *
+ * Production requires an explicit --collection target. This prevents an
+ * operator from accidentally reindexing the active collection in place during
+ * an embedding-provider migration. The source collection remains untouched;
+ * switch QDRANT_COLLECTION only after validating the target collection.
  *
  * Requires (production): DATABASE_URL, QDRANT_URL, QDRANT_API_KEY,
  * QDRANT_COLLECTION, and an embedding key (GOOGLE_GEMINI_API_KEY / GEMINI_API_KEY).
@@ -30,6 +35,31 @@ require('module-alias/register');
 require('dotenv').config();
 
 const env = process.env.NODE_ENV || 'development';
+
+function parseArg(name) {
+    const prefix = `--${name}=`;
+    const arg = process.argv.find((value) => value.startsWith(prefix));
+    return arg ? arg.slice(prefix.length).trim() : null;
+}
+
+const requestedCollection = parseArg('collection');
+const configuredCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
+
+if (env === 'production' && !requestedCollection) {
+    throw new Error(
+        'Production reindex requires an explicit --collection=<new-name> target; '
+        + 'refusing to reindex the active collection in place.',
+    );
+}
+
+if (requestedCollection && requestedCollection === configuredCollection) {
+    throw new Error(
+        `Refusing to reindex active collection "${configuredCollection}" in place; `
+        + 'provide a separate migration collection.',
+    );
+}
+
+if (requestedCollection) process.env.QDRANT_COLLECTION = requestedCollection;
 
 // Force file-based SQLite in development only (mirrors seed-admin.js).
 if (!process.env.DATABASE_URL && env !== 'production') {
@@ -42,8 +72,7 @@ const { sequelize } = require('../utils/database/database-setup');
 const { run, indexShop } = require('../modules/knowledge/auto-index.job');
 
 function parseShopArg() {
-    const arg = process.argv.find((a) => a.startsWith('--shop='));
-    return arg ? arg.slice('--shop='.length).trim() : null;
+    return parseArg('shop');
 }
 
 async function main() {
@@ -53,6 +82,7 @@ async function main() {
     console.log(`  env:        ${env}`);
     console.log(`  qdrantUrl:  ${process.env.QDRANT_URL || 'http://localhost:6333 (default)'}`);
     console.log(`  collection: ${process.env.QDRANT_COLLECTION || 'knowledge_documents (default)'}`);
+    if (requestedCollection) console.log(`  source:     ${configuredCollection}`);
     console.log(`  perTenant:  ${process.env.QDRANT_PER_TENANT === 'true'}`);
     console.log(`  scope:      ${shopId ? `single shop ${shopId}` : 'all active shops'}`);
     console.log('─────────────────────────────────────────────────');

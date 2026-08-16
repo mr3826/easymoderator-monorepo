@@ -234,3 +234,14 @@ describe('image-understanding switches are settable in production', () => {
         expect(env.AI_VISION_ENABLED).toBe('true');
     });
 });
+
+describe('Qdrant embedding dimension is rendered from the repository contract', () => {
+    test('defaults to the Gemini-compatible 384 dimensions', () => {
+        expect(buildRenderedEnv(validSource()).QDRANT_VECTOR_SIZE).toBe('384');
+    });
+
+    test('preserves an explicit configured dimension', () => {
+        expect(buildRenderedEnv(validSource({ QDRANT_VECTOR_SIZE: '768' })).QDRANT_VECTOR_SIZE)
+            .toBe('768');
+    });
+});
