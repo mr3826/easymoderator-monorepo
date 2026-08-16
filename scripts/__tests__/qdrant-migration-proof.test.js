@@ -10,10 +10,44 @@ const {
     extractVectorSize,
     hasLexicalOverlap,
     sourceStats,
+    normalizeDatabaseUrl,
+    normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
 const { Client } = require('pg');
 
 describe('Qdrant migration proof safety helpers', () => {
+    describe('URL contract', () => {
+        it('accepts an HTTP Qdrant service URL', () => {
+            expect(normalizeQdrantUrl('http://qdrant:6333')).toBe('http://qdrant:6333');
+        });
+
+        it('accepts an HTTPS Qdrant service URL', () => {
+            expect(normalizeQdrantUrl('https://qdrant.internal:6333')).toBe('https://qdrant.internal:6333');
+        });
+
+        it('trims surrounding whitespace without accepting internal whitespace', () => {
+            expect(normalizeQdrantUrl('  http://qdrant:6333/  ')).toBe('http://qdrant:6333');
+            expect(() => normalizeQdrantUrl('http://qdrant: 6333')).toThrow(/whitespace/);
+        });
+
+        it('removes accidental literal surrounding quotes from rendered values', () => {
+            expect(normalizeQdrantUrl('"http://qdrant:6333"')).toBe('http://qdrant:6333');
+            expect(normalizeDatabaseUrl('"postgresql://user:pass@postgres:5432/easymod"'))
+                .toBe('postgresql://user:pass@postgres:5432/easymod');
+        });
+
+        it('accepts a Docker service hostname with an explicit port', () => {
+            expect(normalizeQdrantUrl('http://qdrant:6333')).toBe('http://qdrant:6333');
+        });
+
+        it('rejects malformed, unsupported, and missing URLs without exposing their values', () => {
+            expect(() => normalizeQdrantUrl('http://http://qdrant:6333')).toThrow(/server-root/);
+            expect(() => normalizeQdrantUrl('qdrant:6333')).toThrow(/allowed URL protocol/);
+            expect(() => normalizeQdrantUrl('"http://qdrant:6333')).toThrow(/malformed surrounding quotes/);
+            expect(() => normalizeQdrantUrl('')).toThrow(/QDRANT_URL is required/);
+        });
+    });
+
     it('rejects the live collection and mutable or unsafe targets', () => {
         expect(() => assertSafeCollectionName('knowledge_documents')).toThrow();
         expect(() => assertSafeCollectionName('knowledge_documents_openai_rollback_20260816')).not.toThrow();
