@@ -67,6 +67,17 @@ the live collection does not report one point with vector size 384, GHCR access
 fails, either reindex is incomplete, the snapshot checksum changes, the
 isolated restore fails, or any validation gate fails.
 
+If a provider reindex command fails, the workflow emits only this sanitized
+diagnostic contract; the raw host log remains outside the GitHub log:
+
+```text
+REINDEX_PROVIDER=
+REINDEX_STAGE=
+REINDEX_ERROR_TYPE=
+REINDEX_ERROR_SUMMARY=
+REINDEX_EXIT_CODE=
+```
+
 ## Cutover boundary
 
 `QDRANT_MIGRATION_READY_FOR_CUTOVER` means the rollback collection, snapshot,

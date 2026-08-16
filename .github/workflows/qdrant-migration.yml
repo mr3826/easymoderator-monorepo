@@ -236,8 +236,25 @@ jobs:
               rc=$?
               set -e
               grep -E '^[[:space:]]+(shops|indexed|errors|duration):|Reindex complete|Reindex finished with errors' "$log_file" || true
-              test "$rc" -eq 0
-              grep -Eq '^[[:space:]]+errors:[[:space:]]+0$' "$log_file"
+              if [ "$rc" -ne 0 ]; then
+                reindex_stage=$(sed -n 's/^REINDEX_STAGE=//p' "$log_file" | tail -1)
+                reindex_type=$(sed -n 's/^REINDEX_ERROR_TYPE=//p' "$log_file" | tail -1)
+                reindex_summary=$(sed -n 's/^REINDEX_ERROR_SUMMARY=//p' "$log_file" | tail -1)
+                echo "REINDEX_PROVIDER=$provider"
+                echo "REINDEX_STAGE=${reindex_stage:-unknown}"
+                echo "REINDEX_ERROR_TYPE=${reindex_type:-UnknownError}"
+                echo "REINDEX_ERROR_SUMMARY=${reindex_summary:-reindex command failed before sanitized diagnostics}"
+                echo "REINDEX_EXIT_CODE=$rc"
+                return "$rc"
+              fi
+              if ! grep -Eq '^[[:space:]]+errors:[[:space:]]+0$' "$log_file"; then
+                echo "REINDEX_PROVIDER=$provider"
+                echo "REINDEX_STAGE=index"
+                echo "REINDEX_ERROR_TYPE=ReindexIngestionError"
+                echo "REINDEX_ERROR_SUMMARY=Reindex completed with one or more ingestion errors"
+                echo "REINDEX_EXIT_CODE=1"
+                return 1
+              fi
             }
 
             run_proof inspect | tee "$RUN_DIR/inspect.log"

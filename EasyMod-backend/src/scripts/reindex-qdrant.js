@@ -44,6 +44,10 @@ function parseArg(name) {
 
 const requestedCollection = parseArg('collection');
 const configuredCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
+let sequelize = null;
+let run = null;
+let indexShop = null;
+let reindexStage = 'bootstrap';
 
 if (env === 'production' && !requestedCollection) {
     throw new Error(
@@ -66,21 +70,46 @@ if (!process.env.DATABASE_URL && env !== 'production') {
     process.env.DATABASE_URL = 'sqlite:./database.sqlite';
 }
 
-// Load all models before touching the DB.
-require('../modules/entities');
-const { sequelize } = require('../utils/database/database-setup');
-const { run, indexShop } = require('../modules/knowledge/auto-index.job');
-
 function parseShopArg() {
     return parseArg('shop');
 }
 
+const safeErrorType = (error) => String(error?.name || error?.constructor?.name || 'Error')
+    .replace(/[^A-Za-z0-9_.-]/g, '_')
+    .slice(0, 80) || 'Error';
+
+const sanitizeErrorSummary = (error) => String(error?.message || error || 'unknown error')
+    .replace(/["']?postgres(?:ql)?:\/\/[^\s"'`]+["']?/gi, '[database-url]')
+    .replace(/["']?https?:\/\/[^\s"'`]+["']?/gi, '[url]')
+    .replace(/([?&](?:key|token|api[-_]?key|apikey)=)[^&\s]+/gi, '$1[redacted]')
+    .replace(/\b(?:sk|AIza)[A-Za-z0-9_-]{8,}\b/g, '[redacted]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 240) || 'unknown error';
+
+const emitReindexFailure = (error) => {
+    console.error(`REINDEX_STAGE=${reindexStage}`);
+    console.error(`REINDEX_ERROR_TYPE=${safeErrorType(error)}`);
+    console.error(`REINDEX_ERROR_SUMMARY=${sanitizeErrorSummary(error)}`);
+};
+
+const closeDatabase = async () => {
+    if (sequelize) await sequelize.close().catch(() => {});
+};
+
 async function main() {
     const shopId = parseShopArg();
 
+    // Keep bootstrap inside main so module/configuration failures are emitted
+    // through the sanitized diagnostic contract below.
+    reindexStage = 'bootstrap';
+    require('../modules/entities');
+    ({ sequelize } = require('../utils/database/database-setup'));
+    ({ run, indexShop } = require('../modules/knowledge/auto-index.job'));
+
     console.log('── Qdrant reindex ───────────────────────────────');
     console.log(`  env:        ${env}`);
-    console.log(`  qdrantUrl:  ${process.env.QDRANT_URL || 'http://localhost:6333 (default)'}`);
+    console.log(`  qdrantUrl:  ${process.env.QDRANT_URL ? 'configured' : 'default'}`);
     console.log(`  collection: ${process.env.QDRANT_COLLECTION || 'knowledge_documents (default)'}`);
     if (requestedCollection) console.log(`  source:     ${configuredCollection}`);
     console.log(`  perTenant:  ${process.env.QDRANT_PER_TENANT === 'true'}`);
@@ -96,6 +125,7 @@ async function main() {
             + 'Embeddings will fail and every document will be skipped.');
     }
 
+    reindexStage = 'database';
     try {
         await sequelize.authenticate();
     } catch (dbErr) {
@@ -103,6 +133,7 @@ async function main() {
         throw new Error(`database connection failed: ${dbErr.message || detail || 'unknown error'}${detail ? ` (${detail})` : ''}`);
     }
 
+    reindexStage = 'index';
     const started = Date.now();
     let result;
     if (shopId) {
@@ -120,18 +151,33 @@ async function main() {
     console.log(`  duration:  ${secs}s`);
     console.log('─────────────────────────────────────────────────');
 
-    return result.errors > 0 ? 1 : 0;
+    if (result.errors > 0) {
+        const error = new Error(`reindex reported ${result.errors} ingestion errors`);
+        error.name = 'ReindexIngestionError';
+        emitReindexFailure(error);
+        return 1;
+    }
+
+    return 0;
 }
 
-main()
-    .then(async (code) => {
-        await sequelize.close().catch(() => {});
-        console.log(code === 0 ? '✅ Reindex complete.' : '⚠️  Reindex finished with errors (see above).');
-        process.exit(code);
-    })
-    .catch(async (err) => {
-        console.error('❌ Reindex failed:', err.message || err.code || String(err));
-        if (process.env.DEBUG) console.error(err.stack);
-        await sequelize.close().catch(() => {});
-        process.exit(1);
-    });
+if (require.main === module) {
+    main()
+        .then(async (code) => {
+            await closeDatabase();
+            console.log(code === 0 ? '✅ Reindex complete.' : '⚠️  Reindex finished with errors (see above).');
+            process.exit(code);
+        })
+        .catch(async (err) => {
+            emitReindexFailure(err);
+            console.error(`❌ Reindex failed: ${sanitizeErrorSummary(err)}`);
+            await closeDatabase();
+            process.exit(1);
+        });
+}
+
+module.exports = {
+    emitReindexFailure,
+    safeErrorType,
+    sanitizeErrorSummary,
+};
