@@ -3,11 +3,14 @@ const { v5: uuidv5, validate: uuidValidate } = require('uuid');
 const { getEmbedding } = require('./embedding.service');
 
 const config = require('../../config/config');
+const { normalizeQdrantUrl } = require('../../config/url-normalizer');
 
 // Vector store: Qdrant only (Pinecone removed 2026-05-31 — one vector store).
 // Qdrant REST API uses paths without a /v1/ prefix (both old and current versions).
 // Always pin QDRANT_URL to the server root, e.g. http://qdrant:6333
-const qdrantUrl = process.env.QDRANT_URL || 'http://localhost:6333';
+const qdrantUrl = process.env.QDRANT_URL
+    ? normalizeQdrantUrl(process.env.QDRANT_URL)
+    : 'http://localhost:6333';
 const qdrantCollection = process.env.QDRANT_COLLECTION || 'knowledge_documents';
 const vectorSize = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const qdrantApiKey = process.env.QDRANT_API_KEY;

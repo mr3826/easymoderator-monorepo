@@ -1,10 +1,16 @@
 const { Sequelize } = require('sequelize');
 const path = require('path');
 const config = require('../../config/config');
+const { normalizeDatabaseUrl } = require('../../config/url-normalizer');
 
 // Use SQLite only if DATABASE_URL is not set
 const projectRoot = path.resolve(__dirname, '../../..');
-const databaseUrl = config.databaseUrl || 'sqlite:./database.sqlite';
+const rawDatabaseUrl = config.databaseUrl;
+const databaseUrl = rawDatabaseUrl
+    ? String(rawDatabaseUrl).trim().toLowerCase().startsWith('sqlite:')
+        ? String(rawDatabaseUrl).trim()
+        : normalizeDatabaseUrl(rawDatabaseUrl)
+    : 'sqlite:./database.sqlite';
 
 const normalizeSqliteUrl = (url) => {
     if (!url.startsWith('sqlite:') || url === 'sqlite::memory:') {
