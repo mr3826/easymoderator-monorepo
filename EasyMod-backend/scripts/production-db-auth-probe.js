@@ -7,6 +7,14 @@ const { Client } = require('pg');
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
 let failureStage = 'DB_URL';
 
+function decodeRenderedValue(value) {
+    const trimmed = String(value ?? '').trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        return JSON.parse(trimmed);
+    }
+    return trimmed;
+}
+
 function assertTcpConnection(host, port) {
     return new Promise((resolve, reject) => {
         const socket = net.createConnection({ host, port });
@@ -31,7 +39,7 @@ async function main() {
     if (!process.env.DATABASE_URL) {
         throw new Error('DATABASE_URL is required');
     }
-    const databaseUrl = new URL(process.env.DATABASE_URL);
+    const databaseUrl = new URL(decodeRenderedValue(process.env.DATABASE_URL));
     failureStage = 'DB_HOST_RESOLUTION';
     await dns.lookup(databaseUrl.hostname);
     console.log('DB_HOST_RESOLUTION=PASS');
