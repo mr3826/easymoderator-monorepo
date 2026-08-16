@@ -5,6 +5,7 @@ const net = require('net');
 const { Client } = require('pg');
 
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
+let failureStage = 'DB_URL';
 
 function assertTcpConnection(host, port) {
     return new Promise((resolve, reject) => {
@@ -31,12 +32,15 @@ async function main() {
         throw new Error('DATABASE_URL is required');
     }
     const databaseUrl = new URL(process.env.DATABASE_URL);
+    failureStage = 'DB_HOST_RESOLUTION';
     await dns.lookup(databaseUrl.hostname);
     console.log('DB_HOST_RESOLUTION=PASS');
 
+    failureStage = 'DB_TCP_CONNECT';
     await assertTcpConnection(databaseUrl.hostname, Number(databaseUrl.port || 5432));
     console.log('DB_TCP_CONNECT=PASS');
 
+    failureStage = 'DB_NAME';
     const databaseName = decodeURIComponent(databaseUrl.pathname.replace(/^\/+/, ''));
     if (databaseName !== expectedDatabase) {
         throw new Error('unexpected database name');
@@ -45,8 +49,10 @@ async function main() {
 
     const client = new Client({ connectionString: databaseUrl.toString(), ssl: false });
     try {
+        failureStage = 'DB_AUTH';
         await client.connect();
         console.log('DB_AUTH=PASS');
+        failureStage = 'SELECT_1';
         const result = await client.query('SELECT 1 AS ok');
         if (String(result.rows[0]?.ok) !== '1') {
             throw new Error('SELECT 1 returned an unexpected value');
@@ -58,6 +64,7 @@ async function main() {
 }
 
 main().catch(() => {
+    console.error(`${failureStage}=FAIL`);
     console.error('DB_PROBE_FAILED');
     process.exitCode = 1;
 });
