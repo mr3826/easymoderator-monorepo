@@ -85,6 +85,11 @@ jest.mock('src/jobs/burst-coalescer', () => ({
     cancelBurstFlush: jest.fn().mockResolvedValue(undefined),
 }));
 
+const mockTrackUsage = jest.fn().mockResolvedValue({ transactionId: 'txn-1', isRetry: false });
+jest.mock('src/modules/subscription/subscription.service', () => ({
+    trackUsage: (...args) => mockTrackUsage(...args),
+}));
+
 // ── In-memory MetaWebhookReceipt standing in for the Postgres table ───────────
 
 class UniqueConstraintError extends Error {
@@ -518,5 +523,40 @@ describe('operational logging', () => {
         expect(blob).toMatch(/^v1:/);
         expect(blob).not.toContain(MESSAGE_TEXT);
         expect(blob).not.toContain(SENDER_PSID);
+    });
+});
+
+// ── 7. Conversation metering key ─────────────────────────────────────────────
+
+describe('conversation usage metering', () => {
+    // usage_events.request_id is a uuid column in production. A prefixed key
+    // ("conv:<uuid>") makes Postgres reject the insert, and the failure is
+    // swallowed as non-fatal — so billing silently records nothing.
+    const CONV_UUID = 'ce4d0458-e5a7-464a-9ebd-b6dc589c4a20';
+
+    beforeEach(() => {
+        mockConversation.create.mockResolvedValue({ id: CONV_UUID, update: jest.fn() });
+        mockMessage.create.mockResolvedValue({
+            id: 'msg-1', conversation_id: CONV_UUID, metadata: {}, toJSON: () => ({ id: 'msg-1' }),
+        });
+    });
+
+    test('meters a new conversation with the bare conversation id as the idempotency key', async () => {
+        await post(buildPayload()).expect(200);
+
+        expect(mockTrackUsage).toHaveBeenCalledTimes(1);
+        const [shopId, usageType, amount, requestId] = mockTrackUsage.mock.calls[0];
+        expect(shopId).toBe(SHOP_ID);
+        expect(usageType).toBe('conversations');
+        expect(amount).toBe(1);
+        expect(requestId).toBe(CONV_UUID);
+    });
+
+    test('the idempotency key is a bare uuid a uuid column will accept', async () => {
+        await post(buildPayload()).expect(200);
+
+        const requestId = mockTrackUsage.mock.calls[0][3];
+        expect(requestId).not.toMatch(/^conv:/);
+        expect(requestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
 });

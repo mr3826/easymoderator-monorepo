@@ -6,7 +6,7 @@
  * Used by backup-runner container for database restoration
  */
 
-const { execSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -15,33 +15,105 @@ class DatabaseRestore {
     this.backupDir = '/backups';
   }
 
+  parseDatabaseUrl(dbUrl) {
+    let parsed;
+    try {
+      parsed = new URL(dbUrl);
+    } catch (_) {
+      throw new Error('Invalid RECOVERY_DATABASE_URL format');
+    }
+    if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !parsed.hostname || !parsed.pathname.slice(1)) {
+      throw new Error('Invalid RECOVERY_DATABASE_URL format');
+    }
+    return {
+      user: decodeURIComponent(parsed.username),
+      host: parsed.hostname,
+      port: parsed.port || '5432',
+      database: decodeURIComponent(parsed.pathname.slice(1)),
+    };
+  }
+
+  databaseArgs(user, host, port, database) {
+    return ['-h', host, '-p', port, '-U', user, '-d', database];
+  }
+
+  runCustomRestore(backupPath, databaseArgs, password) {
+    const result = spawnSync(
+      'pg_restore',
+      ['--clean', '--if-exists', '--exit-on-error', '--no-owner', '--no-privileges', ...databaseArgs, backupPath],
+      { stdio: 'inherit', env: { ...process.env, PGPASSWORD: password } },
+    );
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`pg_restore exited with status ${result.status}`);
+  }
+
+  runSqlRestore(backupPath, databaseArgs, password) {
+    return new Promise((resolve, reject) => {
+      const psql = spawn('psql', ['--set', 'ON_ERROR_STOP=1', ...databaseArgs], {
+        stdio: ['pipe', 'inherit', 'inherit'],
+        env: { ...process.env, PGPASSWORD: password },
+      });
+      const source = backupPath.endsWith('.gz')
+        ? spawn('gzip', ['-dc', backupPath], { stdio: ['ignore', 'pipe', 'inherit'] })
+        : fs.createReadStream(backupPath);
+      const sourceOutput = source.stdout || source;
+      let sourceStatus = null;
+      let psqlStatus = null;
+      let settled = false;
+
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        if (psql.exitCode === null) psql.kill();
+        if (source.kill && source.exitCode === null) source.kill();
+        reject(error);
+      };
+      const finish = () => {
+        if (settled || sourceStatus === null || psqlStatus === null) return;
+        if (sourceStatus !== 0) return fail(new Error(`gzip exited with status ${sourceStatus}`));
+        if (psqlStatus !== 0) return fail(new Error(`psql exited with status ${psqlStatus}`));
+        settled = true;
+        resolve();
+      };
+
+      sourceOutput.on('error', fail);
+      source.on('error', fail);
+      psql.on('error', fail);
+      source.on('close', (code) => { sourceStatus = code ?? 0; finish(); });
+      psql.on('close', (code) => { psqlStatus = code ?? 0; finish(); });
+      sourceOutput.pipe(psql.stdin);
+    });
+  }
+
   async restoreDatabase(backupFile) {
     console.log(`🔄 Restoring from backup: ${backupFile}`);
     
     try {
-      const backupPath = path.join(this.backupDir, backupFile);
+      const backupRoot = path.resolve(this.backupDir);
+      const backupPath = path.resolve(backupRoot, backupFile);
+      if (!backupPath.startsWith(`${backupRoot}${path.sep}`)) {
+        throw new Error('Backup file must remain inside the backup directory');
+      }
       
       // Check if backup file exists
       if (!fs.existsSync(backupPath)) {
         throw new Error(`Backup file not found: ${backupFile}`);
       }
 
-      const dbUrl = process.env.DATABASE_URL;
+      if (process.env.RECOVERY_TARGET !== 'isolated') {
+        throw new Error('RECOVERY_TARGET=isolated is required; production restore is disabled');
+      }
+
+      const dbUrl = process.env.RECOVERY_DATABASE_URL;
       if (!dbUrl) {
-        throw new Error('DATABASE_URL environment variable not set');
+        throw new Error('RECOVERY_DATABASE_URL environment variable not set');
       }
 
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
-      }
-
-      const [, user, , host, port, database] = dbUrlMatch;
-      const password = process.env.DB_PASSWORD;
+      const { user, host, port, database } = this.parseDatabaseUrl(dbUrl);
+      const password = process.env.RECOVERY_DB_PASSWORD;
       
       if (!password) {
-        throw new Error('DB_PASSWORD environment variable not set');
+        throw new Error('RECOVERY_DB_PASSWORD environment variable not set');
       }
 
       // Verify backup file integrity
@@ -52,18 +124,20 @@ class DatabaseRestore {
       console.log(`💾 Size: ${sizeInMB} MB`);
       console.log(`📅 Modified: ${stats.mtime}`);
 
-      // Create restore command
-      const restoreCommand = `PGPASSWORD="${password}" psql -h ${host} -p ${port} -U ${user} -d ${database} < "${backupPath}"`;
-      
-      console.log('⚠️  WARNING: This will overwrite current database!');
+      console.log('ℹ️  Restoring only into the explicitly isolated recovery target.');
       console.log('🔄 Executing restore command...');
-      
-      execSync(restoreCommand, { stdio: 'inherit' });
+
+      const databaseArgs = this.databaseArgs(user, host, port, database);
+      if (backupPath.endsWith('.dump')) {
+        this.runCustomRestore(backupPath, databaseArgs, password);
+      } else {
+        await this.runSqlRestore(backupPath, databaseArgs, password);
+      }
       
       console.log('✅ Database restored successfully!');
       
       // Verify restore
-      await this.verifyRestore();
+      await this.verifyRestore({ user, host, port, database }, password);
       
     } catch (error) {
       console.error('❌ Restore failed:', error.message);
@@ -71,24 +145,21 @@ class DatabaseRestore {
     }
   }
 
-  async verifyRestore() {
+  async verifyRestore(connection, password) {
     console.log('🔍 Verifying database restore...');
     
     try {
-      const dbUrl = process.env.DATABASE_URL;
-      const dbUrlMatch = dbUrl.match(/postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-      
-      if (!dbUrlMatch) {
-        throw new Error('Invalid DATABASE_URL format');
-      }
-
-      const [, user, , host, port, database] = dbUrlMatch;
-      const password = process.env.DB_PASSWORD;
-      
-      // Test database connection
-      const testCommand = `PGPASSWORD="${password}" psql -h ${host} -p ${port} -U ${user} -d ${database} -c "SELECT COUNT(*) FROM information_schema.tables;"`;
-      
-      execSync(testCommand, { stdio: 'pipe' });
+      const result = spawnSync('psql', [
+        ...this.databaseArgs(connection.user, connection.host, connection.port, connection.database),
+        '-v', 'ON_ERROR_STOP=1',
+        '-c', 'SELECT COUNT(*) FROM information_schema.tables;',
+      ], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PGPASSWORD: password },
+        encoding: 'utf8',
+      });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`psql verification exited with status ${result.status}`);
       
       console.log('✅ Database restore verified successfully!');
       
@@ -108,7 +179,7 @@ class DatabaseRestore {
       }
 
       const files = fs.readdirSync(this.backupDir)
-        .filter(file => file.endsWith('.sql'))
+        .filter(file => file.endsWith('.sql') || file.endsWith('.dump') || file.endsWith('.sql.gz'))
         .map(file => {
           const filePath = path.join(this.backupDir, file);
           const stats = fs.statSync(filePath);
@@ -169,7 +240,7 @@ async function main() {
         console.log('  restore   - Restore from backup file');
         console.log('  list      - List available backups');
         console.log('\nExamples:');
-        console.log('  node restore-database.js restore backup-2023-05-06T15-30-00-000Z.sql');
+        console.log('  node restore-database.js restore backup-2023-05-06T15-30-00-000Z.dump');
         console.log('  node restore-database.js list');
         break;
     }

@@ -327,6 +327,173 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
+    describe('sendMessage() rate-limit + message_tag wiring', () => {
+        // The real (memory-fallback in test env) cacheRedis singleton, shared by
+        // MetaMessengerProvider.sendMessage (via rateLimit.rule's reserveSendSlot/
+        // releaseSendSlot) and rateLimit.rule's own evaluate() peek — patched here
+        // with a tiny in-memory ZSET plus an eval() that reproduces the Lua
+        // script's atomic prune+count+conditional-add, so the test proves both
+        // sides actually agree on key format and the real reserve/release control
+        // flow, not just that each mock was called with *something*.
+        const { cacheRedis } = require('src/config/redis');
+        const rateLimitRule = require('src/modules/policy/rules/rateLimit.rule');
+        let zsets;
+
+        beforeEach(() => {
+            zsets = new Map(); // key -> Map(member -> score)
+            axios.post.mockResolvedValue({ data: { message_id: 'mid_rl' } });
+            cacheRedis.eval = jest.fn(async (_script, _numKeys, key, now, windowMs, limit, member) => {
+                if (!zsets.has(key)) zsets.set(key, new Map());
+                const m = zsets.get(key);
+                for (const [mem, score] of [...m.entries()]) {
+                    if (score < Number(now) - Number(windowMs)) m.delete(mem);
+                }
+                if (m.size < Number(limit)) {
+                    m.set(member, Number(now));
+                    return 1;
+                }
+                return 0;
+            });
+            cacheRedis.zrem = jest.fn(async (key, member) => {
+                zsets.get(key)?.delete(member);
+                return 1;
+            });
+            cacheRedis.zcard = jest.fn(async (key) => zsets.get(key)?.size || 0);
+            cacheRedis.zremrangebyscore = jest.fn(async (key, _min, max) => {
+                const m = zsets.get(key);
+                if (!m) return 0;
+                let removed = 0;
+                for (const [member, score] of [...m.entries()]) {
+                    if (score <= Number(max)) { m.delete(member); removed++; }
+                }
+                return removed;
+            });
+            cacheRedis.zrange = jest.fn(async (key) => {
+                const m = zsets.get(key);
+                if (!m || m.size === 0) return [];
+                const [member, score] = [...m.entries()].sort((a, b) => a[1] - b[1])[0];
+                return [member, String(score)];
+            });
+        });
+
+        afterEach(() => {
+            jest.resetAllMocks();
+        });
+
+        test('a successful send adds one entry to the rate-limit ZSET', async () => {
+            const channel = { id: 'c-rl', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL1' };
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL',
+                normalizedMessage: { text: 'hi', attachments: [] },
+                decision: { allow: true },
+            });
+            expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL1'))).toBe(1);
+        });
+
+        test('a text+attachment message reserves two separate slots, one per real Graph API call', async () => {
+            const channel = { id: 'c-rl-multi', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL_MULTI' };
+            axios.post
+                .mockResolvedValueOnce({ data: { message_id: 'mid_text' } })
+                .mockResolvedValueOnce({ data: { message_id: 'mid_file' } });
+
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL_MULTI',
+                normalizedMessage: {
+                    text: 'Invoice attached',
+                    attachments: [{ type: 'file', url: 'https://cdn.example.com/invoice.pdf' }],
+                },
+                decision: { allow: true },
+            });
+
+            expect(axios.post).toHaveBeenCalledTimes(2);
+            expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL_MULTI'))).toBe(2);
+        });
+
+        test('a burst past META_SEND_LIMIT is rejected mid-send with retryAfterMs', async () => {
+            const channel = { id: 'c-rl2', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL2' };
+            for (let i = 0; i < rateLimitRule.META_SEND_LIMIT; i++) {
+                await provider.sendMessage({
+                    channel,
+                    recipientId: 'PSID_RL2',
+                    normalizedMessage: { text: `msg ${i}`, attachments: [] },
+                    decision: { allow: true },
+                });
+            }
+            // The next real send is denied at the atomic reservation itself —
+            // not just at the read-side peek — proving the gate that matters is
+            // the one immediately guarding the Graph API call.
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL2',
+                normalizedMessage: { text: 'one too many', attachments: [] },
+                decision: { allow: true },
+            })).rejects.toMatchObject({ code: 'META_RATE_LIMIT', retryAfterMs: expect.any(Number) });
+            expect(axios.post).toHaveBeenCalledTimes(rateLimitRule.META_SEND_LIMIT);
+
+            const result = await rateLimitRule.evaluate({}, { channel });
+            expect(result.allow).toBe(false);
+            expect(result.reason).toBe('RATE_LIMIT');
+        });
+
+        test('releases the reservation and bubbles the original error when the Graph API call fails', async () => {
+            const channel = { id: 'c-rl-fail', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL_FAIL' };
+            axios.post.mockRejectedValueOnce({ response: { status: 500, data: {} } });
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL_FAIL',
+                normalizedMessage: { text: 'will fail', attachments: [] },
+                decision: { allow: true },
+            })).rejects.toMatchObject({ code: 'META_API_ERROR' });
+
+            // The failed send's reservation was released, so a fresh send has
+            // the full quota available rather than one slot already burned.
+            expect(await cacheRedis.zcard(rateLimitRule.keyFor('PAGE_RL_FAIL'))).toBe(0);
+        });
+
+        test('fails closed (does not send) when the rate-limit reservation is unavailable', async () => {
+            cacheRedis.eval = jest.fn().mockRejectedValue(new Error('redis down'));
+            const channel = { id: 'c-rl3', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_RL3' };
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_RL3',
+                normalizedMessage: { text: 'must not send', attachments: [] },
+                decision: { allow: true },
+            })).rejects.toMatchObject({ code: 'META_RATE_LIMIT' });
+            expect(axios.post).not.toHaveBeenCalled();
+        });
+
+        test('includes messaging_type MESSAGE_TAG and tag when decision carries an out-of-window message_tag', async () => {
+            const channel = { id: 'c-tag', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_TAG' };
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_TAG',
+                normalizedMessage: { text: 'order shipped', attachments: [] },
+                decision: { allow: true, augment: { message_tag: 'POST_PURCHASE_UPDATE' } },
+            });
+            expect(axios.post).toHaveBeenCalledWith(
+                expect.stringContaining('/me/messages'),
+                expect.objectContaining({ messaging_type: 'MESSAGE_TAG', tag: 'POST_PURCHASE_UPDATE' }),
+                expect.anything(),
+            );
+        });
+
+        test('in-window send (no augment) is unaffected: RESPONSE type, no tag field', async () => {
+            const channel = { id: 'c-notag', page_access_token_ct: 'tok', meta_asset_id: 'PAGE_NOTAG' };
+            await provider.sendMessage({
+                channel,
+                recipientId: 'PSID_NOTAG',
+                normalizedMessage: { text: 'hello', attachments: [] },
+                decision: { allow: true },
+            });
+            const [, body] = axios.post.mock.calls[0];
+            expect(body.messaging_type).toBe('RESPONSE');
+            expect(body).not.toHaveProperty('tag');
+        });
+    });
+
     describe('listManagedAssets() pagination', () => {
         beforeEach(() => {
             process.env.META_APP_SECRET = 'test-secret';

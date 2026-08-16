@@ -8,6 +8,10 @@ const { createLogger } = require('../../utils/structured-logger');
 const { queueProductProcessing } = require('./product-ai.service');
 const { embedProduct, removeProductEmbedding } = require('./product-embedding.service');
 const { removeProductIndex: removeClipIndex } = require('./clip-client.service');
+const {
+    getProductMediaPaths,
+    removeUnreferencedProductMedia,
+} = require('./product-media.service');
 const { HTTP_STATUS } = require('../../constants/http-status');
 
 // Module-level logger for fire-and-forget side effects (embedding upserts).
@@ -202,6 +206,8 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
     }
 
     const transaction = await sequelize.transaction();
+    let committed = false;
+    const newMediaPaths = getProductMediaPaths(productData.images, productData.image_url, shopId);
     
     try {
         // Create product within transaction
@@ -212,6 +218,7 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
 
         // Commit transaction - NOW product is persisted
         await transaction.commit();
+        committed = true;
 
         // ATOMIC: Track usage ONLY after successful DB commit
         // Uses transaction-safe idempotent tracking with request_id
@@ -257,6 +264,9 @@ const createProduct = async (userId, shopId, productData, requestId = null) => {
         return await getProductById(product.id, userId, shopId);
     } catch (error) {
         try { await transaction.rollback(); } catch (_) { /* already committed */ }
+        if (!committed && newMediaPaths.length > 0) {
+            await removeUnreferencedProductMedia({ shopId, images: newMediaPaths });
+        }
         throw error;
     }
 };
@@ -299,8 +309,32 @@ const updateProduct = async (productId, userId, shopId, updateData) => {
         }
     }
 
-    // Update product
-    await product.update(updateData);
+    const previousMediaPaths = getProductMediaPaths(product.images, product.image_url, shopId);
+    const nextMediaPaths = getProductMediaPaths(
+        updateData.images !== undefined ? updateData.images : product.images,
+        updateData.image_url !== undefined ? updateData.image_url : product.image_url,
+        shopId
+    );
+
+    // Update product. If persistence fails, any newly uploaded but now
+    // unreferenced local media is removed immediately; the nightly sweep is
+    // the retry path for filesystem failures.
+    try {
+        await product.update(updateData);
+    } catch (error) {
+        if (nextMediaPaths.length > 0) {
+            await removeUnreferencedProductMedia({ shopId, images: nextMediaPaths });
+        }
+        throw error;
+    }
+
+    const removedMediaPaths = previousMediaPaths.filter((item) => !nextMediaPaths.includes(item));
+    if (removedMediaPaths.length > 0) {
+        setImmediate(() => removeUnreferencedProductMedia({
+            shopId,
+            images: removedMediaPaths,
+        }).catch((err) => moduleLogger.error('Product media cleanup after update failed', err, { shopId, productId })));
+    }
 
     const imagesChanged = updateData.images !== undefined || updateData.image_url !== undefined;
     if (imagesChanged) {
@@ -336,8 +370,14 @@ const deleteProduct = async (productId, userId, shopId) => {
         throw new AppError('Product not found', HTTP_STATUS.NOT_FOUND);
     }
 
+    const mediaPaths = getProductMediaPaths(product.images, product.image_url, shopId);
+
     // Delete product
     await product.destroy();
+
+    if (mediaPaths.length > 0) {
+        await removeUnreferencedProductMedia({ shopId, images: mediaPaths });
+    }
 
     // Remove from vector store and CLIP cache (fire-and-forget)
     setImmediate(() => removeProductEmbedding(productId, shopId));

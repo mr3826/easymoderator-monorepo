@@ -1,6 +1,11 @@
 
 # Node
 node_modules/
+.test-uploads/
+
+# Python
+__pycache__/
+*.pyc
 
 # Logs
 logs/

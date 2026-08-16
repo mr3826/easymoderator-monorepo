@@ -2,11 +2,11 @@ const productService = require('./product.service');
 const productLinkService = require('./product-link.service');
 const upsellService = require('./product-upsell.service');
 const { HTTP_STATUS } = require('../../constants/http-status');
-const { saveDataUrlImage, publicBaseUrl } = require('../../utils/image-upload.service');
+const { publicBaseUrl } = require('../../utils/image-upload.service');
+const { storeProductImage } = require('./product-media.service');
 
 // Matches the "PNG, JPG up to 5MB each" copy the Add Product form shows.
 const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-const PRODUCT_IMAGE_SUBDIR = 'product-images';
 
 /**
  * Helper: Returns a standard validation error response for missing shop
@@ -335,12 +335,12 @@ const listProducts = async (req, res, next) => {
 /**
  * Detect product mentions in AI response text and return product cards.
  * POST /products/detect-mentions
- * Body: { text, shopId? }
+ * Body: { text }
  */
 const detectMentions = async (req, res, next) => {
     try {
-        const { text, shopId: bodyShopId } = req.body;
-        const shopId = bodyShopId || req.user.shopId;
+        const { text } = req.body;
+        const shopId = req.user?.shopId;
 
         if (!text) {
             return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('text is required'));
@@ -434,10 +434,8 @@ const getUpsellsForCart = async (req, res, next) => {
  * returned URL is what the client then sends as `images[]` / `image_url` on
  * create or update.
  *
- * ponytail: an abandoned form leaves the file on disk, as does removing an
- * image from a product. Bounded by the per-file cap and low volume; the fix is
- * a periodic sweep of the uploads dir against products.images, not inline
- * refcounting.
+ * Abandoned form uploads are counted against the tenant quota until the
+ * periodic orphan sweep removes them.
  */
 const uploadProductImage = async (req, res, next) => {
     try {
@@ -451,10 +449,9 @@ const uploadProductImage = async (req, res, next) => {
             return res.status(HTTP_STATUS.BAD_REQUEST).json(getValidationError('image is required'));
         }
 
-        const { publicPath } = await saveDataUrlImage({
+        const { publicPath } = await storeProductImage({
             dataUrl: image,
             shopId,
-            subdir: PRODUCT_IMAGE_SUBDIR,
             maxBytes: PRODUCT_IMAGE_MAX_BYTES,
         });
 

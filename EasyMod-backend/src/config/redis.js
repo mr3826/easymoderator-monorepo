@@ -18,7 +18,7 @@ const forceMemoryStore = (config.env === 'staging' || config.env === 'developmen
 
 // DEBUG
 if (config.env === 'staging' || config.env === 'development') {
-    console.log(`[REDIS DEBUG] env=${config.env}, REDIS_URL=${process.env.REDIS_URL}, redisHost=${config.redisHost}, hasRedisConfig=${hasRedisConfig}, forceMemoryStore=${forceMemoryStore}`);
+    console.log(`[REDIS DEBUG] env=${config.env}, redisHost=${config.redisHost}, hasRedisConfig=${hasRedisConfig}, forceMemoryStore=${forceMemoryStore}`);
 }
 
 let sessionRedis, cacheRedis, rateLimitRedis, legacyRedis;
@@ -86,7 +86,11 @@ if (hasRedisConfig && !forceMemoryStore) {
         scan:    (cursor, opts)   => cache.scan(cursor, opts),
         flushall:()               => cache.flushall(),
         quit:    async ()         => Promise.resolve('OK'),
-        on:      (event, cb)      => { if (event === 'connect') setTimeout(cb, 10); }
+        on:      (event, cb)      => { if (event === 'connect') setTimeout(cb, 10); },
+        zadd:    (key, score, member) => cache.zadd(key, score, member),
+        zremrangebyscore: (key, min, max) => cache.zremrangebyscore(key, min, max),
+        zcard:   (key) => cache.zcard(key),
+        zrange:  (key, start, stop, withScores) => cache.zrange(key, start, stop, withScores)
     });
 
     sessionRedis   = createMockClient(new MemoryCache());

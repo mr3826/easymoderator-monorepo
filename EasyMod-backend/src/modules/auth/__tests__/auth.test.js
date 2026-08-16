@@ -1,5 +1,7 @@
 const request = require('supertest');
 
+const mockCacheStore = new Map();
+
 // ── Set test env vars before anything loads ────────────────────────────
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret';
@@ -31,6 +33,17 @@ jest.mock('src/utils/redis-client', () => ({
     getRedisClient: () => mockRedis,
     isRedisAvailable: () => true,
     closeRedis: jest.fn()
+}));
+
+// Keep token-version cache state hermetic. Without this, the successful-login
+// test can leave user:token_version=1 behind and mask a later DB version=2.
+jest.mock('src/utils/cache.service', () => ({
+    get: jest.fn(async (key) => mockCacheStore.get(key) ?? null),
+    set: jest.fn(async (key, value) => { mockCacheStore.set(key, value); return true; }),
+    delete: jest.fn(async (key) => mockCacheStore.delete(key)),
+    getForShop: jest.fn(async (shopId, key) => mockCacheStore.get(`${shopId}:${key}`) ?? null),
+    setForShop: jest.fn(async (shopId, key, value) => { mockCacheStore.set(`${shopId}:${key}`, value); return true; }),
+    deleteForShop: jest.fn(async (shopId, key) => mockCacheStore.delete(`${shopId}:${key}`)),
 }));
 
 // ── Mock Sequelize (must support .define() for entity files) ───────────
@@ -162,6 +175,7 @@ describe('Auth API', () => {
     beforeEach(() => {
         // Clear redis store between tests
         Object.keys(redisStore).forEach(k => delete redisStore[k]);
+        mockCacheStore.clear();
         // Reset call counts but keep implementations
         mockRedis.get.mockClear();
         mockRedis.set.mockClear();
@@ -381,7 +395,7 @@ describe('Auth API', () => {
 
             // Try to use old token - should be rejected due to version mismatch
             const res = await request(app)
-                .post('/api/auth/me')
+                .get('/api/auth/me')
                 .set('Authorization', `Bearer ${accessToken}`);
 
             // Should fail with 401 because token_version in JWT (1) != DB version (2)

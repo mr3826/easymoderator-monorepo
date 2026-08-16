@@ -1,6 +1,5 @@
 const customerService = require('./customer.service');
 const auditService = require('../audit/audit.service');
-const { storeIdempotencyResult } = require('../audit/idempotency.middleware');
 const { auditLogMiddleware, setAuditValues } = require('../audit/audit.middleware');
 
 /**

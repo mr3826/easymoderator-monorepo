@@ -8,6 +8,8 @@ const workflowPath = path.resolve(
     '../../../../.github/workflows/ci-cd.yml',
 );
 const workflow = fs.readFileSync(workflowPath, 'utf8');
+const composePath = path.resolve(__dirname, '../../../../docker-compose.prod.yml');
+const compose = fs.readFileSync(composePath, 'utf8');
 
 describe('production workflow branch safety', () => {
     test('build and deploy jobs are restricted to main', () => {
@@ -21,6 +23,40 @@ describe('production workflow branch safety', () => {
     test('pull requests can run tests but cannot build deployable images', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
+    });
+
+    test('every branch validates both production Docker build contexts without publishing', () => {
+        const validationBlock = workflow.match(
+            /\n  docker-build-validation:\n([\s\S]*?)\n  # ── 3\./,
+        )?.[1];
+
+        expect(validationBlock).toContain('Docker build validation (no push)');
+        expect(validationBlock).toContain('context: ./EasyMod-backend');
+        expect(validationBlock).toContain('context: ./EasyMod-frontend');
+        expect(validationBlock.match(/push: false/g)).toHaveLength(2);
+        expect(validationBlock.match(/load: true/g)).toHaveLength(2);
+        expect(validationBlock).toContain('push: false');
+    });
+
+    test('main production path builds each publishable image once', () => {
+        const validationBlock = workflow.match(
+            /\n  docker-build-validation:\n([\s\S]*?)\n  # ── 3\./,
+        )?.[1];
+        const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
+
+        expect(validationBlock).toContain("github.ref != 'refs/heads/main'");
+        expect(buildBlock).not.toContain('docker-build-validation');
+        expect(buildBlock.match(/uses: docker\/build-push-action@/g)).toHaveLength(2);
+    });
+
+    test('production Compose pins every image by digest', () => {
+        expect(compose).not.toMatch(/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m);
+        expect(compose).toContain('image: caddy@sha256:');
+        expect(compose).toContain('image: postgres@sha256:');
+        expect(compose).toContain('image: redis@sha256:');
+        expect(compose).toContain('image: qdrant/qdrant@sha256:');
+        expect(workflow).toContain('docker image inspect -f');
+        expect(workflow).toContain('config --images');
     });
 
     // BUILD_TIME lands in the image as ENV and is read back by /health, /version
@@ -45,5 +81,13 @@ describe('production workflow branch safety', () => {
         expect(migrationIndex).toBeGreaterThan(-1);
         expect(replacementIndex).toBeGreaterThan(-1);
         expect(migrationIndex).toBeLessThan(replacementIndex);
+    });
+
+    test('rollback verifies restored images and health before returning', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('verify_rollback() {');
+        expect(deployBlock).toContain('rollback health check failed after 100s');
+        expect(deployBlock).toContain('rollback || rc=70');
     });
 });

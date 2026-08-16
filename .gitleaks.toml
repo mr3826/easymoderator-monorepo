@@ -26,6 +26,8 @@ paths = [
   '''^\.windsurf/skills/senior-secops/references/security_standards\.md$''',
   '''^\.windsurf/skills/senior-secops/scripts/secret_scanner\.py$''',
   '''^\.windsurf/skills/senior-secops/references/security-architecture-patterns\.md$''',
+  '''^\.windsurf/skills/senior-security/references/security-architecture-patterns\.md$''',
+  '''^\.windsurf/skills/senior-security/scripts/secret_scanner\.py$''',
   '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/frontend\.js$''',
   '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/user_service\.py$''',
 ]

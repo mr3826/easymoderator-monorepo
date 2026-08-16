@@ -93,7 +93,7 @@ const updateReturnStatus = async (shopId, orderId, status) => {
         if (status === 'approved') {
             const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
             for (const item of items) {
-                const product = await Product.findByPk(item.product_id, { transaction });
+                const product = await Product.findOne({ where: { id: item.product_id, shop_id: shopId }, transaction });
                 if (product?.track_quantity) {
                     await product.increment('quantity', { by: item.quantity, transaction });
                     // Fire-and-forget cache invalidation after transaction commits

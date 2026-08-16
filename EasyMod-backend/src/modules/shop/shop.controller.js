@@ -564,7 +564,10 @@ const updateBdSettings = async (req, res, next) => {
 
 const getShopAgents = async (req, res, next) => {
     try {
-        const shopId = req.headers['x-shop-id'] || req.user?.shopId;
+        // Tenant scope comes from the verified access token. Do not accept
+        // X-Shop-ID here: this endpoint returns member PII and has no separate
+        // membership check for an arbitrary header-supplied shop.
+        const shopId = req.user?.shopId;
         if (!shopId) {
             return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Shop ID required' } });
         }

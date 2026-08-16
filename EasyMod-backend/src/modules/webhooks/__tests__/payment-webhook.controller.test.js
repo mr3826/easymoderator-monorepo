@@ -56,6 +56,7 @@ describe('bKash payment webhook replay protection', () => {
     test('atomically claims a pending callback before fulfillment', async () => {
         const payment = {
             id: 'payment-1',
+            amount: '100.00',
             status: 'pending',
             update: jest.fn().mockResolvedValue(undefined),
         };
@@ -82,9 +83,36 @@ describe('bKash payment webhook replay protection', () => {
         expect(res.status).toHaveBeenCalledWith(200);
     });
 
+    test('rejects a completed callback whose amount differs from the transaction', async () => {
+        const payment = {
+            id: 'payment-1',
+            amount: '100.00',
+            status: 'pending',
+            update: jest.fn(),
+        };
+        mockPaymentTransaction.findOne.mockResolvedValue(payment);
+        const fulfillment = jest.spyOn(controller, 'processSuccessfulPayment');
+        const res = response();
+
+        await controller.handleBkashWebhook({
+            body: {
+                paymentID: 'gateway-payment-1',
+                transactionStatus: 'Completed',
+                trxID: 'trx-1',
+                amount: '99.00',
+            },
+        }, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith({ error: 'Payment amount mismatch' });
+        expect(mockPaymentTransaction.update).not.toHaveBeenCalled();
+        expect(fulfillment).not.toHaveBeenCalled();
+    });
+
     test('losing the atomic claim does not run fulfillment', async () => {
         const payment = {
             id: 'payment-1',
+            amount: '100.00',
             status: 'pending',
             update: jest.fn(),
         };

@@ -12,10 +12,12 @@ const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 const { resolvePublicAssetOrigin } = require('../../config/origins');
+const config = require('../../config/config');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
 const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_UPLOAD_DIR = path.join(__dirname, '../../../uploads/conversation-attachments');
+const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
 const ALLOWED_META_ATTACHMENT_TYPES = {
     'image/jpeg': { ext: 'jpg', metaType: 'image' },
     'image/png': { ext: 'png', metaType: 'image' },
@@ -67,6 +69,50 @@ function safePublicBaseUrl(req) {
     return resolvePublicAssetOrigin(req);
 }
 
+function attachmentSigningSecret() {
+    return config.csrfSecret || config.sessionSecret || '';
+}
+
+function signAttachmentPath(shopId, fileName, expires) {
+    return crypto.createHmac('sha256', attachmentSigningSecret())
+        .update(`${shopId}/${fileName}.${expires}`)
+        .digest('hex');
+}
+
+async function serveConversationAttachment(req, res, next) {
+    try {
+        const { shopId, fileName } = req.params;
+        const expires = Number(req.query.expires);
+        const signature = String(req.query.signature || '');
+        const secret = attachmentSigningSecret();
+
+        if (!secret || !/^\d+$/.test(String(req.query.expires || ''))
+            || !Number.isSafeInteger(expires) || expires < Math.floor(Date.now() / 1000)
+            || !/^[A-Za-z0-9_-]+$/.test(shopId)
+            || path.basename(fileName) !== fileName
+            || !/^[a-f0-9]{64}$/.test(signature)) {
+            return res.status(404).end();
+        }
+
+        const expected = signAttachmentPath(shopId, fileName, expires);
+        const expectedBuffer = Buffer.from(expected, 'utf8');
+        const receivedBuffer = Buffer.from(signature, 'utf8');
+        if (expectedBuffer.length !== receivedBuffer.length
+            || !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
+            return res.status(404).end();
+        }
+
+        const absolutePath = path.join(ATTACHMENT_UPLOAD_DIR, shopId, fileName);
+        const stat = await fs.stat(absolutePath).catch(() => null);
+        if (!stat?.isFile()) return res.status(404).end();
+        return res.sendFile(absolutePath, { dotfiles: 'deny' }, (error) => {
+            if (error) next(error);
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+
 function getAttachmentUrlFromMetadata(metadata = {}) {
     return metadata.image_url || metadata.file_url || metadata.file_data_url;
 }
@@ -114,8 +160,13 @@ async function prepareOutboundAttachmentMetadata(req, shopId, messageData) {
     const absolutePath = path.join(uploadDir, fileName);
     await fs.writeFile(absolutePath, parsed.buffer);
 
+    if (!attachmentSigningSecret()) {
+        throw makeHttpError(503, 'Attachment delivery is not configured');
+    }
+    const expires = Math.floor(Date.now() / 1000) + ATTACHMENT_URL_TTL_SECONDS;
+    const signature = signAttachmentPath(shopId, fileName, expires);
     const publicPath = `/uploads/conversation-attachments/${shopId}/${fileName}`;
-    const publicUrl = `${publicBaseUrl}${publicPath}`;
+    const publicUrl = `${publicBaseUrl}${publicPath}?expires=${expires}&signature=${signature}`;
     const storedMetadata = {
         ...metadata,
         message_type: messageType,
@@ -173,7 +224,7 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
  * and delegates to the provider registry for transport.
  * Best-effort: never throws. Emits SSE `delivery_failed` on failure.
  */
-async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage) {
+async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage, senderRole = 'agent') {
     let isMetaChannel = false;
     let failureReason = null;
     let deliveryResult = null;
@@ -225,7 +276,7 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
             attachments,
             platform,
             direction: 'outbound',
-            senderRole: 'agent',
+            senderRole,
         };
         const policyCtx = {
             shopId,
@@ -484,7 +535,9 @@ class ConversationController {
                     const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId);
                     if (autoReplyMsg) {
                         sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content);
+                        // Automated escalation holding message, not a human-typed reply —
+                        // must not be blocked by the human-agent outside-window policy gate.
+                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg.content, 'ai');
                     }
                 } catch (err) {
                     // Non-fatal: HITL is already set; log and surface to the agent via SSE
@@ -740,4 +793,9 @@ class ConversationController {
     }
 }
 
-module.exports = new ConversationController();
+const conversationController = new ConversationController();
+conversationController.serveConversationAttachment = serveConversationAttachment;
+// Exposed for unit testing only — not part of the route surface.
+conversationController._deliverViaMetaIfApplicable = deliverViaMetaIfApplicable;
+
+module.exports = conversationController;

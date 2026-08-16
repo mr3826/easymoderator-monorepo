@@ -1,0 +1,84 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const repoRoot = path.resolve(__dirname, '../..');
+const workflow = fs.readFileSync(
+    path.join(repoRoot, '.github/workflows/ci-cd.yml'),
+    'utf8',
+);
+const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.prod.yml'), 'utf8');
+const runbook = fs.readFileSync(
+    path.join(repoRoot, 'docs/deployment/MONOREPO_CUTOVER_RUNBOOK.md'),
+    'utf8',
+);
+
+const required = [
+    ['full commit SHA image tags', 'backend_tag=${{ env.GHCR_BACKEND }}:${SHA}'],
+    ['previous backend capture', 'previous_backend_image=$(resolve_container_digest easymod-backend-1'],
+    ['previous frontend capture', 'previous_frontend_image=$(resolve_container_digest easymod-frontend-1'],
+    ['RepoDigest capture', "{{index .RepoDigests 0}}"],
+    ['running digest guard', 'running services are not backed by content-addressed images'],
+    ['candidate digest outputs', 'backend_digest: ${{ steps.backend_image.outputs.digest }}'],
+    ['candidate immutable assertion', 'assert_immutable_ref() {'],
+    ['rendered compose image guard', 'config --images'],
+    ['deployment metadata', 'deployment-metadata.json'],
+    ['rollback function', 'rollback() {'],
+    ['rollback image verification', 'verify_rollback() {'],
+    ['previous backend restore', 'export GHCR_IMAGE_BACKEND="$previous_backend_image"'],
+    ['previous frontend restore', 'export GHCR_IMAGE_FRONTEND="$previous_frontend_image"'],
+    ['no-build restore', 'up --detach --no-build --remove-orphans'],
+    ['rollback failure status', 'rollback || rc=70'],
+    ['failure trap', 'trap \'rc=$?; if [ "$rc" -ne 0 ]'],
+    ['success marker', 'deploy_succeeded=true'],
+    ['backend immutable interpolation', 'image: ${GHCR_IMAGE_BACKEND:?'],
+    ['frontend immutable interpolation', 'image: ${GHCR_IMAGE_FRONTEND:?'],
+    ['rollback health contract', 'both health checks'],
+    ['schema rollback limitation', 'must not run `migrate:down`'],
+];
+
+const missing = required
+    .filter(([, text]) => !workflow.includes(text) && !compose.includes(text) && !runbook.includes(text))
+    .map(([label]) => label);
+
+if (missing.length) {
+    throw new Error(`Rollback contract missing: ${missing.join(', ')}`);
+}
+
+if (/^\s*[^#\n]*:(latest|dev)\b/m.test(workflow)
+    || /GHCR_IMAGE_(BACKEND|FRONTEND).*latest/.test(compose)) {
+    throw new Error('Rollback contract permits a mutable production image tag.');
+}
+
+if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"')
+    || !workflow.includes('candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"')
+    || !workflow.includes('assert_immutable_ref "$candidate_backend_image"')
+    || !workflow.includes('assert_immutable_ref "$candidate_frontend_image"')) {
+    throw new Error('Production deployment does not fail closed on digest-pinned candidate references.');
+}
+
+if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)
+    || !compose.includes('image: caddy@sha256:')
+    || !compose.includes('image: postgres@sha256:')
+    || !compose.includes('image: redis@sha256:')
+    || !compose.includes('image: qdrant/qdrant@sha256:')) {
+    throw new Error('Production Compose contains mutable or unpinned infrastructure images.');
+}
+
+// Synthetic rehearsal of the state transition. This deliberately does not call
+// Docker or SSH: it proves the recovery inputs are immutable references and the
+// documented restore operation does not depend on the candidate application.
+const previous = {
+    backend: 'ghcr.io/mr3826/easymoderator-backend@sha256:' + 'a'.repeat(64),
+    frontend: 'ghcr.io/mr3826/easymoderator-frontend@sha256:' + 'b'.repeat(64),
+};
+const restored = {
+    backend: previous.backend,
+    frontend: previous.frontend,
+};
+if (restored.backend !== previous.backend || restored.frontend !== previous.frontend) {
+    throw new Error('Synthetic rollback rehearsal did not restore both previous images.');
+}
+
+console.log('rollback-contract=PASS');

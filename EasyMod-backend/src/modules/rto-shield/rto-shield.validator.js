@@ -10,7 +10,8 @@ const addEntrySchema = {
     phone: BD_PHONE,
     reason: Joi.string().trim().min(3).max(255).required(),
     risk_score: Joi.number().integer().min(0).max(100).default(80),
-    is_global: Joi.boolean().default(false),
+    // is_global is intentionally not accepted: global entries are system-computed
+    // (see RtoShieldService.evaluateNetworkPromotion), never merchant-submitted.
     notes: Joi.string().trim().max(1000).optional().allow('')
   })
 };

@@ -2,11 +2,15 @@
 
 **Verdict for this workstream: PASS on policy enforcement; two P2 race/observability defects.**
 
-## Deprecated message tags — genuinely dead
+## Historical snapshot — superseded by the current policy implementation
+
+This document records the 2026-07-26 policy state. The current implementation
+allows a validated `POST_PURCHASE_UPDATE` default tag outside the 24-hour window;
+use the current policy rule and compliance checklist for release decisions.
 
 | Required absent | Status | Proof |
 |---|---|---|
-| `POST_PURCHASE_UPDATE` | **absent** from all live code | only occurrences: an archived migration and two policy test fixtures |
+| `POST_PURCHASE_UPDATE` | **absent in this historical snapshot; superseded now** | Current policy uses it as the default out-of-window order/support tag. |
 | `ACCOUNT_UPDATE` | **absent** | archived migration only |
 | `CONFIRMED_EVENT_UPDATE` | **absent** | archived migration only |
 | `HUMAN_AGENT` | **absent** | archived migration only |

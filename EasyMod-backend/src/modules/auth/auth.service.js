@@ -427,31 +427,52 @@ const requestPasswordReset = async (email) => {
  */
 const resetPassword = async (rawToken, newPassword) => {
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    const record = await PasswordResetToken.findOne({
-        where: {
-            token_hash: tokenHash,
-            used_at: null,
-            expires_at: { [Op.gt]: new Date() },
-        },
-    });
-
-    if (!record) {
-        throw new AppError('Invalid or expired reset token', 400);
-    }
-
-    const user = await User.findByPk(record.user_id);
-    if (!user) {
-        throw new AppError('Invalid or expired reset token', 400);
-    }
-
     const hashedPassword = await hashPassword(newPassword);
 
-    // Atomically mark token used, update password, and increment token_version
-    // Incrementing token_version invalidates all existing access tokens
+    let resetUserId;
     const t = await sequelize.transaction();
     try {
-        await record.update({ used_at: new Date() }, { transaction: t });
+        const record = await PasswordResetToken.findOne({
+            where: {
+                token_hash: tokenHash,
+                used_at: null,
+                expires_at: { [Op.gt]: new Date() },
+            },
+            transaction: t,
+        });
+
+        if (!record) {
+            throw new AppError('Invalid or expired reset token', 400);
+        }
+        resetUserId = record.user_id;
+
+        // The conditional UPDATE is the one-time claim. Two concurrent
+        // requests may both read the unused row, but only one can change it
+        // while used_at is still NULL; the other receives zero affected rows.
+        const [claimedCount] = await PasswordResetToken.update(
+            { used_at: new Date() },
+            {
+                where: {
+                    id: record.id,
+                    token_hash: tokenHash,
+                    used_at: null,
+                    expires_at: { [Op.gt]: new Date() },
+                },
+                transaction: t,
+            },
+        );
+        if (claimedCount !== 1) {
+            throw new AppError('Invalid or expired reset token', 400);
+        }
+
+        const user = await User.findByPk(record.user_id, { transaction: t });
+        if (!user) {
+            throw new AppError('Invalid or expired reset token', 400);
+        }
+
+        // Update password and increment token_version in the same transaction
+        // as the one-time claim. Incrementing token_version invalidates all
+        // existing access tokens.
         await user.update({
             password: hashedPassword,
             refresh_token: null,
@@ -466,7 +487,7 @@ const resetPassword = async (rawToken, newPassword) => {
     // Invalidate the token_version cache entry so the next request hits the DB
     // and picks up the new version immediately, rather than serving a stale hit
     // that would allow the old token to pass for up to 60 more seconds.
-    await cacheService.delete(`user:${user.id}:token_version`);
+    await cacheService.delete(`user:${resetUserId}:token_version`);
 
     return { success: true };
 };

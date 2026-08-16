@@ -72,7 +72,10 @@ const getResourceAuditLogs = async (req, res, next) => {
             });
         }
 
-        const logs = await auditService.getAuditLogs(type.toUpperCase(), id, options);
+        const logs = await auditService.getAuditLogs(type.toUpperCase(), id, {
+            ...options,
+            shopId,
+        });
 
         res.status(200).json({
             success: true,

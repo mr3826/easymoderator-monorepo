@@ -167,7 +167,7 @@ Inbound message → reply, end to end:
 9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. The business reply setting is authoritative across connected Pages: Draft mode stores the reply as an inbox suggestion, Manual mode disables AI generation, and Auto mode can send only after policy and confidence gates pass. Per-channel toggles can opt a Page out, but cannot upgrade Draft/Manual to auto-send.
 10. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
-**Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `openai` or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`.
+**Embeddings:** controlled by `EMBEDDING_PROVIDER`. Use `gemini` (default — reuses `GEMINI_API_KEY`, `gemini-embedding-2` truncated to `QDRANT_VECTOR_SIZE`), `openai`, or an `http`/TEI server in production. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`. Changing provider changes the vector space, so re-run `node src/scripts/reindex-qdrant.js` afterwards.
 
 Business Info updates are part of the AI knowledge path. The owner-written `settings.businessInfo.additionalInfo` field is stored with the shop profile, injected into the system prompt immediately, and included by the scheduled business-info RAG reindex job together with shop name, address, phone, and opening hours.
 
@@ -199,7 +199,7 @@ Source of truth: `src/modules/subscription/subscription.plans.js`.
 
 **Top-up packs** (bKash): `TOPUP_100` ৳150, `TOPUP_250` ৳350, `TOPUP_500` ৳650, `TOPUP_1000` ৳1,200.
 
-Conversation limits are enforced by `conversation-limit.middleware.js` across all connected channels. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
+Conversation-limit billing is tracked at the webhook chokepoint in `meta-webhook-events.handler.js`, which calls `subscriptionService.trackUsage(shopId, 'conversations', 1, 'conv:<id>')` exactly once per new conversation. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
 
 **Payments: bKash only.** No other gateway is wired. Adding one requires implementing its full tokenized-checkout + webhook-verification path.
 
@@ -250,7 +250,6 @@ Operational requirements:
 | `meta-token-refresh.job.js` | Cron | Re-auth Meta tokens nearing expiry |
 | `trial-expiry.job.js` | Cron | End trials + send ending nudges |
 | `monthly-usage-reset.js` | Cron | Reset conversation counters on the 1st |
-| `conversation-usage-notifier.js` | Cron | Push notifications at usage thresholds |
 | `daily-overage-calculator.js` | Cron | Compute Partner-plan per-order charges |
 | `invoice-generator.js` | Cron | Generate subscription/partner invoices (PDF) |
 | `failed-payment-reconciler.js` | Cron | Retry/flag failed bKash payments |
@@ -351,7 +350,8 @@ QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=knowledge_documents
 QDRANT_PER_TENANT=true
-EMBEDDING_PROVIDER=openai             # openai | http | local(dev-only)
+EMBEDDING_PROVIDER=gemini             # gemini | openai | http | local(dev-only)
+GEMINI_EMBEDDING_MODEL=gemini-embedding-2
 QDRANT_VECTOR_SIZE=384
 
 # Email, push, errors, ops

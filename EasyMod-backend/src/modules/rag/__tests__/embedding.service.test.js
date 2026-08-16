@@ -8,7 +8,10 @@
 
 const svc = require('../embedding.service');
 
-const ENV_KEYS = ['EMBEDDING_PROVIDER', 'EMBEDDING_API_URL', 'OPENAI_API_KEY'];
+const ENV_KEYS = [
+    'EMBEDDING_PROVIDER', 'EMBEDDING_API_URL', 'OPENAI_API_KEY',
+    'GEMINI_API_KEY', 'GEMINI_EMBEDDING_MODEL',
+];
 const saved = {};
 beforeEach(() => { ENV_KEYS.forEach(k => { saved[k] = process.env[k]; }); });
 afterEach(() => {
@@ -48,6 +51,21 @@ describe('getProviderInfo', () => {
         expect(svc.getProviderInfo().keyPresent).toBe(true);
     });
 
+    test('gemini is semantic and reports GEMINI_API_KEY presence', () => {
+        process.env.EMBEDDING_PROVIDER = 'gemini';
+        delete process.env.GEMINI_API_KEY;
+        expect(svc.getProviderInfo()).toMatchObject({
+            effective: 'gemini', semantic: true, keyPresent: false, model: 'gemini-embedding-2',
+        });
+        process.env.GEMINI_API_KEY = 'AIza-test';
+        expect(svc.getProviderInfo().keyPresent).toBe(true);
+    });
+
+    test("'google' alias maps to gemini", () => {
+        process.env.EMBEDDING_PROVIDER = 'google';
+        expect(svc.getProviderInfo().effective).toBe('gemini');
+    });
+
     test('anthropic / unknown values fall back to non-semantic local', () => {
         process.env.EMBEDDING_PROVIDER = 'anthropic';
         expect(svc.getProviderInfo().semantic).toBe(false);
@@ -73,5 +91,28 @@ describe('probe', () => {
         expect(result.ok).toBe(false);
         expect(result.provider).toBe('openai');
         expect(result.error).toBeTruthy();
+    });
+
+    test('gemini asks for exactly QDRANT_VECTOR_SIZE dimensions', async () => {
+        process.env.EMBEDDING_PROVIDER = 'gemini';
+        process.env.GEMINI_API_KEY = 'AIza-test';
+        const { vectorSize } = svc.getProviderInfo();
+
+        const realFetch = global.fetch;
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ embedding: { values: new Array(vectorSize).fill(0.1) } }),
+        }));
+        try {
+            const result = await svc.probe();
+            expect(result).toMatchObject({ ok: true, provider: 'gemini', semantic: true, dimensions: vectorSize });
+
+            const [url, init] = global.fetch.mock.calls[0];
+            expect(url).toContain('models/gemini-embedding-2:embedContent');
+            expect(JSON.parse(init.body).outputDimensionality).toBe(vectorSize);
+        } finally {
+            global.fetch = realFetch;
+        }
     });
 });

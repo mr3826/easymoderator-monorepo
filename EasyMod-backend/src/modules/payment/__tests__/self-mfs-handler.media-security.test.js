@@ -29,4 +29,11 @@ describe('self-MFS screenshot media policy', () => {
         );
         expect(result).toBe(`data:image/png;base64,${png.toString('base64')}`);
     });
+
+    test('preprocessing rejects when the centralized fetcher blocks the URL', async () => {
+        mockSafeFetchMedia.mockRejectedValue(new Error('private address'));
+
+        await expect(service._private.preprocessImage('https://example.com/image.png'))
+            .resolves.toBeNull();
+    });
 });

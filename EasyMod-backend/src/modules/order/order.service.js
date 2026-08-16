@@ -526,7 +526,7 @@ const updateOrder = async (orderId, userId, shopId, updateData) => {
             await sequelize.transaction(async (transaction) => {
                 const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
                 for (const item of items) {
-                    const product = await Product.findByPk(item.product_id, { transaction });
+                    const product = await Product.findOne({ where: { id: item.product_id, shop_id: shopId }, transaction });
                     if (product?.track_quantity) {
                         await product.increment('quantity', { by: item.quantity, transaction });
                         invalidateStockWithRetry(shopId, item.product_id);
@@ -869,7 +869,7 @@ const cancelOrder = async (userId, shopId, orderId, reason, customerId) => {
         // Restore inventory for tracked products
         const items = await OrderItem.findAll({ where: { order_id: orderId }, transaction });
         for (const item of items) {
-            const product = await Product.findByPk(item.product_id, { transaction });
+            const product = await Product.findOne({ where: { id: item.product_id, shop_id: shopId }, transaction });
             if (product?.track_quantity) {
                 await product.increment('quantity', { by: item.quantity, transaction });
                 invalidateStockWithRetry(shopId, item.product_id);

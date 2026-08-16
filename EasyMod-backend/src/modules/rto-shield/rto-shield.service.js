@@ -50,10 +50,25 @@ class RtoShieldService {
    * shops carries a signal none of them could see alone. No PII beyond the phone is shared.
    * @returns {{ shops_reported:number, total_attempts:number, total_rtos:number, rto_rate:number }}
    */
-  static async getNetworkStats(phone) {
+  static async getNetworkStats(phone, requestingShopId = null) {
     const normalized = normalizePhone(phone);
     if (!normalized || !isValidBdPhone(normalized)) {
       return { shops_reported: 0, total_attempts: 0, total_rtos: 0, rto_rate: 0 };
+    }
+
+    // A tenant may only ask for a network signal for a phone already present
+    // in that tenant's own delivery history. This keeps the cross-shop
+    // aggregate useful for an active order while preventing arbitrary phone
+    // number probing through the authenticated endpoint.
+    if (requestingShopId) {
+      const localRecord = await CustomerDeliveryStats.findOne({
+        where: { phone: normalized, shop_id: requestingShopId },
+        attributes: ['id'],
+        raw: true,
+      });
+      if (!localRecord) {
+        return { shops_reported: 0, total_attempts: 0, total_rtos: 0, rto_rate: 0 };
+      }
     }
 
     const row = await CustomerDeliveryStats.findOne({
@@ -101,7 +116,7 @@ class RtoShieldService {
       where: { phone: normalized, shop_id: shopId, reason: WHITELIST_REASON }
     });
     if (whitelisted) {
-      return { ...empty, network: enforceNetwork ? await RtoShieldService.getNetworkStats(normalized) : null };
+      return { ...empty, network: enforceNetwork ? await RtoShieldService.getNetworkStats(normalized, shopId) : null };
     }
 
     // Blacklist entries: always the shop's own; global only when the shop enforces the network.
@@ -114,7 +129,7 @@ class RtoShieldService {
       order: [['risk_score', 'DESC']] // Return highest risk entry
     });
 
-    const network = enforceNetwork ? await RtoShieldService.getNetworkStats(normalized) : null;
+    const network = enforceNetwork ? await RtoShieldService.getNetworkStats(normalized, shopId) : null;
     const riskScore = entry ? entry.risk_score : 0;
     const tier = classifyTier(riskScore, network);
 
@@ -129,20 +144,28 @@ class RtoShieldService {
   }
 
   /**
-   * Add a phone number to the blacklist.
+   * Add a phone number to a shop's own blacklist.
+   *
+   * Always shop-scoped: `is_global` is intentionally not accepted here. A global entry
+   * (visible to every tenant and able to block orders platform-wide) is a system-computed
+   * signal — the only path to one is automatic cross-shop promotion in
+   * evaluateNetworkPromotion(). No merchant-facing caller may set is_global; accepting it
+   * from request input let any shop declare a global fraud signal for a phone it doesn't
+   * even do business with, and block COD orders for that phone at every other shop.
    */
-  static async addToBlacklist({ phone, reason, risk_score = 80, is_global = false, shop_id, added_by, notes }) {
+  static async addToBlacklist({ phone, reason, risk_score = 80, shop_id, added_by, notes }) {
     const normalized = normalizePhone(phone);
     if (!normalized || !isValidBdPhone(normalized)) {
       throw new Error(`Invalid Bangladeshi phone number: ${phone}`);
     }
+    if (!shop_id) throw new Error('shop_id is required to add a shop-scoped blacklist entry');
 
     // Upsert: if phone + shop_id combo exists, update it.
     // Exclude whitelist (appeal) sentinels so an allow-override and a block can coexist.
     const existing = await RtoBlacklist.findOne({
       where: {
         phone: normalized,
-        shop_id: shop_id || null,
+        shop_id,
         reason: { [Op.ne]: WHITELIST_REASON }
       }
     });
@@ -157,8 +180,8 @@ class RtoShieldService {
       phone: normalized,
       reason,
       risk_score,
-      is_global: Boolean(is_global),
-      shop_id: shop_id || null,
+      is_global: false,
+      shop_id,
       added_by: added_by || null,
       notes: notes || null
     });

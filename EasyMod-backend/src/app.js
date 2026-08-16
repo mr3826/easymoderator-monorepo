@@ -11,6 +11,7 @@ const { csrfTokenHandler, csrfProtectionMiddleware, csrfDebugHandler } = require
 const config = require('./config/config');
 const { buildCorsOptions } = require('./config/cors-options');
 const routes = require('./modules/routes');
+const conversationController = require('./modules/conversation/conversation.controller');
 const healthRoutes = require('./routes/health.routes');
 const metaWebhookRoutes = require('./modules/integration/meta-webhook.routes');
 const courierWebhookRoutes = require('./modules/webhooks/courier-webhook.routes');
@@ -21,31 +22,6 @@ const { initSentry, sentryCaptureException } = require('./config/sentry');
 const { requestContextMiddleware } = require('./middleware/request-context.middleware');
 const createSessionMiddleware = require('./middleware/session.middleware');
 const xssSanitize = require('./middleware/xss-sanitize.middleware');
-
-const cacheService = require('./utils/cache.service');
-const { getTierByCode } = require('./modules/subscription/subscription.plans');
-
-// Extract shopId for rate-limit key derivation.
-// Prefers req.user.shopId (set by verified auth middleware) to prevent shopId spoofing.
-// Falls back to an unverified JWT peek only for unauthenticated requests where
-// rate-limit precision matters more than security (the key is just a bucket, not a trust decision).
-function getShopIdFromRequest(req) {
-    if (req.user?.shopId) return req.user.shopId;
-    try {
-        let token = null;
-        const authHeader = req.headers.authorization;
-        if (authHeader?.startsWith('Bearer ')) {
-            token = authHeader.substring(7);
-        } else if (req.cookies?.access_token) {
-            token = req.cookies.access_token;
-        }
-        if (!token) return null;
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
-        return payload.shopId || null;
-    } catch (_) {
-        return null;
-    }
-}
 
 function isAuthSessionProbe(req) {
     const path = req.path || req.originalUrl || '';
@@ -106,36 +82,19 @@ if (config.env !== 'test') {
         return undefined; // express-rate-limit default: MemoryStore
     };
 
-    // Per-shop rate limiter — keyed by shopId when authenticated, falls back to IP.
-    // Per-plan limits come from the plan tier's features.rate_limit_per_minute (cached 5 min).
-    const shopRateLimiter = rateLimit({
+    // This middleware runs before route authentication, so it must use only
+    // request metadata that is already trusted. Tenant-specific limits belong
+    // after authenticate; an unverified JWT payload must never select a tenant
+    // bucket or subscription limit.
+    const globalRateLimiter = rateLimit({
         windowMs: 15 * 60 * 1000, // 15-minute window
-        keyGenerator: (req) => {
-            const shopId = getShopIdFromRequest(req);
-            return shopId ? `t:shop:${shopId}` : req.ip;
-        },
-        max: async (req) => {
-            const shopId = getShopIdFromRequest(req);
-            if (!shopId) return 500; // unauthenticated — global baseline
-            try {
-                const cached = await cacheService.getForShop(shopId, 'subscription:plan_ratelimit');
-                if (cached !== null) return cached;
-                const { Subscription } = require('./modules/entities');
-                const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
-                // getTierByCode normalizes legacy/unknown codes → GROWTH (fail-safe).
-                const ratePerMin = getTierByCode(sub?.plan_code)?.features?.rate_limit_per_minute ?? 40;
-                const limit = ratePerMin * 15;
-                await cacheService.setForShop(shopId, 'subscription:plan_ratelimit', limit, 300);
-                return limit;
-            } catch (_) {
-                return 500; // fail open
-            }
-        },
+        keyGenerator: (req) => req.ip,
+        max: 500,
         standardHeaders: true,
         legacyHeaders: false,
-        store: buildStore('rl:shop:')
+        store: buildStore('rl:global:')
     });
-    app.use(shopRateLimiter);
+    app.use(globalRateLimiter);
 
     // Stricter rate limiting for auth endpoints (per IP)
     if (config.env !== 'development') {
@@ -231,7 +190,13 @@ initSentry(app);
 app.use('/health', healthRoutes);
 
 // Public uploaded assets used by Meta Messenger attachment delivery. Filenames
-// are generated server-side; do not expose user-provided directory paths.
+// are generated server-side. Conversation attachments are served above through
+// short-lived signed URLs; the private subtree must never fall through to the
+// public static mount.
+app.get('/uploads/conversation-attachments/:shopId/:fileName',
+    helmet.crossOriginResourcePolicy({ policy: 'cross-origin' }),
+    conversationController.serveConversationAttachment);
+app.use('/uploads/conversation-attachments', (_req, res) => res.status(404).end());
 app.use('/uploads', helmet.crossOriginResourcePolicy({ policy: 'cross-origin' }), express.static(path.join(__dirname, '../uploads'), {
     maxAge: config.env === 'production' ? '1h' : 0,
 }));

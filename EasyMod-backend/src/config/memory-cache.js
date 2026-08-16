@@ -120,6 +120,58 @@ class MemoryCache {
         this.cache.clear();
         return 'OK';
     }
+
+    // Minimal Redis sorted-set compatibility for local safety-limit behavior.
+    // Rate-limit code must behave consistently when development uses the
+    // in-memory fallback instead of silently failing open on missing methods.
+    _getZset(key) {
+        const item = this.cache.get(key);
+        if (!item || item.type !== 'zset') return null;
+        if (item.expiresAt && Date.now() > item.expiresAt) {
+            this.cache.delete(key);
+            return null;
+        }
+        return item;
+    }
+
+    async zadd(key, score, member) {
+        const item = this._getZset(key) || { type: 'zset', entries: new Map(), expiresAt: null };
+        item.entries.set(String(member), Number(score));
+        this.cache.set(key, item);
+        return 1;
+    }
+
+    async zremrangebyscore(key, min, max) {
+        const item = this._getZset(key);
+        if (!item) return 0;
+        const lower = min === '-inf' ? -Infinity : Number(min);
+        const upper = max === '+inf' ? Infinity : Number(max);
+        let removed = 0;
+        for (const [member, score] of item.entries) {
+            if (score >= lower && score <= upper) {
+                item.entries.delete(member);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    async zcard(key) {
+        return this._getZset(key)?.entries.size || 0;
+    }
+
+    async zrange(key, start, stop, withScores) {
+        const item = this._getZset(key);
+        if (!item) return [];
+        const sorted = [...item.entries.entries()]
+            .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
+        const end = stop < 0 ? sorted.length + Number(stop) : Number(stop);
+        const selected = sorted.slice(Number(start), end + 1);
+        if (String(withScores).toUpperCase() === 'WITHSCORES') {
+            return selected.flatMap(([member, score]) => [member, String(score)]);
+        }
+        return selected.map(([member]) => member);
+    }
 }
 
 module.exports = { MemoryCache };

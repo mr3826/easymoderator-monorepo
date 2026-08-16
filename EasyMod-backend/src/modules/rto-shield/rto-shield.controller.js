@@ -19,7 +19,7 @@ class RtoShieldController {
   /** Cross-shop network signal for a phone — surfaced as a "fraud reach" badge in the UI. */
   static async networkStats(req, res) {
     try {
-      const result = await RtoShieldService.getNetworkStats(req.query.phone);
+      const result = await RtoShieldService.getNetworkStats(req.query.phone, resolveShopId(req));
       res.json({ success: true, data: result });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });

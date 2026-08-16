@@ -12,6 +12,14 @@ const bkashService = require('../payment/bkash-merchant.service');
 const paymentService = require('../payment/payment.service');
 const OrderSessionService = require('../order/order-session-standalone.service');
 
+function normalizeAmountToMinorUnits(value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ''] = text.split('.');
+    return BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
+}
+
 class PaymentWebhookController {
     constructor() {
         this.logger = createLogger();
@@ -55,6 +63,17 @@ class PaymentWebhookController {
                 const claimableStatuses = ['pending', 'initiated', 'failed'];
                 if (!claimableStatuses.includes(paymentTransaction.status)) {
                     return res.status(409).json({ error: 'Invalid payment state transition' });
+                }
+
+                const expectedAmount = normalizeAmountToMinorUnits(paymentTransaction.amount);
+                const providerAmount = normalizeAmountToMinorUnits(amount);
+                if (expectedAmount === null || providerAmount === null || expectedAmount !== providerAmount) {
+                    this.logger.warn('bKash webhook amount mismatch', {
+                        paymentID,
+                        expectedAmount: paymentTransaction.amount,
+                        providerAmount: amount,
+                    });
+                    return res.status(400).json({ error: 'Payment amount mismatch' });
                 }
 
                 // Claim the callback atomically. Concurrent/replayed callbacks cannot

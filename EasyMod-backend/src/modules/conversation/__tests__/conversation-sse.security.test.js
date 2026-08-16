@@ -40,6 +40,7 @@ function response() {
         setHeader: jest.fn(),
         flushHeaders: jest.fn(),
         write: jest.fn(),
+        end: jest.fn(),
     };
     res.status.mockReturnValue(res);
     res.json.mockReturnValue(res);
@@ -71,6 +72,17 @@ describe('conversation SSE tenant binding', () => {
         }), res);
         expect(res.status).toHaveBeenCalledWith(400);
         expect(mockSseManager.attachToRequest).not.toHaveBeenCalled();
+    });
+
+    test('rejects unsigned conversation attachment requests', async () => {
+        const res = response();
+        await controller.serveConversationAttachment({
+            params: { shopId: 'shop-1', fileName: 'attachment.pdf' },
+            query: {},
+        }, res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(404);
+        expect(res.end).toHaveBeenCalled();
     });
 
     test.each(['shop-1', 'shop-2'])(

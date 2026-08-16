@@ -94,11 +94,12 @@ a retry resumes **only** the file phase rather than re-running the database work
 `META_APP_SECRET` → 4xx/503 before any data is touched. Verified on production
 2026-07-28: `POST` with no `signed_request` → `400 {"error":"Missing signed_request"}`.
 
-**No success theatre.** If the identity cannot be resolved, or the transaction
-fails, the endpoint returns 500 with "the request is recorded for retry" and the
-row is left in a retryable state. It does not return a confirmation code for a
-deletion that did not happen. (The pre-Phase-1 implementation did exactly that,
-which was the single highest compliance risk in the 2026-07-22 audit.)
+**No success theatre.** If the identity cannot be resolved, the callback is
+acknowledged with an opaque status code but the durable row is
+`IDENTITY_NOT_RESOLVED`, `retryable: true`, and no customer data is touched.
+The status endpoint is the source of truth; a callback acknowledgment is not a
+claim that deletion completed. If the transaction fails, the endpoint returns
+500 with "the request is recorded for retry" and leaves the row retryable.
 
 **No raw identifiers at rest.** The durable record stores an HMAC
 `identity_hash` and a `confirmation_code_hash`, never the Meta user ID or the

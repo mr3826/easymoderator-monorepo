@@ -158,7 +158,7 @@ async function hasPriorCustomerVisibleAiDisclosure(conversationId) {
 }
 
 async function shouldApplyAiDisclosureGreeting({ conversationId, currentTurnMessageIds, aiSettings } = {}) {
-    const mode = normalizeAutomationMode(aiSettings?.automation_mode || 'AI_ACTIVE');
+    const mode = normalizeAutomationMode(aiSettings?.automation_mode || 'DRAFT');
     if (mode !== 'AI_ACTIVE') return false;
     if (aiSettings?.ai_auto_reply === false) return false;
     if (!(await isFirstCustomerTurn(conversationId, currentTurnMessageIds))) return false;
@@ -189,14 +189,26 @@ function hasExplicitAutomationMode(settings = {}) {
     return typeof settings?.automation_mode === 'string' && settings.automation_mode.trim() !== '';
 }
 
+/**
+ * Business ("AI settings" under shop settings) is the source of truth. Channel
+ * settings only fill in keys the business layer does not define — today that is
+ * the disjoint per-Page set (business_hours, confidence_threshold_send/_suggest,
+ * allow_order_creation, purpose_label). A per-Page value can never override a
+ * business one.
+ *
+ * A channel still opts itself out through its own `ai_auto_reply: false` flag,
+ * which the worker reads directly from channelAISettings (Guard 4b) — that is
+ * how authorization recovery disables a disconnected Page.
+ */
 function resolveEffectiveAiSettings(shopSettings = {}, channelSettings = {}) {
-    const merged = { ...shopSettings, ...channelSettings };
+    const merged = { ...channelSettings, ...shopSettings };
     if (hasExplicitAutomationMode(shopSettings)) {
         merged.automation_mode = normalizeAutomationMode(shopSettings.automation_mode);
     } else if (hasExplicitAutomationMode(channelSettings)) {
         merged.automation_mode = normalizeAutomationMode(channelSettings.automation_mode);
     } else {
-        merged.automation_mode = normalizeAutomationMode(merged.automation_mode || 'AI_ACTIVE');
+        // Neither layer configured — hold, never auto-send.
+        merged.automation_mode = normalizeAutomationMode(merged.automation_mode || 'DRAFT');
     }
     return merged;
 }

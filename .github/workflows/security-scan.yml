@@ -20,11 +20,13 @@ jobs:
           fetch-depth: 0
 
       - name: Scan repository history with Gitleaks
+        # The digest pins Gitleaks v8.28.0. Keep the block scalar free of
+        # inline comments because they become literal Docker arguments.
         run: >-
           docker run --rm
           -v "$GITHUB_WORKSPACE:/repo"
-          zricethezav/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 # v8.28.0
-          detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose --log-opts="--all"
+          zricethezav/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+          git --config=/repo/.gitleaks.toml --redact --verbose --log-opts="--all" /repo
 
   production-dependency-audit:
     name: Production dependency audit

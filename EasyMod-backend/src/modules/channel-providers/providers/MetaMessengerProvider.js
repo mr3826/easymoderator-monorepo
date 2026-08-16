@@ -5,9 +5,13 @@
  * Talks to the Meta Graph API on behalf of a connected Page.
  *
  * All outbound sends MUST receive a PolicyDecision with allow=true.
- * The provider can attach decision.augment.message_tag only if a future
- * policy-approved template/tag path supplies it. Legacy Messenger tags are
- * blocked by policy for the BD launch.
+ * When decision.augment.message_tag is set (twentyFourHourWindow rule, for
+ * out-of-24h-window sends), it is put on the wire as the Send API `tag`.
+ *
+ * Every Graph API call atomically reserves its rate-limit slot immediately
+ * beforehand via rateLimit.rule's reserveSendSlot() — see the send loop
+ * below — and releases it if the send itself fails, so a slot Meta never
+ * actually consumed doesn't count against the window.
  */
 
 'use strict';
@@ -18,6 +22,7 @@ const ChannelProvider = require('../ChannelProvider');
 const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
+const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -487,18 +492,33 @@ class MetaMessengerProvider extends ChannelProvider {
         try {
             const providerMessageIds = [];
             for (const body of bodies) {
-                const resp = await axios.post(
-                    `${GRAPH_BASE}/me/messages`,
-                    body,
-                    { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
-                );
-                providerMessageIds.push(resp.data.message_id || null);
+                const reservation = await reserveSendSlot(channel.meta_asset_id);
+                if (!reservation.allowed) {
+                    const rateLimitError = new Error('Meta send rate limit reached');
+                    rateLimitError.code = 'META_RATE_LIMIT';
+                    rateLimitError.retryAfterMs = reservation.retryAfterMs;
+                    throw rateLimitError;
+                }
+                try {
+                    const resp = await axios.post(
+                        `${GRAPH_BASE}/me/messages`,
+                        body,
+                        { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
+                    );
+                    providerMessageIds.push(resp.data.message_id || null);
+                } catch (sendErr) {
+                    await releaseSendSlot(channel.meta_asset_id, reservation.member);
+                    throw sendErr;
+                }
             }
             return {
                 providerMessageId: providerMessageIds[providerMessageIds.length - 1] || null,
                 providerMessageIds,
             };
         } catch (err) {
+            if (err.code === 'META_RATE_LIMIT') {
+                throw err;
+            }
             const normalized = metaError(err, 'sendMessage');
             if ([102, 190].includes(Number(normalized.details?.metaCode))) {
                 try {

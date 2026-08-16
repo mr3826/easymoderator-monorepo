@@ -4,6 +4,8 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 
+process.env.EASYMOD_UPLOAD_ROOT = path.resolve(__dirname, '../../../..', '.test-uploads');
+
 const {
     parseDataUrl,
     saveDataUrlImage,

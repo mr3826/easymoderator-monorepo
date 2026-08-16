@@ -4,6 +4,7 @@ name: CI / CD
 # Required GitHub secrets (Settings → Secrets → Actions):
 #   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
 #   DO_SSH_PRIVATE_KEY   — SSH private key with root access to the droplet
+#   DO_SSH_KNOWN_HOSTS   — pinned SSH host keys for DEPLOY_HOST
 # Public origin settings are repository variables, not secrets:
 #   VITE_API_BASE_URL    — https://api.easymod.tech
 #   VITE_APP_URL         — https://app.easymod.tech
@@ -15,6 +16,7 @@ name: CI / CD
 #   TELEGRAM_WEBHOOK_SECRET — optional; required only when Telegram is enabled
 #   API_URL / BASE_URL   — https://api.easymod.tech (API + public uploads)
 #   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
+#   PRODUCT_IMAGE_QUOTA_BYTES — 104857600 (per-shop product-image cap)
 #
 # The droplet must have:
 #   /opt/easymod/docker-compose.prod.yml  (committed to repo, synced by deploy)
@@ -86,6 +88,8 @@ jobs:
             backend:
               - 'EasyMod-backend/**'
               - 'docker-compose.prod.yml'
+              - 'docker-compose.test.yml'
+              - 'scripts/run-backend-integration.js'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/**'
@@ -202,8 +206,8 @@ jobs:
         run: npm run test:integration
 
   # ── 2c. Non-deploy deployment contract dry run ─────────────────────────────
-  # This job validates Compose interpolation and the renderer with synthetic
-  # values only. It never receives production secrets and never opens SSH.
+  # This job validates Compose interpolation plus the repository's production
+  # secret-backed renderer. It never opens SSH or changes the droplet.
   deployment-config:
     name: Deployment configuration dry run
     runs-on: ubuntu-latest
@@ -221,7 +225,9 @@ jobs:
         run: |
           npm ci
           node --check scripts/render-production-env.js
+          node --check scripts/validate-rollback-contract.js
           npx jest scripts/__tests__/render-production-env.test.js --runInBand
+          node scripts/validate-rollback-contract.js
 
       - name: Validate production Compose without SSH or production values
         env:
@@ -238,6 +244,138 @@ jobs:
           trap 'rm -f .env.prod' EXIT
           docker compose --env-file _tmp/.env.prod -f docker-compose.prod.yml config --quiet
 
+      - name: Validate production secret and deployment contracts without SSH
+        # Never expose repository secrets to forked pull requests; the
+        # synthetic contract step above remains the PR-safe validation.
+        if: github.event_name != 'pull_request'
+        env:
+          DB_USER: ${{ secrets.POSTGRES_USER }}
+          DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          DB_NAME: ${{ secrets.POSTGRES_DB }}
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_ACCESS_EXPIRES_IN: ${{ secrets.JWT_ACCESS_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN: ${{ secrets.JWT_REFRESH_EXPIRES_IN }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+          PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
+          DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
+          PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          MARKETING_URL: ${{ vars.MARKETING_URL || 'https://easymod.tech' }}
+          APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_ASSET_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech' }}
+          FRONTEND_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
+          BASE_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
+          LEGACY_COOKIE_DOMAIN: ${{ vars.LEGACY_COOKIE_DOMAIN || 'easymod.tech' }}
+          META_OAUTH_REDIRECT_URI: ${{ vars.META_OAUTH_REDIRECT_URI || 'https://app.easymod.tech/channels/oauth-callback' }}
+          META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
+          BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
+          BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
+          BKASH_PASSWORD: ${{ secrets.BKASH_PASSWORD }}
+          BKASH_APP_KEY: ${{ secrets.BKASH_APP_KEY }}
+          BKASH_APP_SECRET: ${{ secrets.BKASH_APP_SECRET }}
+          BKASH_WEBHOOK_SECRET: ${{ secrets.BKASH_WEBHOOK_SECRET }}
+          BKASH_SANDBOX: "false"
+          TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
+          EMBEDDING_PROVIDER: ${{ secrets.EMBEDDING_PROVIDER }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          QDRANT_COLLECTION: ${{ secrets.QDRANT_COLLECTION }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN || secrets.VITE_SENTRY_DSN }}
+          SLACK_ALERT_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+          ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
+          BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
+          PRODUCT_IMAGE_QUOTA_BYTES: ${{ vars.PRODUCT_IMAGE_QUOTA_BYTES || '104857600' }}
+          MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p _tmp
+          trap 'rm -f _tmp/.env.prod.real' EXIT
+          test -n "$DEPLOY_HOST"
+          test -n "$DO_SSH_PRIVATE_KEY"
+          test -n "$DO_SSH_KNOWN_HOSTS"
+          node EasyMod-backend/scripts/render-production-env.js _tmp/.env.prod.real
+          test -s _tmp/.env.prod.real
+          grep -q '^CSRF_SECRET=' _tmp/.env.prod.real
+          grep -q '^PAYMENT_CALLBACK_HMAC_SECRET=' _tmp/.env.prod.real
+          grep -q '^QDRANT_URL=' _tmp/.env.prod.real
+          grep -q '^QDRANT_COLLECTION=' _tmp/.env.prod.real
+          grep -q '^QDRANT_API_KEY=' _tmp/.env.prod.real
+          grep -q '^SLACK_ALERT_WEBHOOK_URL=' _tmp/.env.prod.real
+          echo 'secret-backed-render=PASS'
+
+  # ── 2d. Non-publishing Docker build validation ────────────────────────────
+  # Build the exact current source on every branch, including pull requests,
+  # without logging in to GHCR or pushing an image. The production build job
+  # remains main-only, but a feature branch must still prove its Dockerfiles
+  # and build contexts before it can be considered cutover-ready.
+  docker-build-validation:
+    name: Docker build validation (no push)
+    runs-on: ubuntu-latest
+    needs: [changes, test, meta-e2e, deployment-config]
+    # Feature branches and pull requests get a non-publishing Docker build.
+    # The main-branch production path builds and pushes each image exactly once
+    # in the `build` job, so validation cannot create a second candidate build.
+    if: |
+      github.ref != 'refs/heads/main' &&
+      (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true')
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build backend image without publishing
+        if: needs.changes.outputs.backend == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./EasyMod-backend
+          file: ./EasyMod-backend/Dockerfile
+          push: false
+          load: true
+          tags: easymod-backend:validation-${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.run_id }}
+
+      - name: Build frontend image without publishing
+        if: needs.changes.outputs.frontend == 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./EasyMod-frontend
+          file: ./EasyMod-frontend/Dockerfile
+          push: false
+          load: true
+          tags: easymod-frontend:validation-${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL || 'https://api.easymod.tech' }}
+            VITE_APP_URL=${{ vars.VITE_APP_URL || 'https://app.easymod.tech' }}
+            VITE_MARKETING_URL=${{ vars.VITE_MARKETING_URL || 'https://easymod.tech' }}
+            VITE_META_APP_ID=${{ secrets.VITE_META_APP_ID }}
+            VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+            VITE_ENV=production
+            VITE_BKASH_ENABLED=${{ vars.BKASH_ENABLED || 'false' }}
+
   # ── 3. Build & push Docker images ──────────────────────────────────────────
   build:
     name: Build & Push Docker Images
@@ -250,6 +388,9 @@ jobs:
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
+      backend_digest: ${{ steps.backend_image.outputs.digest }}
+      frontend_digest: ${{ steps.frontend_image.outputs.digest }}
+      build_time: ${{ steps.meta.outputs.build_time }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -267,7 +408,6 @@ jobs:
         id: meta
         run: |
           SHA="${{ github.sha }}"
-          SHORT="${SHA::8}"
           # BUILD_TIME used to come from the repository's last-metadata-change
           # stamp rather than this build. It ran *behind* the commit it labelled
           # (bc9c8ca reported builtAt 03:53:04Z for code authored 04:09:23Z) and
@@ -276,17 +416,18 @@ jobs:
           # A guard test pins this line — see workflow-deploy-guard.test.js.
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
-            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHORT}" >> $GITHUB_OUTPUT
+            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHA}" >> $GITHUB_OUTPUT
           else
             echo "backend_tag=" >> $GITHUB_OUTPUT
           fi
           if [ "${{ needs.changes.outputs.frontend }}" = "true" ]; then
-            echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHORT}" >> $GITHUB_OUTPUT
+            echo "frontend_tag=${{ env.GHCR_FRONTEND }}:${SHA}" >> $GITHUB_OUTPUT
           else
             echo "frontend_tag=" >> $GITHUB_OUTPUT
           fi
 
       - name: Build & push backend image
+        id: backend_image
         if: needs.changes.outputs.backend == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -301,6 +442,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.GHCR_BACKEND }}:buildcache,mode=max
 
       - name: Build & push frontend image
+        id: frontend_image
         if: needs.changes.outputs.frontend == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -378,10 +520,6 @@ jobs:
           BKASH_APP_SECRET: ${{ secrets.BKASH_APP_SECRET }}
           BKASH_WEBHOOK_SECRET: ${{ secrets.BKASH_WEBHOOK_SECRET }}
           BKASH_SANDBOX: "false"
-          PATHAO_CLIENT_ID: ${{ secrets.PATHAO_CLIENT_ID }}
-          PATHAO_CLIENT_SECRET: ${{ secrets.PATHAO_CLIENT_SECRET }}
-          STEADFAST_API_KEY: ${{ secrets.STEADFAST_API_KEY }}
-          STEADFAST_SECRET_KEY: ${{ secrets.STEADFAST_SECRET_KEY }}
           # Facebook/Messenger is the cutover scope. Telegram is opt-in via a
           # repository variable and is disabled when the variable is absent.
           TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'false' }}
@@ -407,24 +545,30 @@ jobs:
           SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
           ALLOW_SELF_SIGNED_TLS: ${{ secrets.ALLOW_SELF_SIGNED_TLS }}
           BODY_SIZE_LIMIT: ${{ secrets.BODY_SIZE_LIMIT || '35mb' }}
+          PRODUCT_IMAGE_QUOTA_BYTES: ${{ vars.PRODUCT_IMAGE_QUOTA_BYTES || '104857600' }}
           MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
 
       - name: Copy .env.prod and deploy config to droplet
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
-          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/.env.prod
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
+          scp -i ~/.ssh/deploy_key _tmp/.env.prod root@"$DEPLOY_HOST":/opt/easymod/.env.prod
           # Sync compose + Caddy config straight from the runner's checkout. The
           # droplet has no GitHub auth, so its `git fetch` (in the deploy script)
           # silently failed and left STALE config on disk — which is why the F-05
           # `/health* -> backend` routing never reached production. scp makes the
           # runner the single source of truth for these two files.
-          scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/docker-compose.prod.yml
-          scp -i ~/.ssh/deploy_key Caddyfile root@${{ secrets.DEPLOY_HOST }}:/opt/easymod/Caddyfile
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.DEPLOY_HOST }} 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
+          scp -i ~/.ssh/deploy_key docker-compose.prod.yml root@"$DEPLOY_HOST":/opt/easymod/docker-compose.prod.yml
+          scp -i ~/.ssh/deploy_key Caddyfile root@"$DEPLOY_HOST":/opt/easymod/Caddyfile
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'chmod 600 /opt/easymod/.env.prod && wc -l /opt/easymod/.env.prod && sha256sum /opt/easymod/Caddyfile /opt/easymod/docker-compose.prod.yml'
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
@@ -433,32 +577,65 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN
+          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN
           script: |
             set -e
 
-            # Capture the running digests before any replacement. A no-change
-            # service keeps its current image; a changed service uses the
-            # immutable SHA tag produced by the build job. This makes compose
-            # independent of mutable :latest aliases and gives rollback a
-            # concrete image reference.
-            previous_backend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-backend-1 2>/dev/null || true)
-            previous_frontend_image=$(docker inspect -f '{{index .RepoDigests 0}}' easymod-frontend-1 2>/dev/null || true)
-            if [ -z "$previous_backend_image" ]; then
-              previous_backend_image=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
-            fi
-            if [ -z "$previous_frontend_image" ]; then
-              previous_frontend_image=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
-            fi
+            # Capture the running content-addressed images before any
+            # replacement. A no-change service keeps its current digest; a
+            # changed service consumes the digest emitted by the build job.
+            resolve_container_digest() {
+              local container="$1"
+              local image_ref
+              local digest
+              image_ref=$(docker inspect -f '{{.Config.Image}}' "$container" 2>/dev/null || true)
+              digest=$(docker image inspect -f '{{index .RepoDigests 0}}' "$image_ref" 2>/dev/null || true)
+              case "$digest" in
+                *@sha256:*) printf '%s' "$digest" ;;
+                *) return 1 ;;
+              esac
+            }
 
-            export GHCR_IMAGE_BACKEND="${BACKEND_TAG:-$previous_backend_image}"
-            export GHCR_IMAGE_FRONTEND="${FRONTEND_TAG:-$previous_frontend_image}"
-            if [ -z "$GHCR_IMAGE_BACKEND" ] || [ -z "$GHCR_IMAGE_FRONTEND" ]; then
-              echo "ERROR: no immutable candidate or running image is available for rollback-safe deployment"
+            previous_backend_image=$(resolve_container_digest easymod-backend-1 2>/dev/null || true)
+            previous_frontend_image=$(resolve_container_digest easymod-frontend-1 2>/dev/null || true)
+
+            if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
+              echo "ERROR: running services are not backed by content-addressed images; manual digest pinning is required before cutover"
               exit 1
             fi
 
+            assert_immutable_ref() {
+              if printf '%s' "$1" | grep -Eq '@sha256:[0-9a-fA-F]{64}$'; then
+                return 0
+              fi
+              echo "ERROR: production image reference is not digest-pinned: $1" >&2
+              return 1
+            }
+
+            candidate_backend_image="$previous_backend_image"
+            candidate_frontend_image="$previous_frontend_image"
+            if [ -n "$BACKEND_DIGEST" ]; then
+              candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"
+            fi
+            if [ -n "$FRONTEND_DIGEST" ]; then
+              candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"
+            fi
+            assert_immutable_ref "$candidate_backend_image"
+            assert_immutable_ref "$candidate_frontend_image"
+            export GHCR_IMAGE_BACKEND="$candidate_backend_image"
+            export GHCR_IMAGE_FRONTEND="$candidate_frontend_image"
+
             cd /opt/easymod
+
+            # Validate every image in the interpolated production stack before
+            # any pull, prune, restart, or destructive WIPE path. This is the
+            # final fail-closed guard against a mutable reference entering the
+            # deployed Compose configuration.
+            production_images=$(docker compose --env-file .env.prod -f docker-compose.prod.yml config --images)
+            while IFS= read -r production_image; do
+              [ -z "$production_image" ] && continue
+              assert_immutable_ref "$production_image"
+            done <<< "$production_images"
 
             # docker-compose.prod.yml and Caddyfile are synced from the runner via
             # scp in the previous step (the droplet has no GitHub auth), so no git
@@ -513,15 +690,17 @@ jobs:
             # Authenticate to ghcr.io on the droplet
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
 
-            # Pull rebuilt images
-            if [ -n "$BACKEND_TAG" ]; then
-              echo "Pulling backend: $BACKEND_TAG"
-              docker pull "$BACKEND_TAG"
+            # Pull the exact registry digests emitted by the build job. Tags are
+            # retained only as human-readable publication labels and are never
+            # used as a production deployment or rollback reference.
+            if [ -n "$BACKEND_DIGEST" ]; then
+              echo "Pulling backend digest: $GHCR_IMAGE_BACKEND"
+              docker pull "$GHCR_IMAGE_BACKEND"
             fi
 
-            if [ -n "$FRONTEND_TAG" ]; then
-              echo "Pulling frontend: $FRONTEND_TAG"
-              docker pull "$FRONTEND_TAG"
+            if [ -n "$FRONTEND_DIGEST" ]; then
+              echo "Pulling frontend digest: $GHCR_IMAGE_FRONTEND"
+              docker pull "$GHCR_IMAGE_FRONTEND"
             fi
 
             # Validate the rendered environment with the candidate backend image
@@ -529,18 +708,43 @@ jobs:
             docker run --rm --env-file .env.prod "$GHCR_IMAGE_BACKEND" \
               node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
 
+            verify_rollback() {
+              local restored_backend restored_frontend
+              restored_backend=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
+              restored_frontend=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
+              if [ "$restored_backend" != "$previous_backend_image" ] || [ "$restored_frontend" != "$previous_frontend_image" ]; then
+                echo "ERROR: rollback image references were not restored"
+                return 1
+              fi
+              for i in $(seq 1 20); do
+                local status
+                status=$(docker exec easymod-backend-1 node -e "require('http').get('http://127.0.0.1:3000/health/ready', r => { process.stdout.write(String(r.statusCode)); process.exit(0); }).on('error', () => { process.stdout.write('000'); process.exit(0); })" 2>/dev/null || echo "000")
+                if [ "$status" = "200" ]; then
+                  echo "Rollback health check passed on attempt $i"
+                  return 0
+                fi
+                sleep 5
+              done
+              echo "ERROR: rollback health check failed after 100s"
+              return 1
+            }
+
             rollback() {
               echo "ERROR: candidate deployment failed; restoring previous image references"
-              if [ -n "$previous_backend_image" ] && [ -n "$previous_frontend_image" ]; then
-                export GHCR_IMAGE_BACKEND="$previous_backend_image"
-                export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
-                docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans || true
-              else
+              if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
                 echo "ERROR: previous image references were unavailable; manual recovery is required"
+                return 1
               fi
+              export GHCR_IMAGE_BACKEND="$previous_backend_image"
+              export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
+              if ! docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans; then
+                echo "ERROR: rollback compose restore failed"
+                return 1
+              fi
+              verify_rollback
             }
             deploy_succeeded=false
-            trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$deploy_succeeded" != "true" ]; then rollback; fi' EXIT
+            trap 'rc=$?; if [ "$rc" -ne 0 ] && [ "$deploy_succeeded" != "true" ]; then rollback || rc=70; fi; exit "$rc"' EXIT
 
             # ── DESTRUCTIVE WIPE (only when manually triggered with WIPE_DB=WIPE) ──
             if [ "$WIPE_DB" = "WIPE" ]; then
@@ -669,6 +873,19 @@ jobs:
 
             # Clean up dangling images
             docker image prune -f
+
+            cat > /opt/easymod/deployment-metadata.json <<EOF
+            {
+              "DEPLOYED_COMMIT": "${DEPLOYED_COMMIT}",
+              "BACKEND_IMAGE_DIGEST": "${GHCR_IMAGE_BACKEND}",
+              "FRONTEND_IMAGE_DIGEST": "${GHCR_IMAGE_FRONTEND}",
+              "PREVIOUS_BACKEND_IMAGE_DIGEST": "${previous_backend_image}",
+              "PREVIOUS_FRONTEND_IMAGE_DIGEST": "${previous_frontend_image}",
+              "WORKFLOW_RUN_ID": "${WORKFLOW_RUN_ID}",
+              "DEPLOYED_AT": "${DEPLOYED_AT}"
+            }
+            EOF
+            chmod 600 /opt/easymod/deployment-metadata.json
             deploy_succeeded=true
 
         env:
@@ -676,6 +893,11 @@ jobs:
           GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}
           BACKEND_TAG: ${{ needs.build.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
+          BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ needs.build.outputs.frontend_digest }}
+          DEPLOYED_COMMIT: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          DEPLOYED_AT: ${{ needs.build.outputs.build_time }}
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}

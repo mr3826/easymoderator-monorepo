@@ -104,10 +104,10 @@ IMPORTANT: Only return fields you can clearly read from the image. Do not guess.
  * Downloads the image and returns it as a base64 data URL so Gemini receives
  * the full pixel data directly — avoids CDN auth expiry (Meta URLs short-lived)
  * and ensures the image is accessible regardless of origin access controls.
- * Falls back to the original URL if download fails or image exceeds 5 MB.
+ * Fails closed if the download fails or the image exceeds 5 MB.
  *
  * @param {string} imageUrl
- * @returns {Promise<string>} — base64 data URL or original URL
+ * @returns {Promise<string|null>} — base64 data URL, or null on safe-fetch failure
  */
 const preprocessImage = async (imageUrl) => {
     try {
@@ -117,8 +117,8 @@ const preprocessImage = async (imageUrl) => {
         });
         return `data:${mimeType};base64,${buffer.toString('base64')}`;
     } catch (err) {
-        console.warn('[SelfMfsHandler] Image download for preprocessing failed, using URL directly:', err.message);
-        return imageUrl;
+        console.warn('[SelfMfsHandler] Image download for preprocessing failed; rejecting screenshot:', err.message);
+        return null;
     }
 };
 
@@ -131,6 +131,7 @@ const preprocessImage = async (imageUrl) => {
 const ocrScreenshot = async (imageUrl) => {
     // Fix 13: download + base64-encode before sending to Gemini
     const imageContent = await preprocessImage(imageUrl);
+    if (!imageContent) return null;
 
     try {
         const { text: rawJson } = await llmService.chat({
@@ -199,6 +200,21 @@ const verifyPaymentScreenshot = async ({
     expectedReceiver,
     mfsType
 }) => {
+    const numericExpectedAmount = Number(expectedAmount);
+    const normalizedExpectedReceiver = normalizePhone(expectedReceiver);
+    const normalizedMfsType = typeof mfsType === 'string' ? mfsType.toLowerCase() : null;
+    if (!Number.isFinite(numericExpectedAmount) || numericExpectedAmount <= 0
+        || !normalizedExpectedReceiver
+        || !['bkash', 'nagad', 'rocket'].includes(normalizedMfsType)) {
+        return {
+            verified: false,
+            reason: 'Payment verification requires the order amount, receiver number, and MFS type.',
+            trxId: null,
+            amount: null,
+            ocrData: null,
+        };
+    }
+
     // Step 1: OCR
     const ocr = await ocrScreenshot(imageUrl);
 
@@ -239,13 +255,23 @@ const verifyPaymentScreenshot = async ({
 
     // Step 4: Amount match — 5% tolerance (covers Nagad/Rocket service charges)
     // Minimum tolerance of 5 BDT handles small-amount orders and OCR rounding.
-    if (expectedAmount && ocr.amount !== null) {
-        const tolerance = Math.max(5, Math.ceil(expectedAmount * 0.05));
-        const diff = Math.abs((ocr.amount || 0) - expectedAmount);
+    const ocrAmount = Number(ocr.amount);
+    if (!Number.isFinite(ocrAmount) || ocrAmount <= 0) {
+        return {
+            verified: false,
+            reason: 'Screenshot-এ একটি valid payment amount পাওয়া যায়নি।',
+            trxId,
+            amount: ocr.amount ?? null,
+            ocrData: ocr
+        };
+    }
+    {
+        const tolerance = Math.max(5, Math.ceil(numericExpectedAmount * 0.05));
+        const diff = Math.abs(ocrAmount - numericExpectedAmount);
         if (diff > tolerance) {
             return {
                 verified: false,
-                reason: `Amount মিলছে না। Order total ৳${expectedAmount}, কিন্তু screenshot-এ ৳${ocr.amount} দেখা যাচ্ছে। (Service charge সহ পাঠান।)`,
+                reason: `Amount মিলছে না। Order total ৳${numericExpectedAmount}, কিন্তু screenshot-এ ৳${ocr.amount} দেখা যাচ্ছে। (Service charge সহ পাঠান।)`,
                 trxId,
                 amount: ocr.amount,
                 ocrData: ocr
@@ -254,10 +280,8 @@ const verifyPaymentScreenshot = async ({
     }
 
     // Step 5: Receiver phone match
-    if (expectedReceiver && ocr.receiver_phone) {
-        const normalizedExpected = normalizePhone(expectedReceiver);
-        const normalizedActual = normalizePhone(ocr.receiver_phone);
-        if (normalizedExpected && normalizedActual && normalizedExpected !== normalizedActual) {
+    const normalizedActualReceiver = normalizePhone(ocr.receiver_phone);
+    if (!normalizedActualReceiver || normalizedExpectedReceiver !== normalizedActualReceiver) {
             return {
                 verified: false,
                 reason: `Receiver number মিলছে না। ${mfsType === 'nagad' ? 'নগদ' : 'বিকাশ'} নম্বর ${expectedReceiver}-এ পাঠান।`,
@@ -265,11 +289,10 @@ const verifyPaymentScreenshot = async ({
                 amount: ocr.amount,
                 ocrData: ocr
             };
-        }
     }
 
     // Step 6: MFS type match
-    if (mfsType && ocr.mfs_type && ocr.mfs_type !== 'unknown' && ocr.mfs_type !== mfsType) {
+    if (ocr.mfs_type !== normalizedMfsType) {
         return {
             verified: false,
             reason: `${ocr.mfs_type} screenshot পাঠিয়েছেন, কিন্তু payment হওয়ার কথা ${mfsType}-এ।`,
@@ -302,8 +325,8 @@ const verifyPaymentScreenshot = async ({
             shop_id: shopId,
             order_id: orderId,
             trx_id: trxId,
-            mfs_type: ocr.mfs_type || mfsType,
-            amount: ocr.amount,
+            mfs_type: normalizedMfsType,
+            amount: ocrAmount,
             sender_phone: normalizePhone(ocr.sender_phone),
             receiver_phone: normalizePhone(ocr.receiver_phone),
             ocr_raw: JSON.stringify(ocr),
@@ -320,15 +343,23 @@ const verifyPaymentScreenshot = async ({
                 ocrData: ocr
             };
         }
-        // Other DB errors — log but don't block the order
-        console.error('[SelfMfsHandler] TrxIDLog write failed:', dbErr.message);
+        // Other DB errors — fail closed. An audit-write failure must not
+        // silently pass payment verification (e.g. connection drop, timeout).
+        console.error('[SelfMfsHandler] TrxIDLog write failed, failing closed:', dbErr);
+        return {
+            verified: false,
+            reason: `Payment verify করা সম্ভব হয়নি, technical সমস্যা হয়েছে। কিছুক্ষণ পর আবার চেষ্টা করুন অথবা support-এ যোগাযোগ করুন। (ref: ${trxId})`,
+            trxId,
+            amount: ocr.amount,
+            ocrData: ocr
+        };
     }
 
     return {
         verified: true,
         reason: null,
         trxId,
-        amount: ocr.amount,
+        amount: ocrAmount,
         ocrData: ocr
     };
 };

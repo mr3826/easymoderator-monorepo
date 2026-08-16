@@ -106,16 +106,6 @@ function isValidIdempotencyKey(key) {
     return uuidRegex.test(key) || (typeof key === 'string' && key.length >= 10 && key.length <= 128);
 }
 
-/**
- * @deprecated Storage is now handled inline inside idempotencyMiddleware via res.json
- * interception. This export is kept for backward compatibility but is a no-op.
- * Remove from route definitions in a future cleanup pass.
- */
-const storeIdempotencyResult = (_statusCode = 200) => {
-    return (_req, _res, next) => next();
-};
-
 module.exports = {
-    idempotencyMiddleware,
-    storeIdempotencyResult
+    idempotencyMiddleware
 };
