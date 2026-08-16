@@ -179,6 +179,7 @@ jobs:
             run_proof() {
               docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
                 -e NODE_ENV=production \
+                -e NODE_PATH=/app/node_modules \
                 -e ACTIVE_COLLECTION="$ACTIVE_COLLECTION" \
                 -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
                 -e EXPECTED_LIVE_COUNT="$EXPECTED_LIVE_COUNT" \
@@ -200,6 +201,7 @@ jobs:
               shift 4
               docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
                 -e NODE_ENV=production \
+                -e NODE_PATH=/app/node_modules \
                 -e ACTIVE_COLLECTION="$ACTIVE_COLLECTION" \
                 -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
                 -e EXPECTED_LIVE_COUNT="$EXPECTED_LIVE_COUNT" \
@@ -264,6 +266,7 @@ jobs:
               --snapshot "/qdrant/snapshots/$SNAPSHOT_FILE:$RESTORE_COLLECTION" >/dev/null
             docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
               -e NODE_ENV=production \
+              -e NODE_PATH=/app/node_modules \
               -e QDRANT_URL="http://$RESTORE_HOST:6333" \
               -e QDRANT_API_KEY= \
               -e QDRANT_COLLECTION="$RESTORE_COLLECTION" \
