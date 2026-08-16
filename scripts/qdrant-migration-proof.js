@@ -15,7 +15,6 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const QDRANT_URL = (process.env.QDRANT_URL || 'http://localhost:6333').replace(/\/$/, '');
 const ACTIVE_COLLECTION = process.env.ACTIVE_COLLECTION || 'knowledge_documents';
 const VECTOR_SIZE = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const EXPECTED_SOURCE_COUNT = Number.parseInt(process.env.EXPECTED_SOURCE_COUNT || '2', 10);
@@ -30,6 +29,66 @@ const option = (name, fallback = null) => {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Normalize a URL that may have been serialized by render-production-env.js
+ * and loaded through Docker's --env-file parser. Errors contain only the
+ * variable name so credentials and query strings never reach the log.
+ *
+ * @param {unknown} value raw environment value
+ * @param {{name: string, protocols: string[], rootOnly?: boolean}} options
+ * @returns {string} canonical URL safe for the relevant client
+ */
+function normalizeUrl(value, { name, protocols, rootOnly = false }) {
+    let normalized = String(value ?? '').trim();
+    if (!normalized) throw new Error(`${name} is required`);
+
+    const quote = normalized[0];
+    if (quote === '"' || quote === "'") {
+        if (normalized.at(-1) !== quote) throw new Error(`${name} has malformed surrounding quotes`);
+        normalized = normalized.slice(1, -1).trim();
+    }
+    if (!normalized || /\s/u.test(normalized)) throw new Error(`${name} must not contain whitespace`);
+
+    let parsed;
+    try {
+        parsed = new URL(normalized);
+    } catch (_) {
+        throw new Error(`${name} must be a valid URL`);
+    }
+
+    if (!protocols.includes(parsed.protocol) || !parsed.hostname) {
+        throw new Error(`${name} must use an allowed URL protocol and include a host`);
+    }
+    if (rootOnly && (
+        parsed.pathname !== '/'
+        || parsed.search
+        || parsed.hash
+        || parsed.username
+        || parsed.password
+    )) {
+        throw new Error(`${name} must be a server-root URL`);
+    }
+
+    return rootOnly ? parsed.origin : parsed.toString();
+}
+
+function normalizeQdrantUrl(value) {
+    return normalizeUrl(value, {
+        name: 'QDRANT_URL',
+        protocols: ['http:', 'https:'],
+        rootOnly: true,
+    });
+}
+
+function normalizeDatabaseUrl(value) {
+    return normalizeUrl(value, {
+        name: 'DATABASE_URL',
+        protocols: ['postgres:', 'postgresql:'],
+    });
+}
+
+const qdrantUrl = () => normalizeQdrantUrl(process.env.QDRANT_URL);
 
 const safeError = (error) => String(error?.message || error || 'unknown error')
     .replace(/https?:\/\/\S+/gi, '[url]')
@@ -68,7 +127,7 @@ function qdrantHeaders() {
 }
 
 async function qdrantJson(route, init = {}) {
-    const response = await fetch(`${QDRANT_URL}${route}`, {
+    const response = await fetch(`${qdrantUrl()}${route}`, {
         ...init,
         headers: { ...qdrantHeaders(), ...(init.headers || {}) },
     });
@@ -81,7 +140,7 @@ async function qdrantJson(route, init = {}) {
 }
 
 async function qdrantBinary(route) {
-    const response = await fetch(`${QDRANT_URL}${route}`, {
+    const response = await fetch(`${qdrantUrl()}${route}`, {
         headers: qdrantHeaders(),
     });
     if (!response.ok) throw new Error(`QDRANT_HTTP_${response.status}`);
@@ -91,7 +150,7 @@ async function qdrantBinary(route) {
 const collectionPath = (name) => `/collections/${encodeURIComponent(name)}`;
 
 async function collectionInfo(name) {
-    const response = await fetch(`${QDRANT_URL}${collectionPath(name)}`, {
+    const response = await fetch(`${qdrantUrl()}${collectionPath(name)}`, {
         headers: qdrantHeaders(),
     });
     if (response.status === 404) return null;
@@ -166,7 +225,7 @@ function loadSourceContract() {
 async function sourceStats({ sourceContract } = {}) {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
     const contract = sourceContract || loadSourceContract();
-    const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: databaseSsl() });
+    const client = new Client({ connectionString: normalizeDatabaseUrl(process.env.DATABASE_URL), ssl: databaseSsl() });
     try {
         await client.connect();
         return await contract.collectSourceStats((sql, values) => client.query(sql, values));
@@ -399,5 +458,8 @@ module.exports = {
     extractVectorSize,
     hasLexicalOverlap,
     loadSourceContract,
+    normalizeDatabaseUrl,
+    normalizeQdrantUrl,
+    normalizeUrl,
     sourceStats,
 };
