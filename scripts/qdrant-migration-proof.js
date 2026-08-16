@@ -151,27 +151,25 @@ function databaseSsl() {
     };
 }
 
-async function sourceStats() {
+function loadSourceContract() {
+    const candidates = [
+        process.env.SOURCE_CONTRACT_PATH,
+        '/app/src/modules/knowledge/index-source.contract.js',
+        path.resolve(process.cwd(), 'src/modules/knowledge/index-source.contract.js'),
+        path.resolve(process.cwd(), 'EasyMod-backend/src/modules/knowledge/index-source.contract.js'),
+    ].filter(Boolean);
+    const candidate = candidates.find((file) => fs.existsSync(file));
+    if (!candidate) throw new Error('authoritative PostgreSQL source contract is not present in the candidate image');
+    return require(candidate);
+}
+
+async function sourceStats({ sourceContract } = {}) {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
+    const contract = sourceContract || loadSourceContract();
     const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: databaseSsl() });
     try {
         await client.connect();
-        const countResult = await client.query(
-            'SELECT COUNT(*)::int AS count FROM knowledge_documents WHERE is_active = true',
-        );
-        const shopResult = await client.query(
-            'SELECT DISTINCT shop_id::text AS shop_id FROM knowledge_documents WHERE is_active = true AND shop_id IS NOT NULL',
-        );
-        const sampleResult = await client.query(
-            'SELECT title, content FROM knowledge_documents WHERE is_active = true ORDER BY id LIMIT 20',
-        );
-        return {
-            count: Number(countResult.rows[0]?.count || 0),
-            shopIds: shopResult.rows.map((row) => row.shop_id).filter(Boolean),
-            snippets: sampleResult.rows
-                .map((row) => `${row.title || ''}\n${row.content || ''}`.trim())
-                .filter((value) => value.length > 0),
-        };
+        return await contract.collectSourceStats((sql, values) => client.query(sql, values));
     } finally {
         await client.end().catch(() => {});
     }
@@ -400,4 +398,6 @@ module.exports = {
     assertSafeCollectionName,
     extractVectorSize,
     hasLexicalOverlap,
+    loadSourceContract,
+    sourceStats,
 };
