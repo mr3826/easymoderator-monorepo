@@ -4,8 +4,8 @@
  * Qdrant reindex CLI
  * ------------------
  * Rebuilds the Qdrant vector store from the current database state by running
- * the knowledge auto-index job (business info + FAQs + products + knowledge
- * docs) for every active shop, or a single shop with --shop=<id>.
+ * the knowledge auto-index job (business info + FAQs + products) for every
+ * active shop, or a single shop with --shop=<id>.
  *
  * Why this exists: the auto-index job (src/modules/knowledge/auto-index.job.js)
  * had no entry point, so after standardizing on Qdrant (Pinecone removed
@@ -13,9 +13,9 @@
  * a single idempotent command.
  *
  * Idempotent: every document is upserted under a deterministic id
- * (faq-<id>, product-<id>, kdoc-<id>, biz-<shopId>), so re-running overwrites
- * rather than duplicating. It does NOT delete vectors for removed entities
- * (those are pruned at write time via deletePoint).
+ * (faq-<id>, product-<id>, biz-<shopId>), so re-running overwrites rather
+ * than duplicating. It does NOT delete vectors for removed entities (those
+ * are pruned at write time via deletePoint).
  *
  * Usage (on the droplet, inside the api/worker container):
  *   npm run reindex:qdrant -- --collection=<new-name>             # all active shops into an isolated collection

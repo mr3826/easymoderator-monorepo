@@ -17,55 +17,10 @@
 
 const { ingestData } = require('../rag/rag.service');
 const Product = require('./product.entity');
+const { buildEmbeddingText } = require('./product-embedding-text');
 const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('ProductEmbedding');
-
-/**
- * Build the canonical embedding text for a product.
- * Combines structured fields + AI-generated tags for broad retrieval coverage.
- *
- * @param {object} product — Sequelize Product instance or plain object
- * @returns {string}
- */
-const buildEmbeddingText = (product) => {
-    const parts = [
-        product.name,
-        product.name_bn,
-    ];
-
-    // Size/variant info
-    const variants = product.variants || [];
-    if (variants.length) {
-        parts.push(`sizes: ${variants.join(', ')}`);
-    }
-
-    // Category (human + AI-detected)
-    if (product.category) parts.push(`category: ${product.category}`);
-    if (product.ai_category && product.ai_category !== product.category) {
-        parts.push(product.ai_category);
-    }
-
-    // AI colour / material / style
-    if (product.ai_color_primary) parts.push(product.ai_color_primary);
-    if (product.ai_material) parts.push(product.ai_material);
-    if (product.ai_attributes?.style) parts.push(product.ai_attributes.style);
-
-    // Tags (human + AI)
-    const tags = [...(product.tags || []), ...(product.ai_tags || [])];
-    if (tags.length) parts.push(tags.join(' '));
-
-    // Description
-    if (product.description) parts.push(product.description);
-    if (product.ai_description && product.ai_description !== product.description) {
-        parts.push(product.ai_description);
-    }
-
-    // SKU (enables exact SKU lookup)
-    if (product.sku) parts.push(`SKU: ${product.sku}`);
-
-    return parts.filter(Boolean).join(' | ');
-};
 
 /**
  * Upsert a single product into the vector store.

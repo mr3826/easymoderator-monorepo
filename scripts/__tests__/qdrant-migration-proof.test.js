@@ -1,14 +1,17 @@
 'use strict';
 
-// These tests exercise pure safety helpers; the production script loads pg for
-// its remote source-count check, which is intentionally outside this unit test.
+// These tests exercise pure safety helpers and verify that source-count reads are
+// delegated to the shared PostgreSQL contract rather than hand-written against a
+// Qdrant collection name.
 jest.mock('pg', () => ({ Client: jest.fn() }), { virtual: true });
 
 const {
     assertSafeCollectionName,
     extractVectorSize,
     hasLexicalOverlap,
+    sourceStats,
 } = require('../qdrant-migration-proof');
+const { Client } = require('pg');
 
 describe('Qdrant migration proof safety helpers', () => {
     it('rejects the live collection and mutable or unsafe targets', () => {
@@ -28,5 +31,30 @@ describe('Qdrant migration proof safety helpers', () => {
     it('detects negative-query lexical overlap without treating unrelated text as a hit', () => {
         expect(hasLexicalOverlap('delivery charge', 'Delivery charge is 80 BDT')).toBe(true);
         expect(hasLexicalOverlap('quantum physics', 'Cotton saree delivery information')).toBe(false);
+    });
+
+    it('delegates source counting to the shared PostgreSQL contract', async () => {
+        const client = {
+            connect: jest.fn().mockResolvedValue(undefined),
+            end: jest.fn().mockResolvedValue(undefined),
+            query: jest.fn(),
+        };
+        Client.mockImplementation(() => client);
+        process.env.DATABASE_URL = 'postgres://proof-test';
+
+        const collectSourceStats = jest.fn().mockResolvedValue({
+            count: 2,
+            shopIds: ['shop-1'],
+            snippets: ['source one', 'source two'],
+        });
+
+        await expect(sourceStats({ sourceContract: { collectSourceStats } })).resolves.toEqual({
+            count: 2,
+            shopIds: ['shop-1'],
+            snippets: ['source one', 'source two'],
+        });
+        expect(collectSourceStats).toHaveBeenCalledWith(expect.any(Function));
+        expect(client.connect).toHaveBeenCalledTimes(1);
+        expect(client.end).toHaveBeenCalledTimes(1);
     });
 });

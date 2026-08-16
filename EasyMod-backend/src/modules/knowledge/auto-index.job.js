@@ -12,26 +12,38 @@
  *   - FAQ responses
  *   - Delivery info (zones, timing, courier details)
  *   - Payment methods (available options, instructions)
- *   - Custom knowledge documents
+ *   - Custom knowledge documents are not part of the deterministic bulk
+ *     reindex contract because their request text is not persisted in Postgres.
  *
  * Analytics (order counts, revenue, etc.) are NOT indexed — they're fetched live from DB.
  */
 
-const { Shop, FaqResponse } = require('../entities');
 const { ingestData } = require('../rag/rag.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { sequelize } = require('../../utils/database/database-setup');
+const {
+    assertRequiredSourceRelations,
+    getActiveShopRows,
+    collectShopSources,
+} = require('./index-source.contract');
 
 const logger = createLogger('KnowledgeAutoIndex');
+
+const queryRows = async (sql, bind = []) => {
+    const [rows] = await sequelize.query(sql, { bind });
+    return { rows };
+};
 
 /**
  * Re-index all knowledge for a single shop.
  * @param {string} shopId
- * @returns {{ indexed: number, errors: number }}
+ * @returns {{ indexed: number, errors: number, sourceCount: number }}
  */
-const indexShop = async (shopId) => {
+const indexShop = async (shopId, { existingShop = null, skipRelationCheck = false } = {}) => {
+    if (!skipRelationCheck) await assertRequiredSourceRelations(queryRows);
     let indexed = 0;
     let errors = 0;
+    let sources = [];
 
     const ingest = async (text, metadata) => {
         if (!text || text.trim().length < 5) return;
@@ -53,74 +65,20 @@ const indexShop = async (shopId) => {
     };
 
     try {
-        // 1. Business info
-        const shop = await Shop.findByPk(shopId);
-        if (shop) {
-            const info = shop.settings?.businessInfo || {};
-            const biz = [
-                info.shopName && `Shop name: ${info.shopName}`,
-                info.description && `Description: ${info.description}`,
-                info.address && `Address: ${info.address}`,
-                info.phone && `Phone: ${info.phone}`,
-                (info.openingHours || info.businessHours) && `Business hours: ${info.openingHours || info.businessHours}`,
-                info.additionalInfo && `Additional shop owner info: ${info.additionalInfo}`,
-                ...Object.entries(info.socialLinks || {})
-                    .filter(([, value]) => typeof value === 'string' && value.trim())
-                    .map(([key, value]) => `${key}: ${value.trim()}`),
-                info.returnPolicy && `Return policy: ${info.returnPolicy}`,
-                info.deliveryPolicy && `Delivery policy: ${info.deliveryPolicy}`
-            ].filter(Boolean).join('\n');
-            if (biz) await ingest(biz, { type: 'business_info', documentId: `biz-${shopId}` });
-        }
-
-        // 2. FAQ responses. The faq_responses table stores `category` (the topic
-        // the FAQ answers) plus bilingual `template_bn` / `template_en` answers —
-        // there are no `question`/`answer` columns. Index the category and both
-        // language templates so RAG retrieval matches Bengali and English queries.
-        const faqs = await FaqResponse.findAll({ where: { shop_id: shopId, is_active: true } });
-        for (const faq of faqs) {
-            const text = [
-                `Q: ${faq.category}`,
-                faq.template_bn && `A (BN): ${faq.template_bn}`,
-                faq.template_en && `A (EN): ${faq.template_en}`
-            ].filter(Boolean).join('\n');
-            await ingest(text, { type: 'faq', documentId: `faq-${faq.id}`, faq_id: faq.id });
-        }
-
-        // 3. Products — delegate to the canonical product embedder so the vector
-        // text, metadata, and point ID exactly match the per-product upsert path.
-        // This also enforces the invariant that PRICE is never embedded (it changes
-        // too often — always fetched live from the DB), which the old inline text
-        // here violated by baking "Price: BDT ..." into the embedding.
-        const [products] = await sequelize.query(
-            `SELECT id FROM products WHERE shop_id=:shopId AND is_active=true LIMIT 200`,
-            { replacements: { shopId } }
-        ).catch(() => [[]]);
-
-        if (products.length) {
-            // Lazy-require so the canonical embedder (and its Product entity) is only
-            // loaded when there is actually a product to embed.
-            const { embedProduct } = require('../product/product-embedding.service');
-            for (const product of products) {
+        sources = await collectShopSources(queryRows, shopId, existingShop);
+        const { embedProduct } = require('../product/product-embedding.service');
+        for (const source of sources) {
+            if (source.kind === 'product') {
                 try {
-                    const ok = await embedProduct(product.id, shopId);
+                    const ok = await embedProduct(source.id, shopId);
                     if (ok) { indexed++; } else { errors++; }
                 } catch (err) {
-                    logger.warn('Product embedding failed', { shopId, productId: product.id, err: err.message });
+                    logger.warn('Product embedding failed', { shopId, productId: source.id, err: err.message });
                     errors++;
                 }
+                continue;
             }
-        }
-
-        // 4. Custom knowledge documents (table is `knowledge_documents`)
-        const [docs] = await sequelize.query(
-            `SELECT id, title, content FROM knowledge_documents WHERE shop_id=:shopId AND is_active=true LIMIT 100`,
-            { replacements: { shopId } }
-        ).catch(() => [[]]);
-
-        for (const doc of docs) {
-            const text = `${doc.title}\n${doc.content}`;
-            await ingest(text, { type: 'knowledge_doc', documentId: `kdoc-${doc.id}`, doc_id: doc.id });
+            await ingest(source.text, source.metadata);
         }
 
         logger.info('Shop knowledge indexed', { shopId, indexed, errors });
@@ -129,7 +87,7 @@ const indexShop = async (shopId) => {
         errors++;
     }
 
-    return { indexed, errors };
+    return { indexed, errors, sourceCount: sources?.length || 0 };
 };
 
 /**
@@ -138,18 +96,24 @@ const indexShop = async (shopId) => {
 const run = async () => {
     logger.info('Starting knowledge auto-index job');
 
-    const [shops] = await sequelize.query(
-        `SELECT id FROM shops WHERE is_active=true OR is_active IS NULL`
-    ).catch(() => [[]]);
+    await assertRequiredSourceRelations(queryRows);
+    const shops = await getActiveShopRows(queryRows);
 
     let total = 0;
     let totalErrors = 0;
+    let totalSources = 0;
 
     for (const shop of shops) {
-        const { indexed, errors } = await indexShop(shop.id);
+        const { indexed, errors, sourceCount } = await indexShop(shop.id, {
+            existingShop: shop,
+            skipRelationCheck: true,
+        });
         total += indexed;
         totalErrors += errors;
+        totalSources += sourceCount;
     }
+
+    if (totalSources === 0) throw new Error('no indexable PostgreSQL sources found');
 
     logger.info('Knowledge auto-index complete', { shops: shops.length, documents: total, errors: totalErrors });
     return { shops: shops.length, documents: total, errors: totalErrors };

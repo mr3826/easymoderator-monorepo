@@ -1,11 +1,9 @@
 'use strict';
 
 /**
- * Regression tests for the knowledge auto-index job (used by the Qdrant reindex
- * CLI). Guards two field/schema bugs found during the 2026-05-31 prod reindex:
- *   1. FAQs are stored as category + template_bn/template_en (no question/answer
- *      columns) — the job must embed those, not `undefined`.
- *   2. Custom docs live in `knowledge_documents`, not `shop_knowledge_documents`.
+ * Regression tests for the knowledge auto-index job and its shared source
+ * contract. The Qdrant collection name must never become a PostgreSQL source
+ * table, and missing source relations must fail before any ingest attempt.
  */
 
 process.env.NODE_ENV = 'test';
@@ -17,68 +15,97 @@ jest.mock('src/utils/structured-logger', () => ({
 const mockIngest = jest.fn(() => Promise.resolve({ success: true }));
 jest.mock('src/modules/rag/rag.service', () => ({ ingestData: (...a) => mockIngest(...a) }));
 
-const mockQuery = jest.fn(() => Promise.resolve([[]]));
+const mockEmbedProduct = jest.fn(() => Promise.resolve(true));
+jest.mock('src/modules/product/product-embedding.service', () => ({ embedProduct: (...a) => mockEmbedProduct(...a) }));
+
+const mockQuery = jest.fn();
 jest.mock('src/utils/database/database-setup', () => ({ sequelize: { query: (...a) => mockQuery(...a) } }));
 
-const mockShopFindByPk = jest.fn();
-const mockFaqFindAll = jest.fn(() => Promise.resolve([]));
-jest.mock('src/modules/entities', () => ({
-    Shop: { findByPk: (...a) => mockShopFindByPk(...a) },
-    FaqResponse: { findAll: (...a) => mockFaqFindAll(...a) },
-}));
+const sourceRelations = ['shops', 'faq_responses', 'products'];
+let shopRow;
+let faqRows;
+let productRows;
+let availableRelations;
+
+const installSourceQueryMock = () => {
+    mockQuery.mockImplementation((sql) => {
+        const text = String(sql);
+        if (text.includes('information_schema.tables')) {
+            return Promise.resolve([availableRelations.map((table_name) => ({ table_name }))]);
+        }
+        if (text.includes('FROM shops') && text.includes('WHERE id = $1')) {
+            return Promise.resolve([[shopRow].filter(Boolean)]);
+        }
+        if (text.includes('FROM shops')) return Promise.resolve([[shopRow].filter(Boolean)]);
+        if (text.includes('FROM faq_responses')) return Promise.resolve([faqRows]);
+        if (text.includes('FROM products')) return Promise.resolve([productRows]);
+        throw new Error(`unexpected source SQL: ${text}`);
+    });
+};
 
 const { indexShop } = require('src/modules/knowledge/auto-index.job');
 
-describe('auto-index.job — indexShop', () => {
+describe('auto-index.job — shared PostgreSQL source contract', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockShopFindByPk.mockResolvedValue(null);   // no business info
-        mockFaqFindAll.mockResolvedValue([]);        // no FAQs
-        mockQuery.mockResolvedValue([[]]);           // no products / docs
+        shopRow = null;
+        faqRows = [];
+        productRows = [];
+        availableRelations = [...sourceRelations];
+        mockIngest.mockResolvedValue({ success: true });
+        mockEmbedProduct.mockResolvedValue(true);
+        installSourceQueryMock();
     });
 
-    it('embeds FAQ category + bilingual templates (never undefined question/answer)', async () => {
-        mockFaqFindAll.mockResolvedValue([
-            { id: 7, category: 'ডেলিভারি চার্জ', template_bn: 'ঢাকায় ৬০৳', template_en: 'Dhaka 60 BDT' },
-        ]);
+    it('embeds FAQ category plus bilingual templates through the shared source selection', async () => {
+        faqRows = [
+            { id: 7, shop_id: 'shop-1', category: 'ডেলিভারি চার্জ', template_bn: 'ঢাকায় ৬০৳', template_en: 'Dhaka 60 BDT' },
+        ];
 
         const res = await indexShop('shop-1');
 
-        expect(res.errors).toBe(0);
-        expect(res.indexed).toBe(1);
-        expect(mockFaqFindAll).toHaveBeenCalledWith({ where: { shop_id: 'shop-1', is_active: true } });
-
+        expect(res).toMatchObject({ errors: 0, indexed: 1, sourceCount: 1 });
         const { text, metadata } = mockIngest.mock.calls[0][0];
         expect(text).toContain('Q: ডেলিভারি চার্জ');
         expect(text).toContain('A (BN): ঢাকায় ৬০৳');
         expect(text).toContain('A (EN): Dhaka 60 BDT');
         expect(text).not.toContain('undefined');
-        expect(metadata.type).toBe('faq');
-        expect(metadata.shopId).toBe('shop-1');
+        expect(metadata).toMatchObject({ type: 'faq', shopId: 'shop-1' });
     });
 
-    it('queries knowledge_documents, never shop_knowledge_documents', async () => {
+    it('does not query the Qdrant collection name as a PostgreSQL table', async () => {
         await indexShop('shop-1');
 
-        const sqls = mockQuery.mock.calls.map((c) => c[0]);
-        expect(sqls.some((s) => /\bknowledge_documents\b/.test(s) && !/shop_knowledge_documents/.test(s))).toBe(true);
-        expect(sqls.some((s) => /shop_knowledge_documents/.test(s))).toBe(false);
+        const sqls = mockQuery.mock.calls.map((call) => String(call[0]));
+        expect(sqls.some((sql) => /FROM\s+knowledge_documents\b/i.test(sql))).toBe(false);
+        expect(sqls.some((sql) => /FROM\s+shop_knowledge_documents\b/i.test(sql))).toBe(false);
+        expect(sqls.some((sql) => /FROM\s+(shops|faq_responses|products)\b/i.test(sql))).toBe(true);
+    });
+
+    it('fails closed when a required source relation is missing', async () => {
+        availableRelations = ['shops', 'faq_responses'];
+
+        await expect(indexShop('shop-1')).rejects.toThrow(
+            'missing PostgreSQL source relation(s): products',
+        );
+        expect(mockIngest).not.toHaveBeenCalled();
+        expect(mockEmbedProduct).not.toHaveBeenCalled();
     });
 
     it('counts a swallowed ingest failure as an error, not a silent success', async () => {
-        mockFaqFindAll.mockResolvedValue([
-            { id: 1, category: 'COD', template_bn: 'ক্যাশ অন ডেলিভারি', template_en: 'Cash on delivery' },
-        ]);
+        faqRows = [
+            { id: 1, shop_id: 'shop-1', category: 'COD', template_bn: 'ক্যাশ অন ডেলিভারি', template_en: 'Cash on delivery' },
+        ];
         mockIngest.mockResolvedValueOnce({ success: false, message: 'RAG service unavailable' });
 
         const res = await indexShop('shop-1');
 
-        expect(res.indexed).toBe(0);
-        expect(res.errors).toBe(1);
+        expect(res).toMatchObject({ indexed: 0, errors: 1, sourceCount: 1 });
     });
 
-    it('indexes additional owner business info and openingHours', async () => {
-        mockShopFindByPk.mockResolvedValue({
+    it('indexes additional owner business info and openingHours from the same shop source row', async () => {
+        shopRow = {
+            id: 'shop-1',
             settings: {
                 businessInfo: {
                     shopName: 'Rina Fashion',
@@ -87,16 +114,15 @@ describe('auto-index.job — indexShop', () => {
                     socialLinks: { website: 'https://rina.example' },
                 },
             },
-        });
+        };
 
         const res = await indexShop('shop-1');
 
-        expect(res.errors).toBe(0);
-        expect(res.indexed).toBe(1);
+        expect(res).toMatchObject({ errors: 0, indexed: 1, sourceCount: 1 });
         const { text, metadata } = mockIngest.mock.calls[0][0];
         expect(text).toContain('Business hours: 10am-8pm');
         expect(text).toContain('Additional shop owner info: Exchange requires an unboxing video.');
         expect(text).toContain('website: https://rina.example');
-        expect(metadata.type).toBe('business_info');
+        expect(metadata).toMatchObject({ type: 'business_info', shopId: 'shop-1' });
     });
 });

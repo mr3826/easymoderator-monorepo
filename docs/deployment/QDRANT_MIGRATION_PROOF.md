@@ -29,6 +29,19 @@ compose deployment commands, delete collections or points, or enable
 production deployment. The existing `knowledge_documents` collection is
 checked before and after the proof and must remain at the supplied baseline.
 
+The PostgreSQL source contract is shared by `reindex:qdrant` and this proof:
+
+- active `shops` rows contribute one business-info source when the indexed text
+  is non-empty;
+- active `faq_responses` rows contribute one bilingual FAQ source; and
+- active `products` rows contribute one canonical product source, capped at 200
+  products per shop.
+
+`knowledge_documents` is the live Qdrant collection identifier, not a source
+table in this contract. Custom document writes retain metadata under
+`shops.settings.documents` but do not persist the request text needed for a
+deterministic bulk reindex, so they are not counted as reconstructible sources.
+
 Qdrant collection snapshots include collection configuration, points, and
 payloads. The isolated restore uses the same pinned Qdrant image as production;
 Qdrant documents that a snapshot restore must use a compatible Qdrant minor
@@ -48,10 +61,11 @@ version. See the [Qdrant snapshot documentation](https://qdrant.tech/documentati
 4. Retain the workflow log and the host evidence directory
    `/opt/easymod/qdrant-migration/<run-id>/`.
 
-The workflow fails closed if PostgreSQL does not report two active source
-documents, the live collection does not report one point with vector size 384,
-GHCR access fails, either reindex is incomplete, the snapshot checksum changes,
-the isolated restore fails, or any validation gate fails.
+The workflow fails closed if a required source relation is missing, PostgreSQL
+reports no indexable source rows or not exactly two sources for this migration,
+the live collection does not report one point with vector size 384, GHCR access
+fails, either reindex is incomplete, the snapshot checksum changes, the
+isolated restore fails, or any validation gate fails.
 
 ## Cutover boundary
 
