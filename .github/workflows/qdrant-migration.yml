@@ -1,0 +1,313 @@
+name: Qdrant Migration Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_commit:
+        description: 'Existing immutable candidate commit to pull (for example main HEAD)'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type QDRANT-MIGRATION-ONLY to allow the non-deploying proof'
+        required: true
+        type: string
+
+# This workflow intentionally cannot deploy the application. It uses only the
+# existing production env file on the host, creates two named migration
+# collections, and removes only its isolated restore container at the end.
+permissions:
+  contents: read
+  packages: read
+
+env:
+  GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
+  ACTIVE_COLLECTION: knowledge_documents
+  OPENAI_ROLLBACK_COLLECTION: knowledge_documents_openai_rollback_20260816
+  GEMINI_COLLECTION: knowledge_documents_gemini_20260816
+  EXPECTED_SOURCE_COUNT: '2'
+  EXPECTED_LIVE_COUNT: '1'
+  VECTOR_SIZE: '384'
+  QDRANT_IMAGE: qdrant/qdrant@sha256:b3063c673f3973877c038eeecc392bad5011f072ee7892b56c9a8e204a3bdea9
+
+jobs:
+  qdrant-proof:
+    name: Non-deploying Qdrant migration proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: vars.PRODUCTION_DEPLOY_ENABLED != 'true'
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+      DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_ACTOR: ${{ github.actor }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      PRODUCTION_DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED || 'false' }}
+      PROOF_SCRIPT_PATH: /opt/easymod/qdrant-migration-proof-${{ github.run_id }}.js
+    steps:
+      - name: Check out proof runner
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Pull and digest-pin the candidate with GITHUB_TOKEN
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "QDRANT-MIGRATION-ONLY"
+          test "$PRODUCTION_DEPLOY_ENABLED" != "true"
+          if ! printf '%s' "$CANDIDATE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "candidate_commit must be a full commit SHA"
+            exit 1
+          fi
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin >/dev/null
+          docker pull "$GHCR_BACKEND:$CANDIDATE_COMMIT" >/dev/null
+          candidate_image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$GHCR_BACKEND:$CANDIDATE_COMMIT")
+          if ! printf '%s' "$candidate_image" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'; then
+            echo "candidate image did not resolve to a digest"
+            exit 1
+          fi
+          echo "candidate_image=$candidate_image" >> "$GITHUB_OUTPUT"
+          echo "GHCR_CANDIDATE_PULL=PASS"
+          echo "CANDIDATE_IMAGE=$candidate_image"
+          docker logout ghcr.io >/dev/null 2>&1 || true
+
+      - name: Copy the proof runner to the production host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DO_SSH_PRIVATE_KEY"
+          test -n "$DO_SSH_KNOWN_HOSTS"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/easymod_deploy_key
+          chmod 600 ~/.ssh/easymod_deploy_key
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
+            "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH'"
+          scp -i ~/.ssh/easymod_deploy_key scripts/qdrant-migration-proof.js \
+            root@"$DEPLOY_HOST":"$PROOF_SCRIPT_PATH"
+          ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
+            "chmod 644 '$PROOF_SCRIPT_PATH'"
+          echo "PROOF_SCRIPT_PATH=$PROOF_SCRIPT_PATH" >> "$GITHUB_ENV"
+
+      - name: Execute isolated rollback and Gemini proof without deployment
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        env:
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.candidate_image }}
+          GHCR_BACKEND: ${{ env.GHCR_BACKEND }}
+          ACTIVE_COLLECTION: ${{ env.ACTIVE_COLLECTION }}
+          OPENAI_ROLLBACK_COLLECTION: ${{ env.OPENAI_ROLLBACK_COLLECTION }}
+          GEMINI_COLLECTION: ${{ env.GEMINI_COLLECTION }}
+          EXPECTED_SOURCE_COUNT: ${{ env.EXPECTED_SOURCE_COUNT }}
+          EXPECTED_LIVE_COUNT: ${{ env.EXPECTED_LIVE_COUNT }}
+          VECTOR_SIZE: ${{ env.VECTOR_SIZE }}
+          QDRANT_IMAGE: ${{ env.QDRANT_IMAGE }}
+          PROOF_SCRIPT_PATH: ${{ env.PROOF_SCRIPT_PATH }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          PRODUCTION_DEPLOY_ENABLED: ${{ env.PRODUCTION_DEPLOY_ENABLED }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 1800s
+          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION,GEMINI_COLLECTION,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED
+          script: |
+            set -euo pipefail
+            umask 077
+
+            ENV_PATH=/opt/easymod/.env.prod
+            NETWORK=easymod_internal
+            RUN_DIR="/opt/easymod/qdrant-migration/${WORKFLOW_RUN_ID}"
+            RESTORE_CONTAINER="easymod-qdrant-restore-${WORKFLOW_RUN_ID}"
+            RESTORE_HOST="$RESTORE_CONTAINER"
+            RESTORE_COLLECTION="${OPENAI_ROLLBACK_COLLECTION}_restored"
+            SNAPSHOT_FILE="${OPENAI_ROLLBACK_COLLECTION}.snapshot"
+
+            cleanup() {
+              docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
+              rm -f -- "$PROOF_SCRIPT_PATH"
+              docker logout ghcr.io >/dev/null 2>&1 || true
+            }
+            trap cleanup EXIT
+
+            test "${PRODUCTION_DEPLOY_ENABLED:-false}" != "true"
+            test -f "$ENV_PATH"
+            test -f "$PROOF_SCRIPT_PATH"
+            test -f /opt/easymod/docker-compose.prod.yml
+            test -d /opt/easymod
+            docker network inspect "$NETWORK" >/dev/null
+            docker inspect easymod-qdrant-1 >/dev/null
+            docker inspect easymod-postgres-1 >/dev/null
+            if docker ps -a --format '{{.Names}}' | grep -Fxq "$RESTORE_CONTAINER"; then
+              echo "refusing to reuse an existing isolated restore container"
+              exit 1
+            fi
+
+            for required_name in DATABASE_URL QDRANT_URL QDRANT_COLLECTION OPENAI_API_KEY GEMINI_API_KEY; do
+              grep -q "^${required_name}=" "$ENV_PATH"
+            done
+            configured_collection=$(awk -F= '$1 == "QDRANT_COLLECTION" { sub(/^[^=]*=/, ""); print; exit }' "$ENV_PATH")
+            configured_collection="${configured_collection#\"}"
+            configured_collection="${configured_collection%\"}"
+            test "$configured_collection" = "$ACTIVE_COLLECTION"
+
+            case "$CANDIDATE_IMAGE" in
+              *@sha256:[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]*) ;;
+              *) echo "candidate image is not digest-pinned"; exit 1 ;;
+            esac
+            if ! printf '%s' "$CANDIDATE_IMAGE" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'; then
+              echo "candidate image is not digest-pinned"
+              exit 1
+            fi
+            mkdir -p "$RUN_DIR"
+            chmod 755 "$RUN_DIR"
+            chown 1000:1000 "$RUN_DIR"
+
+            printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin >/dev/null
+            docker pull "$CANDIDATE_IMAGE" >/dev/null
+            echo "GHCR_PRIVILEGED_CANDIDATE_PULL=PASS"
+
+            previous_backend=$(docker inspect easymod-backend-1 --format '{{.Config.Image}}')
+            previous_frontend=$(docker inspect easymod-frontend-1 --format '{{.Config.Image}}')
+            printf '%s\n' "$previous_backend" "$previous_frontend" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'
+            echo "APPLICATION_ROLLBACK=$previous_backend|$previous_frontend"
+            echo "APPLICATION_ROLLBACK_PLAN=restore the captured backend and frontend digest references above; no application switch is executed"
+            echo "QDRANT_ROLLBACK_PLAN=set QDRANT_COLLECTION=$OPENAI_ROLLBACK_COLLECTION in a separately approved deployment; do not delete any collection"
+
+            run_proof() {
+              docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+                -e NODE_ENV=production \
+                -e ACTIVE_COLLECTION="$ACTIVE_COLLECTION" \
+                -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
+                -e EXPECTED_LIVE_COUNT="$EXPECTED_LIVE_COUNT" \
+                -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+                -e QDRANT_PER_TENANT=false \
+                -e OPENAI_ROLLBACK_COLLECTION="$OPENAI_ROLLBACK_COLLECTION" \
+                -e GEMINI_COLLECTION="$GEMINI_COLLECTION" \
+                -e SNAPSHOT_DIR=/tmp/migration \
+                -v "$RUN_DIR:/tmp/migration:rw" \
+                -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js "$@"
+            }
+
+            run_provider_proof() {
+              provider="$1"
+              embedding_model="$2"
+              gemini_model="$3"
+              collection="$4"
+              shift 4
+              docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+                -e NODE_ENV=production \
+                -e ACTIVE_COLLECTION="$ACTIVE_COLLECTION" \
+                -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
+                -e EXPECTED_LIVE_COUNT="$EXPECTED_LIVE_COUNT" \
+                -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+                -e QDRANT_PER_TENANT=false \
+                -e QDRANT_COLLECTION="$collection" \
+                -e EMBEDDING_PROVIDER="$provider" \
+                -e EMBEDDING_MODEL="$embedding_model" \
+                -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
+                -e SNAPSHOT_DIR=/tmp/migration \
+                -v "$RUN_DIR:/tmp/migration:rw" \
+                -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js "$@"
+            }
+
+            run_reindex() {
+              provider="$1"
+              embedding_model="$2"
+              gemini_model="$3"
+              target="$4"
+              log_file="$5"
+              set +e
+              docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+                -e NODE_ENV=production \
+                -e QDRANT_COLLECTION="$ACTIVE_COLLECTION" \
+                -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+                -e QDRANT_PER_TENANT=false \
+                -e EMBEDDING_PROVIDER="$provider" \
+                -e EMBEDDING_MODEL="$embedding_model" \
+                -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
+                "$CANDIDATE_IMAGE" npm run reindex:qdrant -- "--collection=$target" > "$log_file" 2>&1
+              rc=$?
+              set -e
+              grep -E '^[[:space:]]+(shops|indexed|errors|duration):|Reindex complete|Reindex finished with errors' "$log_file" || true
+              test "$rc" -eq 0
+              grep -Eq '^[[:space:]]+errors:[[:space:]]+0$' "$log_file"
+            }
+
+            run_proof inspect | tee "$RUN_DIR/inspect.log"
+            live_count=$(awk -F= '$1 == "LIVE_COUNT" { print $2 }' "$RUN_DIR/inspect.log" | tail -1)
+            test "$live_count" = "$EXPECTED_LIVE_COUNT"
+
+            run_reindex openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
+            run_provider_proof openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" \
+              validate "--collection=$OPENAI_ROLLBACK_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/openai-validate.log"
+
+            run_provider_proof openai text-embedding-004 text-embedding-004 "$OPENAI_ROLLBACK_COLLECTION" \
+              snapshot "--collection=$OPENAI_ROLLBACK_COLLECTION" "--path=$SNAPSHOT_FILE" \
+              | tee "$RUN_DIR/openai-snapshot.log"
+            snapshot_name=$(awk -F= '$1 == "SNAPSHOT_NAME" { print $2 }' "$RUN_DIR/openai-snapshot.log" | tail -1)
+            snapshot_sha=$(awk -F= '$1 == "SNAPSHOT_SHA256" { print $2 }' "$RUN_DIR/openai-snapshot.log" | tail -1)
+            test -n "$snapshot_name"
+            test -n "$snapshot_sha"
+            test "$(sha256sum "$RUN_DIR/$SNAPSHOT_FILE" | awk '{ print $1 }')" = "$snapshot_sha"
+            echo "OPENAI_ROLLBACK_SNAPSHOT=$snapshot_name"
+            echo "OPENAI_ROLLBACK_SHA256=$snapshot_sha"
+
+            docker run -d --name "$RESTORE_CONTAINER" --network "$NETWORK" \
+              --network-alias "$RESTORE_HOST" \
+              -v "$RUN_DIR:/qdrant/snapshots:ro" \
+              "$QDRANT_IMAGE" \
+              --snapshot "/qdrant/snapshots/$SNAPSHOT_FILE:$RESTORE_COLLECTION" >/dev/null
+            docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+              -e NODE_ENV=production \
+              -e QDRANT_URL="http://$RESTORE_HOST:6333" \
+              -e QDRANT_API_KEY= \
+              -e QDRANT_COLLECTION="$RESTORE_COLLECTION" \
+              -e ACTIVE_COLLECTION=__isolated_restore__ \
+              -e EXPECTED_SOURCE_COUNT="$EXPECTED_SOURCE_COUNT" \
+              -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+              -e QDRANT_PER_TENANT=false \
+              -e EMBEDDING_PROVIDER=openai \
+              -e EMBEDDING_MODEL=text-embedding-004 \
+              -e GEMINI_EMBEDDING_MODEL=text-embedding-004 \
+              -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
+              "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js validate \
+              "--collection=$RESTORE_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" \
+              | tee "$RUN_DIR/restore-validate.log"
+            echo "OPENAI_ROLLBACK_RESTORE=PASS"
+
+            run_reindex gemini text-embedding-004 gemini-embedding-2 "$GEMINI_COLLECTION" "$RUN_DIR/gemini-reindex.log"
+            run_provider_proof gemini text-embedding-004 gemini-embedding-2 "$GEMINI_COLLECTION" \
+              validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" \
+              | tee "$RUN_DIR/gemini-validate.log"
+
+            run_proof postflight | tee "$RUN_DIR/postflight.log"
+            test "$(awk -F= '$1 == "LIVE_COLLECTION_UNTOUCHED" { print $2 }' "$RUN_DIR/postflight.log" | tail -1)" = PASS
+
+            openai_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/openai-validate.log" | tail -1)
+            gemini_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
+            for result_name in BANGLA_SEARCH ENGLISH_SEARCH CROSS_LINGUAL_SEARCH NEGATIVE_SEARCH TENANT_ISOLATION; do
+              result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
+              echo "$result_name=$result_value"
+              test "$result_value" = PASS
+            done
+            semantic_search=$(awk -F= '$1 == "SEMANTIC_SEARCH" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
+            echo "SEMANTIC_SEARCH=$semantic_search"
+            test "$semantic_search" = PASS
+            echo "FINAL_STATUS=QDRANT_MIGRATION_READY_FOR_CUTOVER"
+            echo "OPENAI_ROLLBACK_COLLECTION=$OPENAI_ROLLBACK_COLLECTION"
+            echo "OPENAI_ROLLBACK_COUNT=$openai_count"
+            echo "GEMINI_COLLECTION=$GEMINI_COLLECTION"
+            echo "GEMINI_SOURCE_COUNT=$EXPECTED_SOURCE_COUNT"
+            echo "GEMINI_QDRANT_COUNT=$gemini_count"
+            echo "GEMINI_VECTOR_SIZE=$VECTOR_SIZE"
+            echo "GEMINI_REINDEX=PASS"
+            echo "APPLICATION_ROLLBACK_PLAN=restore the captured immutable backend/frontend digests; no application deployment executed"
+            echo "QDRANT_ROLLBACK_PLAN=switch configuration to $OPENAI_ROLLBACK_COLLECTION in a separately approved deployment"
+            echo "PRODUCTION_DEPLOY_ENABLED=false"
+            echo "HARD_BLOCKERS=NONE"
+            echo "NEXT_SAFE_ACTION=independent review of the recorded snapshot SHA and migration logs; do not deploy in this run"
