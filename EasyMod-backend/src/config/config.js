@@ -3,6 +3,14 @@
 // over the .env file.
 require('dotenv').config();
 
+const { normalizeRenderedEnvironment } = require('./rendered-env');
+
+// Docker's --env-file parser can preserve the literal JSON quote delimiters
+// emitted by older production renderers. Decode that legacy representation
+// before validation and before any module reads process.env. Malformed values
+// remain unchanged so the production validator still fails closed.
+Object.assign(process.env, normalizeRenderedEnvironment(process.env));
+
 const env = process.env.NODE_ENV || 'development';
 const { assertProductionConfig } = require('./production-config.validator');
 const { getOrigins } = require('./origins');
