@@ -19,6 +19,7 @@ const ACTIVE_COLLECTION = process.env.ACTIVE_COLLECTION || 'knowledge_documents'
 const VECTOR_SIZE = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const EXPECTED_SOURCE_COUNT = Number.parseInt(process.env.EXPECTED_SOURCE_COUNT || '2', 10);
 const NEGATIVE_SCORE_MAX = Number.parseFloat(process.env.NEGATIVE_SCORE_MAX || '0.5');
+const NEGATIVE_SEARCH_QUERY = 'astrophysics quasars neutrino observatory';
 
 const argv = process.argv.slice(3);
 
@@ -373,9 +374,45 @@ function tokens(value) {
     return String(value || '').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [];
 }
 
-function hasLexicalOverlap(query, content) {
+function lexicalOverlapTokens(query, content) {
     const contentTokens = new Set(tokens(content));
-    return tokens(query).some((token) => contentTokens.has(token));
+    return [...new Set(tokens(query).filter((token) => contentTokens.has(token)))];
+}
+
+function hasLexicalOverlap(query, content) {
+    return lexicalOverlapTokens(query, content).length > 0;
+}
+
+function safeSourceIdentifier(point, index) {
+    const identifier = point?.payload?.documentId ?? point?.id ?? `point-${index}`;
+    return crypto.createHash('sha256').update(String(identifier)).digest('hex').slice(0, 16);
+}
+
+/**
+ * Keep the negative fixture independent from every indexed payload while
+ * reporting only the safe fixture tokens and a hashed source identifier.
+ */
+function assertNegativeFixtureLexicallyDisjoint(query, points) {
+    const violations = (Array.isArray(points) ? points : []).flatMap((point, index) => {
+        const overlaps = lexicalOverlapTokens(query, point?.payload?.text);
+        if (!overlaps.length) return [];
+        return [{ sourceHash: safeSourceIdentifier(point, index), overlaps }];
+    });
+
+    if (violations.length) {
+        const details = violations
+            .map(({ sourceHash, overlaps }) => `source_hash=${sourceHash} tokens=${overlaps.join(',')}`)
+            .join('; ');
+        throw new Error(`negative fixture lexical overlap for query "${query}": ${details}`);
+    }
+
+    return true;
+}
+
+function negativeSearchPass(negativeTop, query, scoreMax = NEGATIVE_SCORE_MAX) {
+    if (!negativeTop) return true;
+    return Number(negativeTop.score) < scoreMax
+        && !hasLexicalOverlap(query, negativeTop.payload?.text);
 }
 
 async function validate(name, expectedCount) {
@@ -435,13 +472,13 @@ async function validate(name, expectedCount) {
         && tenantResults.every((item) => item.payload?.shopId === shopId)
         && foreignResults.length === 0;
 
-    const negativeQuery = 'quantum physics black hole laboratory';
+    const negativeQuery = NEGATIVE_SEARCH_QUERY;
+    assertNegativeFixtureLexicallyDisjoint(negativeQuery, points);
+    console.log('NEGATIVE_FIXTURE_LEXICAL_OVERLAP=false');
     const negativeVector = await getEmbedding(negativeQuery);
     const negativeResults = await searchPoints(name, negativeVector, positiveFilter);
     const negativeTop = negativeResults[0];
-    const negativePass = !negativeTop
-        || (Number(negativeTop.score) < NEGATIVE_SCORE_MAX
-            && !hasLexicalOverlap(negativeQuery, negativeTop.payload?.text));
+    const negativePass = negativeSearchPass(negativeTop, negativeQuery);
 
     console.log(`QDRANT_COLLECTION=${name}`);
     console.log(`QDRANT_COUNT=${count}`);
@@ -524,6 +561,9 @@ module.exports = {
     assertSafeCollectionName,
     extractVectorSize,
     hasLexicalOverlap,
+    assertNegativeFixtureLexicallyDisjoint,
+    negativeSearchPass,
+    NEGATIVE_SEARCH_QUERY,
     loadSourceContract,
     normalizeDatabaseUrl,
     normalizeQdrantUrl,

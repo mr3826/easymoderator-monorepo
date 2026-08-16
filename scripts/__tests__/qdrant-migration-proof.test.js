@@ -10,8 +10,11 @@ jest.mock('pg', () => ({ Client: jest.fn() }), { virtual: true });
 
 const {
     assertSafeCollectionName,
+    assertNegativeFixtureLexicallyDisjoint,
     extractVectorSize,
     hasLexicalOverlap,
+    negativeSearchPass,
+    NEGATIVE_SEARCH_QUERY,
     sourceStats,
     normalizeDatabaseUrl,
     normalizeQdrantUrl,
@@ -19,6 +22,7 @@ const {
 const { Client } = require('pg');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const QDRANT_WORKFLOW_PATH = path.resolve(__dirname, '../../.github/workflows/qdrant-migration.yml');
+const PROOF_SCRIPT_PATH = path.resolve(__dirname, '../qdrant-migration-proof.js');
 
 describe('Qdrant migration proof safety helpers', () => {
     describe('URL contract', () => {
@@ -67,9 +71,75 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(extractVectorSize({})).toBeNull();
     });
 
-    it('detects negative-query lexical overlap without treating unrelated text as a hit', () => {
+    it('detects lexical overlap using the proof tokenizer', () => {
         expect(hasLexicalOverlap('delivery charge', 'Delivery charge is 80 BDT')).toBe(true);
         expect(hasLexicalOverlap('quantum physics', 'Cotton saree delivery information')).toBe(false);
+    });
+
+    it('accepts a negative fixture only when its score and lexical checks both pass', () => {
+        const point = { score: 0.49, payload: { text: 'Cotton saree delivery information' } };
+
+        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, 0.5)).toBe(true);
+        expect(negativeSearchPass(null, NEGATIVE_SEARCH_QUERY, 0.5)).toBe(true);
+    });
+
+    it('fails the fixture invariant clearly when a normalized token overlaps a source', () => {
+        const sourceId = 'customer-source-42';
+        let error;
+
+        try {
+            assertNegativeFixtureLexicallyDisjoint(
+                'quantum physics black hole laboratory',
+                [{ id: sourceId, payload: { documentId: sourceId, text: 'FAQ about physics delivery' } }],
+            );
+        } catch (caught) {
+            error = caught;
+        }
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toMatch(/negative fixture lexical overlap/);
+        expect(error.message).toContain('tokens=physics');
+        expect(error.message).toContain('source_hash=');
+        expect(error.message).not.toContain(sourceId);
+        expect(negativeSearchPass(
+            { score: 0.49, payload: { text: 'FAQ about physics delivery' } },
+            'quantum physics black hole laboratory',
+            0.5,
+        )).toBe(false);
+    });
+
+    it('keeps a valid negative fixture lexically disjoint from every indexed point', () => {
+        expect(() => assertNegativeFixtureLexicallyDisjoint(
+            NEGATIVE_SEARCH_QUERY,
+            [
+                { id: 'faq-1', payload: { documentId: 'faq-1', text: 'Cotton saree delivery information' } },
+                { id: 'product-1', payload: { documentId: 'product-1', text: 'Blue cotton saree, available in Dhaka' } },
+            ],
+        )).not.toThrow();
+    });
+
+    it('fails negative search on a true semantic false positive at the threshold', () => {
+        expect(negativeSearchPass(
+            { score: 0.5, payload: { text: 'unrelated proof content' } },
+            NEGATIVE_SEARCH_QUERY,
+            0.5,
+        )).toBe(false);
+        expect(negativeSearchPass(
+            { score: 0.72, payload: { text: 'unrelated proof content' } },
+            NEGATIVE_SEARCH_QUERY,
+            0.5,
+        )).toBe(false);
+    });
+
+    it('keeps positive-language and tenant-isolation gates wired into validation', () => {
+        const proof = fs.readFileSync(PROOF_SCRIPT_PATH, 'utf8');
+
+        expect(proof).toContain('const banglaPass = await runPositive(banglaQuery);');
+        expect(proof).toContain('const englishPass = await runPositive(englishQuery);');
+        expect(proof).toContain('const crossLingualPass = await runPositive(crossLingualQuery);');
+        expect(proof).toContain('const tenantPass = tenantResults.length > 0');
+        expect(proof).toContain('const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;');
+        expect(proof).toContain('if (!semanticPass || !tenantPass)');
     });
 
     it('delegates source counting to the shared PostgreSQL contract', async () => {
