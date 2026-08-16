@@ -32,20 +32,20 @@
       "output": 1.5,
       "batchInput": 0.125,
       "batchOutput": 0.75,
-      "cacheStoragePerMillionTokenHour": 1.0,
+      "cacheStoragePerMillionTokenHour": 1,
       "notes": "EasyModerator production PRIMARY (llm.service.js:27 default; no LLM_GEMINI_LITE_MODEL is rendered into .env.prod). Image inputs bill at the text/image/video input rate; measured 1064 tokens per image (see AI_COST_ASSUMPTIONS.md)."
     },
     "gemini-3.1-pro-preview": {
       "provider": "google",
       "status": "active",
       "kind": "chat",
-      "input": 2.0,
-      "inputAbove200k": 4.0,
+      "input": 2,
+      "inputAbove200k": 4,
       "cachedInput": 0.2,
-      "output": 12.0,
-      "outputAbove200k": 18.0,
-      "batchInput": 1.0,
-      "batchOutput": 6.0,
+      "output": 12,
+      "outputAbove200k": 18,
+      "batchInput": 1,
+      "batchOutput": 6,
       "cacheStoragePerMillionTokenHour": 4.5,
       "notes": "EasyModerator production FALLBACK TIER 2 (llm.service.js:28 default). 8x the input price and 8x the output price of the primary."
     },
@@ -56,9 +56,9 @@
       "input": 1.25,
       "inputAbove200k": 2.5,
       "cachedInput": 0.125,
-      "output": 10.0,
+      "output": 10,
       "batchInput": 0.625,
-      "batchOutput": 5.0
+      "batchOutput": 5
     },
     "gemini-2.0-flash": {
       "provider": "google",
@@ -101,11 +101,11 @@
       "provider": "openai",
       "status": "active",
       "kind": "chat",
-      "input": 2.0,
+      "input": 2,
       "cachedInput": 0.5,
-      "output": 8.0,
-      "batchInput": 1.0,
-      "batchOutput": 4.0
+      "output": 8,
+      "batchInput": 1,
+      "batchOutput": 4
     },
     "gpt-4o-mini": {
       "provider": "openai",
@@ -136,8 +136,16 @@
       "provider": "local",
       "status": "active",
       "kind": "embedding",
-      "input": 0.0,
+      "input": 0,
       "notes": "embedding.service.js localEmbed() character-bigram hash. Zero marginal cost and zero semantic value — resolveProvider() falls back to this for ANY EMBEDDING_PROVIDER value outside {openai, gcp, http, tei}, including 'gemini' and 'google'."
+    },
+    "gemini-embedding-2": {
+      "provider": "google",
+      "status": "active",
+      "kind": "embedding",
+      "input": 0.15,
+      "batchInput": 0.075,
+      "notes": "embedding.service.js getGeminiEmbedding default when EMBEDDING_PROVIDER=gemini. Free tier bills 0."
     }
   },
   "history": []

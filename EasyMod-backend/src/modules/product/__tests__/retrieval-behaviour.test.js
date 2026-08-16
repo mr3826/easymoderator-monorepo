@@ -125,14 +125,13 @@ describe('vector-store product grounding requires a semantic embedder', () => {
         delete process.env.EMBEDDING_PROVIDER;
         expect(getProviderInfo().semantic).toBe(false);
 
-        // The values every repo artefact suggests for Gemini embeddings are NOT
-        // accepted by resolveProvider, so they silently degrade to the hash.
-        for (const value of ['gemini', 'google', 'anthropic', 'lcoal']) {
+        // Claude has no embeddings API, and typos must never pass as semantic.
+        for (const value of ['anthropic', 'lcoal']) {
             process.env.EMBEDDING_PROVIDER = value;
             expect(getProviderInfo().semantic).toBe(false);
         }
 
-        for (const value of ['openai', 'gcp', 'http', 'tei']) {
+        for (const value of ['gemini', 'google', 'openai', 'gcp', 'http', 'tei']) {
             process.env.EMBEDDING_PROVIDER = value;
             expect(getProviderInfo().semantic).toBe(true);
         }

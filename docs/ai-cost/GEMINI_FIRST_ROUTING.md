@@ -100,13 +100,24 @@ Guarded by a repo-wide scan in `gemini-first-routing.test.js` §C, which fails i
 ### The embedding exception
 
 `EMBEDDING_PROVIDER=openai` would make OpenAI the **normal** embedding provider, which the
-locked decisions rule out. It is not the recommended configuration:
-[RETRIEVAL_QUALITY_EVALUATION.md](RETRIEVAL_QUALITY_EVALUATION.md) concludes that no
-provider embeddings are needed at all, and that if they ever are, Gemini's
-`gemini-embedding-001` is the one to use (384 dimensions, drop-in for the existing Qdrant
-collection). There is **no Gemini embedding implementation in `embedding.service.js`**
-despite a `GEMINI_EMBEDDING_MODEL` secret existing since 2026-03-13 — the intent was there,
-the code never was. Not added, because the evaluation says it is not needed.
+locked decisions rule out.
+
+**Resolved 2026-08-16.** `embedding.service.js` now implements `EMBEDDING_PROVIDER=gemini`
+(`getGeminiEmbedding`), so the `GEMINI_EMBEDDING_MODEL` secret that has existed since
+2026-03-13 is finally read by code. `.env.prod.example` defaults to it, keeping embeddings
+on the same Gemini key as the LLM chain — $0 on the free tier.
+
+The model is **`gemini-embedding-2`**, not the `gemini-embedding-001` that
+[RETRIEVAL_QUALITY_EVALUATION.md](RETRIEVAL_QUALITY_EVALUATION.md) suggested. Measured
+against the live API on 2026-08-16: at `outputDimensionality=384`, `gemini-embedding-2`
+returns an L2-normalised vector (‖v‖ = 1.0000) while `gemini-embedding-001` does not
+(‖v‖ ≈ 0.456), which breaks any dot-product scoring. Both truncate cleanly to the existing
+384-dimension Qdrant collection. Cross-lingual behaviour on shop data is the reason this is
+worth having at all: cos("লাল সুতির শাড়ি", "red cotton saree") = 0.86 against
+cos("লাল সুতির শাড়ি", "motorcycle engine oil") = 0.44.
+
+Switching provider changes the vector space — run `node src/scripts/reindex-qdrant.js`
+after the cutover or existing points stay unmatchable.
 
 ## 4. `model_preset: 'advanced'`
 

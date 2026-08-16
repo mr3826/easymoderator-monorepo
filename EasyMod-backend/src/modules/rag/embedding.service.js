@@ -6,13 +6,13 @@ const normalizeText = (text) => (text || '').toString().trim();
 
 // ── Local embedding ───────────────────────────────────────────────────────────
 // Character n-gram hash fallback — NOT semantically meaningful.
-// Use EMBEDDING_PROVIDER=openai or EMBEDDING_PROVIDER=gcp in production.
+// Use EMBEDDING_PROVIDER=gemini (preferred), openai, or gcp in production.
 // ─────────────────────────────────────────────────────────────────────────────
 const localEmbed = (text) => {
   if (process.env.NODE_ENV === 'production') {
     console.warn(
       '⚠️  WARNING: Using local (non-semantic) embedding in production. ' +
-      'Set EMBEDDING_PROVIDER=openai (with OPENAI_API_KEY) or EMBEDDING_PROVIDER=gcp (with EMBEDDING_API_URL) for real semantic search.'
+      'Set EMBEDDING_PROVIDER=gemini (with GEMINI_API_KEY), openai (with OPENAI_API_KEY), or gcp (with EMBEDDING_API_URL) for real semantic search.'
     );
   }
 
@@ -151,6 +151,54 @@ const getOpenAiEmbedding = async (text) => {
   return ensureVectorSize(vector);
 };
 
+// Gemini embeddings. `outputDimensionality` truncates the vector to the Qdrant
+// collection size, and gemini-embedding-2 returns an already L2-normalised
+// vector at every dimension (gemini-embedding-001 does NOT below 3072 — it
+// returns norms ~0.46 at 384 — so it is not a safe default here).
+// ponytail: one taskType for both indexing and querying. Gemini's asymmetric
+// RETRIEVAL_QUERY/RETRIEVAL_DOCUMENT split would lift recall, but getEmbedding()
+// has no doc-vs-query argument and mixing the two inconsistently is worse than
+// using one. Add the argument when retrieval eval says it's worth it.
+const getGeminiEmbedding = async (text) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not set');
+  }
+
+  const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
+
+  const response = await fetchWithRetries(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: `models/${model}`,
+        content: { parts: [{ text }] },
+        outputDimensionality: vectorSize,
+        taskType: 'RETRIEVAL_DOCUMENT'
+      })
+    }
+  );
+
+  const data = await response.json();
+  // Cost accounting. No-op unless AI_USAGE_ACCOUNTING=true; never throws.
+  try {
+    const { recordUsage } = require('../ai/usage-recorder.service');
+    void recordUsage({
+      operationType: 'embed',
+      provider: 'gemini',
+      model,
+      usage: {
+        embeddingTokens: data?.usageMetadata?.promptTokenCount ?? 0,
+        sourceOfUsage: data?.usageMetadata ? 'provider_reported' : 'estimated',
+      },
+    });
+  } catch (_) { /* accounting must never break retrieval */ }
+
+  return ensureVectorSize(data?.embedding?.values);
+};
+
 const getGcpEmbedding = async (text) => {
   const apiUrl = process.env.EMBEDDING_API_URL;
   if (!apiUrl) {
@@ -218,7 +266,7 @@ const getGcpEmbedding = async (text) => {
 // Providers that produce real semantic vectors. Anything not in this set
 // (local fallback, anthropic, unset, typos) is NON-semantic and will wreck
 // retrieval quality — getProviderInfo().semantic surfaces that to health checks.
-const SEMANTIC_PROVIDERS = new Set(['openai', 'gcp']);
+const SEMANTIC_PROVIDERS = new Set(['gemini', 'openai', 'gcp']);
 
 /**
  * Resolve the raw EMBEDDING_PROVIDER env value to a canonical provider.
@@ -232,6 +280,7 @@ const SEMANTIC_PROVIDERS = new Set(['openai', 'gcp']);
 const resolveProvider = (raw) => {
   const p = (raw == null ? (process.env.EMBEDDING_PROVIDER || 'local') : raw)
     .toString().trim().toLowerCase();
+  if (p === 'gemini' || p === 'google') return 'gemini';
   if (p === 'openai') return 'openai';
   if (p === 'gcp' || p === 'http' || p === 'tei') return 'gcp';
   return 'local';
@@ -243,6 +292,10 @@ const getEmbedding = async (text) => {
   const content = normalizeText(text);
   if (!content) {
     throw new Error('Text is required for embedding');
+  }
+
+  if (provider === 'gemini') {
+    return getGeminiEmbedding(content);
   }
 
   if (provider === 'openai') {
@@ -259,7 +312,7 @@ const getEmbedding = async (text) => {
     console.error(
       '❌ EMBEDDING_PROVIDER=anthropic is not supported. ' +
       'Claude does not have an embeddings API. Falling back to local (non-semantic). ' +
-      'Switch to EMBEDDING_PROVIDER=openai or gcp.'
+      'Switch to EMBEDDING_PROVIDER=gemini, openai, or gcp.'
     );
   }
 
@@ -282,6 +335,7 @@ const getProviderInfo = () => {
 
   // Whether the credential/endpoint that the effective provider needs is present.
   let keyPresent = null;
+  if (effective === 'gemini') keyPresent = Boolean(process.env.GEMINI_API_KEY);
   if (effective === 'openai') keyPresent = Boolean(process.env.OPENAI_API_KEY);
   if (effective === 'gcp') keyPresent = Boolean(process.env.EMBEDDING_API_URL);
 
@@ -291,9 +345,11 @@ const getProviderInfo = () => {
     semantic,
     keyPresent,
     vectorSize,
-    model: effective === 'openai'
-      ? (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')
-      : (process.env.EMBEDDING_MODEL || null),
+    model: effective === 'gemini'
+      ? (process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2')
+      : effective === 'openai'
+        ? (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')
+        : (process.env.EMBEDDING_MODEL || null),
   };
 };
 

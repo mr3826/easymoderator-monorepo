@@ -106,7 +106,7 @@ async function shopsToAudit() {
     console.log(`Probe: ok=${pr.ok} dims=${pr.dimensions}${pr.error ? ` error=${pr.error}` : ''}`);
     if (!info.semantic) {
         console.log('⚠️  NON-SEMANTIC embeddings in effect — retrieval will be near-random and the AI will hallucinate.');
-        console.log('    Set EMBEDDING_PROVIDER=openai (+OPENAI_API_KEY) or =gcp/http (+EMBEDDING_API_URL), then re-run with --all --backfill.');
+        console.log('    Set EMBEDDING_PROVIDER=gemini (+GEMINI_API_KEY), =openai (+OPENAI_API_KEY), or =gcp/http (+EMBEDDING_API_URL), then re-run with --all --backfill.');
     }
     console.log('-'.repeat(72));
 

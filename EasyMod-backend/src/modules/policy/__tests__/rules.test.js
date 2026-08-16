@@ -365,8 +365,9 @@ describe('draftMode.rule', () => {
         const r = await rule.evaluate({}, { settings: { automation_mode: 'AI_ACTIVE' } });
         expect(r.allow).toBe(true);
     });
-    test('allows when no settings (defaults to AI_ACTIVE)', async () => {
+    test('holds when no settings (fail-safe default is DRAFT, not AI_ACTIVE)', async () => {
         const r = await rule.evaluate({}, {});
-        expect(r.allow).toBe(true);
+        expect(r.allow).toBe(false);
+        expect(r.reason).toBe('DRAFT_MODE');
     });
 });

@@ -46,7 +46,7 @@ module.exports = {
 
     async evaluate(_message, ctx) {
         const settings = ctx.settings || {};
-        const automationMode = settings.automation_mode || 'AI_ACTIVE';
+        const automationMode = settings.automation_mode || 'DRAFT';
         const businessHours = settings.business_hours;
         if (!businessHours) return { allow: true, reason: 'NO_HOURS_CONFIG' };
 

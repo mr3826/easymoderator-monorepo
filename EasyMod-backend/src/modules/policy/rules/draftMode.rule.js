@@ -18,7 +18,9 @@ module.exports = {
     name: 'draftMode',
 
     async evaluate(_message, ctx) {
-        const mode = ctx.settings?.automation_mode || 'AI_ACTIVE';
+        // Absent settings mean "not configured yet" — hold the reply rather than
+        // auto-sending it. Fail-safe, matching DEFAULT_AI_SETTINGS.
+        const mode = ctx.settings?.automation_mode || 'DRAFT';
         if (NON_DELIVERING_MODES.has(mode)) {
             return { allow: false, reason: 'DRAFT_MODE', augment: { automation_mode: mode } };
         }
