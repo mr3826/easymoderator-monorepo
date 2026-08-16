@@ -13,6 +13,11 @@ const runbook = fs.readFileSync(
     path.join(repoRoot, 'docs/deployment/MONOREPO_CUTOVER_RUNBOOK.md'),
     'utf8',
 );
+const dbProbe = fs.readFileSync(
+    path.join(repoRoot, 'EasyMod-backend/scripts/production-db-auth-probe.js'),
+    'utf8',
+);
+const sources = [workflow, compose, runbook, dbProbe];
 
 const required = [
     ['full commit SHA image tags', 'backend_tag=${{ env.GHCR_BACKEND }}:${SHA}'],
@@ -26,6 +31,10 @@ const required = [
     ['deployment metadata', 'deployment-metadata.json'],
     ['rollback function', 'rollback() {'],
     ['rollback image verification', 'verify_rollback() {'],
+    ['rollback state directory', 'ROLLBACK_STATE_DIR'],
+    ['rollback environment snapshot', 'cp -p /opt/easymod/.env.prod \'$ROLLBACK_STATE_DIR/.env.prod\''],
+    ['rollback environment restore', 'cp -p "$ROLLBACK_STATE_DIR/.env.prod" /opt/easymod/.env.prod'],
+    ['rollback configuration restore', 'cp -p "$ROLLBACK_STATE_DIR/docker-compose.prod.yml" /opt/easymod/docker-compose.prod.yml'],
     ['previous backend restore', 'export GHCR_IMAGE_BACKEND="$previous_backend_image"'],
     ['previous frontend restore', 'export GHCR_IMAGE_FRONTEND="$previous_frontend_image"'],
     ['no-build restore', 'up --detach --no-build --remove-orphans'],
@@ -35,11 +44,15 @@ const required = [
     ['backend immutable interpolation', 'image: ${GHCR_IMAGE_BACKEND:?'],
     ['frontend immutable interpolation', 'image: ${GHCR_IMAGE_FRONTEND:?'],
     ['rollback health contract', 'both health checks'],
+    ['independent DB host probe', 'DB_HOST_RESOLUTION=PASS'],
+    ['independent DB auth probe', 'DB_AUTH=PASS'],
+    ['independent DB expected name', 'DB_NAME=EXPECTED'],
+    ['independent DB select probe', 'SELECT_1=PASS'],
     ['schema rollback limitation', 'must not run `migrate:down`'],
 ];
 
 const missing = required
-    .filter(([, text]) => !workflow.includes(text) && !compose.includes(text) && !runbook.includes(text))
+    .filter(([, text]) => !sources.some((source) => source.includes(text)))
     .map(([label]) => label);
 
 if (missing.length) {

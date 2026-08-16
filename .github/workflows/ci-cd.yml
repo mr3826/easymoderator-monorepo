@@ -38,7 +38,7 @@ on:
         required: false
         default: 'all'
         type: choice
-        options: [all, backend, frontend]
+        options: [all, backend, frontend, probe]
       wipe_db_first:
         description: 'DESTRUCTIVE — wipe easymod DB before deploy. Type WIPE to confirm (anything else = no-op).'
         required: false
@@ -308,6 +308,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+          PROBE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'probe' }}
         run: |
           set -euo pipefail
           mkdir -p _tmp
@@ -324,6 +325,39 @@ jobs:
           grep -q '^QDRANT_API_KEY=' _tmp/.env.prod.real
           grep -q '^SLACK_ALERT_WEBHOOK_URL=' _tmp/.env.prod.real
           echo 'secret-backed-render=PASS'
+          if [ "$PROBE_MODE" = "true" ]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+
+            probe_env_path="/opt/easymod/.env.prod.candidate.${GITHUB_RUN_ID}"
+            probe_script_path="/opt/easymod/production-db-auth-probe.${GITHUB_RUN_ID}.js"
+            cleanup_probe() {
+              ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+                "rm -f -- '$probe_env_path' '$probe_script_path'" >/dev/null 2>&1 || true
+              rm -f _tmp/.env.prod.real
+            }
+            trap cleanup_probe EXIT
+
+            scp -i ~/.ssh/deploy_key _tmp/.env.prod.real \
+              root@"$DEPLOY_HOST":"$probe_env_path"
+            scp -i ~/.ssh/deploy_key EasyMod-backend/scripts/production-db-auth-probe.js \
+              root@"$DEPLOY_HOST":"$probe_script_path"
+            ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+              'set -e
+               echo PRODUCTION_POSTGRES_ENV
+               docker exec easymod-postgres-1 printenv | awk -F= '\''$1=="POSTGRES_DB" || $1=="POSTGRES_USER" {print $1"="$2}'\''
+               echo PRODUCTION_POSTGRES_DATABASES
+               pguser=$(docker exec easymod-postgres-1 printenv | awk -F= '\''$1=="POSTGRES_USER" {print $2}'\'')
+               if ! docker exec easymod-postgres-1 psql -U postgres -Atc "\l" 2>/dev/null; then
+                 test -n "$pguser"
+                 docker exec easymod-postgres-1 psql -U "$pguser" -Atc "\l"
+               fi'
+            ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+              "set -e; chmod 600 '$probe_env_path' '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/tmp/production-db-auth-probe.js:ro' \"\$image_id\" node /tmp/production-db-auth-probe.js"
+          fi
 
   # ── 2d. Non-publishing Docker build validation ────────────────────────────
   # Build the exact current source on every branch, including pull requests,
@@ -550,18 +584,55 @@ jobs:
           PRODUCT_IMAGE_QUOTA_BYTES: ${{ vars.PRODUCT_IMAGE_QUOTA_BYTES || '104857600' }}
           MEDIA_FETCH_ALLOWED_HOSTS: ${{ secrets.MEDIA_FETCH_ALLOWED_HOSTS }}
 
+      - name: Independent DB authentication probe against candidate environment
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          probe_env_path="/opt/easymod/.env.prod.candidate.${GITHUB_RUN_ID}"
+          probe_script_path="/opt/easymod/production-db-auth-probe.${GITHUB_RUN_ID}.js"
+          cleanup_probe() {
+            ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+              "rm -f -- '$probe_env_path' '$probe_script_path'" >/dev/null 2>&1 || true
+          }
+          trap cleanup_probe EXIT
+          scp -i ~/.ssh/deploy_key _tmp/.env.prod \
+            root@"$DEPLOY_HOST":"$probe_env_path"
+          scp -i ~/.ssh/deploy_key EasyMod-backend/scripts/production-db-auth-probe.js \
+            root@"$DEPLOY_HOST":"$probe_script_path"
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
+            "set -e; chmod 600 '$probe_env_path' '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/tmp/production-db-auth-probe.js:ro' \"\$image_id\" node /tmp/production-db-auth-probe.js"
+
       - name: Copy .env.prod and deploy config to droplet
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+          ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
-          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" 'mkdir -p /opt/easymod && chmod 700 /opt/easymod'
+          ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" "set -e
+            mkdir -p /opt/easymod '$ROLLBACK_STATE_DIR'
+            chmod 700 /opt/easymod '$ROLLBACK_STATE_DIR'
+            test -f /opt/easymod/.env.prod
+            test -f /opt/easymod/docker-compose.prod.yml
+            test -f /opt/easymod/Caddyfile
+            cp -p /opt/easymod/.env.prod '$ROLLBACK_STATE_DIR/.env.prod'
+            cp -p /opt/easymod/docker-compose.prod.yml '$ROLLBACK_STATE_DIR/docker-compose.prod.yml'
+            cp -p /opt/easymod/Caddyfile '$ROLLBACK_STATE_DIR/Caddyfile'
+            sha256sum '$ROLLBACK_STATE_DIR/.env.prod' '$ROLLBACK_STATE_DIR/docker-compose.prod.yml' '$ROLLBACK_STATE_DIR/Caddyfile' > '$ROLLBACK_STATE_DIR/manifest.sha256'
+            chmod 600 '$ROLLBACK_STATE_DIR/.env.prod' '$ROLLBACK_STATE_DIR/manifest.sha256'"
           scp -i ~/.ssh/deploy_key _tmp/.env.prod root@"$DEPLOY_HOST":/opt/easymod/.env.prod
           # Sync compose + Caddy config straight from the runner's checkout. The
           # droplet has no GitHub auth, so its `git fetch` (in the deploy script)
@@ -579,7 +650,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN
+          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
           script: |
             set -e
 
@@ -628,6 +699,18 @@ jobs:
             export GHCR_IMAGE_FRONTEND="$candidate_frontend_image"
 
             cd /opt/easymod
+
+            # The snapshot is created before this job overwrites any production
+            # environment or routing/configuration file. Missing state fails
+            # closed: image-only rollback is not a safe production rollback.
+            if [ -z "${ROLLBACK_STATE_DIR:-}" ] \
+              || [ ! -f "$ROLLBACK_STATE_DIR/.env.prod" ] \
+              || [ ! -f "$ROLLBACK_STATE_DIR/docker-compose.prod.yml" ] \
+              || [ ! -f "$ROLLBACK_STATE_DIR/Caddyfile" ] \
+              || [ ! -f "$ROLLBACK_STATE_DIR/manifest.sha256" ]; then
+              echo "ERROR: rollback environment/configuration snapshot is missing"
+              exit 1
+            fi
 
             # Validate every image in the interpolated production stack before
             # any pull, prune, restart, or destructive WIPE path. This is the
@@ -711,11 +794,22 @@ jobs:
               node -e "require('./src/config/production-config.validator').assertProductionConfig(process.env)"
 
             verify_rollback() {
-              local restored_backend restored_frontend
+              local restored_backend restored_frontend saved_hash current_hash
               restored_backend=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1 2>/dev/null || true)
               restored_frontend=$(docker inspect -f '{{.Config.Image}}' easymod-frontend-1 2>/dev/null || true)
               if [ "$restored_backend" != "$previous_backend_image" ] || [ "$restored_frontend" != "$previous_frontend_image" ]; then
                 echo "ERROR: rollback image references were not restored"
+                return 1
+              fi
+              saved_hash=$(sha256sum "$ROLLBACK_STATE_DIR/.env.prod" | awk '{print $1}')
+              current_hash=$(sha256sum /opt/easymod/.env.prod | awk '{print $1}')
+              if [ "$saved_hash" != "$current_hash" ]; then
+                echo "ERROR: rollback environment was not restored"
+                return 1
+              fi
+              if ! cmp -s "$ROLLBACK_STATE_DIR/docker-compose.prod.yml" /opt/easymod/docker-compose.prod.yml \
+                || ! cmp -s "$ROLLBACK_STATE_DIR/Caddyfile" /opt/easymod/Caddyfile; then
+                echo "ERROR: rollback production configuration was not restored"
                 return 1
               fi
               for i in $(seq 1 20); do
@@ -732,11 +826,18 @@ jobs:
             }
 
             rollback() {
-              echo "ERROR: candidate deployment failed; restoring previous image references"
+              echo "ERROR: candidate deployment failed; restoring previous images and production configuration"
               if [ -z "$previous_backend_image" ] || [ -z "$previous_frontend_image" ]; then
                 echo "ERROR: previous image references were unavailable; manual recovery is required"
                 return 1
               fi
+              if ! cp -p "$ROLLBACK_STATE_DIR/.env.prod" /opt/easymod/.env.prod \
+                || ! cp -p "$ROLLBACK_STATE_DIR/docker-compose.prod.yml" /opt/easymod/docker-compose.prod.yml \
+                || ! cp -p "$ROLLBACK_STATE_DIR/Caddyfile" /opt/easymod/Caddyfile; then
+                echo "ERROR: rollback environment/configuration restore failed"
+                return 1
+              fi
+              chmod 600 /opt/easymod/.env.prod
               export GHCR_IMAGE_BACKEND="$previous_backend_image"
               export GHCR_IMAGE_FRONTEND="$previous_frontend_image"
               if ! docker compose --env-file .env.prod -f docker-compose.prod.yml up --detach --no-build --remove-orphans; then
@@ -904,3 +1005,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
           SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
+          ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
