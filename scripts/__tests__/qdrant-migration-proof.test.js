@@ -166,7 +166,10 @@ describe('Qdrant migration proof safety helpers', () => {
 
         expect(proof).toContain("runPositive('bangla', banglaQuery, banglaRecord)");
         expect(proof).toContain("runPositive('english', englishQuery, englishRecord)");
-        expect(proof).toContain("runPositive('cross-lingual', crossLingualQuery");
+        expect(proof).toContain("runPositive('cross-lingual', crossLingualQuery, crossLingualRecord)");
+        expect(proof).toContain('const crossLingualRecord = null;');
+        expect(proof).toContain('const crossLingualQuery = null;');
+        expect(proof).not.toMatch(/crossLingualQuery\s*=\s*['"`]/);
         expect(proof).toContain('assertPositiveFixture(caseId, query, expectedRecord);');
         expect(proof).toContain('const pass = positiveSearchPass(top, expectedIndex);');
         expect(proof).toContain('const tenantPass = tenantResults.length > 0');

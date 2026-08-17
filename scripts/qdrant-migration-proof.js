@@ -594,7 +594,13 @@ async function validate(name, expectedCount) {
         const englishRecord = records.find((record) => /[A-Za-z]/u.test(record.text));
         const banglaQuery = banglaRecord?.text?.slice(0, 120) || null;
         const englishQuery = englishRecord?.text?.slice(0, 120) || null;
-        const crossLingualQuery = 'ডেলিভারি information';
+        // The real-source contract does not provide an authoritative
+        // cross-lingual query for these mutable rows. Do not invent one here:
+        // controlled multilingual cases live in semantic-calibration-fixtures.js.
+        // Keeping this unavailable makes the migration proof fail closed rather
+        // than treating an unsupported fixture as semantic evidence.
+        const crossLingualRecord = null;
+        const crossLingualQuery = null;
         const positiveFilter = shopFilter(shopId);
 
         const runPositive = async (caseId, query, expectedRecord) => {
@@ -644,7 +650,7 @@ async function validate(name, expectedCount) {
 
         const banglaPass = await runPositive('bangla', banglaQuery, banglaRecord);
         const englishPass = await runPositive('english', englishQuery, englishRecord);
-        const crossLingualPass = await runPositive('cross-lingual', crossLingualQuery, banglaRecord || englishRecord);
+        const crossLingualPass = await runPositive('cross-lingual', crossLingualQuery, crossLingualRecord);
 
         const tenantEmbedding = await getEmbeddingResult(englishQuery, {
             identity: binding.identity,
