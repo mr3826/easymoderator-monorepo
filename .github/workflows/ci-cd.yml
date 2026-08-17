@@ -126,6 +126,16 @@ jobs:
           npm run test:security
           npm test
 
+      # Proof/calibration helpers live at the monorepo root because they are
+      # copied into isolated proof containers and must not bootstrap the app.
+      - name: Qdrant proof and semantic calibration helper tests
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        run: >-
+          npx jest --config jest.config.js --rootDir .. --roots scripts
+          --runTestsByPath ../scripts/__tests__/qdrant-migration-proof.test.js
+          ../scripts/__tests__/semantic-calibration.test.js --runInBand
+
       # Frontend production build — TypeScript/import errors fail here, before a
       # broken bundle can be shipped.
       - name: Frontend — install & build
