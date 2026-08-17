@@ -19,7 +19,6 @@ const ACTIVE_COLLECTION = process.env.ACTIVE_COLLECTION || 'knowledge_documents'
 const VECTOR_SIZE = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const EXPECTED_SOURCE_COUNT = Number.parseInt(process.env.EXPECTED_SOURCE_COUNT || '2', 10);
 const POSITIVE_SCORE_MIN = Number.parseFloat(process.env.POSITIVE_SCORE_MIN || '0.25');
-const NEGATIVE_SCORE_MAX = Number.parseFloat(process.env.NEGATIVE_SCORE_MAX || '0.5');
 const NEGATIVE_SEARCH_QUERY = 'astrophysics quasars neutrino observatory';
 
 const argv = process.argv.slice(3);
@@ -320,6 +319,19 @@ function loadEmbeddingSpaceContract() {
     return require(candidate);
 }
 
+function loadAcceptanceContract() {
+    const candidates = [
+        process.env.SEMANTIC_ACCEPTANCE_CONTRACT_PATH,
+        '/tmp/semantic-acceptance-contract.js',
+        '/app/scripts/semantic-acceptance-contract.js',
+        path.resolve(process.cwd(), 'scripts/semantic-acceptance-contract.js'),
+        path.resolve(__dirname, 'semantic-acceptance-contract.js'),
+    ].filter(Boolean);
+    const candidate = candidates.find((file) => fs.existsSync(file));
+    if (!candidate) throw new Error('semantic acceptance contract is not present in the candidate image');
+    return require(candidate);
+}
+
 function contentPointFilter(filter = null) {
     const manifestCondition = {
         key: 'embedding_space_manifest',
@@ -474,10 +486,15 @@ function assertNegativeFixtureLexicallyDisjoint(query, points) {
     return true;
 }
 
-function negativeSearchPass(negativeTop, query, scoreMax = NEGATIVE_SCORE_MAX) {
-    if (!negativeTop) return true;
-    return Number(negativeTop.score) < scoreMax
-        && !hasLexicalOverlap(query, negativeTop.payload?.text);
+function negativeSearchPass(negativeTop, query, contract = null, acceptanceModule = null) {
+    const module = acceptanceModule || loadAcceptanceContract();
+    const resolvedContract = contract || module.PROOF_ACCEPTANCE_CONTRACT;
+    const lexicalOverlap = Boolean(negativeTop && hasLexicalOverlap(query, negativeTop.payload?.text));
+    return module.evaluateNegativeCase({
+        topScore: negativeTop?.score ?? null,
+        lexicalOverlap,
+        contract: resolvedContract,
+    }).pass;
 }
 
 function assertPositiveFixture(caseId, query, expectedRecord) {
@@ -516,7 +533,8 @@ function emitSearchEvidence({
     expectedScore,
     results,
     positiveThreshold = null,
-    negativeThreshold = null,
+    negativeCeiling = null,
+    negativeAcceptanceMode = null,
     lexicalOverlap,
     pass,
     failureReason,
@@ -537,7 +555,8 @@ function emitSearchEvidence({
         score: Number.isFinite(Number(point?.score)) ? Number(point.score) : null,
     })))}`);
     if (positiveThreshold !== null) console.log(`POSITIVE_THRESHOLD=${positiveThreshold}`);
-    if (negativeThreshold !== null) console.log(`NEGATIVE_THRESHOLD=${negativeThreshold}`);
+    if (negativeAcceptanceMode !== null) console.log(`NEGATIVE_ACCEPTANCE_RULE=${negativeAcceptanceMode}`);
+    if (negativeCeiling !== null) console.log(`NEGATIVE_CEILING=${negativeCeiling}`);
     console.log(`LEXICAL_OVERLAP=${lexicalOverlap ? 'true' : 'false'}`);
     console.log(`PASS_FAIL=${pass ? 'PASS' : 'FAIL'}`);
     console.log(`FAILURE_REASON=${failureReason || 'NONE'}`);
@@ -546,6 +565,11 @@ function emitSearchEvidence({
 async function validate(name, expectedCount) {
     assertSafeCollectionName(name, name === ACTIVE_COLLECTION ? ACTIVE_COLLECTION : '__never__');
     let binding = await collectionBinding(name);
+    const acceptanceModule = loadAcceptanceContract();
+    const acceptanceContract = acceptanceModule.contractForIdentity(binding.identity);
+    acceptanceModule.assertAcceptanceContract(acceptanceContract, binding.identity);
+    console.log(`SEMANTIC_ACCEPTANCE_VERSION=${acceptanceContract.semantic_acceptance_version}`);
+    console.log(`SEMANTIC_ACCEPTANCE_STATUS=${acceptanceContract.status}`);
     try {
         if (binding.state === 'BUILDING') binding = await setCollectionState(name, 'VALIDATING');
 
@@ -619,7 +643,11 @@ async function validate(name, expectedCount) {
             const expectedRank = expectedIndex >= 0 ? expectedIndex + 1 : null;
             const expectedScore = expectedPoint?.score;
             const topScore = Number(top?.score);
-            const pass = positiveSearchPass(top, expectedIndex);
+            const pass = positiveSearchPass(
+                top,
+                expectedIndex,
+                acceptanceContract.positive_threshold,
+            );
             const failureReason = pass
                 ? 'NONE'
                 : expectedIndex < 0
@@ -640,7 +668,7 @@ async function validate(name, expectedCount) {
                 expectedRank,
                 expectedScore,
                 results,
-                positiveThreshold: POSITIVE_SCORE_MIN,
+                positiveThreshold: acceptanceContract.positive_threshold,
                 lexicalOverlap: Boolean(expectedRecord && hasLexicalOverlap(query, expectedRecord.text)),
                 pass,
                 failureReason,
@@ -671,7 +699,7 @@ async function validate(name, expectedCount) {
             expectedRank: tenantResults.length ? 1 : null,
             expectedScore: tenantResults[0]?.score,
             results: tenantResults,
-            positiveThreshold: POSITIVE_SCORE_MIN,
+            positiveThreshold: acceptanceContract.positive_threshold,
             lexicalOverlap: false,
             pass: tenantPass,
             failureReason: tenantPass ? 'NONE' : 'TENANT_FILTER_VIOLATION',
@@ -686,7 +714,12 @@ async function validate(name, expectedCount) {
         });
         const negativeResults = await searchPoints(name, negativeEmbedding.vector, positiveFilter);
         const negativeTop = negativeResults[0];
-        const negativePass = negativeSearchPass(negativeTop, negativeQuery);
+        const negativePass = negativeSearchPass(
+            negativeTop,
+            negativeQuery,
+            acceptanceContract,
+            acceptanceModule,
+        );
         emitSearchEvidence({
             identity: binding.identity,
             collection: name,
@@ -696,10 +729,11 @@ async function validate(name, expectedCount) {
             expectedRank: null,
             expectedScore: null,
             results: negativeResults,
-            negativeThreshold: NEGATIVE_SCORE_MAX,
+            negativeAcceptanceMode: acceptanceContract.negative_acceptance_mode,
+            negativeCeiling: acceptanceContract.negative_ceiling,
             lexicalOverlap: Boolean(negativeTop && hasLexicalOverlap(negativeQuery, negativeTop.payload?.text)),
             pass: negativePass,
-            failureReason: negativePass ? 'NONE' : 'NEGATIVE_RESULT_ABOVE_THRESHOLD_OR_LEXICAL_OVERLAP',
+            failureReason: negativePass ? 'NONE' : 'NEGATIVE_RESULT_ABOVE_CALIBRATED_CEILING_OR_LEXICAL_OVERLAP',
         });
 
         console.log(`QDRANT_COLLECTION=${name}`);
@@ -810,11 +844,11 @@ module.exports = {
     normalizeDatabaseUrl,
     normalizeQdrantUrl,
     normalizeUrl,
+    loadAcceptanceContract,
     sourceStats,
     contentPointFilter,
     safeSourceId,
     emitSearchEvidence,
     spaceSafety,
     POSITIVE_SCORE_MIN,
-    NEGATIVE_SCORE_MAX,
 };

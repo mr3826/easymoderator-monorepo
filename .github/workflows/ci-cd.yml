@@ -162,7 +162,8 @@ jobs:
         run: >-
           npx jest --config jest.config.js --rootDir .. --roots scripts
           --runTestsByPath ../scripts/__tests__/qdrant-migration-proof.test.js
-          ../scripts/__tests__/semantic-calibration.test.js --runInBand
+          ../scripts/__tests__/semantic-calibration.test.js
+          ../scripts/__tests__/semantic-acceptance-contract.test.js --runInBand
 
       # Frontend production build — TypeScript/import errors fail here, before a
       # broken bundle can be shipped.

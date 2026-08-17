@@ -24,10 +24,17 @@ const {
     normalizeDatabaseUrl,
     normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
+const acceptance = require('../semantic-acceptance-contract');
 const { Client } = require('pg');
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const QDRANT_WORKFLOW_PATH = path.resolve(__dirname, '../../.github/workflows/qdrant-migration.yml');
 const PROOF_SCRIPT_PATH = path.resolve(__dirname, '../qdrant-migration-proof.js');
+const READY_ACCEPTANCE_CONTRACT = {
+    ...acceptance.PROOF_ACCEPTANCE_CONTRACT,
+    status: 'READY',
+    negative_ceiling: 0.62,
+    positive_floor_p05: 0.78,
+};
 
 describe('Qdrant migration proof safety helpers', () => {
     describe('URL contract', () => {
@@ -81,11 +88,13 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(hasLexicalOverlap('quantum physics', 'Cotton saree delivery information')).toBe(false);
     });
 
-    it('accepts a negative fixture only when its score and lexical checks both pass', () => {
+    it('accepts a negative fixture only with a ready calibrated contract and lexical check', () => {
         const point = { score: 0.49, payload: { text: 'Cotton saree delivery information' } };
 
-        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, 0.5)).toBe(true);
-        expect(negativeSearchPass(null, NEGATIVE_SEARCH_QUERY, 0.5)).toBe(true);
+        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, READY_ACCEPTANCE_CONTRACT, acceptance)).toBe(true);
+        expect(negativeSearchPass(null, NEGATIVE_SEARCH_QUERY, READY_ACCEPTANCE_CONTRACT, acceptance)).toBe(true);
+        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, acceptance.PROOF_ACCEPTANCE_CONTRACT, acceptance))
+            .toBe(false);
     });
 
     it('fails the fixture invariant clearly when a normalized token overlaps a source', () => {
@@ -110,7 +119,8 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(negativeSearchPass(
             { score: 0.49, payload: { text: 'FAQ about physics delivery' } },
             'quantum physics black hole laboratory',
-            0.5,
+            READY_ACCEPTANCE_CONTRACT,
+            acceptance,
         )).toBe(false);
     });
 
@@ -124,16 +134,18 @@ describe('Qdrant migration proof safety helpers', () => {
         )).not.toThrow();
     });
 
-    it('fails negative search on a true semantic false positive at the threshold', () => {
+    it('fails negative search above the calibrated ceiling', () => {
         expect(negativeSearchPass(
-            { score: 0.5, payload: { text: 'unrelated proof content' } },
+            { score: 0.62, payload: { text: 'unrelated proof content' } },
             NEGATIVE_SEARCH_QUERY,
-            0.5,
-        )).toBe(false);
+            READY_ACCEPTANCE_CONTRACT,
+            acceptance,
+        )).toBe(true);
         expect(negativeSearchPass(
             { score: 0.72, payload: { text: 'unrelated proof content' } },
             NEGATIVE_SEARCH_QUERY,
-            0.5,
+            READY_ACCEPTANCE_CONTRACT,
+            acceptance,
         )).toBe(false);
     });
 
@@ -171,7 +183,9 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(proof).toContain('const crossLingualQuery = null;');
         expect(proof).not.toMatch(/crossLingualQuery\s*=\s*['"`]/);
         expect(proof).toContain('assertPositiveFixture(caseId, query, expectedRecord);');
-        expect(proof).toContain('const pass = positiveSearchPass(top, expectedIndex);');
+        expect(proof).toContain('const pass = positiveSearchPass(');
+        expect(proof).toContain('acceptanceModule.assertAcceptanceContract');
+        expect(proof).toContain('NEGATIVE_ACCEPTANCE_RULE=');
         expect(proof).toContain('const tenantPass = tenantResults.length > 0');
         expect(proof).toContain('const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;');
         expect(proof).toContain('if (!semanticPass || !tenantPass)');
@@ -229,6 +243,8 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
+        expect(workflow).toContain('semantic-acceptance-contract.js');
+        expect(workflow).toContain('SEMANTIC_ACCEPTANCE_CONTRACT_PATH');
     });
 
     it('adds a manifest exclusion to every content count/search filter', () => {
