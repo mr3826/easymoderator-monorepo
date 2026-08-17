@@ -56,12 +56,18 @@ describe('semantic acceptance contract', () => {
             .toBe('NEGATIVE_FIXTURE_LEXICAL_OVERLAP');
     });
 
-    it('fails closed while the checked-in contract is pending', () => {
-        expect(contract.PROOF_ACCEPTANCE_CONTRACT.status).toBe('PENDING_RECALIBRATION');
-        expect(contract.evaluateNegativeCase({ topScore: 0.1, lexicalOverlap: false }).reason)
-            .toBe('SEMANTIC_CALIBRATION_NOT_READY');
+    it('accepts the reviewed 384-dimensional calibration provenance', () => {
+        expect(contract.PROOF_ACCEPTANCE_CONTRACT.status).toBe('READY');
+        expect(contract.PROOF_ACCEPTANCE_CONTRACT.negative_ceiling).toBe(0.652);
+        expect(contract.PROOF_ACCEPTANCE_CONTRACT.calibration_run_id).toBe('32046390673');
+        expect(contract.PROOF_ACCEPTANCE_CONTRACT.workflow_run_id).toBe('32046390673');
         expect(() => contract.assertAcceptanceContract(contract.PROOF_ACCEPTANCE_CONTRACT, identity))
-            .toThrow(expect.objectContaining({ code: 'SEMANTIC_CALIBRATION_NOT_READY' }));
+            .not.toThrow();
+        expect(contract.evaluateNegativeCase({
+            topScore: 0.651,
+            lexicalOverlap: false,
+            contract: contract.PROOF_ACCEPTANCE_CONTRACT,
+        })).toEqual({ pass: true, reason: 'NONE' });
     });
 
     it('rejects a ceiling without the required positive safety boundary', () => {

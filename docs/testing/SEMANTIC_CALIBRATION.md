@@ -32,10 +32,20 @@ workflow run ID, generation time, counts, and threshold derivation. A model,
 space, dimensions, or fixture change therefore requires a new reviewed
 calibration rather than silently inheriting an old ceiling.
 
+The current reviewed 384-dimensional calibration is pinned in
+`scripts/semantic-acceptance-contract.js`: negative ceiling `0.652`, positive
+P05 `0.7561462741171905`, negative maximum `0.6014600529160323`, explicit
+`0.05` safety margin, and minimum positive-to-ceiling safety gap `0.10`.
+It was produced by workflow run `32046390673` at merged-main commit
+`4080b8b32d482b80dfc321ca366175d4f51b051f` for the current deterministic
+fixture version. The contract remains proof-only; production retrieval
+thresholds and runtime behavior are unchanged.
+
 An active proof contract must also carry calibration run ID, commit SHA,
 workflow run ID, timestamp, and the derivation values that produced its ceiling
 and positive P05. `createCalibratedContract` validates and binds those fields;
-the checked-in contract intentionally has none of them because it is pending.
+the checked-in contract is now active only for the exact pinned provider/model/
+space/dimensions/fixture identity.
 
 Run locally only when an authorized Gemini key is already present in the
 environment; do not paste or commit the key:
