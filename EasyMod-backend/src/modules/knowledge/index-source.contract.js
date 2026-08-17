@@ -112,7 +112,11 @@ const collectShopSources = async (query, shopId, existingShop = null) => {
             id: shopId,
             shopId,
             text: businessText,
-            metadata: { type: 'business_info', documentId: `biz-${shopId}` },
+            metadata: {
+                type: 'business_info',
+                documentId: `biz-${shopId}`,
+                embeddingTitle: 'Business information',
+            },
         });
     }
 
@@ -125,7 +129,12 @@ const collectShopSources = async (query, shopId, existingShop = null) => {
             id: faq.id,
             shopId,
             text,
-            metadata: { type: 'faq', documentId: `faq-${faq.id}`, faq_id: faq.id },
+            metadata: {
+                type: 'faq',
+                documentId: `faq-${faq.id}`,
+                faq_id: faq.id,
+                embeddingTitle: faq.category || 'FAQ',
+            },
         });
     }
 
@@ -143,6 +152,7 @@ const collectShopSources = async (query, shopId, existingShop = null) => {
                 documentId: `product:${product.id}`,
                 product_id: product.id,
                 product_name: product.name,
+                embeddingTitle: product.name || 'Product',
                 image_url: product.image_url || null,
                 stock_key: `stock:${shopId}:${product.id}`,
             },
@@ -168,6 +178,12 @@ const collectSourceStats = async (query) => {
         count: sources.length,
         shopIds: [...new Set(sources.map((source) => String(source.shopId)).filter(Boolean))],
         snippets: sources.map((source) => source.text).filter((text) => text && text.trim()),
+        sourceRecords: sources.map((source) => ({
+            sourceId: String(source.metadata?.documentId || source.id),
+            sourceType: source.metadata?.type || source.kind,
+            shopId: String(source.shopId),
+            text: source.text,
+        })),
     };
 };
 

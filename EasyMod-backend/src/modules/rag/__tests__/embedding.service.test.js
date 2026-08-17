@@ -11,6 +11,8 @@ const svc = require('../embedding.service');
 const ENV_KEYS = [
     'EMBEDDING_PROVIDER', 'EMBEDDING_API_URL', 'OPENAI_API_KEY',
     'EMBEDDING_MODEL', 'GEMINI_API_KEY', 'GEMINI_EMBEDDING_MODEL',
+    'EMBEDDING_SPACE_VERSION', 'GEMINI_EMBEDDING_SPACE_VERSION',
+    'OPENAI_EMBEDDING_SPACE_VERSION', 'EMBEDDING_HTTP_MAX_RETRIES',
     'NODE_ENV',
 ];
 const saved = {};
@@ -131,15 +133,14 @@ describe('probe', () => {
         }
     });
 
-    test('Gemini failure uses the OpenAI fallback with the configured vector size', async () => {
+    test('Gemini failure does not create an OpenAI vector at the embedding boundary', async () => {
         process.env.NODE_ENV = 'production';
         process.env.EMBEDDING_PROVIDER = 'gemini';
         process.env.GEMINI_API_KEY = 'AIza-test-primary';
         process.env.OPENAI_API_KEY = 'sk-test-fallback';
         process.env.EMBEDDING_MODEL = 'text-embedding-3-small';
-        const { vectorSize } = svc.getProviderInfo();
+        process.env.EMBEDDING_HTTP_MAX_RETRIES = '0';
         const calls = [];
-        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const realFetch = global.fetch;
         global.fetch = jest.fn(async (url) => {
             calls.push(String(url).includes('generativelanguage') ? 'gemini' : 'openai');
@@ -150,60 +151,66 @@ describe('probe', () => {
                     json: async () => ({ embedding: { values: [0.1] } }),
                 };
             }
-            return {
-                ok: true,
-                status: 200,
-                json: async () => ({ data: [{ embedding: new Array(vectorSize).fill(0.2) }] }),
-            };
+            throw new Error('OpenAI must not be called for per-vector fallback');
         });
         try {
-            const vector = await svc.getEmbedding('fallback test');
-            expect(vector).toHaveLength(vectorSize);
-            expect(calls).toEqual(['gemini', 'openai']);
-            expect(warning).toHaveBeenCalledWith(expect.stringContaining('gemini -> openai'));
-            expect(warning.mock.calls[0][0]).not.toContain('AIza-test-primary');
-            expect(warning.mock.calls[0][0]).not.toContain('sk-test-fallback');
+            await expect(svc.getEmbedding('fallback test')).rejects.toThrow(/length/);
+            expect(calls).toEqual(['gemini']);
         } finally {
             global.fetch = realFetch;
-            warning.mockRestore();
         }
     });
 
-    test('failed OpenAI fallback surfaces a sanitized terminal error', async () => {
+    test('a Gemini provider error remains terminal until rag.service routes to a READY collection', async () => {
         process.env.NODE_ENV = 'production';
         process.env.EMBEDDING_PROVIDER = 'gemini';
         process.env.GEMINI_API_KEY = 'AIza-test-primary';
         process.env.OPENAI_API_KEY = 'sk-test-fallback';
+        process.env.EMBEDDING_HTTP_MAX_RETRIES = '0';
         const realFetch = global.fetch;
-        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const calls = [];
         global.fetch = jest.fn(async (url) => {
+            calls.push(String(url));
             if (String(url).includes('generativelanguage')) {
                 return {
-                    ok: true,
-                    status: 200,
-                    json: async () => ({ embedding: { values: [0.1] } }),
+                    ok: false,
+                    status: 503,
+                    text: async () => 'provider unavailable',
                 };
             }
-            return {
-                ok: false,
-                status: 401,
-                text: async () => `invalid key ${process.env.OPENAI_API_KEY}`,
-            };
+            throw new Error('OpenAI must not be called by getEmbeddingResult');
         });
         try {
-            let error;
-            try {
-                await svc.getEmbedding('terminal failure test');
-            } catch (caught) {
-                error = caught;
-            }
-            expect(error).toMatchObject({ name: 'EmbeddingFallbackError' });
-            expect(error.message).toContain('OpenAI fallback failed');
-            expect(error.message).not.toContain('AIza-test-primary');
-            expect(error.message).not.toContain('sk-test-fallback');
+            await expect(svc.getEmbeddingResult('terminal failure test')).rejects.toThrow(/Gemini embeddings failed/);
+            expect(calls).toHaveLength(1);
+            expect(calls[0]).toContain('generativelanguage');
         } finally {
             global.fetch = realFetch;
-            warning.mockRestore();
+        }
+    });
+
+    test('Gemini Embedding 2 uses the asymmetric query/document input contract', async () => {
+        process.env.EMBEDDING_PROVIDER = 'gemini';
+        process.env.GEMINI_API_KEY = 'AIza-test';
+        process.env.EMBEDDING_HTTP_MAX_RETRIES = '0';
+        const { vectorSize } = svc.getProviderInfo();
+        const realFetch = global.fetch;
+        global.fetch = jest.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ embedding: { values: new Array(vectorSize).fill(0.1) } }),
+        }));
+        try {
+            await svc.getEmbeddingResult('delivery query', { purpose: 'query' });
+            await svc.getEmbeddingResult('delivery answer', { purpose: 'document', title: 'FAQ' });
+            const queryBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+            const documentBody = JSON.parse(global.fetch.mock.calls[1][1].body);
+            expect(queryBody.content.parts[0].text).toBe('task: search result | query: delivery query');
+            expect(documentBody.content.parts[0].text).toBe('title: FAQ | text: delivery answer');
+            expect(queryBody).not.toHaveProperty('taskType');
+            expect(documentBody).not.toHaveProperty('taskType');
+        } finally {
+            global.fetch = realFetch;
         }
     });
 });

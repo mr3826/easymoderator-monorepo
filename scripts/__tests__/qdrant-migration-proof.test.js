@@ -16,6 +16,9 @@ const {
     negativeSearchPass,
     NEGATIVE_SEARCH_QUERY,
     sourceStats,
+    contentPointFilter,
+    safeSourceId,
+    emitSearchEvidence,
     normalizeDatabaseUrl,
     normalizeQdrantUrl,
 } = require('../qdrant-migration-proof');
@@ -98,7 +101,8 @@ describe('Qdrant migration proof safety helpers', () => {
 
         expect(error).toBeInstanceOf(Error);
         expect(error.message).toMatch(/negative fixture lexical overlap/);
-        expect(error.message).toContain('tokens=physics');
+        expect(error.message).toContain('token_hashes=');
+        expect(error.message).not.toContain('physics');
         expect(error.message).toContain('source_hash=');
         expect(error.message).not.toContain(sourceId);
         expect(negativeSearchPass(
@@ -134,12 +138,18 @@ describe('Qdrant migration proof safety helpers', () => {
     it('keeps positive-language and tenant-isolation gates wired into validation', () => {
         const proof = fs.readFileSync(PROOF_SCRIPT_PATH, 'utf8');
 
-        expect(proof).toContain('const banglaPass = await runPositive(banglaQuery);');
-        expect(proof).toContain('const englishPass = await runPositive(englishQuery);');
-        expect(proof).toContain('const crossLingualPass = await runPositive(crossLingualQuery);');
+        expect(proof).toContain("runPositive('bangla', banglaQuery, banglaRecord)");
+        expect(proof).toContain("runPositive('english', englishQuery, englishRecord)");
+        expect(proof).toContain("runPositive('cross-lingual', crossLingualQuery");
         expect(proof).toContain('const tenantPass = tenantResults.length > 0');
         expect(proof).toContain('const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;');
         expect(proof).toContain('if (!semanticPass || !tenantPass)');
+        expect(proof).toContain('EXPECTED_SOURCE_RANK=');
+        expect(proof).toContain('EXPECTED_SOURCE_SCORE=');
+        expect(proof).toContain('TOP_K_SOURCE_IDS_AND_SCORES=');
+        expect(proof).toContain('FAILURE_REASON=');
+        expect(proof).toContain('PASS_EMPTY_EXISTING_BOUND');
+        expect(proof).not.toContain('deleteCollection');
     });
 
     it('delegates source counting to the shared PostgreSQL contract', async () => {
@@ -167,13 +177,13 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(client.end).toHaveBeenCalledTimes(1);
     });
 
-    it('proves Gemini primary, OpenAI fallback, and provider-compatible dimensions', () => {
+    it('proves provider-bound spaces and collection-only fallback', () => {
         const workflow = fs.readFileSync(QDRANT_WORKFLOW_PATH, 'utf8');
 
         expect(workflow).toContain('OPENAI_FALLBACK_MODEL=text-embedding-3-small');
         expect(workflow).toContain('GEMINI_MODEL="${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}"');
-        expect(workflow).toContain('run_provider_fallback');
-        expect(workflow).toContain('provider-fallback');
+        expect(workflow).toContain('run_space_safety');
+        expect(workflow).toContain('space-safety');
         expect(workflow.indexOf('run_reindex gemini')).toBeLessThan(workflow.indexOf('run_reindex openai'));
         expect(workflow).toMatch(
             /run_reindex openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
@@ -181,11 +191,55 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(workflow).toMatch(
             /run_provider_proof openai \"\$OPENAI_FALLBACK_MODEL\" \"\$GEMINI_MODEL\"/,
         );
-        expect(workflow).toContain('QDRANT_VECTOR_COMPATIBILITY=PASS');
+        expect(workflow).toContain('CROSS_SPACE_QUERY_REJECTION');
+        expect(workflow).toContain('CROSS_SPACE_WRITE_REJECTION');
+        expect(workflow).toContain('EMBEDDING_SPACE_SAFETY=PASS');
         expect(workflow).toContain('OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"');
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
+    });
+
+    it('adds a manifest exclusion to every content count/search filter', () => {
+        expect(contentPointFilter()).toEqual({
+            must_not: [{ key: 'embedding_space_manifest', match: { value: true } }],
+        });
+        expect(contentPointFilter({ must: [{ key: 'shopId', match: { value: 'shop-1' } }] }).must_not)
+            .toEqual(expect.arrayContaining([{ key: 'embedding_space_manifest', match: { value: true } }]));
+    });
+
+    it('emits score/rank evidence without exposing source identifiers', () => {
+        const lines = [];
+        const realLog = console.log;
+        console.log = (line) => lines.push(line);
+        try {
+            emitSearchEvidence({
+                identity: {
+                    provider: 'openai',
+                    model: 'text-embedding-3-small',
+                    embedding_space_version: 'openai-v1',
+                    dimensions: 384,
+                },
+                collection: 'proof_collection',
+                caseId: 'english',
+                expectedSourceId: 'merchant-secret-id',
+                top: { id: 'top-id', score: 0.82, payload: { documentId: 'merchant-secret-id' } },
+                expectedRank: 1,
+                expectedScore: 0.82,
+                results: [{ id: 'top-id', score: 0.82, payload: { documentId: 'merchant-secret-id' } }],
+                positiveThreshold: 0.25,
+                lexicalOverlap: false,
+                pass: true,
+                failureReason: 'NONE',
+            });
+        } finally {
+            console.log = realLog;
+        }
+        expect(lines.join('\n')).toContain('EXPECTED_SOURCE_RANK=1');
+        expect(lines.join('\n')).toContain('EXPECTED_SOURCE_SCORE=0.820000');
+        expect(lines.join('\n')).toContain('TOP_SCORE=0.820000');
+        expect(lines.join('\n')).not.toContain('merchant-secret-id');
+        expect(safeSourceId('merchant-secret-id')).toMatch(/^[a-f0-9]{16}$/);
     });
 
     it('keeps active embedding configuration templates on the approved contract', () => {

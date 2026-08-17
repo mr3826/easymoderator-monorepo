@@ -46,6 +46,7 @@ const embedProduct = async (productId, shopId) => {
                 type: 'product',
                 product_id: product.id,
                 product_name: product.name,
+                embeddingTitle: product.name || 'Product',
                 image_url: product.image_url || null,
                 // stock_key used by StockStatusGuard to fetch live quantity from Redis
                 // price, variants, stock are intentionally NOT stored here — always fetch live from DB

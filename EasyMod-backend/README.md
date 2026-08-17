@@ -167,7 +167,7 @@ Inbound message → reply, end to end:
 9. **Disclosure + send policy** — the first AI response after the customer's first turn prepends the required automated-assistant disclosure plus the owner's optional greeting. The business reply setting is authoritative across connected Pages: Draft mode stores the reply as an inbox suggestion, Manual mode disables AI generation, and Auto mode can send only after policy and confidence gates pass. Per-channel toggles can opt a Page out, but cannot upgrade Draft/Manual to auto-send.
 10. **Send** — the reply goes back via the Meta Graph API on the originating page/IG account.
 
-**Embeddings:** controlled by `EMBEDDING_PROVIDER`. Production defaults to Gemini (`GEMINI_API_KEY`, `gemini-embedding-2` truncated to `QDRANT_VECTOR_SIZE`) and uses OpenAI (`EMBEDDING_MODEL=text-embedding-3-small`) only as a fallback when the primary request fails. An explicit `openai` or `http`/TEI provider remains available for isolated proof and controlled operations. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`. Changing provider changes the vector space, so re-run `node src/scripts/reindex-qdrant.js` afterwards.
+**Embeddings:** controlled by `EMBEDDING_PROVIDER`. Production defaults to Gemini (`GEMINI_API_KEY`, `gemini-embedding-2` at `QDRANT_VECTOR_SIZE`) and uses OpenAI (`OPENAI_EMBEDDING_MODEL=text-embedding-3-small`) only through a separately reindexed, provider-homogeneous fallback collection configured by `QDRANT_FALLBACK_COLLECTION`. A failed Gemini request never inserts an OpenAI vector into the Gemini collection. Every knowledge collection carries a durable provider/model/version/dimension manifest and legacy collections without trusted provenance fail closed. Gemini Embedding 2 uses its asymmetric retrieval input contract: `task: search result | query: ...` for queries and `title: ... | text: ...` for documents. The `local` n-gram fallback is **dev-only** — it produces near-random retrieval and is surfaced as `embedding.semantic = false` on `GET /health/detailed`. Any provider, model, or input-contract version change requires a new full-reindex collection; live switching remains an explicit operational action.
 
 Business Info updates are part of the AI knowledge path. The owner-written `settings.businessInfo.additionalInfo` field is stored with the shop profile, injected into the system prompt immediately, and included by the scheduled business-info RAG reindex job together with shop name, address, phone, and opening hours.
 
@@ -349,9 +349,12 @@ LLM_PROVIDER=gemini
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=knowledge_documents
+QDRANT_FALLBACK_COLLECTION=                  # optional READY OpenAI collection; cold fallback only
 QDRANT_PER_TENANT=true
 EMBEDDING_PROVIDER=gemini             # gemini | openai | http | local(dev-only)
 GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+GEMINI_EMBEDDING_SPACE_VERSION=gemini-embedding-2-search-v1
+OPENAI_EMBEDDING_SPACE_VERSION=openai-text-embedding-3-small-v1
 QDRANT_VECTOR_SIZE=384
 
 # Email, push, errors, ops
