@@ -14,6 +14,8 @@ const {
     extractVectorSize,
     hasLexicalOverlap,
     negativeSearchPass,
+    assertPositiveFixture,
+    positiveSearchPass,
     NEGATIVE_SEARCH_QUERY,
     sourceStats,
     contentPointFilter,
@@ -135,12 +137,38 @@ describe('Qdrant migration proof safety helpers', () => {
         )).toBe(false);
     });
 
+    it('fails closed when a positive fixture has no expected source', () => {
+        let error;
+        try {
+            assertPositiveFixture('bangla', 'private fixture text');
+        } catch (caught) {
+            error = caught;
+        }
+
+        expect(error).toBeInstanceOf(Error);
+        expect(error.message).toBe('positive fixture unavailable: bangla expected source missing');
+        expect(error.message).not.toContain('private fixture text');
+        expect(() => assertPositiveFixture('bangla', 'private fixture text', { sourceId: 'secret-source' }))
+            .not.toThrow();
+    });
+
+    it('requires the expected positive source to be the top result', () => {
+        const top = { score: 0.65, payload: { documentId: 'source-1' } };
+
+        expect(positiveSearchPass(top, 0, 0.25)).toBe(true);
+        expect(positiveSearchPass(top, -1, 0.25)).toBe(false);
+        expect(positiveSearchPass(top, 1, 0.25)).toBe(false);
+        expect(positiveSearchPass({ score: 0.24 }, 0, 0.25)).toBe(false);
+    });
+
     it('keeps positive-language and tenant-isolation gates wired into validation', () => {
         const proof = fs.readFileSync(PROOF_SCRIPT_PATH, 'utf8');
 
         expect(proof).toContain("runPositive('bangla', banglaQuery, banglaRecord)");
         expect(proof).toContain("runPositive('english', englishQuery, englishRecord)");
         expect(proof).toContain("runPositive('cross-lingual', crossLingualQuery");
+        expect(proof).toContain('assertPositiveFixture(caseId, query, expectedRecord);');
+        expect(proof).toContain('const pass = positiveSearchPass(top, expectedIndex);');
         expect(proof).toContain('const tenantPass = tenantResults.length > 0');
         expect(proof).toContain('const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;');
         expect(proof).toContain('if (!semanticPass || !tenantPass)');

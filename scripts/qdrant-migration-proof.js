@@ -480,6 +480,23 @@ function negativeSearchPass(negativeTop, query, scoreMax = NEGATIVE_SCORE_MAX) {
         && !hasLexicalOverlap(query, negativeTop.payload?.text);
 }
 
+function assertPositiveFixture(caseId, query, expectedRecord) {
+    if (!expectedRecord || typeof expectedRecord.sourceId !== 'string' || !expectedRecord.sourceId.trim()) {
+        throw new Error(`positive fixture unavailable: ${caseId} expected source missing`);
+    }
+    if (typeof query !== 'string' || !query.trim()) {
+        throw new Error(`positive fixture unavailable: ${caseId} query missing`);
+    }
+    return true;
+}
+
+function positiveSearchPass(top, expectedIndex, scoreMin = POSITIVE_SCORE_MIN) {
+    const topScore = Number(top?.score);
+    return expectedIndex === 0
+        && Number.isFinite(topScore)
+        && topScore >= scoreMin;
+}
+
 const safeSourceId = (sourceId) => crypto.createHash('sha256')
     .update(String(sourceId || 'unknown'))
     .digest('hex')
@@ -575,12 +592,13 @@ async function validate(name, expectedCount) {
             }));
         const banglaRecord = records.find((record) => /[\u0980-\u09ff]/u.test(record.text));
         const englishRecord = records.find((record) => /[A-Za-z]/u.test(record.text));
-        const banglaQuery = banglaRecord?.text?.slice(0, 120) || 'ডেলিভারি তথ্য';
-        const englishQuery = englishRecord?.text?.slice(0, 120) || 'product information';
+        const banglaQuery = banglaRecord?.text?.slice(0, 120) || null;
+        const englishQuery = englishRecord?.text?.slice(0, 120) || null;
         const crossLingualQuery = 'ডেলিভারি information';
         const positiveFilter = shopFilter(shopId);
 
         const runPositive = async (caseId, query, expectedRecord) => {
+            assertPositiveFixture(caseId, query, expectedRecord);
             const embedding = await getEmbeddingResult(query, {
                 identity: binding.identity,
                 purpose: 'query',
@@ -595,16 +613,18 @@ async function validate(name, expectedCount) {
             const expectedRank = expectedIndex >= 0 ? expectedIndex + 1 : null;
             const expectedScore = expectedPoint?.score;
             const topScore = Number(top?.score);
-            const pass = Boolean(top)
-                && Number.isFinite(topScore)
-                && topScore >= POSITIVE_SCORE_MIN;
+            const pass = positiveSearchPass(top, expectedIndex);
             const failureReason = pass
                 ? 'NONE'
-                : !top
-                    ? 'NO_RESULTS'
-                    : !Number.isFinite(topScore)
-                        ? 'TOP_SCORE_NOT_FINITE'
-                        : 'TOP_SCORE_BELOW_THRESHOLD';
+                : expectedIndex < 0
+                    ? 'EXPECTED_SOURCE_NOT_FOUND'
+                    : expectedIndex !== 0
+                        ? 'EXPECTED_SOURCE_NOT_TOP'
+                        : !top
+                            ? 'NO_RESULTS'
+                            : !Number.isFinite(topScore)
+                                ? 'TOP_SCORE_NOT_FINITE'
+                                : 'TOP_SCORE_BELOW_THRESHOLD';
             emitSearchEvidence({
                 identity: binding.identity,
                 collection: name,
@@ -777,6 +797,8 @@ module.exports = {
     hasLexicalOverlap,
     assertNegativeFixtureLexicallyDisjoint,
     negativeSearchPass,
+    assertPositiveFixture,
+    positiveSearchPass,
     NEGATIVE_SEARCH_QUERY,
     loadSourceContract,
     normalizeDatabaseUrl,
