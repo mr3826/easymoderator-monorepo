@@ -35,6 +35,12 @@ const READY_ACCEPTANCE_CONTRACT = {
     negative_ceiling: 0.62,
     positive_floor_p05: 0.78,
 };
+const PENDING_ACCEPTANCE_CONTRACT = {
+    ...acceptance.PROOF_ACCEPTANCE_CONTRACT,
+    status: 'PENDING_RECALIBRATION',
+    negative_ceiling: null,
+    positive_floor_p05: null,
+};
 
 describe('Qdrant migration proof safety helpers', () => {
     describe('URL contract', () => {
@@ -93,7 +99,7 @@ describe('Qdrant migration proof safety helpers', () => {
 
         expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, READY_ACCEPTANCE_CONTRACT, acceptance)).toBe(true);
         expect(negativeSearchPass(null, NEGATIVE_SEARCH_QUERY, READY_ACCEPTANCE_CONTRACT, acceptance)).toBe(true);
-        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, acceptance.PROOF_ACCEPTANCE_CONTRACT, acceptance))
+        expect(negativeSearchPass(point, NEGATIVE_SEARCH_QUERY, PENDING_ACCEPTANCE_CONTRACT, acceptance))
             .toBe(false);
     });
 
