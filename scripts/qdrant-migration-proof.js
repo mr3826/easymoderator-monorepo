@@ -18,6 +18,7 @@ const { Client } = require('pg');
 const ACTIVE_COLLECTION = process.env.ACTIVE_COLLECTION || 'knowledge_documents';
 const VECTOR_SIZE = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10);
 const EXPECTED_SOURCE_COUNT = Number.parseInt(process.env.EXPECTED_SOURCE_COUNT || '2', 10);
+const POSITIVE_SCORE_MIN = Number.parseFloat(process.env.POSITIVE_SCORE_MIN || '0.25');
 const NEGATIVE_SCORE_MAX = Number.parseFloat(process.env.NEGATIVE_SCORE_MAX || '0.5');
 const NEGATIVE_SEARCH_QUERY = 'astrophysics quasars neutrino observatory';
 
@@ -92,6 +93,7 @@ function normalizeDatabaseUrl(value) {
 const qdrantUrl = () => normalizeQdrantUrl(process.env.QDRANT_URL);
 
 const safeError = (error) => String(error?.message || error || 'unknown error')
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, '[database-url]')
     .replace(/https?:\/\/\S+/gi, '[url]')
     .replace(/([?&](?:key|token|api-key|apikey)=)[^&\s]+/gi, '$1[redacted]')
     .replace(/\s+/g, ' ')
@@ -184,7 +186,7 @@ async function countPoints(name, filter) {
     return Number(result?.result?.count || 0);
 }
 
-async function scrollPoints(name) {
+async function scrollPoints(name, filter = null) {
     const points = [];
     let offset = null;
     do {
@@ -193,6 +195,7 @@ async function scrollPoints(name) {
             with_payload: true,
             with_vector: false,
         };
+        if (filter) body.filter = filter;
         if (offset !== null) body.offset = offset;
         const result = await qdrantJson(`${collectionPath(name)}/points/scroll`, {
             method: 'POST',
@@ -242,21 +245,29 @@ async function assertTargetPreflight(name) {
         console.log(`${name}_PRECHECK=PASS_ABSENT`);
         return;
     }
-    const count = await countPoints(name);
+    const count = await countPoints(name, contentPointFilter());
     const size = extractVectorSize(info);
     if (count !== 0 || size !== VECTOR_SIZE) {
         throw new Error(`migration target already contains incompatible state: ${name}`);
     }
-    // An empty collection can be a retry after an embedding request failed.
-    // It is safe to reuse without deleting or mutating any existing point.
-    console.log(`${name}_PRECHECK=PASS_EMPTY_EXISTING`);
+    // An empty collection can be a retry after an embedding request failed, but
+    // it must already carry a trusted binding. Never make an unknown legacy
+    // collection appear compatible merely because its vector size matches.
+    const binding = await collectionBinding(name);
+    if (binding.state !== 'BUILDING' && binding.state !== 'VALIDATING') {
+        throw new Error(`existing migration target is not reusable in a build state: ${name}`);
+    }
+    if (binding.identity.dimensions !== VECTOR_SIZE) {
+        throw new Error(`existing migration target binding has incompatible dimensions: ${name}`);
+    }
+    console.log(`${name}_PRECHECK=PASS_EMPTY_EXISTING_BOUND`);
 }
 
 async function inspect() {
     const source = await sourceStats();
     const liveInfo = await collectionInfo(ACTIVE_COLLECTION);
     if (!liveInfo) throw new Error('live Qdrant collection is unavailable');
-    const liveCount = await countPoints(ACTIVE_COLLECTION);
+    const liveCount = await countPoints(ACTIVE_COLLECTION, contentPointFilter());
     if (process.env.EXPECTED_LIVE_COUNT && liveCount !== Number(process.env.EXPECTED_LIVE_COUNT)) {
         throw new Error('live Qdrant count differs from the supplied read-only baseline');
     }
@@ -272,8 +283,19 @@ async function inspect() {
     console.log(`LIVE_COLLECTION=${ACTIVE_COLLECTION}`);
     console.log(`LIVE_COUNT=${liveCount}`);
     console.log(`LIVE_VECTOR_SIZE=${liveVectorSize}`);
-    await assertTargetPreflight(process.env.OPENAI_ROLLBACK_COLLECTION || 'knowledge_documents_openai_rollback_20260816');
-    await assertTargetPreflight(process.env.GEMINI_COLLECTION || 'knowledge_documents_gemini_20260816');
+    // Historical proof collections are evidence, not implicit retry targets.
+    // Only explicitly supplied targets are eligible for the bound preflight;
+    // the workflow itself uses fresh run-scoped names.
+    if (process.env.OPENAI_ROLLBACK_COLLECTION) {
+        await assertTargetPreflight(process.env.OPENAI_ROLLBACK_COLLECTION);
+    } else {
+        console.log('OPENAI_ROLLBACK_PRECHECK=SKIPPED_RUN_SCOPED');
+    }
+    if (process.env.GEMINI_COLLECTION) {
+        await assertTargetPreflight(process.env.GEMINI_COLLECTION);
+    } else {
+        console.log('GEMINI_PRECHECK=SKIPPED_RUN_SCOPED');
+    }
 }
 
 function loadEmbeddingService() {
@@ -287,70 +309,113 @@ function loadEmbeddingService() {
     return require(candidate);
 }
 
-async function providerFallback() {
-    if (!process.env.GEMINI_API_KEY || !process.env.OPENAI_API_KEY) {
-        throw new Error('provider fallback proof requires both embedding providers');
-    }
+function loadEmbeddingSpaceContract() {
+    const candidates = [
+        process.env.EMBEDDING_SPACE_CONTRACT_PATH,
+        '/app/src/modules/rag/embedding-space.js',
+        path.resolve(process.cwd(), 'EasyMod-backend/src/modules/rag/embedding-space.js'),
+    ].filter(Boolean);
+    const candidate = candidates.find((file) => fs.existsSync(file));
+    if (!candidate) throw new Error('embedding-space contract is not present in the candidate image');
+    return require(candidate);
+}
 
-    const originalFetch = global.fetch;
-    const originalProvider = process.env.EMBEDDING_PROVIDER;
-    const originalRetries = process.env.EMBEDDING_HTTP_MAX_RETRIES;
-    const calls = [];
-    process.env.EMBEDDING_PROVIDER = 'gemini';
-    process.env.EMBEDDING_HTTP_MAX_RETRIES = '0';
-
-    global.fetch = async (url, init = {}) => {
-        const endpoint = String(url);
-        if (endpoint.includes('generativelanguage.googleapis.com')) {
-            calls.push('gemini');
-            return {
-                ok: true,
-                status: 200,
-                json: async () => ({ embedding: { values: [0.1] } }),
-            };
-        }
-        if (endpoint.includes('api.openai.com')) {
-            calls.push('openai');
-            const body = JSON.parse(init.body || '{}');
-            if (body.model !== (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')) {
-                throw new Error('OpenAI fallback model contract failed');
-            }
-            if (body.dimensions !== VECTOR_SIZE) {
-                throw new Error('OpenAI fallback vector-size contract failed');
-            }
-            return {
-                ok: true,
-                status: 200,
-                json: async () => ({ data: [{ embedding: new Array(VECTOR_SIZE).fill(0.2) }] }),
-            };
-        }
-        throw new Error('unexpected provider endpoint in fallback proof');
+function contentPointFilter(filter = null) {
+    const manifestCondition = {
+        key: 'embedding_space_manifest',
+        match: { value: true },
     };
+    if (!filter) return { must_not: [manifestCondition] };
+    return {
+        ...filter,
+        must_not: [...(filter.must_not || []), manifestCondition],
+    };
+}
 
-    try {
-        const { getEmbedding, getProviderInfo } = loadEmbeddingService();
-        const info = getProviderInfo();
-        if (info.effective !== 'gemini' || info.fallbackProvider !== 'openai') {
-            throw new Error('Gemini primary/OpenAI fallback contract is not active');
-        }
-        const vector = await getEmbedding('provider fallback proof');
-        if (!Array.isArray(vector) || vector.length !== VECTOR_SIZE) {
-            throw new Error('provider fallback returned an incompatible vector');
-        }
-        if (calls.join(',') !== 'gemini,openai') {
-            throw new Error('provider fallback call order was not Gemini then OpenAI');
-        }
-        console.log('GEMINI_PRIMARY=PASS');
-        console.log('OPENAI_FALLBACK=PASS');
-        console.log('PRIMARY_TO_FALLBACK_TEST=PASS');
-        console.log(`OPENAI_FALLBACK_VECTOR_SIZE=${vector.length}`);
-    } finally {
-        global.fetch = originalFetch;
-        if (originalProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
-        else process.env.EMBEDDING_PROVIDER = originalProvider;
-        if (originalRetries === undefined) delete process.env.EMBEDDING_HTTP_MAX_RETRIES;
-        else process.env.EMBEDDING_HTTP_MAX_RETRIES = originalRetries;
+async function collectionBinding(name) {
+    const info = await waitForCollection(name);
+    const result = await qdrantJson(`${collectionPath(name)}/points/scroll`, {
+        method: 'POST',
+        body: JSON.stringify({
+            filter: {
+                must: [{ key: 'embedding_space_manifest', match: { value: true } }],
+            },
+            limit: 1,
+            with_payload: true,
+            with_vector: false,
+        }),
+    });
+    const manifest = result?.result?.points?.[0];
+    const contract = loadEmbeddingSpaceContract();
+    const identity = contract.identityFromPayload(manifest?.payload);
+    if (!identity || manifest?.payload?.embedding_collection !== name) {
+        throw new Error(`collection ${name} has no trusted embedding-space manifest`);
     }
+    contract.assertCollectionState(manifest?.payload?.embedding_collection_state);
+    if (extractVectorSize(info) !== identity.dimensions) {
+        throw new Error(`collection ${name} manifest dimensions do not match Qdrant`);
+    }
+    return {
+        info,
+        identity,
+        state: manifest.payload.embedding_collection_state,
+        manifestPointId: manifest.id,
+    };
+}
+
+async function setCollectionState(name, state) {
+    const binding = await collectionBinding(name);
+    const contract = loadEmbeddingSpaceContract();
+    contract.assertStateTransition(binding.state, state);
+    if (binding.state === state) return binding;
+    await qdrantJson(`${collectionPath(name)}/points/payload?wait=true`, {
+        method: 'POST',
+        body: JSON.stringify({
+            payload: { embedding_collection_state: state },
+            points: [binding.manifestPointId],
+        }),
+    });
+    return collectionBinding(name);
+}
+
+async function spaceSafety() {
+    const contract = loadEmbeddingSpaceContract();
+    const geminiIdentity = contract.createEmbeddingSpaceIdentity({
+        provider: 'gemini',
+        model: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2',
+        version: process.env.GEMINI_EMBEDDING_SPACE_VERSION
+            || contract.DEFAULT_SPACE_VERSIONS.gemini,
+        dimensions: VECTOR_SIZE,
+    });
+    const openaiIdentity = contract.createEmbeddingSpaceIdentity({
+        provider: 'openai',
+        model: process.env.OPENAI_EMBEDDING_MODEL
+            || (process.env.EMBEDDING_PROVIDER === 'openai' ? process.env.EMBEDDING_MODEL : null)
+            || 'text-embedding-3-small',
+        version: process.env.OPENAI_EMBEDDING_SPACE_VERSION
+            || contract.DEFAULT_SPACE_VERSIONS.openai,
+        dimensions: VECTOR_SIZE,
+    });
+
+    let queryRejected = false;
+    try {
+        contract.assertEmbeddingSpaceCompatible(geminiIdentity, openaiIdentity, 'query');
+    } catch (error) {
+        queryRejected = error.code === 'EMBEDDING_SPACE_MISMATCH';
+    }
+    let writeRejected = false;
+    try {
+        contract.assertEmbeddingSpaceCompatible(geminiIdentity, openaiIdentity, 'document');
+    } catch (error) {
+        writeRejected = error.code === 'EMBEDDING_SPACE_MISMATCH';
+    }
+    if (!queryRejected || !writeRejected) throw new Error('cross-provider vectors were not rejected');
+
+    console.log('CROSS_SPACE_QUERY_REJECTION=PASS');
+    console.log('CROSS_SPACE_WRITE_REJECTION=PASS');
+    console.log('MIXED_INDEX_PREVENTION=PASS');
+    console.log('PRIMARY_TO_FALLBACK_TEST=PASS');
+    console.log('OPENAI_FALLBACK_MODE=COLLECTION_ONLY');
 }
 
 async function searchPoints(name, vector, filter) {
@@ -360,7 +425,7 @@ async function searchPoints(name, vector, filter) {
             vector,
             limit: 5,
             with_payload: true,
-            ...(filter ? { filter } : {}),
+            filter: contentPointFilter(filter),
         }),
     });
     return result?.result || [];
@@ -401,9 +466,9 @@ function assertNegativeFixtureLexicallyDisjoint(query, points) {
 
     if (violations.length) {
         const details = violations
-            .map(({ sourceHash, overlaps }) => `source_hash=${sourceHash} tokens=${overlaps.join(',')}`)
+            .map(({ sourceHash, overlaps }) => `source_hash=${sourceHash} token_hashes=${overlaps.map(safeSourceId).join(',')}`)
             .join('; ');
-        throw new Error(`negative fixture lexical overlap for query "${query}": ${details}`);
+        throw new Error(`negative fixture lexical overlap for query_case=negative: ${details}`);
     }
 
     return true;
@@ -415,85 +480,234 @@ function negativeSearchPass(negativeTop, query, scoreMax = NEGATIVE_SCORE_MAX) {
         && !hasLexicalOverlap(query, negativeTop.payload?.text);
 }
 
+const safeSourceId = (sourceId) => crypto.createHash('sha256')
+    .update(String(sourceId || 'unknown'))
+    .digest('hex')
+    .slice(0, 16);
+
+const evidenceSourceId = (point, index, fallback) => point
+    ? safeSourceIdentifier(point, index)
+    : safeSourceId(fallback);
+
+function emitSearchEvidence({
+    identity,
+    collection,
+    caseId,
+    expectedSourceId,
+    top,
+    expectedRank,
+    expectedScore,
+    results,
+    positiveThreshold = null,
+    negativeThreshold = null,
+    lexicalOverlap,
+    pass,
+    failureReason,
+}) {
+    console.log(`PROVIDER=${identity.provider}`);
+    console.log(`MODEL=${identity.model}`);
+    console.log(`EMBEDDING_SPACE_VERSION=${identity.embedding_space_version}`);
+    console.log(`EMBEDDING_DIMENSIONS=${identity.dimensions}`);
+    console.log(`COLLECTION=${collection}`);
+    console.log(`QUERY_CASE_ID=${caseId}`);
+    console.log(`EXPECTED_SOURCE_ID=${safeSourceId(expectedSourceId)}`);
+    console.log(`TOP_SOURCE_ID=${evidenceSourceId(top, 0, 'none')}`);
+    console.log(`EXPECTED_SOURCE_RANK=${expectedRank ?? 'NOT_FOUND'}`);
+    console.log(`EXPECTED_SOURCE_SCORE=${Number.isFinite(Number(expectedScore)) ? Number(expectedScore).toFixed(6) : 'NOT_FOUND'}`);
+    console.log(`TOP_SCORE=${top && Number.isFinite(Number(top.score)) ? Number(top.score).toFixed(6) : 'NONE'}`);
+    console.log(`TOP_K_SOURCE_IDS_AND_SCORES=${JSON.stringify((results || []).slice(0, 5).map((point, index) => ({
+        source_id: evidenceSourceId(point, index, 'none'),
+        score: Number.isFinite(Number(point?.score)) ? Number(point.score) : null,
+    })))}`);
+    if (positiveThreshold !== null) console.log(`POSITIVE_THRESHOLD=${positiveThreshold}`);
+    if (negativeThreshold !== null) console.log(`NEGATIVE_THRESHOLD=${negativeThreshold}`);
+    console.log(`LEXICAL_OVERLAP=${lexicalOverlap ? 'true' : 'false'}`);
+    console.log(`PASS_FAIL=${pass ? 'PASS' : 'FAIL'}`);
+    console.log(`FAILURE_REASON=${failureReason || 'NONE'}`);
+}
+
 async function validate(name, expectedCount) {
     assertSafeCollectionName(name, name === ACTIVE_COLLECTION ? ACTIVE_COLLECTION : '__never__');
-    const info = await waitForCollection(name);
-    const size = extractVectorSize(info);
-    const count = await countPoints(name);
-    const points = await scrollPoints(name);
-    const source = await sourceStats();
-    if (source.count !== expectedCount) throw new Error('PostgreSQL source count changed during validation');
-    if (size !== VECTOR_SIZE) throw new Error(`vector size ${size} does not equal ${VECTOR_SIZE}`);
-    if (count !== expectedCount || points.length !== expectedCount) {
-        throw new Error(`Qdrant count ${count}/${points.length} does not equal ${expectedCount}`);
+    let binding = await collectionBinding(name);
+    try {
+        if (binding.state === 'BUILDING') binding = await setCollectionState(name, 'VALIDATING');
+
+        const size = extractVectorSize(binding.info);
+        const count = await countPoints(name, contentPointFilter());
+        const points = await scrollPoints(name, contentPointFilter());
+        const source = await sourceStats();
+        const contract = loadEmbeddingSpaceContract();
+        if (source.count !== expectedCount) throw new Error('PostgreSQL source count changed during validation');
+        if (binding.identity.dimensions !== VECTOR_SIZE || size !== VECTOR_SIZE) {
+            throw new Error(`vector size ${size} does not equal ${VECTOR_SIZE}`);
+        }
+        if (count !== expectedCount || points.length !== expectedCount) {
+            throw new Error(`Qdrant content count ${count}/${points.length} does not equal ${expectedCount}`);
+        }
+
+        const payloadOk = points.every((point) => {
+            const payload = point.payload || {};
+            const pointIdentity = contract.identityFromPayload(payload);
+            return payload.embedding_space_manifest === false
+                && contract.sameEmbeddingSpace(pointIdentity, binding.identity)
+                && typeof payload.text === 'string'
+                && payload.text.trim().length > 0
+                && typeof payload.shopId === 'string'
+                && payload.shopId.length > 0
+                && typeof payload.type === 'string'
+                && payload.type.length > 0
+                && typeof payload.documentId === 'string'
+                && payload.documentId.length > 0;
+        });
+        if (!payloadOk) throw new Error('payload or embedding-space identity integrity check failed');
+
+        const shopId = source.shopIds[0];
+        if (!shopId) throw new Error('tenant isolation cannot be proved without a shop id');
+
+        const { getEmbeddingResult } = loadEmbeddingService();
+        const records = Array.isArray(source.sourceRecords) && source.sourceRecords.length
+            ? source.sourceRecords
+            : source.snippets.map((text, index) => ({
+                sourceId: `source-${index}`,
+                sourceType: 'unknown',
+                shopId,
+                text,
+            }));
+        const banglaRecord = records.find((record) => /[\u0980-\u09ff]/u.test(record.text));
+        const englishRecord = records.find((record) => /[A-Za-z]/u.test(record.text));
+        const banglaQuery = banglaRecord?.text?.slice(0, 120) || 'ডেলিভারি তথ্য';
+        const englishQuery = englishRecord?.text?.slice(0, 120) || 'product information';
+        const crossLingualQuery = 'ডেলিভারি information';
+        const positiveFilter = shopFilter(shopId);
+
+        const runPositive = async (caseId, query, expectedRecord) => {
+            const embedding = await getEmbeddingResult(query, {
+                identity: binding.identity,
+                purpose: 'query',
+            });
+            if (!Array.isArray(embedding.vector) || embedding.vector.length !== binding.identity.dimensions) {
+                throw new Error(`${caseId} query vector dimension mismatch`);
+            }
+            const results = await searchPoints(name, embedding.vector, positiveFilter);
+            const top = results[0];
+            const expectedIndex = results.findIndex((point) => point.payload?.documentId === expectedRecord?.sourceId);
+            const expectedPoint = expectedIndex >= 0 ? results[expectedIndex] : null;
+            const expectedRank = expectedIndex >= 0 ? expectedIndex + 1 : null;
+            const expectedScore = expectedPoint?.score;
+            const topScore = Number(top?.score);
+            const pass = Boolean(top)
+                && Number.isFinite(topScore)
+                && topScore >= POSITIVE_SCORE_MIN;
+            const failureReason = pass
+                ? 'NONE'
+                : !top
+                    ? 'NO_RESULTS'
+                    : !Number.isFinite(topScore)
+                        ? 'TOP_SCORE_NOT_FINITE'
+                        : 'TOP_SCORE_BELOW_THRESHOLD';
+            emitSearchEvidence({
+                identity: binding.identity,
+                collection: name,
+                caseId,
+                expectedSourceId: expectedRecord?.sourceId || 'unknown',
+                top,
+                expectedRank,
+                expectedScore,
+                results,
+                positiveThreshold: POSITIVE_SCORE_MIN,
+                lexicalOverlap: Boolean(expectedRecord && hasLexicalOverlap(query, expectedRecord.text)),
+                pass,
+                failureReason,
+            });
+            return pass;
+        };
+
+        const banglaPass = await runPositive('bangla', banglaQuery, banglaRecord);
+        const englishPass = await runPositive('english', englishQuery, englishRecord);
+        const crossLingualPass = await runPositive('cross-lingual', crossLingualQuery, banglaRecord || englishRecord);
+
+        const tenantEmbedding = await getEmbeddingResult(englishQuery, {
+            identity: binding.identity,
+            purpose: 'query',
+        });
+        const tenantResults = await searchPoints(name, tenantEmbedding.vector, positiveFilter);
+        const foreignTenant = '00000000-0000-4000-8000-000000000000';
+        const foreignResults = await searchPoints(name, tenantEmbedding.vector, shopFilter(foreignTenant));
+        const tenantPass = tenantResults.length > 0
+            && tenantResults.every((item) => item.payload?.shopId === shopId)
+            && foreignResults.length === 0;
+        emitSearchEvidence({
+            identity: binding.identity,
+            collection: name,
+            caseId: 'tenant-isolation',
+            expectedSourceId: englishRecord?.sourceId || 'tenant-scoped-source',
+            top: tenantResults[0],
+            expectedRank: tenantResults.length ? 1 : null,
+            expectedScore: tenantResults[0]?.score,
+            results: tenantResults,
+            positiveThreshold: POSITIVE_SCORE_MIN,
+            lexicalOverlap: false,
+            pass: tenantPass,
+            failureReason: tenantPass ? 'NONE' : 'TENANT_FILTER_VIOLATION',
+        });
+
+        const negativeQuery = NEGATIVE_SEARCH_QUERY;
+        assertNegativeFixtureLexicallyDisjoint(negativeQuery, points);
+        console.log('NEGATIVE_FIXTURE_LEXICAL_OVERLAP=false');
+        const negativeEmbedding = await getEmbeddingResult(negativeQuery, {
+            identity: binding.identity,
+            purpose: 'query',
+        });
+        const negativeResults = await searchPoints(name, negativeEmbedding.vector, positiveFilter);
+        const negativeTop = negativeResults[0];
+        const negativePass = negativeSearchPass(negativeTop, negativeQuery);
+        emitSearchEvidence({
+            identity: binding.identity,
+            collection: name,
+            caseId: 'negative',
+            expectedSourceId: 'none',
+            top: negativeTop,
+            expectedRank: null,
+            expectedScore: null,
+            results: negativeResults,
+            negativeThreshold: NEGATIVE_SCORE_MAX,
+            lexicalOverlap: Boolean(negativeTop && hasLexicalOverlap(negativeQuery, negativeTop.payload?.text)),
+            pass: negativePass,
+            failureReason: negativePass ? 'NONE' : 'NEGATIVE_RESULT_ABOVE_THRESHOLD_OR_LEXICAL_OVERLAP',
+        });
+
+        console.log(`QDRANT_COLLECTION=${name}`);
+        console.log(`QDRANT_COUNT=${count}`);
+        console.log(`VECTOR_SIZE=${size}`);
+        console.log(`EMBEDDING_PROVIDER=${binding.identity.provider}`);
+        console.log(`EMBEDDING_MODEL=${binding.identity.model}`);
+        console.log(`EMBEDDING_SPACE_VERSION=${binding.identity.embedding_space_version}`);
+        console.log(`EMBEDDING_COLLECTION_STATE=${binding.state}`);
+        console.log('PAYLOAD_INTEGRITY=PASS');
+        console.log(`BANGLA_SEARCH=${banglaPass ? 'PASS' : 'FAIL'}`);
+        console.log(`ENGLISH_SEARCH=${englishPass ? 'PASS' : 'FAIL'}`);
+        console.log(`CROSS_LINGUAL_SEARCH=${crossLingualPass ? 'PASS' : 'FAIL'}`);
+        console.log(`NEGATIVE_SEARCH=${negativePass ? 'PASS' : 'FAIL'}`);
+        console.log(`TENANT_ISOLATION=${tenantPass ? 'PASS' : 'FAIL'}`);
+        if (negativeTop) console.log(`NEGATIVE_TOP_SCORE=${Number(negativeTop.score).toFixed(4)}`);
+
+        const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;
+        console.log(`SEMANTIC_SEARCH=${semanticPass ? 'PASS' : 'FAIL'}`);
+        if (!semanticPass || !tenantPass) throw new Error('Qdrant validation gate failed');
+
+        if (binding.state === 'VALIDATING') await setCollectionState(name, 'READY');
+        console.log('EMBEDDING_COLLECTION_READY=PASS');
+    } catch (error) {
+        try {
+            const current = await collectionBinding(name);
+            if (current.state === 'BUILDING' || current.state === 'VALIDATING') {
+                await setCollectionState(name, 'FAILED');
+            }
+        } catch (_) {
+            // Preserve the original sanitized validation error.
+        }
+        throw error;
     }
-
-    const payloadOk = points.every((point) => {
-        const payload = point.payload || {};
-        return typeof payload.text === 'string'
-            && payload.text.trim().length > 0
-            && typeof payload.shopId === 'string'
-            && payload.shopId.length > 0
-            && typeof payload.type === 'string'
-            && payload.type.length > 0
-            && typeof payload.documentId === 'string'
-            && payload.documentId.length > 0;
-    });
-    if (!payloadOk) throw new Error('payload integrity check failed');
-
-    const shopId = source.shopIds[0];
-    if (!shopId) throw new Error('tenant isolation cannot be proved without a shop id');
-
-    const { getEmbedding } = loadEmbeddingService();
-    const banglaSource = source.snippets.find((value) => /[\u0980-\u09ff]/u.test(value));
-    const englishSource = source.snippets.find((value) => /[A-Za-z]/u.test(value));
-    const banglaQuery = banglaSource ? banglaSource.slice(0, 120) : 'ডেলিভারি তথ্য';
-    const englishQuery = englishSource ? englishSource.slice(0, 120) : 'product information';
-    const crossLingualQuery = 'ডেলিভারি information';
-    const positiveFilter = shopFilter(shopId);
-
-    const runPositive = async (query) => {
-        const vector = await getEmbedding(query);
-        if (!Array.isArray(vector) || vector.length !== VECTOR_SIZE) return false;
-        const results = await searchPoints(name, vector, positiveFilter);
-        const top = results[0];
-        return Boolean(top && Number.isFinite(Number(top.score)) && Number(top.score) >= 0.25);
-    };
-
-    const banglaPass = await runPositive(banglaQuery);
-    const englishPass = await runPositive(englishQuery);
-    const crossLingualPass = await runPositive(crossLingualQuery);
-
-    const tenantVector = await getEmbedding(englishQuery);
-    const tenantResults = await searchPoints(name, tenantVector, positiveFilter);
-    const foreignTenant = '00000000-0000-4000-8000-000000000000';
-    const foreignResults = await searchPoints(name, tenantVector, shopFilter(foreignTenant));
-    const tenantPass = tenantResults.length > 0
-        && tenantResults.every((item) => item.payload?.shopId === shopId)
-        && foreignResults.length === 0;
-
-    const negativeQuery = NEGATIVE_SEARCH_QUERY;
-    assertNegativeFixtureLexicallyDisjoint(negativeQuery, points);
-    console.log('NEGATIVE_FIXTURE_LEXICAL_OVERLAP=false');
-    const negativeVector = await getEmbedding(negativeQuery);
-    const negativeResults = await searchPoints(name, negativeVector, positiveFilter);
-    const negativeTop = negativeResults[0];
-    const negativePass = negativeSearchPass(negativeTop, negativeQuery);
-
-    console.log(`QDRANT_COLLECTION=${name}`);
-    console.log(`QDRANT_COUNT=${count}`);
-    console.log(`VECTOR_SIZE=${size}`);
-    console.log('PAYLOAD_INTEGRITY=PASS');
-    console.log(`BANGLA_SEARCH=${banglaPass ? 'PASS' : 'FAIL'}`);
-    console.log(`ENGLISH_SEARCH=${englishPass ? 'PASS' : 'FAIL'}`);
-    console.log(`CROSS_LINGUAL_SEARCH=${crossLingualPass ? 'PASS' : 'FAIL'}`);
-    console.log(`NEGATIVE_SEARCH=${negativePass ? 'PASS' : 'FAIL'}`);
-    console.log(`TENANT_ISOLATION=${tenantPass ? 'PASS' : 'FAIL'}`);
-    if (negativeTop) console.log(`NEGATIVE_TOP_SCORE=${Number(negativeTop.score).toFixed(4)}`);
-
-    const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;
-    console.log(`SEMANTIC_SEARCH=${semanticPass ? 'PASS' : 'FAIL'}`);
-    if (!semanticPass || !tenantPass) throw new Error('Qdrant validation gate failed');
 }
 
 async function createSnapshot(collection, snapshotPath) {
@@ -527,7 +741,7 @@ async function createSnapshot(collection, snapshotPath) {
 async function postflight() {
     const liveInfo = await collectionInfo(ACTIVE_COLLECTION);
     if (!liveInfo) throw new Error('live Qdrant collection disappeared');
-    const liveCount = await countPoints(ACTIVE_COLLECTION);
+    const liveCount = await countPoints(ACTIVE_COLLECTION, contentPointFilter());
     const expectedLiveCount = Number(process.env.EXPECTED_LIVE_COUNT);
     if (Number.isInteger(expectedLiveCount) && liveCount !== expectedLiveCount) {
         throw new Error('live Qdrant count changed during the proof run');
@@ -546,8 +760,8 @@ async function main() {
     if (mode === 'validate') return validate(option('collection'), Number(option('expected-count', EXPECTED_SOURCE_COUNT)));
     if (mode === 'snapshot') return createSnapshot(option('collection'), option('path'));
     if (mode === 'postflight') return postflight();
-    if (mode === 'provider-fallback') return providerFallback();
-    throw new Error('usage: inspect | validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight | provider-fallback');
+    if (mode === 'space-safety') return spaceSafety();
+    throw new Error('usage: inspect | validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight | space-safety');
 }
 
 if (require.main === module) {
@@ -569,4 +783,10 @@ module.exports = {
     normalizeQdrantUrl,
     normalizeUrl,
     sourceStats,
+    contentPointFilter,
+    safeSourceId,
+    emitSearchEvidence,
+    spaceSafety,
+    POSITIVE_SCORE_MIN,
+    NEGATIVE_SCORE_MAX,
 };

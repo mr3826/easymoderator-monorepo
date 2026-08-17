@@ -3,13 +3,23 @@ const EMBEDDING_HTTP_MAX_RETRIES = Number.parseInt(process.env.EMBEDDING_HTTP_MA
 const EMBEDDING_RETRY_BACKOFF_MS = Number.parseInt(process.env.EMBEDDING_RETRY_BACKOFF_MS || '1200', 10);
 const OPENAI_FALLBACK_MODEL = 'text-embedding-3-small';
 
-const normalizeText = (text) => (text || '').toString().trim();
+const {
+  DEFAULT_SPACE_VERSIONS,
+  createEmbeddingSpaceIdentity,
+} = require('./embedding-space');
+const {
+  normalizeEmbeddingText,
+  prepareRetrievalDocument,
+  prepareRetrievalQuery,
+} = require('./embedding-input');
+
+const normalizeText = normalizeEmbeddingText;
 
 // ── Local embedding ───────────────────────────────────────────────────────────
 // Character n-gram hash fallback — NOT semantically meaningful.
 // Use EMBEDDING_PROVIDER=gemini (preferred), openai, or gcp in production.
 // ─────────────────────────────────────────────────────────────────────────────
-const localEmbed = (text) => {
+const localEmbed = (text, dimensions = vectorSize) => {
   if (process.env.NODE_ENV === 'production') {
     console.warn(
       '⚠️  WARNING: Using local (non-semantic) embedding in production. ' +
@@ -17,31 +27,31 @@ const localEmbed = (text) => {
     );
   }
 
-  const vector = new Array(vectorSize).fill(0);
+  const vector = new Array(dimensions).fill(0);
   const normalized = normalizeText(text);
 
   // Bigram overlap — captures some token co-occurrence, still not semantic
   for (let i = 0; i < normalized.length - 1; i++) {
     const bigram = normalized.charCodeAt(i) * 31 + normalized.charCodeAt(i + 1);
-    const index = bigram % vectorSize;
+    const index = bigram % dimensions;
     vector[index] += 1;
   }
   // Single chars too
   for (let i = 0; i < normalized.length; i++) {
-    vector[normalized.charCodeAt(i) % vectorSize] += 0.5;
+    vector[normalized.charCodeAt(i) % dimensions] += 0.5;
   }
 
   const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
   return vector.map((v) => v / norm);
 };
 
-const ensureVectorSize = (vector) => {
+const ensureVectorSize = (vector, expectedSize = vectorSize) => {
   if (!Array.isArray(vector)) {
     throw new Error('Embedding vector is not an array');
   }
-  if (vector.length !== vectorSize) {
+  if (vector.length !== expectedSize) {
     throw new Error(
-      `Embedding vector length (${vector.length}) does not match QDRANT_VECTOR_SIZE (${vectorSize}).`
+      `Embedding vector length (${vector.length}) does not match QDRANT_VECTOR_SIZE (${expectedSize}).`
     );
   }
   return vector;
@@ -65,7 +75,11 @@ const sanitizeProviderError = (error) => {
 
 const shouldRetryStatus = (status) => [408, 429, 500, 502, 503, 504].includes(status);
 
-const fetchWithRetries = async (url, requestInit, retries = EMBEDDING_HTTP_MAX_RETRIES) => {
+const fetchWithRetries = async (
+  url,
+  requestInit,
+  retries = Number.parseInt(process.env.EMBEDDING_HTTP_MAX_RETRIES || String(EMBEDDING_HTTP_MAX_RETRIES), 10),
+) => {
   let lastError;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -122,13 +136,11 @@ const buildEmbeddingCandidateUrls = (rawUrl) => {
   return [...new Set(candidates.filter(Boolean))];
 };
 
-const getOpenAiEmbedding = async (text) => {
+const getOpenAiEmbedding = async (text, { model = OPENAI_FALLBACK_MODEL, dimensions = vectorSize } = {}) => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY is not set');
   }
-
-  const model = process.env.EMBEDDING_MODEL || OPENAI_FALLBACK_MODEL;
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
@@ -139,7 +151,7 @@ const getOpenAiEmbedding = async (text) => {
     // text-embedding-3-* supports a `dimensions` param to truncate output.
     // Always pass it so the embedding size matches the Qdrant collection's
     // configured vector size (QDRANT_VECTOR_SIZE).
-    body: JSON.stringify({ model, input: text, dimensions: vectorSize })
+    body: JSON.stringify({ model, input: text, dimensions })
   });
 
   if (!response.ok) {
@@ -163,22 +175,23 @@ const getOpenAiEmbedding = async (text) => {
   } catch (_) { /* accounting must never break retrieval */ }
 
   const vector = data?.data?.[0]?.embedding;
-  return ensureVectorSize(vector);
+  return ensureVectorSize(vector, dimensions);
 };
 
-// Gemini embeddings. `outputDimensionality` requests the Qdrant collection
-// size; the returned vector is still checked by ensureVectorSize() below.
-// ponytail: one taskType for both indexing and querying. Gemini's asymmetric
-// RETRIEVAL_QUERY/RETRIEVAL_DOCUMENT split would lift recall, but getEmbedding()
-// has no doc-vs-query argument and mixing the two inconsistently is worse than
-// using one. Add the argument when retrieval eval says it's worth it.
-const getGeminiEmbedding = async (text) => {
+// Gemini Embedding 2 uses asymmetric retrieval input formatting. The old
+// taskType field belongs to Gemini Embedding 1 and is deliberately not sent.
+const getGeminiEmbedding = async (
+  text,
+  { model = 'gemini-embedding-2', dimensions = vectorSize, purpose = 'query', title = null } = {},
+) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not set');
   }
 
-  const model = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
+  const input = purpose === 'document'
+    ? prepareRetrievalDocument(text, { title })
+    : prepareRetrievalQuery(text);
 
   let response;
   try {
@@ -189,9 +202,8 @@ const getGeminiEmbedding = async (text) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: `models/${model}`,
-          content: { parts: [{ text }] },
-          outputDimensionality: vectorSize,
-          taskType: 'RETRIEVAL_DOCUMENT'
+          content: { parts: [{ text: input }] },
+          outputDimensionality: dimensions,
         })
       }
     );
@@ -216,10 +228,10 @@ const getGeminiEmbedding = async (text) => {
     });
   } catch (_) { /* accounting must never break retrieval */ }
 
-  return ensureVectorSize(data?.embedding?.values);
+  return ensureVectorSize(data?.embedding?.values, dimensions);
 };
 
-const getGcpEmbedding = async (text) => {
+const getGcpEmbedding = async (text, { model = 'text-embedding-3-small', dimensions = vectorSize } = {}) => {
   const apiUrl = process.env.EMBEDDING_API_URL;
   if (!apiUrl) {
     throw new Error('EMBEDDING_API_URL is not set for GCP provider');
@@ -238,7 +250,7 @@ const getGcpEmbedding = async (text) => {
   for (const url of candidateUrls) {
     const isOpenAiCompat = /\/v1\/embeddings$/i.test(url);
     const payload = isOpenAiCompat
-      ? { model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small', input: text }
+      ? { model, input: text, dimensions }
       : { inputs: text };
 
     try {
@@ -280,7 +292,7 @@ const getGcpEmbedding = async (text) => {
     vector = data.embeddings[0];
   }
 
-  return ensureVectorSize(vector);
+  return ensureVectorSize(vector, dimensions);
 };
 
 // Providers that produce real semantic vectors. Anything not in this set
@@ -310,45 +322,79 @@ const resolveProvider = (raw) => {
   return 'local';
 };
 
-const getEmbedding = async (text) => {
-  const rawProvider = configuredProvider();
-  const provider = resolveProvider(rawProvider);
+const resolveSpaceVersion = (provider) => {
+  const specificKey = provider === 'gemini'
+    ? 'GEMINI_EMBEDDING_SPACE_VERSION'
+    : provider === 'openai'
+      ? 'OPENAI_EMBEDDING_SPACE_VERSION'
+      : null;
+  return (specificKey && process.env[specificKey])
+    || process.env.EMBEDDING_SPACE_VERSION
+    || DEFAULT_SPACE_VERSIONS[provider]
+    || `${provider}-embedding-v1`;
+};
+
+const resolveProviderModel = (provider) => {
+  if (provider === 'gemini') return process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';
+  if (provider === 'openai') {
+    const explicitlyOpenAi = configuredProvider() === 'openai';
+    return process.env.OPENAI_EMBEDDING_MODEL
+      || (explicitlyOpenAi ? process.env.EMBEDDING_MODEL : null)
+      || OPENAI_FALLBACK_MODEL;
+  }
+  if (provider === 'gcp') return process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+  return 'local-ngram';
+};
+
+const getEmbeddingSpaceIdentity = ({ provider, model, version, dimensions } = {}) => {
+  const effectiveProvider = resolveProvider(provider ?? configuredProvider());
+  return createEmbeddingSpaceIdentity({
+    provider: effectiveProvider,
+    model: model || resolveProviderModel(effectiveProvider),
+    version: version || resolveSpaceVersion(effectiveProvider),
+    dimensions: dimensions || vectorSize,
+  });
+};
+
+/**
+ * Generate a vector without discarding the provider-bound identity that made
+ * it. No provider fallback happens here: fallback is a collection-level
+ * decision made by rag.service after resolving a compatible collection.
+ */
+const getEmbeddingResult = async (text, { identity = null, purpose = 'query', title = null } = {}) => {
+  const resolvedIdentity = identity || getEmbeddingSpaceIdentity();
   const content = normalizeText(text);
   if (!content) {
     throw new Error('Text is required for embedding');
   }
 
-  if (provider === 'gemini') {
-    try {
-      return await getGeminiEmbedding(content);
-    } catch (primaryError) {
-      if (!process.env.OPENAI_API_KEY) throw primaryError;
-
-      console.warn(
-        `Embedding provider fallback: gemini -> openai (${sanitizeProviderError(primaryError)})`,
-      );
-      try {
-        return await getOpenAiEmbedding(content);
-      } catch (fallbackError) {
-        const error = new Error(
-          `Gemini embedding failed; OpenAI fallback failed: ${sanitizeProviderError(fallbackError)}`,
-        );
-        error.name = 'EmbeddingFallbackError';
-        throw error;
-      }
-    }
+  if (resolvedIdentity.provider === 'gemini') {
+    const vector = await getGeminiEmbedding(content, {
+      model: resolvedIdentity.model,
+      dimensions: resolvedIdentity.dimensions,
+      purpose,
+      title,
+    });
+    return { vector, identity: resolvedIdentity };
   }
 
-  if (provider === 'openai') {
-    return getOpenAiEmbedding(content);
+  if (resolvedIdentity.provider === 'openai') {
+    const vector = await getOpenAiEmbedding(content, {
+      model: resolvedIdentity.model,
+      dimensions: resolvedIdentity.dimensions,
+    });
+    return { vector, identity: resolvedIdentity };
   }
 
-  if (provider === 'gcp') {
-    return getGcpEmbedding(content);
+  if (resolvedIdentity.provider === 'gcp') {
+    const vector = await getGcpEmbedding(content, {
+      model: resolvedIdentity.model,
+      dimensions: resolvedIdentity.dimensions,
+    });
+    return { vector, identity: resolvedIdentity };
   }
 
-  // 'anthropic' provider removed — Claude is a generative LLM, not an embedding
-  // model; it has no embeddings API. Fall through to local with a clear warning.
+  const rawProvider = configuredProvider();
   if (rawProvider === 'anthropic') {
     console.error(
       '❌ EMBEDDING_PROVIDER=anthropic is not supported. ' +
@@ -357,8 +403,13 @@ const getEmbedding = async (text) => {
     );
   }
 
-  return localEmbed(content);
+  return {
+    vector: localEmbed(content, resolvedIdentity.dimensions),
+    identity: resolvedIdentity,
+  };
 };
+
+const getEmbedding = async (text, options = {}) => (await getEmbeddingResult(text, options)).vector;
 
 /**
  * Report the effective embedding configuration WITHOUT a network call.
@@ -389,15 +440,17 @@ const getProviderInfo = () => {
     keyPresent,
     vectorSize,
     fallbackProvider: effective === 'gemini' ? 'openai' : null,
+    fallbackMode: effective === 'gemini' ? 'collection' : null,
     fallbackKeyPresent: effective === 'gemini' ? Boolean(process.env.OPENAI_API_KEY) : null,
     fallbackModel: effective === 'gemini'
-      ? (process.env.EMBEDDING_MODEL || OPENAI_FALLBACK_MODEL)
+      ? resolveProviderModel('openai')
       : null,
     model: effective === 'gemini'
       ? (process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2')
       : effective === 'openai'
-        ? (process.env.EMBEDDING_MODEL || 'text-embedding-3-small')
+        ? resolveProviderModel('openai')
         : (process.env.EMBEDDING_MODEL || null),
+    embeddingSpaceVersion: getEmbeddingSpaceIdentity().embedding_space_version,
   };
 };
 
@@ -412,12 +465,13 @@ const getProviderInfo = () => {
 const probe = async (sample = 'health check probe') => {
   const info = getProviderInfo();
   try {
-    const vector = await getEmbedding(sample);
+    const result = await getEmbeddingResult(sample);
     return {
       ok: true,
       provider: info.effective,
       semantic: info.semantic,
-      dimensions: Array.isArray(vector) ? vector.length : null,
+      dimensions: Array.isArray(result.vector) ? result.vector.length : null,
+      embeddingSpaceVersion: result.identity.embedding_space_version,
     };
   } catch (error) {
     return {
@@ -432,6 +486,8 @@ const probe = async (sample = 'health check probe') => {
 
 module.exports = {
   getEmbedding,
+  getEmbeddingResult,
+  getEmbeddingSpaceIdentity,
   localEmbed,
   getProviderInfo,
   probe

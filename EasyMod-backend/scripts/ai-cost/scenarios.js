@@ -174,7 +174,7 @@ const queryEmbedding = (model, tokens = TOK.EMB_QUERY_EXPECTED) => op({
     embeddingTokens: tokens,
     measurementSource: T,
     confidence: 'high',
-    notes: 'rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback.',
+    notes: 'rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured.',
 });
 
 module.exports = { M, TOK, P, T, S, op, textTurn, faqBranchTurn, visionExtract, imageTurn, sentimentCall, queryEmbedding, MEASURED_EXPECTED_TURN_INPUT, MEASURED_EXPECTED_TURN_INPUT_OAI };

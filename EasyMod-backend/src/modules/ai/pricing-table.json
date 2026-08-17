@@ -137,7 +137,7 @@
       "status": "active",
       "kind": "embedding",
       "input": 0,
-      "notes": "embedding.service.js localEmbed() character-bigram hash. Zero marginal cost and zero semantic value — resolveProvider() falls back to this for ANY EMBEDDING_PROVIDER value outside {openai, gcp, http, tei}, including 'gemini' and 'google'."
+      "notes": "embedding.service.js localEmbed() character-bigram hash. Zero marginal cost and zero semantic value. It is a development-only space; production provider failures fail closed unless a bound collection-level fallback is READY."
     },
     "gemini-embedding-2": {
       "provider": "google",

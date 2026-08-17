@@ -1,4 +1,14 @@
 const { v4: uuidv4 } = require('uuid');
+const {
+    EMBEDDING_SPACE_MANIFEST_FIELD,
+    EMBEDDING_SPACE_MANIFEST_POINT_ID,
+    createEmbeddingSpaceIdentity,
+    createManifestPayload,
+    createManifestVector,
+    identityFromPayload,
+    identityToPayload,
+    sameEmbeddingSpace,
+} = require('../rag/embedding-space');
 let QdrantClient = null;
 try {
     ({ QdrantClient } = require('@qdrant/qdrant-js'));
@@ -26,6 +36,97 @@ class DeliveryRAGService {
         
         this.collectionName = 'delivery_zones';
         this.addressCollectionName = 'delivery_addresses';
+        this.embeddingIdentity = createEmbeddingSpaceIdentity({
+            provider: 'local',
+            model: 'delivery-zone-hash',
+            version: 'delivery-zone-hash-v1',
+            dimensions: 384,
+        });
+    }
+
+    contentFilter(filter = null) {
+        const manifestCondition = {
+            key: EMBEDDING_SPACE_MANIFEST_FIELD,
+            match: { value: true },
+        };
+        return {
+            ...(filter || {}),
+            must_not: [
+                ...((filter && Array.isArray(filter.must_not)) ? filter.must_not : []),
+                manifestCondition,
+            ],
+        };
+    }
+
+    async readCollectionBinding(collection) {
+        const info = await this.client.getCollection(collection);
+        const scrollResult = await this.client.scroll(collection, {
+            filter: {
+                must: [{ key: EMBEDDING_SPACE_MANIFEST_FIELD, match: { value: true } }],
+            },
+            limit: 1,
+            with_payload: true,
+            with_vector: false,
+        });
+        const manifest = scrollResult?.result?.points?.[0];
+        const identity = identityFromPayload(manifest?.payload);
+        const vectors = info?.result?.config?.params?.vectors || info?.config?.params?.vectors;
+        const size = vectors?.size || vectors?.default?.size
+            || Object.values(vectors || {}).find((value) => Number.isInteger(value?.size))?.size;
+        if (!identity || manifest?.payload?.embedding_collection !== collection
+            || Number(size) !== this.embeddingIdentity.dimensions
+            || !sameEmbeddingSpace(identity, this.embeddingIdentity)) {
+            const error = new Error(`delivery collection has no trusted local embedding binding: ${collection}`);
+            error.code = 'EMBEDDING_COLLECTION_IDENTITY_UNKNOWN';
+            throw error;
+        }
+        return { collection, identity, state: manifest.payload.embedding_collection_state };
+    }
+
+    async ensureBoundCollection(collection) {
+        let exists = true;
+        try {
+            await this.client.getCollection(collection);
+        } catch (error) {
+            const message = String(error?.message || error || '');
+            if (error?.status !== 404 && !/not.?found|does not exist/i.test(message)) throw error;
+            exists = false;
+        }
+
+        if (!exists) {
+            await this.client.createCollection(collection, {
+                vectors: {
+                    size: this.embeddingIdentity.dimensions,
+                    distance: 'Cosine',
+                },
+                optimizers_config: { default_segment_number: 2 },
+            });
+            await this.client.upsert(collection, {
+                wait: true,
+                points: [{
+                    id: EMBEDDING_SPACE_MANIFEST_POINT_ID,
+                    vector: createManifestVector(this.embeddingIdentity.dimensions),
+                    payload: createManifestPayload({
+                        collection,
+                        identity: this.embeddingIdentity,
+                        state: 'ACTIVE',
+                    }),
+                }],
+            });
+        }
+
+        return this.readCollectionBinding(collection);
+    }
+
+    assertBoundVector(binding, vector) {
+        if (!Array.isArray(vector) || vector.length !== this.embeddingIdentity.dimensions) {
+            throw new Error('delivery embedding vector dimension mismatch');
+        }
+        if (!sameEmbeddingSpace(binding.identity, this.embeddingIdentity)) {
+            const error = new Error('delivery query/document embedding space mismatch');
+            error.code = 'EMBEDDING_SPACE_MISMATCH';
+            throw error;
+        }
     }
 
     /**
@@ -33,35 +134,12 @@ class DeliveryRAGService {
      */
     async initializeCollections() {
         try {
-            // Create delivery zones collection
-            await this.client.createCollection(this.collectionName, {
-                vectors: {
-                    size: 384, // Embedding dimension
-                    distance: 'Cosine'
-                },
-                optimizers_config: {
-                    default_segment_number: 2
-                }
-            });
-
-            // Create delivery addresses collection for address matching
-            await this.client.createCollection(this.addressCollectionName, {
-                vectors: {
-                    size: 384,
-                    distance: 'Cosine'
-                },
-                optimizers_config: {
-                    default_segment_number: 2
-                }
-            });
+            await this.ensureBoundCollection(this.collectionName);
+            await this.ensureBoundCollection(this.addressCollectionName);
 
             console.log('✅ Delivery RAG collections initialized');
             return true;
         } catch (error) {
-            if (error.message.includes('already exists')) {
-                console.log('✅ Delivery RAG collections already exist');
-                return true;
-            }
             console.error('❌ Failed to initialize collections:', error);
             return false;
         }
@@ -81,8 +159,10 @@ class DeliveryRAGService {
         } = zoneData;
 
         try {
+            const binding = await this.ensureBoundCollection(this.collectionName);
             // Generate embeddings for all areas in this zone
             const embeddings = await this.generateEmbeddings(areas);
+            embeddings.forEach((vector) => this.assertBoundVector(binding, vector));
 
             const points = areas.map((area, index) => ({
                 id: uuidv4(),
@@ -93,7 +173,9 @@ class DeliveryRAGService {
                     delivery_charge,
                     estimated_time,
                     shop_id,
-                    metadata
+                    metadata,
+                    ...identityToPayload(this.embeddingIdentity),
+                    [EMBEDDING_SPACE_MANIFEST_FIELD]: false,
                 }
             }));
 
@@ -116,22 +198,24 @@ class DeliveryRAGService {
      */
     async matchAddressToZone(address, shop_id) {
         try {
+            const binding = await this.ensureBoundCollection(this.collectionName);
             // Generate embedding for the input address
             const addressEmbedding = await this.generateEmbeddings([address]);
+            this.assertBoundVector(binding, addressEmbedding[0]);
 
             // Search for matching zones
             const searchResult = await this.client.search(this.collectionName, {
                 vector: addressEmbedding[0],
                 limit: 5,
                 score_threshold: 0.7,
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
                             match: { value: shop_id }
                         }
                     ]
-                }
+                })
             });
 
             if (searchResult.length === 0) {
@@ -169,15 +253,16 @@ class DeliveryRAGService {
      */
     async getDeliveryZones(shop_id) {
         try {
+            await this.ensureBoundCollection(this.collectionName);
             const scrollResult = await this.client.scroll(this.collectionName, {
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
                             match: { value: shop_id }
                         }
                     ]
-                },
+                }),
                 limit: 1000,
                 with_payload: true,
                 with_vector: false
@@ -212,9 +297,10 @@ class DeliveryRAGService {
      */
     async updateDeliveryZone(zone_name, shop_id, updateData) {
         try {
+            await this.ensureBoundCollection(this.collectionName);
             // First, find all points for this zone
             const scrollResult = await this.client.scroll(this.collectionName, {
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
@@ -225,7 +311,7 @@ class DeliveryRAGService {
                             match: { value: zone_name }
                         }
                     ]
-                },
+                }),
                 limit: 1000,
                 with_payload: true
             });
@@ -238,7 +324,11 @@ class DeliveryRAGService {
             const pointIds = scrollResult.result.points.map(point => point.id);
             
             await this.client.overwritePayload(this.collectionName, {
-                payload: updateData,
+                payload: {
+                    ...updateData,
+                    ...identityToPayload(this.embeddingIdentity),
+                    [EMBEDDING_SPACE_MANIFEST_FIELD]: false,
+                },
                 points: pointIds
             });
 
@@ -256,8 +346,9 @@ class DeliveryRAGService {
      */
     async deleteDeliveryZone(zone_name, shop_id) {
         try {
+            await this.ensureBoundCollection(this.collectionName);
             const scrollResult = await this.client.scroll(this.collectionName, {
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
@@ -268,7 +359,7 @@ class DeliveryRAGService {
                             match: { value: zone_name }
                         }
                     ]
-                },
+                }),
                 limit: 1000,
                 with_payload: false
             });
@@ -331,9 +422,10 @@ class DeliveryRAGService {
      */
     async calculateDeliveryCharge(zone_name, order_value, shop_id) {
         try {
+            await this.ensureBoundCollection(this.collectionName);
             // Get zone info
             const scrollResult = await this.client.scroll(this.collectionName, {
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
@@ -344,7 +436,7 @@ class DeliveryRAGService {
                             match: { value: zone_name }
                         }
                     ]
-                },
+                }),
                 limit: 1,
                 with_payload: true
             });
@@ -390,15 +482,16 @@ class DeliveryRAGService {
      */
     async getDeliveryStats(shop_id) {
         try {
+            await this.ensureBoundCollection(this.collectionName);
             const scrollResult = await this.client.scroll(this.collectionName, {
-                filter: {
+                filter: this.contentFilter({
                     must: [
                         {
                             key: 'shop_id',
                             match: { value: shop_id }
                         }
                     ]
-                },
+                }),
                 limit: 1000,
                 with_payload: true
             });

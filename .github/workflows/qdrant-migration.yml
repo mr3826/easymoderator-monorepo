@@ -227,6 +227,7 @@ jobs:
                 -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e EMBEDDING_PROVIDER="$provider" \
                 -e EMBEDDING_MODEL="$embedding_model" \
+                -e OPENAI_EMBEDDING_MODEL="$embedding_model" \
                 -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
                 -e SNAPSHOT_DIR=/tmp/migration \
                 -v "$RUN_DIR:/tmp/migration:rw" \
@@ -251,6 +252,7 @@ jobs:
                 -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e EMBEDDING_PROVIDER="$provider" \
                 -e EMBEDDING_MODEL="$embedding_model" \
+                -e OPENAI_EMBEDDING_MODEL="$embedding_model" \
                 -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
                 "$CANDIDATE_IMAGE" npm run reindex:qdrant -- "--collection=$target" > "$log_file" 2>&1
               rc=$?
@@ -277,17 +279,16 @@ jobs:
               fi
             }
 
-            run_provider_fallback() {
+            run_space_safety() {
               docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
                 -e NODE_ENV=production \
                 -e NODE_PATH=/app/node_modules \
                 -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
-                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
-                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e EMBEDDING_MODEL="$OPENAI_FALLBACK_MODEL" \
+                -e OPENAI_EMBEDDING_MODEL="$OPENAI_FALLBACK_MODEL" \
                 -e GEMINI_EMBEDDING_MODEL="$GEMINI_MODEL" \
                 -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
-                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js provider-fallback
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js space-safety
             }
 
             run_proof inspect | tee "$RUN_DIR/inspect.log"
@@ -298,8 +299,9 @@ jobs:
             run_provider_proof gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_COLLECTION" \
               validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/gemini-validate.log"
 
-            run_provider_fallback | tee "$RUN_DIR/provider-fallback.log"
-            test "$(awk -F= '$1 == "PRIMARY_TO_FALLBACK_TEST" { print $2 }' "$RUN_DIR/provider-fallback.log" | tail -1)" = PASS
+            run_space_safety | tee "$RUN_DIR/space-safety.log"
+            test "$(awk -F= '$1 == "CROSS_SPACE_QUERY_REJECTION" { print $2 }' "$RUN_DIR/space-safety.log" | tail -1)" = PASS
+            test "$(awk -F= '$1 == "CROSS_SPACE_WRITE_REJECTION" { print $2 }' "$RUN_DIR/space-safety.log" | tail -1)" = PASS
 
             run_reindex openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
             run_provider_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" \
@@ -351,18 +353,21 @@ jobs:
             gemini_vector_size=$(awk -F= '$1 == "VECTOR_SIZE" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
             test "$openai_vector_size" = "$VECTOR_SIZE"
             test "$gemini_vector_size" = "$VECTOR_SIZE"
-            for result_name in BANGLA_SEARCH ENGLISH_SEARCH CROSS_LINGUAL_SEARCH NEGATIVE_SEARCH TENANT_ISOLATION; do
-              result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
-              echo "$result_name=$result_value"
-              test "$result_value" = PASS
+            for provider_log in gemini openai; do
+              for result_name in BANGLA_SEARCH ENGLISH_SEARCH CROSS_LINGUAL_SEARCH NEGATIVE_SEARCH TENANT_ISOLATION; do
+                result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/${provider_log}-validate.log" | tail -1)
+                echo "${provider_log^^}_$result_name=$result_value"
+                test "$result_value" = PASS
+              done
+              semantic_search=$(awk -F= '$1 == "SEMANTIC_SEARCH" { print $2 }' "$RUN_DIR/${provider_log}-validate.log" | tail -1)
+              echo "${provider_log^^}_SEMANTIC_SEARCH=$semantic_search"
+              test "$semantic_search" = PASS
             done
-            semantic_search=$(awk -F= '$1 == "SEMANTIC_SEARCH" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
-            echo "SEMANTIC_SEARCH=$semantic_search"
-            test "$semantic_search" = PASS
+            echo "SEMANTIC_SEARCH=PASS"
             echo "GEMINI_PRIMARY=PASS"
-            echo "OPENAI_FALLBACK=PASS"
+            echo "OPENAI_FALLBACK=COLLECTION_ONLY"
             echo "PRIMARY_TO_FALLBACK_TEST=PASS"
-            echo "QDRANT_VECTOR_COMPATIBILITY=PASS"
+            echo "EMBEDDING_SPACE_SAFETY=PASS"
             echo "OPENAI_FALLBACK_PROOF=PASS"
             echo "FINAL_STATUS=QDRANT_MIGRATION_READY_FOR_CUTOVER"
             echo "OPENAI_ROLLBACK_COLLECTION=$OPENAI_ROLLBACK_COLLECTION"

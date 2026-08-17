@@ -17,11 +17,45 @@ delete process.env.QDRANT_PER_TENANT;
 jest.mock('src/config/config', () => ({ env: 'test' }));
 
 const { validate: uuidValidate } = require('uuid');
+const {
+    EMBEDDING_SPACE_MANIFEST_POINT_ID,
+    createEmbeddingSpaceIdentity,
+    createManifestPayload,
+} = require('../embedding-space');
+
+const localIdentity = createEmbeddingSpaceIdentity({
+    provider: 'local',
+    model: 'local-ngram',
+    version: 'local-ngram-v1',
+    dimensions: 384,
+});
+const manifestPayload = createManifestPayload({
+    collection: 'knowledge_documents',
+    identity: localIdentity,
+    state: 'ACTIVE',
+});
 
 const calls = [];
 const defaultFetch = async (url, init) => {
     calls.push({ url: String(url), init });
-    // All Qdrant calls "succeed": GET collection (exists), PUT upsert, POST delete.
+    const endpoint = String(url);
+    if (endpoint.includes('/points/scroll')) {
+        return {
+            ok: true,
+            status: 200,
+            text: async () => '',
+            json: async () => ({ result: { points: [{ id: EMBEDDING_SPACE_MANIFEST_POINT_ID, payload: manifestPayload }] } }),
+        };
+    }
+    if (/\/collections\/[^/]+$/.test(endpoint)) {
+        return {
+            ok: true,
+            status: 200,
+            text: async () => '',
+            json: async () => ({ result: { config: { params: { vectors: { size: 384 } } } } }),
+        };
+    }
+    // All remaining Qdrant calls "succeed": upsert, search, count, delete.
     return { ok: true, status: 200, text: async () => '', json: async () => ({ result: [] }) };
 };
 global.fetch = jest.fn(defaultFetch);
@@ -54,6 +88,11 @@ describe('Qdrant point-id normalization', () => {
         // source references and live re-fetch (product_id) still work.
         expect(point.payload.documentId).toBe('product:abc-123');
         expect(point.payload.product_id).toBe('abc-123');
+        expect(point.payload.embedding_provider).toBe('local');
+        expect(point.payload.embedding_model).toBe('local-ngram');
+        expect(point.payload.embedding_space_version).toBe('local-ngram-v1');
+        expect(point.payload.embedding_dimensions).toBe(384);
+        expect(point.payload.embedding_space_manifest).toBe(false);
     });
 
     test('the same documentId is deterministic, and delete targets that exact point', async () => {
@@ -73,6 +112,23 @@ describe('Qdrant point-id normalization', () => {
         expect(upsertBody().points[0].id).toBe(uuid);
     });
 
+    test('a provider transition cannot reuse the active collection for writes', async () => {
+        const previousProvider = process.env.EMBEDDING_PROVIDER;
+        process.env.EMBEDDING_PROVIDER = 'openai';
+        try {
+            const res = await rag.ingestData({
+                text: 'provider transition must reindex',
+                metadata: { documentId: 'transition-1', shopId: 's1', type: 'faq' },
+            });
+            expect(res.success).toBe(false);
+            expect(res.message).toBe('EMBEDDING_SPACE_MISMATCH');
+            expect(calls.some((call) => call.url.includes('/points?wait=true'))).toBe(false);
+        } finally {
+            if (previousProvider === undefined) delete process.env.EMBEDDING_PROVIDER;
+            else process.env.EMBEDDING_PROVIDER = previousProvider;
+        }
+    });
+
     test('queryData removes corrupt blank-payload hits from RAG answers', async () => {
         global.fetch.mockImplementation(async (url, init) => {
             calls.push({ url: String(url), init });
@@ -90,6 +146,22 @@ describe('Qdrant point-id normalization', () => {
                     }),
                 };
             }
+            if (String(url).includes('/points/scroll')) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => '',
+                    json: async () => ({ result: { points: [{ id: EMBEDDING_SPACE_MANIFEST_POINT_ID, payload: manifestPayload }] } }),
+                };
+            }
+            if (/\/collections\/[^/]+$/.test(String(url))) {
+                return {
+                    ok: true,
+                    status: 200,
+                    text: async () => '',
+                    json: async () => ({ result: { config: { params: { vectors: { size: 384 } } } } }),
+                };
+            }
             return { ok: true, status: 200, text: async () => '', json: async () => ({ result: [] }) };
         });
 
@@ -102,5 +174,8 @@ describe('Qdrant point-id normalization', () => {
             'Delivery takes 2 days',
             'Legacy content payload',
         ]);
+        expect(searchBody.filter.must_not).toEqual(expect.arrayContaining([
+            expect.objectContaining({ key: 'embedding_space_manifest' }),
+        ]));
     });
 });

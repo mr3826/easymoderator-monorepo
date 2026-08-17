@@ -281,4 +281,17 @@ describe('Qdrant embedding dimension is rendered from the repository contract', 
         expect(buildRenderedEnv(validSource({ QDRANT_VECTOR_SIZE: '768' })).QDRANT_VECTOR_SIZE)
             .toBe('768');
     });
+
+    test('renders provider-bound fallback collection and space versions', () => {
+        const env = buildRenderedEnv(validSource({
+            QDRANT_FALLBACK_COLLECTION: 'knowledge_documents_openai_candidate',
+            EMBEDDING_SPACE_VERSION: 'global-v1',
+            GEMINI_EMBEDDING_SPACE_VERSION: 'gemini-v2',
+            OPENAI_EMBEDDING_SPACE_VERSION: 'openai-v1',
+        }));
+        expect(env.QDRANT_FALLBACK_COLLECTION).toBe('knowledge_documents_openai_candidate');
+        expect(env.EMBEDDING_SPACE_VERSION).toBe('global-v1');
+        expect(env.GEMINI_EMBEDDING_SPACE_VERSION).toBe('gemini-v2');
+        expect(env.OPENAI_EMBEDDING_SPACE_VERSION).toBe('openai-v1');
+    });
 });
