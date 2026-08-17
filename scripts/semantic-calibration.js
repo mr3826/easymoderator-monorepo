@@ -16,7 +16,6 @@ const {
 } = require('../EasyMod-backend/src/modules/rag/embedding-input');
 const {
     POSITIVE_THRESHOLD,
-    NEGATIVE_THRESHOLD,
     CALIBRATION_DIMENSIONS,
     DIAGNOSTIC_DIMENSIONS,
     CONTROLLED_FIXTURE_DOCUMENTS,
@@ -24,8 +23,10 @@ const {
     CONTROLLED_NEGATIVE_QUERIES,
     lexicalOverlapTokens,
     fixtureSearchText,
+    fixtureVersionFor,
     validateCalibrationFixtures,
 } = require('./semantic-calibration-fixtures');
+const acceptance = require('./semantic-acceptance-contract');
 
 const DEFAULT_MODEL = 'gemini-embedding-2';
 const MAX_DIMENSIONS = 3072;
@@ -94,7 +95,7 @@ function range(values) {
     };
 }
 
-function summarizeDimension(positiveCases, negativeCases) {
+function summarizeDimension(positiveCases, negativeCases, negativeAcceptance = null) {
     const positiveScores = positiveCases
         .map((item) => item.expectedScore)
         .filter((score) => Number.isFinite(score));
@@ -106,7 +107,8 @@ function summarizeDimension(positiveCases, negativeCases) {
         .filter((score) => Number.isFinite(score));
     const top1Count = positiveCases.filter((item) => item.expectedRank === 1).length;
     const positiveThresholdPassCount = positiveCases.filter((item) => item.pass).length;
-    const negativeThresholdPassCount = negativeCases.filter((item) => item.pass).length;
+    const negativeAcceptanceCases = negativeCases.filter((item) => item.acceptanceEvaluated);
+    const negativeAcceptancePassCount = negativeAcceptanceCases.filter((item) => item.pass).length;
     const positiveExpectedScore = range(positiveScores);
     const positiveTop1Margin = range(positiveMargins);
     const negativeTopScore = range(negativeTopScores);
@@ -116,8 +118,10 @@ function summarizeDimension(positiveCases, negativeCases) {
         positiveThresholdPassRate: positiveCases.length
             ? positiveThresholdPassCount / positiveCases.length
             : null,
-        negativeThresholdPassRate: negativeCases.length
-            ? negativeThresholdPassCount / negativeCases.length
+        negativeAcceptanceEvaluated: negativeAcceptanceCases.length === negativeCases.length
+            && negativeCases.length > 0,
+        negativeAcceptancePassRate: negativeAcceptanceCases.length
+            ? negativeAcceptancePassCount / negativeAcceptanceCases.length
             : null,
         positiveExpectedScore,
         positiveExpectedScoreMin: positiveExpectedScore.min,
@@ -136,28 +140,26 @@ function summarizeDimension(positiveCases, negativeCases) {
             p90: percentile(negativeTopScores, 0.9),
             p95: percentile(negativeTopScores, 0.95),
         },
+        positiveNegativeObservedGap: positiveExpectedScore.min !== null && negativeTopScore.max !== null
+            ? positiveExpectedScore.min - negativeTopScore.max
+            : null,
+        negativeAcceptance,
     };
 }
 
 function classifyCalibration(summary, positiveCases, negativeCases) {
-    if (positiveCases.length < 3 || negativeCases.length < 3) {
-        return 'CALIBRATION_E_FIXTURE_CORPUS_INSUFFICIENT';
+    if (summary.positiveTop1Accuracy < 1) return 'ACCEPTANCE_D_RETRIEVAL_RANKING_QUALITY_PROBLEM';
+    if (summary.positiveThresholdPassRate < 1) return 'ACCEPTANCE_C_POSITIVE_THRESHOLD_NOT_SUPPORTED';
+    if (!summary.negativeAcceptance) {
+        return 'ACCEPTANCE_D_INSUFFICIENT_CALIBRATION_EVIDENCE';
     }
-    if (summary.positiveTop1Accuracy === 1 && summary.positiveThresholdPassRate === 1
-        && summary.negativeThresholdPassRate === 1) {
-        return 'CALIBRATION_A_CURRENT_THRESHOLDS_SUPPORTED_BY_FIXTURE_EVIDENCE';
+    if (summary.negativeAcceptance.status === 'READY') {
+        return 'ACCEPTANCE_B_HYBRID_ACCEPTANCE_RULE_SUPPORTED';
     }
-    if (summary.positiveTop1Accuracy === 1 && summary.positiveThresholdPassRate === 1
-        && summary.negativeThresholdPassRate < 1) {
-        return 'CALIBRATION_B_NEGATIVE_THRESHOLD_NOT_SUPPORTED';
+    if (summary.negativeAcceptance.status === 'OVERLAPPING_SCORE_DISTRIBUTIONS') {
+        return 'ACCEPTANCE_C_ABSOLUTE_NEGATIVE_THRESHOLD_NOT_RELIABLE';
     }
-    if (summary.positiveTop1Accuracy === 1 && summary.positiveThresholdPassRate < 1) {
-        return 'CALIBRATION_C_POSITIVE_THRESHOLD_NOT_SUPPORTED';
-    }
-    if (summary.positiveTop1Accuracy < 1 && summary.negativeThresholdPassRate === 1) {
-        return 'CALIBRATION_D_RETRIEVAL_RANKING_QUALITY_PROBLEM';
-    }
-    return 'CALIBRATION_F_MIXED_FINDINGS';
+    return 'ACCEPTANCE_D_INSUFFICIENT_CALIBRATION_EVIDENCE';
 }
 
 function compareDimensions(resultsByDimension) {
@@ -254,6 +256,7 @@ async function runDimension({
     dimensions,
     apiKey,
     fetchImpl,
+    acceptanceContract = null,
 }) {
     const documentVectors = [];
     for (const document of documents) {
@@ -318,6 +321,14 @@ async function runDimension({
             negative.query,
             fixtureSearchText(document),
         ));
+        const lexicalOverlapTokensForQuery = [...new Set(lexicalOverlap)];
+        const negativeEvaluation = acceptanceContract
+            ? acceptance.evaluateNegativeCase({
+                topScore: top?.score ?? null,
+                lexicalOverlap: lexicalOverlapTokensForQuery.length > 0,
+                contract: acceptanceContract,
+            })
+            : { pass: null, reason: 'SEMANTIC_CALIBRATION_NOT_READY' };
         negativeCases.push({
             negativeQueryId: negative.negativeQueryId,
             query: negative.query,
@@ -327,8 +338,10 @@ async function runDimension({
             secondScore: second?.score ?? null,
             allScores: ranked,
             topKResults: ranked.slice(0, TOP_K),
-            lexicalOverlap: [...new Set(lexicalOverlap)],
-            pass: Number(top?.score) < NEGATIVE_THRESHOLD && lexicalOverlap.length === 0,
+            lexicalOverlap: lexicalOverlapTokensForQuery,
+            pass: negativeEvaluation.pass,
+            acceptanceEvaluated: Boolean(acceptanceContract?.status === 'READY'),
+            acceptanceReason: negativeEvaluation.reason,
         });
     }
 
@@ -343,7 +356,13 @@ async function runDimension({
             scores: Object.fromEntries(item.allScores.map((result) => [result.fixtureId, result.score])),
         })),
     };
-    const summary = summarizeDimension(positiveCases, negativeCases);
+    const negativeAcceptance = acceptance.deriveNegativeAcceptance({
+        documents,
+        positiveCases,
+        negativeCases,
+        positiveThreshold: POSITIVE_THRESHOLD,
+    });
+    const summary = summarizeDimension(positiveCases, negativeCases, negativeAcceptance);
 
     return {
         dimensions,
@@ -351,6 +370,7 @@ async function runDimension({
         negativeCases,
         scoreMatrix,
         summary,
+        acceptanceCandidate: negativeAcceptance,
         classification: classifyCalibration(summary, positiveCases, negativeCases),
     };
 }
@@ -364,8 +384,14 @@ async function runCalibration({
     negativeQueries = CONTROLLED_NEGATIVE_QUERIES,
     fetchImpl = globalThis.fetch,
     generatedAt = new Date().toISOString(),
+    commitSha = process.env.CALIBRATION_COMMIT_SHA || null,
+    workflowRunId = process.env.CALIBRATION_WORKFLOW_RUN_ID || null,
+    embeddingSpaceVersion = process.env.GEMINI_EMBEDDING_SPACE_VERSION
+        || acceptance.ACCEPTANCE_EMBEDDING_SPACE_VERSION,
+    acceptanceContract = null,
 } = {}) {
     validateCalibrationFixtures({ documents, positiveQueries, negativeQueries });
+    const fixtureVersion = fixtureVersionFor({ documents, positiveQueries, negativeQueries });
     const normalizedDimensions = parseDimensions(dimensions);
     const resultsByDimension = [];
     for (const dimension of normalizedDimensions) {
@@ -377,16 +403,31 @@ async function runCalibration({
             dimensions: dimension,
             apiKey,
             fetchImpl,
+            acceptanceContract,
         }));
     }
 
+    const calibration384 = resultsByDimension.find((result) => result.dimensions === CALIBRATION_DIMENSIONS) || null;
+    const acceptanceCandidate = calibration384?.acceptanceCandidate || null;
+
     const artifact = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt,
+        generated_at: generatedAt,
         provider: 'gemini',
         model,
-        positiveThreshold: POSITIVE_THRESHOLD,
-        negativeThreshold: NEGATIVE_THRESHOLD,
+        dimensions: normalizedDimensions,
+        embedding_space_version: embeddingSpaceVersion,
+        fixture_version: fixtureVersion,
+        semantic_acceptance_version: acceptance.SEMANTIC_ACCEPTANCE_VERSION,
+        commit_sha: commitSha,
+        workflow_run_id: workflowRunId,
+        positive_threshold: POSITIVE_THRESHOLD,
+        negative_threshold_or_ceiling: acceptanceCandidate?.negativeCeiling ?? null,
+        threshold_derivation: acceptanceCandidate?.derivation || {
+            status: 'PENDING_RECALIBRATION',
+            method: 'expanded corpus calibration required before a negative ceiling can be activated',
+        },
         formatting: {
             document: 'title: {title} | text: {content}',
             query: 'task: search result | query: {content}',
@@ -405,11 +446,14 @@ async function runCalibration({
             containsPii: false,
             allPositiveGroundTruthExplicit: true,
             allNegativesLexicallyDisjoint: true,
+            fixtureVersion: fixtureVersion,
+            semanticAcceptanceVersion: acceptance.SEMANTIC_ACCEPTANCE_VERSION,
         },
         resultsByDimension,
-        calibration384: resultsByDimension.find((result) => result.dimensions === CALIBRATION_DIMENSIONS) || null,
+        calibration384,
         diagnostic768: resultsByDimension.find((result) => result.dimensions === DIAGNOSTIC_DIMENSIONS) || null,
         dimensionComparison: compareDimensions(resultsByDimension),
+        acceptanceCandidate,
     };
 
     return artifact;
@@ -433,6 +477,10 @@ async function main() {
         apiKey: process.env.GEMINI_API_KEY,
         model: process.env.GEMINI_EMBEDDING_MODEL || DEFAULT_MODEL,
         dimensions: parseDimensions(dimensions),
+        commitSha: process.env.CALIBRATION_COMMIT_SHA || null,
+        workflowRunId: process.env.CALIBRATION_WORKFLOW_RUN_ID || null,
+        embeddingSpaceVersion: process.env.GEMINI_EMBEDDING_SPACE_VERSION
+            || acceptance.ACCEPTANCE_EMBEDDING_SPACE_VERSION,
     });
     const serialized = `${JSON.stringify(artifact, null, 2)}\n`;
     if (output) {
@@ -461,4 +509,5 @@ module.exports = {
     runDimension,
     runCalibration,
     parseCliArguments,
+    acceptance,
 };

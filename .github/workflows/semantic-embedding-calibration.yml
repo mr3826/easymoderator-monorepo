@@ -6,7 +6,7 @@ on:
       dimensions:
         description: 'Comma-separated Gemini output dimensions (384 is authoritative; 768 is diagnostic)'
         required: false
-        default: '384,768'
+        default: '384'
         type: string
 
 permissions:
@@ -21,7 +21,10 @@ jobs:
     env:
       GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
       GEMINI_EMBEDDING_MODEL: gemini-embedding-2
-      CALIBRATION_DIMENSIONS: ${{ inputs.dimensions || '384,768' }}
+      GEMINI_EMBEDDING_SPACE_VERSION: gemini-embedding-2-search-v1
+      CALIBRATION_COMMIT_SHA: ${{ github.sha }}
+      CALIBRATION_WORKFLOW_RUN_ID: ${{ github.run_id }}
+      CALIBRATION_DIMENSIONS: ${{ inputs.dimensions || '384' }}
     steps:
       - name: Check out calibration runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
