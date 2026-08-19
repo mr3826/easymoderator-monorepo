@@ -13,8 +13,9 @@ on:
         type: string
 
 # This workflow intentionally cannot deploy the application. It uses only the
-# existing production env file on the host, creates two named migration
-# collections, and removes only its isolated restore container at the end.
+# existing production env file on the host, creates run-scoped isolated
+# migration/calibration collections, and removes only its isolated restore
+# container and proof scripts at the end.
 permissions:
   contents: read
   packages: read
@@ -24,6 +25,8 @@ env:
   ACTIVE_COLLECTION: knowledge_documents
   OPENAI_ROLLBACK_COLLECTION_BASE: knowledge_documents_openai_rollback_20260816
   GEMINI_COLLECTION_BASE: knowledge_documents_gemini_20260816
+  GEMINI_SEMANTIC_COLLECTION_BASE: knowledge_documents_gemini_semantic_20260816
+  OPENAI_SEMANTIC_COLLECTION_BASE: knowledge_documents_openai_semantic_20260816
   EXPECTED_SOURCE_COUNT: '2'
   EXPECTED_LIVE_COUNT: '1'
   VECTOR_SIZE: '384'
@@ -49,6 +52,7 @@ jobs:
       GEMINI_EMBEDDING_MODEL: ${{ secrets.GEMINI_EMBEDDING_MODEL }}
       PROOF_SCRIPT_PATH: /opt/easymod/qdrant-migration-proof-${{ github.run_id }}.js
       ACCEPTANCE_CONTRACT_PATH: /opt/easymod/semantic-acceptance-contract-${{ github.run_id }}.js
+      FIXTURE_SCRIPT_PATH: /opt/easymod/semantic-calibration-fixtures-${{ github.run_id }}.js
     steps:
       - name: Check out proof runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -89,13 +93,15 @@ jobs:
           printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
           ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
-            "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH'"
+            "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH'"
           scp -i ~/.ssh/easymod_deploy_key scripts/qdrant-migration-proof.js \
             root@"$DEPLOY_HOST":"$PROOF_SCRIPT_PATH"
           scp -i ~/.ssh/easymod_deploy_key scripts/semantic-acceptance-contract.js \
             root@"$DEPLOY_HOST":"$ACCEPTANCE_CONTRACT_PATH"
+          scp -i ~/.ssh/easymod_deploy_key scripts/semantic-calibration-fixtures.js \
+            root@"$DEPLOY_HOST":"$FIXTURE_SCRIPT_PATH"
           ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
-            "chmod 644 '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH'"
+            "chmod 644 '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH'"
           echo "PROOF_SCRIPT_PATH=$PROOF_SCRIPT_PATH" >> "$GITHUB_ENV"
           echo "ACCEPTANCE_CONTRACT_PATH=$ACCEPTANCE_CONTRACT_PATH" >> "$GITHUB_ENV"
 
@@ -107,12 +113,15 @@ jobs:
           ACTIVE_COLLECTION: ${{ env.ACTIVE_COLLECTION }}
           OPENAI_ROLLBACK_COLLECTION_BASE: ${{ env.OPENAI_ROLLBACK_COLLECTION_BASE }}
           GEMINI_COLLECTION_BASE: ${{ env.GEMINI_COLLECTION_BASE }}
+          GEMINI_SEMANTIC_COLLECTION_BASE: ${{ env.GEMINI_SEMANTIC_COLLECTION_BASE }}
+          OPENAI_SEMANTIC_COLLECTION_BASE: ${{ env.OPENAI_SEMANTIC_COLLECTION_BASE }}
           EXPECTED_SOURCE_COUNT: ${{ env.EXPECTED_SOURCE_COUNT }}
           EXPECTED_LIVE_COUNT: ${{ env.EXPECTED_LIVE_COUNT }}
           VECTOR_SIZE: ${{ env.VECTOR_SIZE }}
           QDRANT_IMAGE: ${{ env.QDRANT_IMAGE }}
           PROOF_SCRIPT_PATH: ${{ env.PROOF_SCRIPT_PATH }}
           ACCEPTANCE_CONTRACT_PATH: ${{ env.ACCEPTANCE_CONTRACT_PATH }}
+          FIXTURE_SCRIPT_PATH: ${{ env.FIXTURE_SCRIPT_PATH }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           PRODUCTION_DEPLOY_ENABLED: ${{ env.PRODUCTION_DEPLOY_ENABLED }}
           OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
@@ -123,7 +132,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 1800s
-          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,ACCEPTANCE_CONTRACT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
+          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,GEMINI_SEMANTIC_COLLECTION_BASE,OPENAI_SEMANTIC_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,ACCEPTANCE_CONTRACT_PATH,FIXTURE_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
           script: |
             set -euo pipefail
             umask 077
@@ -133,6 +142,8 @@ jobs:
             RUN_DIR="/opt/easymod/qdrant-migration/${WORKFLOW_RUN_ID}"
             OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
             GEMINI_COLLECTION="${GEMINI_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
+            GEMINI_SEMANTIC_COLLECTION="${GEMINI_SEMANTIC_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
+            OPENAI_SEMANTIC_COLLECTION="${OPENAI_SEMANTIC_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"
             OPENAI_FALLBACK_MODEL=text-embedding-3-small
             GEMINI_MODEL="${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}"
             RESTORE_CONTAINER="easymod-qdrant-restore-${WORKFLOW_RUN_ID}"
@@ -142,8 +153,7 @@ jobs:
 
             cleanup() {
               docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
-              rm -f -- "$PROOF_SCRIPT_PATH"
-              rm -f -- "$ACCEPTANCE_CONTRACT_PATH"
+              rm -f -- "$PROOF_SCRIPT_PATH" "$ACCEPTANCE_CONTRACT_PATH" "$FIXTURE_SCRIPT_PATH"
               docker logout ghcr.io >/dev/null 2>&1 || true
             }
             trap cleanup EXIT
@@ -208,6 +218,7 @@ jobs:
                 -e GEMINI_API_KEY="$GEMINI_API_KEY" \
                 -e OPENAI_ROLLBACK_COLLECTION="$OPENAI_ROLLBACK_COLLECTION" \
                 -e GEMINI_COLLECTION="$GEMINI_COLLECTION" \
+                -e EXPECTED_LIVE_ALIAS_FINGERPRINT="${EXPECTED_LIVE_ALIAS_FINGERPRINT:-}" \
                 -e SNAPSHOT_DIR=/tmp/migration \
                 -e SEMANTIC_ACCEPTANCE_CONTRACT_PATH=/tmp/semantic-acceptance-contract.js \
                 -v "$RUN_DIR:/tmp/migration:rw" \
@@ -242,6 +253,33 @@ jobs:
                 -v "$RUN_DIR:/tmp/migration:rw" \
                 -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
                 -v "$ACCEPTANCE_CONTRACT_PATH:/tmp/semantic-acceptance-contract.js:ro" \
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js "$@"
+            }
+
+            run_controlled_proof() {
+              provider="$1"
+              embedding_model="$2"
+              gemini_model="$3"
+              collection="$4"
+              shift 4
+              docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
+                -e NODE_ENV=production \
+                -e NODE_PATH=/app/node_modules \
+                -e ACTIVE_COLLECTION="$ACTIVE_COLLECTION" \
+                -e QDRANT_VECTOR_SIZE="$VECTOR_SIZE" \
+                -e QDRANT_PER_TENANT=false \
+                -e QDRANT_COLLECTION="$collection" \
+                -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+                -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+                -e EMBEDDING_PROVIDER="$provider" \
+                -e EMBEDDING_MODEL="$embedding_model" \
+                -e OPENAI_EMBEDDING_MODEL="$embedding_model" \
+                -e GEMINI_EMBEDDING_MODEL="$gemini_model" \
+                -e CONTROLLED_FIXTURE_PATH=/tmp/semantic-calibration-fixtures.js \
+                -e SEMANTIC_ACCEPTANCE_CONTRACT_PATH=/tmp/semantic-acceptance-contract.js \
+                -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
+                -v "$ACCEPTANCE_CONTRACT_PATH:/tmp/semantic-acceptance-contract.js:ro" \
+                -v "$FIXTURE_SCRIPT_PATH:/tmp/semantic-calibration-fixtures.js:ro" \
                 "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js "$@"
             }
 
@@ -306,18 +344,56 @@ jobs:
             run_proof inspect | tee "$RUN_DIR/inspect.log"
             live_count=$(awk -F= '$1 == "LIVE_COUNT" { print $2 }' "$RUN_DIR/inspect.log" | tail -1)
             test "$live_count" = "$EXPECTED_LIVE_COUNT"
+            EXPECTED_LIVE_ALIAS_FINGERPRINT=$(awk -F= '$1 == "LIVE_ALIAS_FINGERPRINT" { print $2 }' "$RUN_DIR/inspect.log" | tail -1)
+            test -n "$EXPECTED_LIVE_ALIAS_FINGERPRINT"
 
             run_reindex gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_COLLECTION" "$RUN_DIR/gemini-reindex.log"
             run_provider_proof gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_COLLECTION" \
-              validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/gemini-validate.log"
+              validate "--collection=$GEMINI_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" "--semantic=real-source" | tee "$RUN_DIR/gemini-validate.log"
+
+            run_controlled_proof gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_SEMANTIC_COLLECTION" \
+              controlled-index "--collection=$GEMINI_SEMANTIC_COLLECTION" | tee "$RUN_DIR/gemini-controlled-index.log"
+            run_controlled_proof gemini "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$GEMINI_SEMANTIC_COLLECTION" \
+              controlled-validate "--collection=$GEMINI_SEMANTIC_COLLECTION" | tee "$RUN_DIR/gemini-controlled-validate.log"
+            test "$(awk -F= '$1 == "CONTROLLED_SEMANTIC_VALIDATION" { print $2 }' "$RUN_DIR/gemini-controlled-validate.log" | tail -1)" = PASS
+            echo "GEMINI_REAL_SOURCE_REINDEX=PASS"
+            echo "GEMINI_CONTROLLED_SEMANTIC_VALIDATION=PASS"
+            echo "GEMINI_COLLECTION_HOMOGENEITY=PASS"
+            echo "GEMINI_MANIFEST_BINDING=PASS"
 
             run_space_safety | tee "$RUN_DIR/space-safety.log"
-            test "$(awk -F= '$1 == "CROSS_SPACE_QUERY_REJECTION" { print $2 }' "$RUN_DIR/space-safety.log" | tail -1)" = PASS
-            test "$(awk -F= '$1 == "CROSS_SPACE_WRITE_REJECTION" { print $2 }' "$RUN_DIR/space-safety.log" | tail -1)" = PASS
+            for safety_gate in \
+              CROSS_SPACE_QUERY_REJECTION \
+              CROSS_SPACE_WRITE_REJECTION \
+              QDRANT_SEARCH_NOT_EXECUTED_WITH_MISMATCH \
+              UNSAFE_PER_REQUEST_FALLBACK_BLOCKED \
+              WRONG_PROVIDER_REJECTED \
+              WRONG_MODEL_REJECTED \
+              WRONG_VERSION_REJECTED \
+              WRONG_DIMENSION_REJECTED \
+              LEGACY_UNKNOWN_FAIL_CLOSED \
+              VECTOR_SIZE_ONLY_COMPATIBILITY_REJECTED; do
+              test "$(awk -F= -v key="$safety_gate" '$1 == key { print $2 }' "$RUN_DIR/space-safety.log" | tail -1)" = PASS
+            done
 
             run_reindex openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" "$RUN_DIR/openai-reindex.log"
             run_provider_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" \
-              validate "--collection=$OPENAI_ROLLBACK_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" | tee "$RUN_DIR/openai-validate.log"
+              validate "--collection=$OPENAI_ROLLBACK_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" "--semantic=real-source" | tee "$RUN_DIR/openai-validate.log"
+
+            run_controlled_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_SEMANTIC_COLLECTION" \
+              controlled-index "--collection=$OPENAI_SEMANTIC_COLLECTION" | tee "$RUN_DIR/openai-controlled-index.log"
+            run_controlled_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_SEMANTIC_COLLECTION" \
+              controlled-validate "--collection=$OPENAI_SEMANTIC_COLLECTION" | tee "$RUN_DIR/openai-controlled-validate.log"
+            openai_semantic_status=$(awk -F= '$1 == "CONTROLLED_SEMANTIC_VALIDATION" { print $2 }' "$RUN_DIR/openai-controlled-validate.log" | tail -1)
+            openai_calibration_required=$(awk -F= '$1 == "OPENAI_SEMANTIC_CALIBRATION_REQUIRED" { print $2 }' "$RUN_DIR/openai-controlled-validate.log" | tail -1)
+            test "$openai_semantic_status" = "OPENAI_SEMANTIC_CALIBRATION_REQUIRED"
+            test "$openai_calibration_required" = YES
+            echo "OPENAI_REINDEX=PASS"
+            echo "OPENAI_COLLECTION_HOMOGENEITY=PASS"
+            echo "OPENAI_MANIFEST_BINDING=PASS"
+            echo "OPENAI_SEMANTIC_STATUS=CALIBRATION_REQUIRED"
+            echo "OPENAI_SEMANTIC_CALIBRATION_REQUIRED=YES"
+            echo "OPENAI_TOP1_ACCURACY=NOT_EVALUATED"
 
             run_provider_proof openai "$OPENAI_FALLBACK_MODEL" "$GEMINI_MODEL" "$OPENAI_ROLLBACK_COLLECTION" \
               snapshot "--collection=$OPENAI_ROLLBACK_COLLECTION" "--path=$SNAPSHOT_FILE" \
@@ -350,16 +426,17 @@ jobs:
               -e EMBEDDING_PROVIDER=openai \
               -e EMBEDDING_MODEL="$OPENAI_FALLBACK_MODEL" \
               -e GEMINI_EMBEDDING_MODEL="$GEMINI_MODEL" \
-              -e SEMANTIC_ACCEPTANCE_CONTRACT_PATH=/tmp/semantic-acceptance-contract.js \
+            -e SEMANTIC_ACCEPTANCE_CONTRACT_PATH=/tmp/semantic-acceptance-contract.js \
               -v "$PROOF_SCRIPT_PATH:/tmp/qdrant-migration-proof.js:ro" \
               -v "$ACCEPTANCE_CONTRACT_PATH:/tmp/semantic-acceptance-contract.js:ro" \
-              "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js validate \
-              "--collection=$RESTORE_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" \
+            "$CANDIDATE_IMAGE" node /tmp/qdrant-migration-proof.js validate \
+              "--collection=$RESTORE_COLLECTION" "--expected-count=$EXPECTED_SOURCE_COUNT" "--semantic=real-source" \
               | tee "$RUN_DIR/restore-validate.log"
             echo "OPENAI_ROLLBACK_RESTORE=PASS"
 
             run_proof postflight | tee "$RUN_DIR/postflight.log"
             test "$(awk -F= '$1 == "LIVE_COLLECTION_UNTOUCHED" { print $2 }' "$RUN_DIR/postflight.log" | tail -1)" = PASS
+            test "$(awk -F= '$1 == "LIVE_ALIAS_UNCHANGED" { print $2 }' "$RUN_DIR/postflight.log" | tail -1)" = PASS
 
             openai_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/openai-validate.log" | tail -1)
             gemini_count=$(awk -F= '$1 == "QDRANT_COUNT" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
@@ -367,23 +444,23 @@ jobs:
             gemini_vector_size=$(awk -F= '$1 == "VECTOR_SIZE" { print $2 }' "$RUN_DIR/gemini-validate.log" | tail -1)
             test "$openai_vector_size" = "$VECTOR_SIZE"
             test "$gemini_vector_size" = "$VECTOR_SIZE"
-            for provider_log in gemini openai; do
-              for result_name in BANGLA_SEARCH ENGLISH_SEARCH CROSS_LINGUAL_SEARCH NEGATIVE_SEARCH TENANT_ISOLATION; do
-                result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/${provider_log}-validate.log" | tail -1)
-                echo "${provider_log^^}_$result_name=$result_value"
-                test "$result_value" = PASS
-              done
-              semantic_search=$(awk -F= '$1 == "SEMANTIC_SEARCH" { print $2 }' "$RUN_DIR/${provider_log}-validate.log" | tail -1)
-              echo "${provider_log^^}_SEMANTIC_SEARCH=$semantic_search"
-              test "$semantic_search" = PASS
+            for result_name in CONTROLLED_BANGLA_SEARCH CONTROLLED_ENGLISH_SEARCH CONTROLLED_CROSS_LINGUAL_SEARCH CONTROLLED_NEGATIVE_SEARCH CONTROLLED_TENANT_ISOLATION; do
+              result_value=$(awk -F= -v key="$result_name" '$1 == key { print $2 }' "$RUN_DIR/gemini-controlled-validate.log" | tail -1)
+              echo "GEMINI_$result_name=$result_value"
+              test "$result_value" = PASS
             done
+            test "$(awk -F= '$1 == "CONTROLLED_SEMANTIC_VALIDATION" { print $2 }' "$RUN_DIR/gemini-controlled-validate.log" | tail -1)" = PASS
+            echo "GEMINI_CONTROLLED_SEMANTIC_VALIDATION=PASS"
             echo "SEMANTIC_SEARCH=PASS"
             echo "GEMINI_PRIMARY=PASS"
             echo "OPENAI_FALLBACK=COLLECTION_ONLY"
-            echo "PRIMARY_TO_FALLBACK_TEST=PASS"
+            echo "COLLECTION_LEVEL_FALLBACK=NOT_EXECUTED_OPENAI_CALIBRATION_REQUIRED"
+            echo "PRIMARY_TO_FALLBACK_COLLECTION_ROUTING=NOT_EXECUTED_OPENAI_CALIBRATION_REQUIRED"
+            echo "OPENAI_FALLBACK_PROOF=OPENAI_SEMANTIC_CALIBRATION_REQUIRED"
             echo "EMBEDDING_SPACE_SAFETY=PASS"
-            echo "OPENAI_FALLBACK_PROOF=PASS"
-            echo "FINAL_STATUS=QDRANT_MIGRATION_READY_FOR_CUTOVER"
+            echo "MANIFEST_EXCLUSION=PASS"
+            echo "QDRANT_MUTATION_BY_PROOF=ISOLATED_ONLY"
+            echo "FINAL_STATUS=PROVIDER_BOUND_QDRANT_PROOF_PASS_OPENAI_SEMANTIC_CALIBRATION_REQUIRED"
             echo "OPENAI_ROLLBACK_COLLECTION=$OPENAI_ROLLBACK_COLLECTION"
             echo "OPENAI_ROLLBACK_COUNT=$openai_count"
             echo "GEMINI_COLLECTION=$GEMINI_COLLECTION"
@@ -394,5 +471,5 @@ jobs:
             echo "APPLICATION_ROLLBACK_PLAN=restore the captured immutable backend/frontend digests; no application deployment executed"
             echo "QDRANT_ROLLBACK_PLAN=switch configuration to $OPENAI_ROLLBACK_COLLECTION in a separately approved deployment"
             echo "PRODUCTION_DEPLOY_ENABLED=false"
-            echo "HARD_BLOCKERS=NONE"
-            echo "NEXT_SAFE_ACTION=independent review of the recorded snapshot SHA and migration logs; do not deploy in this run"
+            echo "HARD_BLOCKERS=OPENAI_SEMANTIC_CALIBRATION_REQUIRED"
+            echo "NEXT_SAFE_ACTION=calibrate OpenAI semantic acceptance before authorizing collection-level fallback proof; do not deploy in this run"

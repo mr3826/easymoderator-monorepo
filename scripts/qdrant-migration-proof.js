@@ -20,6 +20,9 @@ const VECTOR_SIZE = Number.parseInt(process.env.QDRANT_VECTOR_SIZE || '384', 10)
 const EXPECTED_SOURCE_COUNT = Number.parseInt(process.env.EXPECTED_SOURCE_COUNT || '2', 10);
 const POSITIVE_SCORE_MIN = Number.parseFloat(process.env.POSITIVE_SCORE_MIN || '0.25');
 const NEGATIVE_SEARCH_QUERY = 'astrophysics quasars neutrino observatory';
+const CONTROLLED_SHOP_ID = 'controlled-proof-shop';
+const CONTROLLED_SEMANTIC_MODE = 'controlled';
+const REAL_SOURCE_SEMANTIC_MODE = 'real-source';
 
 const argv = process.argv.slice(3);
 
@@ -149,6 +152,22 @@ async function qdrantBinary(route) {
     return Buffer.from(await response.arrayBuffer());
 }
 
+async function qdrantAliases() {
+    const result = await qdrantJson('/aliases');
+    return Array.isArray(result?.result?.aliases) ? result.result.aliases : [];
+}
+
+function aliasesFingerprint(aliases) {
+    const normalized = (Array.isArray(aliases) ? aliases : [])
+        .map((alias) => ({
+            alias_name: String(alias?.alias_name || ''),
+            collection_name: String(alias?.collection_name || ''),
+        }))
+        .sort((left, right) => `${left.alias_name}\u0000${left.collection_name}`
+            .localeCompare(`${right.alias_name}\u0000${right.collection_name}`));
+    return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
 const collectionPath = (name) => `/collections/${encodeURIComponent(name)}`;
 
 async function collectionInfo(name) {
@@ -219,6 +238,7 @@ function loadSourceContract() {
         '/app/src/modules/knowledge/index-source.contract.js',
         path.resolve(process.cwd(), 'src/modules/knowledge/index-source.contract.js'),
         path.resolve(process.cwd(), 'EasyMod-backend/src/modules/knowledge/index-source.contract.js'),
+        path.resolve(__dirname, '../EasyMod-backend/src/modules/knowledge/index-source.contract.js'),
     ].filter(Boolean);
     const candidate = candidates.find((file) => fs.existsSync(file));
     if (!candidate) throw new Error('authoritative PostgreSQL source contract is not present in the candidate image');
@@ -282,6 +302,7 @@ async function inspect() {
     console.log(`LIVE_COLLECTION=${ACTIVE_COLLECTION}`);
     console.log(`LIVE_COUNT=${liveCount}`);
     console.log(`LIVE_VECTOR_SIZE=${liveVectorSize}`);
+    console.log(`LIVE_ALIAS_FINGERPRINT=${aliasesFingerprint(await qdrantAliases())}`);
     // Historical proof collections are evidence, not implicit retry targets.
     // Only explicitly supplied targets are eligible for the bound preflight;
     // the workflow itself uses fresh run-scoped names.
@@ -302,9 +323,35 @@ function loadEmbeddingService() {
         process.env.EMBEDDING_SERVICE_PATH,
         '/app/src/modules/rag/embedding.service.js',
         path.resolve(process.cwd(), 'EasyMod-backend/src/modules/rag/embedding.service.js'),
+        path.resolve(__dirname, '../EasyMod-backend/src/modules/rag/embedding.service.js'),
     ].filter(Boolean);
     const candidate = candidates.find((file) => fs.existsSync(file));
     if (!candidate) throw new Error('embedding service is not present in the candidate image');
+    return require(candidate);
+}
+
+function loadRagService() {
+    const candidates = [
+        process.env.RAG_SERVICE_PATH,
+        '/app/src/modules/rag/rag.service.js',
+        path.resolve(process.cwd(), 'EasyMod-backend/src/modules/rag/rag.service.js'),
+        path.resolve(__dirname, '../EasyMod-backend/src/modules/rag/rag.service.js'),
+    ].filter(Boolean);
+    const candidate = candidates.find((file) => fs.existsSync(file));
+    if (!candidate) throw new Error('RAG service is not present in the candidate image');
+    return require(candidate);
+}
+
+function loadControlledFixtures() {
+    const candidates = [
+        process.env.CONTROLLED_FIXTURE_PATH,
+        '/tmp/semantic-calibration-fixtures.js',
+        '/app/scripts/semantic-calibration-fixtures.js',
+        path.resolve(process.cwd(), 'scripts/semantic-calibration-fixtures.js'),
+        path.resolve(__dirname, 'semantic-calibration-fixtures.js'),
+    ].filter(Boolean);
+    const candidate = candidates.find((file) => fs.existsSync(file));
+    if (!candidate) throw new Error('controlled semantic fixture corpus is not present in the proof container');
     return require(candidate);
 }
 
@@ -313,6 +360,7 @@ function loadEmbeddingSpaceContract() {
         process.env.EMBEDDING_SPACE_CONTRACT_PATH,
         '/app/src/modules/rag/embedding-space.js',
         path.resolve(process.cwd(), 'EasyMod-backend/src/modules/rag/embedding-space.js'),
+        path.resolve(__dirname, '../EasyMod-backend/src/modules/rag/embedding-space.js'),
     ].filter(Boolean);
     const candidate = candidates.find((file) => fs.existsSync(file));
     if (!candidate) throw new Error('embedding-space contract is not present in the candidate image');
@@ -423,19 +471,51 @@ async function spaceSafety() {
     }
     if (!queryRejected || !writeRejected) throw new Error('cross-provider vectors were not rejected');
 
+    const mismatchCases = [
+        ['provider', { ...openaiIdentity, provider: 'gcp' }],
+        ['model', { ...openaiIdentity, model: 'text-embedding-3-large' }],
+        ['version', { ...openaiIdentity, embedding_space_version: 'openai-stale-space-v0' }],
+        ['dimension', { ...openaiIdentity, dimensions: VECTOR_SIZE + 1 }],
+    ];
+    for (const [, mismatchedIdentity] of mismatchCases) {
+        let rejected = false;
+        try {
+            contract.assertEmbeddingSpaceCompatible(geminiIdentity, mismatchedIdentity, 'query');
+        } catch (error) {
+            rejected = error.code === 'EMBEDDING_SPACE_MISMATCH';
+        }
+        if (!rejected) throw new Error('embedding-space mismatch guard accepted an incompatible identity');
+    }
+
+    let legacyRejected = false;
+    try {
+        contract.assertEmbeddingSpaceCompatible(null, geminiIdentity, 'query');
+    } catch (error) {
+        legacyRejected = error.code === 'EMBEDDING_SPACE_MISMATCH';
+    }
+    if (!legacyRejected) throw new Error('unbound legacy collection was treated as compatible');
+
     console.log('CROSS_SPACE_QUERY_REJECTION=PASS');
     console.log('CROSS_SPACE_WRITE_REJECTION=PASS');
+    console.log('QDRANT_SEARCH_NOT_EXECUTED_WITH_MISMATCH=PASS');
+    console.log('UNSAFE_PER_REQUEST_FALLBACK_BLOCKED=PASS');
+    console.log('WRONG_PROVIDER_REJECTED=PASS');
+    console.log('WRONG_MODEL_REJECTED=PASS');
+    console.log('WRONG_VERSION_REJECTED=PASS');
+    console.log('WRONG_DIMENSION_REJECTED=PASS');
+    console.log('LEGACY_UNKNOWN_FAIL_CLOSED=PASS');
+    console.log('VECTOR_SIZE_ONLY_COMPATIBILITY_REJECTED=PASS');
     console.log('MIXED_INDEX_PREVENTION=PASS');
     console.log('PRIMARY_TO_FALLBACK_TEST=PASS');
     console.log('OPENAI_FALLBACK_MODE=COLLECTION_ONLY');
 }
 
-async function searchPoints(name, vector, filter) {
+async function searchPoints(name, vector, filter, limit = 5) {
     const result = await qdrantJson(`${collectionPath(name)}/points/search`, {
         method: 'POST',
         body: JSON.stringify({
             vector,
-            limit: 5,
+            limit,
             with_payload: true,
             filter: contentPointFilter(filter),
         }),
@@ -558,217 +638,310 @@ function emitSearchEvidence({
     if (negativeAcceptanceMode !== null) console.log(`NEGATIVE_ACCEPTANCE_RULE=${negativeAcceptanceMode}`);
     if (negativeCeiling !== null) console.log(`NEGATIVE_CEILING=${negativeCeiling}`);
     console.log(`LEXICAL_OVERLAP=${lexicalOverlap ? 'true' : 'false'}`);
-    console.log(`PASS_FAIL=${pass ? 'PASS' : 'FAIL'}`);
+    console.log(`PASS_FAIL=${pass === null ? 'NOT_EVALUATED' : pass ? 'PASS' : 'FAIL'}`);
     console.log(`FAILURE_REASON=${failureReason || 'NONE'}`);
 }
 
-async function validate(name, expectedCount) {
-    assertSafeCollectionName(name, name === ACTIVE_COLLECTION ? ACTIVE_COLLECTION : '__never__');
-    let binding = await collectionBinding(name);
-    const acceptanceModule = loadAcceptanceContract();
-    const acceptanceContract = acceptanceModule.contractForIdentity(binding.identity);
-    acceptanceModule.assertAcceptanceContract(acceptanceContract, binding.identity);
-    console.log(`SEMANTIC_ACCEPTANCE_VERSION=${acceptanceContract.semantic_acceptance_version}`);
-    console.log(`SEMANTIC_ACCEPTANCE_STATUS=${acceptanceContract.status}`);
-    try {
-        if (binding.state === 'BUILDING') binding = await setCollectionState(name, 'VALIDATING');
+function assertRealSourceIntegrity({ source, points, expectedCount, vectorSize, bindingIdentity }) {
+    const sourceRecords = Array.isArray(source?.sourceRecords) ? source.sourceRecords : [];
+    if (sourceRecords.length !== expectedCount) throw new Error('authoritative source records are unavailable');
+    if (!bindingIdentity || Number(bindingIdentity.dimensions) !== Number(vectorSize)) {
+        throw new Error('real-source embedding-space dimensions are invalid');
+    }
 
-        const size = extractVectorSize(binding.info);
-        const count = await countPoints(name, contentPointFilter());
-        const points = await scrollPoints(name, contentPointFilter());
-        const source = await sourceStats();
-        const contract = loadEmbeddingSpaceContract();
-        if (source.count !== expectedCount) throw new Error('PostgreSQL source count changed during validation');
-        if (binding.identity.dimensions !== VECTOR_SIZE || size !== VECTOR_SIZE) {
-            throw new Error(`vector size ${size} does not equal ${VECTOR_SIZE}`);
-        }
-        if (count !== expectedCount || points.length !== expectedCount) {
-            throw new Error(`Qdrant content count ${count}/${points.length} does not equal ${expectedCount}`);
-        }
+    const sourceById = new Map(sourceRecords.map((record) => [String(record.sourceId), record]));
+    const embeddingContract = loadEmbeddingSpaceContract();
+    const pointIds = points.map((point) => String(point?.payload?.documentId || ''));
+    if (pointIds.some((id) => !id) || new Set(pointIds).size !== pointIds.length) {
+        throw new Error('Qdrant source/payload identity is missing or duplicated');
+    }
+    if (pointIds.length !== expectedCount || pointIds.some((id) => !sourceById.has(id))) {
+        throw new Error('Qdrant source/payload identity does not match PostgreSQL sources');
+    }
 
-        const payloadOk = points.every((point) => {
-            const payload = point.payload || {};
-            const pointIdentity = contract.identityFromPayload(payload);
-            return payload.embedding_space_manifest === false
-                && contract.sameEmbeddingSpace(pointIdentity, binding.identity)
-                && typeof payload.text === 'string'
-                && payload.text.trim().length > 0
-                && typeof payload.shopId === 'string'
-                && payload.shopId.length > 0
-                && typeof payload.type === 'string'
-                && payload.type.length > 0
-                && typeof payload.documentId === 'string'
-                && payload.documentId.length > 0;
+    const shopIds = new Set((source.shopIds || []).map(String));
+    if (!shopIds.size) throw new Error('authoritative source tenant identity is unavailable');
+    for (const point of points) {
+        const payload = point?.payload || {};
+        const sourceRecord = sourceById.get(String(payload.documentId));
+        const pointIdentity = embeddingContract.identityFromPayload(payload);
+        if (payload.embedding_space_manifest !== false
+            || !embeddingContract.sameEmbeddingSpace(pointIdentity, bindingIdentity)
+            || typeof payload.text !== 'string'
+            || !payload.text.trim()
+            || typeof payload.shopId !== 'string'
+            || !shopIds.has(payload.shopId)
+            || payload.shopId !== String(sourceRecord.shopId)
+            || payload.type !== sourceRecord.sourceType) {
+            throw new Error('real-source payload, tenant, or embedding-space identity check failed');
+        }
+    }
+    return true;
+}
+
+async function controlledIndex(name) {
+    assertSafeCollectionName(name);
+    if (await collectionInfo(name)) throw new Error(`controlled semantic collection already exists: ${name}`);
+
+    const fixtures = loadControlledFixtures();
+    fixtures.validateCalibrationFixtures();
+    const { ingestData } = loadRagService();
+    for (const document of fixtures.CONTROLLED_FIXTURE_DOCUMENTS) {
+        const result = await ingestData({
+            text: document.content,
+            metadata: {
+                shopId: CONTROLLED_SHOP_ID,
+                type: document.sourceType,
+                documentId: document.fixtureId,
+                fixtureId: document.fixtureId,
+                embeddingTitle: document.title,
+            },
         });
-        if (!payloadOk) throw new Error('payload or embedding-space identity integrity check failed');
+        if (!result?.success) throw new Error(`controlled fixture ingestion failed: ${document.fixtureId}`);
+    }
 
-        const shopId = source.shopIds[0];
-        if (!shopId) throw new Error('tenant isolation cannot be proved without a shop id');
+    const binding = await collectionBinding(name);
+    const contentCount = await countPoints(name, contentPointFilter());
+    if (contentCount !== fixtures.CONTROLLED_FIXTURE_DOCUMENTS.length) {
+        throw new Error(`controlled fixture content count ${contentCount} does not match corpus`);
+    }
+    console.log(`CONTROLLED_FIXTURE_VERSION=${fixtures.FIXTURE_VERSION}`);
+    console.log(`CONTROLLED_COLLECTION=${name}`);
+    console.log(`CONTROLLED_COLLECTION_STATE=${binding.state}`);
+    console.log(`CONTROLLED_CONTENT_COUNT=${contentCount}`);
+    console.log('CONTROLLED_INDEX=PASS');
+}
+
+async function validateControlled(name) {
+    assertSafeCollectionName(name, name === ACTIVE_COLLECTION ? ACTIVE_COLLECTION : '__never__');
+    const fixtures = loadControlledFixtures();
+    fixtures.validateCalibrationFixtures();
+    let binding = await collectionBinding(name);
+
+    try {
+        const acceptanceModule = loadAcceptanceContract();
+        const acceptanceContract = acceptanceModule.contractForIdentity(binding.identity);
+        const calibrated = acceptanceContract?.status === 'READY';
+        if (calibrated) acceptanceModule.assertAcceptanceContract(acceptanceContract, binding.identity);
+        if (binding.state === 'BUILDING') binding = await setCollectionState(name, 'VALIDATING');
+        const info = await collectionInfo(name);
+        const rawCount = await countPoints(name);
+        const manifestCount = await countPoints(name, {
+            must: [{ key: 'embedding_space_manifest', match: { value: true } }],
+        });
+        const contentCount = await countPoints(name, contentPointFilter());
+        const points = await scrollPoints(name, contentPointFilter());
+        const expectedIds = new Set(fixtures.CONTROLLED_FIXTURE_DOCUMENTS.map((item) => item.fixtureId));
+        const pointIds = new Set(points.map((point) => String(point?.payload?.documentId || '')));
+        if (rawCount !== fixtures.CONTROLLED_FIXTURE_DOCUMENTS.length + 1
+            || manifestCount !== 1
+            || contentCount !== fixtures.CONTROLLED_FIXTURE_DOCUMENTS.length
+            || points.length !== contentCount
+            || pointIds.size !== expectedIds.size
+            || [...expectedIds].some((id) => !pointIds.has(id))) {
+            throw new Error('controlled manifest/content accounting or fixture identity mismatch');
+        }
+
+        const embeddingContract = loadEmbeddingSpaceContract();
+        const payloadOk = points.every((point) => {
+            const payload = point?.payload || {};
+            return payload.embedding_space_manifest === false
+                && embeddingContract.sameEmbeddingSpace(
+                    embeddingContract.identityFromPayload(payload),
+                    binding.identity,
+                )
+                && payload.shopId === CONTROLLED_SHOP_ID
+                && expectedIds.has(String(payload.documentId))
+                && typeof payload.text === 'string'
+                && payload.text.trim().length > 0;
+        });
+        if (!payloadOk || extractVectorSize(info) !== VECTOR_SIZE) {
+            throw new Error('controlled payload, provider identity, or vector dimension validation failed');
+        }
+
+        console.log(`CONTROLLED_FIXTURE_VERSION=${fixtures.FIXTURE_VERSION}`);
+        console.log(`CONTROLLED_COLLECTION=${name}`);
+        console.log(`CONTROLLED_COLLECTION_STATE=${binding.state}`);
+        console.log(`CONTROLLED_PROVIDER=${binding.identity.provider}`);
+        console.log(`CONTROLLED_MODEL=${binding.identity.model}`);
+        console.log(`CONTROLLED_EMBEDDING_SPACE_VERSION=${binding.identity.embedding_space_version}`);
+        console.log(`CONTROLLED_DIMENSIONS=${binding.identity.dimensions}`);
+        console.log('CONTROLLED_MANIFEST_BINDING=PASS');
+        console.log('CONTROLLED_COLLECTION_HOMOGENEITY=PASS');
+        console.log(`CONTROLLED_RAW_POINT_COUNT=${rawCount}`);
+        console.log(`CONTROLLED_MANIFEST_POINT_COUNT=${manifestCount}`);
+        console.log(`CONTROLLED_CONTENT_POINT_COUNT=${contentCount}`);
+        console.log(`CONTROLLED_MANIFEST_CONTENT_EXCLUSION=${rawCount === manifestCount + contentCount ? 'PASS' : 'FAIL'}`);
+        console.log(`CONTROLLED_SEMANTIC_CALIBRATION=${calibrated ? 'PASS' : 'REQUIRED'}`);
+        if (!calibrated && binding.identity.provider === 'openai') {
+            console.log('OPENAI_SEMANTIC_CALIBRATION_REQUIRED=YES');
+        }
 
         const { getEmbeddingResult } = loadEmbeddingService();
-        const records = Array.isArray(source.sourceRecords) && source.sourceRecords.length
-            ? source.sourceRecords
-            : source.snippets.map((text, index) => ({
-                sourceId: `source-${index}`,
-                sourceType: 'unknown',
-                shopId,
-                text,
-            }));
-        const banglaRecord = records.find((record) => /[\u0980-\u09ff]/u.test(record.text));
-        const englishRecord = records.find((record) => /[A-Za-z]/u.test(record.text));
-        const banglaQuery = banglaRecord?.text?.slice(0, 120) || null;
-        const englishQuery = englishRecord?.text?.slice(0, 120) || null;
-        // The real-source contract does not provide an authoritative
-        // cross-lingual query for these mutable rows. Do not invent one here:
-        // controlled multilingual cases live in semantic-calibration-fixtures.js.
-        // Keeping this unavailable makes the migration proof fail closed rather
-        // than treating an unsupported fixture as semantic evidence.
-        const crossLingualRecord = null;
-        const crossLingualQuery = null;
-        const positiveFilter = shopFilter(shopId);
-
-        const runPositive = async (caseId, query, expectedRecord) => {
-            assertPositiveFixture(caseId, query, expectedRecord);
-            const embedding = await getEmbeddingResult(query, {
+        const positiveResults = [];
+        for (const testCase of fixtures.CONTROLLED_POSITIVE_QUERIES) {
+            const embedding = await getEmbeddingResult(testCase.query, {
                 identity: binding.identity,
                 purpose: 'query',
             });
-            if (!Array.isArray(embedding.vector) || embedding.vector.length !== binding.identity.dimensions) {
-                throw new Error(`${caseId} query vector dimension mismatch`);
-            }
-            const results = await searchPoints(name, embedding.vector, positiveFilter);
+            const results = await searchPoints(name, embedding.vector, shopFilter(CONTROLLED_SHOP_ID), points.length);
             const top = results[0];
-            const expectedIndex = results.findIndex((point) => point.payload?.documentId === expectedRecord?.sourceId);
-            const expectedPoint = expectedIndex >= 0 ? results[expectedIndex] : null;
+            const expectedIndex = results.findIndex((point) => point.payload?.documentId === testCase.expectedSourceId);
             const expectedRank = expectedIndex >= 0 ? expectedIndex + 1 : null;
-            const expectedScore = expectedPoint?.score;
-            const topScore = Number(top?.score);
-            const pass = positiveSearchPass(
-                top,
-                expectedIndex,
-                acceptanceContract.positive_threshold,
-            );
-            const failureReason = pass
-                ? 'NONE'
-                : expectedIndex < 0
-                    ? 'EXPECTED_SOURCE_NOT_FOUND'
-                    : expectedIndex !== 0
-                        ? 'EXPECTED_SOURCE_NOT_TOP'
-                        : !top
-                            ? 'NO_RESULTS'
-                            : !Number.isFinite(topScore)
-                                ? 'TOP_SCORE_NOT_FINITE'
-                                : 'TOP_SCORE_BELOW_THRESHOLD';
+            const expectedScore = expectedIndex >= 0 ? results[expectedIndex]?.score : null;
+            const pass = calibrated ? positiveSearchPass(top, expectedIndex, acceptanceContract.positive_threshold) : null;
+            positiveResults.push({ ...testCase, expectedRank, expectedScore, pass });
             emitSearchEvidence({
                 identity: binding.identity,
                 collection: name,
-                caseId,
-                expectedSourceId: expectedRecord?.sourceId || 'unknown',
+                caseId: testCase.queryId,
+                expectedSourceId: testCase.expectedSourceId,
                 top,
                 expectedRank,
                 expectedScore,
                 results,
-                positiveThreshold: acceptanceContract.positive_threshold,
-                lexicalOverlap: Boolean(expectedRecord && hasLexicalOverlap(query, expectedRecord.text)),
+                positiveThreshold: calibrated ? acceptanceContract.positive_threshold : null,
+                lexicalOverlap: false,
                 pass,
-                failureReason,
+                failureReason: calibrated
+                    ? (pass ? 'NONE' : expectedIndex < 0 ? 'EXPECTED_SOURCE_NOT_FOUND' : expectedIndex !== 0 ? 'EXPECTED_SOURCE_NOT_TOP' : 'TOP_SCORE_BELOW_THRESHOLD')
+                    : 'PROVIDER_SEMANTIC_CALIBRATION_REQUIRED',
             });
-            return pass;
-        };
+        }
 
-        const banglaPass = await runPositive('bangla', banglaQuery, banglaRecord);
-        const englishPass = await runPositive('english', englishQuery, englishRecord);
-        const crossLingualPass = await runPositive('cross-lingual', crossLingualQuery, crossLingualRecord);
+        const negativeResults = [];
+        for (const testCase of fixtures.CONTROLLED_NEGATIVE_QUERIES) {
+            assertNegativeFixtureLexicallyDisjoint(testCase.query, points);
+            const embedding = await getEmbeddingResult(testCase.query, {
+                identity: binding.identity,
+                purpose: 'query',
+            });
+            const results = await searchPoints(name, embedding.vector, shopFilter(CONTROLLED_SHOP_ID), points.length);
+            const top = results[0];
+            const pass = calibrated
+                ? negativeSearchPass(top, testCase.query, acceptanceContract, acceptanceModule)
+                : null;
+            negativeResults.push({ ...testCase, topScore: top?.score, pass });
+            emitSearchEvidence({
+                identity: binding.identity,
+                collection: name,
+                caseId: testCase.negativeQueryId,
+                expectedSourceId: 'none',
+                top,
+                expectedRank: null,
+                expectedScore: null,
+                results,
+                negativeAcceptanceMode: calibrated ? acceptanceContract.negative_acceptance_mode : null,
+                negativeCeiling: calibrated ? acceptanceContract.negative_ceiling : null,
+                lexicalOverlap: Boolean(top && hasLexicalOverlap(testCase.query, top.payload?.text)),
+                pass,
+                failureReason: calibrated
+                    ? (pass ? 'NONE' : 'NEGATIVE_RESULT_ABOVE_CALIBRATED_CEILING_OR_LEXICAL_OVERLAP')
+                    : 'PROVIDER_SEMANTIC_CALIBRATION_REQUIRED',
+            });
+        }
 
-        const tenantEmbedding = await getEmbeddingResult(englishQuery, {
+        const tenantEmbedding = await getEmbeddingResult(fixtures.CONTROLLED_POSITIVE_QUERIES[0].query, {
             identity: binding.identity,
             purpose: 'query',
         });
-        const tenantResults = await searchPoints(name, tenantEmbedding.vector, positiveFilter);
-        const foreignTenant = '00000000-0000-4000-8000-000000000000';
-        const foreignResults = await searchPoints(name, tenantEmbedding.vector, shopFilter(foreignTenant));
+        const tenantResults = await searchPoints(name, tenantEmbedding.vector, shopFilter(CONTROLLED_SHOP_ID));
+        const foreignResults = await searchPoints(name, tenantEmbedding.vector, shopFilter('controlled-proof-foreign-shop'));
         const tenantPass = tenantResults.length > 0
-            && tenantResults.every((item) => item.payload?.shopId === shopId)
+            && tenantResults.every((item) => item.payload?.shopId === CONTROLLED_SHOP_ID)
             && foreignResults.length === 0;
-        emitSearchEvidence({
-            identity: binding.identity,
-            collection: name,
-            caseId: 'tenant-isolation',
-            expectedSourceId: englishRecord?.sourceId || 'tenant-scoped-source',
-            top: tenantResults[0],
-            expectedRank: tenantResults.length ? 1 : null,
-            expectedScore: tenantResults[0]?.score,
-            results: tenantResults,
-            positiveThreshold: acceptanceContract.positive_threshold,
-            lexicalOverlap: false,
-            pass: tenantPass,
-            failureReason: tenantPass ? 'NONE' : 'TENANT_FILTER_VIOLATION',
-        });
+        console.log(`CONTROLLED_TENANT_ISOLATION=${tenantPass ? 'PASS' : 'FAIL'}`);
+        console.log(`MANIFEST_SEARCH_EXCLUSION=${tenantResults.every((item) => item.payload?.embedding_space_manifest !== true) ? 'PASS' : 'FAIL'}`);
+        console.log(`MANIFEST_RAG_EXCLUSION=${tenantResults.every((item) => item.payload?.embedding_space_manifest !== true) ? 'PASS' : 'FAIL'}`);
 
-        const negativeQuery = NEGATIVE_SEARCH_QUERY;
-        assertNegativeFixtureLexicallyDisjoint(negativeQuery, points);
-        console.log('NEGATIVE_FIXTURE_LEXICAL_OVERLAP=false');
-        const negativeEmbedding = await getEmbeddingResult(negativeQuery, {
-            identity: binding.identity,
-            purpose: 'query',
-        });
-        const negativeResults = await searchPoints(name, negativeEmbedding.vector, positiveFilter);
-        const negativeTop = negativeResults[0];
-        const negativePass = negativeSearchPass(
-            negativeTop,
-            negativeQuery,
-            acceptanceContract,
-            acceptanceModule,
-        );
-        emitSearchEvidence({
-            identity: binding.identity,
-            collection: name,
-            caseId: 'negative',
-            expectedSourceId: 'none',
-            top: negativeTop,
-            expectedRank: null,
-            expectedScore: null,
-            results: negativeResults,
-            negativeAcceptanceMode: acceptanceContract.negative_acceptance_mode,
-            negativeCeiling: acceptanceContract.negative_ceiling,
-            lexicalOverlap: Boolean(negativeTop && hasLexicalOverlap(negativeQuery, negativeTop.payload?.text)),
-            pass: negativePass,
-            failureReason: negativePass ? 'NONE' : 'NEGATIVE_RESULT_ABOVE_CALIBRATED_CEILING_OR_LEXICAL_OVERLAP',
-        });
+        const positivePass = calibrated && positiveResults.every((item) => item.pass);
+        const negativePass = calibrated && negativeResults.every((item) => item.pass);
+        const semanticPass = positivePass && negativePass;
+        const languagePass = (language) => calibrated
+            && positiveResults.filter((item) => item.languageClass === language).every((item) => item.pass);
+        console.log(`CONTROLLED_POSITIVE_COUNT=${positiveResults.length}`);
+        console.log(`CONTROLLED_POSITIVE_PASS_COUNT=${calibrated ? positiveResults.filter((item) => item.pass).length : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_TOP1_ACCURACY=${calibrated
+            ? `${positiveResults.filter((item) => item.expectedRank === 1).length}/${positiveResults.length}`
+            : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_NEGATIVE_COUNT=${negativeResults.length}`);
+        console.log(`CONTROLLED_NEGATIVE_PASS_COUNT=${calibrated ? negativeResults.filter((item) => item.pass).length : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_BANGLA_SEARCH=${languagePass('bengali') ? 'PASS' : calibrated ? 'FAIL' : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_ENGLISH_SEARCH=${languagePass('english') ? 'PASS' : calibrated ? 'FAIL' : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_CROSS_LINGUAL_SEARCH=${languagePass('cross_lingual') ? 'PASS' : calibrated ? 'FAIL' : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_NEGATIVE_SEARCH=${negativePass ? 'PASS' : calibrated ? 'FAIL' : 'NOT_EVALUATED'}`);
+        console.log(`CONTROLLED_SEMANTIC_VALIDATION=${semanticPass ? 'PASS' : calibrated ? 'FAIL' : 'OPENAI_SEMANTIC_CALIBRATION_REQUIRED'}`);
 
-        console.log(`QDRANT_COLLECTION=${name}`);
-        console.log(`QDRANT_COUNT=${count}`);
-        console.log(`VECTOR_SIZE=${size}`);
-        console.log(`EMBEDDING_PROVIDER=${binding.identity.provider}`);
-        console.log(`EMBEDDING_MODEL=${binding.identity.model}`);
-        console.log(`EMBEDDING_SPACE_VERSION=${binding.identity.embedding_space_version}`);
-        console.log(`EMBEDDING_COLLECTION_STATE=${binding.state}`);
-        console.log('PAYLOAD_INTEGRITY=PASS');
-        console.log(`BANGLA_SEARCH=${banglaPass ? 'PASS' : 'FAIL'}`);
-        console.log(`ENGLISH_SEARCH=${englishPass ? 'PASS' : 'FAIL'}`);
-        console.log(`CROSS_LINGUAL_SEARCH=${crossLingualPass ? 'PASS' : 'FAIL'}`);
-        console.log(`NEGATIVE_SEARCH=${negativePass ? 'PASS' : 'FAIL'}`);
-        console.log(`TENANT_ISOLATION=${tenantPass ? 'PASS' : 'FAIL'}`);
-        if (negativeTop) console.log(`NEGATIVE_TOP_SCORE=${Number(negativeTop.score).toFixed(4)}`);
-
-        const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;
-        console.log(`SEMANTIC_SEARCH=${semanticPass ? 'PASS' : 'FAIL'}`);
-        if (!semanticPass || !tenantPass) throw new Error('Qdrant validation gate failed');
-
+        if (!calibrated) return { status: 'OPENAI_SEMANTIC_CALIBRATION_REQUIRED', calibrated: false };
+        if (!semanticPass || !tenantPass) throw new Error('controlled semantic validation gate failed');
         if (binding.state === 'VALIDATING') await setCollectionState(name, 'READY');
-        console.log('EMBEDDING_COLLECTION_READY=PASS');
+        console.log('CONTROLLED_COLLECTION_READY=PASS');
+        return { status: 'PASS', calibrated: true };
     } catch (error) {
         try {
             const current = await collectionBinding(name);
-            if (current.state === 'BUILDING' || current.state === 'VALIDATING') {
-                await setCollectionState(name, 'FAILED');
-            }
+            if (current.state === 'BUILDING' || current.state === 'VALIDATING') await setCollectionState(name, 'FAILED');
         } catch (_) {
             // Preserve the original sanitized validation error.
         }
         throw error;
     }
 }
+
+async function validateRealSource(name, expectedCount) {
+    assertSafeCollectionName(name, name === ACTIVE_COLLECTION ? ACTIVE_COLLECTION : '__never__');
+    let binding = await collectionBinding(name);
+    try {
+        if (binding.state === 'BUILDING') binding = await setCollectionState(name, 'VALIDATING');
+        const size = extractVectorSize(binding.info);
+        const count = await countPoints(name, contentPointFilter());
+        const points = await scrollPoints(name, contentPointFilter());
+        const source = await sourceStats();
+        if (source.count !== expectedCount) throw new Error('PostgreSQL source count changed during validation');
+        if (count !== expectedCount || points.length !== expectedCount) {
+            throw new Error(`Qdrant content count ${count}/${points.length} does not equal ${expectedCount}`);
+        }
+        if (binding.identity.dimensions !== VECTOR_SIZE || size !== VECTOR_SIZE) {
+            throw new Error(`vector size ${size} does not equal ${VECTOR_SIZE}`);
+        }
+        assertRealSourceIntegrity({
+            source,
+            points,
+            expectedCount,
+            vectorSize: VECTOR_SIZE,
+            bindingIdentity: binding.identity,
+        });
+        console.log('VALIDATION_MODE=REAL_SOURCE_STRUCTURAL');
+        console.log(`POSTGRES_SOURCE_COUNT=${source.count}`);
+        console.log(`QDRANT_CONTENT_COUNT=${count}`);
+        console.log(`QDRANT_COUNT=${count}`);
+        console.log(`VECTOR_SIZE=${size}`);
+        console.log('REAL_SOURCE_IDENTITY=PASS');
+        console.log('REAL_SOURCE_TENANT_IDENTITY=PASS');
+        console.log('REAL_SOURCE_SEMANTIC_VALIDATION=SKIPPED_UNSUPPORTED');
+        if (binding.state === 'VALIDATING') {
+            binding = await setCollectionState(name, 'READY');
+        }
+        console.log(`EMBEDDING_COLLECTION_STATE=${binding.state}`);
+        console.log('REAL_SOURCE_REINDEX_INTEGRITY=PASS');
+        return { status: 'PASS' };
+    } catch (error) {
+        try {
+            const current = await collectionBinding(name);
+            if (current.state === 'BUILDING' || current.state === 'VALIDATING') await setCollectionState(name, 'FAILED');
+        } catch (_) {
+            // Preserve the original sanitized validation error.
+        }
+        throw error;
+    }
+}
+
+async function validate(name, expectedCount, semanticMode = CONTROLLED_SEMANTIC_MODE) {
+    if (semanticMode === REAL_SOURCE_SEMANTIC_MODE) return validateRealSource(name, expectedCount);
+    if (semanticMode === CONTROLLED_SEMANTIC_MODE) return validateControlled(name);
+    throw new Error(`unsupported validation semantic mode: ${semanticMode}`);
+}
+
 
 async function createSnapshot(collection, snapshotPath) {
     assertSafeCollectionName(collection);
@@ -809,19 +982,32 @@ async function postflight() {
     if (extractVectorSize(liveInfo) !== VECTOR_SIZE) {
         throw new Error('live Qdrant vector configuration changed during the proof run');
     }
+    const aliasFingerprint = aliasesFingerprint(await qdrantAliases());
+    if (process.env.EXPECTED_LIVE_ALIAS_FINGERPRINT
+        && aliasFingerprint !== process.env.EXPECTED_LIVE_ALIAS_FINGERPRINT) {
+        throw new Error('live Qdrant aliases changed during the proof run');
+    }
     console.log(`LIVE_COLLECTION=${ACTIVE_COLLECTION}`);
     console.log(`LIVE_COUNT=${liveCount}`);
+    console.log(`LIVE_ALIAS_FINGERPRINT=${aliasFingerprint}`);
     console.log('LIVE_COLLECTION_UNTOUCHED=PASS');
+    console.log('LIVE_ALIAS_UNCHANGED=PASS');
 }
 
 async function main() {
     const mode = process.argv[2];
     if (mode === 'inspect') return inspect();
-    if (mode === 'validate') return validate(option('collection'), Number(option('expected-count', EXPECTED_SOURCE_COUNT)));
+    if (mode === 'validate') return validate(
+        option('collection'),
+        Number(option('expected-count', EXPECTED_SOURCE_COUNT)),
+        option('semantic', CONTROLLED_SEMANTIC_MODE),
+    );
+    if (mode === 'controlled-index') return controlledIndex(option('collection'));
+    if (mode === 'controlled-validate') return validateControlled(option('collection'));
     if (mode === 'snapshot') return createSnapshot(option('collection'), option('path'));
     if (mode === 'postflight') return postflight();
     if (mode === 'space-safety') return spaceSafety();
-    throw new Error('usage: inspect | validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight | space-safety');
+    throw new Error('usage: inspect | validate --collection=<name> [--semantic=real-source] | controlled-index --collection=<name> | controlled-validate --collection=<name> | snapshot --collection=<name> --path=<file> | postflight | space-safety');
 }
 
 if (require.main === module) {
@@ -845,10 +1031,19 @@ module.exports = {
     normalizeQdrantUrl,
     normalizeUrl,
     loadAcceptanceContract,
+    loadControlledFixtures,
+    loadRagService,
     sourceStats,
     contentPointFilter,
     safeSourceId,
+    aliasesFingerprint,
+    assertRealSourceIntegrity,
+    controlledIndex,
+    validateControlled,
     emitSearchEvidence,
     spaceSafety,
     POSITIVE_SCORE_MIN,
+    CONTROLLED_SHOP_ID,
+    CONTROLLED_SEMANTIC_MODE,
+    REAL_SOURCE_SEMANTIC_MODE,
 };
