@@ -53,6 +53,7 @@ jobs:
       PROOF_SCRIPT_PATH: /opt/easymod/qdrant-migration-proof-${{ github.run_id }}.js
       ACCEPTANCE_CONTRACT_PATH: /opt/easymod/semantic-acceptance-contract-${{ github.run_id }}.js
       FIXTURE_SCRIPT_PATH: /opt/easymod/semantic-calibration-fixtures-${{ github.run_id }}.js
+      READINESS_SCRIPT_PATH: /opt/easymod/qdrant-restore-readiness-${{ github.run_id }}.js
     steps:
       - name: Check out proof runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -93,15 +94,17 @@ jobs:
           printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
           ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
-            "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH'"
+            "set -e; test -f /opt/easymod/.env.prod; test -f /opt/easymod/docker-compose.prod.yml; rm -f -- '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH' '$READINESS_SCRIPT_PATH'"
           scp -i ~/.ssh/easymod_deploy_key scripts/qdrant-migration-proof.js \
             root@"$DEPLOY_HOST":"$PROOF_SCRIPT_PATH"
           scp -i ~/.ssh/easymod_deploy_key scripts/semantic-acceptance-contract.js \
             root@"$DEPLOY_HOST":"$ACCEPTANCE_CONTRACT_PATH"
           scp -i ~/.ssh/easymod_deploy_key scripts/semantic-calibration-fixtures.js \
             root@"$DEPLOY_HOST":"$FIXTURE_SCRIPT_PATH"
+          scp -i ~/.ssh/easymod_deploy_key scripts/qdrant-restore-readiness.js \
+            root@"$DEPLOY_HOST":"$READINESS_SCRIPT_PATH"
           ssh -i ~/.ssh/easymod_deploy_key root@"$DEPLOY_HOST" \
-            "chmod 644 '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH'"
+            "chmod 644 '$PROOF_SCRIPT_PATH' '$ACCEPTANCE_CONTRACT_PATH' '$FIXTURE_SCRIPT_PATH' '$READINESS_SCRIPT_PATH'"
           echo "PROOF_SCRIPT_PATH=$PROOF_SCRIPT_PATH" >> "$GITHUB_ENV"
           echo "ACCEPTANCE_CONTRACT_PATH=$ACCEPTANCE_CONTRACT_PATH" >> "$GITHUB_ENV"
 
@@ -122,6 +125,7 @@ jobs:
           PROOF_SCRIPT_PATH: ${{ env.PROOF_SCRIPT_PATH }}
           ACCEPTANCE_CONTRACT_PATH: ${{ env.ACCEPTANCE_CONTRACT_PATH }}
           FIXTURE_SCRIPT_PATH: ${{ env.FIXTURE_SCRIPT_PATH }}
+          READINESS_SCRIPT_PATH: ${{ env.READINESS_SCRIPT_PATH }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           PRODUCTION_DEPLOY_ENABLED: ${{ env.PRODUCTION_DEPLOY_ENABLED }}
           OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
@@ -132,7 +136,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 1800s
-          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,GEMINI_SEMANTIC_COLLECTION_BASE,OPENAI_SEMANTIC_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,ACCEPTANCE_CONTRACT_PATH,FIXTURE_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
+          envs: CANDIDATE_IMAGE,GHCR_BACKEND,GH_ACTOR,GH_TOKEN,ACTIVE_COLLECTION,OPENAI_ROLLBACK_COLLECTION_BASE,GEMINI_COLLECTION_BASE,GEMINI_SEMANTIC_COLLECTION_BASE,OPENAI_SEMANTIC_COLLECTION_BASE,EXPECTED_SOURCE_COUNT,EXPECTED_LIVE_COUNT,VECTOR_SIZE,QDRANT_IMAGE,PROOF_SCRIPT_PATH,ACCEPTANCE_CONTRACT_PATH,FIXTURE_SCRIPT_PATH,READINESS_SCRIPT_PATH,WORKFLOW_RUN_ID,PRODUCTION_DEPLOY_ENABLED,OPENAI_API_KEY,GEMINI_API_KEY,GEMINI_EMBEDDING_MODEL
           script: |
             set -euo pipefail
             umask 077
@@ -153,7 +157,7 @@ jobs:
 
             cleanup() {
               docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
-              rm -f -- "$PROOF_SCRIPT_PATH" "$ACCEPTANCE_CONTRACT_PATH" "$FIXTURE_SCRIPT_PATH"
+              rm -f -- "$PROOF_SCRIPT_PATH" "$ACCEPTANCE_CONTRACT_PATH" "$FIXTURE_SCRIPT_PATH" "$READINESS_SCRIPT_PATH"
               docker logout ghcr.io >/dev/null 2>&1 || true
             }
             trap cleanup EXIT
@@ -412,16 +416,39 @@ jobs:
               "$QDRANT_IMAGE" \
               ./qdrant \
               --snapshot "/qdrant/snapshots/$SNAPSHOT_FILE:$RESTORE_COLLECTION" >/dev/null
-            restore_ready=false
-            for attempt in $(seq 1 60); do
-              if docker run --rm --network "$NETWORK" "$CANDIDATE_IMAGE" node -e \
-                "fetch('http://$RESTORE_HOST:6333/readyz').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));" >/dev/null 2>&1; then
-                restore_ready=true
-                break
+            RESTORE_REQUEST_TIMEOUT_MS=5000
+            RESTORE_READINESS_DEADLINE_MS=180000
+            RESTORE_READINESS_RETRY_INTERVAL_MS=2000
+            restore_readiness_output=""
+            restore_readiness_exit=0
+            if restore_readiness_output=$(timeout --signal=TERM --kill-after=5s 240s \
+              docker run --rm --network "$NETWORK" \
+                -v "$READINESS_SCRIPT_PATH:/tmp/qdrant-restore-readiness.js:ro" \
+                "$CANDIDATE_IMAGE" node /tmp/qdrant-restore-readiness.js \
+                "http://$RESTORE_HOST:6333/readyz" \
+                "$RESTORE_REQUEST_TIMEOUT_MS" \
+                "$RESTORE_READINESS_DEADLINE_MS" \
+                "$RESTORE_READINESS_RETRY_INTERVAL_MS"); then
+              restore_readiness_exit=0
+            else
+              restore_readiness_exit=$?
+            fi
+            printf '%s\n' "$restore_readiness_output" | tee "$RUN_DIR/restore-readiness.log"
+            if [ "$restore_readiness_exit" -ne 0 ]; then
+              if [ "$restore_readiness_exit" -eq 124 ]; then
+                echo "ROLLBACK_RESTORE_READINESS=FAIL"
+                echo "FAILURE_TYPE=CONTAINER_PROBE_TIMEOUT"
+                echo "ATTEMPTS=UNKNOWN"
+                echo "ELAPSED_MS=240000"
+                echo "LAST_HTTP_STATUS=UNKNOWN"
+                echo "LAST_QDRANT_STATUS=UNKNOWN"
+                echo "LAST_ERROR_TYPE=CONTAINER_PROBE_TIMEOUT"
+                echo "LAST_ERROR_SUMMARY=readiness probe container exceeded its bounded command deadline"
               fi
-              sleep 2
-            done
-            test "$restore_ready" = true
+              exit "$restore_readiness_exit"
+            fi
+            test "$(awk -F= '$1 == "ROLLBACK_RESTORE_READINESS" { print $2 }' "$RUN_DIR/restore-readiness.log" | tail -1)" = PASS
+            echo "ROLLBACK_RESTORE_READINESS=PASS"
             echo "QDRANT_RESTORE_READY=PASS"
             docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
               -e NODE_ENV=production \
