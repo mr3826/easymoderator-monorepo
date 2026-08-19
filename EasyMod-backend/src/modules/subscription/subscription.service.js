@@ -1,8 +1,9 @@
 const { Subscription, Invoice, UsageEvent, AuditLog } = require('../entities');
 const crypto = require('crypto');
+const { v5: uuidv5, validate: uuidValidate } = require('uuid');
 const { AppError } = require('../../utils/AppError');
 const { UserShop } = require('../entities');
-const { Op } = require('sequelize');
+const { Op, Transaction } = require('sequelize');
 const { sequelize } = require('../../utils/database/database-setup');
 const { createLogger } = require('../../utils/structured-logger');
 const cacheService = require('../../utils/cache.service');
@@ -18,6 +19,34 @@ const {
     RECURRING_INVOICE_TYPES,
     recurringInvoiceTypeFor
 } = require('./subscription.plans');
+
+/**
+ * Fixed namespace for hashing non-UUID idempotency keys into usage_events.
+ * Never change it: the hash IS the dedup key, so a new namespace would let
+ * every in-flight request meter a second time.
+ */
+const USAGE_REQUEST_NAMESPACE = '7b3f2c1e-9a4d-4f8b-8c2a-1d6e5f0a9b34';
+
+/**
+ * usage_events.request_id is a UUID column (widened from TEXT by
+ * 20260611_003_schema_drift_sweep), but callers pass whatever identifies their
+ * request: the Meta webhook path sends `conv:<uuid>`, and the HTTP path
+ * forwards a client-supplied `x-request-id` header verbatim
+ * (request-context.middleware.js). Postgres rejects both with "invalid input
+ * syntax for type uuid" — and every caller wraps trackUsage in a catch so
+ * ingestion is never blocked, so the rejection surfaced only as a log line
+ * while the meter silently stayed at zero.
+ *
+ * Hash anything that is not already a UUID into a stable one. Same input still
+ * means same key, so idempotency is unchanged. Every read and write of
+ * usage_events.request_id must go through here, or a lookup will miss the row
+ * its own write created.
+ */
+const usageRequestKey = (requestId) => (
+    uuidValidate(String(requestId))
+        ? String(requestId)
+        : uuidv5(String(requestId), USAGE_REQUEST_NAMESPACE)
+);
 
 /**
  * Verify user has access to shop
@@ -262,6 +291,8 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         throw new AppError(`Invalid usage type: ${usageType}`, 400);
     }
 
+    const idempotencyKey = usageRequestKey(requestId);
+
     const logger = createLogger(requestId, shopId);
     let transaction = null;
 
@@ -271,7 +302,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
             where: {
                 shop_id: shopId,
                 resource_type: usageType,
-                request_id: requestId
+                request_id: idempotencyKey
             }
         });
 
@@ -302,7 +333,10 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
 
         // Step 2: Create transaction
         transaction = await sequelize.transaction({
-            isolationLevel: 'READ_COMMITTED'
+            // The literal 'READ_COMMITTED' is not SQL — Sequelize interpolates
+            // the value straight into SET TRANSACTION ISOLATION LEVEL, so the
+            // underscore form made Postgres reject every usage transaction.
+            isolationLevel: Transaction.ISOLATION_LEVELS.READ_COMMITTED
         });
 
         // Step 3: Lock subscription row for update (prevents concurrent increments)
@@ -338,7 +372,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         const usageEvent = await UsageEvent.create({
             shop_id: shopId,
             resource_type: usageType,
-            request_id: requestId,
+            request_id: idempotencyKey,
             delta: amount,
             transaction_id: transaction.id,
             status: 'pending',
@@ -378,12 +412,20 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         }, { transaction });
 
         // Step 7: Create audit log entry (ensures auditability)
+        //
+        // `metadata` and `idempotency_key`, not `details` and `request_id`:
+        // audit_logs has no column by either of those names, and Sequelize
+        // drops unknown attributes on create() without erroring. Every usage
+        // audit row written so far therefore recorded the ids and the action
+        // and silently lost BOTH the payload and the key that correlates the
+        // row back to its request — the one field an idempotent billing audit
+        // trail exists to carry.
         await AuditLog.create({
             shop_id: shopId,
             resource_type: 'subscription_usage',
             resource_id: subscription.id,
             action: 'usage_tracked',
-            details: {
+            metadata: {
                 usageType,
                 amount,
                 newTotal: newUsage,
@@ -392,7 +434,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                 usageEventId: usageEvent.id
             },
             user_id: null, // System action
-            request_id: requestId
+            idempotency_key: requestId
         }, { transaction });
 
         // Step 8: Mark UsageEvent as committed (MUST be inside transaction)
@@ -421,6 +463,51 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         };
 
     } catch (error) {
+        // Step 9b: Lost an idempotency race.
+        //
+        // The Step 1 check is check-then-act: concurrent callers with the same
+        // requestId all see no existing event, all proceed, and the unique
+        // index on usage_events.request_id lets exactly one insert win. The
+        // losers were being reported as 500 "Usage tracking failed: Validation
+        // error" — the opposite of idempotent, and only reachable under real
+        // concurrency, which is why a mocked suite never saw it.
+        //
+        // The index is the arbiter. Roll our own work back, then return the
+        // winner's committed event as the retry it is. Handled before the
+        // rollback branch below because that branch marks pending rows for this
+        // request_id as rolled_back, which here would be the WINNER's row.
+        if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (transaction) {
+                try {
+                    await transaction.rollback();
+                } catch (rollbackError) {
+                    logger.error('Failed to roll back after idempotency race', rollbackError, { usageType });
+                }
+                transaction = null;
+            }
+
+            const winner = await UsageEvent.findOne({
+                where: { shop_id: shopId, resource_type: usageType, request_id: idempotencyKey }
+            });
+
+            if (winner) {
+                logger.info('Concurrent duplicate resolved by unique index (idempotent retry)', {
+                    usageType,
+                    winnerStatus: winner.status
+                });
+                const currentSubscription = await Subscription.findOne({ where: { shop_id: shopId } });
+                return {
+                    subscription: currentSubscription,
+                    usageEvent: winner,
+                    isRetry: true,
+                    transactionId: winner.transaction_id,
+                    message: 'Usage already tracked for this request (idempotent)'
+                };
+            }
+            // No winner found: fall through and report the original error
+            // rather than inventing a success.
+        }
+
         // Step 10: Rollback on error
         if (transaction) {
             try {
@@ -438,7 +525,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                         where: {
                             shop_id: shopId,
                             resource_type: usageType,
-                            request_id: requestId,
+                            request_id: idempotencyKey,
                             status: 'pending'
                         }
                     }
@@ -607,7 +694,7 @@ const verifyNoDoubleCount = async (shopId, resourceType, requestId) => {
         where: {
             shop_id: shopId,
             resource_type: resourceType,
-            request_id: requestId
+            request_id: usageRequestKey(requestId)
         }
     });
 

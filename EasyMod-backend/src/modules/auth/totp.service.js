@@ -275,5 +275,10 @@ module.exports = {
     verifyTotpToken,
     disableTotp,
     saveTempToken,
-    consumeTempToken
+    consumeTempToken,
+    // Exported for tests only: replay protection can only be asserted with a
+    // code that actually verifies, and computing one any other way would mean a
+    // second TOTP implementation in the test, free to agree with itself while
+    // disagreeing with this one.
+    hotp
 };

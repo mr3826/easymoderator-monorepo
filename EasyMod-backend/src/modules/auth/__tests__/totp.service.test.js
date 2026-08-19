@@ -93,27 +93,45 @@ describe('TOTP Service Security', () => {
     });
 
     describe('Encryption Key', () => {
-        it('should throw error when TOTP encryption secrets are missing', async () => {
-            const originalAppSecret = process.env.APP_SECRET;
-            const originalJwtSecret = process.env.JWT_SECRET;
-
-            // Clear secrets
+        it('should throw error when every encryption secret is missing', async () => {
+            // JWT_ACCESS_SECRET is a third accepted source (totp.service.js:18).
+            // Leaving it set meant the module resolved a key and did not throw.
+            const saved = {
+                APP_SECRET: process.env.APP_SECRET,
+                JWT_SECRET: process.env.JWT_SECRET,
+                JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
+            };
             delete process.env.APP_SECRET;
             delete process.env.JWT_SECRET;
+            delete process.env.JWT_ACCESS_SECRET;
 
-            await expect(totpService.generateTotpSecret('user-1'))
-                .rejects
-                .toThrow(/APP_SECRET, JWT_SECRET, or JWT_ACCESS_SECRET/);
-
-            // Restore
-            process.env.APP_SECRET = originalAppSecret;
-            process.env.JWT_SECRET = originalJwtSecret;
+            try {
+                // getEncryptionKey() is called lazily, at first use — importing
+                // the module never touched it, so the old `expect(require(...))`
+                // could not have thrown no matter which secrets were unset.
+                jest.resetModules();
+                const service = require('src/modules/auth/totp.service');
+                await expect(service.generateTotpSecret('user-1'))
+                    .rejects.toThrow(/required for TOTP encryption/);
+            } finally {
+                // Restore in a finally: a bare assignment after the assertion is
+                // skipped when it fails, and every later test in this file then
+                // dies on the missing secret instead of reporting its own result.
+                Object.entries(saved).forEach(([k, v]) => {
+                    if (v === undefined) delete process.env[k];
+                    else process.env[k] = v;
+                });
+                jest.resetModules();
+            }
         });
     });
 
     describe('TOTP Token Replay Protection', () => {
         it('should mark TOTP token as used after successful verification', async () => {
             const userId = 'user-1';
+            // enableTestTotp drives the service's own setup path, so totp_secret
+            // holds the encrypted iv:tag:ciphertext form rather than a raw base32
+            // string that decryptSecret would split into an undefined tag.
             const secret = await enableTestTotp(userId);
             const token = currentTotpToken(secret);
 

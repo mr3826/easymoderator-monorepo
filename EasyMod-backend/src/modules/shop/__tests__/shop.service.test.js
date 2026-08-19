@@ -82,9 +82,12 @@ describe('Shop Service', () => {
 
     // ── getShopsByUserId ───────────────────────────────────────────────────────
 
-    it('getShopsByUserId — returns shops with role for a user', async () => {
+    // One shop per account: getShopsByUserId delegates to getMyShop, which reads
+    // UserShop.findOne and wraps the result in an array. It never calls findAll,
+    // so both of these were asserting against a query the service stopped making.
+    it('getShopsByUserId — returns the shop for a user with their role', async () => {
         const result = await shopService.getShopsByUserId('user-1');
-        expect(UserShop.findAll).toHaveBeenCalledWith(
+        expect(UserShop.findOne).toHaveBeenCalledWith(
             expect.objectContaining({ where: expect.objectContaining({ user_id: 'user-1', is_active: true }) })
         );
         expect(Array.isArray(result)).toBe(true);
@@ -92,7 +95,7 @@ describe('Shop Service', () => {
     });
 
     it('getShopsByUserId — returns empty array when user has no shops', async () => {
-        UserShop.findAll.mockResolvedValueOnce([]);
+        UserShop.findOne.mockResolvedValueOnce(null);
         const result = await shopService.getShopsByUserId('user-new');
         expect(result).toEqual([]);
     });
@@ -110,10 +113,17 @@ describe('Shop Service', () => {
     it('getShopById — throws 404 when user has no access', async () => {
         UserShop.findOne.mockResolvedValueOnce(null);
         await expect(shopService.getShopById('shop-1', 'user-x'))
-            .rejects.toMatchObject({ statusCode: 404 });
+            .rejects.toMatchObject({ status: 404 });
     });
 
     // ── createShop ─────────────────────────────────────────────────────────────
+
+    // createShop 409s when the account already has a shop, and the shared
+    // beforeEach gives every test one.
+    describe('createShop', () => {
+    beforeEach(() => {
+        UserShop.findOne.mockResolvedValue(null);
+    });
 
     it('createShop — creates shop and UserShop within transaction', async () => {
         const result = await shopService.createShop('user-1', { shop_name: 'New Shop' });
@@ -141,12 +151,20 @@ describe('Shop Service', () => {
         );
     });
 
+    it('createShop — refuses a second shop for the same account', async () => {
+        UserShop.findOne.mockResolvedValue({ id: 'us-1', shop_id: 'shop-1' });
+        await expect(shopService.createShop('user-1', { shop_name: 'Second Shop' }))
+            .rejects.toMatchObject({ status: 409 });
+        expect(Shop.create).not.toHaveBeenCalled();
+    });
+    });
+
     // ── updateShopById ─────────────────────────────────────────────────────────
 
     it('updateShopById — throws 404 when user has no access', async () => {
         UserShop.findOne.mockResolvedValueOnce(null);
         await expect(shopService.updateShopById('shop-1', 'user-x', { shop_name: 'New Name' }))
-            .rejects.toMatchObject({ statusCode: 404 });
+            .rejects.toMatchObject({ status: 404 });
     });
 
     it('updateShopById — deep-merges settings instead of replacing', async () => {
@@ -217,6 +235,6 @@ describe('Shop Service', () => {
     it('deleteShopById — throws 403 when user is not owner', async () => {
         UserShop.findOne.mockResolvedValueOnce(null); // owner check fails
         await expect(shopService.deleteShopById('shop-1', 'user-staff'))
-            .rejects.toMatchObject({ statusCode: 403 });
+            .rejects.toMatchObject({ status: 403 });
     });
 });

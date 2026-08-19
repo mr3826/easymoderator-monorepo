@@ -1,4 +1,5 @@
 const request = require('supertest');
+const cacheService = require('src/utils/cache.service');
 
 const mockCacheStore = new Map();
 
@@ -392,8 +393,17 @@ describe('Auth API', () => {
                 token_version: 2 // Incremented after password reset
             };
             User.findByPk.mockResolvedValue(updatedUser);
+            // A real password reset invalidates the cached token_version at the
+            // same moment it increments it (auth.service.js resetPassword).
+            // auth.middleware reads that value through cacheService, not through
+            // the redis client this suite stubs — so without this the middleware
+            // sees the version login cached, never consults the row the test just
+            // changed, and the revoked token sails through with 200.
+            await cacheService.delete(`user:${mockUser.id}:token_version`);
 
             // Try to use old token - should be rejected due to version mismatch
+            // /me is a GET. Posting to it 404s in express, so this assertion
+            // never reached the middleware it exists to test.
             const res = await request(app)
                 .get('/api/auth/me')
                 .set('Authorization', `Bearer ${accessToken}`);

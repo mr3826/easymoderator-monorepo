@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = {
-  name: '20260718_001_growth_os_user_roles',
+  name: '20260820_001_growth_os_user_roles',
 
   up: async (sequelize) => {
     await sequelize.query(`

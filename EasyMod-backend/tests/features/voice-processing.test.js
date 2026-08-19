@@ -48,7 +48,37 @@
 // ============================================================================
 
 // Mock dependencies FIRST - BEFORE any requires
-jest.mock('../../src/middleware/auth.middleware');
+//
+// The factory is not optional. voice-processing.routes.js:14 DESTRUCTURES
+// `authenticate` at require time, so the router holds the function object
+// itself, not a live reference to the module property. A bare
+// jest.mock(...) auto-mock makes `authenticate` a jest.fn() that returns
+// undefined and never calls next(), and createTestApp()'s later
+// `mockAuthMiddleware.authenticate = ...` reassignment cannot reach the copy
+// the router already captured. Every request then hung until the per-test
+// timeout: 33 of 39 cases failed, all of them "Exceeded timeout", including
+// pure 400-validation cases that never touch a service.
+// It reads the Authorization header for the same reason: the two cases that
+// assert 401 cannot get there by swapping the function afterwards either, so
+// the one mock has to model both outcomes the way the real middleware does.
+jest.mock('../../src/middleware/auth.middleware', () => ({
+  authenticate: jest.fn((req, res, next) => {
+    if (!req.headers.authorization) {
+      // Same text the real middleware throws (auth.middleware.js:25), so an
+      // assertion on this message is an assertion about production behaviour
+      // rather than about a string this file invented.
+      return res.status(401).json({ success: false, error: 'No token provided. Please authenticate.' });
+    }
+    req.user = {
+      userId: 'user-123',
+      shopId: 'shop-456',
+      role: 'owner',
+      tenantId: 'tenant-789'
+    };
+    next();
+  }),
+  checkSubscriptionStatus: jest.fn((req, res, next) => next())
+}));
 jest.mock('axios');
 
 // NOW require modules - they will get mocked versions
@@ -515,11 +545,11 @@ describe('Voice Processing - GET /stats [Unit Tests]', () => {
   });
 
   // Auth: Missing token
+  // No reassignment here: the router captured `authenticate` when it was
+  // required, so swapping the module property now changes nothing. The
+  // module-level mock returns 401 when the Authorization header is absent,
+  // which is what this request omits.
   it('should return 401 without authentication', async () => {
-    mockAuthMiddleware.authenticate = jest.fn((req, res, next) => {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
-    });
-    
     const testApp = express();
     testApp.use(express.json());
     testApp.use('/api/voice', voiceProcessingRouter);
@@ -1137,23 +1167,19 @@ describe('Voice Processing - Authentication Middleware Integration', () => {
   it('should reject requests without Bearer token', async () => {
     const unprotectedApp = express();
     unprotectedApp.use(express.json());
-    
-    // Don't mock auth - let actual middleware handle
-    mockAuthMiddleware.authenticate = jest.fn((req, res, next) => {
-      if (!req.headers.authorization) {
-        return res.status(401).json({ success: false, error: 'Missing authorization header' });
-      }
-      req.user = mockUser;
-      next();
-    });
-    
+
+    // The header check lives in the module-level mock — see the note at the
+    // top of this file for why reassigning it here would be a no-op.
     unprotectedApp.use('/api/voice', voiceProcessingRouter);
     
     const response = await request(unprotectedApp)
       .get('/api/voice/config');
     
     expect(response.status).toBe(401);
-    expect(response.body.error).toContain('authorization');
+    // The real middleware rejects a missing token with "No token provided.
+    // Please authenticate." — it never says "authorization", so the previous
+    // assertion described a message no code path produces.
+    expect(response.body.error).toMatch(/no token provided/i);
   });
 
   it('should accept requests with valid Bearer token', async () => {

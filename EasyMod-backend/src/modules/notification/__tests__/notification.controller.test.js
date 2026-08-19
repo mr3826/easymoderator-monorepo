@@ -29,9 +29,16 @@ jest.mock('../../../utils/AppError', () => ({
     }
 }));
 
+// The controller resolves the shop through the service, not the entity, so
+// mocking `entities` alone leaves it talking to a real database.
+jest.mock('../../shop/shop.service', () => ({
+    getShopById: jest.fn()
+}));
+
 // ── Require after mocks ───────────────────────────────────────────────────────
 
 const notificationController = require('../notification.controller');
+const { getShopById } = require('../../shop/shop.service');
 const queueManager = require('../../../jobs/queue-manager');
 const { AppError } = require('../../../utils/AppError');
 
@@ -52,16 +59,24 @@ const mockReq = (body = {}) => ({
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('NotificationController.sendPush', () => {
-    beforeEach(() => jest.clearAllMocks());
+    beforeEach(() => {
+        jest.clearAllMocks();
+        getShopById.mockResolvedValue({ id: 'shop-1', shop_name: 'Test Shop' });
+    });
 
     it('enqueues a notification job and returns 200 on valid request', async () => {
         const req = mockReq({ shop_id: 'shop-1', title: 'New Order', body: 'Order #42 arrived' });
         const res = mockRes();
         await notificationController.sendPush(req, res);
-        expect(queueManager.queues.notifications.add).toHaveBeenCalledWith({
-            shopId: 'shop-1',
-            payload: { title: 'New Order', body: 'Order #42 arrived', data: undefined }
-        });
+        // The job NAME is part of the contract: the worker routes on it, so a
+        // payload queued without it is never delivered.
+        expect(queueManager.queues.notifications.add).toHaveBeenCalledWith(
+            'push-notification',
+            {
+                shopId: 'shop-1',
+                payload: { title: 'New Order', body: 'Order #42 arrived', data: {} }
+            }
+        );
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
     });
 
@@ -80,30 +95,42 @@ describe('NotificationController.sendPush', () => {
         });
         const res = mockRes();
         await notificationController.sendPush(req, res);
-        expect(queueManager.queues.notifications.add).toHaveBeenCalledWith(expect.objectContaining({
-            payload: expect.objectContaining({ data: { orderId: 'order-1', type: 'new_order' } })
-        }));
+        expect(queueManager.queues.notifications.add).toHaveBeenCalledWith(
+            'push-notification',
+            expect.objectContaining({
+                payload: expect.objectContaining({ data: { orderId: 'order-1', type: 'new_order' } })
+            })
+        );
     });
 
-    it('returns 400 when shop_id is missing', async () => {
-        const req = mockReq({ title: 'Test', body: 'Body' });
+    // Missing title/body are rejected by the validator chain on the route
+    // (notification.routes.js: validatePushNotification), not by the handler —
+    // calling the handler directly never runs it, so the three tests that
+    // asserted 400 here were asserting nothing the controller does. What the
+    // handler itself owns is the tenant boundary below.
+
+    it('refuses to notify a shop the caller does not belong to', async () => {
+        const req = mockReq({ shop_id: 'someone-elses-shop', title: 'T', body: 'B' });
         const res = mockRes();
         await notificationController.sendPush(req, res);
-        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(queueManager.queues.notifications.add).not.toHaveBeenCalled();
     });
 
-    it('returns 400 when title is missing', async () => {
-        const req = mockReq({ shop_id: 'shop-1', body: 'Body' });
+    it('refuses when the caller has no shop at all', async () => {
+        const req = { body: { title: 'T', body: 'B' }, user: {} };
         const res = mockRes();
         await notificationController.sendPush(req, res);
-        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(queueManager.queues.notifications.add).not.toHaveBeenCalled();
     });
 
-    it('returns 400 when body is missing', async () => {
-        const req = mockReq({ shop_id: 'shop-1', title: 'Test' });
+    it('returns 404 when the shop does not exist', async () => {
+        getShopById.mockResolvedValue(null);
+        const req = mockReq({ shop_id: 'shop-1', title: 'T', body: 'B' });
         const res = mockRes();
         await notificationController.sendPush(req, res);
-        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.status).toHaveBeenCalledWith(404);
     });
 
     it('returns 200 with fallback notification_id when queue is unavailable', async () => {
