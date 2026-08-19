@@ -13,11 +13,16 @@
  * Requires: a disposable Postgres database (name must contain "test" or "e2e"
  * as a whole word — see tests/helpers/disposable-database.js) and Redis.
  */
+// Same register jest.config.js reads. Without this an integration-named file
+// that is also quarantined would be discovered by BOTH suites, which is the
+// "duplicate home" condition check-test-discovery.js fails the build on.
+const quarantined = require('./tests/quarantine.json').files.map((f) => f.file);
+
 module.exports = {
     testEnvironment: 'node',
     rootDir: __dirname,
     testMatch: ['<rootDir>/**/*.integration.test.js'],
-    testPathIgnorePatterns: ['/node_modules/'],
+    testPathIgnorePatterns: ['/node_modules/', ...quarantined],
     // env.js must run before any application module captures process.env, and
     // before anything can issue a destructive statement — it holds the
     // disposable-database guard.

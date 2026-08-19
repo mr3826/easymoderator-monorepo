@@ -412,12 +412,20 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         }, { transaction });
 
         // Step 7: Create audit log entry (ensures auditability)
+        //
+        // `metadata` and `idempotency_key`, not `details` and `request_id`:
+        // audit_logs has no column by either of those names, and Sequelize
+        // drops unknown attributes on create() without erroring. Every usage
+        // audit row written so far therefore recorded the ids and the action
+        // and silently lost BOTH the payload and the key that correlates the
+        // row back to its request — the one field an idempotent billing audit
+        // trail exists to carry.
         await AuditLog.create({
             shop_id: shopId,
             resource_type: 'subscription_usage',
             resource_id: subscription.id,
             action: 'usage_tracked',
-            details: {
+            metadata: {
                 usageType,
                 amount,
                 newTotal: newUsage,
@@ -426,7 +434,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                 usageEventId: usageEvent.id
             },
             user_id: null, // System action
-            request_id: requestId
+            idempotency_key: requestId
         }, { transaction });
 
         // Step 8: Mark UsageEvent as committed (MUST be inside transaction)
@@ -455,6 +463,51 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         };
 
     } catch (error) {
+        // Step 9b: Lost an idempotency race.
+        //
+        // The Step 1 check is check-then-act: concurrent callers with the same
+        // requestId all see no existing event, all proceed, and the unique
+        // index on usage_events.request_id lets exactly one insert win. The
+        // losers were being reported as 500 "Usage tracking failed: Validation
+        // error" — the opposite of idempotent, and only reachable under real
+        // concurrency, which is why a mocked suite never saw it.
+        //
+        // The index is the arbiter. Roll our own work back, then return the
+        // winner's committed event as the retry it is. Handled before the
+        // rollback branch below because that branch marks pending rows for this
+        // request_id as rolled_back, which here would be the WINNER's row.
+        if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (transaction) {
+                try {
+                    await transaction.rollback();
+                } catch (rollbackError) {
+                    logger.error('Failed to roll back after idempotency race', rollbackError, { usageType });
+                }
+                transaction = null;
+            }
+
+            const winner = await UsageEvent.findOne({
+                where: { shop_id: shopId, resource_type: usageType, request_id: idempotencyKey }
+            });
+
+            if (winner) {
+                logger.info('Concurrent duplicate resolved by unique index (idempotent retry)', {
+                    usageType,
+                    winnerStatus: winner.status
+                });
+                const currentSubscription = await Subscription.findOne({ where: { shop_id: shopId } });
+                return {
+                    subscription: currentSubscription,
+                    usageEvent: winner,
+                    isRetry: true,
+                    transactionId: winner.transaction_id,
+                    message: 'Usage already tracked for this request (idempotent)'
+                };
+            }
+            // No winner found: fall through and report the original error
+            // rather than inventing a success.
+        }
+
         // Step 10: Rollback on error
         if (transaction) {
             try {

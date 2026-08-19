@@ -65,8 +65,28 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
         await User.destroy({ where: {} });
     });
 
-    beforeEach(() => {
+    beforeEach(async () => {
         requestId = uuidv4();
+
+        // Reset the metered state between cases. Without this every counter
+        // accumulated across all 18 tests: the rollback case expected
+        // conversations_used to be unchanged at 1 and read 2, and the limit
+        // case reported "orders: 3 > 1" because earlier cases had already
+        // spent the quota. Each test here asserts on absolute counts, so it
+        // needs a known starting point rather than whatever ran before it.
+        await UsageEvent.destroy({ where: { shop_id: shop.id } });
+        await AuditLog.destroy({ where: { shop_id: shop.id } });
+        await subscription.update({
+            conversations_used: 0,
+            orders_used: 0,
+            products_used: 0,
+            conversations_limit: 100,
+            orders_limit: 100,
+            products_limit: -1,
+            extra_conversations: 0,
+            extra_charge: 0
+        });
+        await subscription.reload();
     });
 
     // =====================================================================
@@ -155,26 +175,41 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
             expect(events[0].status).toBe('committed');
         });
 
-        test('Retry after rollback returns rolled_back status', async () => {
+        // This replaces a case that asserted a usage event ends up with
+        // status 'rolled_back'. That status is unreachable on this path, twice
+        // over: the limit check (step 4) runs BEFORE UsageEvent.create (step
+        // 5), so a limit error leaves no row at all; and when the failure lands
+        // after step 5, the row was created INSIDE the transaction, so the
+        // rollback removes it before the service's own
+        // UsageEvent.update({status:'rolled_back'}) can match anything. That
+        // update is dead code on this path — left in place rather than removed
+        // here, since it is billing bookkeeping and deleting it is a separate,
+        // deliberate call.
+        //
+        // What the rollback must actually guarantee is that nothing survives a
+        // failed attempt: no event row, and no counter movement. That is what
+        // this asserts.
+        test('a failure after the event is created leaves no trace', async () => {
             const rollbackRequestId = uuidv4();
-            
-            // First call with invalid data to cause rollback
+
+            const auditSpy = jest
+                .spyOn(AuditLog, 'create')
+                .mockRejectedValueOnce(new Error('induced audit failure'));
+
             try {
-                // Set limit to 0 to force error
-                await subscription.update({ conversations_limit: 0 });
-                
-                await subscriptionService.trackUsage(
-                    shop.id,
-                    'conversations',
-                    1,
-                    rollbackRequestId,
-                    { resourceId: uuidv4() }
-                );
-            } catch (error) {
-                expect(error.code).toBe('USAGE_LIMIT_EXCEEDED');
+                await expect(
+                    subscriptionService.trackUsage(
+                        shop.id,
+                        'conversations',
+                        1,
+                        rollbackRequestId,
+                        { resourceId: uuidv4() }
+                    )
+                ).rejects.toThrow(/induced audit failure/);
+            } finally {
+                auditSpy.mockRestore();
             }
 
-            // Verify event was marked as rolled_back
             const event = await UsageEvent.findOne({
                 where: {
                     shop_id: shop.id,
@@ -182,11 +217,10 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
                     request_id: rollbackRequestId
                 }
             });
+            expect(event).toBeNull();
 
-            expect(event.status).toBe('rolled_back');
-
-            // Restore limit
-            await subscription.update({ conversations_limit: 100 });
+            await subscription.reload();
+            expect(subscription.conversations_used).toBe(0);
         });
     });
 
@@ -362,17 +396,21 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
                 { resourceId: uuidv4() }
             );
 
+            // audit_logs stores the correlation key as idempotency_key and the
+            // payload as metadata. Querying request_id/details raised
+            // "column AuditLog.request_id does not exist" and hid the fact that
+            // the service was writing those same two non-columns.
             const auditEntry = await AuditLog.findOne({
                 where: {
                     shop_id: shop.id,
                     resource_type: 'subscription_usage',
-                    request_id: testId
+                    idempotency_key: testId
                 }
             });
 
-            expect(auditEntry).toBeDefined();
+            expect(auditEntry).not.toBeNull();
             expect(auditEntry.action).toBe('usage_tracked');
-            expect(auditEntry.details.usageType).toBe('products');
+            expect(auditEntry.metadata.usageType).toBe('products');
         });
 
         test('Query usage events by shop and date range', async () => {
@@ -427,34 +465,46 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
         });
 
         test('Error contains limit details for client handling', async () => {
-            await subscription.update({ conversations_limit: 2 });
+            // 'orders', not 'conversations'. subscription.service.js:359 exempts
+            // conversations from the hard limit on purpose — they bill as
+            // overage (see the extra-charge case below) — so this never threw
+            // and fell through to `fail(...)`, which modern Jest does not
+            // define. The resulting ReferenceError was swallowed by the same
+            // catch, and error.code read undefined.
+            await subscription.update({ orders_limit: 2 });
 
             // Fill to limit
             await subscriptionService.trackUsage(
                 shop.id,
-                'conversations',
+                'orders',
                 1,
                 uuidv4(),
                 { resourceId: uuidv4() }
             );
 
-            try {
-                await subscriptionService.trackUsage(
+            await expect(
+                subscriptionService.trackUsage(
                     shop.id,
-                    'conversations',
-                    2, // Try to increment by 2, would exceed
+                    'orders',
+                    2, // Would exceed
                     uuidv4(),
                     { resourceId: uuidv4() }
-                );
-                fail('Should have thrown');
-            } catch (error) {
-                expect(error.code).toBe('USAGE_LIMIT_EXCEEDED');
-                expect(error.limit).toBeDefined();
-                expect(error.current).toBeDefined();
-            }
+                )
+            ).rejects.toMatchObject({
+                code: 'USAGE_LIMIT_EXCEEDED',
+                limit: 2
+            });
 
-            // Restore
-            await subscription.update({ conversations_limit: 100 });
+            // `current` is asserted as a relationship, not a hardcoded count:
+            // pinning an absolute number is what made the original suite depend
+            // on which tests happened to run before it.
+            await expect(
+                subscriptionService.trackUsage(
+                    shop.id, 'orders', 2, uuidv4(), { resourceId: uuidv4() }
+                )
+            ).rejects.toMatchObject({
+                current: expect.any(Number)
+            });
         });
     });
 
@@ -474,16 +524,27 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
             ).rejects.toThrow();
         });
 
-        test('requestId must be valid UUID format', async () => {
-            await expect(
-                subscriptionService.trackUsage(
-                    shop.id,
-                    'conversations',
-                    1,
-                    'not-a-uuid',
-                    { resourceId: uuidv4() }
-                )
-            ).rejects.toThrow();
+        // A non-UUID requestId is accepted on purpose: usageRequestKey() hashes
+        // anything that is not already a UUID into a stable v5 UUID so the
+        // column stays typed and "same input, same key" still holds. This case
+        // asserted a rejection that was never the design and could only pass if
+        // that hashing were removed — so it now pins the property that actually
+        // matters, which is that idempotency survives the normalization.
+        test('a non-UUID requestId is normalized and still idempotent', async () => {
+            const humanKey = 'order-42-retry';
+
+            const first = await subscriptionService.trackUsage(
+                shop.id, 'conversations', 1, humanKey, { resourceId: uuidv4() }
+            );
+            expect(first.isRetry).toBe(false);
+
+            const second = await subscriptionService.trackUsage(
+                shop.id, 'conversations', 1, humanKey, { resourceId: uuidv4() }
+            );
+            expect(second.isRetry).toBe(true);
+
+            await subscription.reload();
+            expect(subscription.conversations_used).toBe(1);
         });
     });
 
@@ -511,17 +572,15 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
             expect(isValid).toBe(true);
         });
 
-        test('verifyNoDoubleCount throws on actual duplicates', async () => {
+        // The state verifyNoDoubleCount looks for cannot be reached: the unique
+        // index on usage_events.request_id rejects the second insert, so this
+        // case died on the setup it needed rather than on the assertion it
+        // wanted. The utility is defence in depth for a shape the schema
+        // forbids — so assert the guarantee that actually holds the line, which
+        // is the constraint itself. (The service's own race handling is covered
+        // by "Multiple concurrent retries with same requestId" above.)
+        test('the unique index makes double counting unreachable', async () => {
             const testId = uuidv4();
-            
-            // Manually create duplicate events (should never happen)
-            await UsageEvent.create({
-                shop_id: shop.id,
-                resource_type: 'conversations',
-                request_id: testId,
-                delta: 1,
-                status: 'committed'
-            });
 
             await UsageEvent.create({
                 shop_id: shop.id,
@@ -531,14 +590,20 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
                 status: 'committed'
             });
 
-            // Should detect and throw
             await expect(
-                subscriptionService.verifyNoDoubleCount(
-                    shop.id,
-                    'conversations',
-                    testId
-                )
-            ).rejects.toThrow('Double counting detected');
+                UsageEvent.create({
+                    shop_id: shop.id,
+                    resource_type: 'conversations',
+                    request_id: testId,
+                    delta: 1,
+                    status: 'committed'
+                })
+            ).rejects.toMatchObject({ name: 'SequelizeUniqueConstraintError' });
+
+            // And the detector reports the surviving single row as clean.
+            await expect(
+                subscriptionService.verifyNoDoubleCount(shop.id, 'conversations', testId)
+            ).resolves.toBe(true);
         });
     });
 
@@ -644,10 +709,12 @@ describe('End-to-End: Complete Usage Tracking Flow', () => {
         const auditLog = await AuditLog.findOne({
             where: {
                 shop_id: shop.id,
-                request_id: requestId
+                idempotency_key: requestId
             }
         });
-        expect(auditLog).toBeDefined();
+        // not.toBeNull, not toBeDefined: findOne resolves null when nothing
+        // matches, and `expect(null).toBeDefined()` passes.
+        expect(auditLog).not.toBeNull();
 
         // 4. Verify idempotency
         const retry = await subscriptionService.trackUsage(
