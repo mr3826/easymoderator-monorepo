@@ -30,6 +30,7 @@ module.exports = {
     redisRateLimitDb: process.env.REDIS_RATELIMIT_DB || '2',
     bodySizeLimit: process.env.BODY_SIZE_LIMIT || '35mb',
     allowSelfSignedTls: process.env.ALLOW_SELF_SIGNED_TLS === 'true',
+    growthOsEnabled: process.env.GROWTH_OS_ENABLED === 'true',
     corsOrigins: process.env.CORS_ORIGINS
         ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
         : [],

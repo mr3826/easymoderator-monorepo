@@ -20,7 +20,8 @@ Production deployment remains disabled until every gate below is evidenced:
 - A fresh database backup and a restore check are recorded before the first
   migration against the live database.
 - `npm ci`, backend security/unit tests, backend integration tests, frontend
-  unit/build checks, GrowthOS build, and the historical secret scan are green.
+  unit/build checks, the Growth OS typecheck and build, and the historical
+  secret scan are green.
 
 Telegram is disabled by default. It is an optional integration and may be
 enabled only by setting the `TELEGRAM_ENABLED` repository variable and adding
@@ -68,6 +69,30 @@ does not start Qdrant; it verifies the documented safe-empty vector degradation.
 - The deploy job must capture the currently running backend/frontend digests
   before replacement and keep the backup available until the health gate is
   complete.
+
+## Growth OS first rollout
+
+Growth OS is built and published by `growth-os.yml`, not by `ci-cd.yml`. The
+deploy job therefore has no build-job digest for it: it reads the digest of the
+running `easymod-growth-frontend-1` container and carries it forward unchanged.
+
+That means `ci-cd.yml` fails closed the first time, before Growth OS has ever
+run on the droplet — by design, because a tag would make the deploy
+irreproducible and the rollback meaningless. Bootstrap it once, by hand:
+
+```bash
+cd /opt/easymod
+docker pull ghcr.io/mr3826/easymoderator-growth-os:REPLACE_WITH_COMMIT_SHA
+docker image inspect -f '{{index .RepoDigests 0}}' \
+  ghcr.io/mr3826/easymoderator-growth-os:REPLACE_WITH_COMMIT_SHA
+```
+
+Record the printed `RepoDigest` in `/opt/easymod/.env.prod` as
+`GHCR_IMAGE_GROWTH`, then deploy normally. Every later deploy carries that
+digest forward on its own, and publishing a new Growth OS image is a deliberate
+re-pin rather than a side effect of an unrelated backend deploy.
+
+The placeholder above is an operator input, not a credential.
 
 ## Automatic rollback
 

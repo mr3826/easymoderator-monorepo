@@ -67,6 +67,9 @@ permissions:
 env:
   GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
   GHCR_FRONTEND: ghcr.io/${{ github.repository_owner }}/easymoderator-frontend
+  # Published by growth-os.yml, consumed here only so Compose can resolve the
+  # growth-frontend service to a digest during deploy and rollback.
+  GHCR_GROWTH: ghcr.io/${{ github.repository_owner }}/easymoderator-growth-os
 
 jobs:
   # ── 1. Detect which services changed ────────────────────────────────────────
@@ -111,14 +114,17 @@ jobs:
               changed_paths="$(git diff-tree --no-commit-id --name-only -r "$HEAD_SHA")"
             fi
 
+            # Only this workflow gates these two services. Matching
+            # .github/workflows/* rebuilt and redeployed both on every unrelated
+            # workflow edit — backup.yml, growth-os.yml, security-scan.yml.
             while IFS= read -r path; do
               case "$path" in
-                EasyMod-backend/*|docker-compose.prod.yml|docker-compose.test.yml|scripts/run-backend-integration.js|package.json|package-lock.json|.github/workflows/*)
+                EasyMod-backend/*|docker-compose.prod.yml|docker-compose.test.yml|scripts/run-backend-integration.js|package.json|package-lock.json|.github/workflows/ci-cd.yml)
                   backend=true
                   ;;
               esac
               case "$path" in
-                EasyMod-frontend/*|Caddyfile|package.json|package-lock.json|.github/workflows/*)
+                EasyMod-frontend/*|Caddyfile|package.json|package-lock.json|.github/workflows/ci-cd.yml)
                   frontend=true
                   ;;
               esac
@@ -283,6 +289,7 @@ jobs:
         env:
           GHCR_IMAGE_BACKEND: ghcr.io/mr3826/easymoderator-backend:dry-run
           GHCR_IMAGE_FRONTEND: ghcr.io/mr3826/easymoderator-frontend:dry-run
+          GHCR_IMAGE_GROWTH: ghcr.io/mr3826/easymoderator-growth-os:dry-run
         run: |
           mkdir -p _tmp
           cat > _tmp/.env.prod <<'EOF'
@@ -698,7 +705,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
           script: |
             set -e
 
@@ -745,6 +752,26 @@ jobs:
             assert_immutable_ref "$candidate_frontend_image"
             export GHCR_IMAGE_BACKEND="$candidate_backend_image"
             export GHCR_IMAGE_FRONTEND="$candidate_frontend_image"
+
+            # Growth OS is built and published by growth-os.yml, so this workflow
+            # has no build-job digest to consume for it. It carries the running
+            # container's digest forward untouched — this pipeline never changes
+            # the Growth OS image, it only has to keep Compose resolvable.
+            #
+            # Fails closed exactly like backend and frontend above: a tag would
+            # make the deploy non-reproducible and the rollback meaningless. The
+            # first Growth OS rollout pins its digest on the host by hand; see
+            # docs/deployment/MONOREPO_CUTOVER_RUNBOOK.md.
+            candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
+            if [ -z "$candidate_growth_image" ]; then
+              echo "ERROR: growth-frontend is not running from a content-addressed image."
+              echo "       Pin the first Growth OS release on the droplet before deploying:"
+              echo "         docker pull \$GHCR_GROWTH:<commit-sha>"
+              echo "       then record its digest in /opt/easymod/.env.prod as GHCR_IMAGE_GROWTH."
+              exit 1
+            fi
+            assert_immutable_ref "$candidate_growth_image"
+            export GHCR_IMAGE_GROWTH="$candidate_growth_image"
 
             cd /opt/easymod
 

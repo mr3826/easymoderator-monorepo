@@ -4,8 +4,9 @@
  * Growth metrics — activation & retention.
  *
  * Activation = a shop's FIRST successful AI reply to a real customer. Recorded
- * once per shop (Redis NX-gated) into shop.settings.activation, so no migration
- * is needed and the hot reply path is never blocked.
+ * once per shop into shop.settings.activation. Redis uses a temporary NX claim
+ * while the database write is in flight and persists it only after activation
+ * is confirmed, so a failed DB write can never poison the shop permanently.
  *
  * Retention = a shop with >=1 captured order in a given week, derived live from
  * the Orders table (no extra storage).
@@ -20,6 +21,7 @@ const Order = require('../order/order.entity');
 const { cacheRedis } = require('../../config/redis');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVATION_CLAIM_TTL_SECONDS = 5 * 60;
 
 const normalizeSettings = (settings) => {
     if (!settings) return {};
@@ -42,16 +44,31 @@ const normalizeSettings = (settings) => {
  */
 const recordActivation = async (shopId, conversationId = null) => {
     if (!shopId) return;
+    const claimKey = `shop:activated:${shopId}`;
+    let claimed = false;
+    let activationConfirmed = false;
+
     try {
-        // NX (no expiry) → succeeds only the first time for this shop.
-        const claimed = await cacheRedis.set(`shop:activated:${shopId}`, '1', 'NX');
-        if (claimed !== 'OK' && claimed !== 1) return; // already claimed, or claim failed
+        // The expiry is a recovery boundary, not the long-term marker. Once the
+        // DB confirms activation, PERSIST restores the fast lifetime short-circuit.
+        const claimResult = await cacheRedis.set(
+            claimKey,
+            '1',
+            'EX',
+            ACTIVATION_CLAIM_TTL_SECONDS,
+            'NX',
+        );
+        claimed = claimResult === 'OK' || claimResult === 1;
+        if (!claimed) return;
 
         const shop = await Shop.findByPk(shopId);
         if (!shop) return;
 
         const settings = normalizeSettings(shop.settings);
-        if (settings.activation && settings.activation.activated_at) return; // already recorded
+        if (settings.activation && settings.activation.activated_at) {
+            activationConfirmed = true;
+            return;
+        }
 
         await shop.update({
             settings: {
@@ -62,8 +79,22 @@ const recordActivation = async (shopId, conversationId = null) => {
                 },
             },
         });
+        activationConfirmed = true;
     } catch (_) {
         // best-effort — swallow so a reply is never blocked by metrics bookkeeping
+    } finally {
+        if (claimed) {
+            try {
+                if (activationConfirmed) {
+                    await cacheRedis.persist(claimKey);
+                } else {
+                    await cacheRedis.del(claimKey);
+                }
+            } catch (_) {
+                // The temporary claim still expires, so cleanup failure cannot poison
+                // activation permanently and must never block the customer reply.
+            }
+        }
     }
 };
 
@@ -81,15 +112,37 @@ const getGrowthMetrics = async (opts = {}) => {
         attributes: ['id', 'shop_name', 'name', 'settings', 'created_at'],
     });
 
-    const rows = await Promise.all(shops.map(async (shop) => {
+    const shopIds = shops.map(shop => shop.id);
+    const [lastWeekCounts, previousWeekCounts] = shopIds.length > 0
+        ? await Promise.all([
+            Order.count({
+                where: {
+                    shop_id: { [Op.in]: shopIds },
+                    created_at: { [Op.gte]: weekAgo },
+                },
+                group: ['shop_id'],
+            }),
+            Order.count({
+                where: {
+                    shop_id: { [Op.in]: shopIds },
+                    created_at: { [Op.gte]: twoWeeksAgo, [Op.lt]: weekAgo },
+                },
+                group: ['shop_id'],
+            }),
+        ])
+        : [[], []];
+    const toCountMap = counts => new Map(
+        counts.map(row => [row.shop_id, Number(row.count) || 0]),
+    );
+    const lastWeekByShop = toCountMap(lastWeekCounts);
+    const previousWeekByShop = toCountMap(previousWeekCounts);
+
+    const rows = shops.map((shop) => {
         const settings = normalizeSettings(shop.settings);
         const activatedAt = settings.activation?.activated_at || null;
         const createdAt = shop.created_at || null;
-
-        const [ordersLast7d, ordersPrev7d] = await Promise.all([
-            Order.count({ where: { shop_id: shop.id, created_at: { [Op.gte]: weekAgo } } }),
-            Order.count({ where: { shop_id: shop.id, created_at: { [Op.gte]: twoWeeksAgo, [Op.lt]: weekAgo } } }),
-        ]);
+        const ordersLast7d = lastWeekByShop.get(shop.id) || 0;
+        const ordersPrev7d = previousWeekByShop.get(shop.id) || 0;
 
         const daysToActivation = (activatedAt && createdAt)
             ? Math.max(0, Math.round((new Date(activatedAt) - new Date(createdAt)) / DAY_MS))
@@ -107,11 +160,12 @@ const getGrowthMetrics = async (opts = {}) => {
             retainedThisWeek: ordersLast7d > 0,
             retainedLastWeek: ordersPrev7d > 0,
         };
-    }));
+    });
 
     const total = rows.length;
-    const activated = rows.filter(r => r.activated).length;
-    const retainedThisWeek = rows.filter(r => r.retainedThisWeek).length;
+    const activatedRows = rows.filter(r => r.activated);
+    const activated = activatedRows.length;
+    const retainedThisWeek = activatedRows.filter(r => r.retainedThisWeek).length;
     const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
 
     return {
