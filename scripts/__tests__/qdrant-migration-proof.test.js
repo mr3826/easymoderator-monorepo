@@ -23,6 +23,7 @@ const {
     emitSearchEvidence,
     normalizeDatabaseUrl,
     normalizeQdrantUrl,
+    assertRealSourceIntegrity,
 } = require('../qdrant-migration-proof');
 const acceptance = require('../semantic-acceptance-contract');
 const { Client } = require('pg');
@@ -179,28 +180,94 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(positiveSearchPass({ score: 0.24 }, 0, 0.25)).toBe(false);
     });
 
-    it('keeps positive-language and tenant-isolation gates wired into validation', () => {
+    it('separates real-source integrity from controlled semantic validation', () => {
         const proof = fs.readFileSync(PROOF_SCRIPT_PATH, 'utf8');
+        const workflow = fs.readFileSync(QDRANT_WORKFLOW_PATH, 'utf8');
 
-        expect(proof).toContain("runPositive('bangla', banglaQuery, banglaRecord)");
-        expect(proof).toContain("runPositive('english', englishQuery, englishRecord)");
-        expect(proof).toContain("runPositive('cross-lingual', crossLingualQuery, crossLingualRecord)");
-        expect(proof).toContain('const crossLingualRecord = null;');
-        expect(proof).toContain('const crossLingualQuery = null;');
-        expect(proof).not.toMatch(/crossLingualQuery\s*=\s*['"`]/);
-        expect(proof).toContain('assertPositiveFixture(caseId, query, expectedRecord);');
-        expect(proof).toContain('const pass = positiveSearchPass(');
-        expect(proof).toContain('acceptanceModule.assertAcceptanceContract');
-        expect(proof).toContain('NEGATIVE_ACCEPTANCE_RULE=');
-        expect(proof).toContain('const tenantPass = tenantResults.length > 0');
-        expect(proof).toContain('const semanticPass = banglaPass && englishPass && crossLingualPass && negativePass;');
-        expect(proof).toContain('if (!semanticPass || !tenantPass)');
+        expect(proof).toContain('async function validateRealSource(name, expectedCount)');
+        expect(proof).toContain('REAL_SOURCE_SEMANTIC_VALIDATION=SKIPPED_UNSUPPORTED');
+        expect(proof).toContain('async function validateControlled(name)');
+        expect(proof).toContain('CONTROLLED_FIXTURE_PATH');
+        expect(proof).toContain('CONTROLLED_SEMANTIC_VALIDATION=');
+        expect(proof).not.toContain('const banglaRecord = records.find');
+        expect(proof).not.toContain('const crossLingualRecord = null;');
+        expect(proof).not.toContain('const crossLingualQuery = null;');
         expect(proof).toContain('EXPECTED_SOURCE_RANK=');
         expect(proof).toContain('EXPECTED_SOURCE_SCORE=');
         expect(proof).toContain('TOP_K_SOURCE_IDS_AND_SCORES=');
         expect(proof).toContain('FAILURE_REASON=');
         expect(proof).toContain('PASS_EMPTY_EXISTING_BOUND');
         expect(proof).not.toContain('deleteCollection');
+        expect(workflow).toContain('--semantic=real-source');
+        expect(workflow).toContain('controlled-index');
+        expect(workflow).toContain('controlled-validate');
+        expect(workflow).toContain('FIXTURE_SCRIPT_PATH');
+        expect(workflow).toContain('OPENAI_SEMANTIC_CALIBRATION_REQUIRED=YES');
+    });
+
+    it('passes real-source structural integrity without Bengali or English content', () => {
+        const identity = {
+            provider: 'gemini',
+            model: 'gemini-embedding-2',
+            embedding_space_version: 'gemini-embedding-2-search-v1',
+            dimensions: 384,
+        };
+        const source = {
+            count: 2,
+            shopIds: ['shop-1'],
+            sourceRecords: [
+                { sourceId: 'faq-1', sourceType: 'faq', shopId: 'shop-1', text: '12345' },
+                { sourceId: 'product:2', sourceType: 'product', shopId: 'shop-1', text: '67890' },
+            ],
+        };
+        const payload = (record) => ({
+            embedding_space_manifest: false,
+            embedding_provider: identity.provider,
+            embedding_model: identity.model,
+            embedding_space_version: identity.embedding_space_version,
+            embedding_dimensions: identity.dimensions,
+            documentId: record.sourceId,
+            type: record.sourceType,
+            shopId: record.shopId,
+            text: record.text,
+        });
+
+        expect(() => assertRealSourceIntegrity({
+            source,
+            points: source.sourceRecords.map((record) => ({ payload: payload(record) })),
+            expectedCount: 2,
+            vectorSize: 384,
+            bindingIdentity: identity,
+        })).not.toThrow();
+    });
+
+    it('fails real-source validation on count or source-id mismatch', () => {
+        const identity = {
+            provider: 'gemini',
+            model: 'gemini-embedding-2',
+            embedding_space_version: 'gemini-embedding-2-search-v1',
+            dimensions: 384,
+        };
+        const source = {
+            count: 1,
+            shopIds: ['shop-1'],
+            sourceRecords: [{ sourceId: 'faq-1', sourceType: 'faq', shopId: 'shop-1', text: 'source' }],
+        };
+        expect(() => assertRealSourceIntegrity({
+            source,
+            points: [{ payload: { documentId: 'missing-source', shopId: 'shop-1', type: 'faq', text: 'source', embedding_space_manifest: false, embedding_provider: 'gemini', embedding_model: 'gemini-embedding-2', embedding_space_version: 'gemini-embedding-2-search-v1', embedding_dimensions: 384 } }],
+            expectedCount: 1,
+            vectorSize: 384,
+            bindingIdentity: identity,
+        })).toThrow(/source\/payload identity/);
+
+        expect(() => assertRealSourceIntegrity({
+            source,
+            points: [],
+            expectedCount: 1,
+            vectorSize: 384,
+            bindingIdentity: identity,
+        })).toThrow(/source\/payload identity/);
     });
 
     it('delegates source counting to the shared PostgreSQL contract', async () => {

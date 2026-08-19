@@ -223,11 +223,17 @@ describe('calibration math and runner isolation', () => {
         expect(calibrationSource).toContain('POSITIVE_THRESHOLD');
     });
 
-    it('removes the unsupported legacy cross-lingual query from the real-source proof', () => {
+    it('keeps multilingual semantic evaluation in the controlled corpus', () => {
         const proof = fs.readFileSync(PROOF_SCRIPT_PATH, 'utf8');
-        expect(proof).toContain('const crossLingualRecord = null;');
-        expect(proof).toContain('const crossLingualQuery = null;');
-        expect(proof).not.toMatch(/crossLingualQuery\s*=\s*['"`]/);
+        const fixtureSource = fs.readFileSync(path.resolve(__dirname, '../semantic-calibration-fixtures.js'), 'utf8');
+        expect(proof).toContain('async function validateRealSource(name, expectedCount)');
+        expect(proof).toContain('REAL_SOURCE_SEMANTIC_VALIDATION=SKIPPED_UNSUPPORTED');
+        expect(proof).toContain('async function validateControlled(name)');
+        expect(proof).toContain('CONTROLLED_SEMANTIC_VALIDATION=');
+        expect(proof).not.toContain('const banglaRecord = records.find');
+        expect(proof).not.toContain('const crossLingualRecord = null;');
+        expect(proof).not.toContain('const crossLingualQuery = null;');
+        expect(fixtureSource).not.toMatch(/require\([^)]*(pg|qdrant|sequelize|database)/iu);
     });
 
     it('keeps the calibration workflow manual-only and free of production credentials', () => {
