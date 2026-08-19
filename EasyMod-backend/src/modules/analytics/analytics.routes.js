@@ -3,7 +3,9 @@ const rateLimit = require('express-rate-limit');
 const { body } = require('express-validator');
 const AnalyticsController = require('./analytics.controller');
 const growthMetrics = require('./growth-metrics.service');
+const { validateFunnelEvent } = require('./analytics.validator');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { requireGrowthOsAccess } = require('../growth-os/growth-os.middleware');
 const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
@@ -19,6 +21,13 @@ const publicFunnelWriteLimiter = rateLimit({
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    message: {
+        success: false,
+        error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: 'Too many funnel events. Please try again later.',
+        },
+    },
 });
 
 // Validation middleware
@@ -35,7 +44,7 @@ const validateKnowledgeGap = [
 // Routes
 
 // POST /api/analytics/funnel — first-party launch funnel instrumentation.
-router.post('/funnel', publicFunnelWriteLimiter, AnalyticsController.logFunnelEvent);
+router.post('/funnel', publicFunnelWriteLimiter, validateFunnelEvent, AnalyticsController.logFunnelEvent);
 
 /**
  * GET /api/analytics — summary payload (total_messages, llm_calls, cache_hits, keyword_matches, cost_estimate)
@@ -111,14 +120,11 @@ router.get('/intent-breakdown', authenticate, AnalyticsController.getIntentBreak
 router.get('/confidence-distribution', authenticate, AnalyticsController.getConfidenceDistribution);
 
 /**
- * GET /api/analytics/growth — cross-shop activation + retention (admin only).
+ * GET /api/analytics/growth — cross-shop activation + retention (Growth OS founder only).
  * Powers the launch / 10-shop smoke-test dashboard: who activated (first AI
  * reply), how fast, and who is still transacting this week vs last.
  */
-router.get('/growth', authenticate, async (req, res) => {
-    if (req.user?.role !== 'admin') {
-        return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Admin role required.' } });
-    }
+router.get('/growth', authenticate, requireGrowthOsAccess('growth_os.reports.read_all'), async (req, res) => {
     try {
         const data = await growthMetrics.getGrowthMetrics();
         res.json({ success: true, data });

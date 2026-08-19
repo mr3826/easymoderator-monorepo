@@ -41,6 +41,7 @@ const TelegramNotificationBinding = require('./notification/telegram-notificatio
 const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.entity');
 const CourierCodCollection = require('./reconciliation/courier-collection.entity');
 const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
+const GrowthOsUserRole = require('./growth-os/growth-os-user-role.entity');
 
 // Phase 1 — Meta Integration Redesign: new unified channel entities
 const MetaChannel = require('./channel-providers/meta-channel.entity');
@@ -271,6 +272,13 @@ Message.belongsTo(Conversation, {
 AuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 AuditLog.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 
+// Define Growth OS internal role relationships. These roles are separate from
+// merchant user_shops roles and users.platform_role.
+GrowthOsUserRole.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+GrowthOsUserRole.belongsTo(User, { foreignKey: 'granted_by', as: 'grantedBy' });
+GrowthOsUserRole.belongsTo(User, { foreignKey: 'revoked_by', as: 'revokedBy' });
+User.hasMany(GrowthOsUserRole, { foreignKey: 'user_id', as: 'growthOsRoles' });
+
 // Define idempotency key relationships
 IdempotencyKey.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 IdempotencyKey.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
@@ -499,6 +507,7 @@ module.exports = {
     CustomerDeliveryStats,
     CourierCodCollection,
     ReconciliationDispute,
+    GrowthOsUserRole,
     // Phase 1 — Meta Integration Redesign
     MetaChannel,
     MetaChannelSettings,

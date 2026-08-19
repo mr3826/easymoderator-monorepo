@@ -8,7 +8,7 @@ The monorepo groups the independently understandable EasyModerator modules in on
 EasyModerator/
 ├── EasyMod-backend/     # Express API, workers, migrations, integrations
 ├── EasyMod-frontend/    # React/Vite merchant and marketing application
-├── GrowthOS/            # Independent React/Vite platform-operations frontend
+├── EasyMod-growth/      # Independent React/Vite TS Growth OS staff frontend
 ├── .github/workflows/   # All active GitHub Actions workflows
 ├── docs/                # Canonical product, security, launch, and operations docs
 ├── scripts/             # Root-level repository utilities
@@ -19,7 +19,7 @@ EasyModerator/
 
 - `EasyMod-backend` keeps its own `package.json`, lockfile, tests, migrations, Dockerfiles, and runtime entrypoints.
 - `EasyMod-frontend` keeps its own `package.json`, lockfile, Vite configuration, tests, and deployment assets.
-- `GrowthOS` keeps its own `package.json`, lockfile, Vite configuration, Dockerfile, and API namespace contract. It relies on EasyModerator session authentication but owns no merchant business logic.
+- `EasyMod-growth` keeps its own `package.json`, lockfile, Vite configuration, Dockerfile, and API namespace contract. It relies on EasyModerator session authentication but owns no merchant business logic. Its backend counterpart is `EasyMod-backend/src/modules/growth-os/`, reached only through `/api/internal/growth-os/*`.
 - There are no workspace package imports between the modules. Root workspace scripts invoke module-owned commands without changing their deployment boundaries.
 
 ## Workspace commands
@@ -38,18 +38,18 @@ npm run test:all
 npm run build:all
 ```
 
-The backend is JavaScript and has no compilation step; `build:backend` is a syntax smoke check. GrowthOS currently has no unit-test suite, so `test:growthos` runs its production build as a smoke test. That gap remains visible rather than being represented as nonexistent coverage.
+The backend is JavaScript and has no compilation step; `build:backend` is a syntax smoke check. Growth OS is TypeScript and has no unit-test suite, so `test:growthos` runs `tsc --noEmit`. That is a real type gate rather than a build aliased as a test, but it is not behavioural coverage and is not presented as such. Its authorization rules are covered on the backend side by `growth-os.authz.test.js`.
 
 ## History and rollback
 
-The backend-led EasyModerator history remains the local baseline. The private `mr3826/growth-os` repository was imported into `GrowthOS/` with a non-squashed subtree merge so its source commits remain reachable. The original backend, frontend, and GrowthOS repositories remain unchanged and are the rollback sources until the new repository has passed clean-clone and required-CI validation.
+The backend-led EasyModerator history remains the local baseline. The private `mr3826/growth-os` repository was first imported as `GrowthOS/`, a frontend with no backend behind it. `EasyMod-growth/` supersedes it together with the `growth-os` backend module that serves its API namespace; the retired `GrowthOS/` tree stays reachable in history and at the `archive/growth-os-mvp2` tag. The original backend, frontend, and growth-os repositories remain unchanged and are the rollback sources.
 
 The new repository does not silently change production deployment. Existing production workflows and infrastructure are validated in this repository first; a production repository switch requires a separate authorized deployment decision.
 
 ## Workflow ownership
 
 - `ci-cd.yml` is the backend/frontend production gate and deployment path.
-- `growth-os.yml` independently verifies and publishes the GrowthOS image from `GrowthOS/`.
+- `growth-os.yml` independently typechecks, builds, and publishes the Growth OS image from `EasyMod-growth/`. `ci-cd.yml` never rebuilds it; it only carries the running digest forward so Compose stays resolvable.
 - Backup, administrative, purge, and backend load-testing workflows live only under root `.github/workflows/`.
 - Module-local `.github/workflows` directories are not active GitHub workflow locations and are not retained as duplicate configuration.
 

@@ -6,6 +6,7 @@
 #   backend   — Node Express API (port 3000, internal only)
 #   worker    — BullMQ background jobs (same image, different command)
 #   frontend  — nginx serving built SPA (port 8080, internal only)
+#   growth-frontend — nginx serving Growth OS SPA (port 8080, internal only)
 #   postgres  — PostgreSQL 15 (internal only)
 #   redis     — Redis 7 (internal only)
 #   qdrant    — Vector DB for RAG (internal only)
@@ -45,6 +46,8 @@ services:
       backend:
         condition: service_healthy
       frontend:
+        condition: service_started
+      growth-frontend:
         condition: service_started
 
   # ── Backend: Express API ──────────────────────────────────────────────────
@@ -98,6 +101,14 @@ services:
     networks:
       - internal
     # Port 8080 is internal only — Caddy proxies to it
+
+  # ── Growth OS Frontend: internal acquisition SPA ─────────────────────────
+  growth-frontend:
+    image: ${GHCR_IMAGE_GROWTH:?GHCR_IMAGE_GROWTH must be set to an immutable image reference}
+    restart: unless-stopped
+    networks:
+      - internal
+    # Port 8080 is internal only — Caddy proxies growth.easymod.tech to it
 
   # ── PostgreSQL 15 ─────────────────────────────────────────────────────────
   postgres:

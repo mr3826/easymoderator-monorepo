@@ -24,6 +24,7 @@ const analyticsRoutes = require('./analytics/analytics.routes');
 const banglishRoutes = require('./language/banglish.routes');
 const voiceProcessingRoutes = require('./ai/voice-processing.routes');
 const sentimentRoutes = require('./ai/sentiment.routes');
+const growthOsRoutes = require('./growth-os/growth-os.routes');
 
 const router = express.Router();
 
@@ -57,6 +58,7 @@ router.use('/language', banglishRoutes);
 router.use('/voice', voiceProcessingRoutes);
 router.use('/sentiment', sentimentRoutes);
 router.use('/templates', require('./template/response-template.routes'));
+router.use('/internal/growth-os', growthOsRoutes);
 router.use('/admin/failed-jobs', require('./admin/failed-jobs.routes'));
 // Phase 1 — EasyModerator operations admin panel (platform-admin guarded inside the router).
 // Mounted AFTER /admin/partner and /admin/failed-jobs so those specific routers win first.

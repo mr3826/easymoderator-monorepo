@@ -1,17 +1,25 @@
 name: Growth OS CI / CD
 
+# Growth OS ships on its own pipeline, not through ci-cd.yml. It is an internal
+# staff surface with its own image, its own host (growth.easymod.tech) and no
+# coupling to the merchant app's deploy — keeping it separate is the point.
+#
+# The SPA talks to the backend same-origin: Caddy terminates growth.easymod.tech
+# and proxies /api/* to backend:3000, so VITE_API_BASE_URL stays empty and no
+# cross-origin secret is needed at build time.
+
 on:
   push:
     branches: [main]
     paths:
-      - "GrowthOS/**"
+      - "EasyMod-growth/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/growth-os.yml"
   pull_request:
     branches: [main]
     paths:
-      - "GrowthOS/**"
+      - "EasyMod-growth/**"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/growth-os.yml"
@@ -27,8 +35,6 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/easymoderator-growth-os
-  VITE_APP_DOMAIN: growth.easymod.tech
-  VITE_APP_API_BASE: https://api.easymod.tech/api/internal/growth-os
 
 jobs:
   verify:
@@ -41,18 +47,21 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: GrowthOS/package-lock.json
+          cache-dependency-path: EasyMod-growth/package-lock.json
 
       - name: Install dependencies
-        working-directory: ./GrowthOS
+        working-directory: ./EasyMod-growth
         run: npm ci
 
+      # tsc --noEmit. The old JSX app's "test" was an alias for its build, which
+      # proved nothing the build step below did not already prove.
+      - name: Typecheck
+        working-directory: ./EasyMod-growth
+        run: npm run typecheck
+
       - name: Build
-        working-directory: ./GrowthOS
+        working-directory: ./EasyMod-growth
         run: npm run build
-        env:
-          VITE_APP_DOMAIN: ${{ env.VITE_APP_DOMAIN }}
-          VITE_APP_API_BASE: ${{ env.VITE_APP_API_BASE }}
 
   build-and-push:
     name: Build and publish Growth OS image
@@ -74,11 +83,13 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: ./GrowthOS
-          file: ./GrowthOS/Dockerfile
+          context: ./EasyMod-growth
+          file: ./EasyMod-growth/Dockerfile
           push: true
           build-args: |
-            VITE_APP_DOMAIN=${{ env.VITE_APP_DOMAIN }}
-            VITE_APP_API_BASE=${{ env.VITE_APP_API_BASE }}
+            VITE_ENV=production
+          # :latest is what docker-compose.prod.yml falls back to when the deploy
+          # job does not pin GHCR_IMAGE_GROWTH to an immutable reference.
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
