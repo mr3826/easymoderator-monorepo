@@ -18,6 +18,7 @@ const transport = require('./transport');
 const fixtures = require('./fixtures');
 const grounding = require('../../src/modules/ai/grounding');
 const productSearch = require('../../src/modules/product/product-search.service');
+const { UsageEvent, Subscription } = require('../../src/modules/entities');
 
 const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID } = fixtures;
 const { GroundingDecision, ReasonCode, ProductEvidenceStatus, MediaStatus } = grounding;
@@ -677,5 +678,52 @@ describe('META-E2E-012 — unusable model output', () => {
         expect(result.jobResults[0].reason).toBe('grounding_suppressed');
         expect(result.jobResults[0].handoff).toBe(true);
         expect(harness.sentTexts(result.sends).join('\n')).not.toContain('undefined');
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// META-E2E-013 — metering.
+//
+// Conversation usage is the ONLY usage signal billing reads, and the handler
+// that emits it swallows its own failures so ingestion can never be blocked
+// (meta-webhook-events.handler.js). That catch means a broken meter is
+// invisible in the logs of a working pipeline — every reply still sends, and
+// the counter silently stays at zero. Only a real row read back out of
+// Postgres proves the meter ran.
+//
+// usage-tracking.test.js passes a uuidv4() of its own making, so it proves
+// trackUsage works on a well-formed key and cannot see what the webhook path
+// actually passes. This asserts the production caller.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('META-E2E-013 — the first message on a conversation is metered', () => {
+    const conversationEvents = () => UsageEvent.findAll({
+        where: { shop_id: IDS.shopA, resource_type: 'conversations' },
+    });
+
+    test('a new conversation records exactly one committed usage event', async () => {
+        expect(await conversationEvents()).toHaveLength(0);
+
+        await harness.deliver({ text: 'black panjabi ache?' });
+
+        const events = await conversationEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0].status).toBe('committed');
+        expect(events[0].delta).toBe(1);
+    });
+
+    test("the shop's counted usage moves with it", async () => {
+        await harness.deliver({ text: 'black panjabi ache?' });
+
+        const subscription = await Subscription.findOne({ where: { shop_id: IDS.shopA } });
+        expect(subscription.conversations_used).toBe(1);
+    });
+
+    test('later messages in the same conversation are not re-metered', async () => {
+        await harness.deliver({ text: 'black panjabi ache?' });
+        await harness.deliver({ text: 'dam koto?' });
+        await harness.deliver({ text: 'ache?' });
+
+        expect(await conversationEvents()).toHaveLength(1);
     });
 });

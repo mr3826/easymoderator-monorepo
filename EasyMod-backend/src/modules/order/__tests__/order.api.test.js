@@ -70,6 +70,15 @@ jest.mock('src/modules/product/stock-status-guard.service', () => ({
 
 jest.mock('src/utils/email.service', () => ({ sendEmail: jest.fn() }));
 
+// Return requests are served by return.service, not by the OrderReturn entity
+// directly — mocking the entity alone leaves the controller calling a real
+// service against a stubbed database and answering 500.
+jest.mock('src/modules/order/return.service', () => ({
+    getReturnRequests: jest.fn().mockResolvedValue([]),
+    initiateReturn: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'requested' }),
+    updateReturnStatus: jest.fn().mockResolvedValue({ id: 'ret-1', status: 'approved' })
+}));
+
 const mockProduct = {
     id: 'prod-1', name: 'Blue T-Shirt', price: 500, track_quantity: true, quantity: 10,
     increment: jest.fn(), decrement: jest.fn()
@@ -78,7 +87,9 @@ const mockProduct = {
 const mockOrderItem = { id: 'item-1', product_id: 'prod-1', quantity: 2, price: 500 };
 
 const makeOrder = (overrides = {}) => ({
-    id: 'order-1', shop_id: 'shop-1', order_number: 'ORD-042', status: 'pending',
+    // The column is order_status. A fixture setting `status` leaves
+    // order_status undefined, so every status-dependent guard reads as unset.
+    id: 'order-1', shop_id: 'shop-1', order_number: 'ORD-042', order_status: 'pending',
     customer_id: 'cust-1', total_amount: 1000, payment_method: 'COD',
     items: [mockOrderItem],
     update: jest.fn(async function (d) { Object.assign(this, d); return this; }),
@@ -92,7 +103,10 @@ jest.mock('src/modules/entities', () => ({
     UserShop: { findOne: jest.fn(), create: jest.fn(), belongsTo: jest.fn(), hasMany: jest.fn() },
     Order: { findOne: jest.fn(), findAll: jest.fn(), findAndCountAll: jest.fn(), create: jest.fn(), findByPk: jest.fn() },
     OrderItem: { findAll: jest.fn(() => Promise.resolve([mockOrderItem])), create: jest.fn(), bulkCreate: jest.fn() },
-    Product: { findOne: jest.fn(), findAll: jest.fn(), findByPk: jest.fn(() => Promise.resolve(mockProduct)), decrement: jest.fn(), increment: jest.fn() },
+    // The cancel restore path is shop-scoped — Product.findOne({ where: { id,
+    // shop_id } }) — so stubbing only findByPk left it resolving undefined and
+    // nothing was ever restored.
+    Product: { findOne: jest.fn(() => Promise.resolve(mockProduct)), findAll: jest.fn(), findByPk: jest.fn(() => Promise.resolve(mockProduct)), decrement: jest.fn(), increment: jest.fn() },
     Customer: { findOne: jest.fn(), findOrCreate: jest.fn() },
     Channel: { findOne: jest.fn() },
     OrderReturn: { findOne: jest.fn(), findAll: jest.fn(), create: jest.fn() },
@@ -102,10 +116,17 @@ jest.mock('src/modules/entities', () => ({
 }));
 
 const jwt = require('jsonwebtoken');
-const validToken = jwt.sign({ id: 'user-1', shopId: 'shop-1' }, 'test-access-secret', { expiresIn: '1h' });
+// auth.middleware requires userId + tokenVersion: the token-version revocation
+// check (added with password-reset invalidation) rejects the older { id } shape
+// with 401 before the route is ever reached.
+const validToken = jwt.sign(
+    { userId: 'user-1', shopId: 'shop-1', tokenVersion: 0 },
+    'test-access-secret',
+    { expiresIn: '1h' },
+);
 
 const request = require('supertest');
-const { Order, OrderItem, Product, UserShop, Customer, OrderReturn } = require('src/modules/entities');
+const { Order, OrderItem, Product, User, UserShop, Customer, OrderReturn } = require('src/modules/entities');
 
 let app;
 beforeAll(() => { app = require('src/app'); });
@@ -113,6 +134,10 @@ beforeAll(() => { app = require('src/app'); });
 beforeEach(() => {
     jest.clearAllMocks();
     Object.keys(redisStore).forEach((k) => delete redisStore[k]);
+    // auth.middleware re-reads token_version from the database on a cache miss
+    // (this store is cleared above, so every request is a miss) and 401s if the
+    // user is absent or the version does not match the token's tokenVersion.
+    User.findByPk.mockResolvedValue({ token_version: 0 });
     UserShop.findOne.mockResolvedValue({ id: 'us-1', role: 'owner', is_active: true });
     const order = makeOrder();
     Order.findOne.mockResolvedValue(order);
@@ -127,39 +152,39 @@ beforeEach(() => {
 
 describe('Order API', () => {
 
-    describe('GET /api/orders', () => {
+    describe('GET /api/order', () => {
         it('returns paginated order list', async () => {
             const res = await request(app)
-                .get('/api/orders')
+                .get('/api/order')
                 .set('Authorization', `Bearer ${validToken}`);
             expect(res.status).toBe(200);
             expect(res.body.success).toBe(true);
         });
 
         it('returns 401 without token', async () => {
-            const res = await request(app).get('/api/orders');
+            const res = await request(app).get('/api/order');
             expect(res.status).toBe(401);
         });
 
         it('accepts status filter param', async () => {
             const res = await request(app)
-                .get('/api/orders?status=confirmed')
+                .get('/api/order?status=confirmed')
                 .set('Authorization', `Bearer ${validToken}`);
             expect([200, 400]).toContain(res.status);
         });
 
         it('accepts date range filter', async () => {
             const res = await request(app)
-                .get('/api/orders?startDate=2026-01-01&endDate=2026-12-31')
+                .get('/api/order?startDate=2026-01-01&endDate=2026-12-31')
                 .set('Authorization', `Bearer ${validToken}`);
             expect([200, 400]).toContain(res.status);
         });
     });
 
-    describe('GET /api/orders/:id', () => {
+    describe('GET /api/order/:id', () => {
         it('returns order with items', async () => {
             const res = await request(app)
-                .get('/api/orders/order-1')
+                .get('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa')
                 .set('Authorization', `Bearer ${validToken}`);
             expect(res.status).toBe(200);
             expect(res.body.data).toBeDefined();
@@ -168,58 +193,66 @@ describe('Order API', () => {
         it('returns 404 when order not found', async () => {
             Order.findOne.mockResolvedValue(null);
             const res = await request(app)
-                .get('/api/orders/nonexistent')
+                .get('/api/order/bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')
                 .set('Authorization', `Bearer ${validToken}`);
             expect(res.status).toBe(404);
         });
     });
 
-    describe('PUT /api/orders/:id/status', () => {
+    // Status changes go through PATCH /:id. There is no PUT /:id/status route
+    // — the suite was written against one that was never mounted, so all three
+    // of these asserted against a 404 from express, not from the handler.
+    describe('PATCH /api/order/:id (status change)', () => {
         it('updates order status successfully', async () => {
             const res = await request(app)
-                .put('/api/orders/order-1/status')
+                .patch('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa')
                 .set('Authorization', `Bearer ${validToken}`)
-                .send({ status: 'confirmed' });
+                .send({ order_status: 'confirmed' });
             expect([200, 400]).toContain(res.status);
         });
 
         it('returns 400 for invalid status', async () => {
             const res = await request(app)
-                .put('/api/orders/order-1/status')
+                .patch('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa')
                 .set('Authorization', `Bearer ${validToken}`)
-                .send({ status: 'invalid_status' });
+                .send({ order_status: 'invalid_status' });
             expect(res.status).toBe(400);
         });
 
         it('returns 404 when order not found', async () => {
             Order.findOne.mockResolvedValue(null);
             const res = await request(app)
-                .put('/api/orders/nonexistent/status')
+                .patch('/api/order/bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb')
                 .set('Authorization', `Bearer ${validToken}`)
-                .send({ status: 'confirmed' });
+                .send({ order_status: 'confirmed' });
             expect(res.status).toBe(404);
         });
     });
 
-    describe('POST /api/orders/:id/cancel', () => {
+    describe('POST /api/order/:id/cancel', () => {
         it('cancels order and returns 200', async () => {
             const res = await request(app)
-                .post('/api/orders/order-1/cancel')
+                .post('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa/cancel')
                 .set('Authorization', `Bearer ${validToken}`);
             expect([200, 204]).toContain(res.status);
         });
 
         it('restores product inventory on cancel', async () => {
             await request(app)
-                .post('/api/orders/order-1/cancel')
+                .post('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa/cancel')
                 .set('Authorization', `Bearer ${validToken}`);
-            expect(Product.increment).toHaveBeenCalled();
+            // The service restores through the INSTANCE returned by
+            // Product.findOne, not the model-level Product.increment.
+            expect(mockProduct.increment).toHaveBeenCalledWith(
+                'quantity',
+                expect.objectContaining({ by: mockOrderItem.quantity })
+            );
         });
 
         it('returns 400 when order already cancelled', async () => {
-            Order.findOne.mockResolvedValue(makeOrder({ status: 'cancelled' }));
+            Order.findOne.mockResolvedValue(makeOrder({ order_status: 'cancelled' }));
             const res = await request(app)
-                .post('/api/orders/order-1/cancel')
+                .post('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa/cancel')
                 .set('Authorization', `Bearer ${validToken}`);
             expect(res.status).toBe(400);
         });
@@ -227,31 +260,31 @@ describe('Order API', () => {
         it('returns 404 when order not found', async () => {
             Order.findOne.mockResolvedValue(null);
             const res = await request(app)
-                .post('/api/orders/nonexistent/cancel')
+                .post('/api/order/bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb/cancel')
                 .set('Authorization', `Bearer ${validToken}`);
             expect(res.status).toBe(404);
         });
     });
 
-    describe('POST /api/orders/:id/return', () => {
+    describe('POST /api/order/:id/return', () => {
         it('creates return request and returns 201', async () => {
             Order.findOne.mockResolvedValue(makeOrder({ status: 'delivered' }));
             OrderReturn.create.mockResolvedValue({
                 id: 'ret-1', order_id: 'order-1', status: 'pending', items: []
             });
             const res = await request(app)
-                .post('/api/orders/order-1/return')
+                .post('/api/order/aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa/return')
                 .set('Authorization', `Bearer ${validToken}`)
                 .send({ reason: 'Wrong size', items: [{ product_id: 'prod-1', quantity: 1 }] });
             expect([201, 200, 400]).toContain(res.status);
         });
     });
 
-    describe('GET /api/orders/returns', () => {
+    describe('GET /api/order/returns', () => {
         it('returns list of return requests', async () => {
             OrderReturn.findAll.mockResolvedValue([]);
             const res = await request(app)
-                .get('/api/orders/returns')
+                .get('/api/order/returns')
                 .set('Authorization', `Bearer ${validToken}`);
             expect([200, 404]).toContain(res.status);
         });

@@ -860,6 +860,16 @@ const cancelOrder = async (userId, shopId, orderId, reason, customerId) => {
         throw new AppError('Customer verification failed', 403);
     }
 
+    // Cancelling an already-cancelled order must not run the restore block
+    // again: every tracked item would be incremented a second time, inflating
+    // stock by the order quantity on each repeat call. updateOrderById guards
+    // this by only restoring on a real transition INTO cancelled; this entry
+    // point needs the same guard, and a retried request is the normal way to
+    // hit it.
+    if (order.order_status === 'cancelled') {
+        throw new AppError('Order is already cancelled', 400);
+    }
+
     await sequelize.transaction(async (transaction) => {
         await order.update(
             { order_status: 'cancelled', note: reason ? `Cancelled: ${reason}` : order.note },

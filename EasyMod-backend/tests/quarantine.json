@@ -1,0 +1,40 @@
+{
+  "$comment": [
+    "Tests that are tracked, real, and NOT YET REPAIRED.",
+    "",
+    "This list is the replacement for the 21 silent testPathIgnorePatterns entries",
+    "that used to live in jest.config.js. The difference is not cosmetic:",
+    "",
+    "  - it is the SINGLE source of truth (jest.config.js reads this file),",
+    "  - every entry states the root cause and the repair, in the open,",
+    "  - `npm run test:quarantine` runs exactly these files, so their real state",
+    "    is one command away instead of invisible,",
+    "  - CI runs that command and prints the result on every build,",
+    "  - scripts/check-test-discovery.js reports them as NOT COVERAGE and fails",
+    "    the build if this list grows past `ceiling`.",
+    "",
+    "A file here does not count as coverage. Adding one is a visible, reviewable",
+    "diff that must also raise `ceiling` — which is the point. The number only",
+    "goes down.",
+    "",
+    "This is not a place to park a failing test. It is a debt register with a",
+    "balance, and the balance is meant to reach zero."
+  ],
+  "ceiling": 2,
+  "files": [
+    {
+      "file": "src/modules/ai/__tests__/chatbot-rag.test.js",
+      "cause": "stale API contract — superseded delivery mechanism",
+      "detail": "All 29 cases drive POST /api/ai-chatbot/process. ai-chatbot.routes.js exists but is required by nothing, so the route is not mounted and every request 404s. message-worker.js replaced that HTTP entry point with a direct call and says so at line 7.",
+      "repair": "Retarget the suite at AIChatbotController.processNewIntent(message, history, entities, language, aiSettings, ingestionResult, imageUrls) — the function message-worker actually calls — and assert on its returned { response, confidence, source, grounding } instead of res.body. The mocks (rag.service, llm.service, entities) already fit; the input shape and assertions are the work.",
+      "meanwhile": "The happy path through this pipeline is covered end-to-end by tests/meta-e2e (real signed webhook → real queue → worker → grounding gate). The confidence gate, FAQ threshold and input-validation branches are NOT covered anywhere."
+    },
+    {
+      "file": "tests/smart-payment-detection.test.js",
+      "cause": "wrong test framework + bad import paths + destructive setup",
+      "detail": "Written for Mocha/chai: uses `before()` and 35 `.to.be`-style assertions, and chai is not a dependency of this project. Its three imports are all wrong from tests/ — '../../src/app' resolves above the backend root, and '../../src/config/database' names a file that does not exist. It also calls sequelize.sync({ force: true }), which drops every table.",
+      "repair": "Convert `before` → `beforeAll` and chai assertions → jest expect; fix the three require paths; then rename to *.integration.test.js so it runs under jest.integration.config.js, whose env.js refuses to start against a database that is not provably disposable. It must NOT be enabled in the unit gate: the force-sync would run against whatever DATABASE_URL happens to be set.",
+      "meanwhile": "Payment detection is covered by payment-processing-reconciliation.security.test.js and self-mfs-handler.media-security.test.js in the security gate; the three merchant scenarios in this file are not covered."
+    }
+  ]
+}

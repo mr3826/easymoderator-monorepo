@@ -20,7 +20,7 @@ jest.mock('../../../utils/structured-logger', () => ({
 
 // ── Entity mocks ──────────────────────────────────────────────────────────────
 const mockShopInstance = {
-    id: 'shop-1',
+    id: 'dddddddd-4444-4444-8444-dddddddddddd',
     shop_name: 'My BD Shop',
     name: 'My BD Shop',
     unique_code: 'SHOP1',
@@ -31,11 +31,11 @@ const mockShopInstance = {
 
 const mockUserShop = {
     user_id: 'user-1',
-    shop_id: 'shop-1',
+    shop_id: 'dddddddd-4444-4444-8444-dddddddddddd',
     role: 'owner',
     is_active: true,
     shop: mockShopInstance,
-    toJSON: () => ({ user_id: 'user-1', shop_id: 'shop-1', role: 'owner' }),
+    toJSON: () => ({ user_id: 'user-1', shop_id: 'dddddddd-4444-4444-8444-dddddddddddd', role: 'owner' }),
 };
 
 jest.mock('../../entities', () => ({
@@ -56,14 +56,36 @@ jest.mock('../../entities', () => ({
     Tenant: { findByPk: jest.fn() },
 }));
 
+// `define` is not optional: entity modules reached through the router call it
+// at IMPORT time (knowledge-gap.entity.js is the one this suite pulls in), so a
+// stub without it throws before the first request is ever made.
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
+        define: jest.fn(() => ({
+            findOne: jest.fn(), findByPk: jest.fn(), findAll: jest.fn(() => Promise.resolve([])),
+            findAndCountAll: jest.fn(() => Promise.resolve({ rows: [], count: 0 })),
+            create: jest.fn(), update: jest.fn(), destroy: jest.fn(), count: jest.fn(),
+            belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(),
+            addScope: jest.fn(), scope: jest.fn(function () { return this; })
+        })),
         transaction: jest.fn(async (cb) => {
             const t = { commit: jest.fn(), rollback: jest.fn() };
             if (typeof cb === 'function') return cb(t);
             return t;
-        })
+        }),
+        authenticate: jest.fn(() => Promise.resolve()),
+        sync: jest.fn(() => Promise.resolve()),
+        literal: jest.fn((s) => s),
+        query: jest.fn(() => Promise.resolve([[]])),
+        getDialect: jest.fn(() => 'postgres')
     }
+}));
+
+// business-info is served from the knowledge service, which is a separate
+// module the entity mocks do not cover.
+jest.mock('../../knowledge/knowledge.service', () => ({
+    getKnowledge: jest.fn().mockResolvedValue({ businessInfo: { shopName: 'My BD Shop' } }),
+    updateKnowledge: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock('../shop-defaults', () => ({
@@ -83,8 +105,10 @@ jest.mock('../../../middleware/auth.middleware', () => ({
         if (!auth.startsWith('Bearer ')) {
             return _res.status(401).json({ success: false, error: 'Unauthorized' });
         }
-        req.userId = 'user-1';
-        req.shopId = 'shop-1';
+        // The real middleware sets req.user, and every controller reads
+        // req.user.userId / req.user.shopId. Setting the flat req.userId that
+        // an older middleware exposed makes each handler throw on undefined.
+        req.user = { userId: 'user-1', shopId: 'dddddddd-4444-4444-8444-dddddddddddd' };
         next();
     }
 }));
@@ -93,7 +117,14 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const express = require('express');
 
-const validToken = jwt.sign({ id: 'user-1', shopId: 'shop-1' }, 'test-access-secret', { expiresIn: '1h' });
+// auth.middleware requires userId + tokenVersion: the token-version revocation
+// check (added with password-reset invalidation) rejects the older { id } shape
+// with 401 before the route is ever reached.
+const validToken = jwt.sign(
+    { userId: 'user-1', shopId: 'dddddddd-4444-4444-8444-dddddddddddd', tokenVersion: 0 },
+    'test-access-secret',
+    { expiresIn: '1h' },
+);
 const authHeader = `Bearer ${validToken}`;
 
 let app;
@@ -134,7 +165,9 @@ describe('GET /shop/list', () => {
 
     it('returns empty array when user has no shops', async () => {
         const { UserShop } = require('../../entities');
-        UserShop.findAll.mockResolvedValueOnce([]);
+        // getShopsByUserId delegates to getMyShop, which reads UserShop.findOne.
+        // Stubbing findAll left the default findOne in place and returned a shop.
+        UserShop.findOne.mockResolvedValueOnce(null);
         const res = await request(app)
             .get('/shop/list')
             .set('Authorization', authHeader);
@@ -145,13 +178,22 @@ describe('GET /shop/list', () => {
 });
 
 describe('POST /shop/create', () => {
+    // One shop per user: createShop 409s when UserShop.findOne already resolves
+    // one, which the shared beforeEach sets up for every other test here.
+    beforeEach(() => {
+        const { UserShop } = require('../../entities');
+        UserShop.findOne.mockResolvedValue(null);
+    });
+
     it('creates a shop and returns 200', async () => {
         const res = await request(app)
             .post('/shop/create')
             .set('Authorization', authHeader)
             .send({ shop_name: 'New BD Shop' });
 
-        expect(res.status).toBe(200);
+        // 201 Created — the route was changed to answer with the REST-correct
+        // status for a create.
+        expect(res.status).toBe(201);
         expect(res.body.success).toBe(true);
     });
 
@@ -186,7 +228,7 @@ describe('POST /shop/update', () => {
         const res = await request(app)
             .post('/shop/update')
             .set('Authorization', authHeader)
-            .send({ shop_id: 'shop-1', shop_name: 'Updated Shop' });
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd', shop_name: 'Updated Shop' });
 
         expect(res.status).toBe(200);
         expect(res.body.success).toBe(true);
@@ -199,7 +241,7 @@ describe('POST /shop/update', () => {
         const res = await request(app)
             .post('/shop/update')
             .set('Authorization', authHeader)
-            .send({ shop_id: 'shop-missing', shop_name: 'X' });
+            .send({ shopId: 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee', shop_name: 'X' });
 
         expect(res.status).toBe(404);
     });
@@ -207,7 +249,7 @@ describe('POST /shop/update', () => {
     it('returns 401 without auth token', async () => {
         const res = await request(app)
             .post('/shop/update')
-            .send({ shop_id: 'shop-1', shop_name: 'X' });
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd', shop_name: 'X' });
 
         expect(res.status).toBe(401);
     });
@@ -218,7 +260,7 @@ describe('POST /shop/delete', () => {
         const res = await request(app)
             .post('/shop/delete')
             .set('Authorization', authHeader)
-            .send({ shop_id: 'shop-1' });
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd' });
 
         expect(res.status).toBe(200);
         expect(res.body.success).toBe(true);
@@ -231,7 +273,7 @@ describe('POST /shop/delete', () => {
         const res = await request(app)
             .post('/shop/delete')
             .set('Authorization', authHeader)
-            .send({ shop_id: 'shop-1' });
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd' });
 
         expect(res.status).toBe(403);
     });
@@ -239,7 +281,7 @@ describe('POST /shop/delete', () => {
     it('returns 401 without auth token', async () => {
         const res = await request(app)
             .post('/shop/delete')
-            .send({ shop_id: 'shop-1' });
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd' });
 
         expect(res.status).toBe(401);
     });
