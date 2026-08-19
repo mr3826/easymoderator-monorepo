@@ -9,9 +9,14 @@ Status: Phase 1 working contract, 2026-08-05. These definitions separate code-ob
 | Activation | First successful AI reply records `shop.settings.activation.activated_at` and the first conversation ID. | Observed in code; now written with a recoverable Redis claim. |
 | Activated shop | A shop with a non-empty `activation.activated_at`. | Observed in code; must be reconciled with product analytics before external reporting. |
 | Weekly retention | An activated shop with at least one captured order in the current seven-day window. | Observed in code; current report uses two grouped order queries. |
-| Funnel events | Allowlisted first-party events written to `audit_logs` as `resource_type=funnel_event`. | Observed in code; ingestion is rate-limited, validated, and idempotent when a retry key is supplied. |
-| `assistant_test_passed` | Allowlisted event with no producer found during the audit. | Missing producer; do not report as measured. |
-| `trial_day_7_active` | Allowlisted event with no producer found during the audit. | Missing producer; do not report as measured. |
+| Funnel events | Current first-party events written to `audit_logs` as `resource_type=funnel_event`. | Observed in code; ingestion is schema-validated, Redis-backed when deployed, payload/tenant-bound and server-idempotent, and browser retries are marked only after acceptance. |
+
+## Events excluded from the current contract
+
+`assistant_test_passed` and `trial_day_7_active` are intentionally not accepted
+until their first-party producers and fixture coverage exist. An allowlist entry
+without a producer would create an event that looks measurable while remaining
+unverifiable.
 
 ## Targets
 

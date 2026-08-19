@@ -5,9 +5,19 @@
  * Shop, Order and the Redis cache are mocked — no DB.
  */
 
-const mockShop = { findByPk: jest.fn(), findAll: jest.fn() };
+const mockShop = {
+    findByPk: jest.fn(),
+    findAll: jest.fn(),
+    update: jest.fn(),
+    sequelize: {
+        getDialect: jest.fn(),
+        escape: jest.fn(),
+        literal: jest.fn(),
+    },
+};
 const mockOrder = { count: jest.fn() };
 const mockCache = { set: jest.fn(), persist: jest.fn(), del: jest.fn() };
+const { Op } = require('sequelize');
 
 jest.mock('src/modules/shop/shop.entity', () => mockShop);
 jest.mock('src/modules/order/order.entity', () => mockOrder);
@@ -16,7 +26,10 @@ jest.mock('src/config/redis', () => ({ cacheRedis: mockCache }));
 const { recordActivation, getGrowthMetrics } = require('src/modules/analytics/growth-metrics.service');
 
 describe('growth-metrics.service', () => {
-    beforeEach(() => jest.resetAllMocks());
+    beforeEach(() => {
+        jest.resetAllMocks();
+        mockShop.sequelize.getDialect.mockReturnValue('sqlite');
+    });
 
     describe('recordActivation', () => {
         it('records activation on first NX claim and preserves existing settings', async () => {
@@ -35,6 +48,26 @@ describe('growth-metrics.service', () => {
             expect(arg.settings.businessInfo).toEqual({ x: 1 }); // not clobbered
             expect(mockCache.persist).toHaveBeenCalledWith('shop:activated:shop-1');
             expect(mockCache.del).not.toHaveBeenCalled();
+        });
+
+        it('patches only the activation path with a conditional JSONB update on Postgres', async () => {
+            mockShop.sequelize.getDialect.mockReturnValue('postgres');
+            mockShop.sequelize.escape.mockReturnValue("'{\"activated_at\":\"safe\"}'");
+            mockShop.sequelize.literal.mockImplementation(value => ({ value }));
+            mockShop.update.mockResolvedValue([1]);
+            const update = jest.fn();
+            mockShop.findByPk.mockResolvedValue({ settings: { businessInfo: { x: 1 } }, update });
+            mockCache.set.mockResolvedValue('OK');
+            mockCache.persist.mockResolvedValue(1);
+
+            await recordActivation('shop-1', 'conv-9');
+
+            expect(mockShop.update).toHaveBeenCalledTimes(1);
+            expect(mockShop.update.mock.calls[0][0].settings.value).toContain('jsonb_build_object');
+            expect(mockShop.update.mock.calls[0][1].where[Op.and][0]).toEqual({ id: 'shop-1' });
+            expect(mockShop.update.mock.calls[0][1].where[Op.and][1].value).toContain('activated_at');
+            expect(update).not.toHaveBeenCalled();
+            expect(mockCache.persist).toHaveBeenCalledWith('shop:activated:shop-1');
         });
 
         it('skips entirely when the NX claim was already taken', async () => {

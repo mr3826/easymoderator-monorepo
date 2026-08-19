@@ -11,12 +11,10 @@ const ALLOWED_FUNNEL_EVENTS = new Set([
     'facebook_connect_succeeded',
     'shop_profile_completed',
     'first_product_added',
-    'assistant_test_passed',
     'first_inbound_message',
     'first_ai_reply_sent',
     'first_order_captured',
     'first_rto_flag',
-    'trial_day_7_active',
 ]);
 
 function scrubMetadata(metadata) {
@@ -29,6 +27,42 @@ function scrubMetadata(metadata) {
         else if (typeof value === 'number' || typeof value === 'boolean') safe[key] = value;
     }
     return safe;
+}
+
+function stableValue(value) {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (!value || typeof value !== 'object') return value;
+    return Object.keys(value)
+        .sort()
+        .reduce((result, key) => {
+            result[key] = stableValue(value[key]);
+            return result;
+        }, {});
+}
+
+function buildIdempotencyKey({ event, onceKey, userId, shopId, metadata, req }) {
+    if (!onceKey) return null;
+
+    const rawPath = typeof req?.body?.path === 'string'
+        ? req.body.path
+        : typeof req?.headers?.referer === 'string'
+            ? req.headers.referer
+            : '';
+    const sessionId = typeof req?.body?.sessionId === 'string'
+        ? req.body.sessionId.slice(0, 80)
+        : null;
+    const identity = stableValue({
+        version: 2,
+        event,
+        onceKey,
+        userId: userId || null,
+        shopId: shopId || null,
+        metadata: scrubMetadata(metadata),
+        path: rawPath.slice(0, 500) || null,
+        sessionId,
+    });
+    const digest = crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+    return `funnel:v2:${digest}`;
 }
 
 function deterministicAuditId(idempotencyKey) {
@@ -55,7 +89,17 @@ async function recordFunnelEvent({
         throw err;
     }
 
-    const idempotencyKey = onceKey ? `funnel:${event}:${onceKey}`.slice(0, 255) : null;
+    // Bind retries to the event payload and tenant/user context. A reusable
+    // header must not suppress a different event submitted by another shop or
+    // silently discard a changed payload.
+    const idempotencyKey = buildIdempotencyKey({
+        event,
+        onceKey,
+        userId,
+        shopId,
+        metadata,
+        req,
+    });
     if (idempotencyKey) {
         const existing = await AuditLog.findOne({ where: { idempotency_key: idempotencyKey } });
         if (existing) return existing;
@@ -99,5 +143,6 @@ async function recordFunnelEvent({
 
 module.exports = {
     ALLOWED_FUNNEL_EVENTS,
+    buildIdempotencyKey,
     recordFunnelEvent,
 };

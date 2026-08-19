@@ -847,7 +847,13 @@ async function processMessageJob(job) {
                     platform: policyChannelTypeForSend,
                 },
             })
-            .catch(() => {});
+            .catch((err) => {
+                console.error('Growth funnel event write failed:', {
+                    name: err?.name,
+                    code: err?.code,
+                    statusCode: err?.statusCode,
+                });
+            });
     } catch (_) { /* analytics must never fail a sent reply */ }
 
     return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };

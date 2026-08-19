@@ -1,4 +1,4 @@
-import { publicApiPost } from "@/shared/lib/http/public-client";
+import { publicApiRequest } from "@/shared/lib/http/public-client";
 
 export type FunnelEvent =
   | "landing_view"
@@ -8,14 +8,18 @@ export type FunnelEvent =
   | "facebook_connect_succeeded"
   | "shop_profile_completed"
   | "first_product_added"
-  | "assistant_test_passed"
   | "first_inbound_message"
   | "first_ai_reply_sent"
   | "first_order_captured"
-  | "first_rto_flag"
-  | "trial_day_7_active";
+  | "first_rto_flag";
 
 const SESSION_KEY = "easymod:funnel_session";
+
+function buildIdempotencyKey(event: FunnelEvent, onceKey: string) {
+  const normalizedOnceKey = onceKey.trim().replace(/[^\x21-\x7E]/g, "-");
+  if (!normalizedOnceKey) return undefined;
+  return `funnel-${event}-${normalizedOnceKey}`.slice(0, 128);
+}
 
 function getSessionId() {
   try {
@@ -34,21 +38,43 @@ export function trackFunnelEvent(
   event: FunnelEvent,
   metadata: Record<string, string | number | boolean | null | undefined> = {},
   options: { onceKey?: string } = {},
-) {
+): Promise<void> {
+  const onceStorageKey = options.onceKey
+    ? `easymod:funnel_once:${options.onceKey}`
+    : null;
+
   try {
-    if (options.onceKey) {
-      const key = `easymod:funnel_once:${options.onceKey}`;
-      if (localStorage.getItem(key)) return;
-      localStorage.setItem(key, "1");
-    }
+    if (onceStorageKey && localStorage.getItem(onceStorageKey)) return Promise.resolve();
   } catch {
     // Tracking must never interrupt the user flow.
   }
 
-  publicApiPost("/api/analytics/funnel", {
-    event,
-    metadata,
-    sessionId: getSessionId(),
-    path: typeof window !== "undefined" ? window.location.pathname : undefined,
-  }).catch(() => {});
+  const idempotencyKey = options.onceKey
+    ? buildIdempotencyKey(event, options.onceKey)
+    : undefined;
+  const headers = idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined;
+
+  return publicApiRequest("/api/analytics/funnel", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      event,
+      metadata,
+      sessionId: getSessionId(),
+      path: typeof window !== "undefined" ? window.location.pathname : undefined,
+    }),
+  })
+    .then(() => {
+      if (!onceStorageKey) return;
+      try {
+        // Only suppress a future attempt after the server accepted this event.
+        localStorage.setItem(onceStorageKey, "1");
+      } catch {
+        // Tracking must never interrupt the user flow.
+      }
+    })
+    .catch(() => {
+      // Tracking must never interrupt the user flow. Leaving the marker unset
+      // allows a later successful attempt to record the event.
+    });
 }
