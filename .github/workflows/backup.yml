@@ -27,6 +27,13 @@ on:
 # only on the droplet it protects does not satisfy the pilot DR requirement.
 # ──────────────────────────────────────────────────────────────────────────────
 
+# This job talks only to the droplet over SSH and never calls the GitHub API,
+# so it needs no token scope at all. Declared explicitly rather than inherited:
+# the repository default is currently read, but a workflow that states its own
+# permissions does not silently widen if that default is ever changed.
+permissions:
+  contents: read
+
 jobs:
   backup:
     name: Backup PostgreSQL

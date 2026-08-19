@@ -4,3 +4,10 @@ dist
 npm-debug.log
 Dockerfile
 .dockerignore
+
+# The Dockerfile does `COPY . .`, so anything not excluded here is baked into a
+# build layer. Both sibling apps exclude env files; this one did not, which left
+# any future EasyMod-growth/.env to be copied into the published image.
+.env
+.env.*
+!.env.example
