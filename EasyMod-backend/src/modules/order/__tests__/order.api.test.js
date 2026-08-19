@@ -3,9 +3,16 @@
  * Tests order CRUD, status transitions, cancel/return flows via supertest
  */
 
+// This is the only suite that builds the REAL src/app, so it has to supply
+// everything the app needs to construct. SESSION_SECRET was missing: locally a
+// developer's EasyMod-backend/.env filled it in and the suite passed, while in
+// CI express-session threw "secret option required for sessions" and all 15
+// cases returned 500. A test that only passes next to an untracked .env is not
+// a passing test.
 process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+process.env.SESSION_SECRET = 'test-session-secret';
 
 jest.mock('src/config/redis', () => ({
     sessionRedis: null, cacheRedis: null, rateLimitRedis: null, legacyRedis: null,

@@ -243,13 +243,17 @@ jobs:
         working-directory: ./EasyMod-backend
         run: npm ci
 
+      # test:meta:e2e, not test:integration. Those two were the same command
+      # while test:integration was an alias for jest.meta-e2e.config.js; now
+      # that it points at the real integration suite, calling it here ran the
+      # wrong tests against this job's database.
       - name: Meta-shaped E2E suite
         if: needs.changes.outputs.backend == 'true'
         working-directory: ./EasyMod-backend
         env:
           DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_e2e
           REDIS_URL: redis://127.0.0.1:6379
-        run: npm run test:integration
+        run: npm run test:meta:e2e
 
   # ── 2c. Non-deploy deployment contract dry run ─────────────────────────────
   # This job validates Compose interpolation plus the repository's production
@@ -519,6 +523,18 @@ jobs:
       - name: Install workspace dependencies
         if: needs.changes.outputs.backend == 'true'
         run: npm ci
+
+      # The service container starts empty. tests/integration/env.js configures
+      # and guards the connection but never creates a schema, so without this
+      # every case died on relation "users" does not exist.
+      - name: Migrate the integration database
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
+          DB_SSL: 'false'
+          NODE_ENV: test
+        run: npm run migrate
 
       - name: Backend integration suite
         if: needs.changes.outputs.backend == 'true'
