@@ -313,6 +313,12 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(workflow).toContain('CROSS_SPACE_WRITE_REJECTION');
         expect(workflow).toContain('EMBEDDING_SPACE_SAFETY=PASS');
         expect(workflow).toContain('OPENAI_ROLLBACK_COLLECTION="${OPENAI_ROLLBACK_COLLECTION_BASE}_${WORKFLOW_RUN_ID}"');
+        expect(workflow).toMatch(
+            /"\$QDRANT_IMAGE"\s+\\\r?\n\s+\.\/qdrant\s+\\\r?\n\s+--snapshot/,
+        );
+        expect(workflow).not.toMatch(
+            /"\$QDRANT_IMAGE"\s+\\\r?\n\s+--snapshot/,
+        );
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
