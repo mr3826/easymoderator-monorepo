@@ -14,8 +14,8 @@ on:
 
 # This workflow intentionally cannot deploy the application. It uses only the
 # existing production env file on the host, creates run-scoped isolated
-# migration/calibration collections, and removes only its isolated restore
-# container and proof scripts at the end.
+# migration/calibration collections, retains failed restore evidence, and
+# removes successful isolated restore containers and proof scripts at the end.
 permissions:
   contents: read
   packages: read
@@ -154,13 +154,69 @@ jobs:
             RESTORE_HOST="$RESTORE_CONTAINER"
             RESTORE_COLLECTION="${OPENAI_ROLLBACK_COLLECTION}_restored"
             SNAPSHOT_FILE="${OPENAI_ROLLBACK_COLLECTION}.snapshot"
+            RESTORE_CONTAINER_OWNED=false
+
+            capture_restore_evidence() {
+              local evidence_dir="$RUN_DIR/restore-evidence"
+              mkdir -p "$evidence_dir"
+              printf 'WORKFLOW_EXIT_STATUS=%s\n' "$1" > "$evidence_dir/cleanup-context.log"
+              printf 'RESTORE_CONTAINER=%s\n' "$RESTORE_CONTAINER" >> "$evidence_dir/cleanup-context.log"
+              printf 'RESTORE_CONTAINER_OWNED=%s\n' "$RESTORE_CONTAINER_OWNED" >> "$evidence_dir/cleanup-context.log"
+              printf 'CAPTURED_AT_UTC=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$evidence_dir/cleanup-context.log"
+
+              if [ "$RESTORE_CONTAINER_OWNED" = true ] && docker inspect "$RESTORE_CONTAINER" >/dev/null 2>&1; then
+                docker inspect \
+                  --format='{"id":{{json .Id}},"name":{{json .Name}},"created":{{json .Created}},"path":{{json .Path}},"args":{{json .Args}},"state":{{json .State}},"image":{{json .Config.Image}},"cmd":{{json .Config.Cmd}},"entrypoint":{{json .Config.Entrypoint}},"working_dir":{{json .Config.WorkingDir}},"user":{{json .Config.User}},"network_mode":{{json .HostConfig.NetworkMode}},"restart_policy":{{json .HostConfig.RestartPolicy}},"mounts":{{json .Mounts}},"networks":{{json .NetworkSettings.Networks}}}' \
+                  "$RESTORE_CONTAINER" \
+                  > "$evidence_dir/container-inspect.json" 2>&1 || true
+                timeout --signal=TERM --kill-after=5s 30s \
+                  docker logs --timestamps "$RESTORE_CONTAINER" \
+                  > "$evidence_dir/container-logs.txt" 2>&1 || true
+                timeout --signal=TERM --kill-after=5s 30s \
+                  docker stats --no-stream "$RESTORE_CONTAINER" \
+                  > "$evidence_dir/container-stats.txt" 2>&1 || true
+                docker port "$RESTORE_CONTAINER" \
+                  > "$evidence_dir/container-ports.txt" 2>&1 || true
+                timeout --signal=TERM --kill-after=5s 15s \
+                  docker top "$RESTORE_CONTAINER" \
+                  > "$evidence_dir/container-processes.txt" 2>&1 || true
+                docker network inspect "$NETWORK" \
+                  > "$evidence_dir/network-inspect.json" 2>&1 || true
+
+                if [ "$(docker inspect --format '{{.State.Running}}' "$RESTORE_CONTAINER" 2>/dev/null || true)" = "true" ]; then
+                  timeout --signal=TERM --kill-after=5s 15s \
+                    docker exec "$RESTORE_CONTAINER" /bin/sh -c \
+                    'id; printf "PWD="; pwd; ps -ef 2>/dev/null || ps 2>/dev/null || true; ls -ld /qdrant /qdrant/storage /qdrant/snapshots 2>&1 || true; find /qdrant/snapshots -maxdepth 1 -type f -printf "%M %u:%g %s %TY-%Tm-%TdT%TH:%TM:%TS %p\n" 2>/dev/null || true' \
+                    > "$evidence_dir/container-readonly-state.txt" 2>&1 || true
+                fi
+
+                printf 'RESTORE_CONTAINER_PRESENT=YES\nRESTORE_CONTAINER_RETAINED=YES\n' \
+                  >> "$evidence_dir/cleanup-context.log"
+                echo "RESTORE_EVIDENCE_DIR=$evidence_dir"
+                echo "RESTORE_CONTAINER_RETAINED=YES"
+              else
+                printf 'RESTORE_CONTAINER_PRESENT=NO_OR_NOT_OWNED\nRESTORE_CONTAINER_RETAINED=NO_CONTAINER_CAPTURED\n' \
+                  >> "$evidence_dir/cleanup-context.log"
+                echo "RESTORE_EVIDENCE_DIR=$evidence_dir"
+                echo "RESTORE_CONTAINER_RETAINED=NO_CONTAINER_CAPTURED"
+              fi
+            }
 
             cleanup() {
-              docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
+              local workflow_status="$1"
+              set +e
+              if [ "$workflow_status" -ne 0 ]; then
+                capture_restore_evidence "$workflow_status"
+              else
+                if [ "$RESTORE_CONTAINER_OWNED" = true ]; then
+                  docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
+                fi
+                echo "RESTORE_CONTAINER_RETAINED=NO"
+              fi
               rm -f -- "$PROOF_SCRIPT_PATH" "$ACCEPTANCE_CONTRACT_PATH" "$FIXTURE_SCRIPT_PATH" "$READINESS_SCRIPT_PATH"
               docker logout ghcr.io >/dev/null 2>&1 || true
             }
-            trap cleanup EXIT
+            trap 'workflow_status=$?; cleanup "$workflow_status"; exit "$workflow_status"' EXIT
 
             test "${PRODUCTION_DEPLOY_ENABLED:-false}" != "true"
             test -f "$ENV_PATH"
@@ -410,6 +466,7 @@ jobs:
             echo "OPENAI_ROLLBACK_SNAPSHOT=$snapshot_name"
             echo "OPENAI_ROLLBACK_SHA256=$snapshot_sha"
 
+            RESTORE_CONTAINER_OWNED=true
             docker run -d --name "$RESTORE_CONTAINER" --network "$NETWORK" \
               --network-alias "$RESTORE_HOST" \
               -v "$RUN_DIR:/qdrant/snapshots:ro" \

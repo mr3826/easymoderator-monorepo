@@ -62,6 +62,15 @@ version. See the [Qdrant snapshot documentation](https://qdrant.tech/documentati
 4. Retain the workflow log and the host evidence directory
    `/opt/easymod/qdrant-migration/<run-id>/`.
 
+If the workflow fails after claiming the isolated restore container, cleanup
+does not remove that container. It writes bounded evidence under
+`/opt/easymod/qdrant-migration/<run-id>/restore-evidence/`, including the
+container state, startup logs, resource snapshot, ports, process list, Docker
+network state, and read-only in-container metadata when the process is still
+running. Successful proofs still remove the isolated restore container during
+cleanup. Retain failed-container evidence until an independent reviewer
+accepts the diagnosis; perform any later manual cleanup separately.
+
 The proof receives the authorized `OPENAI_API_KEY` and Gemini key through the
 workflow secret path for the isolated candidate containers. It does not alter
 the production `.env.prod` or restart any production service.
