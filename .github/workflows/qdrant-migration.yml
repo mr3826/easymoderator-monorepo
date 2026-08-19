@@ -412,6 +412,17 @@ jobs:
               "$QDRANT_IMAGE" \
               ./qdrant \
               --snapshot "/qdrant/snapshots/$SNAPSHOT_FILE:$RESTORE_COLLECTION" >/dev/null
+            restore_ready=false
+            for attempt in $(seq 1 60); do
+              if docker run --rm --network "$NETWORK" "$CANDIDATE_IMAGE" node -e \
+                "fetch('http://$RESTORE_HOST:6333/readyz').then(response => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));" >/dev/null 2>&1; then
+                restore_ready=true
+                break
+              fi
+              sleep 2
+            done
+            test "$restore_ready" = true
+            echo "QDRANT_RESTORE_READY=PASS"
             docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
               -e NODE_ENV=production \
               -e NODE_PATH=/app/node_modules \

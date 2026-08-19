@@ -319,6 +319,10 @@ describe('Qdrant migration proof safety helpers', () => {
         expect(workflow).not.toMatch(
             /"\$QDRANT_IMAGE"\s+\\\r?\n\s+--snapshot/,
         );
+        expect(workflow).toContain('QDRANT_RESTORE_READY=PASS');
+        expect(workflow).toMatch(
+            /docker run --rm --network "\$NETWORK" "\$CANDIDATE_IMAGE" node -e[\s\S]+readyz/,
+        );
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
