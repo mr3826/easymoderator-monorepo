@@ -410,6 +410,7 @@ jobs:
               --network-alias "$RESTORE_HOST" \
               -v "$RUN_DIR:/qdrant/snapshots:ro" \
               "$QDRANT_IMAGE" \
+              ./qdrant \
               --snapshot "/qdrant/snapshots/$SNAPSHOT_FILE:$RESTORE_COLLECTION" >/dev/null
             docker run --rm --network "$NETWORK" --env-file "$ENV_PATH" \
               -e NODE_ENV=production \
