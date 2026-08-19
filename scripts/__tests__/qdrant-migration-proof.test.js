@@ -320,9 +320,13 @@ describe('Qdrant migration proof safety helpers', () => {
             /"\$QDRANT_IMAGE"\s+\\\r?\n\s+--snapshot/,
         );
         expect(workflow).toContain('QDRANT_RESTORE_READY=PASS');
-        expect(workflow).toMatch(
-            /docker run --rm --network "\$NETWORK" "\$CANDIDATE_IMAGE" node -e[\s\S]+readyz/,
-        );
+        expect(workflow).toContain('READINESS_SCRIPT_PATH');
+        expect(workflow).toContain('RESTORE_REQUEST_TIMEOUT_MS=5000');
+        expect(workflow).toContain('RESTORE_READINESS_DEADLINE_MS=180000');
+        expect(workflow).toContain('FAILURE_TYPE=CONTAINER_PROBE_TIMEOUT');
+        expect(workflow).toContain('ROLLBACK_RESTORE_READINESS=FAIL');
+        expect(workflow).toContain('timeout --signal=TERM --kill-after=5s 240s');
+        expect(workflow).toContain('qdrant-restore-readiness.js');
         expect(workflow).not.toContain('text-embedding-004');
         expect(workflow).not.toMatch(/docker (?:rm|compose .*rm).*knowledge_documents/);
         expect(workflow).toContain('PRODUCTION_DEPLOY_ENABLED:-false');
