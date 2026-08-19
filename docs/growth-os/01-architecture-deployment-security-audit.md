@@ -83,10 +83,11 @@ Frontend:
 - `EasyMod-frontend/src/api/domains/admin.ts`
 - `EasyMod-frontend/src/app/components/admin/*`
 
-Existing admin design docs:
-
-- `docs/superpowers/specs/2026-06-09-admin-panel-phase1-design.md`
-- `docs/superpowers/plans/2026-06-09-admin-panel-phase1.md`
+Existing admin design docs: the admin-panel phase 1 spec and plan were
+point-in-time design notes for work that has since shipped. They were removed
+from the tree during the monorepo consolidation and remain in git history —
+`git log --diff-filter=D -- 'docs/superpowers/**admin-panel-phase1*'` finds
+them. The shipped behaviour, not those notes, is the reference.
 
 ## Current Repository Structure
 

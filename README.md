@@ -58,29 +58,57 @@ The checklist does not lock navigation. Merchants can use the sidebar and settin
 
 ## Local Development
 
-Backend:
+Install once from the repository root — this is an npm workspace, so `npm ci`
+inside a module resolves the root lockfile anyway:
 
 ```sh
+npm ci
+```
+
+Then run per module:
+
+```sh
+npm run test:backend      # jest unit/service gate
+npm run test:frontend     # vitest
+npm run test:growthos     # tsc --noEmit
+npm run build:all
+```
+
+`npm run test:all` and `npm run build:all` run all three. See
+[Monorepo Architecture](docs/infrastructure/MONOREPO_ARCHITECTURE.md) for the
+boundary and rollback rules.
+
+### Backend test suites
+
+Backend tests belong to exactly one suite, chosen by filename, and
+`npm run test:discovery` fails the build if any tracked test file has no home or
+more than one:
+
+| Suite | Command | Needs |
+|---|---|---|
+| unit / service | `npm test` | nothing — the message queue is stubbed |
+| integration | `npm run test:integration` | real PostgreSQL + Redis (`*.integration.test.js`) |
+| Meta-shaped E2E | `npm run test:meta:e2e` | real PostgreSQL + Redis (`tests/meta-e2e/`) |
+| quarantine | `npm run test:quarantine` | known-broken debt — **not coverage** |
+
+`tests/quarantine.json` is the register of tests that are real but not yet
+repaired; each entry carries its cause and its repair, and the ceiling only goes
+down. A green `npm test` covers everything except that register.
+
+The integration suites refuse to run against a database whose name does not
+carry `test` or `e2e` as a whole word. To run them locally:
+
+```sh
+docker run -d --name em-pg -e POSTGRES_USER=e2e -e POSTGRES_PASSWORD=e2e \
+  -e POSTGRES_DB=easymod_integration_test -p 55432:5432 postgres:16-alpine
+docker run -d --name em-redis -p 56379:6379 redis:7-alpine
+
 cd EasyMod-backend
-npm install
-npm test
-npm run dev
+DATABASE_URL=postgres://e2e:e2e@127.0.0.1:55432/easymod_integration_test \
+  DB_SSL=false NODE_ENV=test npm run migrate
+DATABASE_URL=postgres://e2e:e2e@127.0.0.1:55432/easymod_integration_test \
+  REDIS_URL=redis://127.0.0.1:56379 npm run test:integration
 ```
-
-Frontend:
-
-```sh
-cd EasyMod-frontend
-npm install
-npm run test:unit
-npm run build
-npm run dev
-```
-
-From the repository root, the workspace provides `npm run install:all`,
-`npm run test:all`, and `npm run build:all`, plus module-specific test/build
-commands. See [Monorepo Architecture](docs/infrastructure/MONOREPO_ARCHITECTURE.md)
-for the boundary and rollback rules.
 
 See [EasyMod-backend/README.md](EasyMod-backend/README.md) and [EasyMod-frontend/README.md](EasyMod-frontend/README.md) for module-specific setup, environment variables, testing, and architecture.
 

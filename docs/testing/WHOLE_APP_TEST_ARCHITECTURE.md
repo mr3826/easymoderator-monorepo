@@ -9,8 +9,7 @@ Two sections, kept strictly apart:
 
 An earlier revision of this file described Part B items in the present tense
 under `Status: ACTIVE`, including a `npm run test:prod:smoke` command that does
-not exist. See `WHOLE_APP_TEST_SYSTEM_VALIDATION.md` §2.1. If you are about to
-add a row, put it in Part B until it runs in CI.
+not exist. If you are about to add a row, put it in Part B until it runs in CI.
 
 ---
 
@@ -71,13 +70,18 @@ never invoked by CI.
 
 ## Known exclusions
 
-`jest.config.js` `testPathIgnorePatterns` removes **18 test files** from `npm test`,
-covering all orders, all shop, auth lifecycle, 2FA, products, customers, usage
-metering and notification controllers. A `grep` for `.skip` finds nothing, because
-the exclusion is config, not code. Enumerated in
-`WHOLE_APP_TEST_SYSTEM_VALIDATION.md` §25.
+**Resolved.** `jest.config.js` `testPathIgnorePatterns` used to remove **18 test
+files** from `npm test` — all orders, all shop, auth lifecycle, 2FA, products,
+customers, usage metering and notification controllers. A `grep` for `.skip`
+found nothing, because the exclusion was config, not code.
 
-Treat `npm test` green as "the 129 included files pass", not "the backend passes".
+Membership is now by filename, and `scripts/check-test-discovery.js` fails the
+build if any tracked test file has zero homes or more than one. The only tests
+that do not count as coverage are the ones listed in `tests/quarantine.json`,
+each with its cause and its repair, under a ceiling that only goes down.
+
+Run `npm run test:discovery` for the current count. Treat a green `npm test` as
+covering everything except that register.
 
 ---
 
