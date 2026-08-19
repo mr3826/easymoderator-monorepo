@@ -23,6 +23,52 @@ const { cacheRedis } = require('../../config/redis');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVATION_CLAIM_TTL_SECONDS = 5 * 60;
 
+const writeActivation = async (shop, shopId, conversationId) => {
+    const sequelize = Shop.sequelize;
+    const activatedAt = new Date().toISOString();
+
+    // The production schema stores settings as JSONB. Update only the
+    // activation path in one SQL statement so a concurrent merchant settings
+    // write cannot be replaced by a stale full-object snapshot.
+    if (sequelize?.getDialect?.() === 'postgres') {
+        const activation = JSON.stringify({
+            activated_at: activatedAt,
+            first_conversation_id: conversationId || null,
+        });
+        const escapedActivation = sequelize.escape(activation);
+        const [updatedCount] = await Shop.update(
+            {
+                settings: sequelize.literal(
+                    `COALESCE("settings", '{}'::jsonb) || jsonb_build_object('activation', ${escapedActivation}::jsonb)`,
+                ),
+            },
+            {
+                where: {
+                    [Op.and]: [
+                        { id: shopId },
+                        sequelize.literal(`("settings"->'activation'->>'activated_at') IS NULL`),
+                    ],
+                },
+            },
+        );
+        return updatedCount === 1;
+    }
+
+    // SQLite-backed development/tests do not have the production JSONB
+    // operator. Keep the local fallback for those environments; production
+    // uses the atomic branch above.
+    await shop.update({
+        settings: {
+            ...normalizeSettings(shop.settings),
+            activation: {
+                activated_at: activatedAt,
+                first_conversation_id: conversationId || null,
+            },
+        },
+    });
+    return true;
+};
+
 const normalizeSettings = (settings) => {
     if (!settings) return {};
     if (typeof settings === 'object') return settings;
@@ -70,18 +116,11 @@ const recordActivation = async (shopId, conversationId = null) => {
             return;
         }
 
-        await shop.update({
-            settings: {
-                ...settings,
-                activation: {
-                    activated_at: new Date().toISOString(),
-                    first_conversation_id: conversationId || null,
-                },
-            },
-        });
-        activationConfirmed = true;
-    } catch (_) {
-        // best-effort — swallow so a reply is never blocked by metrics bookkeeping
+        activationConfirmed = await writeActivation(shop, shopId, conversationId);
+    } catch (err) {
+        // Best-effort — swallow so a reply is never blocked by metrics
+        // bookkeeping, but retain a sanitized operational signal.
+        console.error('Growth activation write failed:', { name: err?.name, code: err?.code });
     } finally {
         if (claimed) {
             try {

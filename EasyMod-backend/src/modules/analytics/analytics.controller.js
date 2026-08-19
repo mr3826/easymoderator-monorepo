@@ -43,7 +43,11 @@ class AnalyticsController {
 
             res.status(200).json({ success: true, data: { id: row.id } });
         } catch (error) {
-            console.error('Log funnel event error:', error);
+            console.error('Log funnel event error:', {
+                name: error?.name,
+                code: error?.code,
+                statusCode: error?.statusCode,
+            });
             res.status(error.statusCode || 500).json({
                 success: false,
                 error: { code: 'FUNNEL_EVENT_ERROR', message: 'Failed to log funnel event' }

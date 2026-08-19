@@ -1,6 +1,9 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { RedisStore } = require('rate-limit-redis');
 const { body } = require('express-validator');
+const config = require('../../config/config');
+const { rateLimitRedis } = require('../../config/redis');
 const AnalyticsController = require('./analytics.controller');
 const growthMetrics = require('./growth-metrics.service');
 const { validateFunnelEvent } = require('./analytics.validator');
@@ -10,17 +13,39 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { QueryTypes } = require('sequelize');
 
 const router = express.Router();
+
+const buildAnalyticsRateLimitStore = (prefix) => {
+    // Keep unit tests deterministic and use the shared Redis-backed store in
+    // deployed environments. Production configuration requires REDIS_URL;
+    // development/staging can still use the documented single-process
+    // fallback when Redis is intentionally absent.
+    if (config.env === 'test') return undefined;
+    if (!rateLimitRedis || rateLimitRedis._isMemoryFallback || typeof rateLimitRedis.call !== 'function') {
+        return undefined;
+    }
+    try {
+        return new RedisStore({
+            prefix,
+            sendCommand: (...args) => rateLimitRedis.call(...args),
+        });
+    } catch (_) {
+        return undefined;
+    }
+};
+
 const knowledgeGapWriteLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    store: buildAnalyticsRateLimitStore('rl:analytics-knowledge-gap:'),
 });
 const publicFunnelWriteLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    store: buildAnalyticsRateLimitStore('rl:analytics-funnel:'),
     message: {
         success: false,
         error: {
@@ -66,13 +91,13 @@ router.get('/', authenticate, async (req, res) => {
              JOIN conversations c ON c.id = m.conversation_id
              WHERE c.shop_id = :shopId AND m.created_at >= :since`,
             { replacements: { shopId, since }, type: QueryTypes.SELECT }
-        ).catch(() => [{ total_messages: 0 }]);
+        );
 
         // Count knowledge-gap logs as a proxy for unanswered (llm) calls
         const [gapRow] = await sequelize.query(
             `SELECT COUNT(id) AS llm_calls FROM knowledge_gaps WHERE shop_id = :shopId AND created_at >= :since`,
             { replacements: { shopId, since }, type: QueryTypes.SELECT }
-        ).catch(() => [{ llm_calls: 0 }]);
+        );
 
         const total_messages = parseInt(msgRow?.total_messages) || 0;
         const llm_calls = parseInt(gapRow?.llm_calls) || 0;
@@ -88,7 +113,14 @@ router.get('/', authenticate, async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ success: false, error: { code: 'ANALYTICS_ERROR', message: err.message } });
+        console.error('Analytics summary error:', { name: err?.name, code: err?.code });
+        res.status(503).json({
+            success: false,
+            error: {
+                code: 'ANALYTICS_ERROR',
+                message: 'Analytics are temporarily unavailable.',
+            },
+        });
     }
 });
 
@@ -129,7 +161,14 @@ router.get('/growth', authenticate, requireGrowthOsAccess('growth_os.reports.rea
         const data = await growthMetrics.getGrowthMetrics();
         res.json({ success: true, data });
     } catch (err) {
-        res.status(500).json({ success: false, error: { code: 'GROWTH_METRICS_ERROR', message: err.message } });
+        console.error('Growth metrics error:', { name: err?.name, code: err?.code });
+        res.status(503).json({
+            success: false,
+            error: {
+                code: 'GROWTH_METRICS_ERROR',
+                message: 'Growth metrics are temporarily unavailable.',
+            },
+        });
     }
 });
 

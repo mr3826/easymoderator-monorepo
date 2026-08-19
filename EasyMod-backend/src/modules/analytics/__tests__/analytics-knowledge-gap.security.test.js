@@ -133,4 +133,41 @@ describe('growth analytics authorization', () => {
 
         expect(growthMetrics.getGrowthMetrics).toHaveBeenCalledTimes(1);
     });
+
+    test('returns a sanitized unavailable response when Growth metrics fail', async () => {
+        growthMetrics.getGrowthMetrics.mockRejectedValueOnce(new Error('database connection details'));
+
+        const response = await request(app())
+            .get('/api/analytics/growth')
+            .set('authorization', 'Bearer merchant-shop-one')
+            .set('x-growth-permission', 'growth_os.reports.read_all')
+            .expect(503);
+
+        expect(response.body).toEqual({
+            success: false,
+            error: {
+                code: 'GROWTH_METRICS_ERROR',
+                message: 'Growth metrics are temporarily unavailable.',
+            },
+        });
+        expect(JSON.stringify(response.body)).not.toContain('database connection details');
+    });
+
+    test('does not turn analytics query failures into zero-valued success data', async () => {
+        mockSequelize.query.mockRejectedValueOnce(new Error('analytics database details'));
+
+        const response = await request(app())
+            .get('/api/analytics')
+            .set('authorization', 'Bearer merchant-shop-one')
+            .expect(503);
+
+        expect(response.body).toEqual({
+            success: false,
+            error: {
+                code: 'ANALYTICS_ERROR',
+                message: 'Analytics are temporarily unavailable.',
+            },
+        });
+        expect(JSON.stringify(response.body)).not.toContain('analytics database details');
+    });
 });
