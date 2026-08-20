@@ -1,6 +1,6 @@
 # Growth OS Execution State
 
-Updated: 2026-08-20
+Updated: 2026-08-21
 
 ## Current execution
 
@@ -206,7 +206,7 @@ does not rebuild the already-merged prospect foundation.
 - `REPOSITORY_VISIBILITY`: `PUBLIC — verified with gh repo view`
 - `HARDENING_PRODUCTION_CHANGED`: `NO`
 - `HARDENING_DNS_CHANGED`: `NO`
-- `HARDENING_BROWSER_E2E`: `OPEN — no live host or Playwright dependency`
+- `HARDENING_BROWSER_E2E`: `PASS locally — disposable Chromium gate passed; live Growth-origin browser/DNS/TLS remains open`
 - Server enforcement now restricts marketer source rows, redacts notes/metadata
   and timeline private fields, gates linkage suggestions, permits read-assigned
   without mutation permission, requires active Growth roles for owners, and
@@ -226,6 +226,12 @@ does not rebuild the already-merged prospect foundation.
   `20260820_003` and importer re-linking; Growth frontend gate **6 files, 34
   tests passed with TypeScript check**; Growth production build passed; merchant
   frontend gate **59 files, 483 tests passed**; backend syntax/build passed.
+- Disposable Growth browser gate: `npm run test:growthos:e2e` passed **12 of 12
+  Chromium scenarios** across prospect workflows, role/scoped permissions,
+  mocked and real failure states, and 390px/768px/1440px responsive layouts.
+  The runner completed migrations and fixture seeding against disposable
+  PostgreSQL/Redis services and removed the owned containers, volumes, and
+  network during teardown; no production service or data was touched.
 - `HARDENING_REMOTE_CI`: `PASS — PR #42 Growth OS build, historical secret scan, and production dependency audit passed; image publication skipped`
 - The hardening branch remains separate from the Phase 2 Cloudflare credential
   recovery and release verdict block above. No DNS, deploy, bootstrap, or
@@ -239,7 +245,7 @@ does not rebuild the already-merged prospect foundation.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; the Growth image was published and the later production preflight was read-only.
-- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified; the local disposable browser gate is not a live-host receipt.
 
 ## Phase 3 implementation
 
@@ -285,10 +291,10 @@ The gates are intentionally separate:
 - `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE`
 - `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; this hardening draft addresses them`
 - `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation complete; remote CI remains pending until a draft PR exists`
-- `PHASE_3_BROWSER_E2E_GATE`: `OPEN — browser E2E remains deferred with the live-delivery gate`
+- `PHASE_3_BROWSER_E2E_GATE`: `PASS locally — 12 disposable Chromium scenarios passed; live Growth-origin browser/DNS/TLS remains OPEN`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 implementation is complete for the local development gate. The
-outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, production
-delivery, and full browser E2E gates remain open and must not be represented as
-passed by this phase.
+Phase 3 implementation and the disposable local browser gate are complete for
+the local development gate. The outstanding live Growth-origin browser/DNS/TLS,
+operator bootstrap, and production delivery gates remain open and must not be
+represented as passed by this phase.

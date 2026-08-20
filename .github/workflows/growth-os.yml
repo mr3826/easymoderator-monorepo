@@ -13,15 +13,21 @@ on:
     branches: [main]
     paths:
       - "EasyMod-growth/**"
+      - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
       - "package.json"
       - "package-lock.json"
+      - "scripts/run-growth-e2e.js"
+      - "docker-compose.test.yml"
       - ".github/workflows/growth-os.yml"
   pull_request:
     branches: [main]
     paths:
       - "EasyMod-growth/**"
+      - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
       - "package.json"
       - "package-lock.json"
+      - "scripts/run-growth-e2e.js"
+      - "docker-compose.test.yml"
       - ".github/workflows/growth-os.yml"
   workflow_dispatch:
 
@@ -68,10 +74,69 @@ jobs:
       - name: Build
         run: npm run build --workspace=easymod-growth
 
+  browser-e2e:
+    name: Growth OS browser E2E gate
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: easymod_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U e2e -d easymod_e2e"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run disposable-stack browser gate
+        env:
+          TEST_POSTGRES_PORT: 5432
+          TEST_REDIS_PORT: 6379
+          GROWTH_E2E_USE_EXISTING_SERVICES: "true"
+        run: npm run test:growthos:e2e
+
+      - name: Upload Growth browser artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: growth-os-browser-e2e
+          path: |
+            EasyMod-growth/playwright-report/
+            EasyMod-growth/test-results/
+          if-no-files-found: ignore
+
   build-and-push:
     name: Build and publish Growth OS image
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, browser-e2e]
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
