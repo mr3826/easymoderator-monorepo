@@ -202,7 +202,7 @@ does not rebuild the already-merged prospect foundation.
 
 - `HARDENING_BRANCH`: `codex/growth-os-phase-3-prospect-hardening`
 - `HARDENING_BASE`: `930005db170761a472576e597df900bc77dc67bd`
-- `HARDENING_PR_STATE`: `DRAFT_ONLY — not pushed or opened from this session`
+- `HARDENING_PR_STATE`: `DRAFT — PR #42 open; not merged`
 - `REPOSITORY_VISIBILITY`: `PUBLIC — verified with gh repo view`
 - `HARDENING_PRODUCTION_CHANGED`: `NO`
 - `HARDENING_DNS_CHANGED`: `NO`
@@ -226,7 +226,7 @@ does not rebuild the already-merged prospect foundation.
   `20260820_003` and importer re-linking; Growth frontend gate **6 files, 34
   tests passed with TypeScript check**; Growth production build passed; merchant
   frontend gate **59 files, 483 tests passed**; backend syntax/build passed.
-- `HARDENING_REMOTE_CI`: `PENDING — no draft PR was pushed or opened from this session`
+- `HARDENING_REMOTE_CI`: `PENDING — PR #42 remote checks not yet complete`
 - The hardening branch remains separate from the Phase 2 Cloudflare credential
   recovery and release verdict block above. No DNS, deploy, bootstrap, or
   production data action is authorized by this draft.
