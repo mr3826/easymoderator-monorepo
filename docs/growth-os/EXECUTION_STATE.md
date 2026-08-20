@@ -138,6 +138,18 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed.
 - Remote CI and draft PR checks passed on PR #35. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
 
-## Next phase
+## Phase 3 development and release gates
 
-Phase 3 — prospect/lead foundation is deferred. It must not start until this Phase 2 branch has passed its required remote and runtime release gates and the Phase 2 access foundation is explicitly accepted.
+The gates are intentionally separate:
+
+- `PHASE_2_IMPLEMENTATION_GATE`: `PASS`
+- `PHASE_2_MERGE_GATE`: `PENDING — PR #35 must be merged and verified on main`
+- `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
+- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `PHASE_2_MERGE_ONLY`
+- `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
+
+Phase 3 is not started. It may begin from a fresh worktree after PR #35 is
+merged and its squash result plus Phase 2 evidence are verified on `main`.
+The outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, and
+production delivery gates remain release blockers and must not be treated as
+Phase 3 development prerequisites.

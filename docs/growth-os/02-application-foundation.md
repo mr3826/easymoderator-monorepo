@@ -418,15 +418,28 @@ Data safety:
 
 ## Prompt 3 Readiness
 
-Phase 3 is not started. It remains gated on acceptance of the Phase 2 access/runtime/release evidence in `EXECUTION_STATE.md`.
+Phase 3 is not started. Its development gate is the Phase 2 merge gate, not
+the separate production-release gate. Start it only from a fresh worktree
+after PR #35 is merged and its squash result plus Phase 2 evidence are
+verified on `main`.
 
-Phase 3 entry criteria, after the Phase 2 release gate is accepted, include:
+The bounded implementation/runtime evidence already covers migration
+compatibility, real PostgreSQL/Redis authorization and failure behavior,
+direct API denial, and merchant regression. The remaining production-release
+gates are:
 
-1. `growth_os_user_roles` migration is applied locally or in staging.
-2. At least one internal user is bootstrapped as `FOUNDER`.
-3. Real PostgreSQL/Redis authorization, revocation, and dependency-failure checks pass.
-4. `http://localhost:5174` or `https://growth.easymod.tech` opens the Growth OS shell for the authorized user.
-5. A merchant account receives access denied through direct API and browser paths.
-6. The merchant dashboard remains unchanged.
+1. an internal operator is bootstrapped as `FOUNDER` through an approved
+   production runbook;
+2. `https://growth.easymod.tech` is validated in a real browser for the
+   authorized and unauthorized access matrix, including DNS/TLS and cookie
+   behavior;
+3. the production delivery path is executed and independently verified.
+
+These must keep the overall Growth OS release verdict at `NO-GO` until closed;
+they are not Phase 3 development prerequisites.
+
+Live Growth-origin browser/DNS/TLS validation, operator bootstrap, and
+production delivery proof remain release blockers even while Phase 3
+development proceeds after the merge gate.
 
 Prompt 3 should implement only the prospect and lead foundation under the existing Growth OS boundary.
