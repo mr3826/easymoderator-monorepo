@@ -4,12 +4,12 @@ Updated: 2026-08-20
 
 ## Current execution
 
-- `CURRENT_MAIN`: `7ad012d0312dbf157b25dc2ff73e4faa4e661bcf`
-- `BASE_MAIN`: latest `origin/main` after PR #35 squash merge
+- `CURRENT_MAIN`: `974533af5e9783100dbf7db8b00f775623e3d5a1`
+- `BASE_MAIN`: latest `origin/main` after PR #37 squash merge
 - `WORKTREE`: `D:\easymod\easy-moderator-phase-3`
-- `BRANCH`: `codex/growth-os-phase-3-prospect-ledger`
+- `BRANCH`: `codex/growth-os-phase-3-release-state`
 - `PHASE`: Phase 3 — Prospect / lead foundation
-- `STATUS`: implementation complete; local validation evidence recorded below
+- `STATUS`: merged; live release evidence remains blocked and is recorded below
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -154,11 +154,31 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - Backend syntax/build check: passed.
 - Fresh bootstrap smoke check: passed; prospect tables were absent before the
   migration and both migrated tables contained the required `CHECK` constraints.
-- Complete backend unit gate: **169 suites, 2,004 tests passed**.
+- Complete backend unit gate: **170 suites, 2,006 tests passed** (including the
+  Growth role bootstrap CLI check).
 - Backend security gate: **29 suites, 198 tests passed**.
 - Focused auth/analytics/Growth regression: **11 suites, 92 tests passed**.
-- Backend test discovery: **176 tracked files, 176 with exactly one execution
+- Backend test discovery: **177 tracked files, 177 with exactly one execution
   home**; 2 quarantined files remain within the existing allowance.
+
+## Phase 3 merge and post-merge release evidence
+
+- `PR_37_STATE`: `MERGED`
+- `PR_37_HEAD`: `0f09704` (`feat(growth-os): ship prospect ledger and operator bootstrap`)
+- `PR_37_MERGE_SHA`: `974533af5e9783100dbf7db8b00f775623e3d5a1`
+- PR #37 remote gates passed: Test & Build Gate, PostgreSQL/Redis integration,
+  Meta-shaped E2E, security scan, Growth OS build, deployment dry run, and
+  no-push Docker validation.
+- Growth image publication run `32353042939` passed after the merge.
+- `GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:27ab4c4ce1067d5e131786e86333b62a1d512c156c14318139f54cc66b769f26`
+- `GROWTH_DNS_TLS_GATE`: `OPEN` — `growth.easymod.tech` still returns NXDOMAIN;
+  the available Cloudflare API token returned authentication error `10000`, so
+  no DNS record was changed.
+- `FIRST_GROWTH_ROLLOUT`: `NOT RUN` — the image is published but not pinned on
+  the droplet; `PRODUCTION_DEPLOY_ENABLED` remains `false`.
+- `OPERATOR_BOOTSTRAP`: `NOT RUN` — no Founder target credentials or live
+  authenticated bootstrap session were available.
+- `PHASE_3_BROWSER_WALKTHROUGH`: `NOT RUN` — the host is not live.
 
 ## Known limitations and pre-existing debt
 
@@ -167,8 +187,8 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - The two existing quarantine suites remain unrelated debt: the chatbot suite currently assumes a legacy route, and the smart-payment suite requires an unsupported CommonJS/ESM Chai load. They remain within the tracked quarantine allowance and were not changed by Phase 3.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
-- No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed.
-- Remote CI and draft PR checks passed on PR #35. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+- No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; only the Growth image was published.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
 
 ## Phase 3 implementation
 
