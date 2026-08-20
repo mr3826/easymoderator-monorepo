@@ -164,6 +164,3 @@ Phase 3 is not started. It may now begin from a fresh worktree based on the
 verified `main` commit above. The outstanding live Growth-origin browser/DNS/TLS,
 operator bootstrap, and production delivery gates remain release blockers and
 must not be treated as Phase 3 development prerequisites.
-The outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, and
-production delivery gates remain release blockers and must not be treated as
-Phase 3 development prerequisites.
