@@ -9,8 +9,8 @@ Updated: 2026-08-20
 - `WORKTREE`: `D:\easymod\.codex-worktrees\growth-os-phase-2-access-foundation`
 - `BRANCH`: `codex/growth-os-phase-2-access-foundation`
 - `PHASE`: Phase 2 — Make the access foundation releasable
-- `STATUS`: bounded implementation and local runtime gate complete; remote PR gate pending
-- `RELEASE_STATUS`: NO-GO until required remote CI and live/browser delivery evidence are complete
+- `STATUS`: bounded implementation and local/remote validation gates complete; live/browser delivery evidence pending
+- `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
 ## Phase 1 base proof
@@ -82,7 +82,7 @@ Growth OS reuses EasyModerator's authenticated JWT/httpOnly-cookie identity and 
 | Authentication | COMPLETE for bounded gate | Shared JWT/cookie auth, token-version and blacklist checks; invalid/expired claims return `401`; revocation-store failures return sanitized `503`. | Live browser/session proof remains outside the local gate. |
 | Internal Growth authorization | COMPLETE for bounded gate | Explicit six-role table, permission policy, default-deny middleware, MFA assurance for Founder/Growth Manager. | Operator bootstrap and production enablement remain separate gates. |
 | Frontend route protection | PARTIAL | Growth provider/route guard reflects `401`, `403`, `503`, refresh, and logout failure states. | Live cross-origin browser verification is not available in this worktree. |
-| Backend Growth APIs | COMPLETE for bounded gate | Session and analytics routes enforce backend auth; role mutation routes require `growth_os.roles.manage`. | Remote CI still pending. |
+| Backend Growth APIs | COMPLETE for bounded gate | Session and analytics routes enforce backend auth; role mutation routes require `growth_os.roles.manage`; remote Test & Build Gate passed. | No live host proof. |
 | Direct endpoint bypass | COMPLETE | Real integration and mocked security tests call protected endpoints directly; merchant calls receive `403`. | No live host proof. |
 | Tenant/resource isolation | COMPLETE for current surface | Merchant tokens with forged frontend claims and foreign shop IDs remain denied; no current Growth resource-ID lookup exists. | Future resource APIs require new IDOR tests. |
 | Privileged mutations | COMPLETE for bounded gate | Founder-only grant/revoke policy, input validation, transaction, last-Founder guard, cache invalidation, and audit rows. | No role-management UI; API is intentionally internal. |
@@ -92,7 +92,7 @@ Growth OS reuses EasyModerator's authenticated JWT/httpOnly-cookie identity and 
 | Redis runtime | COMPLETE locally | Disposable Redis supports role cache, invalidation, startup probe, and strict authorization cache operations; outage path returns `503`. | No production Redis was touched. |
 | Phase 1 telemetry/error contract | COMPLETE | Phase 1 focused analytics suites pass after Phase 2 changes; sanitized dependency failures and idempotency behavior remain intact. | None identified in the bounded suite. |
 | Deployment/readiness | COMPLETE for config gate | Caddy validates; Growth frontend has exact health/readiness paths and Compose healthcheck; Growth host rejects unsupported API paths with `404`. | Live DNS/TLS/host checks remain unverified. |
-| Remote CI/build gate | PENDING | Draft PR will run repository workflows on the pushed head. | Must be green before release verdict can change. |
+| Remote CI/build gate | COMPLETE for bounded gate | Draft PR #35 remote checks passed: Test & Build Gate, backend PostgreSQL/Redis integration, Meta-shaped E2E, Growth build, secret scan, dependency audit, deployment dry run, and no-push Docker validation; publish/deploy jobs were skipped. | Live delivery proof is still required for release. |
 
 ## Phase 2 implementation
 
@@ -136,7 +136,7 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - Meta-E2E remains a known empty/disabled discovery debt, including the orphan `tests/meta-e2e/meta-e2e.test.js`; it is not a Phase 2 implementation failure.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed.
-- Remote CI, draft PR checks, and live Growth-origin browser parity remain pending until the branch is pushed and independently exercised.
+- Remote CI and draft PR checks passed on PR #35. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
 
 ## Next phase
 
