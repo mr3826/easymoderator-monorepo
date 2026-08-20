@@ -1,9 +1,11 @@
 import { LogOut, PanelLeft, ShieldCheck, UsersRound } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
+import { PROSPECT_READ_PERMISSIONS, usePermission } from '@/auth/usePermission';
 
 export function GrowthShell() {
   const { session, error, logout } = useGrowthAuth();
+  const canReadProspects = usePermission(PROSPECT_READ_PERMISSIONS);
 
   return (
     <div className="app-frame">
@@ -21,10 +23,12 @@ export function GrowthShell() {
             <PanelLeft aria-hidden="true" />
             <span>Overview</span>
           </NavLink>
-          <NavLink className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} to="/prospects">
-            <UsersRound aria-hidden="true" />
-            <span>Prospects</span>
-          </NavLink>
+          {canReadProspects ? (
+            <NavLink className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} to="/prospects">
+              <UsersRound aria-hidden="true" />
+              <span>Prospects</span>
+            </NavLink>
+          ) : null}
         </nav>
       </aside>
 

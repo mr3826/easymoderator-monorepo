@@ -7,6 +7,7 @@ const { authenticate } = require('../../middleware/auth.middleware');
 const validate = require('../../middleware/validate.middleware');
 const { AppError } = require('../../utils/AppError');
 const { requireGrowthOsAccess } = require('./growth-os.middleware');
+const { hasProspectReadAccess } = require('./growth-os.prospect.scope');
 const ctrl = require('./growth-os.controller');
 const roleCtrl = require('./growth-os.roles.controller');
 const prospectCtrl = require('./growth-os.prospect.controller');
@@ -14,11 +15,6 @@ const prospectValidator = require('./growth-os.prospect.validator');
 
 const router = express.Router();
 
-const prospectReadPermissions = [
-  'growth_os.prospects.read_all',
-  'growth_os.prospects.read_assigned',
-  'growth_os.prospects.read_source_scope',
-];
 const prospectMutationPermissions = [
   'growth_os.prospects.manage_all',
   'growth_os.prospects.update_assigned',
@@ -71,7 +67,7 @@ router.delete('/roles/:userId', requireGrowthOsAccess('growth_os.roles.manage'),
 
 router.get(
   '/prospects',
-  requireGrowthOsAccess(prospectReadPermissions),
+  requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.listProspects),
   prospectCtrl.listProspects,
 );
@@ -86,14 +82,14 @@ router.post(
 router.get(
   '/prospects/duplicate-check',
   prospectLookupLimiter,
-  requireGrowthOsAccess(prospectReadPermissions),
+  requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.duplicateCheck),
   prospectCtrl.checkDuplicates,
 );
 
 router.get(
   '/prospects/:id',
-  requireGrowthOsAccess(prospectReadPermissions),
+  requireGrowthOsAccess(hasProspectReadAccess),
   validateProspect(prospectValidator.idParams),
   prospectCtrl.getProspect,
 );
@@ -129,7 +125,7 @@ router.post(
 router.get(
   '/prospects/:id/linkage-suggestions',
   prospectLookupLimiter,
-  requireGrowthOsAccess(prospectReadPermissions),
+  requireGrowthOsAccess('growth_os.prospects.manage_all'),
   validateProspect(prospectValidator.linkageSuggestions),
   prospectCtrl.linkageSuggestions,
 );

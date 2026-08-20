@@ -23,6 +23,14 @@ const PROSPECT_SOURCES = Object.freeze([
   'other',
 ]);
 
+const MARKETING_SOURCES = Object.freeze([
+  'self_signup',
+  'partner_form',
+  'referral_mention',
+  'inbound_message',
+  'event',
+]);
+
 const ALLOWED_TRANSITIONS = Object.freeze({
   new: Object.freeze(['contacted', 'disqualified', 'unreachable']),
   contacted: Object.freeze(['qualifying', 'disqualified', 'unreachable']),
@@ -75,6 +83,7 @@ function assertTransition(fromStatus, toStatus) {
 module.exports = {
   PROSPECT_STATUSES,
   PROSPECT_SOURCES,
+  MARKETING_SOURCES,
   PROSPECT_EVENT_TYPES,
   ALLOWED_TRANSITIONS,
   isProspectStatus,

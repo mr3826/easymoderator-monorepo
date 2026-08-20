@@ -36,6 +36,17 @@ export const PROSPECT_STATUSES = [
 
 export type ProspectStatus = typeof PROSPECT_STATUSES[number];
 
+export const PROSPECT_ALLOWED_TRANSITIONS: Record<ProspectStatus, readonly ProspectStatus[]> = {
+  new: ['contacted', 'disqualified', 'unreachable'],
+  contacted: ['qualifying', 'disqualified', 'unreachable'],
+  qualifying: ['qualified', 'disqualified', 'unreachable'],
+  qualified: ['converted', 'disqualified', 'unreachable'],
+  disqualified: ['qualifying'],
+  unreachable: ['contacted'],
+  converted: [],
+  merged: [],
+};
+
 export const PROSPECT_SOURCES = [
   'self_signup',
   'partner_form',
@@ -75,7 +86,7 @@ export interface ProspectListItem {
   mergedIntoId: string | null;
   mergedAt: string | null;
   createdBy: string | null;
-  metadata: ProspectMetadata;
+  metadata: ProspectMetadata | null;
   createdAt: string;
   updatedAt: string;
   eligibleForNextPhase: boolean;
@@ -90,12 +101,18 @@ export interface ProspectTimelineEvent {
   toValue: string | null;
   reason: string | null;
   changedFields: string[];
-  metadata: ProspectMetadata;
+  metadata: ProspectMetadata | null;
   createdAt: string;
 }
 
 export interface Prospect extends ProspectListItem {
   timeline: ProspectTimelineEvent[];
+  timelinePagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 export interface ProspectLinkageSuggestion {
@@ -125,14 +142,14 @@ export interface ProspectListFilters {
 
 export interface ProspectFormPayload {
   businessName: string;
-  contactName?: string;
-  contactPhone?: string;
-  contactEmail?: string;
-  pageUrl?: string;
-  niche?: string;
-  notes?: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  pageUrl?: string | null;
+  niche?: string | null;
+  notes?: string | null;
   source: ProspectSource;
-  sourceDetail?: string;
+  sourceDetail?: string | null;
 }
 
 export type ProspectUpdatePayload = Partial<ProspectFormPayload>;
@@ -341,9 +358,15 @@ export const growthApi = {
     return payload.data;
   },
 
-  async getProspect(id: string): Promise<Prospect> {
+  async getProspect(id: string, pagination: { timelinePage?: number; timelinePageSize?: number } = {}): Promise<Prospect> {
+    const params = new URLSearchParams();
+    if (pagination.timelinePage) params.set('timelinePage', String(Math.max(1, Math.floor(pagination.timelinePage))));
+    if (pagination.timelinePageSize) {
+      params.set('timelinePageSize', String(boundedPageSize(pagination.timelinePageSize)));
+    }
+    const query = params.toString();
     const payload = await request<{ success: true; data: Prospect }>(
-      `/api/internal/growth-os/prospects/${encodeURIComponent(id)}`,
+      `/api/internal/growth-os/prospects/${encodeURIComponent(id)}${query ? `?${query}` : ''}`,
     );
     return payload.data;
   },

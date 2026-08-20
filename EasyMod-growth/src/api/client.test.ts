@@ -90,6 +90,21 @@ describe('Growth API security contract', () => {
     expect(requestOptions.headers).not.toHaveProperty('X-CSRF-Token');
   });
 
+  it('serializes bounded timeline pagination on prospect detail requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, {
+      success: true,
+      data: {},
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await growthApi.getProspect('prospect-1', { timelinePage: 2, timelinePageSize: 250 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/internal/growth-os/prospects/prospect-1?timelinePage=2&timelinePageSize=100',
+      expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
   it('preserves the conflicting prospect ID from a 409 response', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(409, {
       success: false,

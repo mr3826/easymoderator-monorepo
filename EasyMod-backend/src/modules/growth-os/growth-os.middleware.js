@@ -87,12 +87,10 @@ function requireGrowthOsAccess(requiredPermission = 'growth_os.session.read') {
       }
 
       const access = await resolveGrowthOsAccess(userId);
-      const requiredPermissions = Array.isArray(requiredPermission)
-        ? requiredPermission
-        : [requiredPermission];
-      const hasRequiredPermission = requiredPermissions.some((permission) => (
-        hasPermission(access?.role, permission)
-      ));
+      const hasRequiredPermission = typeof requiredPermission === 'function'
+        ? requiredPermission(access)
+        : (Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission])
+          .some((permission) => hasPermission(access?.role, permission));
       if (!access || !hasRequiredPermission) {
         throw new AppError('Forbidden: Growth OS access required.', 403, 'GROWTH_OS_FORBIDDEN');
       }

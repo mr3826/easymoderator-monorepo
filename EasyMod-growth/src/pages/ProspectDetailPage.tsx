@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, CheckCircle2, GitMerge, Link2, RefreshCw, UserRound, Workflow } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import {
+  ApiError,
   growthApi,
-  PROSPECT_STATUSES,
+  PROSPECT_ALLOWED_TRANSITIONS,
   type Prospect,
   type ProspectLinkageSuggestion,
   type ProspectStatus,
@@ -11,6 +13,11 @@ import {
 import { usePermission } from '@/auth/usePermission';
 
 const REDACTED_CONTACT_FIELDS = new Set(['contactName', 'contactPhone', 'contactEmail', 'pageUrl']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value.trim());
+}
 
 function codeLabel(value: string) {
   return value.replace(/_/g, ' ');
@@ -71,7 +78,7 @@ function LoadingDetail() {
 }
 
 function TimelineEvent({ event }: { event: Prospect['timeline'][number] }) {
-  const metadataEntries = Object.entries(event.metadata);
+  const metadataEntries = Object.entries(event.metadata || {});
   return (
     <li className="timeline-item">
       <span className="timeline-marker" aria-hidden="true" />
@@ -100,6 +107,7 @@ function TimelineEvent({ event }: { event: Prospect['timeline'][number] }) {
 export function ProspectDetailPage() {
   const { prospectId } = useParams<{ prospectId: string }>();
   const navigate = useNavigate();
+  const { reportApiError } = useGrowthAuth();
   const [prospect, setProspect] = useState<Prospect | null>(null);
   const [linkageSuggestions, setLinkageSuggestions] = useState<ProspectLinkageSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -115,6 +123,7 @@ export function ProspectDetailPage() {
   const [mergeTargetId, setMergeTargetId] = useState('');
   const [mergeReason, setMergeReason] = useState('');
   const [busyAction, setBusyAction] = useState<'assign' | 'status' | 'link' | 'merge' | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const canManage = usePermission('growth_os.prospects.manage_all');
   const canUpdate = usePermission(['growth_os.prospects.manage_all', 'growth_os.prospects.update_assigned']);
@@ -132,10 +141,15 @@ export function ProspectDetailPage() {
     setLoading(true);
     setError(null);
     setActionError(null);
-    Promise.all([
-      growthApi.getProspect(prospectId),
-      growthApi.getProspectLinkageSuggestions(prospectId).catch(() => []),
-    ])
+    const suggestionsRequest = canManage
+      ? growthApi.getProspectLinkageSuggestions(prospectId).catch((suggestionError: unknown) => {
+        if (suggestionError instanceof ApiError && [401, 403, 503].includes(suggestionError.status)) {
+          throw suggestionError;
+        }
+        return [];
+      })
+      : Promise.resolve([] as ProspectLinkageSuggestion[]);
+    Promise.all([growthApi.getProspect(prospectId), suggestionsRequest])
       .then(([nextProspect, suggestions]) => {
         if (!active) return;
         setProspect(nextProspect);
@@ -146,10 +160,9 @@ export function ProspectDetailPage() {
         setStatusReason('');
       })
       .catch((requestError: unknown) => {
-        if (active) {
-          setProspect(null);
-          setError(messageFor(requestError, 'Unable to load this prospect.'));
-        }
+        if (!active || reportApiError(requestError)) return;
+        setProspect(null);
+        setError(messageFor(requestError, 'Unable to load this prospect.'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -158,13 +171,34 @@ export function ProspectDetailPage() {
     return () => {
       active = false;
     };
-  }, [prospectId, reloadToken]);
+  }, [canManage, prospectId, reloadToken, reportApiError]);
+
+  async function loadTimelinePage(page: number) {
+    if (!prospectId || !prospect?.timelinePagination) return;
+    setTimelineLoading(true);
+    setActionError(null);
+    try {
+      const nextProspect = await growthApi.getProspect(prospectId, {
+        timelinePage: page,
+        timelinePageSize: prospect.timelinePagination.pageSize,
+      });
+      setProspect(nextProspect);
+    } catch (requestError: unknown) {
+      if (!reportApiError(requestError)) setActionError(messageFor(requestError, 'Unable to load this timeline page.'));
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
 
   async function handleAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!prospectId) return;
     if (!assignmentReason.trim()) {
       setActionError('A reason is required when changing the owner.');
+      return;
+    }
+    if (ownerUserId.trim() && !isUuid(ownerUserId)) {
+      setActionError('Owner user ID must be a valid UUID.');
       return;
     }
     setBusyAction('assign');
@@ -176,6 +210,7 @@ export function ProspectDetailPage() {
       });
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
+      if (reportApiError(requestError)) return;
       setActionError(messageFor(requestError, 'Unable to update the prospect owner.'));
     } finally {
       setBusyAction(null);
@@ -185,8 +220,9 @@ export function ProspectDetailPage() {
   async function handleStatusTransition(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!prospectId || nextStatus === prospect?.status) return;
-    if (nextStatus === 'disqualified' && !statusReason.trim()) {
-      setActionError('A reason is required when disqualifying a prospect.');
+    if ((nextStatus === 'disqualified' || (prospect?.status === 'disqualified' && nextStatus === 'qualifying'))
+      && !statusReason.trim()) {
+      setActionError('A reason is required for this lifecycle transition.');
       return;
     }
     setBusyAction('status');
@@ -198,18 +234,27 @@ export function ProspectDetailPage() {
       });
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
+      if (reportApiError(requestError)) return;
       setActionError(messageFor(requestError, 'Unable to transition this prospect.'));
     } finally {
       setBusyAction(null);
     }
   }
 
-  async function handleLink(shopId?: string, userId?: string) {
+  async function handleLink(shopId?: string, userId?: string, unlink = false) {
     if (!prospectId) return;
     const nextShopId = shopId?.trim() || null;
     const nextUserId = userId?.trim() || null;
-    if (!nextShopId && !nextUserId) {
+    if (!nextShopId && !nextUserId && !unlink) {
       setActionError('Enter a shop ID or user ID to link this prospect.');
+      return;
+    }
+    if (nextShopId && !isUuid(nextShopId)) {
+      setActionError('Shop ID must be a valid UUID.');
+      return;
+    }
+    if (nextUserId && !isUuid(nextUserId)) {
+      setActionError('User ID must be a valid UUID.');
       return;
     }
     if (!linkReason.trim()) {
@@ -220,8 +265,9 @@ export function ProspectDetailPage() {
     setActionError(null);
     try {
       await growthApi.linkProspect(prospectId, {
-        ...(nextShopId ? { shopId: nextShopId } : {}),
-        ...(nextUserId ? { userId: nextUserId } : {}),
+        ...(unlink ? { shopId: null, userId: null } : {}),
+        ...(!unlink && nextShopId ? { shopId: nextShopId } : {}),
+        ...(!unlink && nextUserId ? { userId: nextUserId } : {}),
         reason: linkReason.trim(),
       });
       setLinkShopId('');
@@ -229,6 +275,7 @@ export function ProspectDetailPage() {
       setLinkReason('');
       setReloadToken((current) => current + 1);
     } catch (requestError: unknown) {
+      if (reportApiError(requestError)) return;
       setActionError(messageFor(requestError, 'Unable to update prospect linkage.'));
     } finally {
       setBusyAction(null);
@@ -248,6 +295,10 @@ export function ProspectDetailPage() {
       setActionError('Enter a different target prospect ID.');
       return;
     }
+    if (!isUuid(targetId)) {
+      setActionError('Target prospect ID must be a valid UUID.');
+      return;
+    }
     if (!mergeReason.trim()) {
       setActionError('A reason is required when merging prospects.');
       return;
@@ -261,6 +312,7 @@ export function ProspectDetailPage() {
       });
       navigate(`/prospects/${encodeURIComponent(result.targetProspect.id)}`, { replace: true });
     } catch (requestError: unknown) {
+      if (reportApiError(requestError)) return;
       setActionError(messageFor(requestError, 'Unable to merge this prospect.'));
     } finally {
       setBusyAction(null);
@@ -288,6 +340,7 @@ export function ProspectDetailPage() {
   const isMerged = prospect.status === 'merged';
   const statusClass = `status-${prospect.status.replace(/_/g, '-')}`;
   const timeline = prospect.timeline ?? [];
+  const allowedNextStatuses = PROSPECT_ALLOWED_TRANSITIONS[prospect.status];
 
   return (
     <main className="page-content detail-page" aria-labelledby="prospect-detail-title">
@@ -356,6 +409,27 @@ export function ProspectDetailPage() {
                 {timeline.map((event) => <TimelineEvent key={event.id} event={event} />)}
               </ol>
             )}
+            {prospect.timelinePagination && prospect.timelinePagination.totalPages > 1 ? (
+              <div className="button-row timeline-pagination" aria-label="Timeline pagination">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={timelineLoading || prospect.timelinePagination.page <= 1}
+                  onClick={() => void loadTimelinePage(prospect.timelinePagination.page - 1)}
+                >
+                  Previous
+                </button>
+                <span>Page {prospect.timelinePagination.page} of {prospect.timelinePagination.totalPages}</span>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={timelineLoading || prospect.timelinePagination.page >= prospect.timelinePagination.totalPages}
+                  onClick={() => void loadTimelinePage(prospect.timelinePagination.page + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
 
@@ -379,14 +453,15 @@ export function ProspectDetailPage() {
             {canUpdate && !isMerged ? (
               <form className="action-form" onSubmit={handleStatusTransition}>
                 <label htmlFor="next-status">
-                  Move to status
-                  <select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ProspectStatus)}>
-                    {PROSPECT_STATUSES.map((status) => <option key={status} value={status}>{codeLabel(status)}</option>)}
-                  </select>
-                </label>
-                <label htmlFor="status-reason">
-                  Reason <span className="field-hint-inline">required for disqualified</span>
-                  <textarea id="status-reason" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} rows={3} />
+                   Move to status
+                   <select id="next-status" value={nextStatus} onChange={(event) => setNextStatus(event.target.value as ProspectStatus)}>
+                     <option value={prospect.status}>{codeLabel(prospect.status)} (current)</option>
+                     {allowedNextStatuses.map((status) => <option key={status} value={status}>{codeLabel(status)}</option>)}
+                   </select>
+                 </label>
+                 <label htmlFor="status-reason">
+                   Reason <span className="field-hint-inline">required for disqualification and reopening</span>
+                   <textarea id="status-reason" value={statusReason} onChange={(event) => setStatusReason(event.target.value)} rows={3} maxLength={200} />
                 </label>
                 <button className="primary-button" type="submit" disabled={busyAction !== null || nextStatus === prospect.status}>
                   {busyAction === 'status' ? 'Updating' : 'Update lifecycle'}
@@ -413,11 +488,11 @@ export function ProspectDetailPage() {
               <form className="action-form" onSubmit={handleAssignment}>
                 <label htmlFor="owner-user-id">
                   Owner user ID
-                  <input id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} placeholder="Leave blank to unassign" />
+                   <input id="owner-user-id" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} placeholder="Leave blank to unassign" maxLength={36} />
                 </label>
                 <label htmlFor="assignment-reason">
                   Reason
-                  <textarea id="assignment-reason" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} rows={3} required />
+                   <textarea id="assignment-reason" value={assignmentReason} onChange={(event) => setAssignmentReason(event.target.value)} rows={3} maxLength={200} required />
                 </label>
                 <button className="primary-button" type="submit" disabled={busyAction !== null}>
                   {busyAction === 'assign' ? 'Saving' : 'Save owner'}
@@ -466,19 +541,29 @@ export function ProspectDetailPage() {
               <form className="action-form" onSubmit={handleManualLink}>
                 <label htmlFor="shop-link-id">
                   Shop ID
-                  <input id="shop-link-id" value={linkShopId} onChange={(event) => setLinkShopId(event.target.value)} />
+                   <input id="shop-link-id" value={linkShopId} onChange={(event) => setLinkShopId(event.target.value)} maxLength={36} />
                 </label>
                 <label htmlFor="link-user-id">
                   User ID
-                  <input id="link-user-id" value={linkUserId} onChange={(event) => setLinkUserId(event.target.value)} />
+                   <input id="link-user-id" value={linkUserId} onChange={(event) => setLinkUserId(event.target.value)} maxLength={36} />
                 </label>
                 <label htmlFor="link-reason">
                   Reason
-                  <textarea id="link-reason" value={linkReason} onChange={(event) => setLinkReason(event.target.value)} rows={3} required />
+                   <textarea id="link-reason" value={linkReason} onChange={(event) => setLinkReason(event.target.value)} rows={3} maxLength={200} required />
                 </label>
                 <button className="primary-button" type="submit" disabled={busyAction !== null}>
                   {busyAction === 'link' ? 'Linking' : 'Save linkage'}
                 </button>
+                {(prospect.linkedShopId || prospect.linkedUserId) ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busyAction !== null}
+                    onClick={() => void handleLink(undefined, undefined, true)}
+                  >
+                    {busyAction === 'link' ? 'Clearing' : 'Clear linkage'}
+                  </button>
+                ) : null}
               </form>
             ) : <p className="state-copy">{isMerged ? 'Merged records cannot be changed.' : 'Shop and user linkage is available to Growth Managers and Founders.'}</p>}
           </section>
@@ -496,11 +581,11 @@ export function ProspectDetailPage() {
               <form className="action-form" onSubmit={handleMerge}>
                 <label htmlFor="merge-target-id">
                   Target prospect ID
-                  <input id="merge-target-id" value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)} required />
+                   <input id="merge-target-id" value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)} maxLength={36} required />
                 </label>
                 <label htmlFor="merge-reason">
                   Reason
-                  <textarea id="merge-reason" value={mergeReason} onChange={(event) => setMergeReason(event.target.value)} rows={3} required />
+                   <textarea id="merge-reason" value={mergeReason} onChange={(event) => setMergeReason(event.target.value)} rows={3} maxLength={200} required />
                 </label>
                 <button className="secondary-button" type="submit" disabled={busyAction !== null}>
                   {busyAction === 'merge' ? 'Merging' : 'Merge record'}

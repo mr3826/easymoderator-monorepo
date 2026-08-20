@@ -134,7 +134,10 @@ const GrowthOsProspect = sequelize.define('GrowthOsProspect', {
       name: 'growth_os_prospects_source_reference_uq',
       unique: true,
       fields: ['source', 'source_reference'],
-      where: { source_reference: { [Op.ne]: null } },
+      where: {
+        source_reference: { [Op.ne]: null },
+        status: { [Op.ne]: 'merged' },
+      },
     },
   ],
 });

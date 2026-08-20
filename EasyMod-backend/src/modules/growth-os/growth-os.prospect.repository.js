@@ -1,6 +1,22 @@
 'use strict';
 
 const { Op } = require('sequelize');
+const { sanitizeErrorMessage } = require('../../utils/AppError');
+const { createLogger } = require('../../utils/structured-logger');
+
+const logger = createLogger('GrowthOsProspectRepository');
+
+function logRepositoryError(operation, error, context = {}) {
+  logger.error(`Growth OS prospect repository ${operation} failed`, {
+    ...context,
+    error: {
+      name: error?.name || 'Error',
+      message: sanitizeErrorMessage(error?.message || String(error)),
+      ...(error?.code ? { code: error.code } : {}),
+    },
+  });
+  throw error;
+}
 
 const PROSPECT_ATTRIBUTES = [
   'id',
@@ -40,10 +56,11 @@ function getModels() {
   const {
     GrowthOsProspect,
     GrowthOsProspectEvent,
+    GrowthOsUserRole,
     User,
     Shop,
   } = require('../entities');
-  return { GrowthOsProspect, GrowthOsProspectEvent, User, Shop };
+  return { GrowthOsProspect, GrowthOsProspectEvent, GrowthOsUserRole, User, Shop };
 }
 
 function scopedWhere(scope, where = {}) {
@@ -143,7 +160,11 @@ async function listProspects({ scope, filters = {}, page = 1, pageSize = 20, tra
     distinct: true,
   };
   if (transaction) options.transaction = transaction;
-  return GrowthOsProspect.findAndCountAll(options);
+  return GrowthOsProspect.findAndCountAll(options).catch((error) => logRepositoryError(
+    'list',
+    error,
+    { page, pageSize },
+  ));
 }
 
 async function findProspectById(prospectId, { scope, transaction, lock = false, include = true } = {}) {
@@ -155,7 +176,11 @@ async function findProspectById(prospectId, { scope, transaction, lock = false, 
   if (include) options.include = relationshipIncludes();
   if (transaction) options.transaction = transaction;
   if (lock && transaction) options.lock = transaction.LOCK?.UPDATE;
-  return GrowthOsProspect.findOne(options);
+  return GrowthOsProspect.findOne(options).catch((error) => logRepositoryError(
+    'find by id',
+    error,
+    { prospectId },
+  ));
 }
 
 function identityWhere(identity = {}) {
@@ -187,7 +212,7 @@ async function findDuplicateProspects(identity, {
     limit: 10,
   };
   if (transaction) options.transaction = transaction;
-  return GrowthOsProspect.findAll(options);
+  return GrowthOsProspect.findAll(options).catch((error) => logRepositoryError('find duplicates', error));
 }
 
 async function findBySourceReference(source, sourceReference, {
@@ -197,13 +222,21 @@ async function findBySourceReference(source, sourceReference, {
 } = {}) {
   if (!source || !sourceReference) return null;
   const { GrowthOsProspect } = getModels();
-  const where = { source, source_reference: sourceReference };
+  const where = {
+    source,
+    source_reference: sourceReference,
+    status: { [Op.ne]: 'merged' },
+  };
   if (excludeId) where.id = { [Op.ne]: excludeId };
   const options = {
     where: scopedWhere(scope, where),
   };
   if (transaction) options.transaction = transaction;
-  return GrowthOsProspect.findOne(options);
+  return GrowthOsProspect.findOne(options).catch((error) => logRepositoryError(
+    'find source reference',
+    error,
+    { source, excludeId },
+  ));
 }
 
 async function findConflict(identity, {
@@ -223,8 +256,15 @@ async function findConflict(identity, {
   return null;
 }
 
-async function listProspectEvents(prospectId, { scope, transaction } = {}) {
+async function listProspectEvents(prospectId, {
+  scope,
+  transaction,
+  page = 1,
+  pageSize = 20,
+} = {}) {
   const { GrowthOsProspect, GrowthOsProspectEvent, User } = getModels();
+  const boundedPage = Math.max(1, Number(page) || 1);
+  const boundedPageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
   const options = {
     where: { prospect_id: prospectId },
     include: [
@@ -238,22 +278,54 @@ async function listProspectEvents(prospectId, { scope, transaction } = {}) {
       {
         model: User,
         as: 'actor',
-        attributes: ['id', 'full_name', 'email'],
+        attributes: scope?.redacted ? ['id'] : ['id', 'full_name', 'email'],
         required: false,
       },
     ],
     order: [['created_at', 'ASC'], ['id', 'ASC']],
+    limit: boundedPageSize,
+    offset: (boundedPage - 1) * boundedPageSize,
+    distinct: true,
   };
   if (transaction) options.transaction = transaction;
-  return GrowthOsProspectEvent.findAll(options);
+  return GrowthOsProspectEvent.findAndCountAll(options).catch((error) => logRepositoryError(
+    'list events',
+    error,
+    { prospectId, page: boundedPage, pageSize: boundedPageSize },
+  ));
 }
 
-async function findUserById(userId, { transaction } = {}) {
+async function findUserById(userId, { transaction, lock = false } = {}) {
   if (!userId) return null;
   const { User } = getModels();
   const options = { attributes: ['id', 'full_name', 'email', 'phone'] };
   if (transaction) options.transaction = transaction;
-  return User.findByPk(userId, options);
+  if (lock && transaction) options.lock = transaction.LOCK?.UPDATE;
+  return User.findByPk(userId, options).catch((error) => logRepositoryError(
+    'find user',
+    error,
+    { userId },
+  ));
+}
+
+async function findActiveGrowthRoleForUser(userId, { transaction, lock = false } = {}) {
+  if (!userId) return null;
+  const { GrowthOsUserRole } = getModels();
+  const options = {
+    where: {
+      user_id: userId,
+      is_active: true,
+      revoked_at: { [Op.is]: null },
+    },
+    attributes: ['id', 'user_id', 'role'],
+  };
+  if (transaction) options.transaction = transaction;
+  if (lock && transaction) options.lock = transaction.LOCK?.UPDATE;
+  return GrowthOsUserRole.findOne(options).catch((error) => logRepositoryError(
+    'find active Growth role',
+    error,
+    { userId },
+  ));
 }
 
 async function findShopById(shopId, { transaction } = {}) {
@@ -261,7 +333,11 @@ async function findShopById(shopId, { transaction } = {}) {
   const { Shop } = getModels();
   const options = { attributes: ['id', 'name', 'shop_name', 'is_active'] };
   if (transaction) options.transaction = transaction;
-  return Shop.findByPk(shopId, options);
+  return Shop.findByPk(shopId, options).catch((error) => logRepositoryError(
+    'find shop',
+    error,
+    { shopId },
+  ));
 }
 
 async function lockProspectsByIds(ids, { scope, transaction } = {}) {
@@ -300,7 +376,10 @@ async function findLinkageSuggestions(prospect, { transaction } = {}) {
     limit: 25,
   };
   if (transaction) options.transaction = transaction;
-  const users = await User.findAll(options);
+  const users = await User.findAll(options).catch((error) => logRepositoryError(
+    'find linkage suggestions',
+    error,
+  ));
   const email = String(prospect.normalized_email || '').toLowerCase();
   const phone = String(prospect.normalized_phone || '').slice(-10);
   return users.flatMap((user) => (user.shops || []).map((shop) => {
@@ -329,6 +408,7 @@ module.exports = {
   findConflict,
   listProspectEvents,
   findUserById,
+  findActiveGrowthRoleForUser,
   findShopById,
   lockProspectsByIds,
   findLinkageSuggestions,

@@ -30,7 +30,13 @@ const prospectFields = {
   metadata: Joi.object().max(50),
 };
 
-const idParams = { params: Joi.object({ id: uuid.required() }) };
+const idParams = {
+  params: Joi.object({ id: uuid.required() }),
+  query: Joi.object({
+    timelinePage: Joi.number().integer().min(1).default(1),
+    timelinePageSize: Joi.number().integer().min(1).max(100).default(20),
+  }),
+};
 
 const createProspect = {
   body: Joi.object({

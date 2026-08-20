@@ -1,6 +1,7 @@
 'use strict';
 
-const { AppError } = require('../../utils/AppError');
+const { AppError, sanitizeErrorMessage } = require('../../utils/AppError');
+const { createLogger } = require('../../utils/structured-logger');
 const repository = require('./growth-os.prospect.repository');
 const {
   PROSPECT_EVENT_TYPES,
@@ -18,6 +19,19 @@ const {
   canManageAll,
   canRead,
 } = require('./growth-os.prospect.scope');
+
+const logger = createLogger('GrowthOsProspectService');
+
+function logServiceError(message, error, context = {}) {
+  logger.error(message, {
+    ...context,
+    error: {
+      name: error?.name || 'Error',
+      message: sanitizeErrorMessage(error?.message || String(error)),
+      ...(error?.code ? { code: error.code } : {}),
+    },
+  });
+}
 
 const FIELD_ALIASES = Object.freeze({
   business_name: ['businessName', 'business_name'],
@@ -153,7 +167,7 @@ function assertIdentity(values) {
     throw invalidInput('businessName is required.');
   }
   assertStringLength(identity.normalized_business_name, 'normalizedBusinessName', 255);
-  assertStringLength(identity.normalized_phone, 'normalizedPhone', 15);
+  assertStringLength(identity.normalized_phone, 'normalizedPhone', 32);
   assertStringLength(identity.normalized_email, 'normalizedEmail', 255);
   assertStringLength(identity.normalized_page, 'normalizedPage', 255);
   if (!hasChannel(identity)) {
@@ -301,7 +315,7 @@ function toApiProspect(record, scope) {
     contactEmail: redacted ? null : data.contact_email,
     pageUrl: redacted ? null : data.page_url,
     niche: data.niche,
-    notes: data.notes,
+    notes: redacted ? null : data.notes,
     source: data.source,
     sourceDetail: data.source_detail,
     sourceReference: data.source_reference,
@@ -318,7 +332,7 @@ function toApiProspect(record, scope) {
     mergedIntoId: data.merged_into_id,
     mergedAt: data.merged_at,
     createdBy: data.created_by,
-    metadata: data.metadata || {},
+    metadata: redacted ? null : (data.metadata || {}),
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     eligibleForNextPhase: Boolean(
@@ -332,8 +346,9 @@ function toApiProspect(record, scope) {
   return response;
 }
 
-function toApiEvent(record) {
+function toApiEvent(record, scope) {
   const data = plain(record);
+  const redacted = scope?.redacted === true;
   return {
     id: data.id,
     prospectId: data.prospect_id,
@@ -341,9 +356,9 @@ function toApiEvent(record) {
     actorUserId: data.actor_user_id,
     fromValue: data.from_value,
     toValue: data.to_value,
-    reason: data.reason,
+    reason: redacted ? null : data.reason,
     changedFields: Array.isArray(data.changed_fields) ? data.changed_fields : [],
-    metadata: data.metadata || {},
+    metadata: redacted ? null : (data.metadata || {}),
     createdAt: data.created_at,
   };
 }
@@ -393,6 +408,10 @@ async function writeProspectEvent({
       metadata,
     }, { transaction });
   } catch (_error) {
+    logServiceError('Growth OS prospect event write failed', _error, {
+      prospectId,
+      eventType,
+    });
     throw internalError();
   }
 }
@@ -421,7 +440,11 @@ async function writeAudit({
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
     }, { transaction });
-  } catch (_error) {
+  } catch (error) {
+    logServiceError('Growth OS prospect audit write failed', error, {
+      prospectId,
+      action,
+    });
     throw internalError();
   }
 }
@@ -451,16 +474,22 @@ async function safeFindConflict(identity, values, { scope = null, excludeId = nu
       source: values.source,
       sourceReference: values.sourceReference ?? values.source_reference,
     });
-  } catch (_error) {
+  } catch (error) {
+    logServiceError('Growth OS prospect conflict lookup failed', error, {
+      source: values.source,
+      hasSourceReference: Boolean(values.sourceReference ?? values.source_reference),
+      excludeId,
+    });
     return null;
   }
 }
 
-async function runWithDatabaseProtection(work) {
+async function runWithDatabaseProtection(work, context = {}) {
   try {
     return await work();
   } catch (error) {
     if (error instanceof AppError) throw error;
+    logServiceError('Growth OS prospect database operation failed', error, context);
     throw internalError();
   }
 }
@@ -641,15 +670,29 @@ class GrowthOsProspectService {
     };
   }
 
-  async get({ userId, access, prospectId }) {
+  async get({ userId, access, prospectId, timelinePage = 1, timelinePageSize = 20 }) {
     const scope = assertReadScope(access, userId);
     return runWithDatabaseProtection(async () => {
       const prospect = await repository.findProspectById(prospectId, { scope });
       if (!prospect) throw notFound();
-      const events = await repository.listProspectEvents(prospectId, { scope });
+       const requestedPage = Math.max(1, Number(timelinePage) || 1);
+       const requestedPageSize = Math.min(100, Math.max(1, Number(timelinePageSize) || 20));
+       const eventResult = await repository.listProspectEvents(prospectId, {
+         scope,
+         page: requestedPage,
+         pageSize: requestedPageSize,
+       });
+       const events = Array.isArray(eventResult) ? eventResult : (eventResult?.rows || []);
+       const total = Array.isArray(eventResult) ? events.length : Number(eventResult?.count || 0);
       return {
         ...toApiProspect(prospect, scope),
-        timeline: events.map(toApiEvent),
+        timeline: events.map((event) => toApiEvent(event, scope)),
+        timelinePagination: {
+          page: requestedPage,
+          pageSize: requestedPageSize,
+          total,
+          totalPages: Math.ceil(total / requestedPageSize),
+        },
       };
     });
   }
@@ -685,7 +728,7 @@ class GrowthOsProspectService {
             });
           }
           const conflict = await repository.findDuplicateProspects(identity, {
-            scope,
+            scope: null,
             excludeId: row.id,
             transaction,
           });
@@ -732,10 +775,11 @@ class GrowthOsProspectService {
             }
           }
           const conflict = await safeFindConflict(identity, values, {
-            scope,
+            scope: null,
             excludeId: prospectId,
           });
-          throw duplicateError(conflict?.id);
+          if (conflict) throw duplicateError(conflict.id);
+          throw internalError();
         }
         throw error;
       }
@@ -746,12 +790,23 @@ class GrowthOsProspectService {
     assertManageAll(access, 'Forbidden: prospect assignment access required.');
     const scope = assertReadScope(access, userId);
     if (ownerUserId === undefined || !cleanValue(reason)) throw invalidInput('ownerUserId and reason are required.');
-    if (ownerUserId) {
-      const owner = await runWithDatabaseProtection(() => repository.findUserById(ownerUserId));
-      if (!owner) throw new AppError('Owner user was not found.', 404, 'GROWTH_OS_PROSPECT_NOT_FOUND');
-    }
     const db = getSequelize();
     return runWithDatabaseProtection(() => db.transaction(async (transaction) => {
+      if (ownerUserId) {
+        const owner = await repository.findUserById(ownerUserId, { transaction, lock: true });
+        if (!owner) throw new AppError('Owner user was not found.', 404, 'GROWTH_OS_PROSPECT_NOT_FOUND');
+        const growthRole = await repository.findActiveGrowthRoleForUser(ownerUserId, {
+          transaction,
+          lock: true,
+        });
+        if (!growthRole) {
+          throw new AppError(
+            'Owner user must have an active Growth OS role.',
+            400,
+            'GROWTH_OS_PROSPECT_INVALID_OWNER',
+          );
+        }
+      }
       const prospect = await repository.findProspectById(prospectId, {
         scope,
         transaction,
@@ -905,6 +960,7 @@ class GrowthOsProspectService {
   }
 
   async linkageSuggestions({ userId, access, prospectId }) {
+    assertManageAll(access, 'Forbidden: prospect linkage suggestions access required.');
     const scope = assertReadScope(access, userId);
     return runWithDatabaseProtection(async () => {
       const prospect = await repository.findProspectById(prospectId, { scope });
@@ -1026,7 +1082,7 @@ class GrowthOsProspectService {
             const conflict = await safeFindConflict(targetIdentity, {
               source: target.source,
               source_reference: target.source_reference,
-            });
+            }, { excludeId: target.id });
             if (conflict && conflict.id !== target.id) throw duplicateError(conflict.id);
           }
           throw internalError();
@@ -1039,4 +1095,5 @@ class GrowthOsProspectService {
 
 module.exports = new GrowthOsProspectService();
 module.exports.toApiProspect = toApiProspect;
+module.exports.toApiEvent = toApiEvent;
 module.exports.auditSnapshot = auditSnapshot;

@@ -10,6 +10,7 @@ const FOREIGN_PROSPECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROSPECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const TARGET_PROSPECT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const SHOP_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const MARKETING_PROSPECT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 const roleHolder = {
   user: null,
@@ -91,7 +92,7 @@ function makeProspect(overrides = {}) {
     normalized_phone: '+8801700000000',
     normalized_email: 'owner@example.test',
     normalized_page: 'facebook.com/north-star',
-    source: 'manual_entry',
+    source: 'partner_form',
     source_detail: 'security-fixture',
     source_reference: null,
     source_recorded_at: new Date('2026-08-20T00:00:00.000Z'),
@@ -116,6 +117,7 @@ function makeProspect(overrides = {}) {
 
 function buildApp() {
   const app = express();
+  app.set('trust proxy', 1);
   app.use(express.json());
   app.use('/api/internal/growth-os', growthOsRoutes);
   app.use((error, _req, res, _next) => {
@@ -148,6 +150,20 @@ function mockMutationServices() {
       prospectService.toApiProspect(makeProspect(), { redacted: false }),
     );
   }
+  jest.spyOn(prospectService, 'linkageSuggestions').mockResolvedValue([{
+    userId: EXECUTIVE_ID,
+    shopId: SHOP_ID,
+    shopName: 'North Star Shop',
+    matchedFields: ['contactEmail'],
+  }]);
+  jest.spyOn(prospectService, 'checkDuplicates').mockResolvedValue({
+    matches: [{
+      prospectId: PROSPECT_ID,
+      businessName: 'North Star Retail',
+      status: 'qualified',
+      matchedFields: ['contactEmail'],
+    }],
+  });
 }
 
 describe('Growth OS prospect route security', () => {
@@ -169,6 +185,7 @@ describe('Growth OS prospect route security', () => {
       id: FOREIGN_PROSPECT_ID,
       business_name: 'Foreign Prospect',
       normalized_business_name: 'foreign prospect',
+      source: 'manual_entry',
       owner_user_id: null,
     });
     mockProspectRows[TARGET_PROSPECT_ID] = makeProspect({
@@ -177,17 +194,27 @@ describe('Growth OS prospect route security', () => {
       normalized_business_name: 'target prospect',
       owner_user_id: null,
     });
+    mockProspectRows[MARKETING_PROSPECT_ID] = makeProspect({
+      id: MARKETING_PROSPECT_ID,
+      source: 'event',
+      business_name: 'Marketing Prospect',
+      normalized_business_name: 'marketing prospect',
+      owner_user_id: null,
+    });
     mockProspectRepository.listProspects.mockImplementation(async ({ scope }) => {
       const ownerId = scope?.where?.owner_user_id;
       const rows = Object.values(mockProspectRows).filter((row) => (
-        !ownerId || row.owner_user_id === ownerId
+        (!ownerId || row.owner_user_id === ownerId)
+        && (scope?.kind !== 'source' || ['self_signup', 'partner_form', 'referral_mention', 'inbound_message', 'event'].includes(row.source))
       ));
       return { rows, count: rows.length };
     });
     mockProspectRepository.findProspectById.mockImplementation(async (id, { scope } = {}) => {
       const row = mockProspectRows[id];
       const ownerId = scope?.where?.owner_user_id;
-      if (!row || (ownerId && row.owner_user_id !== ownerId)) return null;
+      if (!row
+        || (ownerId && row.owner_user_id !== ownerId)
+        || (scope?.kind === 'source' && !['self_signup', 'partner_form', 'referral_mention', 'inbound_message', 'event'].includes(row.source))) return null;
       return row;
     });
     mockProspectRepository.listProspectEvents.mockResolvedValue([]);
@@ -234,6 +261,9 @@ describe('Growth OS prospect route security', () => {
     for (const role of roles) {
       setIdentity({ id: `${role.toLowerCase()}-1`, role });
       const listResponse = await request(app).get('/api/internal/growth-os/prospects');
+      const duplicateResponse = await request(app)
+        .get('/api/internal/growth-os/prospects/duplicate-check')
+        .query({ contactEmail: 'owner@example.test' });
       const updateResponse = await request(app)
         .patch(`/api/internal/growth-os/prospects/${PROSPECT_ID}`)
         .send({ businessName: 'Updated name' });
@@ -256,14 +286,18 @@ describe('Growth OS prospect route security', () => {
       const mergeResponse = await request(app)
         .post(`/api/internal/growth-os/prospects/${PROSPECT_ID}/merge`)
         .send({ targetProspectId: TARGET_PROSPECT_ID, reason: 'Role matrix probe' });
+      const suggestionsResponse = await request(app)
+        .get(`/api/internal/growth-os/prospects/${PROSPECT_ID}/linkage-suggestions`);
 
       expect(listResponse.status).toBe(readRoles.has(role) ? 200 : 403);
+      expect(duplicateResponse.status).toBe(readRoles.has(role) ? 200 : 403);
       expect(updateResponse.status).toBe(updateRoles.has(role) ? 200 : 403);
       expect(statusResponse.status).toBe(updateRoles.has(role) ? 200 : 403);
       expect(manageResponse.status).toBe(manageRoles.has(role) ? 201 : 403);
       expect(assignResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
       expect(linkResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
       expect(mergeResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
+      expect(suggestionsResponse.status).toBe(manageRoles.has(role) ? 200 : 403);
     }
   });
 
@@ -287,6 +321,38 @@ describe('Growth OS prospect route security', () => {
     expect(JSON.stringify(response.body)).not.toContain('facebook.com/north-star');
   });
 
+  it('returns linkage suggestions only through the manage_all route', async () => {
+    setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
+
+    const response = await request(app)
+      .get(`/api/internal/growth-os/prospects/${PROSPECT_ID}/linkage-suggestions`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([expect.objectContaining({
+      shopId: SHOP_ID,
+      matchedFields: ['contactEmail'],
+    })]);
+    expect(prospectService.linkageSuggestions).toHaveBeenCalledWith(expect.objectContaining({
+      prospectId: PROSPECT_ID,
+    }));
+  });
+
+  it('restricts marketer reads to marketing-attributable sources', async () => {
+    setIdentity({ id: MARKETER_ID, role: 'MARKETER' });
+
+    const list = await request(app).get('/api/internal/growth-os/prospects');
+    expect(list.status).toBe(200);
+    expect(list.body.data.items.map((item) => item.id)).toEqual(
+      expect.arrayContaining([PROSPECT_ID, MARKETING_PROSPECT_ID]),
+    );
+    expect(list.body.data.items.map((item) => item.id)).not.toContain(FOREIGN_PROSPECT_ID);
+
+    const manual = makeProspect({ source: 'manual_entry' });
+    mockProspectRows[PROSPECT_ID] = manual;
+    const detail = await request(app).get(`/api/internal/growth-os/prospects/${PROSPECT_ID}`);
+    expect(detail.status).toBe(404);
+  });
+
   it('denies an executive IDOR lookup outside the assigned scope', async () => {
     setIdentity({ id: EXECUTIVE_ID, role: 'BUSINESS_EXECUTIVE' });
 
@@ -304,6 +370,38 @@ describe('Growth OS prospect route security', () => {
         }),
       }),
     );
+  });
+
+  it('enforces MFA for broad Growth roles before prospect access', async () => {
+    setIdentity({ id: FOUNDER_ID, role: 'FOUNDER', mfaVerified: false });
+
+    const response = await request(app).get('/api/internal/growth-os/prospects');
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
+    expect(mockProspectRepository.listProspects).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed prospect input at the HTTP boundary', async () => {
+    setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
+
+    const noChannel = await request(app)
+      .post('/api/internal/growth-os/prospects')
+      .send({ businessName: 'No channel', source: 'manual_entry' });
+    const longBusinessName = await request(app)
+      .post('/api/internal/growth-os/prospects')
+      .send({ businessName: 'x'.repeat(256), contactEmail: 'owner@example.test', source: 'manual_entry' });
+    const arrayMetadata = await request(app)
+      .post('/api/internal/growth-os/prospects')
+      .send({ businessName: 'Array metadata', contactEmail: 'array@example.test', source: 'manual_entry', metadata: [] });
+    const malformedId = await request(app)
+      .get('/api/internal/growth-os/prospects/not-a-uuid');
+
+    expect(noChannel.status).toBe(400);
+    expect(longBusinessName.status).toBe(400);
+    expect(arrayMetadata.status).toBe(400);
+    expect(malformedId.status).toBe(400);
+    expect(prospectService.create).not.toHaveBeenCalled();
   });
 
   it('ignores a forged frontend guard claim when the backend role is absent', async () => {
@@ -362,5 +460,15 @@ describe('Growth OS prospect route security', () => {
     }
     expect(prospectService.transition).not.toHaveBeenCalledWith(expect.anything());
     expect(prospectService.link).not.toHaveBeenCalledWith(expect.anything());
+  });
+
+  it('rate-limits repeated duplicate-check lookups', async () => {
+    setIdentity({ id: FOUNDER_ID, role: 'FOUNDER' });
+    const responses = await Promise.all(Array.from({ length: 121 }, () => request(app)
+      .get('/api/internal/growth-os/prospects/duplicate-check')
+      .set('X-Forwarded-For', '198.51.100.99')
+      .query({ contactEmail: 'owner@example.test' })));
+
+    expect(responses.some((response) => response.status === 429)).toBe(true);
   });
 });
