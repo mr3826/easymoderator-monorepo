@@ -1,5 +1,5 @@
-import { LogOut, PanelLeft, ShieldCheck } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { LogOut, PanelLeft, ShieldCheck, UsersRound } from 'lucide-react';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 export function GrowthShell() {
@@ -17,10 +17,14 @@ export function GrowthShell() {
         </div>
 
         <nav className="nav-list">
-          <a className="nav-item active" href="/" aria-current="page">
+          <NavLink className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} to="/" end>
             <PanelLeft aria-hidden="true" />
             <span>Overview</span>
-          </a>
+          </NavLink>
+          <NavLink className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} to="/prospects">
+            <UsersRound aria-hidden="true" />
+            <span>Prospects</span>
+          </NavLink>
         </nav>
       </aside>
 
