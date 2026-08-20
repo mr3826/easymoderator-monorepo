@@ -4,12 +4,12 @@ Updated: 2026-08-20
 
 ## Current execution
 
-- `CURRENT_MAIN`: `a0e41ab5dcfdcafe11d6acc410c5cd5144602719`
+- `CURRENT_MAIN`: `7ad012d0312dbf157b25dc2ff73e4faa4e661bcf`
 - `BASE_MAIN`: latest `origin/main` after PR #35 squash merge
-- `WORKTREE`: `main` after PR #35 merge verification
-- `BRANCH`: `main`
-- `PHASE`: Phase 2 — Make the access foundation releasable
-- `STATUS`: bounded implementation and merge gates complete; live/browser delivery evidence pending
+- `WORKTREE`: `D:\easymod\easy-moderator-phase-3`
+- `BRANCH`: `codex/growth-os-phase-3-prospect-ledger`
+- `PHASE`: Phase 3 — Prospect / lead foundation
+- `STATUS`: implementation complete; local validation evidence recorded below
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -141,14 +141,56 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - Dependency audit: `npm audit --audit-level=high --omit=dev` passed with 0 vulnerabilities.
 - Changed-code Gitleaks directory scans passed for backend, Growth frontend, and workflow paths.
 
+## Phase 3 validation evidence
+
+- Prospect backend focused unit/security/migration gate: **4 suites, 26 tests
+  passed**.
+- Disposable PostgreSQL/Redis integration gate: **4 suites, 28 tests passed**,
+  including prospect CRUD, scope/IDOR, scoped duplicate conflict redaction,
+  multi-field search, concurrent duplicate creation, merge index release, audit
+  rollback, and import dry-run/idempotency.
+- Growth frontend Vitest/jsdom/typecheck gate: **3 files, 17 tests passed**.
+- Growth production build: passed.
+- Backend syntax/build check: passed.
+- Fresh bootstrap smoke check: passed; prospect tables were absent before the
+  migration and both migrated tables contained the required `CHECK` constraints.
+- Complete backend unit gate: **169 suites, 2,004 tests passed**.
+- Backend security gate: **29 suites, 198 tests passed**.
+- Focused auth/analytics/Growth regression: **11 suites, 92 tests passed**.
+- Backend test discovery: **176 tracked files, 176 with exactly one execution
+  home**; 2 quarantined files remain within the existing allowance.
+
 ## Known limitations and pre-existing debt
 
 - The repository has no tracked `docs/growth-os/GROWTH_OS_GOAL.md` or `CURRENT_STATE.md`; the available untracked master-goal document was preserved in the user's root worktree and historical tracked Growth documents were used as context. This Phase 2 state file is the durable evidence record.
-- Node `v25.6.1` is newer than the repository's Node 20 engine. `npm ci --ignore-scripts` leaves the pre-existing `sqlite3` native binding unavailable, so the backend security run completed 26 suites/183 tests and one unrelated admin suite failed during module loading without assertion failures. The historical Phase 1 result was 27 suites/183 tests.
-- Meta-E2E remains a known empty/disabled discovery debt, including the orphan `tests/meta-e2e/meta-e2e.test.js`; it is not a Phase 2 implementation failure.
+- Node `v25.6.1` is newer than the repository's Node 20 engine. The local unit/security gates pass, but runs without Redis emit pre-existing post-test BullMQ/ioredis `ECONNREFUSED` logs; the disposable PostgreSQL/Redis gate passes with Redis available.
+- The two existing quarantine suites remain unrelated debt: the chatbot suite currently assumes a legacy route, and the smart-payment suite requires an unsupported CommonJS/ESM Chai load. They remain within the tracked quarantine allowance and were not changed by Phase 3.
+- Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed.
 - Remote CI and draft PR checks passed on PR #35. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+
+## Phase 3 implementation
+
+Implemented the canonical two-table prospect ledger and its internal operator
+surface:
+
+- PostgreSQL migration with named checks, scope/query indexes, and partial
+  unique identity indexes;
+- lazy-loaded Sequelize prospect/event entities and associations;
+- pure phone/email/page/business normalization and deterministic lifecycle;
+- repository-enforced all, assigned, and redacted source scopes;
+- transactional create/edit/status/assignment/link/merge services writing both
+  product events and platform audit rows;
+- GET duplicate preflight and linkage suggestions with targeted rate limiting;
+- dry-run-by-default historical importer for `crm_lead` and Partner rows;
+- Growth list/detail/create/edit pages, permission UX guards, redacted rendering,
+  timeline, assignment, linkage, merge, and Vitest/jsdom setup;
+- backend unit/security/migration/integration/import tests and Growth UI/client
+  tests.
+
+Merchant signup/Partner producers, subscriptions, billing, merchant frontend,
+and `ci-cd.yml` job blocks were not changed.
 
 ## Phase 3 development and release gates
 
@@ -157,10 +199,12 @@ The gates are intentionally separate:
 - `PHASE_2_IMPLEMENTATION_GATE`: `PASS`
 - `PHASE_2_MERGE_GATE`: `PASS — PR #35 squash-merged and verified on main`
 - `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
-- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE — merge gate satisfied; use a fresh main worktree`
+- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE`
+- `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local focused and disposable-stack evidence recorded`
+- `PHASE_3_BROWSER_E2E_GATE`: `OPEN — browser E2E remains deferred with the live-delivery gate`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 is not started. It may now begin from a fresh worktree based on the
-verified `main` commit above. The outstanding live Growth-origin browser/DNS/TLS,
-operator bootstrap, and production delivery gates remain release blockers and
-must not be treated as Phase 3 development prerequisites.
+Phase 3 implementation is complete for the local development gate. The
+outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, production
+delivery, and full browser E2E gates remain open and must not be represented as
+passed by this phase.
