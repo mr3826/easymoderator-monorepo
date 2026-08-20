@@ -64,6 +64,13 @@ if (/^\s*[^#\n]*:(latest|dev)\b/m.test(workflow)
     throw new Error('Rollback contract permits a mutable production image tag.');
 }
 
+const probeMount = ':/app/scripts/production-db-auth-probe.js:ro';
+const probeCommand = 'node /app/scripts/production-db-auth-probe.js';
+if (workflow.split(probeMount).length - 1 !== 2
+    || workflow.split(probeCommand).length - 1 !== 2) {
+    throw new Error('Production DB probe must preserve the image script path for relative imports.');
+}
+
 if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"')
     || !workflow.includes('candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"')
     || !workflow.includes('assert_immutable_ref "$candidate_backend_image"')
