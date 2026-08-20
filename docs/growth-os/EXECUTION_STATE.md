@@ -4,12 +4,12 @@ Updated: 2026-08-20
 
 ## Current execution
 
-- `CURRENT_MAIN`: `b786c1ecfd4d4f03cf3f47c2945bc8c3ba8780de`
-- `BASE_MAIN`: latest `origin/main` fetched before implementation
-- `WORKTREE`: `D:\easymod\.codex-worktrees\growth-os-phase-2-access-foundation`
-- `BRANCH`: `codex/growth-os-phase-2-access-foundation`
+- `CURRENT_MAIN`: `a0e41ab5dcfdcafe11d6acc410c5cd5144602719`
+- `BASE_MAIN`: latest `origin/main` after PR #35 squash merge
+- `WORKTREE`: `main` after PR #35 merge verification
+- `BRANCH`: `main`
 - `PHASE`: Phase 2 — Make the access foundation releasable
-- `STATUS`: bounded implementation and local/remote validation gates complete; live/browser delivery evidence pending
+- `STATUS`: bounded implementation and merge gates complete; live/browser delivery evidence pending
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -32,6 +32,18 @@ Phase 1 evidence reused:
 - activation writes are atomic;
 - deployed analytics rate limiting uses Redis;
 - Phase 1 focused evidence remains 5 backend suites/34 tests, 27 backend security suites/183 tests, 59 merchant frontend files/483 tests, PostgreSQL/Redis integration, Meta-shaped E2E, secret scan, dependency audit, and changed-service checks.
+
+## Phase 2 merge proof
+
+PR #35 was squash-merged into `main` after the final current-head checks
+passed:
+
+- `PR_35_STATE`: `MERGED`
+- `PR_35_MERGE_SHA`: `a0e41ab5dcfdcafe11d6acc410c5cd5144602719`
+- `PR_35_HEAD`: `62a542dce4066872a64594205b5c973b554bb176`
+- The Phase 2 head is intentionally not an ancestor of `main` because the PR
+  used squash merge; the resulting main tree and content are the authoritative
+  verification.
 
 ## Access contract
 
@@ -143,13 +155,12 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 The gates are intentionally separate:
 
 - `PHASE_2_IMPLEMENTATION_GATE`: `PASS`
-- `PHASE_2_MERGE_GATE`: `PENDING — PR #35 must be merged and verified on main`
+- `PHASE_2_MERGE_GATE`: `PASS — PR #35 squash-merged and verified on main`
 - `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
-- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `PHASE_2_MERGE_ONLY`
+- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE — merge gate satisfied; use a fresh main worktree`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 is not started. It may begin from a fresh worktree after PR #35 is
-merged and its squash result plus Phase 2 evidence are verified on `main`.
-The outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, and
-production delivery gates remain release blockers and must not be treated as
-Phase 3 development prerequisites.
+Phase 3 is not started. It may now begin from a fresh worktree based on the
+verified `main` commit above. The outstanding live Growth-origin browser/DNS/TLS,
+operator bootstrap, and production delivery gates remain release blockers and
+must not be treated as Phase 3 development prerequisites.
