@@ -4,10 +4,10 @@ Updated: 2026-08-20
 
 ## Current execution
 
-- `CURRENT_MAIN`: `974533af5e9783100dbf7db8b00f775623e3d5a1`
-- `BASE_MAIN`: latest `origin/main` after PR #37 squash merge
+- `CURRENT_MAIN`: `0e1251c73ba9d1d56f8e27344eb0b72ca8a6aabf`
+- `BASE_MAIN`: latest `origin/main` after PR #40 squash merge
 - `WORKTREE`: `D:\easymod\easy-moderator-phase-3`
-- `BRANCH`: `codex/growth-os-phase-3-release-state`
+- `BRANCH`: `codex/growth-os-phase-3-final-state`
 - `PHASE`: Phase 3 — Prospect / lead foundation
 - `STATUS`: merged; live release evidence remains blocked and is recorded below
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
@@ -169,8 +169,20 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - PR #37 remote gates passed: Test & Build Gate, PostgreSQL/Redis integration,
   Meta-shaped E2E, security scan, Growth OS build, deployment dry run, and
   no-push Docker validation.
+- `PR_38_STATE`: `MERGED` — release-state evidence documentation;
+  `PR_38_MERGE_SHA`: `52819cc07098863ede1adef2a89cfa479cd096d9`.
+- `PR_39_STATE`: `MERGED` — corrected the production DB probe's image path;
+  `PR_39_MERGE_SHA`: `f3c1b6314ee467f4ffa3d2fd9444706fe67443ae`.
+- `PR_40_STATE`: `MERGED` — made the production DB probe standalone and added
+  regression coverage; `PR_40_MERGE_SHA`:
+  `0e1251c73ba9d1d56f8e27344eb0b72ca8a6aabf`.
 - Growth image publication run `32353042939` passed after the merge.
 - `GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:27ab4c4ce1067d5e131786e86333b62a1d512c156c14318139f54cc66b769f26`
+- `PRODUCTION_PREFLIGHT_RUN`: `32356594440` passed in read-only probe mode;
+  production environment rendering, SSH, DB host resolution, TCP connectivity,
+  expected database name, DB authentication, and `SELECT 1` all passed.
+- `PRODUCTION_DROPLET`: DigitalOcean read-only API confirmed active droplet
+  `easymod-prod` (`id=572180595`, `139.59.249.141`).
 - `GROWTH_DNS_TLS_GATE`: `OPEN` — `growth.easymod.tech` still returns NXDOMAIN;
   the available Cloudflare API token returned authentication error `10000`, so
   no DNS record was changed.
@@ -187,8 +199,8 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - The two existing quarantine suites remain unrelated debt: the chatbot suite currently assumes a legacy route, and the smart-payment suite requires an unsupported CommonJS/ESM Chai load. They remain within the tracked quarantine allowance and were not changed by Phase 3.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
-- No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; only the Growth image was published.
-- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+- No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; the Growth image was published and the later production preflight was read-only.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
 
 ## Phase 3 implementation
 
