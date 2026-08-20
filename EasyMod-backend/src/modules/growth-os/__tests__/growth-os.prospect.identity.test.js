@@ -30,6 +30,17 @@ describe('Growth OS prospect identity normalization', () => {
     ]);
   });
 
+  it('preserves non-Bangladesh phone digits instead of adding a Bangladesh prefix', () => {
+    expect(normalizePhone('+1 415 555 1234')).toBe('+14155551234');
+    expect(normalizePhone('+44 20 7946 0958')).toBe('+442079460958');
+  });
+
+  it('collapses Bangladesh fixed-line formats without corrupting them', () => {
+    expect(normalizePhone('02 1234 5678')).toBe('+880212345678');
+    expect(normalizePhone('+880 2 1234 5678')).toBe('+880212345678');
+    expect(normalizePhone('00880 2 1234 5678')).toBe('+880212345678');
+  });
+
   it('trims and lowercases email identity values', () => {
     expect(normalizeEmail('  Owner@Example.COM  ')).toBe('owner@example.com');
     expect(normalizeIdentity({ contactEmail: ' SALES@Example.COM ' }).normalized_email)

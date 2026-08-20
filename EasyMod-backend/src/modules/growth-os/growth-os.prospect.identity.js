@@ -5,12 +5,17 @@ function normalizePhone(value) {
   const digits = String(value).normalize('NFKC').replace(/\D/g, '');
   if (!digits) return null;
 
+  // ponytail: this Bangladesh-default heuristic should be replaced with a real
+  // E.164 parser before the prospect pool becomes multi-country.
   let canonicalDigits = digits;
-  if (canonicalDigits.startsWith('00880')) canonicalDigits = canonicalDigits.slice(2);
-  else if (canonicalDigits.startsWith('880')) canonicalDigits = canonicalDigits;
-  else if (canonicalDigits.startsWith('88')) canonicalDigits = `880${canonicalDigits.slice(2)}`;
-  else if (canonicalDigits.startsWith('0')) canonicalDigits = `880${canonicalDigits.slice(1)}`;
-  else canonicalDigits = `880${canonicalDigits}`;
+  const bdLocal = /^0(?:1\d{9}|[2-9]\d{8})$/.test(digits);
+  const bdCountry = /^880(?:1\d{9}|[2-9]\d{8})$/.test(digits);
+  const bdShortCountry = /^88(?:1\d{9}|[2-9]\d{8})$/.test(digits);
+  const bdInternational = /^00880(?:1\d{9}|[2-9]\d{8})$/.test(digits);
+  if (bdLocal) canonicalDigits = `880${digits.slice(1)}`;
+  else if (bdCountry) canonicalDigits = digits;
+  else if (bdShortCountry) canonicalDigits = `880${digits.slice(2)}`;
+  else if (bdInternational) canonicalDigits = digits.slice(2);
 
   return `+${canonicalDigits}`;
 }

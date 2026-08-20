@@ -1,6 +1,7 @@
 'use strict';
 
 const { Op } = require('sequelize');
+const { MARKETING_SOURCES } = require('./growth-os.prospect.lifecycle');
 
 function permissionsOf(access) {
   return new Set(Array.isArray(access?.permissions) ? access.permissions : []);
@@ -20,20 +21,20 @@ function resolveProspectScope(access, userId) {
   }
 
   if (permissions.has('growth_os.prospects.read_assigned')
-    && permissions.has('growth_os.prospects.update_assigned')) {
+  ) {
     return {
       kind: 'assigned',
       where: { owner_user_id: userId },
       redacted: false,
-      canEdit: true,
-      canChangeStatus: true,
+      canEdit: permissions.has('growth_os.prospects.update_assigned'),
+      canChangeStatus: permissions.has('growth_os.prospects.update_assigned'),
     };
   }
 
   if (permissions.has('growth_os.prospects.read_source_scope')) {
     return {
       kind: 'source',
-      where: {},
+      where: { source: { [Op.in]: MARKETING_SOURCES } },
       redacted: true,
       canEdit: false,
       canChangeStatus: false,
@@ -57,8 +58,7 @@ function canRead(access) {
   const permissions = permissionsOf(access);
   return permissions.has('growth_os.prospects.manage_all')
     || permissions.has('growth_os.prospects.read_all')
-    || (permissions.has('growth_os.prospects.read_assigned')
-      && permissions.has('growth_os.prospects.update_assigned'))
+    || permissions.has('growth_os.prospects.read_assigned')
     || permissions.has('growth_os.prospects.read_source_scope');
 }
 
@@ -66,4 +66,5 @@ module.exports = {
   resolveProspectScope,
   canManageAll,
   canRead,
+  hasProspectReadAccess: canRead,
 };

@@ -12,6 +12,7 @@ interface GrowthAuthState {
   signin: (payload: SigninPayload) => Promise<void>;
   verifyTwoFactor: (token: string) => Promise<void>;
   logout: () => Promise<void>;
+  reportApiError: (error: unknown) => boolean;
 }
 
 const GrowthAuthContext = createContext<GrowthAuthState | undefined>(undefined);
@@ -61,6 +62,24 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       setStatus('error');
     }
   }, [session]);
+
+  const reportApiError = useCallback((requestError: unknown) => {
+    if (!(requestError instanceof ApiError)) return false;
+    if (requestError.status === 401) {
+      void refreshSession();
+      return true;
+    }
+    if (requestError.status === 403) {
+      setStatus('access-denied');
+      return true;
+    }
+    if (requestError.status === 503) {
+      setError(requestError.message);
+      setStatus('unavailable');
+      return true;
+    }
+    return false;
+  }, [refreshSession]);
 
   useEffect(() => {
     void refreshSession();
@@ -142,7 +161,8 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     signin,
     verifyTwoFactor,
     logout,
-  }), [status, session, error, refreshSession, signin, verifyTwoFactor, logout]);
+    reportApiError,
+  }), [status, session, error, refreshSession, signin, verifyTwoFactor, logout, reportApiError]);
 
   return (
     <GrowthAuthContext.Provider value={value}>

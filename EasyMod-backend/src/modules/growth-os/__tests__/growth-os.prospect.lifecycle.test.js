@@ -7,8 +7,11 @@ const mockSequelize = {
   transaction: jest.fn(),
 };
 const mockRepository = {
+  listProspects: jest.fn(),
   findProspectById: jest.fn(),
   findDuplicateProspects: jest.fn(),
+  findConflict: jest.fn(),
+  listProspectEvents: jest.fn(),
   getModels: jest.fn(),
 };
 
@@ -85,6 +88,9 @@ describe('Growth OS prospect lifecycle', () => {
       GrowthOsProspectEvent: { create: mockEventCreate },
     });
     mockRepository.findDuplicateProspects.mockResolvedValue([]);
+    mockRepository.findConflict.mockResolvedValue(null);
+    mockRepository.listProspects.mockResolvedValue({ rows: [makeProspect()], count: 201 });
+    mockRepository.listProspectEvents.mockResolvedValue({ rows: [], count: 0 });
   });
 
   it('accepts every declared legal transition and rejects every other status pair', () => {
@@ -217,5 +223,71 @@ describe('Growth OS prospect lifecycle', () => {
       expect(prospectService.toApiProspect(makeProspect({ ...base, ...overrides }), { redacted: false })
         .eligibleForNextPhase).toBe(false);
     }
+  });
+
+  it('redacts notes, metadata, event reasons, and event metadata in source scope', async () => {
+    const row = makeProspect({ notes: 'private note', metadata: { campaign: 'secret' } });
+    mockRepository.findProspectById.mockResolvedValue(row);
+    mockRepository.listProspectEvents.mockResolvedValue({
+      rows: [{
+        id: 'event-1',
+        prospect_id: row.id,
+        event_type: 'updated',
+        actor_user_id: 'actor-1',
+        from_value: null,
+        to_value: null,
+        reason: 'private reason',
+        changed_fields: ['notes'],
+        metadata: { internal: 'secret' },
+        created_at: new Date('2026-08-20T00:00:00.000Z'),
+      }],
+      count: 1,
+    });
+
+    const result = await prospectService.get({
+      userId: 'marketer-1',
+      access: { permissions: ['growth_os.prospects.read_source_scope'] },
+      prospectId: row.id,
+    });
+
+    expect(result).toMatchObject({
+      notes: null,
+      metadata: null,
+      redacted: true,
+      timeline: [{ reason: null, metadata: null, actorUserId: 'actor-1' }],
+    });
+  });
+
+  it('clamps prospect pagination and returns total pages', async () => {
+    const result = await prospectService.list({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      filters: { page: 0, pageSize: 1000 },
+    });
+
+    expect(mockRepository.listProspects).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      pageSize: 100,
+    }));
+    expect(result).toMatchObject({ page: 1, pageSize: 100, total: 201, totalPages: 3 });
+  });
+
+  it('sanitizes a failed post-conflict lookup instead of returning an id-less duplicate', async () => {
+    const row = makeProspect();
+    const uniqueError = new Error('source reference unique violation');
+    uniqueError.name = 'SequelizeUniqueConstraintError';
+    row.update.mockRejectedValueOnce(uniqueError);
+    mockRepository.findProspectById.mockResolvedValue(row);
+    mockRepository.findConflict.mockRejectedValueOnce(new Error('postgres is unavailable'));
+
+    await expect(prospectService.update({
+      userId: 'founder-1',
+      access: ALL_PROSPECT_ACCESS,
+      prospectId: row.id,
+      data: { contactEmail: 'new-owner@example.com' },
+    })).rejects.toMatchObject({
+      status: 503,
+      code: 'GROWTH_OS_PROSPECT_UNAVAILABLE',
+    });
   });
 });

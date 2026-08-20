@@ -1,9 +1,24 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, growthApi, type Prospect } from '@/api/client';
 import { ProspectFormPage } from './ProspectFormPage';
+
+vi.mock('@/auth/GrowthAuthProvider', () => ({
+  useGrowthAuth: () => ({ reportApiError: vi.fn() }),
+}));
+
+function renderEditForm() {
+  render(
+    <MemoryRouter initialEntries={['/prospects/prospect-1/edit']}>
+      <Routes>
+        <Route path="/prospects/:prospectId/edit" element={<ProspectFormPage />} />
+        <Route path="/prospects/:prospectId" element={<div />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 function renderCreateForm() {
   render(
@@ -73,8 +88,9 @@ describe('ProspectFormPage', () => {
       updatedAt: '2026-08-20T00:00:00.000Z',
       eligibleForNextPhase: false,
       redacted: true,
-      timeline: [],
-    } satisfies Prospect);
+       timeline: [],
+       timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+     } satisfies Prospect);
     vi.spyOn(growthApi, 'getProspectLinkageSuggestions').mockResolvedValue([]);
 
     render(
@@ -167,5 +183,85 @@ describe('ProspectFormPage', () => {
       'href',
       '/prospects/conflict-prospect',
     );
+  });
+
+  it('sends null for cleared optional fields during an edit', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(growthApi, 'getProspect').mockResolvedValue({
+      id: 'prospect-1',
+      businessName: 'North Star',
+      contactName: 'Owner',
+      contactPhone: '01700000000',
+      contactEmail: 'owner@example.com',
+      pageUrl: null,
+      niche: 'retail',
+      notes: 'Existing note',
+      source: 'manual_entry',
+      sourceDetail: 'Campaign',
+      sourceReference: null,
+      sourceRecordedAt: null,
+      status: 'new',
+      statusChangedAt: null,
+      disqualifiedReason: null,
+      ownerUserId: null,
+      assignedAt: null,
+      assignedBy: null,
+      linkedShopId: null,
+      linkedUserId: null,
+      linkedAt: null,
+      mergedIntoId: null,
+      mergedAt: null,
+      createdBy: null,
+      metadata: {},
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+      eligibleForNextPhase: false,
+      timeline: [],
+      timelinePagination: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+    } satisfies Prospect);
+    vi.spyOn(growthApi, 'checkProspectDuplicates').mockResolvedValue({ matches: [] });
+    const update = vi.spyOn(growthApi, 'updateProspect').mockResolvedValue({
+      id: 'prospect-1',
+      businessName: 'North Star',
+      contactName: 'Owner',
+      contactPhone: '01700000000',
+      contactEmail: 'owner@example.com',
+      pageUrl: null,
+      niche: null,
+      notes: null,
+      source: 'manual_entry',
+      sourceDetail: null,
+      sourceReference: null,
+      sourceRecordedAt: null,
+      status: 'new',
+      statusChangedAt: null,
+      disqualifiedReason: null,
+      ownerUserId: null,
+      assignedAt: null,
+      assignedBy: null,
+      linkedShopId: null,
+      linkedUserId: null,
+      linkedAt: null,
+      mergedIntoId: null,
+      mergedAt: null,
+      createdBy: null,
+      metadata: {},
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+      eligibleForNextPhase: false,
+    });
+    renderEditForm();
+
+    await screen.findByRole('heading', { name: 'Edit prospect' });
+    await user.clear(screen.getByLabelText('Prospect notes'));
+    await user.clear(screen.getByLabelText('Niche'));
+    await user.clear(screen.getByLabelText('Source detail'));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith('prospect-1', expect.objectContaining({
+      notes: null,
+      niche: null,
+      sourceDetail: null,
+    })));
   });
 });

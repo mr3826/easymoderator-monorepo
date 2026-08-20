@@ -4,6 +4,7 @@ const config = require('../../config/config');
 const { sequelize } = require('./database-setup');
 require('../../modules/entities');
 const growthProspectMigration = require('../../database/migrations/20260820_002_growth_os_prospects');
+const growthProspectSourceReferenceMigration = require('../../database/migrations/20260820_003_growth_os_prospect_source_reference_idx');
 
 const syncDatabase = async () => {
     try {
@@ -15,6 +16,7 @@ const syncDatabase = async () => {
         // DDL (ALTER ... USING (col::enum)) that aborts the whole sync on Postgres.
         await sequelize.sync();
         await growthProspectMigration.up(sequelize);
+        await growthProspectSourceReferenceMigration.up(sequelize);
         console.log('Database synchronized successfully (tables created).');
         process.exit(0);
     } catch (error) {

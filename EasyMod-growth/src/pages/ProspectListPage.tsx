@@ -13,9 +13,11 @@ import {
   type ProspectStatus,
 } from '@/api/client';
 import { usePermission } from '@/auth/usePermission';
+import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 const PAGE_SIZE = 20;
 const initialFilters: ProspectListFilters = { page: 1, pageSize: PAGE_SIZE };
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function codeLabel(value: string) {
   return value.replace(/_/g, ' ');
@@ -90,7 +92,9 @@ export function ProspectListPage() {
   const [result, setResult] = useState<ProspectListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filterValidationError, setFilterValidationError] = useState<string | null>(null);
   const canCreate = usePermission('growth_os.prospects.manage_all');
+  const { reportApiError } = useGrowthAuth();
 
   useEffect(() => {
     let active = true;
@@ -102,7 +106,8 @@ export function ProspectListPage() {
         if (active) setResult(nextResult);
       })
       .catch((requestError: unknown) => {
-        if (active) setError(errorMessage(requestError));
+        if (!active || reportApiError(requestError)) return;
+        setError(errorMessage(requestError));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -115,12 +120,18 @@ export function ProspectListPage() {
 
   function submitFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (draftFilters.ownerUserId?.trim() && !UUID_PATTERN.test(draftFilters.ownerUserId.trim())) {
+      setFilterValidationError('Owner user ID must be a valid UUID.');
+      return;
+    }
+    setFilterValidationError(null);
     setFilters({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize || PAGE_SIZE });
   }
 
   function resetFilters() {
     setDraftFilters(initialFilters);
     setFilters(initialFilters);
+    setFilterValidationError(null);
   }
 
   const total = result?.total ?? 0;
@@ -201,6 +212,7 @@ export function ProspectListPage() {
               value={draftFilters.ownerUserId ?? ''}
               onChange={(event) => setDraftFilters((current) => ({ ...current, ownerUserId: event.target.value }))}
               placeholder="Any owner"
+              maxLength={36}
             />
           </label>
           <label htmlFor="prospect-linked">
@@ -235,6 +247,7 @@ export function ProspectListPage() {
             <button className="secondary-button" type="button" onClick={resetFilters}>Reset</button>
           </div>
         </form>
+        {filterValidationError ? <p className="form-error" role="alert">{filterValidationError}</p> : null}
       </section>
 
       <section className="content-card" aria-labelledby="prospect-results-title">

@@ -32,6 +32,10 @@ on:
           - CUSTOMER_SUCCESS
           - READ_ONLY_ANALYST
           - NONE
+      actor:
+        description: 'Email or UUID of the operator performing the change'
+        required: true
+        type: string
 
 # Never run two Growth OS role changes at once.
 concurrency:
@@ -55,14 +59,15 @@ jobs:
           timeout: 120s
           # Forward inputs as named env vars so they are not interpolated into
           # the remote shell (avoids command injection through the email field).
-          envs: TARGET_EMAIL,TARGET_ROLE
+          envs: TARGET_EMAIL,TARGET_ROLE,ACTOR
           script: |
             set -e
             cd /opt/easymod
-            echo "==> Setting Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL}"
+            echo "==> Setting Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL} by ${ACTOR}"
             docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
-              node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}"
+              node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}" --actor "${ACTOR}"
             echo "==> Done."
         env:
           TARGET_EMAIL: ${{ inputs.email }}
           TARGET_ROLE: ${{ inputs.role }}
+          ACTOR: ${{ inputs.actor }}

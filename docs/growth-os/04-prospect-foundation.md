@@ -18,12 +18,14 @@ transaction. Audit failure rolls the mutation back.
 
 The database enforces the lifecycle/source checks, the channel requirement, the
 converted-to-shop invariant, merge consistency, source-reference idempotency,
-and partial unique identity indexes. Merged rows leave the phone/email/page
-unique indexes without being deleted.
+and partial unique identity indexes. Merged rows leave the phone/email/page and
+source-reference unique indexes without being deleted.
 
 ## Normalization And Deduplication
 
-- Phone values become Bangladesh-default E.164-style digits (`+880...`).
+- Plausible Bangladesh phone values become Bangladesh-default E.164-style
+  digits (`+880...`); other country values preserve their international digits
+  as `+<digits>` until a multi-country E.164 parser is introduced.
 - Email values are trimmed and lowercased.
 - Page URLs lose scheme, `www.`, mobile Facebook host aliases, query/fragment,
   and trailing slash before lowercasing.
@@ -52,15 +54,18 @@ reachable through at least one channel.
 ## Authorization
 
 - `manage_all` and `read_all` read all rows with full contact fields.
-- `read_assigned` plus `update_assigned` restricts SQL queries to the current
-  owner's rows and permits only edit/status operations on those rows.
-- `read_source_scope` reads all rows with `contactName`, `contactPhone`,
-  `contactEmail`, and `pageUrl` set to `null`, plus `redacted: true`.
+- `read_assigned` alone restricts SQL queries to the current owner's rows;
+  `update_assigned` is additionally required for edit/status operations.
+- `read_source_scope` is restricted to `self_signup`, `partner_form`,
+  `referral_mention`, `inbound_message`, and `event` rows. It sets contact
+  fields, notes, metadata, timeline reasons, and timeline metadata to `null`,
+  omits actor name/email attributes, and adds `redacted: true`.
 - Roles without a prospect read permission receive `403 GROWTH_OS_FORBIDDEN`.
 
 The repository applies the scope predicate before fetching a row, including
-detail and mutation lookups. Linkage suggestions are read-only; `/link` verifies
-target existence and writes only prospect pointers.
+detail and mutation lookups. Linkage suggestions require `manage_all`; `/link`
+verifies target existence and writes only prospect pointers. Timeline reads are
+bounded and expose page metadata.
 
 ## API
 
@@ -76,7 +81,7 @@ All paths are under `/api/internal/growth-os`:
 | POST | `/prospects/:id/status` | `manage_all` or `update_assigned` |
 | POST | `/prospects/:id/assign` | `manage_all` |
 | POST | `/prospects/:id/link` | `manage_all` |
-| GET | `/prospects/:id/linkage-suggestions` | any prospect read permission |
+| GET | `/prospects/:id/linkage-suggestions` | `manage_all` |
 | POST | `/prospects/:id/merge` | `manage_all` |
 
 Validation is Joi-based and mutations retain the existing CSRF middleware.
@@ -90,7 +95,8 @@ available.
 audit rows and all `partner_applications`, preserves source references, and
 writes an `imported` timeline event. It performs no source-table writes, handles
 rows independently, is dry-run by default, and requires `--apply` to persist.
-Rerunning the importer is safe through `(source, source_reference)` uniqueness.
+Rerunning the importer is safe through `(source, source_reference)` uniqueness;
+merged tombstones do not satisfy the source-reference lookup or unique index.
 
 ## Explicit Boundaries
 

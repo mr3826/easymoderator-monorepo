@@ -4,10 +4,12 @@ const { Op } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const { AuditLog, GrowthOsProspect, GrowthOsProspectEvent, PartnerApplication, User } = require('../../entities');
 const { run } = require('../../../../scripts/import-growth-prospects');
+const prospectService = require('../growth-os.prospect.service');
 
 let sourceUser;
 let crmLead;
 let partnerApplication;
+let tombstonePartnerApplication;
 let sourceReferences;
 
 function suffix() {
@@ -43,6 +45,7 @@ async function removeImportedFixtures() {
   }
   if (crmLead) await AuditLog.destroy({ where: { id: crmLead.id } });
   if (partnerApplication) await PartnerApplication.destroy({ where: { id: partnerApplication.id } });
+  if (tombstonePartnerApplication) await PartnerApplication.destroy({ where: { id: tombstonePartnerApplication.id } });
   if (sourceUser) await User.destroy({ where: { id: sourceUser.id } });
 }
 
@@ -136,5 +139,56 @@ describe('Growth OS prospect import on real PostgreSQL', () => {
       status: partnerBefore.status,
       notes: partnerBefore.notes,
     });
+  });
+
+  it('re-links an importer record when its prior source reference is merged', async () => {
+    const id = suffix();
+    tombstonePartnerApplication = await PartnerApplication.create({
+      business_name: `Merged importer source ${id}`,
+      phone: phoneFor(`source-${id}`, '018'),
+      page_link: `https://facebook.com/merged-source-${id}`,
+      status: 'pending',
+      notes: 'Tombstone source fixture',
+    });
+    const sourceReference = `partner_application:${tombstonePartnerApplication.id}`;
+    const targetReference = `partner_tombstone_target:${id}`;
+    sourceReferences.push(sourceReference, targetReference);
+
+    const source = await prospectService.createImported({
+      source: 'partner_form',
+      sourceReference,
+      dryRun: false,
+      data: {
+        businessName: tombstonePartnerApplication.business_name,
+        contactPhone: tombstonePartnerApplication.phone,
+        pageUrl: tombstonePartnerApplication.page_link,
+        notes: tombstonePartnerApplication.notes,
+        sourceDetail: 'partner_form',
+      },
+    });
+    const target = await prospectService.createImported({
+      source: 'partner_form',
+      sourceReference: targetReference,
+      dryRun: false,
+      data: {
+        businessName: `Merged importer target ${id}`,
+        contactPhone: phoneFor(`target-${id}`, '018'),
+        contactEmail: `merged-target-${id}@example.test`,
+        pageUrl: `https://facebook.com/merged-target-${id}`,
+      },
+    });
+
+    await source.prospect.update({
+      status: 'merged',
+      merged_into_id: target.prospect.id,
+      merged_at: new Date(),
+    });
+
+    const applied = await run({ apply: true });
+    const replacement = applied.results.find((result) => result.sourceReference === sourceReference);
+
+    expect(replacement).toMatchObject({ sourceReference, outcome: 'created' });
+    expect(applied.counts.failed).toBe(0);
+    expect(await GrowthOsProspect.count({ where: { source_reference: sourceReference } })).toBe(2);
   });
 });

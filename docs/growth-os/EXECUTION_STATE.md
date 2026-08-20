@@ -1,15 +1,15 @@
 # Growth OS Execution State
 
-Updated: 2026-08-20
+Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `0e1251c73ba9d1d56f8e27344eb0b72ca8a6aabf`
-- `BASE_MAIN`: latest `origin/main` after PR #40 squash merge
-- `WORKTREE`: `D:\easymod\easy-moderator-phase-3`
-- `BRANCH`: `codex/growth-os-phase-3-final-state`
+- `CURRENT_MAIN`: `930005db170761a472576e597df900bc77dc67bd`
+- `BASE_MAIN`: latest `origin/main` after PR #41 squash merge
+- `WORKTREE`: `D:\easymod\easy-moderator-hardening`
+- `BRANCH`: `codex/growth-os-phase-3-prospect-hardening`
 - `PHASE`: Phase 3 — Prospect / lead foundation
-- `STATUS`: merged; live release evidence remains blocked and is recorded below
+- `STATUS`: hardening draft; merged release remains intact and live release evidence remains blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -94,7 +94,7 @@ Growth OS reuses EasyModerator's authenticated JWT/httpOnly-cookie identity and 
 | Authentication | COMPLETE for bounded gate | Shared JWT/cookie auth, token-version and blacklist checks; invalid/expired claims return `401`; revocation-store failures return sanitized `503`. | Live browser/session proof remains outside the local gate. |
 | Internal Growth authorization | COMPLETE for bounded gate | Explicit six-role table, permission policy, default-deny middleware, MFA assurance for Founder/Growth Manager. | Operator bootstrap and production enablement remain separate gates. |
 | Frontend route protection | PARTIAL | Growth provider/route guard reflects `401`, `403`, `503`, refresh, and logout failure states. | Live cross-origin browser verification is not available in this worktree. |
-| Backend Growth APIs | COMPLETE for bounded gate | Session and analytics routes enforce backend auth; role mutation routes require `growth_os.roles.manage`; remote Test & Build Gate passed. | No live host proof. |
+| Backend Growth APIs | COMPLETE for bounded gate | Session, analytics, prospect, and role routes enforce backend auth and server-side permission/scope predicates; remote Test & Build Gate passed for the merged release. | Hardening draft awaits remote CI; no live host proof. |
 | Direct endpoint bypass | COMPLETE | Real integration and mocked security tests call protected endpoints directly; merchant calls receive `403`. | No live host proof. |
 | Tenant/resource isolation | COMPLETE for current surface | Merchant tokens with forged frontend claims and foreign shop IDs remain denied; no current Growth resource-ID lookup exists. | Future resource APIs require new IDOR tests. |
 | Privileged mutations | COMPLETE for bounded gate | Founder-only grant/revoke policy, input validation, transaction, last-Founder guard, cache invalidation, and audit rows. | No role-management UI; API is intentionally internal. |
@@ -141,7 +141,7 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - Dependency audit: `npm audit --audit-level=high --omit=dev` passed with 0 vulnerabilities.
 - Changed-code Gitleaks directory scans passed for backend, Growth frontend, and workflow paths.
 
-## Phase 3 validation evidence
+## Phase 3 merged-release validation evidence (pre-hardening)
 
 - Prospect backend focused unit/security/migration gate: **4 suites, 26 tests
   passed**.
@@ -192,6 +192,51 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
   authenticated bootstrap session were available.
 - `PHASE_3_BROWSER_WALKTHROUGH`: `NOT RUN` — the host is not live.
 
+## Phase 3 prospect foundation hardening
+
+The merged Phase 3 implementation had confirmed defects in source scoping,
+redaction, phone normalization, linkage authorization, assignment validation,
+source-reference tombstones, timeline bounds, duplicate conflict handling, and
+diagnostic error visibility. This draft branch is the focused remediation; it
+does not rebuild the already-merged prospect foundation.
+
+- `HARDENING_BRANCH`: `codex/growth-os-phase-3-prospect-hardening`
+- `HARDENING_BASE`: `930005db170761a472576e597df900bc77dc67bd`
+- `HARDENING_PR_STATE`: `DRAFT — PR #42 open; not merged`
+- `REPOSITORY_VISIBILITY`: `PUBLIC — verified with gh repo view`
+- `HARDENING_PRODUCTION_CHANGED`: `NO`
+- `HARDENING_DNS_CHANGED`: `NO`
+- `HARDENING_BROWSER_E2E`: `PASS remotely — PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c; Growth OS browser E2E run 32409044181 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains open`
+- Server enforcement now restricts marketer source rows, redacts notes/metadata
+  and timeline private fields, gates linkage suggestions, permits read-assigned
+  without mutation permission, requires active Growth roles for owners, and
+  requires explicit CLI audit actors.
+- Data integrity now preserves non-Bangladesh phone digits, excludes merged
+  tombstones from source-reference deduplication, bounds timeline pages, and
+  returns consistent duplicate conflicts through global error handling.
+- Growth UI now sends explicit nulls for cleared edit fields, routes endpoint
+  `401`/`403`/`503` responses through `GrowthAuthProvider`, follows the legal
+  lifecycle map, gates the prospect sidebar, validates UUID inputs, and caps
+  mutation reasons at 200 characters.
+- Local hardening validation: focused prospect gate **6 suites, 41 tests
+  passed**; full backend unit gate **174 suites, 2,027 tests passed**; backend
+  security gate **29 suites, 203 tests passed**; test-discovery guard **181
+  tracked files, 181 with exactly one execution home**; disposable PostgreSQL/
+  Redis integration **4 suites, 35 tests passed**, including migration
+  `20260820_003` and importer re-linking; Growth frontend gate **6 files, 34
+  tests passed with TypeScript check**; Growth production build passed; merchant
+  frontend gate **59 files, 483 tests passed**; backend syntax/build passed.
+- Disposable Growth browser gate: `npm run test:growthos:e2e` passed **12 of 12
+  Chromium scenarios** across prospect workflows, role/scoped permissions,
+  mocked and real failure states, and 390px/768px/1440px responsive layouts.
+  The runner completed migrations and fixture seeding against disposable
+  PostgreSQL/Redis services and removed the owned containers, volumes, and
+  network during teardown; no production service or data was touched.
+- `HARDENING_REMOTE_CI`: `PASS — PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c passed Growth OS build, browser E2E run 32409044181 (12/12), historical secret scan, dependency audit, backend integration, Meta-shaped E2E, deployment dry run, Docker no-push, Test & Build, and changed-services checks; image publication and deployment skipped`
+- The hardening branch remains separate from the Phase 2 Cloudflare credential
+  recovery and release verdict block above. No DNS, deploy, bootstrap, or
+  production data action is authorized by this draft.
+
 ## Known limitations and pre-existing debt
 
 - The repository has no tracked `docs/growth-os/GROWTH_OS_GOAL.md` or `CURRENT_STATE.md`; the available untracked master-goal document was preserved in the user's root worktree and historical tracked Growth documents were used as context. This Phase 2 state file is the durable evidence record.
@@ -200,7 +245,7 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; the Growth image was published and the later production preflight was read-only.
-- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40; PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c passed its remote browser gate in run 32409044181. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified; the disposable browser gate is not a live-host receipt.
 
 ## Phase 3 implementation
 
@@ -224,6 +269,18 @@ surface:
 Merchant signup/Partner producers, subscriptions, billing, merchant frontend,
 and `ci-cd.yml` job blocks were not changed.
 
+## Deferred Growth OS debt
+
+The following remain explicitly deferred and were not expanded by the hardening
+draft: unindexed `%LIKE%` linkage suggestions; no `pg_trgm` index for `q`
+search; punctuation-normalized business-name search gaps; unbounded importer
+source loads and intra-batch dry-run miscounts; IP-only rate limits covering
+only a subset of routes; entity/migration index drift; missing role DDL checks
+and partial indexes on the `db:sync` path; and the `merged_into_id ON DELETE SET
+NULL` conflict with the merge check. Outreach, Next Best Action, demos, trials,
+retention/churn scoring, referrals/testimonials, and autonomous AI remain Phase
+4+ scope.
+
 ## Phase 3 development and release gates
 
 The gates are intentionally separate:
@@ -232,11 +289,12 @@ The gates are intentionally separate:
 - `PHASE_2_MERGE_GATE`: `PASS — PR #35 squash-merged and verified on main`
 - `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
 - `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE`
-- `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local focused and disposable-stack evidence recorded`
-- `PHASE_3_BROWSER_E2E_GATE`: `OPEN — browser E2E remains deferred with the live-delivery gate`
+- `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; this hardening draft addresses them`
+- `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on head ceb26b714ffc05a84acafe03b66efbb43721200c`
+- `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — head ceb26b714ffc05a84acafe03b66efbb43721200c; run 32409044181 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 implementation is complete for the local development gate. The
-outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, production
-delivery, and full browser E2E gates remain open and must not be represented as
-passed by this phase.
+Phase 3 implementation and the disposable local and remote browser gates are
+complete for the development gate. The outstanding live Growth-origin
+browser/DNS/TLS, operator bootstrap, and production delivery gates remain open
+and must not be represented as passed by this phase.

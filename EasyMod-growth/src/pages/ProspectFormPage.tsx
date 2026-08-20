@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { ArrowLeft, Save } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 import {
   getConflictingProspectId,
   growthApi,
@@ -69,20 +70,24 @@ function valuesFromProspect(prospect: Prospect): ProspectFormValues {
   };
 }
 
-function toPayload(values: ProspectFormValues, redacted: boolean): ProspectFormPayload {
+function toPayload(values: ProspectFormValues, redacted: boolean, editing: boolean): ProspectFormPayload {
+  const optionalValue = (value: string) => {
+    const normalized = value.trim();
+    return editing ? (normalized || null) : (normalized || undefined);
+  };
   const payload: ProspectFormPayload = {
     businessName: values.businessName.trim(),
-    niche: trimmed(values.niche),
-    notes: trimmed(values.notes),
+    niche: optionalValue(values.niche),
+    notes: optionalValue(values.notes),
     source: values.source as ProspectSource,
-    sourceDetail: trimmed(values.sourceDetail),
+    sourceDetail: optionalValue(values.sourceDetail),
   };
 
   if (!redacted) {
-    payload.contactName = trimmed(values.contactName);
-    payload.contactPhone = trimmed(values.contactPhone);
-    payload.contactEmail = trimmed(values.contactEmail);
-    payload.pageUrl = trimmed(values.pageUrl);
+    payload.contactName = optionalValue(values.contactName);
+    payload.contactPhone = optionalValue(values.contactPhone);
+    payload.contactEmail = optionalValue(values.contactEmail);
+    payload.pageUrl = optionalValue(values.pageUrl);
   }
 
   return payload;
@@ -151,6 +156,7 @@ function Field({
 export function ProspectFormPage() {
   const { prospectId } = useParams<{ prospectId: string }>();
   const navigate = useNavigate();
+  const { reportApiError } = useGrowthAuth();
   const editing = Boolean(prospectId);
   const [values, setValues] = useState<ProspectFormValues>(emptyValues);
   const [redacted, setRedacted] = useState(false);
@@ -177,7 +183,8 @@ export function ProspectFormPage() {
         setRedacted(prospect.redacted === true);
       })
       .catch((requestError: unknown) => {
-        if (active) setError(errorMessage(requestError, 'Unable to load this prospect for editing.'));
+        if (!active || reportApiError(requestError)) return;
+        setError(errorMessage(requestError, 'Unable to load this prospect for editing.'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -212,7 +219,7 @@ export function ProspectFormPage() {
       return;
     }
 
-    const payload = toPayload(values, redacted);
+    const payload = toPayload(values, redacted, editing);
     setSubmitting(true);
     setError(null);
     setValidationError(null);
@@ -232,6 +239,7 @@ export function ProspectFormPage() {
         : await growthApi.createProspect(payload);
       navigate(`/prospects/${encodeURIComponent(saved.id)}`, { replace: true });
     } catch (requestError: unknown) {
+      if (reportApiError(requestError)) return;
       const conflictId = getConflictingProspectId(requestError);
       if (conflictId) {
         setDuplicateConflictId(conflictId);

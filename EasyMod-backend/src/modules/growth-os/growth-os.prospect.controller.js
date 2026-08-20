@@ -1,7 +1,10 @@
 'use strict';
 
-const { AppError } = require('../../utils/AppError');
+const { AppError, sanitizeErrorMessage } = require('../../utils/AppError');
+const { createLogger } = require('../../utils/structured-logger');
 const service = require('./growth-os.prospect.service');
+
+const logger = createLogger('GrowthOsProspectController');
 
 function audit(req) {
   return {
@@ -24,17 +27,18 @@ function hasOwn(value, key) {
 
 function handleError(error, req, res, next) {
   if (error?.code === 'GROWTH_OS_PROSPECT_DUPLICATE') {
-    const payload = error instanceof AppError
-      ? error.toJSON(req.requestId || req.headers['x-request-id'] || 'unknown')
-      : {
-        success: false,
-         code: 'GROWTH_OS_PROSPECT_DUPLICATE',
-        message: 'A prospect with the same normalized identity already exists.',
-      };
-    payload.conflictingProspectId = error.conflictingProspectId || error.details?.conflictingProspectId;
-    return res.status(409).json(payload);
+    return next(error);
   }
   if (error instanceof AppError) return next(error);
+  logger.error('Growth OS prospect controller failed', {
+    method: req.method,
+    path: req.path,
+    error: {
+      name: error?.name || 'Error',
+      message: sanitizeErrorMessage(error?.message || String(error)),
+      ...(error?.code ? { code: error.code } : {}),
+    },
+  });
   return next(new AppError(
     'Growth OS prospect service is temporarily unavailable.',
     503,
@@ -75,7 +79,12 @@ exports.createProspect = async (req, res, next) => {
 
 exports.getProspect = async (req, res, next) => {
   try {
-    const data = await service.get({ ...context(req), prospectId: req.params.id });
+    const data = await service.get({
+      ...context(req),
+      prospectId: req.params.id,
+      timelinePage: req.query.timelinePage,
+      timelinePageSize: req.query.timelinePageSize,
+    });
     res.json({ success: true, data });
   } catch (error) {
     handleError(error, req, res, next);

@@ -9,6 +9,9 @@ import { ProspectListPage } from './ProspectListPage';
 vi.mock('@/auth/usePermission', () => ({
   usePermission: vi.fn(),
 }));
+vi.mock('@/auth/GrowthAuthProvider', () => ({
+  useGrowthAuth: () => ({ reportApiError: vi.fn() }),
+}));
 
 const permissionMock = vi.mocked(usePermission);
 
@@ -91,7 +94,7 @@ describe('ProspectListPage', () => {
     await user.type(screen.getByLabelText('Search'), 'North Star');
     await user.selectOptions(screen.getByLabelText('Lifecycle status'), 'qualified');
     await user.selectOptions(screen.getByLabelText('Source'), 'manual_entry');
-    await user.type(screen.getByLabelText('Owner user ID'), 'owner-1');
+    await user.type(screen.getByLabelText('Owner user ID'), '11111111-1111-4111-8111-111111111111');
     await user.selectOptions(screen.getByLabelText('Linkage'), 'true');
     await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
@@ -100,7 +103,7 @@ describe('ProspectListPage', () => {
       q: 'North Star',
       status: 'qualified',
       source: 'manual_entry',
-      ownerUserId: 'owner-1',
+      ownerUserId: '11111111-1111-4111-8111-111111111111',
       linked: 'true',
       page: 1,
       pageSize: 50,

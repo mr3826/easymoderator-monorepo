@@ -9,9 +9,9 @@ export function DashboardPage() {
       <section className="status-panel primary-panel" aria-labelledby="dashboard-title">
         <div>
           <p className="eyebrow">Foundation ready</p>
-          <h2 id="dashboard-title">No modules enabled yet</h2>
+          <h2 id="dashboard-title">Prospect foundation ready</h2>
           <p>
-            Prospects, follow-ups, demos, trials, and command center workflows are intentionally deferred to later prompts.
+            Use the prospect ledger to capture, qualify, and assign acquisition conversations. Follow-ups, demos, trials, and command center workflows remain outside this phase.
           </p>
         </div>
         <ClipboardList aria-hidden="true" />
