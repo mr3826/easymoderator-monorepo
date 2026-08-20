@@ -226,7 +226,7 @@ does not rebuild the already-merged prospect foundation.
   `20260820_003` and importer re-linking; Growth frontend gate **6 files, 34
   tests passed with TypeScript check**; Growth production build passed; merchant
   frontend gate **59 files, 483 tests passed**; backend syntax/build passed.
-- `HARDENING_REMOTE_CI`: `PENDING — PR #42 remote checks not yet complete`
+- `HARDENING_REMOTE_CI`: `PASS — PR #42 Growth OS build, historical secret scan, and production dependency audit passed; image publication skipped`
 - The hardening branch remains separate from the Phase 2 Cloudflare credential
   recovery and release verdict block above. No DNS, deploy, bootstrap, or
   production data action is authorized by this draft.
