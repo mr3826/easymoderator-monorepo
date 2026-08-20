@@ -70,6 +70,9 @@ if (workflow.split(probeMount).length - 1 !== 2
     || workflow.split(probeCommand).length - 1 !== 2) {
     throw new Error('Production DB probe must preserve the image script path for relative imports.');
 }
+if (/require\(['"]\.\.\/src\//.test(dbProbe)) {
+    throw new Error('Production DB probe must remain standalone inside the running image.');
+}
 
 if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"')
     || !workflow.includes('candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"')
