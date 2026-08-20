@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 const { GrowthOsUserRole, User } = require('../entities');
 const { getRolePriority, isGrowthOsRole } = require('./growth-os.permissions');
 
-async function findActiveRoleForUser(userId) {
+async function findActiveRoleForUser(userId, options = {}) {
   if (!userId) return null;
 
   const roles = await GrowthOsUserRole.findAll({
@@ -14,6 +14,8 @@ async function findActiveRoleForUser(userId) {
       revoked_at: { [Op.is]: null },
     },
     attributes: ['id', 'user_id', 'role', 'granted_at'],
+    ...(options.transaction ? { transaction: options.transaction } : {}),
+    ...(options.lock ? { lock: options.lock } : {}),
   });
 
   const validRoles = roles

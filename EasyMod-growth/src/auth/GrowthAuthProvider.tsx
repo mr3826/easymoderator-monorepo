@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, growthApi, type GrowthSession, type SigninPayload } from '@/api/client';
 
-type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'two-factor' | 'access-denied' | 'session-expired' | 'error';
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'two-factor' | 'access-denied' | 'session-expired' | 'unavailable' | 'error';
 
 interface GrowthAuthState {
   status: AuthStatus;
@@ -28,7 +28,17 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      const nextSession = await growthApi.getSession();
+      let nextSession: GrowthSession;
+      try {
+        nextSession = await growthApi.getSession();
+      } catch (err) {
+        // A valid refresh cookie can recover an expired access cookie. Retry
+        // exactly once so a stale session never becomes a frontend-only
+        // authorization decision.
+        if (!(err instanceof ApiError) || err.status !== 401) throw err;
+        await growthApi.refresh();
+        nextSession = await growthApi.getSession();
+      }
       setSession(nextSession);
       setStatus('authenticated');
     } catch (err) {
@@ -40,6 +50,11 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       }
       if (err instanceof ApiError && err.status === 403) {
         setStatus('access-denied');
+        return;
+      }
+      if (err instanceof ApiError && err.status === 503) {
+        setStatus('unavailable');
+        setError(err.message);
         return;
       }
       setError(err instanceof Error ? err.message : 'Unable to load Growth OS.');
@@ -70,6 +85,11 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
         setStatus('access-denied');
         return;
       }
+      if (err instanceof ApiError && err.status === 503) {
+        setStatus('unavailable');
+        setError(err.message);
+        return;
+      }
       setStatus('unauthenticated');
       setError(err instanceof Error ? err.message : 'Sign in failed.');
       throw err;
@@ -98,10 +118,19 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
   }, [tempToken]);
 
   const logout = useCallback(async () => {
-    await growthApi.logout();
-    setSession(null);
-    setTempToken(null);
-    setStatus('unauthenticated');
+    setError(null);
+    try {
+      await growthApi.logout();
+      setSession(null);
+      setTempToken(null);
+      setStatus('unauthenticated');
+    } catch (err) {
+      // Keep the authenticated state when server-side revocation fails. The
+      // user sees the error and can retry instead of believing the cookie was
+      // revoked when it was not.
+      setError(err instanceof Error ? err.message : 'Unable to complete sign out. Please retry.');
+      setStatus('authenticated');
+    }
   }, []);
 
   const value = useMemo(() => ({

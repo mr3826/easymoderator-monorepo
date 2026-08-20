@@ -204,9 +204,14 @@ const createUserWithShop = async (userData) => {
             userId: user.id,
             email: user.email,
             shopId: shop.id,
-            tokenVersion: user.token_version
+            tokenVersion: user.token_version,
+            mfaVerified: false,
         });
-        const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
+        const refreshToken = generateRefreshToken({
+            userId: user.id,
+            tokenVersion: user.token_version,
+            mfaVerified: false,
+        });
 
         // Hash and save refresh token using SHA-256 (not bcrypt - too expensive for high-entropy tokens)
         const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -339,9 +344,14 @@ const authenticateUser = async (email, password) => {
         userId: user.id,
         email: user.email,
         shopId: loggedShopId,
-        tokenVersion: user.token_version
+        tokenVersion: user.token_version,
+        mfaVerified: false,
     });
-    const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
+    const refreshToken = generateRefreshToken({
+        userId: user.id,
+        tokenVersion: user.token_version,
+        mfaVerified: false,
+    });
 
     // Hash and save refresh token using SHA-256 (not bcrypt)
     const hashedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
@@ -529,7 +539,8 @@ const validateRefreshToken = async (refreshToken) => {
             userId: user.id,
             email: user.email,
             shopId: user.last_logged_shop_id,
-            tokenVersion: user.token_version
+            tokenVersion: user.token_version,
+            mfaVerified: decoded.mfaVerified === true,
         });
 
         return { accessToken, userId: user.id, shopId: user.last_logged_shop_id };

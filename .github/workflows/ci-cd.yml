@@ -327,7 +327,7 @@ jobs:
           APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
           API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
           PUBLIC_ASSET_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}
-          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech' }}
+          CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'https://app.easymod.tech,https://growth.easymod.tech' }}
           FRONTEND_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
           BASE_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_ASSET_URL || 'https://api.easymod.tech' }}

@@ -3,6 +3,7 @@ import { GrowthAuthProvider } from '@/auth/GrowthAuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { GrowthShell } from '@/layout/GrowthShell';
+import { GrowthUnavailablePage } from '@/pages/GrowthUnavailablePage';
 import { AccessDeniedPage } from '@/pages/AccessDeniedPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -20,6 +21,7 @@ export function App() {
             <Route path="/unauthorized" element={<UnauthorizedPage />} />
             <Route path="/access-denied" element={<AccessDeniedPage />} />
             <Route path="/session-expired" element={<SessionExpiredPage />} />
+            <Route path="/unavailable" element={<GrowthUnavailablePage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<GrowthShell />}>
                 <Route index element={<DashboardPage />} />

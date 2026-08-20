@@ -3,7 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { useGrowthAuth } from '@/auth/GrowthAuthProvider';
 
 export function GrowthShell() {
-  const { session, logout } = useGrowthAuth();
+  const { session, error, logout } = useGrowthAuth();
 
   return (
     <div className="app-frame">
@@ -41,6 +41,7 @@ export function GrowthShell() {
             </button>
           </div>
         </header>
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
 
         <Outlet />
       </div>

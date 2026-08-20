@@ -25,8 +25,14 @@ const authenticate = async (req, res, next) => {
             throw new AppError('No token provided. Please authenticate.', 401);
         }
 
-        // 2. Verify JWT signature + expiry
-        const decoded = verifyAccessToken(token);
+        // 2. Verify JWT signature + expiry. Keep malformed/expired credentials
+        // distinct from failures in the revocation stores below.
+        let decoded;
+        try {
+            decoded = verifyAccessToken(token);
+        } catch (_error) {
+            throw new AppError('Invalid or expired token. Please login again.', 401);
+        }
 
         // 3. Check if the token has been revoked (logout)
         const blacklisted = await isTokenBlacklisted(token);
@@ -62,7 +68,11 @@ const authenticate = async (req, res, next) => {
             userId: decoded.userId,
             email: decoded.email,
             shopId: decoded.shopId,
-            exp: decoded.exp // needed for logout/blacklist TTL
+            exp: decoded.exp, // needed for logout/blacklist TTL
+            // This claim is issued only after the TOTP login step. A signed
+            // token without it is intentionally not sufficient for privileged
+            // Growth roles.
+            mfaVerified: decoded.mfaVerified === true,
         };
 
         next();
@@ -70,7 +80,7 @@ const authenticate = async (req, res, next) => {
         if (error instanceof AppError) {
             next(error);
         } else {
-            next(new AppError('Invalid or expired token. Please login again.', 401));
+            next(new AppError('Authentication service is temporarily unavailable. Please retry.', 503, 'AUTH_SERVICE_UNAVAILABLE'));
         }
     }
 };

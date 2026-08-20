@@ -4,61 +4,152 @@ Updated: 2026-08-20
 
 ## Current execution
 
-- `CURRENT_MAIN`: `d1e7eacc062401882ac9a1a8a48e916f24833f1b`
-- `BRANCH`: `codex/growth-os-phase-1-telemetry-foundation`
-- `PHASE`: Phase 1 — Repair current growth data foundations
-- `STATUS`: COMPLETE for the bounded source and fixture acceptance gate
-- `RELEASE_STATUS`: NO-GO for production or Growth enablement until the Phase 2 access/runtime gate passes
+- `CURRENT_MAIN`: `b786c1ecfd4d4f03cf3f47c2945bc8c3ba8780de`
+- `BASE_MAIN`: latest `origin/main` fetched before implementation
+- `WORKTREE`: `D:\easymod\.codex-worktrees\growth-os-phase-2-access-foundation`
+- `BRANCH`: `codex/growth-os-phase-2-access-foundation`
+- `PHASE`: Phase 2 — Make the access foundation releasable
+- `STATUS`: bounded implementation and local/remote validation gates complete; live/browser delivery evidence pending
+- `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
-The canonical `GROWTH_OS_GOAL.md` and `CURRENT_STATE.md` were not found in
-the repository. The untracked master-goal document and the tracked Growth OS
-audit, architecture, application-foundation, and metrics documents were read
-as the available source of truth. The pre-existing untracked files were
-preserved.
+## Phase 1 base proof
 
-## Phase 0 evidence reused
+Phase 1 was merged through PR #34 using squash merge:
 
-- Repository and remote were verified from the dedicated worktree before implementation.
-- Existing Growth permission middleware, activation claim/release behavior, activated-cohort retention, bounded grouped order queries, and authz fixtures were reused rather than reimplemented.
-- Historical Phase 0/Phase 1 ledger claims were treated as context, not as current acceptance proof.
+- `PR_34_STATE`: `MERGED`
+- `PR_34_MERGE_SHA`: `b786c1ecfd4d4f03cf3f47c2945bc8c3ba8780de`
+- `MERGE_METHOD`: `SQUASH`
+- Original Phase 1 commit `0041311dd3f4ac8c48347a24f8adb41aec6a6e10` is intentionally not required to be an ancestor of `main`.
+- The current base contains the Phase 1 telemetry/idempotency implementation, regression tests, and completion evidence.
 
-## Phase 1 implementation
+Phase 1 evidence reused:
 
-- Removed `assistant_test_passed` and `trial_day_7_active` from the accepted event contract until first-party producers and fixtures exist.
-- Kept browser once-only funnel markers unset until the server accepts the event, and forwarded a validated `Idempotency-Key` for retries.
-- Made retry identity versioned, hashed, payload-bound, and bound to user/shop context so a reused header cannot suppress a different tenant or payload.
-- Changed analytics query failures from false zero-valued success payloads to sanitized `503` responses.
-- Added sanitized operational signals for activation and funnel write failures without allowing telemetry bookkeeping to block customer replies.
-- Added a conditional PostgreSQL JSONB-path activation update so a stale telemetry snapshot cannot replace concurrent merchant settings.
-- Configured analytics write limiters to use the shared Redis rate-limit store when deployed; the documented single-process fallback remains for local development/staging without Redis.
-- Added backend and frontend regression fixtures for unsupported events, failure semantics, idempotency, retry behavior, and the PostgreSQL activation write path.
+- unsupported funnel events remain rejected;
+- browser telemetry markers are set only after successful server acceptance;
+- idempotency is bound to tenant/user/payload identity;
+- analytics dependency failures return sanitized `503` responses rather than false zero-valued success;
+- activation writes are atomic;
+- deployed analytics rate limiting uses Redis;
+- Phase 1 focused evidence remains 5 backend suites/34 tests, 27 backend security suites/183 tests, 59 merchant frontend files/483 tests, PostgreSQL/Redis integration, Meta-shaped E2E, secret scan, dependency audit, and changed-service checks.
 
-No database migration or schema change was made.
+## Access contract
 
-## Validation evidence
+### Authorized identities and roles
 
-- Focused Growth/analytics backend suite: **5 suites, 34 tests passed**.
-- Backend security suite: **27 suites, 183 tests passed**.
-- Merchant frontend unit suite: **59 files, 483 tests passed**. The suite emits expected `ECONNREFUSED` noise for tests that probe an absent local backend; the process still exits successfully.
-- Frontend funnel/client focused tests: **2 files, 3 tests passed**.
-- Frontend TypeScript check: passed.
-- Growth OS TypeScript check: passed.
-- Backend syntax/build check: passed.
-- Frontend production build: passed; existing large-chunk warnings remain.
-- `git diff --check`: passed; only expected CRLF conversion warnings were emitted.
-- Backend test-discovery check: **pre-existing failure** — two orphan tests and empty integration/meta-E2E suites; no Growth test routing was changed in this phase.
+Growth OS reuses EasyModerator's authenticated JWT/httpOnly-cookie identity and the authoritative `users` records. Access requires an active `growth_os_user_roles` record and a matching permission in the server-side policy:
 
-## Unverified runtime evidence
+- `FOUNDER`
+- `GROWTH_MANAGER`
+- `BUSINESS_EXECUTIVE`
+- `MARKETER`
+- `CUSTOMER_SUCCESS`
+- `READ_ONLY_ANALYST`
 
-- `UNVERIFIED_ITEM`: real PostgreSQL/Redis/browser delivery across the Growth and merchant origins.
-- `WHY_NOT_VERIFIED`: no authorized disposable staging stack or browser session was available in this worktree; database, Redis, and authorization behavior in the fixtures is mocked or local-only.
-- `RISK`: production CORS/CSRF origin behavior, Redis topology, database concurrency, and cross-origin browser delivery remain runtime questions.
-- `REQUIRED_FOLLOWUP`: Phase 2 staging gate with real PostgreSQL/Redis, Growth auth/2FA/refresh/expiry/CSRF flows, revocation invalidation, and browser coverage.
+`FOUNDER` and `GROWTH_MANAGER` require the server-issued `mfaVerified=true` assurance claim. Normal password sessions issue `mfaVerified=false`; only the existing TOTP verification path issues the privileged claim. `users.platform_role` and merchant `user_shops.role` do not authorize Growth OS.
 
-## Next phase
+### Unauthorized identities and roles
 
-Phase 2 — Make the access foundation releasable. It is not started by this
-change. It must close the Growth-origin auth mismatch, real access-flow tests,
-role grant/revoke with immediate cache invalidation, and staging/browser proof
-before Growth is enabled.
+- unauthenticated, malformed, expired, revoked, or token-version-invalid sessions;
+- ordinary merchant accounts, even when they know the URL or supply a different shop/merchant identifier;
+- EasyModerator platform/admin accounts without an explicit Growth OS role;
+- internal users with no active Growth role or without the permission required by an endpoint;
+- privileged Growth roles whose session lacks the required MFA assurance;
+- any request that attempts to use a frontend-only claim or client-side state as authorization.
+
+### Enforcement and data scope
+
+- Backend authority: `authenticate` followed by `requireGrowthOsAccess` on the Growth router and on privileged endpoints.
+- Frontend defense: `GrowthAuthProvider` and `ProtectedRoute` control navigation and show explicit denied/temporary-unavailable states; these checks are UX only.
+- Current Growth APIs expose a safe internal session profile and an intentionally internal cross-shop analytics endpoint. The current Phase 2 surface does not accept merchant/customer/prospect resource IDs.
+- Cross-shop analytics is allowed only through the explicit `growth_os.reports.read_all` permission. Merchant shop context is never used to grant Growth access, and forged shop identifiers do not expand access.
+- Future resource endpoints must derive authorization from the server-side Growth role/policy and must add resource-scope tests before implementation.
+
+### Failure contract
+
+- missing, malformed, expired, revoked, or invalid-version authentication: sanitized `401`;
+- authenticated without Growth authorization: sanitized `403 GROWTH_OS_FORBIDDEN`;
+- privileged role without MFA assurance: `403 GROWTH_OS_MFA_REQUIRED`;
+- Growth disabled by configuration: `503 GROWTH_OS_DISABLED`;
+- unavailable role database/authentication store: sanitized `503`;
+- unavailable deployed Redis authorization cache, including strict-cache read/write failure: sanitized `503`, never an in-memory authorization decision;
+- unavailable analytics/data dependency: Phase 1 sanitized `503`, never fabricated analytics success.
+
+## Phase 2 evidence matrix
+
+| Capability | Status | Current evidence and expected property | Remaining gap |
+| --- | --- | --- | --- |
+| Authentication | COMPLETE for bounded gate | Shared JWT/cookie auth, token-version and blacklist checks; invalid/expired claims return `401`; revocation-store failures return sanitized `503`. | Live browser/session proof remains outside the local gate. |
+| Internal Growth authorization | COMPLETE for bounded gate | Explicit six-role table, permission policy, default-deny middleware, MFA assurance for Founder/Growth Manager. | Operator bootstrap and production enablement remain separate gates. |
+| Frontend route protection | PARTIAL | Growth provider/route guard reflects `401`, `403`, `503`, refresh, and logout failure states. | Live cross-origin browser verification is not available in this worktree. |
+| Backend Growth APIs | COMPLETE for bounded gate | Session and analytics routes enforce backend auth; role mutation routes require `growth_os.roles.manage`; remote Test & Build Gate passed. | No live host proof. |
+| Direct endpoint bypass | COMPLETE | Real integration and mocked security tests call protected endpoints directly; merchant calls receive `403`. | No live host proof. |
+| Tenant/resource isolation | COMPLETE for current surface | Merchant tokens with forged frontend claims and foreign shop IDs remain denied; no current Growth resource-ID lookup exists. | Future resource APIs require new IDOR tests. |
+| Privileged mutations | COMPLETE for bounded gate | Founder-only grant/revoke policy, input validation, transaction, last-Founder guard, cache invalidation, and audit rows. | No role-management UI; API is intentionally internal. |
+| Auditability | COMPLETE for implemented mutation | Role grant/revoke write `AuditLog` records in the same database transaction. | Future Growth mutations remain out of scope. |
+| Invalid/expired sessions | COMPLETE | Unit/security/integration coverage includes no credentials, invalid/expired credentials, token version, and valid signed sessions. | Live cookie expiry flow remains unverified. |
+| PostgreSQL runtime | COMPLETE locally | Disposable PostgreSQL migrations and Growth access integration pass; real constraints and transactional role lifecycle exercised. | No production database was touched. |
+| Redis runtime | COMPLETE locally | Disposable Redis supports role cache, invalidation, startup probe, and strict authorization cache operations; outage path returns `503`. | No production Redis was touched. |
+| Phase 1 telemetry/error contract | COMPLETE | Phase 1 focused analytics suites pass after Phase 2 changes; sanitized dependency failures and idempotency behavior remain intact. | None identified in the bounded suite. |
+| Deployment/readiness | COMPLETE for config gate | Caddy validates; Growth frontend has exact health/readiness paths and Compose healthcheck; Growth host rejects unsupported API paths with `404`. | Live DNS/TLS/host checks remain unverified. |
+| Remote CI/build gate | COMPLETE for bounded gate | Draft PR #35 remote checks passed: Test & Build Gate, backend PostgreSQL/Redis integration, Meta-shaped E2E, Growth build, secret scan, dependency audit, deployment dry run, and no-push Docker validation; publish/deploy jobs were skipped. | Live delivery proof is still required for release. |
+
+## Phase 2 implementation
+
+Existing implementation reused:
+
+- shared EasyModerator authentication, refresh, token-version, blacklist, TOTP, CSRF, session, `User`, `AuditLog`, PostgreSQL, Redis, Caddy, Compose, and deployment workflows;
+- existing Growth role entity/migration, permission map, session controller, analytics route, and separate `EasyMod-growth` frontend;
+- existing sanitized `AppError`/global error handling and Phase 1 telemetry/idempotency behavior.
+
+Bounded changes made:
+
+- added exact Growth origin configuration and production CSRF trust for `growth.easymod.tech`;
+- made privileged MFA assurance explicit in server-issued tokens and Growth authorization;
+- added audited Founder-only Growth role grant/revoke operations with validation, transactional last-Founder protection, and cache invalidation;
+- prevented Growth authorization from falling back to generic in-memory cache behavior; lazy Redis startup is probed with a bounded timeout and strict role-cache operations fail closed;
+- added sanitized authentication service failure behavior for revocation-store outages;
+- fixed Growth client CSRF behavior for authenticated mutations, refresh/retry behavior, logout failure handling, and temporary dependency-unavailable UI;
+- narrowed the Growth host proxy to the Growth auth/session contract and made unsupported API paths deterministic `404` responses;
+- added Growth frontend readiness/build identity, Compose healthcheck, behavioral test execution in CI, and Windows-compatible integration migration/test discovery;
+- made the existing Growth role migration DDL transactional and corrected its migration log identifier.
+
+No new merchant-facing feature, CRM feature, prospect discovery, enrichment, outreach, retention, referral, AI, or Phase 3 implementation was added.
+
+## Runtime and validation evidence
+
+- Disposable PostgreSQL/Redis stack: migrations completed successfully, including `20260820_001_growth_os_user_roles`.
+- Real Growth access integration: final disposable PostgreSQL/Redis gate passed 2 suites/22 tests after the strict Redis/startup-probe correction; migrations completed before the test run.
+- Growth authorization focused suite: final combined affected suite passed 4 suites/29 tests, including 13 Growth authorization tests and the authentication, CSRF, and origin regressions.
+- Merchant frontend unit suite: 59 files/483 tests passed.
+- Growth frontend behavioral test: passed; Growth frontend TypeScript check and production build passed.
+- Backend build/syntax check: passed.
+- Phase 1 analytics focused regression: 4 suites/27 tests passed in the current checkout; historical merged Phase 1 acceptance remains 5 suites/34 tests.
+- Production Compose parse: passed; Caddy configuration validation: passed; Growth Docker image build: passed.
+- Dependency audit: `npm audit --audit-level=high --omit=dev` passed with 0 vulnerabilities.
+- Changed-code Gitleaks directory scans passed for backend, Growth frontend, and workflow paths.
+
+## Known limitations and pre-existing debt
+
+- The repository has no tracked `docs/growth-os/GROWTH_OS_GOAL.md` or `CURRENT_STATE.md`; the available untracked master-goal document was preserved in the user's root worktree and historical tracked Growth documents were used as context. This Phase 2 state file is the durable evidence record.
+- Node `v25.6.1` is newer than the repository's Node 20 engine. `npm ci --ignore-scripts` leaves the pre-existing `sqlite3` native binding unavailable, so the backend security run completed 26 suites/183 tests and one unrelated admin suite failed during module loading without assertion failures. The historical Phase 1 result was 27 suites/183 tests.
+- Meta-E2E remains a known empty/disabled discovery debt, including the orphan `tests/meta-e2e/meta-e2e.test.js`; it is not a Phase 2 implementation failure.
+- A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
+- No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed.
+- Remote CI and draft PR checks passed on PR #35. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified.
+
+## Phase 3 development and release gates
+
+The gates are intentionally separate:
+
+- `PHASE_2_IMPLEMENTATION_GATE`: `PASS`
+- `PHASE_2_MERGE_GATE`: `PENDING — PR #35 must be merged and verified on main`
+- `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
+- `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `PHASE_2_MERGE_ONLY`
+- `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
+
+Phase 3 is not started. It may begin from a fresh worktree after PR #35 is
+merged and its squash result plus Phase 2 evidence are verified on `main`.
+The outstanding live Growth-origin browser/DNS/TLS, operator bootstrap, and
+production delivery gates remain release blockers and must not be treated as
+Phase 3 development prerequisites.

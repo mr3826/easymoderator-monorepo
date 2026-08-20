@@ -3,6 +3,7 @@
 const PRODUCTION_DEFAULTS = Object.freeze({
     marketing: 'https://easymod.tech',
     app: 'https://app.easymod.tech',
+    growth: 'https://growth.easymod.tech',
     api: 'https://api.easymod.tech',
     publicAssets: 'https://api.easymod.tech',
 });
@@ -10,6 +11,7 @@ const PRODUCTION_DEFAULTS = Object.freeze({
 const DEVELOPMENT_DEFAULTS = Object.freeze({
     marketing: 'http://localhost:5173',
     app: 'http://localhost:5173',
+    growth: 'http://localhost:5174',
     api: 'http://localhost:3000',
     publicAssets: 'http://localhost:3000',
 });
@@ -36,6 +38,7 @@ function getOrigins(env = process.env) {
     return Object.freeze({
         marketing: firstConfigured(env, ['MARKETING_URL']) || defaults.marketing,
         app,
+        growth: firstConfigured(env, ['GROWTH_FRONTEND_URL', 'GROWTH_URL']) || defaults.growth,
         api,
         publicAssets: firstConfigured(env, ['PUBLIC_ASSET_URL', 'PUBLIC_BASE_URL']) || api,
     });

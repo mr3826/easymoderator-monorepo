@@ -62,6 +62,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --workspace=easymod-growth
 
+      - name: Growth OS behavioral tests
+        run: npm test --workspace=easymod-growth
+
       - name: Build
         run: npm run build --workspace=easymod-growth
 
@@ -90,6 +93,7 @@ jobs:
           push: true
           build-args: |
             VITE_ENV=production
+            VITE_BUILD_SHA=${{ github.sha }}
           # :latest is what docker-compose.prod.yml falls back to when the deploy
           # job does not pin GHCR_IMAGE_GROWTH to an immutable reference.
           tags: |

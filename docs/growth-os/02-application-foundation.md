@@ -369,9 +369,9 @@ The local Docker client emitted `C:\Users\ahmee\.docker\config.json: Access is d
 
 ## Audit Logging
 
-Prompt 2 adds no Growth OS mutation endpoint. Therefore, no Growth OS audit event is emitted by this foundation endpoint.
+Phase 2 adds the first Growth OS mutation endpoints: Founder-only role grant and revoke. Each operation validates the target and reason, writes an `AuditLog` row in the same PostgreSQL transaction, and invalidates the target's Redis authorization cache before commit. A failed audit or cache invalidation rolls the role change back.
 
-Future mutation endpoints must log important changes using `AuditService.logOperation`, including:
+Future mutation endpoints must log important changes using the same existing audit architecture, including:
 
 - role assignment and revocation
 - prospect create/update/status transitions
@@ -408,24 +408,38 @@ Data safety:
 
 ## Known Limitations
 
-- no Growth OS role-management UI yet
-- first role must be bootstrapped through database access
+- no Growth OS role-management UI yet; the internal role API is server-protected and intentionally not exposed in the SPA
+- the first Founder still must be bootstrapped through database access or an approved operator runbook
 - no prospects/leads/tasks/demos/trials modules yet
-- no Growth OS mutation audit events yet because no mutation endpoint exists
+- role grant/revoke audit events exist; prospect/task/demo/trial mutation audit events are not implemented
 - no live deployment or DNS change was performed
-- npm reported one high-severity advisory while generating/installing the new frontend package graph; this needs separate dependency triage
+- the current production dependency audit reports zero high-severity vulnerabilities; Node 25 local execution still leaves one unrelated sqlite3 loader suite unavailable
 - frontend route guards are intentionally not treated as security controls
 
 ## Prompt 3 Readiness
 
-CONDITIONALLY READY.
+Phase 3 is not started. Its development gate is the Phase 2 merge gate, not
+the separate production-release gate. Start it only from a fresh worktree
+after PR #35 is merged and its squash result plus Phase 2 evidence are
+verified on `main`.
 
-Prompt 3 can start after:
+The bounded implementation/runtime evidence already covers migration
+compatibility, real PostgreSQL/Redis authorization and failure behavior,
+direct API denial, and merchant regression. The remaining production-release
+gates are:
 
-1. `growth_os_user_roles` migration is applied locally or in staging.
-2. At least one internal user is bootstrapped as `FOUNDER`.
-3. `http://localhost:5174` or `https://growth.easymod.tech` opens the Growth OS shell for the authorized user.
-4. A merchant account receives access denied.
-5. The merchant dashboard remains unchanged.
+1. an internal operator is bootstrapped as `FOUNDER` through an approved
+   production runbook;
+2. `https://growth.easymod.tech` is validated in a real browser for the
+   authorized and unauthorized access matrix, including DNS/TLS and cookie
+   behavior;
+3. the production delivery path is executed and independently verified.
+
+These must keep the overall Growth OS release verdict at `NO-GO` until closed;
+they are not Phase 3 development prerequisites.
+
+Live Growth-origin browser/DNS/TLS validation, operator bootstrap, and
+production delivery proof remain release blockers even while Phase 3
+development proceeds after the merge gate.
 
 Prompt 3 should implement only the prospect and lead foundation under the existing Growth OS boundary.
