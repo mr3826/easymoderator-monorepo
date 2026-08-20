@@ -4,12 +4,12 @@ Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `930005db170761a472576e597df900bc77dc67bd`
-- `BASE_MAIN`: latest `origin/main` after PR #41 squash merge
-- `WORKTREE`: `D:\easymod\easy-moderator-hardening`
-- `BRANCH`: `codex/growth-os-phase-3-prospect-hardening`
-- `PHASE`: Phase 3 — Prospect / lead foundation
-- `STATUS`: hardening draft; merged release remains intact and live release evidence remains blocked
+- `CURRENT_MAIN`: `c65919238b608b5329aa0c152be4387dbafbfb67`
+- `BASE_MAIN`: latest `origin/main` after PR #42 squash merge
+- `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
+- `BRANCH`: `docs/growth-os-post-merge-state`
+- `PHASE`: Phase 3 — Prospect / lead foundation, post-merge release staging
+- `STATUS`: development complete; PR #42 merged; production prerequisites staged; release evidence remains blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -94,7 +94,7 @@ Growth OS reuses EasyModerator's authenticated JWT/httpOnly-cookie identity and 
 | Authentication | COMPLETE for bounded gate | Shared JWT/cookie auth, token-version and blacklist checks; invalid/expired claims return `401`; revocation-store failures return sanitized `503`. | Live browser/session proof remains outside the local gate. |
 | Internal Growth authorization | COMPLETE for bounded gate | Explicit six-role table, permission policy, default-deny middleware, MFA assurance for Founder/Growth Manager. | Operator bootstrap and production enablement remain separate gates. |
 | Frontend route protection | PARTIAL | Growth provider/route guard reflects `401`, `403`, `503`, refresh, and logout failure states. | Live cross-origin browser verification is not available in this worktree. |
-| Backend Growth APIs | COMPLETE for bounded gate | Session, analytics, prospect, and role routes enforce backend auth and server-side permission/scope predicates; remote Test & Build Gate passed for the merged release. | Hardening draft awaits remote CI; no live host proof. |
+| Backend Growth APIs | COMPLETE for bounded gate | Session, analytics, prospect, and role routes enforce backend auth and server-side permission/scope predicates; remote Test & Build Gate passed for the merged release. | No live host proof. |
 | Direct endpoint bypass | COMPLETE | Real integration and mocked security tests call protected endpoints directly; merchant calls receive `403`. | No live host proof. |
 | Tenant/resource isolation | COMPLETE for current surface | Merchant tokens with forged frontend claims and foreign shop IDs remain denied; no current Growth resource-ID lookup exists. | Future resource APIs require new IDOR tests. |
 | Privileged mutations | COMPLETE for bounded gate | Founder-only grant/revoke policy, input validation, transaction, last-Founder guard, cache invalidation, and audit rows. | No role-management UI; API is intentionally internal. |
@@ -176,37 +176,72 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - `PR_40_STATE`: `MERGED` — made the production DB probe standalone and added
   regression coverage; `PR_40_MERGE_SHA`:
   `0e1251c73ba9d1d56f8e27344eb0b72ca8a6aabf`.
-- Growth image publication run `32353042939` passed after the merge.
-- `GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:27ab4c4ce1067d5e131786e86333b62a1d512c156c14318139f54cc66b769f26`
-- `PRODUCTION_PREFLIGHT_RUN`: `32356594440` passed in read-only probe mode;
+- `PR_42_STATE`: `MERGED`.
+- `PR_42_HEAD`: `a673aa5204485e22613313ff14eb1b6976af8549`.
+- `PR_42_MERGE_SHA`: `c65919238b608b5329aa0c152be4387dbafbfb67`.
+- `PR_42_MERGE_METHOD`: `SQUASH`.
+- `PR_42_MERGED_SHA_E2E_RUN`: `32412540978` passed; the browser gate reported
+  12 of 12 Chromium scenarios.
+- `PR_42_MERGED_SHA_CI_RUN`: `32412540977` passed; image publication completed
+  and the deploy job was skipped.
+- Growth image publication run `32412540978` passed after the merge.
+- `GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0`
+- `PRODUCTION_PREFLIGHT_RUN`: `32413675729` passed in read-only probe mode;
   production environment rendering, SSH, DB host resolution, TCP connectivity,
   expected database name, DB authentication, and `SELECT 1` all passed.
 - `PRODUCTION_DROPLET`: DigitalOcean read-only API confirmed active droplet
   `easymod-prod` (`id=572180595`, `139.59.249.141`).
-- `GROWTH_DNS_TLS_GATE`: `OPEN` — `growth.easymod.tech` still returns NXDOMAIN;
-  the available Cloudflare API token returned authentication error `10000`, so
-  no DNS record was changed.
+- `CORS_ORIGINS_PREREQUISITE`: `CLOSED` — repository variable
+  `CORS_ORIGINS` now contains `https://app.easymod.tech` and
+  `https://growth.easymod.tech`; it still excludes the marketing origin.
+- `GROWTH_DNS_TLS_GATE`: `OPEN` — `growth.easymod.tech` resolves to
+  `139.59.249.141`, but HTTPS still fails with `tlsv1 alert internal error`
+  (TLS alert 80). Caddy on the droplet has no certificate for the Growth SNI
+  because its deployed `Caddyfile` predates the Growth site block, and that
+  file is synced inside the gated deploy. TLS is therefore a post-deploy
+  validation and cannot be closed beforehand.
 - `FIRST_GROWTH_ROLLOUT`: `NOT RUN` — the image is published but not pinned on
   the droplet; `PRODUCTION_DEPLOY_ENABLED` remains `false`.
 - `OPERATOR_BOOTSTRAP`: `NOT RUN` — no Founder target credentials or live
   authenticated bootstrap session were available.
 - `PHASE_3_BROWSER_WALKTHROUGH`: `NOT RUN` — the host is not live.
+- `ROLLBACK_REHEARSAL`: `OPEN` — no production rollback rehearsal has been
+  claimed.
+
+## First-rollout digest pin
+
+The first Growth rollout must be hand-pinned with the merged image digest before
+any separately authorized deploy. The following commands are prepared only; they
+were not executed:
+
+```bash
+cd /opt/easymod
+docker pull ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be4387dbafbfb67
+test "$(docker image inspect -f '{{index .RepoDigests 0}}' ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be4387dbafbfb67)" = "ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0"
+```
+
+After separate authorization, set this exact line in `/opt/easymod/.env.prod`:
+
+```dotenv
+GHCR_IMAGE_GROWTH=ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
+```
 
 ## Phase 3 prospect foundation hardening
 
 The merged Phase 3 implementation had confirmed defects in source scoping,
 redaction, phone normalization, linkage authorization, assignment validation,
 source-reference tombstones, timeline bounds, duplicate conflict handling, and
-diagnostic error visibility. This draft branch is the focused remediation; it
+diagnostic error visibility. The hardening implementation is the focused remediation; it
 does not rebuild the already-merged prospect foundation.
 
 - `HARDENING_BRANCH`: `codex/growth-os-phase-3-prospect-hardening`
 - `HARDENING_BASE`: `930005db170761a472576e597df900bc77dc67bd`
-- `HARDENING_PR_STATE`: `DRAFT — PR #42 open; not merged`
+- `HARDENING_PR_STATE`: `MERGED — PR #42 squash-merged as
+  c65919238b608b5329aa0c152be4387dbafbfb67`
 - `REPOSITORY_VISIBILITY`: `PUBLIC — verified with gh repo view`
 - `HARDENING_PRODUCTION_CHANGED`: `NO`
 - `HARDENING_DNS_CHANGED`: `NO`
-- `HARDENING_BROWSER_E2E`: `PASS remotely — PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c; Growth OS browser E2E run 32409044181 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains open`
+- `HARDENING_BROWSER_E2E`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; Growth OS browser E2E run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains open`
 - Server enforcement now restricts marketer source rows, redacts notes/metadata
   and timeline private fields, gates linkage suggestions, permits read-assigned
   without mutation permission, requires active Growth roles for owners, and
@@ -232,10 +267,10 @@ does not rebuild the already-merged prospect foundation.
   The runner completed migrations and fixture seeding against disposable
   PostgreSQL/Redis services and removed the owned containers, volumes, and
   network during teardown; no production service or data was touched.
-- `HARDENING_REMOTE_CI`: `PASS — PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c passed Growth OS build, browser E2E run 32409044181 (12/12), historical secret scan, dependency audit, backend integration, Meta-shaped E2E, deployment dry run, Docker no-push, Test & Build, and changed-services checks; image publication and deployment skipped`
-- The hardening branch remains separate from the Phase 2 Cloudflare credential
-  recovery and release verdict block above. No DNS, deploy, bootstrap, or
-  production data action is authorized by this draft.
+- `HARDENING_REMOTE_CI`: `PASS — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67 passed Growth OS build, browser E2E run 32412540978 (12/12), CI run 32412540977, historical secret scan, dependency audit, backend integration, Meta-shaped E2E, deployment dry run, and Test & Build; the Growth image was published and deployment was skipped`
+- The merged hardening implementation remains separate from the Phase 2
+  Cloudflare credential recovery and release verdict block above. No DNS, deploy,
+  bootstrap, or production data action was authorized by this state update.
 
 ## Known limitations and pre-existing debt
 
@@ -245,7 +280,7 @@ does not rebuild the already-merged prospect foundation.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; the Growth image was published and the later production preflight was read-only.
-- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40; PR #42 head ceb26b714ffc05a84acafe03b66efbb43721200c passed its remote browser gate in run 32409044181. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified; the disposable browser gate is not a live-host receipt.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40; merged PR #42 passed its remote browser gate in run 32412540978 and CI run 32412540977. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, rollback rehearsal, and production delivery remain unverified; the disposable browser gate is not a live-host receipt.
 
 ## Phase 3 implementation
 
@@ -272,7 +307,7 @@ and `ci-cd.yml` job blocks were not changed.
 ## Deferred Growth OS debt
 
 The following remain explicitly deferred and were not expanded by the hardening
-draft: unindexed `%LIKE%` linkage suggestions; no `pg_trgm` index for `q`
+implementation: unindexed `%LIKE%` linkage suggestions; no `pg_trgm` index for `q`
 search; punctuation-normalized business-name search gaps; unbounded importer
 source loads and intra-batch dry-run miscounts; IP-only rate limits covering
 only a subset of routes; entity/migration index drift; missing role DDL checks
@@ -289,12 +324,18 @@ The gates are intentionally separate:
 - `PHASE_2_MERGE_GATE`: `PASS — PR #35 squash-merged and verified on main`
 - `PHASE_2_PRODUCTION_RELEASE_GATE`: `BLOCKED`
 - `PHASE_3_DEVELOPMENT_BLOCKED_BY`: `NONE`
-- `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; this hardening draft addresses them`
-- `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on head ceb26b714ffc05a84acafe03b66efbb43721200c`
-- `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — head ceb26b714ffc05a84acafe03b66efbb43721200c; run 32409044181 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
+- `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; the merged hardening implementation addresses them`
+- `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on merged SHA c65919238b608b5329aa0c152be4387dbafbfb67`
+- `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
+- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — hand-pin the exact Growth image digest above before the first separately authorized deploy`
+- `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation`
+- `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
+- `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
+- `ROLLBACK_REHEARSAL_GATE`: `OPEN — no rollback rehearsal has been claimed`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
 Phase 3 implementation and the disposable local and remote browser gates are
-complete for the development gate. The outstanding live Growth-origin
-browser/DNS/TLS, operator bootstrap, and production delivery gates remain open
-and must not be represented as passed by this phase.
+complete for the development gate. The outstanding digest pin, live
+Growth-origin browser/DNS/TLS, operator bootstrap, rollback rehearsal, and
+production delivery gates remain open and must not be represented as passed by
+this phase.
