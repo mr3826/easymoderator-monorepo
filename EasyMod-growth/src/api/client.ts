@@ -38,6 +38,14 @@ export class ApiError extends Error {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 const REQUEST_TIMEOUT_MS = 10000;
 let csrfToken: string | null = null;
+const CSRF_EXEMPT_PATHS = new Set([
+  '/api/auth/signup',
+  '/api/auth/signin',
+  '/api/auth/refresh',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/2fa/verify',
+]);
 
 async function initCsrfToken(): Promise<void> {
   if (csrfToken) return;
@@ -55,21 +63,21 @@ async function initCsrfToken(): Promise<void> {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(method);
-  const isAuthMutation = path.startsWith('/api/auth/');
-  if (isMutation && !isAuthMutation) await initCsrfToken();
+  const needsCsrf = isMutation && !CSRF_EXEMPT_PATHS.has(path);
+  if (needsCsrf) await initCsrfToken();
 
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(`${apiBaseUrl}${path}`, {
-      ...options,
-      credentials: 'include',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(csrfToken && isMutation && !isAuthMutation ? { 'X-CSRF-Token': csrfToken } : {}),
-        ...options.headers,
-      },
+        ...options,
+        credentials: 'include',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken && needsCsrf ? { 'X-CSRF-Token': csrfToken } : {}),
+          ...options.headers,
+        },
     });
 
     const payload = await response.json().catch(() => null);
@@ -88,7 +96,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
     throw error;
   } finally {
-    window.clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
   }
 }
 
@@ -119,7 +127,11 @@ export const growthApi = {
     await initCsrfToken().catch(() => undefined);
   },
 
+  async refresh(): Promise<void> {
+    await request('/api/auth/refresh', { method: 'POST' });
+  },
+
   async logout(): Promise<void> {
-    await request('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    await request('/api/auth/logout', { method: 'POST' });
   },
 };

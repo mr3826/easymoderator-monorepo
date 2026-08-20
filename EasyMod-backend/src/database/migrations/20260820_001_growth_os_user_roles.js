@@ -4,7 +4,9 @@ module.exports = {
   name: '20260820_001_growth_os_user_roles',
 
   up: async (sequelize) => {
-    await sequelize.query(`
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query(`
       CREATE TABLE IF NOT EXISTS growth_os_user_roles (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -28,32 +30,44 @@ module.exports = {
           )
         )
       );
-    `);
+      `, { transaction });
 
-    await sequelize.query(`
+      await sequelize.query(`
       CREATE INDEX IF NOT EXISTS growth_os_user_roles_user_id_idx
       ON growth_os_user_roles (user_id);
-    `);
+      `, { transaction });
 
-    await sequelize.query(`
+      await sequelize.query(`
       CREATE INDEX IF NOT EXISTS growth_os_user_roles_role_idx
       ON growth_os_user_roles (role);
-    `);
+      `, { transaction });
 
-    await sequelize.query(`
+      await sequelize.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS growth_os_user_roles_one_active_role_per_user_idx
       ON growth_os_user_roles (user_id)
       WHERE is_active = true AND revoked_at IS NULL;
-    `);
+      `, { transaction });
 
-    console.log('[migration] 20260718_001_growth_os_user_roles: UP complete');
+      await transaction.commit();
+      console.log('[migration] 20260820_001_growth_os_user_roles: UP complete');
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   },
 
   down: async (sequelize) => {
-    await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_one_active_role_per_user_idx;');
-    await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_role_idx;');
-    await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_user_id_idx;');
-    await sequelize.query('DROP TABLE IF EXISTS growth_os_user_roles;');
-    console.log('[migration] 20260718_001_growth_os_user_roles: DOWN complete');
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_one_active_role_per_user_idx;', { transaction });
+      await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_role_idx;', { transaction });
+      await sequelize.query('DROP INDEX IF EXISTS growth_os_user_roles_user_id_idx;', { transaction });
+      await sequelize.query('DROP TABLE IF EXISTS growth_os_user_roles;', { transaction });
+      await transaction.commit();
+      console.log('[migration] 20260820_001_growth_os_user_roles: DOWN complete');
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
   },
 };

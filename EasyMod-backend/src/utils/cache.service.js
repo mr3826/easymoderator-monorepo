@@ -225,6 +225,32 @@ class CacheService {
     async delete(key) { return this._delete(key); }
 
     /**
+     * Strict cache operations for security-sensitive authorization decisions.
+     * These deliberately reject on Redis absence/failure instead of falling
+     * back to process-local memory or converting the failure into a cache miss.
+     */
+    async getStrict(key) {
+        if (!cacheRedis || cacheRedis._isMemoryFallback === true || cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        const value = await cacheRedis.get(key);
+        return value ? JSON.parse(value) : null;
+    }
+
+    async setStrict(key, value, ttl = null) {
+        if (!cacheRedis || cacheRedis._isMemoryFallback === true || cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        const serialized = JSON.stringify(value);
+        if (ttl) {
+            await cacheRedis.setex(key, ttl, serialized);
+        } else {
+            await cacheRedis.set(key, serialized);
+        }
+        return true;
+    }
+
+    /**
      * Delete keys matching a pattern.
      * Fixed: uses SCAN cursor instead of blocking KEYS *.
      */

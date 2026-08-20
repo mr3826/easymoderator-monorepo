@@ -71,9 +71,14 @@ const verify = async (req, res, next) => {
             userId: user.id,
             email: user.email,
             shopId,
-            tokenVersion: user.token_version
+            tokenVersion: user.token_version,
+            mfaVerified: true,
         });
-        const refreshToken = generateRefreshToken({ userId: user.id, tokenVersion: user.token_version });
+        const refreshToken = generateRefreshToken({
+            userId: user.id,
+            tokenVersion: user.token_version,
+            mfaVerified: true,
+        });
 
         // Use SHA-256 for refresh token storage (not bcrypt - too expensive for high-entropy tokens)
         const hashedRefreshToken = require('crypto').createHash('sha256').update(refreshToken).digest('hex');
