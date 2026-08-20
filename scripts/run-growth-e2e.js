@@ -37,7 +37,7 @@ const testEnv = {
     JWT_ACCESS_SECRET: 'growth-e2e-jwt-access-secret-at-least-32',
     JWT_REFRESH_SECRET: 'growth-e2e-jwt-refresh-secret-at-least-32',
     SESSION_SECRET: 'growth-e2e-session-secret-at-least-32-chars',
-    CSRF_SECRET: 'growth-e2e-csrf-secret-at-least-32-characters',
+    CSRF_SECRET: 'd'.repeat(64),
     CORS_ORIGINS: 'http://127.0.0.1:5175,http://localhost:5175',
     GIT_SHA: 'growth-e2e-local',
 };
