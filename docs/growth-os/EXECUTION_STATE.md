@@ -7,7 +7,7 @@ Updated: 2026-08-21
 - `CURRENT_MAIN`: `e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0`
 - `BASE_MAIN`: latest `origin/main` after PR #45 squash merge
 - `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
-- `BRANCH`: `docs/growth-os-post-merge-state`
+- `BRANCH`: `docs/growth-os-phase-c-publication`
 - `PHASE`: Phase C — publish the safety mechanism before authorizing rollout
 - `STATUS`: pre-deploy receipts pass; the restore mechanism is being published; human authorization and live release evidence remain blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
