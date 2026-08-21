@@ -4,12 +4,12 @@ Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa`
-- `BASE_MAIN`: latest `origin/main` after PR #42 squash merge
-- `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
-- `BRANCH`: `docs/growth-os-post-merge-state`
+- `CURRENT_MAIN`: `0f327dd4728c649a3ed849f6915043f0410af278`
+- `BASE_MAIN`: latest `origin/main` after PR #44 squash merge
+- `WORKTREE`: `D:\easymod\_growth-os-rollback-bookkeeping`
+- `BRANCH`: `docs/growth-os-rollback-rehearsal-state`
 - `PHASE`: Phase 3 — Prospect / lead foundation, post-merge release staging
-- `STATUS`: development complete; PR #42 and PR #43 merged; production prerequisites staged; release evidence remains blocked
+- `STATUS`: development complete; PR #42, PR #43, and PR #44 merged; rollback rehearsal passed; remaining release gates are blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -193,7 +193,20 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - `PR_43_MERGED_SHA_CI_RUN`: `32449959064` passed; Test & Build, Meta-shaped E2E, PostgreSQL/Redis integration, deployment configuration, and Build & Push passed; Docker build validation (no push) and `Deploy to DO Droplet` were skipped.
 - `PR_43_MERGED_SHA_GROWTH_RUN`: `32449958917` passed; Growth typecheck/tests/build, browser E2E reported 12 of 12 Chromium scenarios, and Growth image publication passed.
 - `PR_43_MERGED_SHA_SECURITY_RUN`: `32449958900` passed; historical secret scan and production dependency audit passed.
-- `PR_43_GROWTH_IMAGE_DIGEST`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:e91adfe42a6e4b39326efa3d185e7e626813da82113d955d51f356a135608af` (published 2026-08-21 for merged SHA `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa`).
+- `PR_43_GROWTH_RUNTIME_SOURCE_SHA`: `c65919238b608b5329aa0c152be4387dbafbfb67` — PR #43 changed no `EasyMod-growth/**` files; `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa` is the later deploy/CI/docs SHA.
+- `PR_43_GROWTH_IMAGE_DIGEST`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0` (verified 64-hex first-rollout candidate for runtime source SHA `c65919238b608b5329aa0c152be4387dbafbfb67`; the invalid 63-hex handoff value is rejected).
+- `PR_44_STATE`: `MERGED`.
+- `PR_44_HEAD`: `82ba19f97fcfb0c87a4f118fb7ed409cec435a18`.
+- `PR_44_MERGE_SHA`: `0f327dd4728c649a3ed849f6915043f0410af278`.
+- `PR_44_MERGE_METHOD`: `SQUASH`.
+- `PR_44_MERGED_SHA_CI_RUN`: `32456686329` passed; deployment configuration dry run, including the executable rollback rehearsal, passed; Build & Push passed; Docker build validation (no push) and `Deploy to DO Droplet` were skipped.
+- `PR_44_MERGED_SHA_CI_JOB`: `96695826601` passed; the rehearsal receipt was uploaded.
+- `PR_44_MERGED_SHA_SECURITY_RUN`: `32456686304` passed; historical secret scan and production dependency audit passed.
+- `PR_44_ROLLBACK_REHEARSAL_ARTIFACT`: `rollback-rehearsal-evidence` (`659` bytes, unexpired).
+- `PR_44_ROLLBACK_REHEARSAL_RECEIPT_SHA256`: `160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb`.
+- `PRODUCTION_DEPLOY_ENABLED`: `false`.
+- `GROWTH_BOOTSTRAP_DIGEST`: `ABSENT`.
+- `PR_44_ROLLBACK_REHEARSAL`: `PASS` — the merged-SHA receipt reports candidate verification rejection, previous digest-pinned backend/frontend restoration, matching environment hashes, byte-identical Compose/Caddyfile restoration, backend `/health/ready` and `/health` success, frontend health success, and missing-previous-image rejection; it does not prove the production topology or run `migrate:down`.
 - `PRODUCTION_PREFLIGHT_RUN`: `32413675729` passed in read-only probe mode;
   production environment rendering, SSH, DB host resolution, TCP connectivity,
   expected database name, DB authentication, and `SELECT 1` all passed.
@@ -213,8 +226,7 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - `OPERATOR_BOOTSTRAP`: `NOT RUN` — no Founder target credentials or live
   authenticated bootstrap session were available.
 - `PHASE_3_BROWSER_WALKTHROUGH`: `NOT RUN` — the host is not live.
-- `ROLLBACK_REHEARSAL`: `OPEN` — no production rollback rehearsal has been
-  claimed.
+- `ROLLBACK_REHEARSAL`: `PASS` — merged SHA `0f327dd4728c649a3ed849f6915043f0410af278`; CI run `32456686329`, deployment-config job `96695826601`, artifact `rollback-rehearsal-evidence`, receipt SHA256 `160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb`.
 
 ## First-rollout digest pin
 
@@ -229,11 +241,13 @@ gh api "/users/mr3826/packages/container/easymoderator-growth-os/versions" \
   --jq '.[] | select(.metadata.container.tags[]? == "<MERGE_SHA>") | .name'
 ```
 
-Current dated evidence is the Growth digest published for merged SHA
-`ff33c056c3e3c8a0ffd80b92e30f9589c05486fa` on 2026-08-21:
+Current dated evidence is the verified Growth candidate for runtime source SHA
+`c65919238b608b5329aa0c152be4387dbafbfb67` on 2026-08-21. PR #43 and PR #44
+changed deployment, CI, and documentation paths but did not change
+`EasyMod-growth/**`:
 
 ```text
-ghcr.io/mr3826/easymoderator-growth-os@sha256:e91adfe42a6e4b39326efa3d185e7e626813da82113d955d51f356a135608af
+ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
 ```
 
 After separate authorization, resolve the digest again and set the repository
@@ -301,7 +315,7 @@ does not rebuild the already-merged prospect foundation.
 - Meta-shaped E2E remains an open pre-existing gate and does not provide live Growth-origin browser proof in this worktree. It is intentionally not represented as a Phase 3 pass.
 - A full Gitleaks history scan cannot traverse the linked-worktree `.git` pointer. The bounded changed-code scans passed. A whole-worktree scan reports the pre-existing public Resend DKIM TXT record in `docs/launch/cloudflare-zone-records.txt` as a generic-key false positive; it was not changed.
 - No production deployment, DNS/TLS change, live browser session, operator bootstrap, or production data mutation was performed; the Growth image was published and the later production preflight was read-only.
-- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40; merged PR #42 passed its remote browser gate in run 32412540978 and CI run 32412540977. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, rollback rehearsal, and production delivery remain unverified; the disposable browser gate is not a live-host receipt.
+- Remote CI and draft PR checks passed on PR #35; Phase 3 remote CI/build gates passed on PR #37, #39, and #40; merged PR #42 passed its remote browser gate in run 32412540978 and CI run 32412540977; merged PR #44 passed CI run 32456686329, Security run 32456686304, and rollback rehearsal job 96695826601 with receipt hash 160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb. Live Growth-origin browser parity, DNS/TLS, operator bootstrap, and production delivery remain unverified; the disposable browser and rollback rehearsals are not live-host receipts.
 
 ## Phase 3 implementation
 
@@ -322,8 +336,9 @@ surface:
 - backend unit/security/migration/integration/import tests and Growth UI/client
   tests.
 
-Merchant signup/Partner producers, subscriptions, billing, merchant frontend,
-and `ci-cd.yml` job blocks were not changed.
+Merchant signup/Partner producers, subscriptions, billing, and merchant
+frontend were not changed by the prospect implementation. PR #44 later added
+only the non-production rollback-rehearsal CI wiring.
 
 ## Deferred Growth OS debt
 
@@ -352,11 +367,11 @@ The gates are intentionally separate:
 - `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation`
 - `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
 - `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
-- `ROLLBACK_REHEARSAL_GATE`: `OPEN — no rollback rehearsal has been claimed`
+- `ROLLBACK_REHEARSAL_GATE`: `PASS — merged SHA 0f327dd4728c649a3ed849f6915043f0410af278; CI run 32456686329; deployment-config job 96695826601; artifact rollback-rehearsal-evidence; receipt SHA256 160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 implementation and the disposable local and remote browser gates are
-complete for the development gate. The outstanding digest pin, live
-Growth-origin browser/DNS/TLS, operator bootstrap, rollback rehearsal, and
+Phase 3 implementation and the disposable local, browser, and rollback gates
+are complete for the development gate. The outstanding digest pin, live
+Growth-origin browser/DNS/TLS, operator bootstrap, production browser, and
 production delivery gates remain open and must not be represented as passed by
 this phase.
