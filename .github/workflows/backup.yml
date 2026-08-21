@@ -6,6 +6,12 @@ on:
     # should not accept a seven-day recovery point objective.
     - cron: '0 2 * * *'
   workflow_dispatch:
+    inputs:
+      restore_drill:
+        description: Restore the recorded production dump into an isolated throwaway database
+        required: false
+        default: false
+        type: boolean
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Required GitHub secrets:
@@ -232,3 +238,122 @@ jobs:
             find "$BACKUP_DIR" -name "*.enc" -mtime +1 -delete 2>/dev/null || true
             echo "Retention cleanup done. Current backups:"
             ls -lh "$BACKUP_DIR"
+
+  restore-drill:
+    name: Isolated PostgreSQL restore drill
+    if: github.event_name == 'workflow_dispatch' && inputs.restore_drill == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Restore the recorded production dump into an isolated target
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        env:
+          RESTORE_DRILL_RUN_ID: ${{ github.run_id }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 900s
+          envs: RESTORE_DRILL_RUN_ID
+          script: |
+            set -euo pipefail
+            umask 077
+
+            BACKUP_FILE=${BACKUP_FILE:-}
+            if [ -z "$BACKUP_FILE" ]; then
+              BACKUP_FILE=$(find /opt/easymod/backups -maxdepth 1 -type f -name 'easymod-*.dump' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')
+            fi
+            test -n "$BACKUP_FILE"
+            printf 'RESTORE_BACKUP_FILE=%s\n' "$BACKUP_FILE"
+            RESTORE_CONTAINER="easymod-restore-drill-${RESTORE_DRILL_RUN_ID}"
+            RESTORE_NETWORK="${RESTORE_CONTAINER}-network"
+            RESTORE_VOLUME="${RESTORE_CONTAINER}-data"
+            POSTGRES_IMAGE='postgres@sha256:df7bca0066e6f60cc3dd32faa70caddec20e2c22b58932f79498e5704b23854a'
+
+            cleanup() {
+              docker rm -f "$RESTORE_CONTAINER" >/dev/null 2>&1 || true
+              docker volume rm "$RESTORE_VOLUME" >/dev/null 2>&1 || true
+              docker network rm "$RESTORE_NETWORK" >/dev/null 2>&1 || true
+            }
+            trap cleanup EXIT
+
+            # The target must never be production or attached to its network.
+            test "$RESTORE_CONTAINER" != 'easymod-postgres-1'
+            test "$RESTORE_NETWORK" != 'easymod_internal'
+            test -f "$BACKUP_FILE"
+            test -n "$RESTORE_DRILL_RUN_ID"
+
+            if docker ps -a --format '{{.Names}}' | grep -Fxq "$RESTORE_CONTAINER"; then
+              echo 'RESTORE_DRILL_REFUSED=existing_container'
+              exit 1
+            fi
+            if docker network ls --format '{{.Name}}' | grep -Fxq "$RESTORE_NETWORK"; then
+              echo 'RESTORE_DRILL_REFUSED=existing_network'
+              exit 1
+            fi
+            if docker volume ls --format '{{.Name}}' | grep -Fxq "$RESTORE_VOLUME"; then
+              echo 'RESTORE_DRILL_REFUSED=existing_volume'
+              exit 1
+            fi
+
+            PRODUCTION_POSTGRES_STARTED_AT=$(docker inspect -f '{{.State.StartedAt}}' easymod-postgres-1)
+            POSTGRES_ENV=$(docker inspect easymod-postgres-1 --format '{{range .Config.Env}}{{println .}}{{end}}')
+            POSTGRES_USER=$(printf '%s\n' "$POSTGRES_ENV" | awk -F= '$1 == "POSTGRES_USER" { print substr($0, index($0, "=") + 1); exit }')
+            POSTGRES_PASSWORD=$(printf '%s\n' "$POSTGRES_ENV" | awk -F= '$1 == "POSTGRES_PASSWORD" { print substr($0, index($0, "=") + 1); exit }')
+            POSTGRES_DB=$(printf '%s\n' "$POSTGRES_ENV" | awk -F= '$1 == "POSTGRES_DB" { print substr($0, index($0, "=") + 1); exit }')
+            test -n "$POSTGRES_USER"
+            test -n "$POSTGRES_PASSWORD"
+            test -n "$POSTGRES_DB"
+
+            docker network create "$RESTORE_NETWORK" >/dev/null
+            docker volume create "$RESTORE_VOLUME" >/dev/null
+            docker run --detach --name "$RESTORE_CONTAINER" \
+              --network "$RESTORE_NETWORK" \
+              --mount "type=volume,src=$RESTORE_VOLUME,dst=/var/lib/postgresql/data" \
+              --env "POSTGRES_USER=$POSTGRES_USER" \
+              --env "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
+              --env "POSTGRES_DB=$POSTGRES_DB" \
+              "$POSTGRES_IMAGE" >/dev/null
+
+            ready=false
+            for attempt in $(seq 1 60); do
+              if docker exec "$RESTORE_CONTAINER" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1 \
+                && [ "$(docker exec "$RESTORE_CONTAINER" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT 1' 2>/dev/null)" = 1 ]; then
+                ready=true
+                break
+              fi
+              sleep 2
+            done
+            test "$ready" = true
+
+            docker cp "$BACKUP_FILE" "$RESTORE_CONTAINER:/tmp/restore.dump"
+            docker exec "$RESTORE_CONTAINER" pg_restore \
+              --clean --if-exists --exit-on-error --no-owner --no-privileges \
+              -U "$POSTGRES_USER" -d "$POSTGRES_DB" /tmp/restore.dump
+
+            for table in users shops growth_os_user_roles growth_prospects; do
+              table_exists=$(docker exec "$RESTORE_CONTAINER" psql -X -At \
+                -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -c "SELECT to_regclass('public.' || quote_ident('$table')) IS NOT NULL;")
+              if [ "$table_exists" = t ]; then
+                row_count=$(docker exec "$RESTORE_CONTAINER" psql -X -At \
+                  -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                  -c "SELECT COUNT(*) FROM \"$table\";")
+                printf 'RESTORE_ROW_COUNT_%s=%s\n' "$table" "$row_count"
+                if [ "$table" = users ] || [ "$table" = shops ]; then
+                  test "$row_count" -gt 0
+                fi
+              else
+                printf 'RESTORE_ROW_COUNT_%s=ABSENT\n' "$table"
+              fi
+            done
+
+            max_migration=$(docker exec "$RESTORE_CONTAINER" psql -X -At \
+              -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+              -c 'SELECT name FROM migrations ORDER BY executed_at DESC LIMIT 1;')
+            test -n "$max_migration"
+            printf 'RESTORE_MAX_MIGRATION=%s\n' "$max_migration"
+
+            test "$(docker inspect -f '{{.State.StartedAt}}' easymod-postgres-1)" = "$PRODUCTION_POSTGRES_STARTED_AT"
+            echo 'RESTORE_PG_RESTORE=PASS'
+            echo 'PRODUCTION_POSTGRES_UPTIME_UNCHANGED=PASS'
