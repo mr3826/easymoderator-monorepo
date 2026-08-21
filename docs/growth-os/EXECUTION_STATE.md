@@ -4,12 +4,12 @@ Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `c65919238b608b5329aa0c152be4387dbafbfb67`
+- `CURRENT_MAIN`: `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa`
 - `BASE_MAIN`: latest `origin/main` after PR #42 squash merge
 - `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
 - `BRANCH`: `docs/growth-os-post-merge-state`
 - `PHASE`: Phase 3 — Prospect / lead foundation, post-merge release staging
-- `STATUS`: development complete; PR #42 merged; production prerequisites staged; release evidence remains blocked
+- `STATUS`: development complete; PR #42 and PR #43 merged; production prerequisites staged; release evidence remains blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -185,7 +185,15 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 - `PR_42_MERGED_SHA_CI_RUN`: `32412540977` passed; image publication completed
   and the deploy job was skipped.
 - Growth image publication run `32412540978` passed after the merge.
-- `GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0`
+- `PR_42_GHCR_IMAGE_GROWTH_CANDIDATE`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0` (historical; superseded by the PR #43 publication below).
+- `PR_43_STATE`: `MERGED`.
+- `PR_43_HEAD`: `f808e5913932a6c2ec3b65bd61fc3d1909ce024b`.
+- `PR_43_MERGE_SHA`: `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa`.
+- `PR_43_MERGE_METHOD`: `SQUASH`.
+- `PR_43_MERGED_SHA_CI_RUN`: `32449959064` passed; Test & Build, Meta-shaped E2E, PostgreSQL/Redis integration, deployment configuration, and Build & Push passed; Docker build validation (no push) and `Deploy to DO Droplet` were skipped.
+- `PR_43_MERGED_SHA_GROWTH_RUN`: `32449958917` passed; Growth typecheck/tests/build, browser E2E reported 12 of 12 Chromium scenarios, and Growth image publication passed.
+- `PR_43_MERGED_SHA_SECURITY_RUN`: `32449958900` passed; historical secret scan and production dependency audit passed.
+- `PR_43_GROWTH_IMAGE_DIGEST`: `ghcr.io/mr3826/easymoderator-growth-os@sha256:e91adfe42a6e4b39326efa3d185e7e626813da82113d955d51f356a135608af` (published 2026-08-21 for merged SHA `ff33c056c3e3c8a0ffd80b92e30f9589c05486fa`).
 - `PRODUCTION_PREFLIGHT_RUN`: `32413675729` passed in read-only probe mode;
   production environment rendering, SSH, DB host resolution, TCP connectivity,
   expected database name, DB authentication, and `SELECT 1` all passed.
@@ -210,21 +218,33 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 
 ## First-rollout digest pin
 
-The first Growth rollout must be hand-pinned with the merged image digest before
-any separately authorized deploy. The following commands are prepared only; they
-were not executed:
+The first Growth rollout must be hand-pinned at rollout time from the Growth
+image digest published for the exact main SHA being deployed. Do not freeze a
+digest in this state file: resolve the digest for that SHA immediately before
+the separately authorized deploy. The following commands are prepared only;
+they were not executed:
+
+```bash
+gh api "/users/mr3826/packages/container/easymoderator-growth-os/versions" \
+  --jq '.[] | select(.metadata.container.tags[]? == "<MERGE_SHA>") | .name'
+```
+
+Current dated evidence is the Growth digest published for merged SHA
+`ff33c056c3e3c8a0ffd80b92e30f9589c05486fa` on 2026-08-21:
+
+```text
+ghcr.io/mr3826/easymoderator-growth-os@sha256:e91adfe42a6e4b39326efa3d185e7e626813da82113d955d51f356a135608af
+```
+
+After separate authorization, resolve the digest again and set the repository
+variable `GROWTH_BOOTSTRAP_DIGEST` to its exact bare value, then confirm the
+droplet pulled the same immutable reference:
 
 ```bash
 cd /opt/easymod
-docker pull ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be4387dbafbfb67
-test "$(docker image inspect -f '{{index .RepoDigests 0}}' ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be4387dbafbfb67)" = "ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0"
-```
-
-After separate authorization, set the repository variable
-`GROWTH_BOOTSTRAP_DIGEST` to this exact bare digest:
-
-```text
-sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
+GROWTH_DIGEST="<RESOLVED_DIGEST>"
+docker pull "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}"
+test "$(docker image inspect -f '{{index .RepoDigests 0}}' "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}")" = "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}"
 ```
 
 ## Phase 3 prospect foundation hardening
@@ -328,7 +348,7 @@ The gates are intentionally separate:
 - `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; the merged hardening implementation addresses them`
 - `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on merged SHA c65919238b608b5329aa0c152be4387dbafbfb67`
 - `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
-- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — set repository variable GROWTH_BOOTSTRAP_DIGEST to the exact Growth image digest above before the first separately authorized deploy, then clear it after successful rollout`
+- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — at rollout time resolve the Growth digest published for the main SHA being deployed, set repository variable GROWTH_BOOTSTRAP_DIGEST to that exact bare digest before the first separately authorized deploy, then clear it after successful rollout`
 - `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation`
 - `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
 - `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
