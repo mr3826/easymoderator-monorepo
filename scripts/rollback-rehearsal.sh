@@ -373,11 +373,20 @@ check_backend_health /health
 HEALTH=PASS
 export HEALTH
 
-frontend_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-frontend-1)"
-if [[ "$frontend_health" != "healthy" ]]; then
+wait_for_frontend_health() {
+    local frontend_health
+    for _ in $(seq 1 30); do
+        frontend_health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' easymod-frontend-1)"
+        if [[ "$frontend_health" == "healthy" ]]; then
+            return 0
+        fi
+        sleep 1
+    done
     echo "ERROR: restored frontend health status was $frontend_health" >&2
-    exit 1
-fi
+    return 1
+}
+
+wait_for_frontend_health
 FRONTEND_HEALTH=PASS
 export FRONTEND_HEALTH
 SCENARIO_B=PASS
