@@ -43,6 +43,10 @@ const required = [
     ['success marker', 'deploy_succeeded=true'],
     ['backend immutable interpolation', 'image: ${GHCR_IMAGE_BACKEND:?'],
     ['frontend immutable interpolation', 'image: ${GHCR_IMAGE_FRONTEND:?'],
+    ['growth running capture', 'candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1'],
+    ['growth bootstrap pin', 'candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"'],
+    ['growth immutable assertion', 'assert_immutable_ref "$candidate_growth_image"'],
+    ['growth immutable interpolation', 'image: ${GHCR_IMAGE_GROWTH:?'],
     ['rollback health contract', 'both health checks'],
     ['independent DB host probe', 'DB_HOST_RESOLUTION=PASS'],
     ['independent DB auth probe', 'DB_AUTH=PASS'],
@@ -79,6 +83,14 @@ if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGES
     || !workflow.includes('assert_immutable_ref "$candidate_backend_image"')
     || !workflow.includes('assert_immutable_ref "$candidate_frontend_image"')) {
     throw new Error('Production deployment does not fail closed on digest-pinned candidate references.');
+}
+
+if (!runbook.includes('GROWTH_BOOTSTRAP_DIGEST')
+    || !workflow.includes('GROWTH_BOOTSTRAP_DIGEST')) {
+    throw new Error('Growth first-rollout bootstrap contract is not documented in both the workflow and the runbook.');
+}
+if (/GHCR_IMAGE_GROWTH[^\n]*\.env\.prod|\.env\.prod[^\n]*GHCR_IMAGE_GROWTH/.test(runbook)) {
+    throw new Error('Runbook still directs operators to pin GHCR_IMAGE_GROWTH in .env.prod, which the deploy regenerates.');
 }
 
 if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)

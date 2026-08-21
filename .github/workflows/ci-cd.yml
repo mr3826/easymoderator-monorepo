@@ -796,7 +796,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
           script: |
             set -e
 
@@ -850,15 +850,19 @@ jobs:
             # the Growth OS image, it only has to keep Compose resolvable.
             #
             # Fails closed exactly like backend and frontend above: a tag would
-            # make the deploy non-reproducible and the rollback meaningless. The
-            # first Growth OS rollout pins its digest on the host by hand; see
-            # docs/deployment/MONOREPO_CUTOVER_RUNBOOK.md.
+            # make the deploy non-reproducible and the rollback meaningless.
+            # The repository variable provides the explicitly pinned first-rollout
+            # input; once running, the container digest takes precedence.
             candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1 2>/dev/null || true)
+            if [ -z "$candidate_growth_image" ] && [ -n "${GROWTH_BOOTSTRAP_DIGEST:-}" ]; then
+              echo "growth-frontend is not running; bootstrapping from pinned GROWTH_BOOTSTRAP_DIGEST"
+              candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"
+            fi
             if [ -z "$candidate_growth_image" ]; then
-              echo "ERROR: growth-frontend is not running from a content-addressed image."
-              echo "       Pin the first Growth OS release on the droplet before deploying:"
-              echo "         docker pull \$GHCR_GROWTH:<commit-sha>"
-              echo "       then record its digest in /opt/easymod/.env.prod as GHCR_IMAGE_GROWTH."
+              echo "ERROR: growth-frontend is not running from a content-addressed image and"
+              echo "       no GROWTH_BOOTSTRAP_DIGEST is set. Set the repository variable"
+              echo "       GROWTH_BOOTSTRAP_DIGEST to the sha256:... digest of the Growth"
+              echo "       image published by growth-os.yml for this commit, then re-run."
               exit 1
             fi
             assert_immutable_ref "$candidate_growth_image"
@@ -952,6 +956,11 @@ jobs:
             if [ -n "$FRONTEND_DIGEST" ]; then
               echo "Pulling frontend digest: $GHCR_IMAGE_FRONTEND"
               docker pull "$GHCR_IMAGE_FRONTEND"
+            fi
+
+            if [ -n "$GROWTH_BOOTSTRAP_DIGEST" ]; then
+              echo "Pulling Growth digest: $GHCR_IMAGE_GROWTH"
+              docker pull "$GHCR_IMAGE_GROWTH"
             fi
 
             # Validate the rendered environment with the candidate backend image
@@ -1148,6 +1157,7 @@ jobs:
               "DEPLOYED_COMMIT": "${DEPLOYED_COMMIT}",
               "BACKEND_IMAGE_DIGEST": "${GHCR_IMAGE_BACKEND}",
               "FRONTEND_IMAGE_DIGEST": "${GHCR_IMAGE_FRONTEND}",
+              "GROWTH_IMAGE_DIGEST": "${GHCR_IMAGE_GROWTH}",
               "PREVIOUS_BACKEND_IMAGE_DIGEST": "${previous_backend_image}",
               "PREVIOUS_FRONTEND_IMAGE_DIGEST": "${previous_frontend_image}",
               "WORKFLOW_RUN_ID": "${WORKFLOW_RUN_ID}",
@@ -1160,6 +1170,8 @@ jobs:
         env:
           GHCR_BACKEND: ${{ env.GHCR_BACKEND }}
           GHCR_FRONTEND: ${{ env.GHCR_FRONTEND }}
+          GHCR_GROWTH: ${{ env.GHCR_GROWTH }}
+          GROWTH_BOOTSTRAP_DIGEST: ${{ vars.GROWTH_BOOTSTRAP_DIGEST }}
           BACKEND_TAG: ${{ needs.build.outputs.backend_tag }}
           FRONTEND_TAG: ${{ needs.build.outputs.frontend_tag }}
           BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}

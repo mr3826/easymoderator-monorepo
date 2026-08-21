@@ -159,8 +159,8 @@ jobs:
           build-args: |
             VITE_ENV=production
             VITE_BUILD_SHA=${{ github.sha }}
-          # :latest is what docker-compose.prod.yml falls back to when the deploy
-          # job does not pin GHCR_IMAGE_GROWTH to an immutable reference.
+          # :latest is a human-readable publication label only. Production resolves
+          # GHCR_IMAGE_GROWTH to a digest; docker-compose.prod.yml has no :latest fallback.
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:latest

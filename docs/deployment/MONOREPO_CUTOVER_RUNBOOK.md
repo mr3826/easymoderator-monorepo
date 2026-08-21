@@ -78,7 +78,8 @@ running `easymod-growth-frontend-1` container and carries it forward unchanged.
 
 That means `ci-cd.yml` fails closed the first time, before Growth OS has ever
 run on the droplet — by design, because a tag would make the deploy
-irreproducible and the rollback meaningless. Bootstrap it once, by hand:
+irreproducible and the rollback meaningless. Obtain and verify the first image
+digest with:
 
 ```bash
 cd /opt/easymod
@@ -87,10 +88,15 @@ docker image inspect -f '{{index .RepoDigests 0}}' \
   ghcr.io/mr3826/easymoderator-growth-os:REPLACE_WITH_COMMIT_SHA
 ```
 
-Record the printed `RepoDigest` in `/opt/easymod/.env.prod` as
-`GHCR_IMAGE_GROWTH`, then deploy normally. Every later deploy carries that
-digest forward on its own, and publishing a new Growth OS image is a deliberate
-re-pin rather than a side effect of an unrelated backend deploy.
+Set the repository variable `GROWTH_BOOTSTRAP_DIGEST` to the printed bare
+`sha256:...` value, then deploy normally. The production environment file is
+regenerated on every deploy, so a value written there is discarded. A running
+Growth container always takes precedence over the bootstrap variable, so it
+self-disarms after the first rollout. If the first rollout fails, the restored
+pre-Growth Compose snapshot removes the Growth container during rollback.
+After the first successful rollout, unset the repository variable
+`GROWTH_BOOTSTRAP_DIGEST`; if the container is later lost, leaving it set could
+resurrect a stale image instead of failing closed.
 
 The placeholder above is an operator input, not a credential.
 
