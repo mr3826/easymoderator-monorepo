@@ -220,10 +220,11 @@ docker pull ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be43
 test "$(docker image inspect -f '{{index .RepoDigests 0}}' ghcr.io/mr3826/easymoderator-growth-os:c65919238b608b5329aa0c152be4387dbafbfb67)" = "ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0"
 ```
 
-After separate authorization, set this exact line in `/opt/easymod/.env.prod`:
+After separate authorization, set the repository variable
+`GROWTH_BOOTSTRAP_DIGEST` to this exact bare digest:
 
-```dotenv
-GHCR_IMAGE_GROWTH=ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
+```text
+sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
 ```
 
 ## Phase 3 prospect foundation hardening
@@ -327,7 +328,7 @@ The gates are intentionally separate:
 - `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; the merged hardening implementation addresses them`
 - `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on merged SHA c65919238b608b5329aa0c152be4387dbafbfb67`
 - `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
-- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — hand-pin the exact Growth image digest above before the first separately authorized deploy`
+- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — set repository variable GROWTH_BOOTSTRAP_DIGEST to the exact Growth image digest above before the first separately authorized deploy, then clear it after successful rollout`
 - `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation`
 - `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
 - `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
