@@ -4,12 +4,12 @@ Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `0f327dd4728c649a3ed849f6915043f0410af278`
-- `BASE_MAIN`: latest `origin/main` after PR #44 squash merge
-- `WORKTREE`: `D:\easymod\_growth-os-rollback-bookkeeping`
-- `BRANCH`: `docs/growth-os-rollback-rehearsal-state`
-- `PHASE`: Phase 3 — Prospect / lead foundation, post-merge release staging
-- `STATUS`: development complete; PR #42, PR #43, and PR #44 merged; rollback rehearsal passed; remaining release gates are blocked
+- `CURRENT_MAIN`: `e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0`
+- `BASE_MAIN`: latest `origin/main` after PR #45 squash merge
+- `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
+- `BRANCH`: `docs/growth-os-post-merge-state`
+- `PHASE`: Phase C — publish the safety mechanism before authorizing rollout
+- `STATUS`: pre-deploy receipts pass; the restore mechanism is being published; human authorization and live release evidence remain blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -230,36 +230,86 @@ No new merchant-facing feature, CRM feature, prospect discovery, enrichment, out
 
 ## First-rollout digest pin
 
-The first Growth rollout must be hand-pinned at rollout time from the Growth
-image digest published for the exact main SHA being deployed. Do not freeze a
-digest in this state file: resolve the digest for that SHA immediately before
-the separately authorized deploy. The following commands are prepared only;
-they were not executed:
+The first Growth rollout must be hand-pinned with the exact image built from
+`origin/main` at `e455b0c` before any separately authorized deploy. The source
+delta check `git log c65919238b608b5329aa0c152be4387dbafbfb67..origin/main --
+EasyMod-growth` is empty, but an exact publication is still required because
+the Docker build embeds its SHA in `dist/build-info.json`.
 
-```bash
-gh api "/users/mr3826/packages/container/easymoderator-growth-os/versions" \
-  --jq '.[] | select(.metadata.container.tags[]? == "<MERGE_SHA>") | .name'
-```
+The exact publication completed through workflow dispatch:
 
-Current dated evidence is the verified Growth candidate for runtime source SHA
-`c65919238b608b5329aa0c152be4387dbafbfb67` on 2026-08-21. PR #43 and PR #44
-changed deployment, CI, and documentation paths but did not change
-`EasyMod-growth/**`:
+- `GROWTH_IMAGE_PUBLICATION_RUN`: `32477273787`
+- `GROWTH_IMAGE_BUILD_JOB`: `96756642973`
+- `GROWTH_IMAGE_BUILD_SHA`: `e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0`
+- `GROWTH_IMAGE_TAG`: `e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0`
+- `GROWTH_IMAGE_DIGEST`: `sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00`
+- `GROWTH_IMAGE_BUILD_INFO`: run log confirms `VITE_BUILD_SHA=e455b0c...`
+- `GROWTH_IMAGE_IMMUTABLE_CHECK`: `PASS` — bare digest is 64 hex characters
 
-```text
-ghcr.io/mr3826/easymoderator-growth-os@sha256:353e55de49eff657e9304c54e10b54ce005a8ffdd22ea82eab400f74e7d506c0
-```
-
-After separate authorization, resolve the digest again and set the repository
-variable `GROWTH_BOOTSTRAP_DIGEST` to its exact bare value, then confirm the
-droplet pulled the same immutable reference:
+The previous `ff33c056` and `c659192` image digests remain historical evidence
+only. The local Docker Desktop daemon was unavailable for the optional pull and
+`docker image inspect` cross-check; the authoritative digest is the successful
+GHCR push step's digest from the exact-SHA run. The following operator commands
+remain prepared only; they were not executed:
 
 ```bash
 cd /opt/easymod
-GROWTH_DIGEST="<RESOLVED_DIGEST>"
-docker pull "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}"
-test "$(docker image inspect -f '{{index .RepoDigests 0}}' "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}")" = "ghcr.io/mr3826/easymoderator-growth-os@${GROWTH_DIGEST}"
+docker pull ghcr.io/mr3826/easymoderator-growth-os:e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0
+test "$(docker image inspect -f '{{index .RepoDigests 0}}' ghcr.io/mr3826/easymoderator-growth-os:e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0)" = "ghcr.io/mr3826/easymoderator-growth-os@sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00"
 ```
+
+After separate authorization, set `GROWTH_BOOTSTRAP_DIGEST` to this verified
+bare digest, confirm the droplet pulled the same immutable reference, and clear
+the variable after a successful rollout. It remains unset until the human gate
+opens.
+
+## Phase A and B pre-deploy receipts
+
+These receipts were collected on `2026-08-21`. No deploy, DNS/TLS change,
+Founder credential handling, or production data mutation occurred. The restore
+drill used a temporary container, volume, and network and removed all three in
+its trap-guarded teardown.
+
+- `PHASE_A_PREFLIGHT_GATE`: `PASS` for pre-deploy lanes 1-4
+- `DIGEST_AUTHORITY`: `PASS` — exact-SHA publication run `32477273787` produced
+  `sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00`
+- `PRODUCTION_DIGEST_CAPTURE`: `PASS` — backend rollback ref
+  `ghcr.io/mr3826/easymod-backend@sha256:016272e5ee91f821ef27f9a93cc07874036a567bc22fa1f1973193bde0921b18`
+  and frontend rollback ref
+  `ghcr.io/mr3826/easymod-frontend@sha256:496aac5a73e954ed8d08f94250bbaddc5321f6a63555e81c139acab0d3db6fc5`
+  were captured with `docker inspect`; Growth was confirmed absent
+- `BACKUP_READINESS`: `PASS` — fresh backup run `32441601649` produced
+  `easymod-20260821-025646.dump`; isolated restore receipt recorded
+  `RESTORE_PG_RESTORE=PASS`, users `2`, shops `2`, Growth tables absent as an
+  explicit pre-rollout baseline, latest migration
+  `20260726_001_meta_webhook_receipts`, and unchanged production PostgreSQL
+  uptime; the published restore workflow is the repeatable mechanism for this
+  receipt
+- `DEPLOY_PATH_INTEGRITY`: `PASS` — validator returned
+  `rollback-contract=PASS`; `production` now has required reviewer `mr3826` and
+  protected-branch policy; `main` requires pull requests, admin enforcement,
+  conversation resolution, strict `Test & Build Gate`, `Growth OS build gate`,
+  and `Growth OS browser E2E gate` checks, with required approvals set to `0`,
+  force-push and deletion disabled;
+  required secret names passed, `PRODUCTION_DEPLOY_ENABLED=false`, and
+  `GROWTH_BOOTSTRAP_DIGEST` is absent. Single-maintainer review is structurally
+  unavailable; the `production` environment reviewer gate with
+  `prevent_self_review=false` remains the human checkpoint.
+- `DNS_HTTP_BASELINE`: `PASS` — expected hosts resolve to `139.59.249.141` and
+  HTTP redirects to HTTPS
+- `GROWTH_TLS_ISSUANCE`: `DEFERRED_TO_POST_DEPLOY` — the pre-deploy TLS failure
+  is circular by design because the Growth Caddy block is delivered and reloaded
+  only by the gated deploy; no pre-deploy TLS failure is counted against Phase A
+- `PHASE_B_POST_DEPLOY_GATE`: `OPEN` — Growth TLS issuance, live
+  Growth-origin browser walkthrough, and operator bootstrap remain pending
+- `PRODUCTION_DEPLOY_ENABLED`: `false` confirmed by names-only repository
+  variable inspection
+- `GROWTH_BOOTSTRAP_DIGEST`: absent during preflight
+- `HUMAN_AUTHORIZATION_GATE`: closed
+
+The existing `origin/main` CI run `32466526882` and Security run `32466526773`
+passed, with `Deploy to DO Droplet` skipped. These checks and the new pre-deploy
+receipts do not authorize the live rollout.
 
 ## Phase 3 prospect foundation hardening
 
@@ -363,15 +413,23 @@ The gates are intentionally separate:
 - `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; the merged hardening implementation addresses them`
 - `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on merged SHA c65919238b608b5329aa0c152be4387dbafbfb67`
 - `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
-- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `OPEN — at rollout time resolve the Growth digest published for the main SHA being deployed, set repository variable GROWTH_BOOTSTRAP_DIGEST to that exact bare digest before the first separately authorized deploy, then clear it after successful rollout`
-- `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation`
+- `PHASE_A_PREFLIGHT_GATE`: `PASS — exact digest, incumbent rollback refs, isolated restore, deploy protections, and required names-only configuration checks are evidenced; the restore-drill workflow awaits publication`
+- `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `PASS — exact e455b0c publication run 32477273787 produced digest sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00`
+- `PRODUCTION_DIGEST_CAPTURE_GATE`: `PASS — backend/frontend incumbent refs are digest-pinned and Growth is absent, so the bootstrap path is confirmed`
+- `BACKUP_RESTORE_GATE`: `PASS — isolated manual drill restored the fresh dump and cleaned all temporary resources; Growth tables were absent in the pre-rollout backup and recorded explicitly`
+- `DEPLOY_PATH_INTEGRITY_GATE`: `PASS — rollback contract, production reviewer policy, protected main branch with zero required approvals and strict required checks, and required secret names are verified`
+- `DNS_HTTP_BASELINE_GATE`: `PASS — DNS and HTTP redirect baseline recorded`
+- `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation are required because the Caddy Growth block is delivered by the gated deploy`
+- `PHASE_B_POST_DEPLOY_GATE`: `OPEN — Growth TLS, live Growth-origin browser walkthrough, and operator bootstrap remain pending`
+- `PHASE_C_PUBLICATION_GATE`: `OPEN — the corrected workflow and receipts must merge to main before the restore mechanism is considered published`
 - `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
 - `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
 - `ROLLBACK_REHEARSAL_GATE`: `PASS — merged SHA 0f327dd4728c649a3ed849f6915043f0410af278; CI run 32456686329; deployment-config job 96695826601; artifact rollback-rehearsal-evidence; receipt SHA256 160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb`
 - `OVERALL_GROWTH_OS_RELEASE_VERDICT`: `NO-GO`
 
-Phase 3 implementation and the disposable local, browser, and rollback gates
-are complete for the development gate. The outstanding digest pin, live
-Growth-origin browser/DNS/TLS, operator bootstrap, production browser, and
-production delivery gates remain open and must not be represented as passed by
-this phase.
+Phase 3 implementation and the disposable local and remote browser gates are
+complete for the development gate. The pre-deploy rollout gate is now
+evidenced, but live Growth-origin TLS/browser delivery, operator bootstrap,
+rollback rehearsal and production delivery remain open and must not be
+represented as passed by this phase. The restore mechanism remains a release
+precondition, not authorization to deploy.
