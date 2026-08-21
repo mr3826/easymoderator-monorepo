@@ -1,7 +1,8 @@
 name: Growth OS CI / CD
 
 # Changes to release-safety workflows intentionally exercise the required PR
-# verification jobs; image publication remains guarded by its event condition.
+# verification jobs; receipt-only release updates use this protected path too;
+# image publication remains guarded by its event condition.
 # Growth OS ships on its own pipeline, not through ci-cd.yml. It is an internal
 # staff surface with its own image, its own host (growth.easymod.tech) and no
 # coupling to the merchant app's deploy — keeping it separate is the point.
