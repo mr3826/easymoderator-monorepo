@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      forward_migration_image:
+        description: 'Backend image whose migrations must apply to the restored dump; defaults to the image production currently runs'
+        required: false
+        default: ''
+        type: string
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Required GitHub secrets:
@@ -241,7 +246,17 @@ jobs:
 
   restore-drill:
     name: Isolated PostgreSQL restore drill
-    if: github.event_name == 'workflow_dispatch' && inputs.restore_drill == true
+    # Nightly against the backup just taken, and on demand. Fresh-database CI
+    # cannot see production schema drift, so the restored dump is the only
+    # pre-production place a migration can be proved against the real schema.
+    needs: [backup]
+    # always(): the drill reads the newest dump on the droplet, so a failed
+    # off-site upload must not also cost the day's migration proof.
+    if: |
+      always() && (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.restore_drill == true)
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -249,12 +264,13 @@ jobs:
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
         env:
           RESTORE_DRILL_RUN_ID: ${{ github.run_id }}
+          FORWARD_MIGRATION_IMAGE: ${{ inputs.forward_migration_image }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 900s
-          envs: RESTORE_DRILL_RUN_ID
+          envs: RESTORE_DRILL_RUN_ID,FORWARD_MIGRATION_IMAGE
           script: |
             set -euo pipefail
             umask 077
@@ -354,6 +370,56 @@ jobs:
             test -n "$max_migration"
             printf 'RESTORE_MAX_MIGRATION=%s\n' "$max_migration"
 
-            test "$(docker inspect -f '{{.State.StartedAt}}' easymod-postgres-1)" = "$PRODUCTION_POSTGRES_STARTED_AT"
             echo 'RESTORE_PG_RESTORE=PASS'
+
+            # ── Forward-migration gate ──────────────────────────────────────
+            # Run 32511063613 failed its production migration while CI was
+            # green: CI builds a fresh squash-shaped database, production
+            # carries a pre-squash shape its ledger claims is already migrated.
+            # Pending migrations are therefore proved here, against the restored
+            # dump, before they are ever pointed at production.
+            MIGRATION_IMAGE="${FORWARD_MIGRATION_IMAGE:-}"
+            if [ -z "$MIGRATION_IMAGE" ]; then
+              MIGRATION_IMAGE=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1)
+            fi
+            test -n "$MIGRATION_IMAGE"
+            echo "FORWARD_MIGRATION_IMAGE=$MIGRATION_IMAGE"
+
+            migration_count() {
+              docker exec "$1" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT COUNT(*) FROM migrations;'
+            }
+            PRODUCTION_LEDGER_BEFORE=$(migration_count easymod-postgres-1)
+            RESTORED_LEDGER_BEFORE=$(migration_count "$RESTORE_CONTAINER")
+
+            # A throwaway hex login keeps production's own credentials out of
+            # the connection string, and hex needs no URL escaping.
+            DRILL_PASSWORD=$(openssl rand -hex 24)
+            docker exec "$RESTORE_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE ROLE restore_drill LOGIN SUPERUSER PASSWORD '$DRILL_PASSWORD';"
+            DRILL_DATABASE_URL="postgres://restore_drill:$DRILL_PASSWORD@$RESTORE_CONTAINER:5432/$POSTGRES_DB"
+
+            # The migrator gets production's env file for its secrets, so the
+            # only thing separating it from the live database is the
+            # DATABASE_URL override. The container re-checks that override
+            # itself and exits before the first statement unless it names this
+            # drill's isolated container.
+            docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e RUN_MIGRATIONS_ON_STARTUP=false -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" -e EXPECTED_DB_HOST="$RESTORE_CONTAINER" "$MIGRATION_IMAGE" sh -c "node -e 'if (new URL(process.env.DATABASE_URL).hostname !== process.env.EXPECTED_DB_HOST) { console.error(process.env.EXPECTED_DB_HOST); process.exit(1); }' && npm run migrate"
+
+            RESTORED_LEDGER_AFTER=$(migration_count "$RESTORE_CONTAINER")
+            echo "RESTORED_FORWARD_MIGRATIONS_APPLIED=$((RESTORED_LEDGER_AFTER - RESTORED_LEDGER_BEFORE))"
+            echo 'RESTORED_FORWARD_MIGRATION=PASS'
+
+            # Reported, not gating: the audit also surfaces entity drift that
+            # predates this gate, so a finding here is evidence to triage rather
+            # than a reason to fail the drill.
+            if docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" "$MIGRATION_IMAGE" node scripts/schema-drift-audit.js; then
+              echo 'RESTORED_SCHEMA_DRIFT_AUDIT=CLEAN'
+            else
+              echo 'RESTORED_SCHEMA_DRIFT_AUDIT=FINDINGS'
+            fi
+
+            # None of the above may have touched production: same postgres
+            # process, same migration ledger.
+            test "$(docker inspect -f '{{.State.StartedAt}}' easymod-postgres-1)" = "$PRODUCTION_POSTGRES_STARTED_AT"
+            test "$(migration_count easymod-postgres-1)" = "$PRODUCTION_LEDGER_BEFORE"
             echo 'PRODUCTION_POSTGRES_UPTIME_UNCHANGED=PASS'
+            echo 'PRODUCTION_MIGRATION_LEDGER_UNCHANGED=PASS'
