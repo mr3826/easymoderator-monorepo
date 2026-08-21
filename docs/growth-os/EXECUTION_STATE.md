@@ -4,12 +4,12 @@ Updated: 2026-08-21
 
 ## Current execution
 
-- `CURRENT_MAIN`: `e455b0c69ce8aca1a18d7dc4085f1cd6854d25d0`
-- `BASE_MAIN`: latest `origin/main` after PR #45 squash merge
+- `CURRENT_MAIN`: `cf634fab5d47477f9cda4113237561471454a8ae`
+- `BASE_MAIN`: latest `origin/main` after PR #46 squash merge
 - `WORKTREE`: `D:\easymod\easy-moderator-growth-docs`
-- `BRANCH`: `docs/growth-os-phase-c-publication`
-- `PHASE`: Phase C — publish the safety mechanism before authorizing rollout
-- `STATUS`: pre-deploy receipts pass; the restore mechanism is being published; human authorization and live release evidence remain blocked
+- `BRANCH`: `docs/growth-os-restore-receipt`
+- `PHASE`: Phase C — safety mechanism published; rollout authorization pending
+- `STATUS`: pre-deploy receipts pass; post-merge restore mechanism receipt passes; human authorization and live release evidence remain blocked
 - `RELEASE_STATUS`: NO-GO until live Growth-origin browser/DNS/TLS and operator-delivery evidence are complete
 - `PRODUCTION_CHANGED`: NO
 
@@ -263,14 +263,15 @@ bare digest, confirm the droplet pulled the same immutable reference, and clear
 the variable after a successful rollout. It remains unset until the human gate
 opens.
 
-## Phase A and B pre-deploy receipts
+## Phase A-C pre-deploy receipts
 
 These receipts were collected on `2026-08-21`. No deploy, DNS/TLS change,
 Founder credential handling, or production data mutation occurred. The restore
 drill used a temporary container, volume, and network and removed all three in
 its trap-guarded teardown.
 
-- `PHASE_A_PREFLIGHT_GATE`: `PASS` for pre-deploy lanes 1-4
+- `PHASE_A_PREFLIGHT_GATE`: `PASS` for pre-deploy lanes 1-4; the restore-drill
+  workflow is now published on `main`
 - `DIGEST_AUTHORITY`: `PASS` — exact-SHA publication run `32477273787` produced
   `sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00`
 - `PRODUCTION_DIGEST_CAPTURE`: `PASS` — backend rollback ref
@@ -278,13 +279,14 @@ its trap-guarded teardown.
   and frontend rollback ref
   `ghcr.io/mr3826/easymod-frontend@sha256:496aac5a73e954ed8d08f94250bbaddc5321f6a63555e81c139acab0d3db6fc5`
   were captured with `docker inspect`; Growth was confirmed absent
-- `BACKUP_READINESS`: `PASS` — fresh backup run `32441601649` produced
-  `easymod-20260821-025646.dump`; isolated restore receipt recorded
-  `RESTORE_PG_RESTORE=PASS`, users `2`, shops `2`, Growth tables absent as an
-  explicit pre-rollout baseline, latest migration
-  `20260726_001_meta_webhook_receipts`, and unchanged production PostgreSQL
-  uptime; the published restore workflow is the repeatable mechanism for this
-  receipt
+- `BACKUP_READINESS`: `PASS` — published-main workflow dispatch run
+  `32484826577` (backup job `96778894448`, restore job `96778894595`), resolved
+  `/opt/easymod/backups/easymod-20260821-025646.dump`, and reported
+  `RESTORE_ROW_COUNT_users=2`, `RESTORE_ROW_COUNT_shops=2`, Growth tables absent,
+  `RESTORE_MAX_MIGRATION=20260726_001_meta_webhook_receipts`,
+  `RESTORE_PG_RESTORE=PASS`, and
+  `PRODUCTION_POSTGRES_UPTIME_UNCHANGED=PASS`; isolated container, volume, and
+  network teardown completed successfully
 - `DEPLOY_PATH_INTEGRITY`: `PASS` — validator returned
   `rollback-contract=PASS`; `production` now has required reviewer `mr3826` and
   protected-branch policy; `main` requires pull requests, admin enforcement,
@@ -307,9 +309,10 @@ its trap-guarded teardown.
 - `GROWTH_BOOTSTRAP_DIGEST`: absent during preflight
 - `HUMAN_AUTHORIZATION_GATE`: closed
 
-The existing `origin/main` CI run `32466526882` and Security run `32466526773`
-passed, with `Deploy to DO Droplet` skipped. These checks and the new pre-deploy
-receipts do not authorize the live rollout.
+PR #46 CI run `32484251281`, Growth OS run `32484251140`, and Security run
+`32484251127` passed with deployment and image publication skipped for the PR.
+The post-merge restore run `32484826577` also passed. These checks and receipts
+do not authorize the live rollout.
 
 ## Phase 3 prospect foundation hardening
 
@@ -413,15 +416,15 @@ The gates are intentionally separate:
 - `PHASE_3_MERGED_IMPLEMENTATION_GATE`: `CORRECTED — merged implementation had confirmed security/correctness defects; the merged hardening implementation addresses them`
 - `PHASE_3_IMPLEMENTATION_GATE`: `PASS — local hardening validation and PR #42 remote checks complete on merged SHA c65919238b608b5329aa0c152be4387dbafbfb67`
 - `PHASE_3_BROWSER_E2E_GATE`: `PASS remotely — merged SHA c65919238b608b5329aa0c152be4387dbafbfb67; run 32412540978 reported 12/12 Chromium scenarios; live Growth-origin browser/DNS/TLS remains OPEN`
-- `PHASE_A_PREFLIGHT_GATE`: `PASS — exact digest, incumbent rollback refs, isolated restore, deploy protections, and required names-only configuration checks are evidenced; the restore-drill workflow awaits publication`
+- `PHASE_A_PREFLIGHT_GATE`: `PASS — exact digest, incumbent rollback refs, isolated restore, deploy protections, required names-only configuration checks, and the published restore-drill workflow are evidenced`
 - `FIRST_GROWTH_ROLLOUT_DIGEST_GATE`: `PASS — exact e455b0c publication run 32477273787 produced digest sha256:7421a9b49792fb02d6f8c18acd9d5a547966684529c8dfaa1df8629bdff02b00`
 - `PRODUCTION_DIGEST_CAPTURE_GATE`: `PASS — backend/frontend incumbent refs are digest-pinned and Growth is absent, so the bootstrap path is confirmed`
-- `BACKUP_RESTORE_GATE`: `PASS — isolated manual drill restored the fresh dump and cleaned all temporary resources; Growth tables were absent in the pre-rollout backup and recorded explicitly`
+- `BACKUP_RESTORE_GATE`: `PASS — published-main run 32484826577 / job 96778894595 restored the resolved dump, reported users 2 and shops 2, confirmed Growth tables absent and unchanged production PostgreSQL uptime, and cleaned all temporary resources`
 - `DEPLOY_PATH_INTEGRITY_GATE`: `PASS — rollback contract, production reviewer policy, protected main branch with zero required approvals and strict required checks, and required secret names are verified`
 - `DNS_HTTP_BASELINE_GATE`: `PASS — DNS and HTTP redirect baseline recorded`
 - `GROWTH_TLS_ISSUANCE_GATE`: `OPEN — post-deploy Caddy certificate issuance and HTTPS validation are required because the Caddy Growth block is delivered by the gated deploy`
 - `PHASE_B_POST_DEPLOY_GATE`: `OPEN — Growth TLS, live Growth-origin browser walkthrough, and operator bootstrap remain pending`
-- `PHASE_C_PUBLICATION_GATE`: `OPEN — the corrected workflow and receipts must merge to main before the restore mechanism is considered published`
+- `PHASE_C_PUBLICATION_GATE`: `PASS — PR #46 merged as `cf634fab5d47477f9cda4113237561471454a8ae`; the restore mechanism was dispatched from that merged `main` and passed`
 - `OPERATOR_BOOTSTRAP_GATE`: `OPEN — Founder/operator bootstrap remains unclaimed`
 - `PRODUCTION_BROWSER_E2E_GATE`: `OPEN — no live Growth-origin browser receipt`
 - `ROLLBACK_REHEARSAL_GATE`: `PASS — merged SHA 0f327dd4728c649a3ed849f6915043f0410af278; CI run 32456686329; deployment-config job 96695826601; artifact rollback-rehearsal-evidence; receipt SHA256 160f59bd56257807aeaba18ad40e727c37e73720dbf978ce8d19b282b275dccb`
