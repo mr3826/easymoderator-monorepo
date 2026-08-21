@@ -11,7 +11,6 @@ PROJECT_NAME="easymod-rollback-rehearsal-$$"
 ROLLBACK_STATE_DIR="$STAGE_ROOT/.cutover-rollback/rehearsal-$$"
 WORK_DIR=""
 MARKER_OWNED=false
-STAGE_READY=false
 
 export PROJECT_NAME
 export REPORT_PATH
@@ -137,32 +136,6 @@ fi
 
 mkdir -p "$REPO_ROOT/_tmp"
 
-if [[ -e "$STAGE_ROOT/.env.prod" || -e "$STAGE_ROOT/deployment-metadata.json" ]] \
-    && [[ ! -f "$MARKER" ]]; then
-    echo "ERROR: refusing to use $STAGE_ROOT because a production state file already exists" >&2
-    exit 1
-fi
-
-if [[ -d "$STAGE_ROOT" && ! -f "$MARKER" ]] \
-    && [[ -n "$(find "$STAGE_ROOT" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-    echo "ERROR: refusing to use non-empty unowned directory $STAGE_ROOT" >&2
-    exit 1
-fi
-
-sudo mkdir -p "$STAGE_ROOT"
-sudo chown "$(id -u):$(id -g)" "$STAGE_ROOT"
-if [[ -f "$MARKER" ]]; then
-    if ! sudo grep -Fxq "$MARKER_CONTENT" "$MARKER"; then
-        echo "ERROR: refusing to use $STAGE_ROOT with an unknown rehearsal marker" >&2
-        exit 1
-    fi
-else
-    printf '%s\n' "$MARKER_CONTENT" | sudo tee "$MARKER" >/dev/null
-    sudo chown "$(id -u):$(id -g)" "$MARKER"
-fi
-MARKER_OWNED=true
-STAGE_READY=true
-
 WORK_DIR="$(mktemp -d)"
 EXTRACTED_FILE="$WORK_DIR/extracted-functions.sh"
 : > "$EXTRACTED_FILE"
@@ -217,6 +190,31 @@ fi
 
 # shellcheck disable=SC1090
 source "$EXTRACTED_FILE"
+
+if [[ -e "$STAGE_ROOT/.env.prod" || -e "$STAGE_ROOT/deployment-metadata.json" ]] \
+    && [[ ! -f "$MARKER" ]]; then
+    echo "ERROR: refusing to use $STAGE_ROOT because a production state file already exists" >&2
+    exit 1
+fi
+
+if [[ -d "$STAGE_ROOT" && ! -f "$MARKER" ]] \
+    && [[ -n "$(find "$STAGE_ROOT" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    echo "ERROR: refusing to use non-empty unowned directory $STAGE_ROOT" >&2
+    exit 1
+fi
+
+sudo mkdir -p "$STAGE_ROOT"
+sudo chown "$(id -u):$(id -g)" "$STAGE_ROOT"
+if [[ -f "$MARKER" ]]; then
+    if ! sudo grep -Fxq "$MARKER_CONTENT" "$MARKER"; then
+        echo "ERROR: refusing to use $STAGE_ROOT with an unknown rehearsal marker" >&2
+        exit 1
+    fi
+else
+    printf '%s\n' "$MARKER_CONTENT" | sudo tee "$MARKER" >/dev/null
+    sudo chown "$(id -u):$(id -g)" "$MARKER"
+fi
+MARKER_OWNED=true
 
 docker pull node:20-alpine
 docker pull node:22-alpine
