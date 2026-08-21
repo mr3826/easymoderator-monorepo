@@ -17,6 +17,10 @@ on:
     paths:
       - "EasyMod-growth/**"
       - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
+      # The browser gate runs the migration chain against its disposable
+      # PostgreSQL before seeding fixtures, so a migration change can break it
+      # without touching a single Growth file.
+      - "EasyMod-backend/src/database/**"
       - "package.json"
       - "package-lock.json"
       - "scripts/run-growth-e2e.js"
@@ -27,6 +31,10 @@ on:
     paths:
       - "EasyMod-growth/**"
       - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
+      # The browser gate runs the migration chain against its disposable
+      # PostgreSQL before seeding fixtures, so a migration change can break it
+      # without touching a single Growth file.
+      - "EasyMod-backend/src/database/**"
       - "package.json"
       - "package-lock.json"
       - "scripts/run-growth-e2e.js"
