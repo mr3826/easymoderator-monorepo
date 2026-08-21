@@ -41,6 +41,7 @@ const required = [
     ['rollback failure status', 'rollback || rc=70'],
     ['failure trap', 'trap \'rc=$?; if [ "$rc" -ne 0 ]'],
     ['success marker', 'deploy_succeeded=true'],
+    ['executable rollback rehearsal', 'scripts/rollback-rehearsal.sh'],
     ['backend immutable interpolation', 'image: ${GHCR_IMAGE_BACKEND:?'],
     ['frontend immutable interpolation', 'image: ${GHCR_IMAGE_FRONTEND:?'],
     ['growth running capture', 'candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1'],
@@ -99,21 +100,6 @@ if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)
     || !compose.includes('image: redis@sha256:')
     || !compose.includes('image: qdrant/qdrant@sha256:')) {
     throw new Error('Production Compose contains mutable or unpinned infrastructure images.');
-}
-
-// Synthetic rehearsal of the state transition. This deliberately does not call
-// Docker or SSH: it proves the recovery inputs are immutable references and the
-// documented restore operation does not depend on the candidate application.
-const previous = {
-    backend: 'ghcr.io/mr3826/easymoderator-backend@sha256:' + 'a'.repeat(64),
-    frontend: 'ghcr.io/mr3826/easymoderator-frontend@sha256:' + 'b'.repeat(64),
-};
-const restored = {
-    backend: previous.backend,
-    frontend: previous.frontend,
-};
-if (restored.backend !== previous.backend || restored.frontend !== previous.frontend) {
-    throw new Error('Synthetic rollback rehearsal did not restore both previous images.');
 }
 
 console.log('rollback-contract=PASS');
