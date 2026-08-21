@@ -119,15 +119,26 @@ curl --fail https://api.easymod.tech/health/ready
 curl --fail https://api.easymod.tech/health
 ```
 
-The rollback rehearsal is non-production and must use a disposable Compose
-project or a shell-level contract harness. It must prove that captured
-`previous_backend_image` and `previous_frontend_image` values are restored by
-the `docker compose ... up -d --no-build --remove-orphans` command, followed by
-both health checks. It must not run `migrate:down`: application rollback can
-restore images, while a schema change requires a reviewed forward migration or
-an isolated database restore. The current production source and its tags remain
-the operator's rollback inputs; this repository must not be required to boot in
-order to execute that recovery.
+The executable non-production rehearsal runs from the repository root in the
+CI `Deployment configuration dry run` job:
+
+```bash
+bash scripts/rollback-rehearsal.sh
+```
+
+It resolves real `node:20-alpine` and `node:22-alpine` RepoDigests at runtime,
+extracts `resolve_container_digest`, `assert_immutable_ref`, `verify_rollback`,
+and `rollback` directly from the shipped `ci-cd.yml`, and stages synthetic
+previous/candidate files under an owned `/opt/easymod` layout. The rehearsal proves the candidate state is
+rejected, then proves the actual rollback restores both captured image
+references, the environment hash, Compose, the Caddyfile, and both health checks;
+it also proves missing previous images fail closed. Its
+`rollback-rehearsal-evidence` artifact is a machine-readable receipt. It must not run `migrate:down`:
+application rollback can restore images, while a schema change requires a reviewed
+forward migration or an isolated database restore.
+The current production source and its tags remain the operator's rollback
+inputs; this repository must not be required to boot in order to execute that
+recovery.
 
 The placeholders above are operator inputs, not credentials and must never be
 replaced in committed documentation.
