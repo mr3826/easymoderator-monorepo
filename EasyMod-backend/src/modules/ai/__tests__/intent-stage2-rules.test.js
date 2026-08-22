@@ -4,6 +4,7 @@ const {
     PENDING_BANGLA_LANGUAGE_QA_LITERALS,
     classify,
     hasPurchaseIntent,
+    isNegatedMutation,
     isOrderCancel,
     isNegatedPurchase,
 } = require('../intent/stage2-rules');
@@ -22,7 +23,7 @@ describe('Stage-2 deterministic intent rules', () => {
         expect(result.intentId).toBe(intentId);
         expect(result.domain).toBe(domain);
         expect(result.source).toBe('RULE');
-        expect(result.matchedRule).toMatch(/^1\.0\.0:/);
+        expect(result.matchedRule).toMatch(/^1\.1\.0:/);
     });
 
     test.each([
@@ -78,6 +79,90 @@ describe('Stage-2 deterministic intent rules', () => {
     test('all new Bengali literals are explicitly marked pending language QA', () => {
         expect(PENDING_BANGLA_LANGUAGE_QA_LITERALS.length).toBeGreaterThan(0);
         expect(PENDING_BANGLA_LANGUAGE_QA_LITERALS).toContain('ঢাকার বাইরে কত');
+    });
+
+    test.each([
+        ['confirm order yes', 'ORDER_SESSION_CHECKOUT'],
+        ['yes confirm this order', 'ORDER_SESSION_CHECKOUT'],
+        ['checkout now', 'ORDER_SESSION_CHECKOUT'],
+        ['order ta confirm korun', 'ORDER_SESSION_CHECKOUT'],
+        ['ঠিক আছে অর্ডার কনফার্ম', 'ORDER_SESSION_CHECKOUT'],
+        ['I confirm', 'ORDER_SESSION_CHECKOUT'],
+        ['yes go ahead', 'ORDER_SESSION_CHECKOUT'],
+        ['checkout order', 'ORDER_SESSION_CHECKOUT'],
+        ['add one more shirt', 'CART_EDIT_OR_ADD_MORE'],
+        ['cart e aro ekta dao', 'CART_EDIT_OR_ADD_MORE'],
+        ['edit my preorder cart', 'CART_EDIT_OR_ADD_MORE'],
+        ['quantity change korbo', 'CART_EDIT_OR_ADD_MORE'],
+        ['cart theke eta bad dao', 'CART_EDIT_OR_ADD_MORE'],
+        ['can I add another product', 'CART_EDIT_OR_ADD_MORE'],
+        ['do you have this item', 'PRODUCT_AVAILABILITY'],
+        ['এই পণ্যটি কি আছে', 'PRODUCT_AVAILABILITY'],
+        ['can I get this product', 'PRODUCT_AVAILABILITY'],
+        ['available size ache', 'PRODUCT_AVAILABILITY'],
+        ['নাই নাকি আছে', 'PRODUCT_AVAILABILITY'],
+        ['এই শার্টটা স্টকে আছে?', 'PRODUCT_AVAILABILITY'],
+        ['কোন সাইজ স্টকে আছে?', 'PRODUCT_AVAILABILITY'],
+        ['স্টক আছে?', 'PRODUCT_AVAILABILITY'],
+        ['do you have cotton saree', 'PRODUCT_INQUIRY'],
+        ['saree collection dekhাও', 'PRODUCT_INQUIRY'],
+        ['cotton jamdani saree', 'PRODUCT_INQUIRY'],
+        ['I need an agent', 'HUMAN_HANDOFF_REQUEST'],
+        ['let me speak with someone', 'HUMAN_HANDOFF_REQUEST'],
+        ['shop team help me', 'HUMAN_HANDOFF_REQUEST'],
+        ['my order is delayed', 'ORDER_POST_PURCHASE_REQUEST'],
+        ['modify the order after purchase', 'ORDER_POST_PURCHASE_REQUEST'],
+        ['how are you', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['ভালো আছেন?', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['maybe confirm this?', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ["I don't want to confirm order", 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['do not checkout now', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['confirm order but change address', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ["don't add another product", 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['confirm order no!', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['checkout korbo na', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['add another product na', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['change quantity to two na', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['অর্ডার কনফার্ম না!', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['do not cancel order', 'GENERAL_CHAT_OR_UNKNOWN'],
+        ['ঠিক আছে', 'GENERAL_CHAT_OR_UNKNOWN'],
+    ])('covers the C3 boundary fixture %s', (text, intentId) => {
+        expect(classify(text, { language: 'mixed', activeSession: true }).intentId).toBe(intentId);
+    });
+
+    test('does not turn an initial product order phrase into checkout', () => {
+        expect(classify('confirm order for this item').intentId).toBe('PURCHASE_INTENT_START');
+    });
+
+    test.each([
+        ['cancel checkout', 'ORDER_SESSION_CANCEL'],
+        ['human hair wig price?', 'PRODUCT_INQUIRY'],
+        ['complaint policy?', 'FAQ_KNOWLEDGE_QUESTION'],
+        ['I want to change my order before purchase', 'PRODUCT_INQUIRY'],
+        ['cotton and silk saree', 'PRODUCT_INQUIRY'],
+    ])('rejects a contextual false positive for %s', (text, intentId) => {
+        expect(classify(text, { language: 'en' }).intentId).toBe(intentId);
+    });
+
+    test('records availability variants without confusing them with attributes', () => {
+        expect(classify('এই শার্টটা স্টকে আছে?', { language: 'bn' }).slots).toEqual({
+            productReference: 'এই শার্টটা স্টকে আছে?',
+        });
+        expect(classify('কোন সাইজ স্টকে আছে?', { language: 'bn' }).slots).toEqual({
+            productReference: null,
+            variant: 'size',
+        });
+    });
+
+    test.each([
+        "I don't want to confirm order",
+        'do not checkout now',
+        'cancel checkout',
+        "don't add another product",
+        'checkout korbo na',
+        'confirm order no',
+    ])('marks refusal or cancellation as a negated mutation: %s', (text) => {
+        expect(isNegatedMutation(text)).toBe(true);
     });
 });
 

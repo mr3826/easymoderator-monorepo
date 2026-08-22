@@ -88,7 +88,11 @@ describe('handleOrderFlow — continue an active session', () => {
         const res = await handleOrderFlow(base({ message: 'cancel korbo' }));
 
         expect(res.handled).toBe(true);
-        expect(OrderSessionService.cancelSession).toHaveBeenCalledWith('sess-1', SHOP);
+        expect(OrderSessionService.cancelSession).toHaveBeenCalledWith('sess-1', SHOP, {
+            conversationId: null,
+            traceId: null,
+            mutationsAllowed: true,
+        });
         expect(OrderSessionService.processStep).not.toHaveBeenCalled();
         expect(res.response).toMatch(/cancel/i);
     });
@@ -112,6 +116,51 @@ describe('handleOrderFlow — continue an active session', () => {
             order_session: 'continue',
             step: 'COLLECTING_NAME',
         }));
+    });
+
+    test('a negated purchase cancels the active session instead of stepping it', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+
+        const res = await handleOrderFlow(base({ message: "I don't want to order this shirt" }));
+
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ reason: 'negated_purchase' }));
+        expect(OrderSessionService.cancelSession).toHaveBeenCalledWith('sess-1', SHOP, {
+            conversationId: null,
+            traceId: null,
+            mutationsAllowed: true,
+        });
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        'stop',
+        'I need an agent',
+        'I want to return my order',
+    ])('releases an active session for terminal intent %s', async (message) => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+
+        const res = await handleOrderFlow(base({ message }));
+
+        expect(res.handled).toBe(false);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'released_for_terminal_intent' }));
+        expect(OrderSessionService.cancelSession).toHaveBeenCalledWith('sess-1', SHOP, {
+            conversationId: null,
+            traceId: null,
+            mutationsAllowed: true,
+        });
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+    });
+
+    test('does not mutate an active cart for a negated edit', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue({ id: 'sess-1', status: 'ACTIVE' });
+
+        const res = await handleOrderFlow(base({ message: "don't add another shirt" }));
+
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'no_mutation' }));
+        expect(OrderSessionService.processStep).not.toHaveBeenCalled();
+        expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
     });
 });
 
@@ -137,6 +186,28 @@ describe('handleOrderFlow — start a session on purchase intent', () => {
         // The detected language is threaded into the session so its prompts reply
         // in one language matching the customer.
         expect(arg.language).toBe('en');
+    });
+
+    test('does not search or start a session for a negated purchase', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+
+        const res = await handleOrderFlow(base({ message: "I don't want to order this shirt" }));
+
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'no_mutation' }));
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
+    });
+
+    test('does not start a new session from a checkout confirmation without an active session', async () => {
+        OrderSessionService.getActiveSession.mockResolvedValue(null);
+
+        const res = await handleOrderFlow(base({ message: 'confirm order yes' }));
+
+        expect(res.handled).toBe(true);
+        expect(res.meta).toEqual(expect.objectContaining({ order_session: 'checkout_requires_active_session' }));
+        expect(productSearch.searchForOrder).not.toHaveBeenCalled();
+        expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
     });
 
     test('offers a numbered picker when multiple products match', async () => {
@@ -335,7 +406,10 @@ describe('hasPurchaseIntent', () => {
 });
 
 describe('isOrderCancel', () => {
-    test.each(['cancel', 'cancel korbo', 'order cancel', 'অর্ডার বাতিল', 'বাতিল', "don't want this order"])(
+    test.each([
+        'cancel', 'cancel korbo', 'order cancel', 'অর্ডার বাতিল', 'অর্ডারটি বাতিল করুন', 'বাতিল',
+        "don't want this order", 'I want to cancel this order', 'please cancel my session', 'cancel checkout',
+    ])(
         'detects cancel in: %s', (msg) => {
             expect(isOrderCancel(msg)).toBe(true);
         });
@@ -349,6 +423,8 @@ describe('isOrderCancel', () => {
         'না',
         'no, confirm this',
         'cancel blue shirt',
+        'do not cancel order',
+        "I don't want to cancel this order",
         'হ্যাঁ',
         'yes',
         'John Doe',

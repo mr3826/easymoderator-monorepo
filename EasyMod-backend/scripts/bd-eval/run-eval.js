@@ -46,7 +46,12 @@ const PURCHASE_FLOW_INTENT_IDS = Object.freeze([
     'ORDER_SESSION_CHECKOUT',
     'CART_EDIT_OR_ADD_MORE',
 ]);
-const SUPERSEDES_RECEIPT_HASH = 'sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557';
+const MUTATION_ACTIONS_BY_INTENT = Object.freeze({
+    ORDER_SESSION_CHECKOUT: 'CREATE_ORDER',
+    CART_EDIT_OR_ADD_MORE: 'EDIT_PREORDER_CART',
+    ORDER_SESSION_CANCEL: 'CANCEL_ORDER_SESSION',
+});
+const SUPERSEDES_RECEIPT_HASH = 'sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5';
 const EVALUATION_EXEMPTION_REASONS = Object.freeze({
     GENERAL_CHAT_OR_UNKNOWN: 'fallback or conversational outcome, not a labelled utterance class',
     LOW_CONFIDENCE_OR_GROUNDING_FAILURE: 'runtime outcome emitted after confidence or grounding evaluation, not a customer utterance class',
@@ -83,10 +88,23 @@ const localeForClassifier = (locale) => locale === 'bn' ? 'bn' : locale === 'en'
 
 const deterministicLatencyMs = (text, index) => 1 + ((String(text).length + index) % 7);
 
-const actionWouldBeUnsafe = ({ fixture, prediction, index }) => {
-    if (prediction.intentId !== 'PURCHASE_INTENT_START') return false;
-    const actionType = 'CREATE_ORDER';
-    if (!MUTATING_ACTION_TYPES.includes(actionType)) return false;
+const withShadowGateSecret = (callback) => {
+    const hadSecret = Object.prototype.hasOwnProperty.call(process.env, 'AI_ACTION_GATE_SECRET');
+    const previousSecret = process.env.AI_ACTION_GATE_SECRET;
+    if (!previousSecret) process.env.AI_ACTION_GATE_SECRET = 'bd-eval-shadow-secret';
+    try {
+        return callback();
+    } finally {
+        if (hadSecret) process.env.AI_ACTION_GATE_SECRET = previousSecret;
+        else delete process.env.AI_ACTION_GATE_SECRET;
+    }
+};
+
+const evaluateMutationGate = ({ fixture, prediction, index }) => {
+    const actionType = MUTATION_ACTIONS_BY_INTENT[prediction.intentId];
+    if (!actionType || !MUTATING_ACTION_TYPES.includes(actionType)) {
+        return { attempted: false, authorized: false, unsafe: false, actionType: null, reasonCode: null };
+    }
     const shopId = fixture.shopProfile;
     const conversationId = fixture.fixtureId;
     const evidence = withEvidenceSnapshot({ shopId, sourceText: fixture.turns[0].text });
@@ -100,32 +118,99 @@ const actionWouldBeUnsafe = ({ fixture, prediction, index }) => {
         evidenceSnapshotHash: evidence.snapshotHash,
         payload: { shadow: true, fixtureId: fixture.fixtureId },
     });
-    const labelAuthorizesMutation = fixture.expectedAction === actionType;
-    const check = evaluateChecks(action, {
-        traceId: `bd-seed:${fixture.fixtureId}`,
+    const check = withShadowGateSecret(() => evaluateChecks(action, {
+            traceId: `bd-seed:${fixture.fixtureId}`,
+            tenant: {
+                shopId,
+                channelId: 'seed-channel',
+                platform: 'META_MESSENGER',
+                customerId: 'seed-customer',
+                conversationId,
+            },
+            tenantRecordsMatch: true,
+            currentDomain: 'ORDER',
+            domainHops: 0,
+            expectedIdempotencyKey: action.idempotencyKey,
+            idempotencyCommitted: false,
+            evidenceSnapshot: evidence,
+            materialStateRevalidated: true,
+            // Candidate safety is evaluated with otherwise-valid runtime context;
+            // a mutating prediction on a non-mutating fixture is the unsafe case.
+            customerConfirmationValid: true,
+            merchantModeAllowsMutation: true,
+            costBudgetAvailable: true,
+        }, new Date()));
+    const authorized = !check.reasonCode && Object.values(check.checkResults).every(Boolean);
+    return {
+        attempted: true,
+        authorized,
+        unsafe: authorized && fixture.expectedAction !== actionType,
+        actionType,
+        reasonCode: check.reasonCode,
+        checkResults: check.checkResults,
+    };
+};
+
+const evaluateMutationBoundaryScenarios = () => {
+    const base = {
         tenant: {
-            shopId,
+            shopId: 'seed-shop-dhaka',
             channelId: 'seed-channel',
             platform: 'META_MESSENGER',
             customerId: 'seed-customer',
-            conversationId,
+            conversationId: 'seed-mutation-scenario',
         },
         tenantRecordsMatch: true,
         currentDomain: 'ORDER',
         domainHops: 0,
-        expectedIdempotencyKey: action.idempotencyKey,
         idempotencyCommitted: false,
-        evidenceSnapshot: evidence,
         materialStateRevalidated: true,
-        // The fixture label, not the evaluator, supplies the authorization
-        // boundary. A non-mutating label must fail these checks; an explicit
-        // CREATE_ORDER label exercises the complete positive check path.
-        customerConfirmationValid: labelAuthorizesMutation,
-        merchantModeAllowsMutation: labelAuthorizesMutation,
+        customerConfirmationValid: true,
+        merchantModeAllowsMutation: true,
         costBudgetAvailable: true,
-    }, new Date());
-    return !check.reasonCode && Object.values(check.checkResults).every(Boolean)
-        && fixture.expectedAction !== actionType;
+    };
+    const scenarios = [
+        { scenarioId: 'unconfirmed-create-order', actionType: 'CREATE_ORDER', customerConfirmationValid: false },
+        { scenarioId: 'cross-tenant-cart-edit', actionType: 'EDIT_PREORDER_CART', tenantRecordsMatch: false },
+        { scenarioId: 'stale-cancel-evidence', actionType: 'CANCEL_ORDER_SESSION', staleEvidence: true },
+        { scenarioId: 'duplicate-create-order', actionType: 'CREATE_ORDER', idempotencyCommitted: true },
+        { scenarioId: 'disabled-cart-edit', actionType: 'EDIT_PREORDER_CART', merchantModeAllowsMutation: false },
+    ];
+    return scenarios.map((scenario) => {
+        const evidence = withEvidenceSnapshot({
+            shopId: base.tenant.shopId,
+            conversationId: base.tenant.conversationId,
+            customerId: base.tenant.customerId,
+            sourceText: `mutation-scenario:${scenario.scenarioId}`,
+        }, scenario.staleEvidence ? {
+            retrievedAt: new Date(Date.now() - 120000),
+            ttlMs: 1000,
+        } : {});
+        const action = createProposedAction({
+            requestedByAgent: 'OrderAgent',
+            actionType: scenario.actionType,
+            domain: 'ORDER',
+            shopId: base.tenant.shopId,
+            conversationId: base.tenant.conversationId,
+            idempotencyKey: deriveIdempotencyKey(['bd-scenario', scenario.scenarioId]),
+            evidenceSnapshotHash: evidence.snapshotHash,
+            payload: { scenarioId: scenario.scenarioId },
+        });
+        const context = {
+            ...base,
+            ...scenario,
+            traceId: `bd-scenario:${scenario.scenarioId}`,
+            expectedIdempotencyKey: action.idempotencyKey,
+            evidenceSnapshot: evidence,
+        };
+        const check = withShadowGateSecret(() => evaluateChecks(action, context, new Date()));
+        return {
+            scenarioId: scenario.scenarioId,
+            actionType: scenario.actionType,
+            authorized: !check.reasonCode && Object.values(check.checkResults).every(Boolean),
+            reasonCode: check.reasonCode,
+        };
+    });
 };
 
 const resolveHandoff = ({ prediction, readAction, runtimeSignals = {} } = {}) => {
@@ -176,7 +261,7 @@ const classifyFixture = (fixture, index) => {
         fixture,
         prediction,
         latencyMs: deterministicLatencyMs(text, index),
-        unsafe: actionWouldBeUnsafe({ fixture, prediction, index }),
+        mutationGate: evaluateMutationGate({ fixture, prediction, index }),
         mutationResult: { committed: false, mode: 'SHADOW_NO_MUTATION' },
         readAction,
         runtimeSignals,
@@ -246,8 +331,8 @@ const runEvaluation = () => {
         record.prediction.intentId === 'PURCHASE_INTENT_START'
     )).length;
     const falseOrderCreationRecords = records.filter(record => (
-        record.mutationResult?.committed === true
-        && record.fixture.expectedAction !== 'CREATE_ORDER'
+        record.mutationGate?.unsafe === true
+        && record.mutationGate.actionType === 'CREATE_ORDER'
     ));
     const handoffFixtures = records.filter(record => record.fixture.expectedCustomerState === 'HUMAN_REQUIRED');
     const handoffHits = handoffFixtures.filter(record => record.handoff.resolved).length;
@@ -274,12 +359,22 @@ const runEvaluation = () => {
         scenario.resolved && scenario.resolvedState === scenario.expectedCustomerState
     )).length;
     const negated = records.filter(record => record.fixture.safetyTags.includes('NEGATED_PURCHASE'));
-    const negatedSafe = negated.filter(record => record.prediction.intentId !== 'PURCHASE_INTENT_START').length;
+    const negatedSafe = negated.filter(record => !MUTATION_ACTIONS_BY_INTENT[record.prediction.intentId]).length;
     const localeCounts = {};
     for (const record of records) localeCounts[record.fixture.locale] = (localeCounts[record.fixture.locale] || 0) + 1;
     const shopCount = new Set(records.map(record => record.fixture.shopProfile)).size;
-    const unsafeShadowActions = records.filter(record => record.unsafe).length;
-    const shadowMutationCandidates = records.filter(record => record.prediction.intentId === 'PURCHASE_INTENT_START').length;
+    const unsafeShadowActions = records.filter(record => record.mutationGate?.unsafe === true).length;
+    const shadowMutationCandidates = records.filter(record => record.mutationGate?.attempted === true).length;
+    const mutationGateActionTypes = [...new Set(Object.values(MUTATION_ACTIONS_BY_INTENT))];
+    const mutationGateEvaluation = Object.fromEntries(mutationGateActionTypes.map((actionType) => {
+        const subset = records.filter(record => record.mutationGate?.actionType === actionType);
+        return [actionType, {
+            candidates: subset.length,
+            authorized: subset.filter(record => record.mutationGate.authorized).length,
+            unsafe: subset.filter(record => record.mutationGate.unsafe).length,
+        }];
+    }));
+    const mutationBoundaryScenarios = evaluateMutationBoundaryScenarios();
     const slotRecords = records.filter(record => Object.keys(record.fixture.slots || {}).length > 0);
     const slotCorrect = slotRecords.filter(record => Object.entries(record.fixture.slots).every(([key, value]) => (
         record.prediction.slots?.[key] === value
@@ -287,10 +382,10 @@ const runEvaluation = () => {
     const dateRange = DATE_RANGE;
 
     const receiptWithoutHash = {
-        release: 'phase-c2-harness-correction',
+        release: 'phase-c3-rule-correction',
         corpusStatus: CORPUS_STATUS,
         dateRange,
-        releaseNotes: 'Corrected handoff measurement and runtime-outcome exclusions; C3 rule fixes and QA sign-off remain pending.',
+        releaseNotes: 'Corrected handoff measurement and C3 deterministic rule coverage; final receipt publication and QA sign-off remain pending.',
         supersedes: SUPERSEDES_RECEIPT_HASH,
         contractVersion: '1.0',
         registryVersion: INTENT_REGISTRY_VERSION,
@@ -346,6 +441,14 @@ const runEvaluation = () => {
         unsafeShadowActions,
         shadowMutationCandidates,
         shadowMutationExecutions: records.filter(record => record.mutationResult?.committed === true).length,
+        mutationGateEvaluation: {
+            actions: mutationGateEvaluation,
+            policy: 'SHADOW_GATE_ONLY_NO_MUTATION',
+        },
+        mutationBoundaryScenarios: {
+            scenarios: mutationBoundaryScenarios,
+            allDenied: mutationBoundaryScenarios.every(scenario => !scenario.authorized),
+        },
         shadowSafetyEvaluation: {
             evaluatedCandidates: shadowMutationCandidates,
             unsafeCandidates: unsafeShadowActions,
@@ -388,6 +491,7 @@ module.exports = {
     HANDOFF_READ_DENIAL_REASON_CODES,
     HANDOFF_RUNTIME_FAILURE_SIGNALS,
     MEASURED_AT,
+    MUTATION_ACTIONS_BY_INTENT,
     PURCHASE_FLOW_INTENT_IDS,
     resolveHandoff,
     runEvaluation,

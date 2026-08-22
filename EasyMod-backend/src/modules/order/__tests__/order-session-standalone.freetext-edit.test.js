@@ -25,9 +25,17 @@ jest.mock('../../shop/shop.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../payment/payment-config.entity', () => ({ findAll: jest.fn() }));
 jest.mock('../../shop/shop-bd-settings', () => ({ getBdSettings: jest.fn(), hasSelfMfs: jest.fn() }));
 jest.mock('../../invoice/chat-invoice.service', () => ({ issueInvoiceForOrder: jest.fn() }));
+jest.mock('../../ai/action-gate', () => ({
+    authorize: jest.fn(async (action) => ({
+        authorized: true,
+        authorization: { actionType: action.actionType, shopId: action.shopId, idempotencyKey: action.idempotencyKey },
+    })),
+    verifyAuthorization: jest.fn(() => true),
+}));
 
 const OrderSessionService = require('../order-session-standalone.service');
 const productSearch = require('../../product/product-search.service');
+const { authorize } = require('../../ai/action-gate');
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -129,6 +137,26 @@ describe('detectCartEdit', () => {
     test('a message with no product match is NOT an edit', () => {
         expect(OrderSessionService.detectCartEdit('change my address', cart())).toEqual({ action: null });
     });
+
+    test.each([
+        "don't remove the blue shirt",
+        'do not remove the dupatta',
+        "no, don't add another product",
+    ])('a negated cart request is NOT an edit: %s', (message) => {
+        expect(OrderSessionService.detectCartEdit(message, cart())).toEqual({ action: null });
+    });
+});
+
+describe('add-more checkout boundary', () => {
+    test.each(['do not checkout now', 'cancel checkout', "I don't want to confirm order"]) (
+        'does not advance checkout for %s', (message) => {
+            expect(OrderSessionService.isCheckoutWord(message)).toBe(false);
+        });
+
+    test.each(['done', 'checkout', 'no more', 'order confirm']) (
+        'recognises a positive checkout decision: %s', (message) => {
+            expect(OrderSessionService.isCheckoutWord(message)).toBe(true);
+        });
 });
 
 // ─── 3. Step-machine integration ────────────────────────────────────────────
@@ -184,6 +212,10 @@ describe('ORDER_SUMMARY applies a per-line edit instead of dead-ending', () => {
         expect(res.step_data.cart[0].product_id).toBe('p1');
         expect(res.prompt).toContain('Red Saree');
         expect(res.prompt).not.toContain('Silk Dupatta');
+        expect(authorize).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'EDIT_PREORDER_CART' }),
+            expect.objectContaining({ currentDomain: 'ORDER' }),
+        );
     });
 
     test('"make the saree 3" updates the quantity and re-shows the summary', async () => {

@@ -37,6 +37,15 @@ describe('intent registry contract', () => {
         expect(INTENTS.LOW_CONFIDENCE_OR_GROUNDING_FAILURE.evaluationClass)
             .toBe(INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME);
         expect(INTENTS.PRODUCT_INQUIRY.evaluationClass).toBeUndefined();
+        expect(INTENTS.PRODUCT_INQUIRY.version).toBe(2);
+        expect(INTENTS.ORDER_SESSION_CHECKOUT.version).toBe(2);
+        expect(createIntentRecord({
+            intentId: 'ORDER_SESSION_CHECKOUT',
+            slots: { currentCheckoutSlot: 'CONFIRMATION' },
+            confidence: 0.99,
+            source: 'RULE',
+            traceId: 'trace-checkout',
+        }).intentVersion).toBe(2);
     });
 
     test.each([

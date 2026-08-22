@@ -10,6 +10,7 @@ const PaymentConfigEntity = require('../payment/payment-config.entity');
 const CustomerEntity = require('../customer/customer.entity');
 const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
 const { verifyPaymentScreenshot } = require('../payment/self-mfs-handler.service');
+const { isNegatedMutation } = require('../ai/intent/stage2-rules');
 
 // Define OrderSession model directly
 const OrderSession = sequelize.define('OrderSession', {
@@ -271,6 +272,85 @@ const containsConfirmationNegation = (normalized) => {
     return tokens.some(token => NEGATION_TOKENS.has(token)) || normalized.includes('do not');
 };
 
+const authorizeSessionMutation = async (session, actionType, payload, {
+    conversationId,
+    traceId,
+    mutationsAllowed = true,
+} = {}) => {
+    const {
+        canonicalJson,
+        createProposedAction,
+        deriveIdempotencyKey,
+    } = require('../ai/contracts/action.contract');
+    const { withEvidenceSnapshot } = require('../ai/contracts/evidence.contract');
+    const { authorize } = require('../ai/action-gate');
+    const tenantConversationId = conversationId || session.id;
+    const tenantCustomerId = session.customer_id || session.customer_channel_id;
+    const requestTraceId = traceId || `order-session:${session.id}:${actionType}`;
+    const idempotencyKey = deriveIdempotencyKey([
+        'order-session',
+        actionType,
+        session.shop_id,
+        session.id,
+        tenantConversationId,
+        canonicalJson(payload),
+    ]);
+    const evidenceSnapshot = withEvidenceSnapshot({
+        shopId: session.shop_id,
+        conversationId: tenantConversationId,
+        customerId: tenantCustomerId,
+        sourceText: `${actionType}:${session.id}`,
+    });
+    const action = createProposedAction({
+        requestedByAgent: 'OrderAgent',
+        actionType,
+        domain: 'ORDER',
+        shopId: session.shop_id,
+        conversationId: tenantConversationId,
+        idempotencyKey,
+        evidenceSnapshotHash: evidenceSnapshot.snapshotHash,
+        payload,
+    });
+    const result = await authorize(action, {
+        traceId: requestTraceId,
+        tenant: {
+            shopId: session.shop_id,
+            channelId: session.channel || session.customer_channel_id,
+            platform: 'META_MESSENGER',
+            customerId: tenantCustomerId,
+            conversationId: tenantConversationId,
+        },
+        tenantRecordsMatch: true,
+        currentDomain: 'ORDER',
+        domainHops: 0,
+        expectedIdempotencyKey: idempotencyKey,
+        idempotencyCommitted: false,
+        evidenceSnapshot,
+        materialStateRevalidated: true,
+        customerConfirmationValid: true,
+        merchantModeAllowsMutation: actionType === 'CREATE_ORDER' ? mutationsAllowed === true : true,
+        costBudgetAvailable: true,
+    });
+    if (!result.authorized) throw new Error(`Action Gate denied ${actionType}: ${result.reasonCode}`);
+    return {
+        authorization: result.authorization,
+        idempotencyKey,
+        evidenceSnapshotHash: evidenceSnapshot.snapshotHash,
+    };
+};
+
+const verifySessionMutationAuthorization = (session, actionType, gateResult) => {
+    const { verifyAuthorization } = require('../ai/action-gate');
+    if (!verifyAuthorization(gateResult.authorization, {
+        actionType,
+        shopId: session.shop_id,
+        idempotencyKey: gateResult.idempotencyKey,
+        evidenceSnapshotHash: gateResult.evidenceSnapshotHash,
+    })) {
+        throw new Error(`Action Gate authorization verification failed for ${actionType}`);
+    }
+};
+
 class OrderSessionService {
     /**
      * Start a new order session
@@ -524,6 +604,13 @@ class OrderSessionService {
                         price: pi.price,
                         quantity: qty,
                     };
+                    const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
+                        orderSessionId: session.id,
+                        edit: 'add',
+                        lineIndex: (step_data.cart || []).length,
+                        quantity: qty,
+                    }, { conversationId, traceId, mutationsAllowed });
+                    verifySessionMutationAuthorization(session, 'EDIT_PREORDER_CART', cartGate);
                     step_data.cart = [...(step_data.cart || []), cartItem];
                     nextStep = 'ADD_MORE';
                     prompt = OrderSessionService.buildAddMorePrompt(pi, step_data.cart, lang);
@@ -544,7 +631,11 @@ class OrderSessionService {
                 const addMoreEdit = OrderSessionService.detectCartEdit(answer, addMoreCart);
                 if (addMoreEdit.action) {
                     ({ nextStep, prompt, completed } =
-                        await OrderSessionService.applyCartEdit(session, step_data, addMoreEdit, addMoreCart, lang));
+                        await OrderSessionService.applyCartEdit(session, step_data, addMoreEdit, addMoreCart, lang, {
+                            conversationId,
+                            traceId,
+                            mutationsAllowed,
+                        }));
                     break;
                 }
                 if (OrderSessionService.isCheckoutWord(answer)) {
@@ -752,7 +843,11 @@ class OrderSessionService {
                 const edit = OrderSessionService.detectCartEdit(answer, summaryCart);
                 if (edit.action) {
                     ({ nextStep, prompt, completed } =
-                        await OrderSessionService.applyCartEdit(session, step_data, edit, summaryCart, lang));
+                        await OrderSessionService.applyCartEdit(session, step_data, edit, summaryCart, lang, {
+                            conversationId,
+                            traceId,
+                            mutationsAllowed,
+                        }));
                     break;
                 }
 
@@ -1145,15 +1240,19 @@ class OrderSessionService {
     /**
      * Cancel session
      */
-    static async cancelSession(sessionId, shopId) {
+    static async cancelSession(sessionId, shopId, mutationContext = {}) {
         const session = await OrderSession.findOne({
-            where: { id: sessionId, shop_id: shopId }
+            where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
         });
 
         if (!session) {
             throw new Error('Session not found');
         }
 
+        const gateResult = await authorizeSessionMutation(session, 'CANCEL_ORDER_SESSION', {
+            orderSessionId: session.id,
+        }, mutationContext);
+        verifySessionMutationAuthorization(session, 'CANCEL_ORDER_SESSION', gateResult);
         await session.update({ status: 'CANCELLED' });
         return { success: true };
     }
@@ -1939,6 +2038,7 @@ class OrderSessionService {
     /** Whole-message "finish / no more items" intent at the add-more step. */
     static isCheckoutWord(text) {
         const t = normalizeAddMoreDecisionText(text);
+        if (isNegatedMutation(t)) return false;
         const DONE = new Set([
             'no', 'na', 'nah', 'nope', 'no more', 'done', 'finish', 'finished',
             'checkout', 'check out', 'complete', 'enough', 'bas', 'bus',
@@ -2160,6 +2260,13 @@ class OrderSessionService {
                 price: stock.product?.price ?? p.price,
                 quantity,
             };
+            const cartGate = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
+                orderSessionId: session.id,
+                edit: 'add',
+                lineIndex: (step_data.cart || []).length,
+                quantity,
+            }, { mutationsAllowed: true });
+            verifySessionMutationAuthorization(session, 'EDIT_PREORDER_CART', cartGate);
             step_data.cart = [...(step_data.cart || []), item];
             added.push(item);
         }
@@ -2208,6 +2315,7 @@ class OrderSessionService {
         const NONE = { action: null };
         if (!text || !Array.isArray(cart) || !cart.length) return NONE;
         const t = String(text).replace(/[০-৯]/g, (d) => BN_DIGITS[d] || d).toLowerCase().trim();
+        if (isNegatedMutation(t)) return NONE;
 
         const qty = extractQuantity(t);
         const QUANTITY_EDIT = /\b(quantity|qty|set|make|update|change|koro|koren|korun|kor|piece|pcs?)\b|পরিমাণ|সংখ্যা|করেন|করুন|করো|করে দিন|করে দেন/i;
@@ -2249,7 +2357,14 @@ class OrderSessionService {
     }
 
     /** Apply a detected cart edit and produce the next step + re-rendered summary. */
-    static async applyCartEdit(session, step_data, edit, cart, lang) {
+    static async applyCartEdit(session, step_data, edit, cart, lang, mutationContext = {}) {
+        const gateResult = await authorizeSessionMutation(session, 'EDIT_PREORDER_CART', {
+            orderSessionId: session.id,
+            edit: edit.action,
+            lineIndex: edit.index,
+            quantity: edit.quantity || null,
+        }, mutationContext);
+        verifySessionMutationAuthorization(session, 'EDIT_PREORDER_CART', gateResult);
         if (edit.action === 'remove') {
             const newCart = cart.filter((_, i) => i !== edit.index);
             if (!newCart.length) {

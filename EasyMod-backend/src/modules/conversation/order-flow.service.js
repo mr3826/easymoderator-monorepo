@@ -32,10 +32,22 @@ const {
     PURCHASE_PATTERNS,
     STATUS_HINTS,
     hasPurchaseIntent,
+    isNegatedCancel,
+    isNegatedMutation,
+    isNegatedPurchase,
     isOrderCancel,
     normalizeForCancel,
     normalizeForIntent,
+    classify,
 } = require('../ai/intent/stage2-rules');
+
+const ACTIVE_SESSION_TERMINAL_INTENTS = new Set([
+    'STOP_OPT_OUT',
+    'HUMAN_HANDOFF_REQUEST',
+    'SENTIMENT_HANDOFF',
+    'ORDER_POST_PURCHASE_REQUEST',
+    'ORDER_STATUS_LOOKUP',
+]);
 
 // ── Intent detection ────────────────────────────────────────────────────────
 // Conservative on purpose: only DECISION-to-buy phrases, never mere interest
@@ -100,25 +112,95 @@ async function handleOrderFlow({
     // ── 1. Continue an active session ────────────────────────────────────────
     const active = await OrderSessionService.getActiveSession(shopId, customerChannelId);
     if (active && active.status === 'ACTIVE') {
+        const cancelActiveSession = async () => {
+            try {
+                await OrderSessionService.cancelSession(active.id, shopId, {
+                    conversationId,
+                    traceId,
+                    mutationsAllowed,
+                });
+                return true;
+            } catch (_) {
+                return false;
+            }
+        };
+
+        const safeCancellationFailure = {
+            handled: true,
+            response: language === 'en'
+                ? 'I could not safely update that order yet. A team member will review it.'
+                : 'অর্ডারটি নিরাপদে আপডেট করা যায়নি। আমাদের টিম বিষয়টি দেখে দেবে।',
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'mutation_denied' },
+        };
+
+        if (isNegatedCancel(message)) return {
+            handled: true,
+            response: language === 'en'
+                ? 'I did not cancel or change the order.'
+                : 'অর্ডারটি বাতিল বা পরিবর্তন করা হয়নি।',
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'no_mutation' },
+        };
+
         // Escape hatch: an explicit cancel ends the flow instead of being captured
         // as the answer to the current step (e.g. stored as the customer's "name").
         if (isOrderCancel(message)) {
-            try { await OrderSessionService.cancelSession(active.id, shopId); } catch (_) { /* best-effort */ }
+            if (!await cancelActiveSession()) return { ...safeCancellationFailure, meta: { order_session: 'cancel_denied' } };
             return { handled: true, response: cancelMessage(language), confidence: 1.0, sourceReferences: null,
                 meta: { order_session: 'cancelled' } };
+        }
+
+        if (isNegatedPurchase(message)) {
+            if (!await cancelActiveSession()) return safeCancellationFailure;
+            return { handled: true, response: cancelMessage(language), confidence: 1.0, sourceReferences: null,
+                meta: { order_session: 'cancelled', reason: 'negated_purchase' } };
+        }
+
+        const activeIntent = classify(message, { language });
+        if (ACTIVE_SESSION_TERMINAL_INTENTS.has(activeIntent.intentId)) {
+            if (!await cancelActiveSession()) return safeCancellationFailure;
+            return { handled: false, meta: { order_session: 'released_for_terminal_intent', intentId: activeIntent.intentId } };
+        }
+
+        if (isNegatedMutation(message)) {
+            return {
+                handled: true,
+                response: language === 'en'
+                    ? 'I did not change the order. Tell me what you would like to do next.'
+                    : 'অর্ডারে কোনো পরিবর্তন করা হয়নি। এরপর কী করতে চান জানালে বলুন।',
+                confidence: 1.0,
+                sourceReferences: null,
+                meta: { order_session: 'no_mutation' },
+            };
         }
 
         const rawMessage = imageUrls.length ? { imageUrl: imageUrls[0] } : null;
         const stepOptions = { mutationsAllowed };
         if (conversationId) stepOptions.conversationId = conversationId;
         if (traceId) stepOptions.traceId = traceId;
-        const step = await OrderSessionService.processStep(
-            active.id,
-            shopId,
-            message,
-            rawMessage,
-            stepOptions
-        );
+        let step;
+        try {
+            step = await OrderSessionService.processStep(
+                active.id,
+                shopId,
+                message,
+                rawMessage,
+                stepOptions
+            );
+        } catch (_) {
+            return {
+                handled: true,
+                response: language === 'en'
+                    ? 'I could not safely update the order yet. A team member will review it.'
+                    : 'অর্ডারটি নিরাপদে আপডেট করা যায়নি। আমাদের টিম বিষয়টি দেখে দেবে।',
+                confidence: 1.0,
+                sourceReferences: null,
+                meta: { order_session: 'mutation_denied' },
+            };
+        }
         return {
             handled: true,
             response: step.prompt,
@@ -136,6 +218,28 @@ async function handleOrderFlow({
     }
 
     // ── 2. Start a session on clear purchase intent for an identified product ─
+    if (classify(message, { language, activeSession: true }).intentId === 'ORDER_SESSION_CHECKOUT') {
+        return {
+            handled: true,
+            response: language === 'en'
+                ? 'There is no active order to check out. Send the product name with your order request first.'
+                : 'চেকআউট করার কোনো সক্রিয় অর্ডার নেই। আগে পণ্যের নাম দিয়ে অর্ডারের অনুরোধ পাঠান।',
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'checkout_requires_active_session' },
+        };
+    }
+    if (isNegatedPurchase(message) || isNegatedMutation(message)) {
+        return {
+            handled: true,
+            response: language === 'en'
+                ? 'I did not start or change an order.'
+                : 'কোনো অর্ডার শুরু বা পরিবর্তন করা হয়নি।',
+            confidence: 1.0,
+            sourceReferences: null,
+            meta: { order_session: 'no_mutation' },
+        };
+    }
     if (!hasPurchaseIntent(message)) {
         return { handled: false };
     }

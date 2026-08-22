@@ -47,9 +47,11 @@ retrieval or grounding outcomes as if they were customer utterances. The
 corrected receipt removes those impossible utterance fixtures, marks
 `GENERAL_CHAT_OR_UNKNOWN` and `LOW_CONFIDENCE_OR_GROUNDING_FAILURE` as runtime
 outcome classes, and records their exemption reasons separately from intent
-accuracy. The corrected seed currently contains 231 fixtures and reports
-handoff recall against 60 actual human-required turns; C3 rule coverage and
-Bangladesh Language QA remain pending.
+accuracy. The corrected seed currently contains 238 fixtures and reports
+handoff recall against 60 actual human-required turns. C3 now covers checkout,
+cart, availability, handoff, cancellation, and post-purchase boundaries; the
+seed receipt reports 60/60 handoff recall while keeping the remaining accuracy
+and launch-size gaps explicit. Bangladesh Language QA remains pending.
 
 Named test homes include:
 
@@ -65,7 +67,7 @@ Named test homes include:
 ## Not Proved
 
 - This is not the 2,000-turn launch corpus. The corrected committed corpus
-  contains 231 regression fixtures and is honestly labelled `SEED`; the
+  contains 238 regression fixtures and is honestly labelled `SEED`; the
   superseded Phase B receipt contained 241 before the harness correction.
 - No Cohen's kappa measurement or double-labelled human sample exists here.
 - No native Bangladesh Language QA review has happened.
@@ -86,7 +88,9 @@ pending native review:
 `ঢাকার বাইরে কত`, `কুরিয়ার দিয়ে এখন কত লাগবে`, `কুরিয়ার দিয়ে এখন কত লাগবে`,
 `ডেলিভারি দেন`, `কোথায় ডেলিভারি দেন`, `পেমেন্টটা গেছে`, `কি কি পেমেন্ট নেন`,
 `পেমেন্ট পদ্ধতি`, `সাইজ`, `মাপ`, `রং`, `উপাদান`, `ব্র্যান্ড`, `বৈশিষ্ট্য`,
-`অর্ডারটা বদলাতে চাই`, `অর্ডার ফেরত দিতে চাই`, `অভিযোগ করতে চাই`, `অর্ডার দেরি`.
+`এইটা নেব`, `অর্ডারটা বদলাতে চাই`, `অর্ডার ফেরত দিতে চাই`, `অভিযোগ করতে চাই`, `অর্ডার দেরি`,
+`ঠিক আছে অর্ডার কনফার্ম`, `এই পণ্যটি কি আছে`, `নাই নাকি আছে`, `ভালো আছেন`,
+`এই শার্টটা স্টকে আছে`, `কোন সাইজ স্টকে আছে`, `স্টক আছে`.
 
 Source: [`stage2-rules.js`](../../../EasyMod-backend/src/modules/ai/intent/stage2-rules.js),
 export `PENDING_BANGLA_LANGUAGE_QA_LITERALS`.
