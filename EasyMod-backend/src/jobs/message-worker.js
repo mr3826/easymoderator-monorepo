@@ -218,6 +218,284 @@ async function claimDedupKey(key) {
     }
 }
 
+/**
+ * Start the durable timeout clock only after the inbound dedup claim. Every
+ * path clears both timers before the worker returns. Redis makes the holding
+ * message replay-safe across BullMQ attempts; the local flag prevents the two
+ * clocks from racing inside one attempt.
+ */
+function createRecoveryControl({
+    turnId,
+    shopId,
+    conversationId,
+    platform,
+    recipientId,
+    channel,
+    language = 'en',
+    turnStartedAt = new Date(),
+    initialState = 'RECEIVED',
+}) {
+    const recovery = require('../modules/ai/recovery/turn-recovery.service');
+    const { getHoldingTemplate } = require('../modules/ai/recovery/holding-templates');
+    let currentState = initialState;
+    let closed = false;
+    let holdingSent = false;
+    let holdingMessage = null;
+    let providerAccepted = false;
+    let providerAttempted = false;
+    let inFlight = null;
+    let policySettings = null;
+    let resolvePolicySettings;
+    const policySettingsReady = new Promise((resolve) => { resolvePolicySettings = resolve; });
+    let hardTimeoutTransition = null;
+    const startedAtMs = new Date(turnStartedAt).getTime();
+    const elapsedMs = Number.isFinite(startedAtMs) ? Math.max(0, Date.now() - startedAtMs) : 0;
+
+    const transitionTo = async (state, metadata = {}) => {
+        currentState = state;
+        try {
+            await recovery.transition({ turnId, conversationId }, state, metadata);
+        } catch (_) { /* telemetry must not fail the customer turn */ }
+    };
+
+    const sendHolding = async (recoveryKind, { hardTimeout = false } = {}) => {
+        const suppressed = hardTimeout
+            ? recovery.isHardTimeoutSuppressed(currentState)
+            : recovery.isHoldingSuppressed(currentState);
+        if (closed || suppressed) return;
+        if (hardTimeout) {
+            await transitionTo('RETRY_PENDING', {
+                recoveryKind,
+                hardTimeoutAt: new Date().toISOString(),
+            });
+        }
+        if (holdingSent) return;
+        const holdingKey = `holding:${conversationId}:${turnId}:${recoveryKind}`;
+        const providerName = platform === 'messenger' ? 'facebook' : platform;
+        const normalizedMessage = {
+            text: getHoldingTemplate(recoveryKind, language),
+            attachments: [],
+            platform: providerName,
+            direction: 'outbound',
+            senderRole: 'ai',
+        };
+        if (!channel) {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'FAILED',
+            });
+            return null;
+        }
+        await policySettingsReady;
+        if (closed || (hardTimeout
+            ? recovery.isHardTimeoutSuppressed(currentState)
+            : recovery.isHoldingSuppressed(currentState))) return null;
+        let decision;
+        try {
+            const customer = await Customer.findOne({
+                where: {
+                    shop_id: shopId,
+                    channel_type: providerName === 'facebook' ? 'messenger' : providerName,
+                    channel_user_id: String(recipientId),
+                },
+            }).catch(() => null);
+            decision = await policyEngine.evaluateOutbound(normalizedMessage, {
+                shopId,
+                channelId: channel.id,
+                conversationId,
+                recipientId: String(recipientId),
+                channel,
+                customer,
+                settings: policySettings || {},
+                platform: providerName,
+            });
+            if (!decision?.allow) {
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
+        } catch (error) {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'FAILED',
+            });
+            opsAlert('holding_message_delivery_failed', {
+                detail: `shop=${shopId} conv=${conversationId} turn=${turnId}\nerror: ${error.message}`,
+                level: 'error',
+                context: { shopId, conversationId, turnId, recoveryKind },
+            }).catch(() => {});
+            return null;
+        }
+        // ponytail: Redis-durable dedup; move to a DB unique constraint if a lost key ever double-sends.
+        if (!(await claimDedupKey(holdingKey))) {
+            holdingSent = true;
+            return null;
+        }
+        if (closed || (hardTimeout
+            ? recovery.isHardTimeoutSuppressed(currentState)
+            : recovery.isHoldingSuppressed(currentState))) {
+            holdingSent = false;
+            if (typeof cacheRedis.del === 'function') await cacheRedis.del(holdingKey).catch(() => {});
+            return null;
+        }
+
+        holdingSent = true;
+        providerAccepted = false;
+        const content = normalizedMessage.text;
+        try {
+            if (!holdingMessage) {
+                holdingMessage = await Message.create({
+                    conversation_id: conversationId,
+                    content,
+                    sender: 'ai',
+                    external_id: null,
+                    metadata: {
+                        type: 'recovery_holding',
+                        recovery_kind: recoveryKind,
+                        turn_id: turnId,
+                        delivered: false,
+                    },
+                });
+            }
+            const provider = getProvider(providerName);
+            providerAttempted = true;
+            const sendResult = await provider.sendMessage({
+                channel,
+                recipientId: String(recipientId),
+                normalizedMessage: decision.transform || normalizedMessage,
+                decision,
+            });
+            providerAccepted = true;
+            if (holdingMessage?.update) {
+                await holdingMessage.update({
+                    metadata: {
+                        ...(holdingMessage.metadata || {}),
+                        delivered: true,
+                        provider_message_id: sendResult?.providerMessageId || null,
+                    },
+                });
+            }
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'NOT_STARTED',
+                recoveryKind,
+                firstHoldingAt: new Date().toISOString(),
+                outboundStatus: 'SENT',
+            });
+            return holdingMessage;
+        } catch (error) {
+            if (providerAccepted || providerAttempted) {
+                holdingSent = true;
+                await transitionTo('INDETERMINATE', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    firstHoldingAt: new Date().toISOString(),
+                    outboundStatus: 'INDETERMINATE',
+                });
+            } else {
+                holdingSent = false;
+                if (typeof cacheRedis.del === 'function') await cacheRedis.del(holdingKey).catch(() => {});
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    firstHoldingAt: new Date().toISOString(),
+                    outboundStatus: 'FAILED',
+                });
+            }
+            opsAlert('holding_message_delivery_failed', {
+                detail: `shop=${shopId} conv=${conversationId} turn=${turnId}\nerror: ${error.message}`,
+                level: 'error',
+                context: { shopId, conversationId, turnId, recoveryKind, providerAccepted },
+            }).catch(() => {});
+            return null;
+        }
+    };
+
+    const scheduleHolding = (recoveryKind, options) => {
+        if (inFlight) {
+            if (options?.hardTimeout
+                && !closed
+                && !recovery.isHardTimeoutSuppressed(currentState)) {
+                hardTimeoutTransition = transitionTo('RETRY_PENDING', {
+                    recoveryKind,
+                    hardTimeoutAt: new Date().toISOString(),
+                });
+            }
+            return inFlight;
+        }
+        inFlight = sendHolding(recoveryKind, options).finally(() => {
+            inFlight = null;
+        });
+        return inFlight;
+    };
+    const fiveSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY'); }, Math.max(0, 5000 - elapsedMs));
+    const eightSecondTimer = setTimeout(() => { void scheduleHolding('PROVIDER_DELAY', { hardTimeout: true }); }, Math.max(0, 8000 - elapsedMs));
+
+    return {
+        transitionTo,
+        complete: async (state, metadata = {}) => {
+            if (state === 'SENT' && inFlight) await inFlight;
+            if (state === 'SENT' && hardTimeoutTransition) await hardTimeoutTransition;
+            closed = true;
+            clearTimeout(fiveSecondTimer);
+            clearTimeout(eightSecondTimer);
+            resolvePolicySettings(policySettings || {});
+            await transitionTo(state, metadata);
+        },
+        setPolicySettings: (settings) => {
+            policySettings = settings || {};
+            resolvePolicySettings(policySettings);
+        },
+        flush: () => inFlight || Promise.resolve(),
+        close: () => {
+            closed = true;
+            resolvePolicySettings(policySettings || {});
+            clearTimeout(fiveSecondTimer);
+            clearTimeout(eightSecondTimer);
+            return Promise.all([inFlight, hardTimeoutTransition].filter(Boolean));
+        },
+        sendHolding: scheduleHolding,
+    };
+}
+
+async function requireHumanRecovery({ turnId, traceId, recoveryAvailable, conversation, shopId, conversationId, platform, recipientId, channel, reason }) {
+    try {
+        const recovery = require('../modules/ai/recovery/turn-recovery.service');
+        return await recovery.requireHuman({
+            turnId,
+            traceId: traceId || turnId,
+            conversation,
+            shopId,
+            conversationId,
+            platform,
+            recipientId,
+            channel,
+            reason,
+        });
+    } catch (recoveryErr) {
+        if (recoveryAvailable || process.env.NODE_ENV !== 'test') {
+            opsAlert('human_recovery_transaction_failed', {
+                detail: `shop=${shopId} conv=${conversationId} turn=${turnId}\nerror: ${recoveryErr.message}`,
+                level: 'error',
+                context: { shopId, conversationId, turnId, reason },
+            }).catch(() => {});
+            return null;
+        }
+        // Unit-only compatibility fallback for harnesses that do not load the
+        // recovery table. Production never flips HITL outside the transaction.
+        const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
+        return escalateToHuman({ conversation, shopId, conversationId, platform, recipientId, channel, reason })
+            .catch((handoffErr) => {
+                console.error(`[worker] Human recovery failed for conv ${conversationId}: ${recoveryErr.message}; handoff: ${handoffErr.message}`);
+                return null;
+            });
+    }
+}
+
 function normalizeAutomationMode(mode) {
     return mode === 'AUTO' ? 'AI_ACTIVE' : mode;
 }
@@ -252,6 +530,29 @@ function resolveEffectiveAiSettings(shopSettings = {}, channelSettings = {}) {
 
 function isShopManualKillSwitch(settings = {}) {
     return normalizeAutomationMode(settings?.automation_mode) === 'MANUAL';
+}
+
+async function resolveStaticConfigAvailability(shopId, aiSettings = {}) {
+    if (aiSettings.staticConfigAvailable !== undefined) return aiSettings.staticConfigAvailable;
+    try {
+        const { Shop } = require('../modules/entities');
+        const shop = await Shop.findByPk(shopId, { attributes: ['settings'] });
+        const settings = shop?.settings || {};
+        const delivery = settings.delivery || {};
+        const businessInfo = settings.businessInfo || {};
+        const hasDeliveryPolicy = Boolean(
+            delivery.policy
+            || businessInfo.deliveryPolicy
+            || (Array.isArray(businessInfo.deliveryAreas) && businessInfo.deliveryAreas.length > 0),
+        );
+        const hasDeliveryCharge = Boolean(
+            (Array.isArray(delivery.area_pricing) && delivery.area_pricing.length > 0)
+            || delivery.default_delivery_charge !== undefined,
+        );
+        return { DELIVERY_POLICY: hasDeliveryPolicy, DELIVERY_CHARGE: hasDeliveryCharge };
+    } catch (_) {
+        return false;
+    }
 }
 
 /**
@@ -379,6 +680,7 @@ async function processMessageJob(job) {
         try { await cacheRedis.set('canary:msg:last_ok', String(Date.now())); } catch (_) { /* best-effort */ }
         return { canary: true, ok: true };
     }
+    const workerJob = job;
 
     const {
         shopId,
@@ -390,6 +692,9 @@ async function processMessageJob(job) {
         recipientId,
         senderInfo = {},
         metaChannelId = null,
+        traceId: jobTraceId = null,
+        idempotencyKey: jobIdempotencyKey = null,
+        turnId: requestedTurnId = null,
     } = job.data;
 
     // ── Burst flush: coalesce a rapid-fire multi-message turn into ONE reply ──
@@ -428,6 +733,36 @@ async function processMessageJob(job) {
         if (!isNew) return { skipped: true, reason: 'duplicate', externalId: effExternalId };
     }
 
+    let recoveryControl = null;
+    let recoveryStarted = false;
+    let stableTraceId = jobTraceId || job.id || effExternalId || conversationId;
+    const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
+    try {
+        const recovery = require('../modules/ai/recovery/turn-recovery.service');
+        const { deriveIdempotencyKey } = require('../modules/ai/contracts/action.contract');
+        const started = await recovery.startTurn({
+            turnId,
+            traceId: stableTraceId,
+            shopId,
+            conversationId,
+            idempotencyKey: jobIdempotencyKey || deriveIdempotencyKey(['turn', shopId, conversationId, turnId]),
+        });
+        recoveryStarted = true;
+        stableTraceId = started.turn.trace_id || stableTraceId;
+        recoveryControl = createRecoveryControl({
+            turnId,
+            shopId,
+            conversationId,
+            platform,
+            recipientId,
+            channel: jobChannel,
+            language: job.data.language || 'en',
+            turnStartedAt: started.turn.turn_started_at,
+            initialState: started.turn.state || 'RECEIVED',
+        });
+    } catch (recoveryErr) {
+        console.warn(`[worker] Recovery state unavailable for turn ${turnId}: ${recoveryErr.message}`);
+    }
     try {
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────
     const conversation = await Conversation.findOne({
@@ -438,6 +773,7 @@ async function processMessageJob(job) {
         console.warn(`[worker] Conversation ${conversationId} not found for shop ${shopId} — skipping job`);
         return { skipped: true, reason: 'conversation_not_found' };
     }
+    await recoveryControl?.transitionTo('CONTEXT_BUILDING');
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
 
     // ── Guard 3: AI pause (30-min mute when agent sends manually) ──────────
@@ -456,6 +792,7 @@ async function processMessageJob(job) {
     }
 
     const aiSettings = resolveEffectiveAiSettings(shopAISettings, channelAISettings);
+    recoveryControl?.setPolicySettings(aiSettings);
     if (aiSettings.automation_mode === 'MANUAL') {
         return { skipped: true, reason: 'manual_mode', scope: 'effective' };
     }
@@ -510,8 +847,10 @@ async function processMessageJob(job) {
                 console.log(`[worker] Auto-escalating conv ${conversationId}: sentiment=${sentimentResult.sentiment} (${sentimentResult.method})`);
                 // Pause AI + reassure the customer + deliver on the same channel the
                 // inbound arrived on (shared with the low-confidence handoff path).
-                const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
-                await escalateToHuman({
+                await requireHumanRecovery({
+                    turnId,
+                    traceId: stableTraceId,
+                    recoveryAvailable: recoveryStarted,
                     conversation, shopId, conversationId,
                     platform, recipientId, channel: jobChannel,
                     reason: `sentiment_${sentimentResult.sentiment}`,
@@ -528,6 +867,47 @@ async function processMessageJob(job) {
     const history = await loadConversationHistory(conversationId, historyExcludeIds);
     const detectedLanguage = ConversationStateService.detectLanguage(effMessage);
     const entities = ConversationStateService.extractEntities(effMessage);
+    await recoveryControl?.transitionTo('AGENT_RUNNING');
+    const staticConfigAvailable = await resolveStaticConfigAvailability(shopId, aiSettings);
+
+    // Stage 2 is a read-only shadow. It records the deterministic proposal and
+    // never decides routing, sends, or mutations; the existing order-flow and
+    // conversational paths below remain authoritative.
+    let shadowProposal = null;
+    let shadowIntentRecord = null;
+    let shadowTraceId = stableTraceId;
+    try {
+        const { classify } = require('../modules/ai/intent/stage2-rules');
+        const { createIntentRecord } = require('../modules/ai/contracts/intent.contract');
+        shadowProposal = classify(effMessage, {
+            language: detectedLanguage,
+            hasAttachment: effImageUrls.length > 0,
+            staticConfigAvailable,
+        });
+        shadowTraceId = stableTraceId;
+        shadowIntentRecord = {
+            ...createIntentRecord({
+                intentId: shadowProposal.intentId,
+                domain: shadowProposal.domain,
+                slots: shadowProposal.slots,
+                confidence: shadowProposal.confidence,
+                source: shadowProposal.source,
+                evidenceIds: [],
+                traceId: shadowTraceId,
+            }),
+            matchedRule: shadowProposal.matchedRule,
+        };
+        await ConversationStateService.updateConversationState(conversationId, {
+            intent: shadowIntentRecord.intentId,
+            language: detectedLanguage,
+            confidence: Math.round(shadowIntentRecord.confidence * 100),
+            intentConfidence: shadowIntentRecord.confidence,
+            intentRecord: shadowIntentRecord,
+        });
+    } catch (shadowErr) {
+        // Shadow telemetry must never make an inbound turn fail.
+        console.warn(`[worker] Stage-2 shadow classification skipped for conv ${conversationId}: ${shadowErr.message}`);
+    }
 
     const ingestionResult = {
         shop_id: shopId,
@@ -555,19 +935,25 @@ async function processMessageJob(job) {
     let fallbackKnowledgeGapSource = null;
     try {
         const { handleOrderFlow } = require('../modules/conversation/order-flow.service');
-        orderFlow = await handleOrderFlow({
-            shopId,
-            customerChannelId: recipientId,
-            platform,
-            message: effMessage,
-            entities,
-            language: detectedLanguage,
-            imageUrls: effImageUrls,
-            mutationsAllowed: aiSettings.automation_mode === 'AI_ACTIVE'
-                && channelAISettings.allow_order_creation !== false,
-            conversationId,
-            traceId: job.id || effExternalId || conversationId,
-        });
+        {
+            // Preserve the original turn trace for the existing live call site;
+            // retries may arrive as a new BullMQ job ID without mutating BullMQ's
+            // own identity or delayed-job bookkeeping.
+            const job = { ...workerJob, id: stableTraceId };
+            orderFlow = await handleOrderFlow({
+                shopId,
+                customerChannelId: recipientId,
+                platform,
+                message: effMessage,
+                entities,
+                language: detectedLanguage,
+                imageUrls: effImageUrls,
+                mutationsAllowed: aiSettings.automation_mode === 'AI_ACTIVE'
+                    && channelAISettings.allow_order_creation !== false,
+                conversationId,
+                traceId: job.id || effExternalId || conversationId,
+            });
+        }
     } catch (ofErr) {
         console.error(`[worker] handleOrderFlow failed for conv ${conversationId}:`, ofErr.message);
         const failureOrderFlow = buildOrderFlowFailureResponse(effMessage, detectedLanguage);
@@ -580,6 +966,26 @@ async function processMessageJob(job) {
             }).catch(() => {});
         }
         // Non-purchase messages remain non-fatal and fall through to conversational AI.
+    }
+
+    if (shadowProposal?.intentId === 'PURCHASE_INTENT_START') {
+        try {
+            const { hasPurchaseIntent } = require('../modules/conversation/order-flow.service');
+            const liveStartedSession = orderFlow.meta?.order_session === 'started';
+            if (!hasPurchaseIntent(effMessage) && !liveStartedSession) {
+                await ConversationStateService.updateConversationState(conversationId, {
+                    unsafeShadowActions: 1,
+                    shadowDivergence: {
+                        proposedIntent: shadowProposal.intentId,
+                        livePurchaseIntent: false,
+                        liveOrderSessionStarted: liveStartedSession,
+                        traceId: shadowTraceId,
+                    },
+                });
+            }
+        } catch (shadowDivergenceErr) {
+            console.warn(`[worker] Stage-2 divergence record skipped for conv ${conversationId}: ${shadowDivergenceErr.message}`);
+        }
     }
 
     // AIChatbotController is loaded lazily to avoid circular requires
@@ -599,18 +1005,22 @@ async function processMessageJob(job) {
             replyProvider = intentResult.provider || null;
             proposedAttachments = intentResult.attachments || [];
             if (humanRequired) {
-                const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
-                await escalateToHuman({
+                await requireHumanRecovery({
+                    turnId,
+                    traceId: stableTraceId,
+                    recoveryAvailable: recoveryStarted,
                     conversation, shopId, conversationId,
                     platform, recipientId, channel: jobChannel,
                     reason: 'order_status_customer_context_missing',
-                }).catch((handoffErr) => {
-                    opsAlert('Customer-bound order lookup handoff failed', {
-                        detail: `shop=${shopId} conv=${conversationId}\nerror: ${handoffErr.message}`,
-                        level: 'error',
-                        context: { shopId, conversationId, error: handoffErr.message },
-                    }).catch(() => {});
                 });
+                return {
+                    success: true,
+                    conversationId,
+                    confidence,
+                    sent: false,
+                    reason: 'human_required',
+                    handoff: true,
+                };
             }
         } catch (aiErr) {
             console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
@@ -746,16 +1156,21 @@ async function processMessageJob(job) {
 
     if (groundingVerdict.decision === grounding.GroundingDecision.SUPPRESS) {
         if (committedOrder) {
+            await recoveryControl?.close();
+            const templateResult = await sendPostMutationTemplate('grounding_suppressed');
+            if (templateResult.sent) await recoveryControl?.transitionTo('SENT', { outboundStatus: 'SENT' });
             return {
                 success: true,
                 conversationId,
-                sent: (await sendPostMutationTemplate('grounding_suppressed')).sent,
+                sent: templateResult.sent,
                 reason: 'post_mutation_template',
             };
         }
         // Nothing truthful can be said. Silence plus a human beats a guess.
-        const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
-        await escalateToHuman({
+        await requireHumanRecovery({
+            turnId,
+            traceId: stableTraceId,
+            recoveryAvailable: recoveryStarted,
             conversation, shopId, conversationId,
             platform, recipientId, channel: jobChannel, reason: 'grounding_suppressed',
         });
@@ -801,8 +1216,10 @@ async function processMessageJob(job) {
             }
             const aiMessage = (await storeAiResponse(rawResponse, false)).message;
             await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'low_confidence' });
-            const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
-            await escalateToHuman({
+            await requireHumanRecovery({
+                turnId,
+                traceId: stableTraceId,
+                recoveryAvailable: recoveryStarted,
                 conversation, shopId, conversationId,
                 platform, recipientId, channel: jobChannel, reason: 'low_confidence',
             });
@@ -898,7 +1315,9 @@ async function processMessageJob(job) {
 
     if (!decision.allow) {
         if (committedOrder) {
+            await recoveryControl?.close();
             const templateResult = await sendPostMutationTemplate(`policy_${decision.reason || 'denied'}`);
+            if (templateResult.sent) await recoveryControl?.transitionTo('SENT', { outboundStatus: 'SENT' });
             return {
                 success: true,
                 conversationId,
@@ -1001,12 +1420,15 @@ async function processMessageJob(job) {
             });
     } catch (_) { /* analytics must never fail a sent reply */ }
 
+    if (recoveryControl) await recoveryControl.complete('SENT', { outboundStatus: 'SENT' });
     return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
     } catch (err) {
         if (dedupKey && !isUnrecoverableJobError(err) && typeof cacheRedis.del === 'function') {
             await cacheRedis.del(dedupKey).catch(() => {});
         }
         throw err;
+    } finally {
+        await recoveryControl?.close();
     }
 }
 
@@ -1086,5 +1508,7 @@ module.exports = {
         resolveEffectiveAiSettings,
         isShopManualKillSwitch,
         signalBillingPause,
+        createRecoveryControl,
+        resolveStaticConfigAvailability,
     },
 };
