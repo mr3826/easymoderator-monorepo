@@ -23,6 +23,7 @@ jest.mock('src/config/redis', () => ({
         get: jest.fn(async () => null),
         set: jest.fn(async () => 'OK'),
         setex: jest.fn(async () => 'OK'),
+        del: jest.fn(async () => 1),
     },
 }));
 jest.mock('src/utils/ops-alert', () => ({ opsAlert: jest.fn(async () => {}) }));
@@ -61,6 +62,12 @@ jest.mock('src/modules/conversation/order-flow.service', () => ({
 }));
 jest.mock('src/modules/conversation/ai-chatbot.controller', () => ({ processNewIntent: jest.fn() }));
 jest.mock('src/modules/conversation/human-handoff.service', () => ({ escalateToHuman: jest.fn(async () => {}) }));
+jest.mock('src/modules/notification/merchant-notification.service', () => ({
+    notifyShop: jest.fn(async () => ({ queued: true })),
+}));
+jest.mock('src/modules/notification/notification-events', () => ({
+    NOTIFICATION_EVENTS: { AI_HITL: 'ai_hitl' },
+}));
 jest.mock('src/modules/knowledge/knowledge-gap-capture.service', () => ({ recordKnowledgeGap: jest.fn(async () => {}) }));
 jest.mock('src/modules/analytics/growth-metrics.service', () => ({ recordActivation: jest.fn(() => Promise.resolve()) }));
 jest.mock('src/modules/analytics/funnel-events.service', () => ({ recordFunnelEvent: jest.fn(() => Promise.resolve()) }));
@@ -73,6 +80,8 @@ const { getProvider } = require('src/modules/channel-providers/provider.registry
 const AIChatbotController = require('src/modules/conversation/ai-chatbot.controller');
 const { escalateToHuman } = require('src/modules/conversation/human-handoff.service');
 const grounding = require('src/modules/ai/grounding');
+const { handleOrderFlow } = require('src/modules/conversation/order-flow.service');
+const { opsAlert } = require('src/utils/ops-alert');
 
 const SHOP = 'shop-a';
 const PHOTO_URL = 'https://cdn.easymod.tech/products/black-saree.jpg';
@@ -279,6 +288,23 @@ describe('existing behaviour is preserved', () => {
         expect(AIChatbotController.processNewIntent).not.toHaveBeenCalled();
     });
 
+    test('releases the dedup claim when a retryable provider send fails', async () => {
+        const { cacheRedis } = require('src/config/redis');
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'A grounded reply',
+            confidence: 0.9,
+            source: 'llm',
+            provider: 'gemini-lite',
+            grounding: grounding.emptyEvidence(SHOP),
+            attachments: [],
+        });
+        sendMessage.mockRejectedValueOnce(new Error('temporary Meta failure'));
+
+        await expect(processMessageJob(job())).rejects.toThrow('temporary Meta failure');
+
+        expect(cacheRedis.del).toHaveBeenCalledWith('msg:dedup:shop-a:ext-1');
+    });
+
     test('a policy denial still holds the reply as a draft rather than sending', async () => {
         const policyEngine = require('src/modules/policy/policy.engine');
         policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'OUTSIDE_24H' });
@@ -295,5 +321,56 @@ describe('existing behaviour is preserved', () => {
         expect(result.sent).toBe(false);
         expect(result.reason).toBe('OUTSIDE_24H');
         expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('a policy denial after order mutation sends the deterministic post-mutation template', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success with unsupported claims',
+            confidence: 0.1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-1', order_number: 'ORD-1', order_status: 'confirmed' },
+            },
+        });
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'DRAFT_MODE', decisionId: 'deny-1' });
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result.sent).toBe(true);
+        expect(sendMessage).toHaveBeenCalledTimes(1);
+        expect(sentPayload().text).toBe('অর্ডার #ORD-1 | স্ট্যাটাস: confirmed');
+        expect(sentPayload().text).not.toContain('generated order success');
+    });
+
+    test('a failed post-mutation template send alerts operations and the merchant', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 0.1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-2', order_number: 'ORD-2', order_status: 'confirmed' },
+            },
+        });
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'OUTSIDE_24H', decisionId: 'deny-2' });
+        sendMessage.mockRejectedValueOnce(new Error('Meta send failed'));
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result.sent).toBe(false);
+        expect(opsAlert).toHaveBeenCalledWith(
+            'executed_mutation_without_outbound_send',
+            expect.objectContaining({ level: 'error' })
+        );
+        expect(require('src/modules/notification/merchant-notification.service').notifyShop)
+            .toHaveBeenCalledWith(
+                SHOP,
+                'ai_hitl',
+                expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+                expect.any(Object)
+            );
     });
 });

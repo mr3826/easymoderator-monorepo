@@ -372,6 +372,7 @@ class AIChatbotController {
                 grounding: evidence,
                 source: routerResult.source || null,
                 provider: routerResult.provider || null,
+                humanRequired: routerResult.humanRequired === true,
                 // A product photo is attached only when a verified product of THIS
                 // shop owns it; the outbound gate re-checks provenance before send.
                 attachments: evidence.mediaStatus === grounding.MediaStatus.AVAILABLE

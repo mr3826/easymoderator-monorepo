@@ -67,7 +67,7 @@ describe('handleOrderFlow — continue an active session', () => {
 
         expect(res.handled).toBe(true);
         expect(res.response).toBe('আপনার মোবাইল নম্বর কত?');
-        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, 'John Doe', null);
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, 'John Doe', null, { mutationsAllowed: true });
         expect(OrderSessionService.startOrderSession).not.toHaveBeenCalled();
     });
 
@@ -77,7 +77,9 @@ describe('handleOrderFlow — continue an active session', () => {
 
         await handleOrderFlow(base({ message: '[image]', imageUrls: ['https://x/y.jpg'] }));
 
-        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, '[image]', { imageUrl: 'https://x/y.jpg' });
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith(
+            'sess-1', SHOP, '[image]', { imageUrl: 'https://x/y.jpg' }, { mutationsAllowed: true }
+        );
     });
 
     test('a clear cancel message ends the session instead of stepping', async () => {
@@ -103,7 +105,9 @@ describe('handleOrderFlow — continue an active session', () => {
 
         expect(res.handled).toBe(true);
         expect(OrderSessionService.cancelSession).not.toHaveBeenCalled();
-        expect(OrderSessionService.processStep).toHaveBeenCalledWith('sess-1', SHOP, 'আর লাগবে না', null);
+        expect(OrderSessionService.processStep).toHaveBeenCalledWith(
+            'sess-1', SHOP, 'আর লাগবে না', null, { mutationsAllowed: true }
+        );
         expect(res.meta).toEqual(expect.objectContaining({
             order_session: 'continue',
             step: 'COLLECTING_NAME',

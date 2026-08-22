@@ -5,14 +5,14 @@
  * persisted to the conversation thread but NOT delivered to Meta. The reply
  * sits as a suggestion that the human agent reviews/edits/sends.
  *
- * Also handles 'AI_SUGGEST_ONLY' and 'MANUAL' — both block delivery without
+ * Also handles 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', and 'MANUAL' — all block delivery without
  * being "errors". The worker reads the deny reason and skips the send while
  * still storing the AI output.
  */
 
 'use strict';
 
-const NON_DELIVERING_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL']);
+const NON_DELIVERING_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL']);
 
 module.exports = {
     name: 'draftMode',

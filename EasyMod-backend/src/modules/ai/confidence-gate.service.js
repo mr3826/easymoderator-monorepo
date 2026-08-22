@@ -12,7 +12,7 @@
  * low-confidence reply was always auto-sent. The gate below is called from
  * message-worker.js after the reply is generated and before it is delivered.
  *
- * Holds ONLY in auto-send mode. In DRAFT / AI_SUGGEST_ONLY / MANUAL the policy
+ * Holds ONLY in auto-send mode. In DRAFT / AI_SUGGEST_ONLY / HUMAN_ACTIVE / MANUAL the policy
  * engine already withholds delivery, so the gate is a no-op there. Deterministic
  * order-flow turns (confidence 1.0) are never held. A null/unknown confidence
  * (AI pipeline failure) is treated as low → held, which is safer than
@@ -22,7 +22,7 @@
  * default 75). Accepts a 0–1 fraction too, so both scales are safe.
  */
 
-const NON_AUTO_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL']);
+const NON_AUTO_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL']);
 
 const DEFAULT_THRESHOLD = 0.75;
 

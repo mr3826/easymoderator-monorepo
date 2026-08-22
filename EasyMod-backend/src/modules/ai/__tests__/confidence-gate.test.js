@@ -62,7 +62,7 @@ describe('shouldHoldForLowConfidence', () => {
     });
 
     test('does NOT hold in non-auto modes (policy engine already withholds)', () => {
-        for (const mode of ['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL']) {
+        for (const mode of ['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL']) {
             expect(shouldHoldForLowConfidence({
                 confidence: 0.1, automationMode: mode, confidenceThreshold: 75,
             })).toBe(false);
