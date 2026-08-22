@@ -158,6 +158,23 @@ function sumCosts(results = []) {
     };
 }
 
+/**
+ * Return the current mutation budget state. A non-finite estimate is unknown
+ * and therefore unavailable; callers must not convert uncertainty to true.
+ */
+function getMutationBudgetState({ estimatedCostUsd, ceilingUsd } = {}) {
+    const ceiling = Number(ceilingUsd ?? process.env.AI_MAX_COST_PER_ORDER_CREATED_USD ?? '0.024572');
+    if (!Number.isFinite(estimatedCostUsd) || !Number.isFinite(ceiling) || ceiling < 0) {
+        return { available: false, reason: 'BUDGET_UNKNOWN', estimatedCostUsd: null, ceilingUsd: null };
+    }
+    return {
+        available: estimatedCostUsd <= ceiling,
+        reason: estimatedCostUsd <= ceiling ? 'BUDGET_AVAILABLE' : 'BUDGET_EXCEEDED',
+        estimatedCostUsd,
+        ceilingUsd: ceiling,
+    };
+}
+
 /** USD → BDT with an explicit, overridable rate. Never mixes currencies silently. */
 function usdToBdt(usd, rate = PRICING.fx.USD_BDT) {
     if (!Number.isFinite(usd)) return null;
@@ -169,6 +186,7 @@ module.exports = {
     calculateCost,
     normalizeProviderUsage,
     sumCosts,
+    getMutationBudgetState,
     usdToBdt,
     getPricingVersion,
     getFxRate,
