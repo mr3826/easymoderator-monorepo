@@ -414,6 +414,25 @@ jobs:
           grep -q '^QDRANT_API_KEY=' _tmp/.env.prod.real
           grep -q '^SLACK_ALERT_WEBHOOK_URL=' _tmp/.env.prod.real
           echo 'secret-backed-render=PASS'
+
+          # META_APP_ID and META_APP_SECRET must belong to the SAME Meta app.
+          # They arrive from two differently-named secrets (VITE_META_APP_ID
+          # feeds META_APP_ID), so nothing but this check stops one drifting
+          # to a different app than the other -- which silently retargets the
+          # consent dialog and 403s every webhook. Graph rejects a mismatched
+          # client_id/client_secret pair, so one client_credentials call is a
+          # complete test. Never print either value.
+          meta_id=$(grep -m1 '^META_APP_ID=' _tmp/.env.prod.real | cut -d= -f2-)
+          meta_secret=$(grep -m1 '^META_APP_SECRET=' _tmp/.env.prod.real | cut -d= -f2-)
+          test -n "$meta_id"
+          test -n "$meta_secret"
+          pair_url='https://graph.facebook.com/v21.0/oauth/access_token?grant_type=client_credentials'
+          if ! curl -sf --get "$pair_url" --data-urlencode "client_id=$meta_id" --data-urlencode "client_secret=$meta_secret" | grep -q access_token; then
+            echo "META_APP_ID ($meta_id) and META_APP_SECRET are not a valid pair for one Meta app." >&2
+            echo "Fix the VITE_META_APP_ID / META_APP_SECRET repository secrets before deploying." >&2
+            exit 1
+          fi
+          echo "meta-app-credential-pair=PASS (app $meta_id)"
           if [ "$PROBE_MODE" = "true" ]; then
             mkdir -p ~/.ssh
             printf '%s\n' "$DO_SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
