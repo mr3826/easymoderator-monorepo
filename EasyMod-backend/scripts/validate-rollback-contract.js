@@ -41,8 +41,13 @@ const required = [
     ['rollback failure status', 'rollback || rc=70'],
     ['failure trap', 'trap \'rc=$?; if [ "$rc" -ne 0 ]'],
     ['success marker', 'deploy_succeeded=true'],
+    ['executable rollback rehearsal', 'scripts/rollback-rehearsal.sh'],
     ['backend immutable interpolation', 'image: ${GHCR_IMAGE_BACKEND:?'],
     ['frontend immutable interpolation', 'image: ${GHCR_IMAGE_FRONTEND:?'],
+    ['growth running capture', 'candidate_growth_image=$(resolve_container_digest easymod-growth-frontend-1'],
+    ['growth bootstrap pin', 'candidate_growth_image="${GHCR_GROWTH}@${GROWTH_BOOTSTRAP_DIGEST}"'],
+    ['growth immutable assertion', 'assert_immutable_ref "$candidate_growth_image"'],
+    ['growth immutable interpolation', 'image: ${GHCR_IMAGE_GROWTH:?'],
     ['rollback health contract', 'both health checks'],
     ['independent DB host probe', 'DB_HOST_RESOLUTION=PASS'],
     ['independent DB auth probe', 'DB_AUTH=PASS'],
@@ -64,11 +69,29 @@ if (/^\s*[^#\n]*:(latest|dev)\b/m.test(workflow)
     throw new Error('Rollback contract permits a mutable production image tag.');
 }
 
+const probeMount = ':/app/scripts/production-db-auth-probe.js:ro';
+const probeCommand = 'node /app/scripts/production-db-auth-probe.js';
+if (workflow.split(probeMount).length - 1 !== 2
+    || workflow.split(probeCommand).length - 1 !== 2) {
+    throw new Error('Production DB probe must preserve the image script path for relative imports.');
+}
+if (/require\(['"]\.\.\/src\//.test(dbProbe)) {
+    throw new Error('Production DB probe must remain standalone inside the running image.');
+}
+
 if (!workflow.includes('candidate_backend_image="${GHCR_BACKEND}@${BACKEND_DIGEST}"')
     || !workflow.includes('candidate_frontend_image="${GHCR_FRONTEND}@${FRONTEND_DIGEST}"')
     || !workflow.includes('assert_immutable_ref "$candidate_backend_image"')
     || !workflow.includes('assert_immutable_ref "$candidate_frontend_image"')) {
     throw new Error('Production deployment does not fail closed on digest-pinned candidate references.');
+}
+
+if (!runbook.includes('GROWTH_BOOTSTRAP_DIGEST')
+    || !workflow.includes('GROWTH_BOOTSTRAP_DIGEST')) {
+    throw new Error('Growth first-rollout bootstrap contract is not documented in both the workflow and the runbook.');
+}
+if (/GHCR_IMAGE_GROWTH[^\n]*\.env\.prod|\.env\.prod[^\n]*GHCR_IMAGE_GROWTH/.test(runbook)) {
+    throw new Error('Runbook still directs operators to pin GHCR_IMAGE_GROWTH in .env.prod, which the deploy regenerates.');
 }
 
 if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)
@@ -77,21 +100,6 @@ if (/(^|\n)\s*image:\s*[^\n]*:(latest|dev)(\s|$)/m.test(compose)
     || !compose.includes('image: redis@sha256:')
     || !compose.includes('image: qdrant/qdrant@sha256:')) {
     throw new Error('Production Compose contains mutable or unpinned infrastructure images.');
-}
-
-// Synthetic rehearsal of the state transition. This deliberately does not call
-// Docker or SSH: it proves the recovery inputs are immutable references and the
-// documented restore operation does not depend on the candidate application.
-const previous = {
-    backend: 'ghcr.io/mr3826/easymoderator-backend@sha256:' + 'a'.repeat(64),
-    frontend: 'ghcr.io/mr3826/easymoderator-frontend@sha256:' + 'b'.repeat(64),
-};
-const restored = {
-    backend: previous.backend,
-    frontend: previous.frontend,
-};
-if (restored.backend !== previous.backend || restored.frontend !== previous.frontend) {
-    throw new Error('Synthetic rollback rehearsal did not restore both previous images.');
 }
 
 console.log('rollback-contract=PASS');

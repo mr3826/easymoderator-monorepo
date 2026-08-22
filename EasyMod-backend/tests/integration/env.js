@@ -25,6 +25,7 @@ process.env.NODE_ENV = 'test';
 def('DATABASE_URL', 'postgres://easymod_user:easymod_password@127.0.0.1:5432/easymod_integration_test');
 def('DB_SSL', 'false');
 def('REDIS_URL', 'redis://127.0.0.1:6379');
+def('GROWTH_OS_ENABLED', 'true');
 
 // ── Crypto / auth ────────────────────────────────────────────────────────────
 // Test-only values. Nothing here unlocks anything outside this process.

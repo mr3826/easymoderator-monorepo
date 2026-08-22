@@ -80,6 +80,9 @@ test.output.txt
 *.output.txt
 *-output.txt
 *.temp
+EasyMod-growth/tests/e2e/.fixtures.json
+EasyMod-growth/playwright-report/
+EasyMod-growth/test-results/
 
 # Ignore scripts output
 scripts/output/

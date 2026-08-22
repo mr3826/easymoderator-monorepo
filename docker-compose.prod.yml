@@ -109,6 +109,12 @@ services:
     networks:
       - internal
     # Port 8080 is internal only — Caddy proxies growth.easymod.tech to it
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
   # ── PostgreSQL 15 ─────────────────────────────────────────────────────────
   postgres:

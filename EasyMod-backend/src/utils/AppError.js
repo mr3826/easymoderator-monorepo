@@ -35,13 +35,18 @@ class AppError extends Error {
   }
 
   toJSON(requestId = 'unknown') {
-    return {
+    const response = {
       success: false,
       message: sanitizeErrorMessage(this.message),
       code: this.code,
       requestId,
       timestamp: this.timestamp
     };
+    if (this.code === 'GROWTH_OS_PROSPECT_DUPLICATE'
+      && typeof this.conflictingProspectId === 'string') {
+      response.conflictingProspectId = this.conflictingProspectId;
+    }
+    return response;
   }
 
   getFullContext() {

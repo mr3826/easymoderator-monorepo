@@ -1,0 +1,73 @@
+name: Grant Growth OS Role
+
+# -----------------------------------------------------------------------------
+# Manually grant or revoke an EasyModerator Growth OS role on production.
+#
+# This is the supported bootstrap path for the first Founder and the supported
+# operator path afterwards. It runs the already-tested role service inside the
+# backend container, so transactions, audit rows, last-Founder protection, and
+# role-cache invalidation remain centralized in application code.
+#
+# The target email MUST already exist as a registered app user. This workflow
+# changes Growth OS access; it does not create or modify user accounts.
+# -----------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Email of an EXISTING app user to grant/revoke'
+        required: true
+        type: string
+      role:
+        description: 'Growth OS role to set'
+        required: true
+        default: FOUNDER
+        type: choice
+        options:
+          - FOUNDER
+          - GROWTH_MANAGER
+          - BUSINESS_EXECUTIVE
+          - MARKETER
+          - CUSTOMER_SUCCESS
+          - READ_ONLY_ANALYST
+          - NONE
+      actor:
+        description: 'Email or UUID of the operator performing the change'
+        required: true
+        type: string
+
+# Never run two Growth OS role changes at once.
+concurrency:
+  group: grant-growth-role
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  grant:
+    name: Set Growth OS role on production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run grant-growth-role on droplet
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          timeout: 120s
+          # Forward inputs as named env vars so they are not interpolated into
+          # the remote shell (avoids command injection through the email field).
+          envs: TARGET_EMAIL,TARGET_ROLE,ACTOR
+          script: |
+            set -e
+            cd /opt/easymod
+            echo "==> Setting Growth OS role=${TARGET_ROLE} for ${TARGET_EMAIL} by ${ACTOR}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend \
+              node src/scripts/grant-growth-role.js "${TARGET_EMAIL}" "${TARGET_ROLE}" --actor "${ACTOR}"
+            echo "==> Done."
+        env:
+          TARGET_EMAIL: ${{ inputs.email }}
+          TARGET_ROLE: ${{ inputs.role }}
+          ACTOR: ${{ inputs.actor }}

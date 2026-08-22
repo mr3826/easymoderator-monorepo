@@ -3,10 +3,26 @@
 const dns = require('dns').promises;
 const net = require('net');
 const { Client } = require('pg');
-const { decodeRenderedEnvValue } = require('../src/config/rendered-env');
 
 const expectedDatabase = process.env.EXPECTED_DB_NAME || 'easymod_prod';
 let failureStage = 'DB_URL';
+
+// Keep the probe standalone: it is copied into the running backend image, which
+// may predate the source tree that produced the probe script.
+function decodeRenderedEnvValue(value) {
+    const raw = String(value ?? '');
+    const trimmed = raw.trim();
+    if (trimmed.length < 2 || trimmed[0] !== '"' || trimmed.at(-1) !== '"') {
+        return value;
+    }
+
+    try {
+        const decoded = JSON.parse(trimmed);
+        return typeof decoded === 'string' ? decoded : value;
+    } catch (_) {
+        return value;
+    }
+}
 
 function assertTcpConnection(host, port) {
     return new Promise((resolve, reject) => {
@@ -64,8 +80,12 @@ async function main() {
     }
 }
 
-main().catch(() => {
-    console.error(`${failureStage}=FAIL`);
-    console.error('DB_PROBE_FAILED');
-    process.exitCode = 1;
-});
+if (require.main === module) {
+    main().catch(() => {
+        console.error(`${failureStage}=FAIL`);
+        console.error('DB_PROBE_FAILED');
+        process.exitCode = 1;
+    });
+}
+
+module.exports = { decodeRenderedEnvValue, main };
