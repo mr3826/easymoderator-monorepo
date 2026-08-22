@@ -2,7 +2,7 @@ name: CI / CD
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Changes to this workflow intentionally exercise the protected PR test gate;
-# receipt-only release updates use this protected path as well; publish and
+# receipt-only and docs-only release updates use this path as well; publish and
 # deploy jobs remain guarded by event, branch, and repository gates.
 # Required GitHub secrets (Settings → Secrets → Actions):
 #   DEPLOY_HOST          — Droplet IP or hostname (update after each droplet swap)
