@@ -175,3 +175,4 @@ Supported merchant alert events are new order, AI human-handoff, customer waitin
 - README/docs updates are part of done when behavior, setup, deployment, or operational workflows change.
 - Prefer small, reviewable commits by product slice: backend behavior, frontend UI, docs, and deployment changes should be separated when practical.
 - Before deployment, run focused tests for touched modules plus the frontend build; rely on CI/CD for the final production gate.
+- AI runtime changes must follow [CONTRIBUTING-AI.md](CONTRIBUTING-AI.md) and the normative documents under `docs/ai/`.
