@@ -60,11 +60,21 @@ function normalizePaymentEncryptionKey(raw, source = process.env) {
  * Throws if a render input or the production config validator is unsatisfied.
  */
 function buildRenderedEnv(source = process.env) {
-    const required = (name) => source[name] || '';
+    const missingRequiredInputs = new Set();
+    const required = (name) => {
+        const value = source[name] || '';
+        if (!value) missingRequiredInputs.add(name);
+        return value;
+    };
+    const requiredOneOf = (names) => {
+        const value = names.map(name => source[name] || '').find(Boolean) || '';
+        if (!value) names.forEach(name => missingRequiredInputs.add(name));
+        return value;
+    };
     const marketingUrl = required('MARKETING_URL');
-    const appUrl = required('APP_URL') || required('FRONTEND_URL');
-    const apiUrl = required('API_URL') || required('BASE_URL');
-    const publicAssetUrl = required('PUBLIC_ASSET_URL') || source.PUBLIC_BASE_URL || apiUrl;
+    const appUrl = requiredOneOf(['APP_URL', 'FRONTEND_URL']);
+    const apiUrl = requiredOneOf(['API_URL', 'BASE_URL']);
+    const publicAssetUrl = requiredOneOf(['PUBLIC_ASSET_URL', 'PUBLIC_BASE_URL', 'API_URL', 'BASE_URL']);
 
     const missingRenderInputs = RENDER_INPUT_REQUIRED.filter((name) => !source[name]);
     if (missingRenderInputs.length) {
@@ -186,6 +196,14 @@ function buildRenderedEnv(source = process.env) {
         MAX_LOGIN_ATTEMPTS: '5',
         LOGIN_LOCKOUT_MINUTES: '15',
     };
+
+    const missingInputs = [...new Set([
+        ...missingRenderInputs,
+        ...missingRequiredInputs,
+    ])].sort();
+    if (missingInputs.length) {
+        throw new Error(`Missing deployment environment variables: ${missingInputs.join(', ')}`);
+    }
 
     // Fail before writing anything if the config is unsafe.
     assertProductionConfig(rendered);
