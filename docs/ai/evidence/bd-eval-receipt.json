@@ -1,64 +1,64 @@
 {
-  "release": "phase-c2-harness-correction",
+  "release": "phase-c3-rule-correction",
   "corpusStatus": "SEED",
   "dateRange": {
     "from": "2026-08-22T00:00:00.000Z",
     "to": "2026-08-22T00:00:00.000Z"
   },
-  "releaseNotes": "Corrected handoff measurement and runtime-outcome exclusions; C3 rule fixes and QA sign-off remain pending.",
-  "supersedes": "sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557",
+  "releaseNotes": "Corrected handoff measurement and C3 deterministic rule coverage; final receipt publication and QA sign-off remain pending.",
+  "supersedes": "sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5",
   "contractVersion": "1.0",
   "registryVersion": "1.0.0",
-  "registryHash": "sha256:b3c99d3f25a1a5798b2ec590e10383ee67d013f1f6310a2533462b249188d1dd",
-  "rulesetVersion": "1.0.0",
+  "registryHash": "sha256:d7085c1294f4a7a81c6108f9a38fd32460e47705f9f8108effa99a9d2aed57d2",
+  "rulesetVersion": "1.1.0",
   "promptVersion": "none-deterministic-shadow",
-  "corpusVersion": "sha256:fab3d71aa048a33f00d5cb5d5c1ca52a56bd7c12995766de68a0a2a23f2aac14",
-  "labelledTurns": 231,
+  "corpusVersion": "sha256:c37cecbdf5ee72fd22dc6e33457918a56441a3669ef0dc98d4394d02591416d7",
+  "labelledTurns": 238,
   "shopCount": 3,
   "localeCounts": {
-    "bn": 58,
-    "banglish": 58,
-    "en": 58,
-    "mixed": 57
+    "bn": 60,
+    "banglish": 60,
+    "en": 59,
+    "mixed": 59
   },
   "denominators": {
-    "domain": 231,
-    "intent": 220,
-    "falsePurchaseStarts": 201,
+    "domain": 238,
+    "intent": 223,
+    "falsePurchaseStarts": 208,
     "purchaseFlowFalseStarts": 20,
-    "falseOrderCreations": 231,
+    "falseOrderCreations": 238,
     "handoffRecall": 60,
-    "negatedPurchase": 10,
-    "runtimeOutcomes": 11,
+    "negatedPurchase": 14,
+    "runtimeOutcomes": 15,
     "providerFallback": 0
   },
   "domainAccuracy": {
-    "successes": 195,
-    "denominator": 231,
-    "value": 0.844156,
+    "successes": 225,
+    "denominator": 238,
+    "value": 0.945378,
     "confidenceInterval95": {
-      "lower": 0.791796,
-      "upper": 0.885256
+      "lower": 0.908802,
+      "upper": 0.967805
     }
   },
   "runtimeOutcomeAccuracy": {
-    "successes": 8,
-    "denominator": 11,
-    "value": 0.727273,
+    "successes": 15,
+    "denominator": 15,
+    "value": 1,
     "confidenceInterval95": {
-      "lower": 0.43435,
-      "upper": 0.902541
+      "lower": 0.796111,
+      "upper": 1
     }
   },
-  "intentMacroAccuracy": 0.785,
+  "intentMacroAccuracy": 0.955,
   "perClassAccuracy": {
     "STOP_OPT_OUT": {
-      "correct": 9,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.9,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.595844,
-        "upper": 0.982124
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "GREETING": {
@@ -71,15 +71,6 @@
       }
     },
     "PRODUCT_INQUIRY": {
-      "correct": 7,
-      "denominator": 10,
-      "accuracy": 0.7,
-      "confidenceInterval95": {
-        "lower": 0.396773,
-        "upper": 0.892211
-      }
-    },
-    "PRODUCT_ATTRIBUTE": {
       "correct": 9,
       "denominator": 10,
       "accuracy": 0.9,
@@ -88,13 +79,22 @@
         "upper": 0.982124
       }
     },
-    "PRODUCT_AVAILABILITY": {
-      "correct": 5,
+    "PRODUCT_ATTRIBUTE": {
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.5,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.23659,
-        "upper": 0.76341
+        "lower": 0.72246,
+        "upper": 1
+      }
+    },
+    "PRODUCT_AVAILABILITY": {
+      "correct": 13,
+      "denominator": 13,
+      "accuracy": 1,
+      "confidenceInterval95": {
+        "lower": 0.771898,
+        "upper": 1
       }
     },
     "PRODUCT_PHOTO_LOOKUP": {
@@ -170,30 +170,30 @@
       }
     },
     "ORDER_SESSION_CHECKOUT": {
-      "correct": 0,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0,
-        "upper": 0.27754
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "CART_EDIT_OR_ADD_MORE": {
-      "correct": 4,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.4,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.168178,
-        "upper": 0.68733
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "ORDER_SESSION_CANCEL": {
-      "correct": 8,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.8,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.490157,
-        "upper": 0.943319
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "SELF_MFS_PAYMENT_VERIFICATION": {
@@ -206,30 +206,30 @@
       }
     },
     "SENTIMENT_HANDOFF": {
-      "correct": 8,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.8,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.490157,
-        "upper": 0.943319
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "ORDER_POST_PURCHASE_REQUEST": {
-      "correct": 8,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.8,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.490157,
-        "upper": 0.943319
+        "lower": 0.72246,
+        "upper": 1
       }
     },
     "HUMAN_HANDOFF_REQUEST": {
-      "correct": 7,
+      "correct": 10,
       "denominator": 10,
-      "accuracy": 0.7,
+      "accuracy": 1,
       "confidenceInterval95": {
-        "lower": 0.396773,
-        "upper": 0.892211
+        "lower": 0.72246,
+        "upper": 1
       }
     }
   },
@@ -266,48 +266,48 @@
       "confidence_hold"
     ],
     "signalHits": {
-      "intent:STOP_OPT_OUT": 9,
+      "intent:STOP_OPT_OUT": 10,
       "read_denied:customer_identity_unbound": 10,
       "intent:SELF_MFS_PAYMENT_VERIFICATION": 10,
-      "intent:SENTIMENT_HANDOFF": 8,
-      "intent:ORDER_POST_PURCHASE_REQUEST": 8,
-      "intent:HUMAN_HANDOFF_REQUEST": 7
+      "intent:SENTIMENT_HANDOFF": 10,
+      "intent:ORDER_POST_PURCHASE_REQUEST": 10,
+      "intent:HUMAN_HANDOFF_REQUEST": 10
     }
   },
   "falsePurchaseStarts": {
     "successes": 0,
-    "denominator": 201,
+    "denominator": 208,
     "value": 0,
     "confidenceInterval95": {
       "lower": 0,
-      "upper": 0.018754
+      "upper": 0.018134
     }
   },
   "purchaseFlowFalseStarts": {
-    "successes": 4,
+    "successes": 0,
     "denominator": 20,
-    "value": 0.2,
+    "value": 0,
     "confidenceInterval95": {
-      "lower": 0.080656,
-      "upper": 0.416022
+      "lower": 0,
+      "upper": 0.16113
     }
   },
   "falseOrderCreations": {
     "successes": 0,
-    "denominator": 231,
+    "denominator": 238,
     "value": 0,
     "confidenceInterval95": {
       "lower": 0,
-      "upper": 0.016358
+      "upper": 0.015885
     }
   },
   "handoffRecall": {
-    "successes": 52,
+    "successes": 60,
     "denominator": 60,
-    "value": 0.866667,
+    "value": 1,
     "confidenceInterval95": {
-      "lower": 0.758346,
-      "upper": 0.93086
+      "lower": 0.939826,
+      "upper": 1
     }
   },
   "runtimeScenarioCoverage": {
@@ -342,30 +342,85 @@
     }
   },
   "negatedPurchaseSafety": {
-    "successes": 10,
-    "denominator": 10,
+    "successes": 14,
+    "denominator": 14,
     "value": 1,
     "confidenceInterval95": {
-      "lower": 0.72246,
+      "lower": 0.784683,
       "upper": 1
     }
   },
   "slotAccuracy": {
-    "successes": 14,
-    "denominator": 20,
-    "value": 0.7,
+    "successes": 29,
+    "denominator": 30,
+    "value": 0.966667,
     "confidenceInterval95": {
-      "lower": 0.481023,
-      "upper": 0.854525
+      "lower": 0.833292,
+      "upper": 0.994092
     }
   },
   "p50TurnLatencyMs": 4,
   "p95TurnLatencyMs": 7,
   "unsafeShadowActions": 0,
-  "shadowMutationCandidates": 13,
+  "shadowMutationCandidates": 30,
   "shadowMutationExecutions": 0,
+  "mutationGateEvaluation": {
+    "actions": {
+      "CREATE_ORDER": {
+        "candidates": 10,
+        "authorized": 10,
+        "unsafe": 0
+      },
+      "EDIT_PREORDER_CART": {
+        "candidates": 10,
+        "authorized": 10,
+        "unsafe": 0
+      },
+      "CANCEL_ORDER_SESSION": {
+        "candidates": 10,
+        "authorized": 10,
+        "unsafe": 0
+      }
+    },
+    "policy": "SHADOW_GATE_ONLY_NO_MUTATION"
+  },
+  "mutationBoundaryScenarios": {
+    "scenarios": [
+      {
+        "scenarioId": "unconfirmed-create-order",
+        "actionType": "CREATE_ORDER",
+        "authorized": false,
+        "reasonCode": "customer_confirmation_valid"
+      },
+      {
+        "scenarioId": "cross-tenant-cart-edit",
+        "actionType": "EDIT_PREORDER_CART",
+        "authorized": false,
+        "reasonCode": "tenant_records_match"
+      },
+      {
+        "scenarioId": "stale-cancel-evidence",
+        "actionType": "CANCEL_ORDER_SESSION",
+        "authorized": false,
+        "reasonCode": "evidence_snapshot_fresh"
+      },
+      {
+        "scenarioId": "duplicate-create-order",
+        "actionType": "CREATE_ORDER",
+        "authorized": false,
+        "reasonCode": "idempotency_not_committed"
+      },
+      {
+        "scenarioId": "disabled-cart-edit",
+        "actionType": "EDIT_PREORDER_CART",
+        "authorized": false,
+        "reasonCode": "merchant_mode_allows_mutation"
+      }
+    ],
+    "allDenied": true
+  },
   "shadowSafetyEvaluation": {
-    "evaluatedCandidates": 13,
+    "evaluatedCandidates": 30,
     "unsafeCandidates": 0,
     "mutationExecutionPolicy": "SHADOW_NO_MUTATION"
   },
@@ -375,33 +430,33 @@
   "latencyMeasurement": "deterministic seed-fixture clock; production timing pending QA traffic",
   "localeSlices": {
     "bn": {
-      "denominator": 58,
+      "denominator": 60,
       "shopCount": 3,
       "domainAccuracy": {
-        "successes": 50,
-        "denominator": 58,
-        "value": 0.862069,
+        "successes": 56,
+        "denominator": 60,
+        "value": 0.933333,
         "confidenceInterval95": {
-          "lower": 0.750739,
-          "upper": 0.928416
+          "lower": 0.840744,
+          "upper": 0.973772
         }
       },
       "intentAccuracy": {
-        "successes": 42,
-        "denominator": 55,
-        "value": 0.763636,
+        "successes": 53,
+        "denominator": 56,
+        "value": 0.946429,
         "confidenceInterval95": {
-          "lower": 0.636514,
-          "upper": 0.856335
+          "lower": 0.853925,
+          "upper": 0.981615
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 3,
-        "value": 0.666667,
+        "successes": 4,
+        "denominator": 4,
+        "value": 1,
         "confidenceInterval95": {
-          "lower": 0.207655,
-          "upper": 0.93851
+          "lower": 0.5101,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -410,33 +465,33 @@
       }
     },
     "banglish": {
-      "denominator": 58,
+      "denominator": 60,
       "shopCount": 3,
       "domainAccuracy": {
-        "successes": 48,
-        "denominator": 58,
-        "value": 0.827586,
+        "successes": 57,
+        "denominator": 60,
+        "value": 0.95,
         "confidenceInterval95": {
-          "lower": 0.710915,
-          "upper": 0.903558
+          "lower": 0.862993,
+          "upper": 0.982851
         }
       },
       "intentAccuracy": {
-        "successes": 43,
-        "denominator": 55,
-        "value": 0.781818,
+        "successes": 54,
+        "denominator": 56,
+        "value": 0.964286,
         "confidenceInterval95": {
-          "lower": 0.656297,
-          "upper": 0.870541
+          "lower": 0.87881,
+          "upper": 0.990151
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 3,
-        "value": 0.666667,
+        "successes": 4,
+        "denominator": 4,
+        "value": 1,
         "confidenceInterval95": {
-          "lower": 0.207655,
-          "upper": 0.93851
+          "lower": 0.5101,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -445,33 +500,33 @@
       }
     },
     "en": {
-      "denominator": 58,
+      "denominator": 59,
       "shopCount": 3,
       "domainAccuracy": {
-        "successes": 48,
-        "denominator": 58,
-        "value": 0.827586,
+        "successes": 56,
+        "denominator": 59,
+        "value": 0.949153,
         "confidenceInterval95": {
-          "lower": 0.710915,
-          "upper": 0.903558
+          "lower": 0.860833,
+          "upper": 0.982558
         }
       },
       "intentAccuracy": {
-        "successes": 46,
+        "successes": 52,
         "denominator": 55,
-        "value": 0.836364,
+        "value": 0.945455,
         "confidenceInterval95": {
-          "lower": 0.71736,
-          "upper": 0.911447
+          "lower": 0.851467,
+          "upper": 0.981277
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 3,
-        "value": 0.666667,
+        "successes": 4,
+        "denominator": 4,
+        "value": 1,
         "confidenceInterval95": {
-          "lower": 0.207655,
-          "upper": 0.93851
+          "lower": 0.5101,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -480,32 +535,32 @@
       }
     },
     "mixed": {
-      "denominator": 57,
+      "denominator": 59,
       "shopCount": 3,
       "domainAccuracy": {
-        "successes": 49,
-        "denominator": 57,
-        "value": 0.859649,
+        "successes": 56,
+        "denominator": 59,
+        "value": 0.949153,
         "confidenceInterval95": {
-          "lower": 0.746753,
-          "upper": 0.927128
+          "lower": 0.860833,
+          "upper": 0.982558
         }
       },
       "intentAccuracy": {
-        "successes": 43,
-        "denominator": 55,
-        "value": 0.781818,
+        "successes": 52,
+        "denominator": 56,
+        "value": 0.928571,
         "confidenceInterval95": {
-          "lower": 0.656297,
-          "upper": 0.870541
+          "lower": 0.830243,
+          "upper": 0.971874
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 2,
+        "successes": 3,
+        "denominator": 3,
         "value": 1,
         "confidenceInterval95": {
-          "lower": 0.342372,
+          "lower": 0.438494,
           "upper": 1
         }
       },
@@ -517,33 +572,33 @@
   },
   "shopSlices": {
     "seed-shop-dhaka": {
-      "denominator": 77,
+      "denominator": 80,
       "shopCount": 1,
       "domainAccuracy": {
-        "successes": 65,
-        "denominator": 77,
-        "value": 0.844156,
+        "successes": 74,
+        "denominator": 80,
+        "value": 0.925,
         "confidenceInterval95": {
-          "lower": 0.747061,
-          "upper": 0.908542
+          "lower": 0.845878,
+          "upper": 0.965175
         }
       },
       "intentAccuracy": {
-        "successes": 58,
-        "denominator": 73,
-        "value": 0.794521,
+        "successes": 71,
+        "denominator": 75,
+        "value": 0.946667,
         "confidenceInterval95": {
-          "lower": 0.688261,
-          "upper": 0.871331
+          "lower": 0.870738,
+          "upper": 0.979067
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 4,
-        "value": 0.5,
+        "successes": 5,
+        "denominator": 5,
+        "value": 1,
         "confidenceInterval95": {
-          "lower": 0.150036,
-          "upper": 0.849964
+          "lower": 0.565509,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -552,33 +607,33 @@
       }
     },
     "seed-shop-chattogram": {
-      "denominator": 77,
+      "denominator": 79,
       "shopCount": 1,
       "domainAccuracy": {
-        "successes": 66,
-        "denominator": 77,
-        "value": 0.857143,
+        "successes": 75,
+        "denominator": 79,
+        "value": 0.949367,
         "confidenceInterval95": {
-          "lower": 0.762025,
-          "upper": 0.918318
+          "lower": 0.876921,
+          "upper": 0.980136
         }
       },
       "intentAccuracy": {
-        "successes": 60,
+        "successes": 70,
         "denominator": 74,
-        "value": 0.810811,
+        "value": 0.945946,
         "confidenceInterval95": {
-          "lower": 0.707122,
-          "upper": 0.883821
+          "lower": 0.869094,
+          "upper": 0.978781
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 2,
-        "denominator": 3,
-        "value": 0.666667,
+        "successes": 5,
+        "denominator": 5,
+        "value": 1,
         "confidenceInterval95": {
-          "lower": 0.207655,
-          "upper": 0.93851
+          "lower": 0.565509,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -587,32 +642,32 @@
       }
     },
     "seed-shop-sylhet": {
-      "denominator": 77,
+      "denominator": 79,
       "shopCount": 1,
       "domainAccuracy": {
-        "successes": 64,
-        "denominator": 77,
-        "value": 0.831169,
+        "successes": 76,
+        "denominator": 79,
+        "value": 0.962025,
         "confidenceInterval95": {
-          "lower": 0.732269,
-          "upper": 0.898594
+          "lower": 0.894198,
+          "upper": 0.987002
         }
       },
       "intentAccuracy": {
-        "successes": 56,
-        "denominator": 73,
-        "value": 0.767123,
+        "successes": 70,
+        "denominator": 74,
+        "value": 0.945946,
         "confidenceInterval95": {
-          "lower": 0.658325,
-          "upper": 0.849212
+          "lower": 0.869094,
+          "upper": 0.978781
         }
       },
       "runtimeOutcomeAccuracy": {
-        "successes": 4,
-        "denominator": 4,
+        "successes": 5,
+        "denominator": 5,
         "value": 1,
         "confidenceInterval95": {
-          "lower": 0.5101,
+          "lower": 0.565509,
           "upper": 1
         }
       },
@@ -630,5 +685,5 @@
     "locales": 4,
     "boundaryPhrases": 4
   },
-  "receiptHash": "sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5"
+  "receiptHash": "sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf"
 }

@@ -879,10 +879,15 @@ async function processMessageJob(job) {
     try {
         const { classify } = require('../modules/ai/intent/stage2-rules');
         const { createIntentRecord } = require('../modules/ai/contracts/intent.contract');
+        const OrderSessionService = require('../modules/order/order-session-standalone.service');
+        const activeOrderSession = typeof OrderSessionService.getActiveSession === 'function'
+            ? await OrderSessionService.getActiveSession(shopId, recipientId).catch(() => null)
+            : null;
         shadowProposal = classify(effMessage, {
             language: detectedLanguage,
             hasAttachment: effImageUrls.length > 0,
             staticConfigAvailable,
+            activeSession: activeOrderSession?.status === 'ACTIVE',
         });
         shadowTraceId = stableTraceId;
         shadowIntentRecord = {

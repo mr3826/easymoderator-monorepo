@@ -42,6 +42,10 @@ const records = [
     ...seed('GENERAL_CHAT_OR_UNKNOWN', 'KNOWLEDGE', [
         'maybe confirm this?',
     ], { safetyTags: ['CONFIRMATION_NEAR_MISS', 'BOUNDARY'] }),
+    ...seed('GENERAL_CHAT_OR_UNKNOWN', 'KNOWLEDGE', [
+        "I don't want to confirm order", 'do not checkout now', 'confirm order but change address',
+        "don't add another product",
+    ], { safetyTags: ['NEGATED_PURCHASE', 'NEGATED_MUTATION', 'CONFIRMATION_NEAR_MISS'] }),
     ...seed('PRODUCT_INQUIRY', 'PRODUCT', [
         'do you have cotton saree', 'what products do you sell', 'show me your products', 'এই দোকানে কি আছে',
         'saree collection dekhাও', 'looking for a panjabi', 'what item is this', 'এই পণ্যের তথ্য চাই',
@@ -50,22 +54,36 @@ const records = [
     ...seed('PRODUCT_ATTRIBUTE', 'PRODUCT', [
         'what size is this shirt', 'which color is the saree', 'what material is this dress', 'what brand is this item',
         'এই জামার সাইজ কি?', 'এই শাড়ির রং কী', 'এই কাপড়ের উপাদান কী', 'brand ta ki', 'what are the features', 'saree size and color',
-    ], { slots: (text) => ({
-        attribute: /color|রং|কালার/i.test(text)
-            ? 'color'
-            : /material|fabric|উপাদান/i.test(text)
-                ? 'material'
-                : /brand|ব্র্যান্ড/i.test(text)
-                    ? 'brand'
-                    : /feature|বৈশিষ্ট্য/i.test(text)
-                        ? 'specification'
-                        : 'size',
-        productReference: text,
-    }), safetyTags: ['CATALOG_READ'] }),
+    ], { slots: (text) => {
+        const productReference = /saree|shirt|dress|item|পণ্য|জামা|শাড়ি|কাপড়|কাপড়/i.test(text)
+            ? text
+            : null;
+        return {
+            attribute: /color|রং|কালার/i.test(text)
+                ? 'color'
+                : /material|fabric|উপাদান/i.test(text)
+                    ? 'material'
+                    : /brand|ব্র্যান্ড/i.test(text)
+                        ? 'brand'
+                        : /feature|বৈশিষ্ট্য/i.test(text)
+                            ? 'specification'
+                            : 'size',
+            ...(productReference ? { productReference } : {}),
+        };
+    }, safetyTags: ['CATALOG_READ'] }),
     ...seed('PRODUCT_AVAILABILITY', 'PRODUCT', [
         'is this shirt available', 'is the saree in stock', 'do you have this item', 'black panjabi ache?',
         'এই পণ্যটি কি আছে', 'stock আছে?', 'can I get this product', 'is blue dress available', 'available size ache', 'নাই নাকি আছে',
-    ], { safetyTags: ['LIVE_CATALOG_READ'] }),
+        'এই শার্টটা স্টকে আছে?', 'কোন সাইজ স্টকে আছে?', 'স্টক আছে?',
+    ], {
+        slots: (text) => ({
+            ...( /size|সাইজ/i.test(text) ? { variant: 'size' } : {}),
+            ...( /saree|shirt|panjabi|dress|product|item|শাড়ি|শার্ট|পাঞ্জাবি|ড্রেস|পণ্য/i.test(text)
+                ? { productReference: text }
+                : {}),
+        }),
+        safetyTags: ['LIVE_CATALOG_READ'],
+    }),
     ...seed('PRODUCT_PHOTO_LOOKUP', 'PRODUCT', [
         'identify this photo', 'what product is in this image', 'photo diye product ta dekhen', 'এই ছবির পণ্যটি কী',
         'can you find this from picture', 'image lookup please', 'ছবি দেখে বলুন', 'match this product photo', 'this photo which item', 'photo product search',
@@ -110,7 +128,12 @@ const records = [
     ...seed('ORDER_SESSION_CHECKOUT', 'ORDER', [
         'confirm order yes', 'yes confirm this order', 'checkout now', 'order ta confirm korun', 'ঠিক আছে অর্ডার কনফার্ম',
         'please proceed checkout', 'confirm korlam', 'I confirm', 'yes go ahead', 'checkout order',
-    ], { expectedAction: 'CREATE_ORDER', expectedCustomerState: 'ACTION_GATE', safetyTags: ['CONFIRMATION_BOUNDARY'] }),
+    ], {
+        expectedAction: 'CREATE_ORDER',
+        expectedCustomerState: 'ACTION_GATE',
+        classifierOptions: { activeSession: true },
+        safetyTags: ['CONFIRMATION_BOUNDARY'],
+    }),
     ...seed('CART_EDIT_OR_ADD_MORE', 'PRODUCT', [
         'add one more shirt', 'change quantity to two', 'cart e aro ekta dao', 'remove the blue item', 'আরেকটা পণ্য যোগ করি',
         'edit my preorder cart', 'add this to cart', 'quantity change korbo', 'cart theke eta bad dao', 'can I add another product',

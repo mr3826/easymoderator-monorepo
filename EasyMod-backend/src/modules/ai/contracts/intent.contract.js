@@ -22,48 +22,50 @@ const deepFreeze = (value) => {
     return value;
 };
 
-const intent = (domain, requiredSlots, status = ACTIVE, evaluationClass = null) => ({
+const intent = (domain, requiredSlots, status = ACTIVE, evaluationClass = null, version = 1) => ({
     domain,
     requiredSlots,
     status,
-    version: 1,
+    version,
     ...(evaluationClass ? { evaluationClass } : {}),
 });
 
-const pairedIntent = (domains, requiredSlots, status = ACTIVE, evaluationClass = null) => ({
+const pairedIntent = (domains, requiredSlots, status = ACTIVE, evaluationClass = null, version = 1) => ({
     domains,
     requiredSlots,
     status,
-    version: 1,
+    version,
     ...(evaluationClass ? { evaluationClass } : {}),
 });
 
+const revisedIntent = (domain, requiredSlots, evaluationClass = null) =>
+    intent(domain, requiredSlots, ACTIVE, evaluationClass, 2);
+
 const INTENTS = deepFreeze({
-    STOP_OPT_OUT: intent('SUPPORT', []),
+    STOP_OPT_OUT: revisedIntent('SUPPORT', []),
     GREETING: intent('KNOWLEDGE', ['language']),
-    GENERAL_CHAT_OR_UNKNOWN: intent('KNOWLEDGE', [], ACTIVE, INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME),
-    PRODUCT_INQUIRY: intent('PRODUCT', ['productReference']),
-    PRODUCT_ATTRIBUTE: intent('PRODUCT', ['productReference', 'attribute']),
-    PRODUCT_AVAILABILITY: intent('PRODUCT', ['productReference']),
+    GENERAL_CHAT_OR_UNKNOWN: revisedIntent('KNOWLEDGE', [], INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME),
+    PRODUCT_INQUIRY: revisedIntent('PRODUCT', ['productReference']),
+    PRODUCT_ATTRIBUTE: revisedIntent('PRODUCT', ['productReference', 'attribute']),
+    PRODUCT_AVAILABILITY: revisedIntent('PRODUCT', ['productReference']),
     PRODUCT_PHOTO_LOOKUP: intent('PRODUCT', ['attachment']),
-    FAQ_KNOWLEDGE_QUESTION: intent('KNOWLEDGE', ['questionTopic']),
+    FAQ_KNOWLEDGE_QUESTION: revisedIntent('KNOWLEDGE', ['questionTopic']),
     DELIVERY_POLICY: pairedIntent(['KNOWLEDGE', 'COMMERCE_OPS'], ['zoneOrLocation']),
     DELIVERY_CHARGE: pairedIntent(['KNOWLEDGE', 'COMMERCE_OPS'], ['destination']),
     PAYMENT_POLICY: pairedIntent(['KNOWLEDGE', 'COMMERCE_OPS'], ['paymentTopic']),
     PAYMENT_METHODS: intent('KNOWLEDGE', []),
     ORDER_STATUS_LOOKUP: intent('ORDER', ['orderReference']),
-    PURCHASE_INTENT_START: intent('ORDER', ['productReference']),
-    ORDER_SESSION_CHECKOUT: intent('ORDER', ['currentCheckoutSlot']),
-    CART_EDIT_OR_ADD_MORE: intent('PRODUCT', ['productOrQuantityChange']),
-    ORDER_SESSION_CANCEL: intent('ORDER', ['activeSession']),
+    PURCHASE_INTENT_START: revisedIntent('ORDER', ['productReference']),
+    ORDER_SESSION_CHECKOUT: revisedIntent('ORDER', ['currentCheckoutSlot']),
+    CART_EDIT_OR_ADD_MORE: revisedIntent('PRODUCT', ['productOrQuantityChange']),
+    ORDER_SESSION_CANCEL: revisedIntent('ORDER', ['activeSession']),
     SELF_MFS_PAYMENT_VERIFICATION: intent('COMMERCE_OPS', ['screenshot', 'expectedAmount']),
-    SENTIMENT_HANDOFF: intent('SUPPORT', ['sentiment']),
-    ORDER_POST_PURCHASE_REQUEST: intent('SUPPORT', ['reason']),
-    HUMAN_HANDOFF_REQUEST: intent('SUPPORT', []),
-    LOW_CONFIDENCE_OR_GROUNDING_FAILURE: intent(
+    SENTIMENT_HANDOFF: revisedIntent('SUPPORT', ['sentiment']),
+    ORDER_POST_PURCHASE_REQUEST: revisedIntent('SUPPORT', ['reason']),
+    HUMAN_HANDOFF_REQUEST: revisedIntent('SUPPORT', []),
+    LOW_CONFIDENCE_OR_GROUNDING_FAILURE: revisedIntent(
         'SUPPORT',
         ['reasonCode'],
-        ACTIVE,
         INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME,
     ),
 

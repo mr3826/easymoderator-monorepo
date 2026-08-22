@@ -78,7 +78,7 @@ Every stored intent decision has:
 {
   "contractVersion": "1.0",
   "intentId": "PRODUCT_ATTRIBUTE",
-  "intentVersion": 1,
+  "intentVersion": 2,
   "domain": "PRODUCT",
   "slots": { "attribute": "material", "productReference": "p-1" },
   "confidence": 0.94,
@@ -110,6 +110,14 @@ Change workflow:
 3. Run the corpus and compare per-class precision, recall, domain accuracy, and false mutation metrics.
 4. Obtain native-language and product-owner review.
 5. Increment the rule-set version and record the migration note.
+
+### Phase C C3 Migration Note
+
+Ruleset `1.1.0` adds checkout, cart, availability, handoff, cancellation, and
+post-purchase boundaries while preserving the existing intent IDs. The affected
+intent definitions are at `intentVersion: 2`; the registry semantic version
+remains `1.0.0` because no intent meaning or identifier changed. The evaluation
+receipt records the resulting registry hash and ruleset version.
 
 ## 7. Reserved Intents
 

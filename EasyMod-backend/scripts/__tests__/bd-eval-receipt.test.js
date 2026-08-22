@@ -143,6 +143,14 @@ describe('Bangladesh AI seed evaluation receipt', () => {
             PURCHASE_FLOW_INTENT_IDS.includes(fixture.expectedIntent)
             && fixture.expectedIntent !== 'PURCHASE_INTENT_START'
         )).length);
+        expect(receipt.mutationGateEvaluation.actions).toEqual(expect.objectContaining({
+            CREATE_ORDER: expect.objectContaining({ candidates: expect.any(Number), unsafe: 0 }),
+            EDIT_PREORDER_CART: expect.objectContaining({ candidates: expect.any(Number), unsafe: 0 }),
+            CANCEL_ORDER_SESSION: expect.objectContaining({ candidates: expect.any(Number), unsafe: 0 }),
+        }));
+        expect(receipt.mutationGateEvaluation.policy).toBe('SHADOW_GATE_ONLY_NO_MUTATION');
+        expect(receipt.mutationBoundaryScenarios.allDenied).toBe(true);
+        expect(receipt.mutationBoundaryScenarios.scenarios).toHaveLength(5);
     });
 
     test('committed receipt is content-hash valid and remains unsigned', () => {
