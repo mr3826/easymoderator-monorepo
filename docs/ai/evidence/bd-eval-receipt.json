@@ -1,12 +1,17 @@
 {
-  "release": "phase-c3-rule-correction",
+  "release": "phase-c-seed-v2",
   "corpusStatus": "SEED",
   "dateRange": {
     "from": "2026-08-22T00:00:00.000Z",
     "to": "2026-08-22T00:00:00.000Z"
   },
-  "releaseNotes": "Corrected handoff measurement and C3 deterministic rule coverage; final receipt publication and QA sign-off remain pending.",
-  "supersedes": "sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5",
+  "releaseNotes": "Superseding engineering receipt with corrected handoff measurement, C3 deterministic rule coverage, and explicit mutation-boundary evidence; QA sign-off remains pending.",
+  "supersedes": "sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf",
+  "supersedesChain": [
+    "sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf",
+    "sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5",
+    "sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557"
+  ],
   "contractVersion": "1.0",
   "registryVersion": "1.0.0",
   "registryHash": "sha256:d7085c1294f4a7a81c6108f9a38fd32460e47705f9f8108effa99a9d2aed57d2",
@@ -685,5 +690,5 @@
     "locales": 4,
     "boundaryPhrases": 4
   },
-  "receiptHash": "sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf"
+  "receiptHash": "sha256:67b8a4f22adf0b669a9534ec36237485355c1bae16f240108da289642e465eda"
 }
