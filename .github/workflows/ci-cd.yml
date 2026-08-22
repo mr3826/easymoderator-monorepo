@@ -350,6 +350,7 @@ jobs:
           DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
           CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
+          AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}
           MARKETING_URL: ${{ vars.MARKETING_URL || 'https://easymod.tech' }}
           APP_URL: ${{ vars.APP_URL || 'https://app.easymod.tech' }}
           API_URL: ${{ vars.API_URL || 'https://api.easymod.tech' }}

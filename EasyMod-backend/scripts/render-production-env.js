@@ -126,6 +126,7 @@ function buildRenderedEnv(source = process.env) {
         DELIVERY_ENCRYPTION_KEY: required('DELIVERY_ENCRYPTION_KEY'),
         CHANNEL_ENCRYPTION_KEY: required('CHANNEL_ENCRYPTION_KEY'),
         PAYMENT_CALLBACK_HMAC_SECRET: required('PAYMENT_CALLBACK_HMAC_SECRET'),
+        AI_ACTION_GATE_SECRET: required('AI_ACTION_GATE_SECRET'),
         MARKETING_URL: marketingUrl,
         APP_URL: appUrl,
         API_URL: apiUrl,

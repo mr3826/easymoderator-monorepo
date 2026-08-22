@@ -53,7 +53,7 @@ const LEGAL_TRANSITIONS = Object.freeze({
 });
 
 const getSecret = () => {
-    const configured = process.env.AI_ACTION_GATE_SECRET || process.env.ACTION_GATE_SECRET;
+    const configured = process.env.AI_ACTION_GATE_SECRET;
     if (configured) return configured;
     if (process.env.NODE_ENV === 'test') return 'test-only-action-gate-secret';
     return null;
@@ -212,4 +212,5 @@ module.exports = {
     authorize,
     evaluateChecks,
     verifyAuthorization,
+    _private: { getSecret },
 };
