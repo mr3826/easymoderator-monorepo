@@ -2,7 +2,14 @@
 
 **App:** EasyModerator
 **Legal entity:** Hexabyte Technologies (registered in Bangladesh) — <https://hexabyte.tech>
-**Last updated:** 2026-07-28
+**Last updated:** 2026-08-20
+
+> **Status — 2026-08-20: business verification is COMPLETE.** App settings →
+> Basic → Business portfolio shows **HexaByte Technologies**, ID
+> `1268762121859445`, ● Verified. Sections 0–4 below are kept as the procedure
+> record; you do not need to run them again. The remaining verification gate is
+> **Access Verification (Tech Provider)** — section 6 — which is *not started*
+> and carries a hard deadline of **2026-10-19**.
 
 This is the step that gates everything else. **App Review cannot grant Advanced
 Access to `pages_messaging` until the business portfolio that owns the app is
@@ -141,7 +148,7 @@ being a surprise mid-launch.
 |---|---|---|
 | **Data Protection Assessment (DPA)** | A questionnaire about how you store, share and secure Platform data. Apps handling Page/messaging data are routinely selected. | Usually after App Review approval; you get a deadline. Missing it suspends the app. |
 | **Data Use Checkup** | Annual re-attestation that your permission use is still accurate. | Annually, from the App Dashboard. |
-| **Tech Provider status** | Meta classifies apps that manage assets *on behalf of other businesses* — which is exactly what EasyModerator does with merchant Pages. If the dashboard offers/requires a Tech Provider business type, it requires verification too. | Check during setup; confirm in the dashboard. |
+| **Access Verification (Tech Provider)** | **Confirmed required, not started.** `pages_show_list` sits in the dashboard's Tech-Provider-gated section. Merchants without a role on the app cannot grant it until HexaByte is verified as a Tech Provider. Separate from, and not satisfied by, App Review. | **Deadline 2026-10-19** — the dashboard warns of app restrictions past that date. Full procedure in section 6. |
 
 For the DPA, the answers are already documented — `permissions-justification.md`
 (what each scope does and its retention) and `data-deletion-flow.md` (deletion
@@ -150,7 +157,56 @@ story matches what App Review was told.
 
 ---
 
-## 6. Sequencing
+## 6. Access Verification (Tech Provider) — OPEN
+
+**Confirmed in the dashboard on 2026-08-20. This is the only verification gate
+still outstanding, and the only one with a deadline.**
+
+App settings → Basic → Business portfolio → **Access verification** →
+*View details* opens
+<https://developers.facebook.com/1268762121859445/access-verification/>, which
+currently reads:
+
+> Answer the following questions so we can verify that your business is a Tech
+> Provider. Only complete this for your own business, HexaByte Technologies.
+> **To avoid restrictions to 1 app, this must be completed by 10/19/2026.**
+
+### Why it applies to us
+
+`pages_show_list` appears in the dashboard section headed *"Your app only needs
+advanced access to the following permissions and features if your business
+provides services of a Tech Provider. Business verification and access
+verification are required."* EasyModerator connects **other businesses'** Pages,
+so it is squarely a Tech Provider integration.
+
+Without it, once the app leaves Development mode every merchant who does not
+hold a role on the app fails with error code 100 — *"Unsupported get request.
+Object with ID does not exist, cannot be loaded due to missing permissions, or
+does not support this operation."* That is every real customer.
+
+Passing App Review does **not** satisfy this, and completing this does not
+substitute for App Review. They are independent gates.
+
+### What to do
+
+1. Only a **Business admin** of HexaByte Technologies can complete it — the
+   founder, not a developer holding only an app role.
+2. Prerequisites are already met: business verification passed, and there are
+   no restrictions on the business account.
+3. Open the link above → **Start verification** → categorise and describe how
+   HexaByte uses other businesses' data to provide a service to them. Answer
+   from `permissions-justification.md` so the story matches what App Review is
+   told.
+4. Decision takes roughly **5 days**. Business admins get an email; app admins
+   get a developer alert.
+
+Verified status can lapse — it is lost if the business becomes unverified, the
+app is disconnected from the business, or the business account is restricted,
+and returns automatically once that is reversed.
+
+---
+
+## 7. Sequencing
 
 Run these in parallel, not in series — the two Meta-side waits overlap:
 
@@ -166,7 +222,7 @@ Day N   Business verified + App Review approved → switch app to Live
 
 Submitting App Review before verification completes is fine and saves a week.
 
-## 7. Founder checklist
+## 8. Founder checklist
 
 - [ ] Trade License located, unexpired, full-page scan
 - [ ] Business info in Business Manager matches the licence character for character
@@ -174,7 +230,9 @@ Submitting App Review before verification completes is fine and saves a week.
 - [ ] EasyModerator app is inside the business portfolio
 - [ ] Business email on `@easymod.tech` exists and is reachable
 - [ ] Business phone reachable for SMS/call
-- [ ] Verification submitted; date submitted: ____________
-- [ ] Verified — date: ____________
+- [x] Verification submitted
+- [x] Verified — HexaByte Technologies, ID `1268762121859445` (confirmed 2026-08-20)
+- [ ] **Access verification (Tech Provider) submitted — date: ____________**
+- [ ] **Tech Provider approved — date: ____________**  ← deadline 2026-10-19
 
 See also: `compliance-checklist.md`, `dashboard-setup-walkthrough.md`.
