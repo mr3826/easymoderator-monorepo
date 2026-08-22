@@ -3,6 +3,10 @@ name: Growth OS CI / CD
 # Changes to release-safety workflows intentionally exercise the required PR
 # verification jobs; receipt-only and docs-only updates use this path too;
 # image publication remains guarded by its event condition.
+#
+# On pull requests this workflow is invoked by ci-cd.yml's PR Merge Gate via
+# workflow_call — see the `on:` block below for why it has no pull_request
+# trigger of its own.
 # Growth OS ships on its own pipeline, not through ci-cd.yml. It is an internal
 # staff surface with its own image, its own host (growth.easymod.tech) and no
 # coupling to the merchant app's deploy — keeping it separate is the point.
@@ -26,20 +30,13 @@ on:
       - "scripts/run-growth-e2e.js"
       - "docker-compose.test.yml"
       - ".github/workflows/growth-os.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "EasyMod-growth/**"
-      - "EasyMod-backend/src/scripts/seed-growth-e2e.js"
-      # The browser gate runs the migration chain against its disposable
-      # PostgreSQL before seeding fixtures, so a migration change can break it
-      # without touching a single Growth file.
-      - "EasyMod-backend/src/database/**"
-      - "package.json"
-      - "package-lock.json"
-      - "scripts/run-growth-e2e.js"
-      - "docker-compose.test.yml"
-      - ".github/workflows/growth-os.yml"
+  # No pull_request trigger. A workflow-level paths filter means the workflow
+  # never starts on an unrelated diff, so its job contexts never exist, and a
+  # required context that never reports blocks the PR forever with "Expected —
+  # waiting for status". PR validation is driven through workflow_call by
+  # ci-cd.yml's `PR Merge Gate`, which DOES run on every PR and decides there
+  # whether Growth is affected. Push/deploy behaviour below is unchanged.
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
