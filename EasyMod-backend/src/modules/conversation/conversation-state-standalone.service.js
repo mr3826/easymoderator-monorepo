@@ -245,19 +245,41 @@ class ConversationStateService {
             const conversation = await Conversation.findByPk(conversationId);
             if (!conversation) throw new Error('Conversation not found');
 
-            const { intent, language, confidence, automation_mode } = stateUpdate;
+            const {
+                intent,
+                language,
+                confidence,
+                automation_mode,
+                intentRecord,
+                intentConfidence,
+                unsafeShadowActions = 0,
+                shadowDivergence,
+            } = stateUpdate;
             const currentMeta = conversation.metadata || {};
+            const nextMetadata = {
+                ...currentMeta,
+                ...(intent !== undefined ? { last_intent: intent } : {}),
+                ...(language !== undefined ? { language_detected: language } : {}),
+                ...(confidence !== undefined ? { last_intent_confidence: intentConfidence ?? confidence } : {}),
+                ...(automation_mode !== undefined ? { automation_mode: automation_mode || currentMeta.automation_enabled } : {}),
+                ...(intentRecord ? { last_intent_record: intentRecord } : {}),
+                ...(unsafeShadowActions ? {
+                    unsafeShadowActions: (Number(currentMeta.unsafeShadowActions) || 0) + Number(unsafeShadowActions),
+                } : {}),
+                ...(shadowDivergence ? { lastShadowDivergence: shadowDivergence } : {}),
+                last_state_update: new Date().toISOString(),
+            };
 
-            await conversation.update({
-                metadata: {
-                    ...currentMeta,
-                    last_intent: intent,
-                    language_detected: language,
-                    last_intent_confidence: confidence,
-                    automation_mode: automation_mode || currentMeta.automation_enabled,
-                    last_state_update: new Date().toISOString()
-                }
-            });
+            const stateColumns = { metadata: nextMetadata };
+            if (intent !== undefined) stateColumns.intent = intent;
+            if (confidence !== undefined) {
+                stateColumns.confidence = Number.isFinite(Number(confidence))
+                    && Number(confidence) >= 0
+                    && Number(confidence) <= 1
+                    ? Math.round(Number(confidence) * 100)
+                    : confidence;
+            }
+            await conversation.update(stateColumns);
 
             return {
                 success: true,
