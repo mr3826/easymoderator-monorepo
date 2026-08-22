@@ -24,6 +24,7 @@ const CORE_REQUIRED = [
     'DELIVERY_ENCRYPTION_KEY',
     'CHANNEL_ENCRYPTION_KEY',
     'PAYMENT_CALLBACK_HMAC_SECRET',
+    'AI_ACTION_GATE_SECRET',
     // BKASH_WEBHOOK_SECRET is deliberately NOT core. It only guards the bKash
     // callback route, which is unreachable while the gateway is disabled, and
     // requiring it unconditionally pressures an operator into inventing a fake
@@ -54,6 +55,7 @@ const LONG_SECRETS = [
     'META_APP_SECRET',
     'META_WEBHOOK_VERIFY_TOKEN',
     'PAYMENT_CALLBACK_HMAC_SECRET',
+    'AI_ACTION_GATE_SECRET',
     'BKASH_WEBHOOK_SECRET',
     'TELEGRAM_WEBHOOK_SECRET',
 ];
