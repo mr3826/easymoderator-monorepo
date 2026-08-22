@@ -180,30 +180,17 @@ const loadLegacyProductSearch = (pgClient) => {
 };
 
 /**
- * The intent-router's two product-search gates, sourced from the shipped file.
- * intent-router.service.js is not required directly because it pulls in the LLM
- * client, Redis and the BERT client; the gates themselves are pure predicates
- * over a keyword list and two regexes, so they are parsed out instead of copied
- * and can therefore not drift from the code under test.
+ * The intent-router's two product-search gates, sourced from the dependency-free
+ * Stage-2 rules module. The router itself pulls in the LLM client, Redis and the
+ * BERT client, so the harness imports only the pure predicates.
  */
 const loadProductIntent = () => {
-    const src = fs.readFileSync(
-        path.resolve(__dirname, '../../src/modules/ai/intent-router.service.js'), 'utf8',
-    );
-    const block = src.match(/const PRODUCT_INTENT_KEYWORDS = \[([\s\S]*?)\];/);
-    if (!block) throw new Error('Could not parse PRODUCT_INTENT_KEYWORDS from intent-router.service.js');
-    const keywords = [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
-    const hasProductIntent = (msg) => keywords.some((k) => msg.toLowerCase().includes(k));
-
-    const reOf = (name) => {
-        const m = src.match(new RegExp(`const ${name} = (/.*/[a-z]*);`));
-        if (!m) throw new Error(`Could not parse ${name} from intent-router.service.js`);
-        // eslint-disable-next-line no-eval
-        return eval(m[1]);
-    };
-    const greeting = reOf('GREETING_PATTERN');
-    const chatter = reOf('NON_PRODUCT_CHATTER');
-
+    const {
+        GREETING_PATTERN: greeting,
+        NON_PRODUCT_CHATTER: chatter,
+        PRODUCT_INTENT_KEYWORDS: keywords,
+        hasProductIntent,
+    } = require('../../src/modules/ai/intent/stage2-rules');
     const isPlainGreeting = (msg) => {
         const t = (msg || '').trim();
         return Boolean(t) && !hasProductIntent(t) && greeting.test(t);
@@ -212,7 +199,6 @@ const loadProductIntent = () => {
         const t = (msg || '').trim();
         return Boolean(t) && !isPlainGreeting(t) && !chatter.test(t);
     };
-
     return { keywords, hasProductIntent, shouldSearchProducts };
 };
 
