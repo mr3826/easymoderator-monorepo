@@ -102,4 +102,35 @@ describe('createOrderFromSession', () => {
         ).rejects.toThrow(/no product/i);
         expect(createOrderInternal).not.toHaveBeenCalled();
     });
+
+    test('mutationsAllowed=false leaves the confirmed session awaiting confirmation', async () => {
+        const session = {
+            id: 'sess-draft',
+            shop_id: 'shop-1',
+            current_step: 'ORDER_SUMMARY',
+            step_data: {
+                language: 'en',
+                name: 'Rahim',
+                phone: '01711111111',
+                address: 'Mirpur, Dhaka',
+                delivery_charge: 60,
+                payment_method: 'cod',
+                cart: [{ product_id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 }],
+            },
+            product_info: { id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 },
+            update: jest.fn(),
+        };
+
+        const result = await OrderSessionService.handleCurrentStep(
+            session,
+            'YES',
+            null,
+            { mutationsAllowed: false }
+        );
+
+        expect(result.current_step).toBe('ORDER_SUMMARY');
+        expect(result.state).toBe('AWAITING_CONFIRMATION');
+        expect(result.mutation_blocked).toBe(true);
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
 });

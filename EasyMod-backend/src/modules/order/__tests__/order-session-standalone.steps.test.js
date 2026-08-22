@@ -129,6 +129,51 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         expect(res.prompt).toMatch(/অর্ডার সফলভাবে|placed successfully/);
     });
 
+    test.each([
+        'y',
+        'হ্যাঁ না',
+        'na hoile',
+        'nibo na',
+        'why so expensive?',
+        'ok kintu address change korbo',
+    ])('does not create an order for non-confirmation "%s"', async (answer) => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+
+        expect(res.completed).toBe(false);
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
+
+    test.each(['ha', 'confirm korun', 'জি'])('accepts an exact confirmation "%s"', async (answer) => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null);
+        await drainImmediates();
+
+        expect(res.completed).toBe(true);
+        expect(createOrderInternal).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps a confirmed summary awaiting confirmation when mutations are disabled', async () => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(
+            session,
+            'YES',
+            null,
+            { mutationsAllowed: false }
+        );
+
+        expect(res.completed).toBe(false);
+        expect(res.mutation_blocked).toBe(true);
+        expect(res.state).toBe('AWAITING_CONFIRMATION');
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.prompt).toMatch(/team member|টিম সদস্য/i);
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
+
     // Founder's live failure: order creation threw a 400 "Insufficient stock"
     // (AppError, exposed as `.status`), but the catch read `.statusCode` →
     // undefined → treated as 5xx → customer saw the scary generic line instead

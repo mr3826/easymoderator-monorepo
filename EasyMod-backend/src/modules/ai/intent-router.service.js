@@ -126,6 +126,20 @@ const decodeCacheEntry = (raw) => {
 const evidenceFromSource = (shopId, sourceText) =>
     grounding.withSourceText(grounding.emptyEvidence(shopId), sourceText);
 
+const buildOrderStatusHandoff = (shopId, language = 'mixed') => {
+    const response = language === 'en'
+        ? "I can't look that order up here. Our team will check it for you."
+        : 'এই অর্ডারটি এখানে যাচাই করতে পারছি না। আমাদের টিম আপনার জন্য দেখে দেবে।';
+    return {
+        response,
+        confidence: 1.0,
+        source: 'order_status_handoff',
+        sourceReferences: null,
+        humanRequired: true,
+        grounding: evidenceFromSource(shopId, response),
+    };
+};
+
 /**
  * A reply may only be cached when it carries no product facts. Prices and stock
  * change; a hallucination that slips through must not be served for 30 minutes;
@@ -196,12 +210,61 @@ const route = async ({
         ? (confidenceThreshold > 1 ? confidenceThreshold / 100 : confidenceThreshold)
         : SEMANTIC_THRESHOLD;
 
+    // ------------------------------------------------------------------
+    // Stage 1.5: Exact-match order lookup (DB query, zero LLM cost)
+    // Handles "where is my order 12345?" style queries — the most common
+    // BD f-commerce message type. This branch runs before the router-disabled
+    // escape hatch so an order number can never reach the LLM unbound.
+    // ------------------------------------------------------------------
+    const orderMatch = !imageUrls.length ? message.match(/\b(\d{5,8})\b/) : null;
+    if (orderMatch) {
+        try {
+            const { Conversation, Order } = require('../entities');
+            if (!conversationId || typeof Conversation?.findOne !== 'function') {
+                return buildOrderStatusHandoff(shopId, language);
+            }
+
+            const conversation = await Conversation.findOne({
+                where: { id: conversationId, shop_id: shopId },
+                attributes: ['customer_id'],
+            });
+            const customerId = conversation?.customer_id;
+            if (!customerId) return buildOrderStatusHandoff(shopId, language);
+
+            const order = await Order.findOne({
+                where: {
+                    shop_id: shopId,
+                    order_number: orderMatch[1],
+                    customer_id: customerId,
+                },
+                attributes: ['order_number', 'order_status', 'payment_status', 'delivery_status', 'delivery_tracking_code'],
+            });
+            if (!order) return buildOrderStatusHandoff(shopId, language);
+
+            const statusLine = [
+                `Order #${order.order_number}`,
+                `Status: ${order.order_status || 'processing'}`,
+                order.payment_status ? `Payment: ${order.payment_status}` : null,
+                order.delivery_status ? `Delivery: ${order.delivery_status}` : null,
+                order.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
+            ].filter(Boolean).join(' | ');
+            return {
+                response: statusLine,
+                confidence: 1.0,
+                source: 'exact_match',
+                grounding: evidenceFromSource(shopId, statusLine),
+            };
+        } catch (_) {
+            return buildOrderStatusHandoff(shopId, language);
+        }
+    }
+
     if (ROUTER_DISABLED) {
         return _callLlm({ shopId, message, history, conversationId, language, systemPrompt, preferredProvider, imageUrls });
     }
 
     // ------------------------------------------------------------------
-    // Stage 1: Exact-match response cache (skip for image messages)
+    // Stage 1: Exact-match response cache (skip for image and order messages)
     // ------------------------------------------------------------------
     const cacheKey = imageUrls.length > 0 ? null : normalisedKey(shopId, message);
     if (cacheKey) {
@@ -213,40 +276,6 @@ const route = async ({
                 source: 'cache',
                 grounding: evidenceFromSource(shopId, cached.sourceText),
             };
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Stage 1.5: Exact-match order lookup (DB query, zero LLM cost)
-    // Handles "where is my order 12345?" style queries — the most common
-    // BD f-commerce message type.
-    // ------------------------------------------------------------------
-    if (!imageUrls.length) {
-        const orderMatch = message.match(/\b(\d{5,8})\b/);
-        if (orderMatch) {
-            try {
-                const { Order } = require('../entities');
-                const order = await Order.findOne({
-                    where: { shop_id: shopId, order_number: orderMatch[1] },
-                    attributes: ['order_number', 'order_status', 'payment_status', 'delivery_status', 'delivery_tracking_code'],
-                });
-                if (order) {
-                    const statusLine = [
-                        `Order #${order.order_number}`,
-                        `Status: ${order.order_status || 'processing'}`,
-                        order.payment_status ? `Payment: ${order.payment_status}` : null,
-                        order.delivery_status ? `Delivery: ${order.delivery_status}` : null,
-                        order.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
-                    ].filter(Boolean).join(' | ');
-                    if (cacheKey) await intentCache.setex(cacheKey, CACHE_TTL, encodeCacheEntry(statusLine, statusLine));
-                    return {
-                        response: statusLine,
-                        confidence: 1.0,
-                        source: 'exact_match',
-                        grounding: evidenceFromSource(shopId, statusLine),
-                    };
-                }
-            } catch (_) { /* DB unavailable — fall through */ }
         }
     }
 

@@ -64,6 +64,43 @@ function buildOrderFlowFailureResponse(message, language = 'mixed') {
     };
 }
 
+function buildPostMutationResponse(orderFlow, language = 'mixed') {
+    const order = orderFlow?.meta?.order;
+    const orderNumber = order?.order_number || 'the order';
+    const orderStatus = order?.order_status || 'confirmed';
+    return language === 'en'
+        ? `Order #${orderNumber} | Status: ${orderStatus}`
+        : `অর্ডার #${orderNumber} | স্ট্যাটাস: ${orderStatus}`;
+}
+
+function isUnrecoverableJobError(error) {
+    return error instanceof UnrecoverableError || error?.name === 'UnrecoverableError';
+}
+
+async function notifyExecutedMutationWithoutOutbound({ shopId, conversationId, orderFlow, reason }) {
+    try {
+        const merchantNotificationService = require('../modules/notification/merchant-notification.service');
+        const { NOTIFICATION_EVENTS } = require('../modules/notification/notification-events');
+        await merchantNotificationService.notifyShop(
+            shopId,
+            NOTIFICATION_EVENTS.AI_HITL,
+            {
+                reason: 'executed_mutation_without_outbound_send',
+                orderId: orderFlow?.meta?.order?.id || null,
+                orderNumber: orderFlow?.meta?.order?.order_number || null,
+                conversationId,
+                detail: reason,
+            },
+            {
+                dedupeKey: `executed_mutation_without_outbound_send:${orderFlow?.meta?.order?.id || conversationId}`,
+                dedupeTtlSeconds: 24 * 60 * 60,
+            }
+        );
+    } catch (err) {
+        console.error(`[worker] Failed to notify merchant about committed order without outbound send: ${err.message}`);
+    }
+}
+
 /**
  * Resolve the MetaChannel row for this job. Prefers `metaChannelId` from the
  * job payload (set by the webhook dispatcher, unambiguous when a shop owns
@@ -385,11 +422,13 @@ async function processMessageJob(job) {
     const jobChannel = await resolveChannelForJob(shopId, platform, metaChannelId);
 
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
-    if (effExternalId) {
-        const isNew = await claimDedupKey(`msg:dedup:${shopId}:${effExternalId}`);
+    const dedupKey = effExternalId ? `msg:dedup:${shopId}:${effExternalId}` : null;
+    if (dedupKey) {
+        const isNew = await claimDedupKey(dedupKey);
         if (!isNew) return { skipped: true, reason: 'duplicate', externalId: effExternalId };
     }
 
+    try {
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────
     const conversation = await Conversation.findOne({
         where: { id: conversationId, shop_id: shopId },
@@ -510,6 +549,7 @@ async function processMessageJob(job) {
     let replySource = null;
     let replyProvider = null;
     let proposedAttachments = [];
+    let humanRequired = false;
     let orderFlow = { handled: false };
     let knowledgeGapCaptured = false;
     let fallbackKnowledgeGapSource = null;
@@ -523,6 +563,8 @@ async function processMessageJob(job) {
             entities,
             language: detectedLanguage,
             imageUrls: effImageUrls,
+            mutationsAllowed: aiSettings.automation_mode === 'AI_ACTIVE'
+                && channelAISettings.allow_order_creation !== false,
         });
     } catch (ofErr) {
         console.error(`[worker] handleOrderFlow failed for conv ${conversationId}:`, ofErr.message);
@@ -549,11 +591,25 @@ async function processMessageJob(job) {
             const intentResult = await AIChatbotController.processNewIntent(
                 effMessage, history, entities, detectedLanguage, aiSettings, ingestionResult, effImageUrls
             );
-            ({ response: rawResponse, confidence, sourceReferences } = intentResult);
+            ({ response: rawResponse, confidence, sourceReferences, humanRequired = false } = intentResult);
             groundingEvidence = intentResult.grounding || groundingEvidence;
             replySource = intentResult.source || null;
             replyProvider = intentResult.provider || null;
             proposedAttachments = intentResult.attachments || [];
+            if (humanRequired) {
+                const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
+                await escalateToHuman({
+                    conversation, shopId, conversationId,
+                    platform, recipientId, channel: jobChannel,
+                    reason: 'order_status_customer_context_missing',
+                }).catch((handoffErr) => {
+                    opsAlert('Customer-bound order lookup handoff failed', {
+                        detail: `shop=${shopId} conv=${conversationId}\nerror: ${handoffErr.message}`,
+                        level: 'error',
+                        context: { shopId, conversationId, error: handoffErr.message },
+                    }).catch(() => {});
+                });
+            }
         } catch (aiErr) {
             console.error(`[worker] processNewIntent failed for conv ${conversationId}:`, aiErr.message);
             // Stage alert (warning): the customer still gets a reply, but it's the
@@ -572,11 +628,21 @@ async function processMessageJob(job) {
         }
     }
 
+    const committedOrder = orderFlow.meta?.completed && orderFlow.meta?.order
+        ? orderFlow.meta.order
+        : null;
+    if (committedOrder) {
+        rawResponse = buildPostMutationResponse(orderFlow, detectedLanguage);
+        confidence = 1.0;
+        proposedAttachments = [];
+        groundingEvidence = grounding.withSourceText(grounding.emptyEvidence(shopId), rawResponse);
+    }
+
     // ── Grounding gate: EasyModerator owns the SEND decision ────────────────
     // The last point at which merchant facts can still be withdrawn. Runs on
     // every reply regardless of which provider (or cache tier) produced it, so
     // a provider swap or a fallback cannot route around it.
-    const groundingVerdict = grounding.evaluateCandidate({
+    let groundingVerdict = grounding.evaluateCandidate({
         candidate: rawResponse,
         evidence: groundingEvidence,
         language: detectedLanguage,
@@ -594,7 +660,97 @@ async function processMessageJob(job) {
         violations: groundingVerdict.violations,
     });
 
+    let outboundAttachments = groundingVerdict.attachments || [];
+
+    // Store the candidate before any branch that may need the deterministic
+    // post-mutation response. The closure reads the final grounding verdict.
+    const storeAiResponse = (content, aiDisclosureApplied) => ConversationStateService.storeAIResponse(conversationId, content, {
+        platform,
+        confidence,
+        automation_mode: aiSettings.automation_mode,
+        ai_disclosure_applied: aiDisclosureApplied,
+        order_flow: orderFlow.meta || null,
+        sourceReferences: sourceReferences || null,
+        grounding_decision: groundingVerdict?.decision || null,
+        grounding_reason: groundingVerdict?.reasonCode || null,
+        grounding_product_status: groundingEvidence.productStatus,
+        grounding_media_status: groundingEvidence.mediaStatus,
+        grounding_media_product_id: groundingEvidence.mediaProductId,
+        grounding_verified_product_ids: groundingEvidence.verifiedProducts.map(p => p.id),
+        grounding_knowledge_ids: groundingEvidence.knowledgeIds,
+        grounding_violations: groundingVerdict?.violations || [],
+        grounding_provider: replyProvider,
+        grounding_attachment_urls: outboundAttachments.map(a => a.url),
+        human_required: humanRequired,
+    });
+
+    const sendPostMutationTemplate = async (reason) => {
+        rawResponse = buildPostMutationResponse(orderFlow, detectedLanguage);
+        confidence = 1.0;
+        proposedAttachments = [];
+        groundingEvidence = grounding.withSourceText(grounding.emptyEvidence(shopId), rawResponse);
+        groundingVerdict = grounding.evaluateCandidate({
+            candidate: rawResponse,
+            evidence: groundingEvidence,
+            language: detectedLanguage,
+            attachments: [],
+            modelGenerated: false,
+        });
+        outboundAttachments = [];
+
+        const aiMessage = (await storeAiResponse(rawResponse, false)).message;
+        try {
+            const sendPlatform = platform === 'messenger' ? 'facebook' : platform;
+            if (!jobChannel) {
+                throw new Error(`No MetaChannel found for committed order in shop ${shopId}`);
+            }
+            const provider = getProvider(sendPlatform);
+            const sendResult = await provider.sendMessage({
+                channel: jobChannel,
+                recipientId: String(recipientId),
+                normalizedMessage: {
+                    text: rawResponse,
+                    attachments: [],
+                    platform: sendPlatform,
+                    direction: 'outbound',
+                    senderRole: 'ai',
+                },
+                decision: {
+                    allow: true,
+                    decisionId: `post_mutation:${orderFlow.meta.order.id || conversationId}`,
+                    reason: 'POST_MUTATION_INVARIANT',
+                },
+            });
+            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                delivered: true,
+                heldReason: null,
+                providerMessageId: sendResult?.providerMessageId || null,
+            });
+            return { sent: true, reason };
+        } catch (err) {
+            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                delivered: false,
+                heldReason: 'executed_mutation_without_outbound_send',
+            });
+            await opsAlert('executed_mutation_without_outbound_send', {
+                detail: `shop=${shopId} conv=${conversationId} order=${orderFlow.meta.order.order_number || 'unknown'}\nerror: ${err.message}`,
+                level: 'error',
+                context: { shopId, conversationId, orderId: orderFlow.meta.order.id || null, reason, error: err.message },
+            }).catch(() => {});
+            await notifyExecutedMutationWithoutOutbound({ shopId, conversationId, orderFlow, reason });
+            return { sent: false, reason, error: err.message };
+        }
+    };
+
     if (groundingVerdict.decision === grounding.GroundingDecision.SUPPRESS) {
+        if (committedOrder) {
+            return {
+                success: true,
+                conversationId,
+                sent: (await sendPostMutationTemplate('grounding_suppressed')).sent,
+                reason: 'post_mutation_template',
+            };
+        }
         // Nothing truthful can be said. Silence plus a human beats a guess.
         const { escalateToHuman } = require('../modules/conversation/human-handoff.service');
         await escalateToHuman({
@@ -613,32 +769,8 @@ async function processMessageJob(job) {
         // low-confidence gate below holds the turn and pulls in a human.
         if (groundingVerdict.reasonCode === grounding.ReasonCode.RETRIEVAL_FAILED) confidence = 0;
     }
-    const outboundAttachments = groundingVerdict.attachments;
-
     let repliedText = rawResponse;
     let disclosureApplied = false;
-    const storeAiResponse = (content, aiDisclosureApplied) => ConversationStateService.storeAIResponse(conversationId, content, {
-        platform,
-        confidence,
-        automation_mode: aiSettings.automation_mode,
-        ai_disclosure_applied: aiDisclosureApplied,
-        order_flow: orderFlow.meta || null,
-        sourceReferences: sourceReferences || null,
-        grounding_decision: groundingVerdict.decision,
-        grounding_reason: groundingVerdict.reasonCode,
-        grounding_product_status: groundingEvidence.productStatus,
-        // The rest of the decision's evidence, durable on the row rather than
-        // only in a rotating container log: an incident review (and the live
-        // Meta certification) has to be able to answer "which product was this
-        // grounded on, and what exactly went out" months later.
-        grounding_media_status: groundingEvidence.mediaStatus,
-        grounding_media_product_id: groundingEvidence.mediaProductId,
-        grounding_verified_product_ids: groundingEvidence.verifiedProducts.map(p => p.id),
-        grounding_knowledge_ids: groundingEvidence.knowledgeIds,
-        grounding_violations: groundingVerdict.violations,
-        grounding_provider: replyProvider,
-        grounding_attachment_urls: outboundAttachments.map(a => a.url),
-    });
 
     // ── Confidence gate: hold + hand off when the AI is unsure ──────────────
     // In auto-send mode, an answer below the shop's confidence_threshold is NOT
@@ -647,7 +779,7 @@ async function processMessageJob(job) {
     // message so they are not left in silence. Order-flow turns are deterministic
     // (confidence 1.0) and never held.
     const { shouldHoldForLowConfidence } = require('../modules/ai/confidence-gate.service');
-    const holdForLowConfidence = shouldHoldForLowConfidence({
+    const holdForLowConfidence = !committedOrder && shouldHoldForLowConfidence({
         confidence,
         automationMode: aiSettings.automation_mode,
         confidenceThreshold: aiSettings.confidence_threshold,
@@ -763,6 +895,17 @@ async function processMessageJob(job) {
     });
 
     if (!decision.allow) {
+        if (committedOrder) {
+            const templateResult = await sendPostMutationTemplate(`policy_${decision.reason || 'denied'}`);
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: templateResult.sent,
+                reason: 'post_mutation_template',
+                decisionId: decision.decisionId,
+            };
+        }
         // RATE_LIMIT: defer the job until the bucket clears.
         if (decision.reason === 'RATE_LIMIT' && decision.retryAfterMs) {
             await job.moveToDelayed(Date.now() + decision.retryAfterMs, job.token);
@@ -857,6 +1000,12 @@ async function processMessageJob(job) {
     } catch (_) { /* analytics must never fail a sent reply */ }
 
     return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
+    } catch (err) {
+        if (dedupKey && !isUnrecoverableJobError(err) && typeof cacheRedis.del === 'function') {
+            await cacheRedis.del(dedupKey).catch(() => {});
+        }
+        throw err;
+    }
 }
 
 // ── Worker lifecycle ──────────────────────────────────────────────────────────

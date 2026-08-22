@@ -213,6 +213,64 @@ const normalizeAddMoreDecisionText = (text) => String(text || '')
     .replace(/\s+/g, ' ')
     .trim();
 
+const BARE_CONFIRMATIONS = new Set([
+    'yes', 'y', 'ok', 'okay', 'confirm', 'confirm korun', 'confirm koren',
+    'confirm koro', 'order confirm', 'ha', 'haa', 'han', 'hae', 'ji', 'jwi',
+    'জি', 'জ্বি', 'হ্যাঁ', 'ঠিক আছে', 'thik ache', 'thik ace', 'acha', 'accha',
+    'আচ্ছা', 'done', 'hmm', 'হুম', 'কনফার্ম', 'কনফার্ম করুন',
+]);
+
+const CONFIRMATION_PHRASES = new Set([
+    'order confirm korun',
+    'order confirm koren',
+    'order confirm koro',
+    'ha nibo',
+    'haa nibo',
+    'confirm kore din',
+    'confirm kore den',
+    'yes please',
+    'yes confirm',
+    'send koro',
+    'send koren',
+    'pathao',
+    'পাঠান',
+    'দিন',
+    'dien',
+    'din',
+    'nibo',
+    'nibo bhai',
+    'nilam',
+    'নিব',
+    'নিবো',
+    'নিলাম',
+    'order dibo',
+    'order korbo',
+    'order chai',
+    'করব',
+    'korbo',
+    'agree',
+    'জি',
+    'জ্বি',
+    'jwi',
+]);
+
+const NEGATION_TOKENS = new Set([
+    'na', 'nah', 'nai', 'nei', 'না', 'নাই', 'নেই', "don't", 'dont', 'no',
+]);
+
+const normalizeConfirmationText = (text) => String(text || '')
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/[\p{P}\p{S}\u200d]+$/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const containsConfirmationNegation = (normalized) => {
+    const tokens = normalized.split(' ');
+    return tokens.some(token => NEGATION_TOKENS.has(token)) || normalized.includes('do not');
+};
+
 class OrderSessionService {
     /**
      * Start a new order session
@@ -339,7 +397,7 @@ class OrderSessionService {
     /**
      * Process a step in the order flow
      */
-    static async processStep(sessionId, shopId, answer, rawMessage = null) {
+    static async processStep(sessionId, shopId, answer, rawMessage = null, options = {}) {
         const session = await OrderSession.findOne({
             where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
         });
@@ -354,7 +412,7 @@ class OrderSessionService {
         });
 
         // Process current step
-        const result = await this.handleCurrentStep(session, answer, rawMessage);
+        const result = await this.handleCurrentStep(session, answer, rawMessage, options);
 
         return result;
     }
@@ -362,7 +420,7 @@ class OrderSessionService {
     /**
      * Handle the current step in the order flow
      */
-    static async handleCurrentStep(session, answer, rawMessage) {
+    static async handleCurrentStep(session, answer, rawMessage, { mutationsAllowed = true } = {}) {
         const { current_step } = session;
         // Spread into a new object so Sequelize's dirty-tracking detects the change
         const step_data = { ...(session.step_data || {}) };
@@ -370,6 +428,7 @@ class OrderSessionService {
         let nextStep = current_step;
         let prompt = '';
         let completed = false;
+        let createdOrder = null;
 
         switch (current_step) {
             case 'SELECTING_PRODUCT': {
@@ -683,9 +742,8 @@ class OrderSessionService {
 
             case 'ORDER_SUMMARY': {
                 // A per-line edit ("remove the dupatta", "saree 3 ta koro") takes
-                // priority over confirmation: extractConfirmation uses includes(),
-                // so an edit phrase containing a confirm-substring must NOT place
-                // the order. Only fall through to confirm when it's not an edit.
+                // priority over confirmation. Only fall through to confirm when it
+                // is not an edit.
                 const summaryCart = OrderSessionService.getCartItems(session, step_data);
                 const edit = OrderSessionService.detectCartEdit(answer, summaryCart);
                 if (edit.action) {
@@ -696,6 +754,23 @@ class OrderSessionService {
 
                 const orderConfirmation = this.extractConfirmation(answer);
                 if (orderConfirmation) {
+                    if (!mutationsAllowed) {
+                        return {
+                            session_id: session.id,
+                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                                pickLang(
+                                    lang,
+                                    'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
+                                    'A team member will confirm this order.'
+                                ),
+                            current_step: 'ORDER_SUMMARY',
+                            state: 'AWAITING_CONFIRMATION',
+                            step_data,
+                            completed: false,
+                            mutation_blocked: true,
+                        };
+                    }
+
                     // Re-check stock for EVERY line in the cart before committing.
                     const cart = OrderSessionService.getCartItems(session, step_data);
                     for (const item of cart) {
@@ -719,6 +794,7 @@ class OrderSessionService {
                     let orderPrompt;
                     try {
                         order = await OrderSessionService.createOrderFromSession(session, step_data);
+                        createdOrder = order;
                         orderPrompt = pickLang(lang,
                             `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}`,
                             `✅ Order placed successfully! Order number: ${order.order_number}`);
@@ -795,8 +871,9 @@ class OrderSessionService {
                     completed = true;
                     prompt = orderPrompt;
                 } else {
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang, 'কি পরিবর্তন করতে চান?', 'What would you like to change?');
+                    nextStep = 'ORDER_SUMMARY';
+                    prompt = `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                        pickLang(lang, 'কী পরিবর্তন করতে চান, অথবা অর্ডার নিশ্চিত করতে একটি সম্পূর্ণ নিশ্চিতকরণ লিখুন?', 'What would you like to change, or write a full confirmation to place the order?');
                 }
                 break;
             }
@@ -808,13 +885,18 @@ class OrderSessionService {
             step_data
         });
 
-        return {
-            session_id: session.id,
-            prompt,
-            current_step: nextStep,
-            step_data,
-            completed
-        };
+                    return {
+                        session_id: session.id,
+                        prompt,
+                        current_step: nextStep,
+                        step_data,
+                        completed,
+                        order: createdOrder ? {
+                            id: createdOrder.id,
+                            order_number: createdOrder.order_number,
+                            order_status: createdOrder.order_status || 'confirmed',
+                        } : null,
+                    };
     }
 
     /**
@@ -1165,11 +1247,119 @@ class OrderSessionService {
         };
 
         try {
-            await deliveryService.createDeliveryOrder(shopId, orderData);
+            const deliveryResult = await deliveryService.createDeliveryOrder(shopId, orderData);
+            await OrderSessionService.persistDeliveryResult(order, deliveryResult);
             console.info(`[AutoParcel] Dispatched order ${order.order_number} for shop ${shopId}`);
+            return deliveryResult;
         } catch (err) {
             console.error(`[AutoParcel] Dispatch failed for order ${order.order_number}:`, err.message);
             throw err; // re-throw so dispatchParcelWithRetry can count the attempt
+        }
+    }
+
+    static async persistDeliveryResult(order, deliveryResult) {
+        const trackingNumber = deliveryResult?.tracking_code || deliveryResult?.consignment_id;
+        if (!trackingNumber) {
+            throw new Error('Courier returned no tracking reference');
+        }
+
+        if (order?.delivery_consignment_id || order?.delivery_tracking_code) {
+            return deliveryResult;
+        }
+
+        const deliveryTrackingService = require('../delivery/delivery-tracking.service');
+        await deliveryTrackingService.createTrackingRecord(order, deliveryResult);
+        return deliveryResult;
+    }
+
+    static async lookupExistingCourierOrder(shopId, orderNumber) {
+        const deliveryService = require('../delivery/delivery.service');
+        let activeProvider;
+        try {
+            activeProvider = await deliveryService.getActiveProvider(shopId);
+        } catch (err) {
+            return { state: 'unknown', provider: null, error: err };
+        }
+
+        if (!activeProvider?.provider || !activeProvider.instance) {
+            return {
+                state: 'unknown',
+                provider: activeProvider?.provider || null,
+                error: new Error('Active courier provider could not be resolved'),
+            };
+        }
+
+        const { provider, instance } = activeProvider;
+        if (provider !== 'steadfast' || typeof instance.getOrderStatusByInvoice !== 'function') {
+            return { state: 'unsupported', provider };
+        }
+
+        try {
+            const response = await instance.getOrderStatusByInvoice(orderNumber);
+            const consignmentId = response?.consignment_id || response?.consignmentId || null;
+            const trackingCode = response?.tracking_code || response?.trackingCode || consignmentId;
+            if (!trackingCode) {
+                return {
+                    state: 'unknown',
+                    provider,
+                    error: new Error('Courier status lookup returned no tracking reference'),
+                };
+            }
+            return {
+                state: 'found',
+                provider,
+                result: {
+                    provider,
+                    consignment_id: consignmentId || trackingCode,
+                    tracking_code: trackingCode,
+                    status: response.delivery_status || response.order_status || 'booked',
+                    invoice: response.invoice || orderNumber,
+                },
+            };
+        } catch (err) {
+            const status = err?.status || err?.statusCode || err?.response?.status;
+            if (status === 404 || err?.code === 'NOT_FOUND') {
+                return { state: 'absent', provider };
+            }
+            return { state: 'unknown', provider, error: err };
+        }
+    }
+
+    static async markDispatchIndeterminate(order, shopId, provider, reason) {
+        try {
+            if (typeof order?.update === 'function') {
+                await order.update({ delivery_status: 'dispatch_indeterminate' });
+            } else {
+                const { Order } = require('../entities');
+                await Order.update(
+                    { delivery_status: 'dispatch_indeterminate' },
+                    { where: { id: order.id } }
+                );
+            }
+        } catch (err) {
+            console.error('[AutoParcel] Failed to mark dispatch_indeterminate:', err.message);
+        }
+
+        try {
+            const merchantNotificationService = require('../notification/merchant-notification.service');
+            const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
+            await merchantNotificationService.notifyShop(
+                shopId,
+                NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED,
+                {
+                    orderId: order?.id,
+                    orderNumber: order?.order_number,
+                    provider,
+                    reason,
+                    status: 'dispatch_indeterminate',
+                },
+                {
+                    dedupeKey: `${order?.id || order?.order_number}:dispatch_indeterminate`,
+                    dedupeTtlSeconds: 24 * 60 * 60,
+                }
+            );
+        } catch (err) {
+            console.error('[AutoParcel] Failed to notify dispatch_indeterminate:', err.message);
         }
     }
 
@@ -1186,13 +1376,71 @@ class OrderSessionService {
     static async dispatchParcelWithRetry(order, stepData, shopId) {
         const RETRY_DELAYS_MS = [5000, 25000]; // delays between attempt 1→2 and 2→3
         const MAX_ATTEMPTS = 3;
+        let provider = null;
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                provider = existing.provider || provider;
+                if (existing.state === 'found') {
+                    try {
+                        await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        return existing.result;
+                    } catch (persistErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            `existing_courier_order_persist_failed:${persistErr.message}`
+                        );
+                        return null;
+                    }
+                }
+                if (existing.state !== 'absent') {
+                    await OrderSessionService.markDispatchIndeterminate(
+                        order,
+                        shopId,
+                        provider,
+                        existing.state === 'unsupported'
+                            ? 'provider_has_no_invoice_lookup'
+                            : 'courier_status_lookup_failed'
+                    );
+                    return null;
+                }
+            }
+
             try {
-                await OrderSessionService.dispatchParcel(order, stepData, shopId);
-                return; // success — done
+                return await OrderSessionService.dispatchParcel(order, stepData, shopId);
             } catch (err) {
                 console.error(`[AutoParcel] Attempt ${attempt}/${MAX_ATTEMPTS} failed for ${order.order_number}: ${err.message}`);
+
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                provider = existing.provider || provider;
+                if (existing.state === 'found') {
+                    try {
+                        return await OrderSessionService.persistDeliveryResult(order, existing.result);
+                    } catch (persistErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            `existing_courier_order_persist_failed:${persistErr.message}`
+                        );
+                        return null;
+                    }
+                }
+                if (existing.state !== 'absent') {
+                    await OrderSessionService.markDispatchIndeterminate(
+                        order,
+                        shopId,
+                        provider,
+                        existing.state === 'unsupported'
+                            ? 'provider_has_no_invoice_lookup'
+                            : 'courier_status_lookup_failed'
+                    );
+                    return null;
+                }
+
                 if (attempt < MAX_ATTEMPTS) {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
                 } else {
@@ -1258,28 +1506,14 @@ class OrderSessionService {
      * Exact equality only; never substring (would reject real names like "Jia").
      */
     static isBareConfirmationWord(text) {
-        const BARE_CONFIRMATIONS = new Set([
-            'yes', 'y', 'ok', 'okay', 'confirm', 'confirm korun', 'confirm koren',
-            'confirm koro', 'order confirm', 'ha', 'haa', 'han', 'hae', 'ji', 'jwi',
-            'জি', 'জ্বি', 'হ্যাঁ', 'ঠিক আছে', 'thik ache', 'thik ace', 'acha', 'accha',
-            'আচ্ছা', 'done', 'hmm', 'হুম', 'কনফার্ম', 'কনফার্ম করুন'
-        ]);
-        return BARE_CONFIRMATIONS.has(String(text || '').toLowerCase().trim());
+        return BARE_CONFIRMATIONS.has(normalizeConfirmationText(text));
     }
 
     static extractConfirmation(text) {
-        // BD F-commerce buyers confirm with many local phrases — catch all common ones
-        const confirmations = [
-            'yes', 'y', 'হ্যাঁ', 'ha', 'haa', 'han', 'confirm', 'ok', 'okay',
-            'ঠিক আছে', 'thik ache', 'thik ace', 'thikace',
-            'send koro', 'send koren', 'pathao', 'পাঠান',
-            'দিন', 'dien', 'din',
-            'nibo', 'nibo bhai', 'nilam', 'নিব', 'নিলাম',
-            'order dibo', 'order korbo', 'order chai', 'করব', 'korbo',
-            'agree', 'done', 'ji', 'জি', 'জ্বি', 'jwi'
-        ];
-        const textLower = text.toLowerCase().trim();
-        return confirmations.some(conf => textLower.includes(conf));
+        const normalized = normalizeConfirmationText(text);
+        if (!normalized || [...normalized].length === 1) return false;
+        if (containsConfirmationNegation(normalized)) return false;
+        return BARE_CONFIRMATIONS.has(normalized) || CONFIRMATION_PHRASES.has(normalized);
     }
 
     static extractPhoneNumber(text) {
