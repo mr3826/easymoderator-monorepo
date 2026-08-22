@@ -6,6 +6,7 @@ const deliveryService = require('../delivery/delivery.service');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { invalidate: invalidateStock } = require('../product/stock-status-guard.service');
+const { findOrderByIdempotencyKey } = require('./order-idempotency.service');
 
 /**
  * Constants for order processing
@@ -304,9 +305,7 @@ const _createOrderCore = async (shopId, orderData, logger, requestId = null) => 
 
     // Idempotency key check
     if (requestId) {
-        const existingOrder = await Order.findOne({
-            where: { shop_id: shopId, idempotency_key: requestId }
-        });
+        const existingOrder = await findOrderByIdempotencyKey(shopId, requestId);
         if (existingOrder) return existingOrder;
     }
 

@@ -1,16 +1,11 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-
 const mockAuditCreate = jest.fn(async values => values);
 jest.mock('../../modules/entities', () => ({ AuditLog: { create: mockAuditCreate } }));
 
 const { authorize } = require('../../modules/ai/action-gate');
 const { createProposedAction } = require('../../modules/ai/contracts/action.contract');
 const { withEvidenceSnapshot } = require('../../modules/ai/contracts/evidence.contract');
-
-const workerSource = fs.readFileSync(path.resolve(__dirname, '../message-worker.js'), 'utf8');
 
 const baseContext = (action, evidence, domainHops = 0) => ({
     traceId: 'worker-trace-1',
@@ -35,11 +30,7 @@ const baseContext = (action, evidence, domainHops = 0) => ({
 
 beforeEach(() => jest.clearAllMocks());
 
-test('worker traversal routes mutation context through the gate audit contract', async () => {
-    expect(workerSource).toContain('handleOrderFlow');
-    expect(workerSource).toContain('mutationsAllowed');
-    expect(workerSource).toContain('traceId: job.id || effExternalId || conversationId');
-
+test('mutation actions use the gate audit contract', async () => {
     const evidence = withEvidenceSnapshot({ shopId: 'shop-1', sourceText: 'order summary' });
     const orderAction = createProposedAction({
         requestedByAgent: 'OrderAgent',

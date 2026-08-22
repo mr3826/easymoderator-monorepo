@@ -804,31 +804,25 @@ class OrderSessionService {
                         }
                     }
 
-                    if (priceChanged) {
-                        step_data.cart = cart;
-                        return {
-                            session_id: session.id,
-                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
-                                pickLang(
-                                    lang,
-                                    'দাম পরিবর্তন হয়েছে। অর্ডার করতে নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।',
-                                    'The price changed. Please confirm the new summary to place the order.'
-                                ),
-                            current_step: 'ORDER_SUMMARY',
-                            state: 'AWAITING_CONFIRMATION',
-                            step_data,
-                            completed: false,
-                            confirmation_invalidated: true,
-                        };
-                    }
+                    if (priceChanged) step_data.cart = cart;
 
-                    const { createProposedAction, deriveCreateOrderIdempotencyKey } = require('../ai/contracts/action.contract');
+                    const {
+                        createProposedAction,
+                        deriveCreateOrderIdempotencyKey,
+                        confirmedSummaryHash: hashSummary,
+                    } = require('../ai/contracts/action.contract');
                     const { withEvidenceSnapshot } = require('../ai/contracts/evidence.contract');
                     const { authorize } = require('../ai/action-gate');
+                    const { findOrderByIdempotencyKey } = require('./order-idempotency.service');
+                    const { getMutationBudgetState } = require('../ai/cost.service');
+                    const { Conversation } = require('../conversation/conversation.entity');
+                    const freshSummaryHash = priceChanged
+                        ? hashSummary(this.buildContractOrderSummary(session, step_data))
+                        : confirmedSummaryHash;
                     const summaryEvidence = withEvidenceSnapshot({
                         shopId: session.shop_id,
                         sourceText: this.generateOrderSummary(session, step_data, lang),
-                        summaryHash: confirmedSummaryHash,
+                        summaryHash: freshSummaryHash,
                         productIds: cart.map(item => item.product_id).filter(Boolean),
                     });
                     const orderIdempotencyKey = deriveCreateOrderIdempotencyKey({
@@ -837,6 +831,29 @@ class OrderSessionService {
                         orderSessionId: session.id,
                         confirmedSummaryHash,
                     });
+                    const matchingConversation = conversationId && session.customer_id
+                        ? await Conversation.findOne({
+                            where: {
+                                id: conversationId,
+                                shop_id: session.shop_id,
+                                customer_id: session.customer_id,
+                            },
+                            attributes: ['id', 'shop_id', 'customer_id'],
+                        }).catch(() => null)
+                        : null;
+                    const existingOrder = await findOrderByIdempotencyKey(session.shop_id, orderIdempotencyKey);
+                    const budgetState = getMutationBudgetState({ estimatedCostUsd: 0 });
+                    const tenantRecordsMatch = Boolean(
+                        matchingConversation
+                            && matchingConversation.shop_id === session.shop_id
+                            && matchingConversation.customer_id === session.customer_id
+                    );
+                    const materialStateRevalidated = !priceChanged;
+                    const customerConfirmationValid = Boolean(
+                        !priceChanged
+                            && orderConfirmation
+                            && confirmedSummaryHash === step_data.confirmed_summary_hash
+                    );
                     const orderAction = createProposedAction({
                         requestedByAgent: 'OrderAgent',
                         actionType: 'CREATE_ORDER',
@@ -861,25 +878,32 @@ class OrderSessionService {
                             customerId: session.customer_id,
                             conversationId,
                         },
-                        tenantRecordsMatch: true,
+                        tenantRecordsMatch,
                         currentDomain: 'ORDER',
                         domainHops: 0,
                         expectedIdempotencyKey: orderIdempotencyKey,
-                        idempotencyCommitted: false,
+                        idempotencyCommitted: Boolean(existingOrder),
                         evidenceSnapshot: summaryEvidence,
-                        materialStateRevalidated: true,
-                        customerConfirmationValid: true,
+                        materialStateRevalidated,
+                        customerConfirmationValid,
                         merchantModeAllowsMutation: mutationsAllowed,
-                        costBudgetAvailable: true,
+                        costBudgetAvailable: budgetState.available,
                     });
                     if (!gateResult.authorized) {
+                        const confirmationInvalidated = priceChanged
+                            || gateResult.reasonCode === 'material_state_revalidated'
+                            || gateResult.reasonCode === 'customer_confirmation_valid';
                         return {
                             session_id: session.id,
                             prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
                                 pickLang(
                                     lang,
-                                    'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
-                                    'A team member will confirm this order.'
+                                    confirmationInvalidated
+                                        ? 'দাম বা অর্ডারের তথ্য পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                        : 'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
+                                    confirmationInvalidated
+                                        ? 'The order changed. Please confirm the new summary before placing it.'
+                                        : 'A team member will confirm this order.'
                                 ),
                             current_step: 'ORDER_SUMMARY',
                             state: 'AWAITING_CONFIRMATION',
@@ -979,6 +1003,11 @@ class OrderSessionService {
                     try {
                         const { createProposedAction, deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
                         const { authorize } = require('../ai/action-gate');
+                        const existingCourierDispatch = await OrderSessionService.getCourierDispatchRecord(
+                            order,
+                            session.shop_id,
+                            'active'
+                        );
                         const courierIdempotencyKey = deriveBookCourierIdempotencyKey({
                             shopId: session.shop_id,
                             orderId: order.id,
@@ -1003,16 +1032,16 @@ class OrderSessionService {
                                 customerId: session.customer_id,
                                 conversationId,
                             },
-                            tenantRecordsMatch: true,
+                        tenantRecordsMatch,
                             currentDomain: 'ORDER',
                             domainHops: 1,
                             expectedIdempotencyKey: courierIdempotencyKey,
-                            idempotencyCommitted: false,
-                            evidenceSnapshot: summaryEvidence,
-                            materialStateRevalidated: true,
-                            customerConfirmationValid: true,
-                            merchantModeAllowsMutation: mutationsAllowed,
-                            costBudgetAvailable: true,
+                        idempotencyCommitted: existingCourierDispatch?.status === 'COMMITTED',
+                        evidenceSnapshot: summaryEvidence,
+                        materialStateRevalidated,
+                        customerConfirmationValid,
+                        merchantModeAllowsMutation: mutationsAllowed,
+                        costBudgetAvailable: budgetState.available,
                         });
                         if (courierGate.authorized) courierAuthorization = courierGate.authorization;
                         else await OrderSessionService.markDispatchIndeterminate(
@@ -1475,7 +1504,41 @@ class OrderSessionService {
         return deliveryResult;
     }
 
-    static async lookupExistingCourierOrder(shopId, orderNumber) {
+    static async getCourierDispatchRecord(order, shopId, provider) {
+        const CourierDispatch = require('../delivery/courier-dispatch.entity');
+        if (!CourierDispatch || typeof CourierDispatch.findOne !== 'function') return null;
+        return CourierDispatch.findOne({
+            where: { shop_id: shopId, order_id: order.id, provider },
+        });
+    }
+
+    static async claimCourierDispatch(order, shopId, provider) {
+        const { deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
+        const CourierDispatch = require('../delivery/courier-dispatch.entity');
+        if (!CourierDispatch || typeof CourierDispatch.findOrCreate !== 'function') {
+            return { state: 'unavailable', provider, record: null };
+        }
+
+        const idempotencyKey = deriveBookCourierIdempotencyKey({
+            shopId,
+            orderId: order.id,
+            provider,
+        });
+        const [record, created] = await CourierDispatch.findOrCreate({
+            where: { shop_id: shopId, order_id: order.id, provider },
+            defaults: { idempotency_key: idempotencyKey, status: 'PENDING' },
+        });
+        if (record.status === 'COMMITTED') return { state: 'committed', provider, record };
+        return { state: created ? 'claimed' : 'existing', provider, record };
+    }
+
+    static async updateCourierDispatch(record, values) {
+        if (!record || typeof record.update !== 'function') return record;
+        await record.update(values);
+        return record;
+    }
+
+    static async lookupExistingCourierOrder(shopId, orderNumber, order = null) {
         const deliveryService = require('../delivery/delivery.service');
         let activeProvider;
         try {
@@ -1493,6 +1556,23 @@ class OrderSessionService {
         }
 
         const { provider, instance } = activeProvider;
+        const localDispatch = order
+            ? await OrderSessionService.getCourierDispatchRecord(order, shopId, provider)
+            : null;
+        if (localDispatch?.status === 'COMMITTED' && (localDispatch.tracking_code || localDispatch.consignment_id)) {
+            return {
+                state: 'found',
+                provider,
+                record: localDispatch,
+                result: {
+                    provider,
+                    consignment_id: localDispatch.consignment_id || localDispatch.tracking_code,
+                    tracking_code: localDispatch.tracking_code || localDispatch.consignment_id,
+                    status: 'booked',
+                    invoice: orderNumber,
+                },
+            };
+        }
         if (provider !== 'steadfast' || typeof instance.getOrderStatusByInvoice !== 'function') {
             return { state: 'unsupported', provider };
         }
@@ -1529,6 +1609,16 @@ class OrderSessionService {
     }
 
     static async markDispatchIndeterminate(order, shopId, provider, reason) {
+        try {
+            const localDispatch = await OrderSessionService.getCourierDispatchRecord(order, shopId, provider);
+            await OrderSessionService.updateCourierDispatch(localDispatch, {
+                status: 'INDETERMINATE',
+                error: reason,
+            });
+        } catch (err) {
+            console.error('[AutoParcel] Failed to update courier_dispatch indeterminate state:', err.message);
+        }
+
         try {
             if (typeof order?.update === 'function') {
                 await order.update({ delivery_status: 'dispatch_indeterminate' });
@@ -1580,14 +1670,69 @@ class OrderSessionService {
         const RETRY_DELAYS_MS = [5000, 25000]; // delays between attempt 1→2 and 2→3
         const MAX_ATTEMPTS = 3;
         let provider = null;
+        let dispatchRecord = null;
+
+        try {
+            const deliveryService = require('../delivery/delivery.service');
+            const activeProvider = await deliveryService.getActiveProvider(shopId);
+            provider = activeProvider?.provider || null;
+            if (provider) {
+                const claim = await OrderSessionService.claimCourierDispatch(order, shopId, provider);
+                dispatchRecord = claim.record;
+                if (claim.state === 'committed') {
+                    const result = {
+                        provider,
+                        consignment_id: dispatchRecord.consignment_id || dispatchRecord.tracking_code,
+                        tracking_code: dispatchRecord.tracking_code || dispatchRecord.consignment_id,
+                        status: 'booked',
+                        invoice: order.order_number,
+                    };
+                    await OrderSessionService.persistDeliveryResult(order, result);
+                    return result;
+                }
+                if (claim.state === 'existing') {
+                    const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                    if (existing.state === 'found') {
+                        await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
+                        return existing.result;
+                    }
+                    if (existing.state !== 'absent') {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            existing.state === 'unsupported'
+                                ? 'provider_has_no_invoice_lookup'
+                                : 'courier_status_lookup_failed'
+                        );
+                        return null;
+                    }
+                }
+            }
+        } catch (err) {
+            await OrderSessionService.markDispatchIndeterminate(order, shopId, provider || 'active', `courier_dispatch_claim_failed:${err.message}`);
+            return null;
+        }
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             if (attempt > 1) {
-                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
                 provider = existing.provider || provider;
                 if (existing.state === 'found') {
                     try {
                         await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
                         return existing.result;
                     } catch (persistErr) {
                         await OrderSessionService.markDispatchIndeterminate(
@@ -1613,15 +1758,29 @@ class OrderSessionService {
             }
 
             try {
-                return await OrderSessionService.dispatchParcel(order, stepData, shopId, options);
+                const result = await OrderSessionService.dispatchParcel(order, stepData, shopId, options);
+                await OrderSessionService.updateCourierDispatch(dispatchRecord, {
+                    status: 'COMMITTED',
+                    consignment_id: result?.consignment_id || null,
+                    tracking_code: result?.tracking_code || null,
+                    error: null,
+                });
+                return result;
             } catch (err) {
                 console.error(`[AutoParcel] Attempt ${attempt}/${MAX_ATTEMPTS} failed for ${order.order_number}: ${err.message}`);
 
-                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
                 provider = existing.provider || provider;
                 if (existing.state === 'found') {
                     try {
-                        return await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        const result = await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
+                        return result;
                     } catch (persistErr) {
                         await OrderSessionService.markDispatchIndeterminate(
                             order,
@@ -1647,6 +1806,10 @@ class OrderSessionService {
                 if (attempt < MAX_ATTEMPTS) {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
                 } else {
+                    await OrderSessionService.updateCourierDispatch(dispatchRecord, {
+                        status: 'FAILED',
+                        error: err.message,
+                    });
                     // All attempts exhausted — surface failure to shop owner via order record
                     try {
                         const { Order } = require('../entities');

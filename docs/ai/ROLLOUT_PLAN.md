@@ -50,6 +50,8 @@ The first implementation sequence is:
 
 The existing audit's live defects, including mutation-before-outbound policy, broad `extractConfirmation()` matching, unbound order status, early dedup claims, and courier retry uncertainty, are Phase A implementation work. This document set specifies them; it does not claim they are fixed by documentation alone.
 
+The ordering deviation is recorded in [ADR-0001](../adr/0001-phase-a-defect-first-ordering.md). The current dependency-boundary implementation is recorded in [ADR-0002](../adr/0002-boundary-test-instead-of-dependency-cruiser.md).
+
 ## 4. Merchant Readiness Gate
 
 An unprepared shop starts in `DRAFT`. `AI_ACTIVE` requires a readiness receipt with all mandatory checks:
