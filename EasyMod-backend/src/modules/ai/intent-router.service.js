@@ -25,11 +25,8 @@ const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
 const grounding = require('./grounding');
 const { withEvidenceSnapshot } = require('./contracts/evidence.contract');
-const { recordReadAction } = require('./action-gate');
 const {
-    GREETING_PATTERN,
     NON_PRODUCT_CHATTER,
-    PRODUCT_INTENT_KEYWORDS,
     hasProductIntent,
     isPlainGreeting,
 } = require('./intent/stage2-rules');
@@ -162,7 +159,6 @@ const route = async ({
     systemPrompt = '',
     preferredProvider,
     imageUrls = [],
-    traceId = null,
     // Bug #11: accept per-shop threshold so shops can tune for Banglish noise.
     // Falls back to SEMANTIC_THRESHOLD (env var) if not provided.
     confidenceThreshold
@@ -181,26 +177,6 @@ const route = async ({
     // ------------------------------------------------------------------
     const orderMatch = !imageUrls.length ? message.match(/\b(\d{5,8})\b/) : null;
     if (orderMatch) {
-        const readTraceId = traceId || `order-status:${conversationId || 'unbound'}:${orderMatch[1]}`;
-        let lookupCustomerId = null;
-        const auditOrderStatusAttempt = (customerId, sourceText) => recordReadAction({
-            actionType: 'READ_ORDER_STATUS',
-            tenant: {
-                shopId,
-                channelId: 'unknown',
-                platform: 'META_MESSENGER',
-                customerId,
-                conversationId,
-            },
-            traceId: readTraceId,
-            evidenceSnapshot: withEvidenceSnapshot({
-                shopId,
-                conversationId,
-                ...(customerId ? { customerId } : {}),
-                sourceText,
-            }),
-            payload: { orderNumber: orderMatch[1] },
-        });
         try {
             const { Conversation, Order } = require('../entities');
             if (!conversationId || typeof Conversation?.findOne !== 'function') {
@@ -211,29 +187,26 @@ const route = async ({
                 where: { id: conversationId, shop_id: shopId },
                 attributes: ['customer_id'],
             });
-            lookupCustomerId = conversation?.customer_id || null;
-            if (!lookupCustomerId) {
-                await auditOrderStatusAttempt(null, 'customer identity was unavailable for order status lookup');
-                return buildOrderStatusHandoff(shopId, language);
-            }
+            const customerId = conversation?.customer_id;
+            if (!customerId) return buildOrderStatusHandoff(shopId, language);
 
             const order = await Order.findOne({
                 where: {
                     shop_id: shopId,
                     order_number: orderMatch[1],
-                    customer_id: lookupCustomerId,
+                    customer_id: customerId,
                 },
                 attributes: ['order_number', 'order_status', 'payment_status', 'delivery_status', 'delivery_tracking_code'],
             });
+            if (!order) return buildOrderStatusHandoff(shopId, language);
+
             const statusLine = [
-                order ? `Order #${order.order_number}` : `Order #${orderMatch[1]} was not found`,
-                order ? `Status: ${order.order_status || 'processing'}` : null,
-                order?.payment_status ? `Payment: ${order.payment_status}` : null,
-                order?.delivery_status ? `Delivery: ${order.delivery_status}` : null,
-                order?.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
+                `Order #${order.order_number}`,
+                `Status: ${order.order_status || 'processing'}`,
+                order.payment_status ? `Payment: ${order.payment_status}` : null,
+                order.delivery_status ? `Delivery: ${order.delivery_status}` : null,
+                order.delivery_tracking_code ? `Tracking: ${order.delivery_tracking_code}` : null,
             ].filter(Boolean).join(' | ');
-            const readResult = await auditOrderStatusAttempt(lookupCustomerId, statusLine);
-            if (!readResult.recorded || !order) return buildOrderStatusHandoff(shopId, language);
             return {
                 response: statusLine,
                 confidence: 1.0,
@@ -241,7 +214,6 @@ const route = async ({
                 grounding: evidenceFromSource(shopId, statusLine),
             };
         } catch (_) {
-            await auditOrderStatusAttempt(lookupCustomerId, 'order status lookup failed').catch(() => {});
             return buildOrderStatusHandoff(shopId, language);
         }
     }
