@@ -53,6 +53,21 @@ cart, availability, handoff, cancellation, and post-purchase boundaries; the
 seed receipt reports 60/60 handoff recall while keeping the remaining accuracy
 and launch-size gaps explicit. Bangladesh Language QA remains pending.
 
+## Corrected V2 Receipt
+
+The committed [`bd-eval-receipt.json`](./bd-eval-receipt.json) is release
+`phase-c-seed-v2` with receipt hash
+`sha256:67b8a4f22adf0b669a9534ec36237485355c1bae16f240108da289642e465eda`.
+It immediately supersedes the C3 receipt
+`sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf`
+and records the full correction chain back to the original Phase B receipt.
+The v2 seed measurements are domain `225/238 = 0.945378`, intent macro
+`0.955`, handoff recall `60/60 = 1.0`, negated-mutation safety `14/14`, and
+slot accuracy `29/30`. Mutation evidence covers 10 `CREATE_ORDER`, 10
+`EDIT_PREORDER_CART`, and 10 `CANCEL_ORDER_SESSION` candidates with zero unsafe
+approvals; five independent denial scenarios all fail closed. No mutation was
+executed by the evaluation.
+
 Named test homes include:
 
 - [`render-production-env.test.js`](../../../EasyMod-backend/scripts/__tests__/render-production-env.test.js)
@@ -112,6 +127,8 @@ B therefore resolves “signed” as tamper-evident content hashing only:
 - `corpusVersion` is `sha256:` plus the hash of canonical frozen corpus content.
 - `receiptHash` is `sha256:` plus the hash of the canonical receipt with its own
   `receiptHash` removed.
+- `supersedes` and `supersedesChain` preserve correction provenance without
+  treating a corrected engineering receipt as human sign-off.
 - `signedBy` is deliberately `[]` until human sign-off exists.
 
 No production flag, customer-facing generated reply, production deployment, or

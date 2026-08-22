@@ -51,7 +51,12 @@ const MUTATION_ACTIONS_BY_INTENT = Object.freeze({
     CART_EDIT_OR_ADD_MORE: 'EDIT_PREORDER_CART',
     ORDER_SESSION_CANCEL: 'CANCEL_ORDER_SESSION',
 });
-const SUPERSEDES_RECEIPT_HASH = 'sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5';
+const SUPERSEDES_RECEIPT_HASH = 'sha256:2f12d0fd98e04c4bec87f4a862762581e268d60aec2b6e32581892ab2dac9cbf';
+const SUPERSEDES_CHAIN = Object.freeze([
+    SUPERSEDES_RECEIPT_HASH,
+    'sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5',
+    'sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557',
+]);
 const EVALUATION_EXEMPTION_REASONS = Object.freeze({
     GENERAL_CHAT_OR_UNKNOWN: 'fallback or conversational outcome, not a labelled utterance class',
     LOW_CONFIDENCE_OR_GROUNDING_FAILURE: 'runtime outcome emitted after confidence or grounding evaluation, not a customer utterance class',
@@ -382,11 +387,12 @@ const runEvaluation = () => {
     const dateRange = DATE_RANGE;
 
     const receiptWithoutHash = {
-        release: 'phase-c3-rule-correction',
+        release: 'phase-c-seed-v2',
         corpusStatus: CORPUS_STATUS,
         dateRange,
-        releaseNotes: 'Corrected handoff measurement and C3 deterministic rule coverage; final receipt publication and QA sign-off remain pending.',
+        releaseNotes: 'Superseding engineering receipt with corrected handoff measurement, C3 deterministic rule coverage, and explicit mutation-boundary evidence; QA sign-off remains pending.',
         supersedes: SUPERSEDES_RECEIPT_HASH,
+        supersedesChain: SUPERSEDES_CHAIN,
         contractVersion: '1.0',
         registryVersion: INTENT_REGISTRY_VERSION,
         registryHash: INTENT_REGISTRY_HASH,
