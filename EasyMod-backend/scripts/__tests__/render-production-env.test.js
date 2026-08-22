@@ -241,6 +241,11 @@ describe('core secret / alert sink fail-closed (§10)', () => {
         expect(() => buildRenderedEnv(validSource({ JWT_ACCESS_SECRET: '' }))).toThrow(/JWT_ACCESS_SECRET/);
     });
 
+    test('a missing Action Gate secret is reported as a render input', () => {
+        expect(() => buildRenderedEnv(validSource({ AI_ACTION_GATE_SECRET: '' })))
+            .toThrow(/^Missing deployment environment variables: AI_ACTION_GATE_SECRET$/);
+    });
+
     test('a placeholder secret value fails', () => {
         expect(() => buildRenderedEnv(validSource({ SESSION_SECRET: 'change_in_production_please_00000' })))
             .toThrow(/SESSION_SECRET/);
