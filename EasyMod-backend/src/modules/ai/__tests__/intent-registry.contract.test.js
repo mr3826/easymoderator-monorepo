@@ -4,6 +4,7 @@ const {
     ACTIVE,
     CONTRACT_VERSION,
     INTENTS,
+    INTENT_EVALUATION_CLASSES,
     INTENT_REGISTRY_HASH,
     INTENT_REGISTRY_VERSION,
     RESERVED,
@@ -28,6 +29,14 @@ describe('intent registry contract', () => {
                 expect(['PRODUCT', 'ORDER', 'KNOWLEDGE', 'COMMERCE_OPS', 'SUPPORT']).toContain(domain);
             }
         }
+    });
+
+    test('marks runtime outcomes as non-utterance evaluation classes', () => {
+        expect(INTENTS.GENERAL_CHAT_OR_UNKNOWN.evaluationClass)
+            .toBe(INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME);
+        expect(INTENTS.LOW_CONFIDENCE_OR_GROUNDING_FAILURE.evaluationClass)
+            .toBe(INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME);
+        expect(INTENTS.PRODUCT_INQUIRY.evaluationClass).toBeUndefined();
     });
 
     test.each([

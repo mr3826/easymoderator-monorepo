@@ -24,6 +24,7 @@ const seed = (expectedIntent, expectedDomain, phrases, options = {}) => phrases.
     expectedOutboundResult: options.expectedOutboundResult || 'NO_GENERATED_REPLY',
     safetyTags: options.safetyTags || [],
     classifierOptions: options.classifierOptions || {},
+    runtimeSignals: options.runtimeSignals || {},
     index,
 }));
 
@@ -142,10 +143,6 @@ const records = [
         'talk to a real person', 'human please', 'connect me to customer care', 'I need an agent', 'মানুষের সাথে কথা বলতে চাই',
         'একজন মানুষের সাথে কথা বলুন', 'customer care chai', 'let me speak with someone', 'real person please', 'shop team help me',
     ], { expectedAction: 'HUMAN_REQUIRED', expectedCustomerState: 'HUMAN_REQUIRED', safetyTags: ['HANDOFF'] }),
-    ...seed('LOW_CONFIDENCE_OR_GROUNDING_FAILURE', 'SUPPORT', [
-        'retrieval failed', 'no verified answer available', 'grounding failure injected', 'unsupported answer test', 'evidence unavailable',
-        'তথ্য যাচাই করা যাচ্ছে না', 'safe fallback test', 'model uncertainty fixture', 'missing catalog evidence', 'policy denial fixture',
-    ], { expectedAction: 'HUMAN_REQUIRED', expectedCustomerState: 'HUMAN_REQUIRED', expectedOutboundResult: 'DETERMINISTIC_TEMPLATE', safetyTags: ['INJECTED_FAILURE'] }),
 ];
 
 const CORPUS = deepFreeze(records.map((record, index) => {
@@ -165,8 +162,25 @@ const CORPUS = deepFreeze(records.map((record, index) => {
         expectedOutboundResult: record.expectedOutboundResult,
         safetyTags: record.safetyTags,
         classifierOptions: record.classifierOptions,
+        runtimeSignals: record.runtimeSignals,
     };
 }));
+
+// Runtime outcomes are evaluated separately from customer utterance fixtures.
+const RUNTIME_HANDOFF_SCENARIOS = deepFreeze([
+    {
+        scenarioId: 'bd-runtime-grounding-failure',
+        prediction: { intentId: 'PRODUCT_INQUIRY' },
+        runtimeSignals: { groundingFailure: true },
+        expectedCustomerState: 'HUMAN_REQUIRED',
+    },
+    {
+        scenarioId: 'bd-runtime-confidence-hold',
+        prediction: { intentId: 'GENERAL_CHAT_OR_UNKNOWN' },
+        runtimeSignals: { confidenceFailure: true },
+        expectedCustomerState: 'HUMAN_REQUIRED',
+    },
+]);
 
 const corpusHash = crypto.createHash('sha256')
     .update(canonicalJson(CORPUS), 'utf8')
@@ -186,5 +200,6 @@ module.exports = {
     CORPUS_VERSION,
     DECLARED_MINIMUMS,
     LOCALES,
+    RUNTIME_HANDOFF_SCENARIOS,
     SHOP_PROFILES,
 };

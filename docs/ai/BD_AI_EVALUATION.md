@@ -37,6 +37,16 @@ These constants are launch commitments:
 
 The denominator, confidence interval, shop count, locale slice, and date range are stored with every result. A result without those fields is not a launch receipt.
 
+Intent macro accuracy and per-class floors include active registry entries that
+represent customer utterance classes. Entries marked `evaluationClass:
+RUNTIME_OUTCOME` are runtime results, such as fallback or grounding failure,
+not utterance labels; they are excluded from those denominators and the receipt
+records the exemption and reason.
+
+Handoff recall measures the resolved customer state, not intent membership alone.
+A hit may come from a handoff intent, a denied read action, or a grounding or
+confidence failure emitted by the runtime path.
+
 ## 3. Corpus Ownership And Maintenance
 
 The corpus is versioned in the evaluation repository and is refreshed weekly during rollout and monthly after the first 90 production days. The labeler is QA. Every Bangla and Banglish fixture requires a native-speaker reviewer. Product owns merchant-policy and commercial labels; Security owns tenant, authorization, and privacy labels.

@@ -4,15 +4,53 @@
 const fs = require('fs');
 const path = require('path');
 const { canonicalJson, createProposedAction, deriveIdempotencyKey, MUTATING_ACTION_TYPES } = require('../../src/modules/ai/contracts/action.contract');
-const { INTENTS, INTENT_REGISTRY_VERSION } = require('../../src/modules/ai/contracts/intent.contract');
+const {
+    INTENTS,
+    INTENT_EVALUATION_CLASSES,
+    INTENT_REGISTRY_HASH,
+    INTENT_REGISTRY_VERSION,
+} = require('../../src/modules/ai/contracts/intent.contract');
 const { withEvidenceSnapshot } = require('../../src/modules/ai/contracts/evidence.contract');
 const { evaluateChecks } = require('../../src/modules/ai/action-gate/action-gate.service');
-const { classify } = require('../../src/modules/ai/intent/stage2-rules');
-const { CORPUS, CORPUS_STATUS, CORPUS_VERSION, DECLARED_MINIMUMS } = require('./corpus');
+const { evaluateReadAction } = require('../../src/modules/ai/action-gate/read-action-evaluator');
+const { RULESET_VERSION, classify } = require('../../src/modules/ai/intent/stage2-rules');
+const {
+    CORPUS,
+    CORPUS_STATUS,
+    CORPUS_VERSION,
+    DECLARED_MINIMUMS,
+    RUNTIME_HANDOFF_SCENARIOS,
+} = require('./corpus');
 
 const MEASURED_AT = '2026-08-22T00:00:00.000Z';
 const DATE_RANGE = Object.freeze({ from: MEASURED_AT, to: MEASURED_AT });
 const Z_SCORE = 1.96;
+const HANDOFF_INTENT_IDS = Object.freeze([
+    'STOP_OPT_OUT',
+    'SELF_MFS_PAYMENT_VERIFICATION',
+    'SENTIMENT_HANDOFF',
+    'ORDER_POST_PURCHASE_REQUEST',
+    'HUMAN_HANDOFF_REQUEST',
+]);
+const HANDOFF_READ_DENIAL_REASON_CODES = Object.freeze([
+    'customer_identity_unbound',
+    'tenant_context_incomplete',
+    'tenant_scope_mismatch',
+    'evidence_snapshot_stale',
+    'read_action_contract_invalid',
+    'audit_unavailable',
+]);
+const HANDOFF_RUNTIME_FAILURE_SIGNALS = Object.freeze(['grounding_failure', 'confidence_hold']);
+const PURCHASE_FLOW_INTENT_IDS = Object.freeze([
+    'PURCHASE_INTENT_START',
+    'ORDER_SESSION_CHECKOUT',
+    'CART_EDIT_OR_ADD_MORE',
+]);
+const SUPERSEDES_RECEIPT_HASH = 'sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557';
+const EVALUATION_EXEMPTION_REASONS = Object.freeze({
+    GENERAL_CHAT_OR_UNKNOWN: 'fallback or conversational outcome, not a labelled utterance class',
+    LOW_CONFIDENCE_OR_GROUNDING_FAILURE: 'runtime outcome emitted after confidence or grounding evaluation, not a customer utterance class',
+});
 
 const percentile = (values, p) => {
     if (!values.length) return 0;
@@ -28,7 +66,7 @@ const wilson = (successes, denominator) => {
     const centre = proportion + (Z_SCORE ** 2 / (2 * denominator));
     const margin = Z_SCORE * Math.sqrt((proportion * (1 - proportion) / denominator) + (Z_SCORE ** 2 / (4 * denominator ** 2)));
     return {
-        lower: Number(((centre - margin) / denominatorWithZ).toFixed(6)),
+        lower: Math.max(0, Number(((centre - margin) / denominatorWithZ).toFixed(6))),
         upper: Number(((centre + margin) / denominatorWithZ).toFixed(6)),
     };
 };
@@ -90,30 +128,81 @@ const actionWouldBeUnsafe = ({ fixture, prediction, index }) => {
         && fixture.expectedAction !== actionType;
 };
 
+const resolveHandoff = ({ prediction, readAction, runtimeSignals = {} } = {}) => {
+    const reasons = [];
+    if (HANDOFF_INTENT_IDS.includes(prediction?.intentId)) reasons.push(`intent:${prediction.intentId}`);
+    if (readAction?.recorded === false && readAction.reasonCode) {
+        reasons.push(`read_denied:${readAction.reasonCode}`);
+    }
+    if (runtimeSignals.groundingFailure === true) reasons.push('grounding_failure');
+    if (runtimeSignals.confidenceFailure === true) reasons.push('confidence_hold');
+    return {
+        resolved: reasons.length > 0,
+        resolvedState: reasons.length > 0 ? 'HUMAN_REQUIRED' : 'NOT_HUMAN_REQUIRED',
+        reasons,
+    };
+};
+
 const classifyFixture = (fixture, index) => {
     const text = fixture.turns.map(turn => turn.text).join(' ');
     const prediction = classify(text, {
         language: localeForClassifier(fixture.locale),
         ...fixture.classifierOptions,
     });
+    const readAction = prediction.intentId === 'ORDER_STATUS_LOOKUP'
+        ? evaluateReadAction({
+            actionType: 'READ_ORDER_STATUS',
+            tenant: {
+                shopId: fixture.shopProfile,
+                channelId: 'seed-channel',
+                platform: 'META_MESSENGER',
+                customerId: null,
+                conversationId: fixture.fixtureId,
+            },
+            traceId: `bd-seed:${fixture.fixtureId}`,
+            evidenceSnapshot: withEvidenceSnapshot({
+                shopId: fixture.shopProfile,
+                conversationId: fixture.fixtureId,
+                sourceText: text,
+            }),
+            payload: { orderNumber: prediction.slots?.orderReference || null },
+        })
+        : null;
+    const runtimeSignals = {
+        groundingFailure: fixture.runtimeSignals?.groundingFailure === true,
+        confidenceFailure: fixture.runtimeSignals?.confidenceFailure === true,
+    };
     return {
         fixture,
         prediction,
         latencyMs: deterministicLatencyMs(text, index),
         unsafe: actionWouldBeUnsafe({ fixture, prediction, index }),
         mutationResult: { committed: false, mode: 'SHADOW_NO_MUTATION' },
+        readAction,
+        runtimeSignals,
+        handoff: resolveHandoff({ prediction, readAction, runtimeSignals }),
     };
 };
 
+const isRuntimeOutcomeRecord = (record) => (
+    INTENTS[record.fixture.expectedIntent]?.evaluationClass === INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME
+);
+
 const buildSlice = (records, key, values) => values.reduce((result, value) => {
     const subset = records.filter(record => record.fixture[key] === value);
+    const intentSubset = subset.filter(record => !isRuntimeOutcomeRecord(record));
+    const runtimeOutcomeSubset = subset.filter(isRuntimeOutcomeRecord);
     const domainCorrect = subset.filter(record => record.prediction.domain === record.fixture.expectedDomain).length;
-    const intentCorrect = subset.filter(record => record.prediction.intentId === record.fixture.expectedIntent).length;
+    const intentCorrect = intentSubset.filter(record => record.prediction.intentId === record.fixture.expectedIntent).length;
+    const runtimeOutcomeCorrect = runtimeOutcomeSubset.filter(record => (
+        record.prediction.intentId === record.fixture.expectedIntent
+    )).length;
     result[value] = {
         denominator: subset.length,
         shopCount: new Set(subset.map(record => record.fixture.shopProfile)).size,
         domainAccuracy: metric(domainCorrect, subset.length),
-        intentAccuracy: metric(intentCorrect, subset.length),
+        intentAccuracy: metric(intentCorrect, intentSubset.length),
+        runtimeOutcomeAccuracy: metric(runtimeOutcomeCorrect, runtimeOutcomeSubset.length),
         dateRange: DATE_RANGE,
     };
     return result;
@@ -123,9 +212,14 @@ const runEvaluation = () => {
     const records = CORPUS.map(classifyFixture);
     const total = records.length;
     const domainCorrect = records.filter(record => record.prediction.domain === record.fixture.expectedDomain).length;
-    const intentCorrect = records.filter(record => record.prediction.intentId === record.fixture.expectedIntent).length;
+    const intentRecords = records.filter(record => !isRuntimeOutcomeRecord(record));
+    const runtimeOutcomeRecords = records.filter(isRuntimeOutcomeRecord);
+    const runtimeOutcomeCorrect = runtimeOutcomeRecords.filter(record => (
+        record.prediction.intentId === record.fixture.expectedIntent
+    )).length;
     const activeIntentIds = Object.entries(INTENTS)
-        .filter(([, definition]) => definition.status === 'ACTIVE')
+        .filter(([, definition]) => definition.status === 'ACTIVE'
+            && definition.evaluationClass !== INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME)
         .map(([intentId]) => intentId);
     const perClassAccuracy = {};
     for (const intentId of activeIntentIds) {
@@ -142,17 +236,43 @@ const runEvaluation = () => {
     const intentMacroAccuracy = classValues.length
         ? Number((classValues.reduce((sum, value) => sum + value, 0) / classValues.length).toFixed(6))
         : null;
-    const nonPurchase = records.filter(record => record.fixture.expectedIntent !== 'PURCHASE_INTENT_START');
+    const nonPurchase = records.filter(record => !PURCHASE_FLOW_INTENT_IDS.includes(record.fixture.expectedIntent));
     const falsePurchaseStarts = nonPurchase.filter(record => record.prediction.intentId === 'PURCHASE_INTENT_START').length;
+    const purchaseFlowRecords = records.filter(record => (
+        PURCHASE_FLOW_INTENT_IDS.includes(record.fixture.expectedIntent)
+        && record.fixture.expectedIntent !== 'PURCHASE_INTENT_START'
+    ));
+    const purchaseFlowFalseStarts = purchaseFlowRecords.filter(record => (
+        record.prediction.intentId === 'PURCHASE_INTENT_START'
+    )).length;
     const falseOrderCreationRecords = records.filter(record => (
         record.mutationResult?.committed === true
         && record.fixture.expectedAction !== 'CREATE_ORDER'
     ));
     const handoffFixtures = records.filter(record => record.fixture.expectedCustomerState === 'HUMAN_REQUIRED');
-    const handoffHits = handoffFixtures.filter(record => [
-        'STOP_OPT_OUT', 'SENTIMENT_HANDOFF', 'ORDER_POST_PURCHASE_REQUEST', 'HUMAN_HANDOFF_REQUEST',
-        'LOW_CONFIDENCE_OR_GROUNDING_FAILURE',
-    ].includes(record.prediction.intentId)).length;
+    const handoffHits = handoffFixtures.filter(record => record.handoff.resolved).length;
+    const handoffSignalHits = {};
+    handoffFixtures.forEach((record) => {
+        record.handoff.reasons.forEach((reason) => {
+            handoffSignalHits[reason] = (handoffSignalHits[reason] || 0) + 1;
+        });
+    });
+    const runtimeScenarioResults = RUNTIME_HANDOFF_SCENARIOS.map((scenario) => {
+        const resolution = resolveHandoff({
+            prediction: scenario.prediction,
+            runtimeSignals: scenario.runtimeSignals,
+        });
+        return {
+            scenarioId: scenario.scenarioId,
+            expectedCustomerState: scenario.expectedCustomerState,
+            resolved: resolution.resolved,
+            resolvedState: resolution.resolvedState,
+            reasons: resolution.reasons,
+        };
+    });
+    const runtimeScenarioHits = runtimeScenarioResults.filter(scenario => (
+        scenario.resolved && scenario.resolvedState === scenario.expectedCustomerState
+    )).length;
     const negated = records.filter(record => record.fixture.safetyTags.includes('NEGATED_PURCHASE'));
     const negatedSafe = negated.filter(record => record.prediction.intentId !== 'PURCHASE_INTENT_START').length;
     const localeCounts = {};
@@ -167,12 +287,15 @@ const runEvaluation = () => {
     const dateRange = DATE_RANGE;
 
     const receiptWithoutHash = {
-        release: 'phase-b-seed',
+        release: 'phase-c2-harness-correction',
         corpusStatus: CORPUS_STATUS,
         dateRange,
-        releaseNotes: 'Engineering seed receipt; QA sign-off and human signatures are pending.',
+        releaseNotes: 'Corrected handoff measurement and runtime-outcome exclusions; C3 rule fixes and QA sign-off remain pending.',
+        supersedes: SUPERSEDES_RECEIPT_HASH,
         contractVersion: '1.0',
         registryVersion: INTENT_REGISTRY_VERSION,
+        registryHash: INTENT_REGISTRY_HASH,
+        rulesetVersion: RULESET_VERSION,
         promptVersion: 'none-deterministic-shadow',
         corpusVersion: CORPUS_VERSION,
         labelledTurns: total,
@@ -180,19 +303,42 @@ const runEvaluation = () => {
         localeCounts,
         denominators: {
             domain: total,
-            intent: total,
+            intent: intentRecords.length,
             falsePurchaseStarts: nonPurchase.length,
+            purchaseFlowFalseStarts: purchaseFlowRecords.length,
             falseOrderCreations: total,
             handoffRecall: handoffFixtures.length,
             negatedPurchase: negated.length,
+            runtimeOutcomes: runtimeOutcomeRecords.length,
             providerFallback: 0,
         },
         domainAccuracy: metric(domainCorrect, total),
+        runtimeOutcomeAccuracy: metric(runtimeOutcomeCorrect, runtimeOutcomeRecords.length),
         intentMacroAccuracy,
         perClassAccuracy,
+        evaluationExemptions: {
+            intentClasses: Object.fromEntries(Object.entries(EVALUATION_EXEMPTION_REASONS).map(([intentId, reason]) => [
+                intentId,
+                {
+                    evaluationClass: INTENTS[intentId].evaluationClass,
+                    reason,
+                },
+            ])),
+        },
+        handoffResolution: {
+            intentClasses: HANDOFF_INTENT_IDS,
+            deniedReadReasonCodes: HANDOFF_READ_DENIAL_REASON_CODES,
+            runtimeFailureSignals: HANDOFF_RUNTIME_FAILURE_SIGNALS,
+            signalHits: handoffSignalHits,
+        },
         falsePurchaseStarts: metric(falsePurchaseStarts, nonPurchase.length),
+        purchaseFlowFalseStarts: metric(purchaseFlowFalseStarts, purchaseFlowRecords.length),
         falseOrderCreations: metric(falseOrderCreationRecords.length, total),
         handoffRecall: metric(handoffHits, handoffFixtures.length),
+        runtimeScenarioCoverage: {
+            scenarios: runtimeScenarioResults,
+            metric: metric(runtimeScenarioHits, runtimeScenarioResults.length),
+        },
         negatedPurchaseSafety: metric(negatedSafe, negated.length),
         slotAccuracy: metric(slotCorrect, slotRecords.length),
         p50TurnLatencyMs: percentile(records.map(record => record.latencyMs), 0.5),
@@ -238,7 +384,12 @@ if (require.main === module) {
 module.exports = {
     DATE_RANGE,
     DECLARED_MINIMUMS,
+    HANDOFF_INTENT_IDS,
+    HANDOFF_READ_DENIAL_REASON_CODES,
+    HANDOFF_RUNTIME_FAILURE_SIGNALS,
     MEASURED_AT,
+    PURCHASE_FLOW_INTENT_IDS,
+    resolveHandoff,
     runEvaluation,
     wilson,
     writeReceipt,
