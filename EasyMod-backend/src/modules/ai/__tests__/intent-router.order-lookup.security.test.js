@@ -23,6 +23,7 @@ jest.mock('src/modules/rag/rag.service', () => ({ queryData: jest.fn() }));
 jest.mock('src/modules/entities', () => ({
     Conversation: { findOne: jest.fn() },
     Order: { findOne: jest.fn() },
+    AuditLog: { create: jest.fn(async values => values) },
     FaqResponse: { findAll: jest.fn(async () => []) },
 }));
 
