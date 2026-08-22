@@ -26,84 +26,21 @@
 const OrderSessionService = require('../order/order-session-standalone.service');
 const productSearch = require('../product/product-search.service');
 const Customer = require('../customer/customer.entity');
+const {
+    CANCEL_PATTERNS,
+    EXACT_CANCEL_PHRASES,
+    PURCHASE_PATTERNS,
+    STATUS_HINTS,
+    hasPurchaseIntent,
+    isOrderCancel,
+    normalizeForCancel,
+    normalizeForIntent,
+} = require('../ai/intent/stage2-rules');
 
 // ── Intent detection ────────────────────────────────────────────────────────
 // Conservative on purpose: only DECISION-to-buy phrases, never mere interest
 // ("price?", "available?"). Linking the wrong product to an order — or trapping
 // a browsing customer in a checkout flow — is worse than asking one more question.
-const PURCHASE_PATTERNS = [
-    // English
-    'i want to order', 'want to order', 'i will order', 'place an order', 'place order',
-    'confirm order', 'i want to buy', 'want to buy', 'buy it', 'buy this', 'purchase it',
-    // Banglish
-    'order korbo', 'order dibo', 'order korte chai', 'order dite chai', 'order confirm',
-    'confirm korun', 'confirm koren', 'confirm koro', 'confirm kore din', 'confirm korlam',
-    'nibo', 'nibe', 'nimu', 'nilam', 'kinbo', 'kinbe', 'kinte chai', 'kine nibo',
-    // Bengali
-    'অর্ডার কর', 'অর্ডার দিব', 'অর্ডার দে', 'অর্ডার কনফার্ম', 'কনফার্ম কর',
-    'নিব', 'নিবো', 'নিলাম', 'কিনব', 'কিনবো', 'কিনতে চাই', 'নিতে চাই',
-];
-
-// BD buyers typo "order" constantly ("oder korbo", "odar dibo"). Normalise the
-// common misspellings to "order" before pattern matching — the live 2026-06-11
-// test failed intent detection on exactly "Oder korbo".
-const normalizeForIntent = (t) => t.replace(/\b(?:oder|odar|ordar)\b/g, 'order');
-
-// Status / tracking queries that may also contain "order" — must NOT be treated
-// as a new purchase. (Order-number queries are handled separately below.)
-const STATUS_HINTS = ['where is', 'status', 'track', 'tracking', 'kothay', 'কোথায়', 'koi ', 'kobe pabo', 'kobe debe'];
-
-const normalizeForCancel = (message) => String(message || '')
-    .toLowerCase()
-    .replace(/[’‘]/g, "'")
-    .replace(/[“”"]/g, ' ')
-    .replace(/[,.!?;:।]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const EXACT_CANCEL_PHRASES = new Set([
-    'cancel',
-    'cancel order',
-    'order cancel',
-    'cancel korbo',
-    'cancel koren',
-    'cancel korun',
-    'cancel koro',
-    'cancel kor',
-    'cancel kore din',
-    'cancel chai',
-    'order batil',
-    'order baatil',
-    'batil',
-    'baatil',
-    'বাতিল',
-    'অর্ডার বাতিল',
-]);
-
-const CANCEL_PATTERNS = [
-    /\border(?:\s+ta|\s+টা)?\s+(?:cancel|batil|baatil)\b/i,
-    /\bcancel\s+(?:order|korbo|koren|korun|koro|kor|kore\s+din|chai)\b/i,
-    /\b(?:don't|dont|do\s+not)\s+(?:want\s+)?(?:this\s+)?order\b/i,
-    /অর্ডার(?:\s+টা)?\s+বাতিল/i,
-    /^বাতিল(?:\s+(?:করুন|করেন|করে দিন|করবো))?$/i,
-];
-
-function hasPurchaseIntent(message) {
-    if (!message || typeof message !== 'string') return false;
-    const t = normalizeForIntent(message.toLowerCase().trim());
-    // An order-number lookup ("where is order 123456") is a status query, not a buy.
-    if (/\b\d{5,8}\b/.test(t)) return false;
-    if (STATUS_HINTS.some(h => t.includes(h))) return false;
-    return PURCHASE_PATTERNS.some(p => t.includes(p));
-}
-
-function isOrderCancel(message) {
-    if (!message || typeof message !== 'string') return false;
-    const t = normalizeForCancel(message);
-    if (EXACT_CANCEL_PHRASES.has(t)) return true;
-    return CANCEL_PATTERNS.some(p => p.test(t));
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────-
 // Facebook is stored as channel_type 'messenger' (webhook mapping facebook→messenger).
 const channelTypeFor = (platform) =>
@@ -273,4 +210,15 @@ async function handleOrderFlow({
     };
 }
 
-module.exports = { handleOrderFlow, hasPurchaseIntent, isOrderCancel };
+module.exports = {
+    handleOrderFlow,
+    hasPurchaseIntent,
+    isOrderCancel,
+    // Compatibility exports for callers that imported the old rule helpers.
+    PURCHASE_PATTERNS,
+    STATUS_HINTS,
+    EXACT_CANCEL_PHRASES,
+    CANCEL_PATTERNS,
+    normalizeForIntent,
+    normalizeForCancel,
+};
