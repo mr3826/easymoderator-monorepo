@@ -42,3 +42,29 @@ jobs:
       - run: npm ci
       - name: Audit production dependencies
         run: npm audit --workspaces --include-workspace-root --omit=dev --audit-level=high
+
+  # Branch protection requires this single context, not the two jobs above.
+  # Naming the individual jobs meant every added or renamed scan job needed a
+  # matching branch-protection edit; this one aggregates them and has no `if`
+  # and no paths filter, so it always reports.
+  gate:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [gitleaks, production-dependency-audit]
+    steps:
+      - name: Report the security verdict
+        env:
+          R_GITLEAKS: ${{ needs.gitleaks.result }}
+          R_AUDIT: ${{ needs.production-dependency-audit.result }}
+        run: |
+          set -euo pipefail
+          echo "Historical secret scan:       $R_GITLEAKS"
+          echo "Production dependency audit:  $R_AUDIT"
+          # Both jobs are unconditional, so anything other than success — including
+          # skipped or cancelled — means the scan did not actually clear.
+          if [ "$R_GITLEAKS" != "success" ] || [ "$R_AUDIT" != "success" ]; then
+            echo "Security Scan: FAIL"
+            exit 1
+          fi
+          echo "Security Scan: PASS"

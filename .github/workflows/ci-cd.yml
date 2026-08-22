@@ -82,6 +82,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend == 'true' }}
       frontend: ${{ steps.filter.outputs.frontend == 'true' }}
+      growth: ${{ steps.filter.outputs.growth == 'true' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -101,6 +102,10 @@ jobs:
 
           backend=false
           frontend=false
+          # Growth OS has its own workflow and its own deploy. This flag only
+          # decides whether the PR gate calls that workflow for verification;
+          # growth-os.yml still owns push/deploy on its own trigger.
+          growth=false
 
           if [[ "$EVENT_NAME" == "push" ]]; then
             backend=true
@@ -131,11 +136,19 @@ jobs:
                   frontend=true
                   ;;
               esac
+              # Mirrors growth-os.yml's own push paths, plus this workflow:
+              # editing the gate must exercise everything the gate gates.
+              case "$path" in
+                EasyMod-growth/*|EasyMod-backend/src/scripts/seed-growth-e2e.js|EasyMod-backend/src/database/*|scripts/run-growth-e2e.js|docker-compose.test.yml|package.json|package-lock.json|.github/workflows/growth-os.yml|.github/workflows/ci-cd.yml)
+                  growth=true
+                  ;;
+              esac
             done <<< "$changed_paths"
           fi
 
           echo "backend=$backend" >> "$GITHUB_OUTPUT"
           echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "growth=$growth" >> "$GITHUB_OUTPUT"
 
   # ── 2. Test gate — must pass before any image is built or deployed ──────────
   # This is the gate that makes the silent-failure bug class (job-not-enqueued /
@@ -1198,3 +1211,116 @@ jobs:
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
           SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
           ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
+
+  # ── 4. Growth OS verification, driven from the PR gate ─────────────────────
+  # growth-os.yml has no pull_request trigger: its workflow-level paths filter
+  # meant the workflow never started on an unrelated diff, so its required job
+  # contexts never existed and every such PR sat on "Expected — waiting for
+  # status" forever. Calling it from here inverts that — this workflow always
+  # runs on a PR, and the `if` below decides whether Growth is affected. A
+  # skipped call is a real, reported "not required", not a missing context.
+  growth-os:
+    name: Growth OS PR verification
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.growth == 'true'
+    uses: ./.github/workflows/growth-os.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+
+  # ── 5. The one required PR context ─────────────────────────────────────────
+  # Branch protection requires exactly this job plus "Security Scan". It has no
+  # `if` and no paths filter, so it ALWAYS reports on a PR into main, and it
+  # always reports a real verdict:
+  #
+  #   failure/cancelled in any upstream job  -> FAIL
+  #   upstream skipped because the diff does not touch it -> reported as
+  #     "not required", which is not the same as pretending it ran
+  #
+  # It also carries the validation a docs-only diff would otherwise get none of:
+  # whitespace/conflict markers and Markdown link integrity.
+  pr-merge-gate:
+    name: PR Merge Gate
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'pull_request'
+    needs:
+      - changes
+      - test
+      - meta-e2e
+      - integration
+      - deployment-config
+      - docker-build-validation
+      - growth-os
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate documentation and diff hygiene
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Whitespace damage and CR/LF violations, per the repo's .gitattributes.
+          git diff --check "$BASE_SHA" "$HEAD_SHA"
+          mapfile -t changed < <(git diff --name-only --diff-filter=d "$BASE_SHA" "$HEAD_SHA")
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "No files changed."
+          else
+            node scripts/pr-docs-check.js "${changed[@]}"
+          fi
+
+      - name: Report the gate verdict
+        env:
+          BACKEND: ${{ needs.changes.outputs.backend }}
+          FRONTEND: ${{ needs.changes.outputs.frontend }}
+          GROWTH: ${{ needs.changes.outputs.growth }}
+          R_CHANGES: ${{ needs.changes.result }}
+          R_TEST: ${{ needs.test.result }}
+          R_META_E2E: ${{ needs.meta-e2e.result }}
+          R_INTEGRATION: ${{ needs.integration.result }}
+          R_DEPLOY_CONFIG: ${{ needs.deployment-config.result }}
+          R_DOCKER: ${{ needs.docker-build-validation.result }}
+          R_GROWTH: ${{ needs.growth-os.result }}
+        run: |
+          set -euo pipefail
+
+          failed=0
+
+          # A skipped job is a legitimate "this diff does not touch it". A
+          # failed or cancelled one is not, and neither is a skipped `changes`
+          # — that one has no `if` and must always succeed.
+          verdict() {
+            local label="$1" result="$2" relevant="$3"
+            case "$result" in
+              success)   echo "PASS         $label" ;;
+              skipped|"") if [ "$relevant" = "true" ]; then
+                            echo "MISSING      $label (expected to run for this diff)"
+                            failed=1
+                          else
+                            echo "NOT REQUIRED $label — no impacting paths changed"
+                          fi ;;
+              *)         echo "FAIL         $label ($result)"; failed=1 ;;
+            esac
+          }
+
+          code_changed=false
+          if [ "$BACKEND" = "true" ] || [ "$FRONTEND" = "true" ]; then code_changed=true; fi
+
+          echo "── PR Merge Gate ─────────────────────────────────────────────"
+          verdict "Detect changed services"                "$R_CHANGES"        true
+          verdict "Test & Build Gate"                      "$R_TEST"           "$code_changed"
+          verdict "Meta-shaped E2E (AI trust boundary)"    "$R_META_E2E"       "$code_changed"
+          verdict "Backend integration (PostgreSQL+Redis)" "$R_INTEGRATION"    "$code_changed"
+          verdict "Deployment configuration dry run"       "$R_DEPLOY_CONFIG"  "$code_changed"
+          verdict "Docker build validation (no push)"      "$R_DOCKER"         "$code_changed"
+          verdict "Growth OS verification"                 "$R_GROWTH"         "$GROWTH"
+          echo "── documentation and diff hygiene: PASS ──────────────────────"
+
+          if [ "$failed" -ne 0 ]; then
+            echo "PR Merge Gate: FAIL"
+            exit 1
+          fi
+          echo "PR Merge Gate: PASS"
