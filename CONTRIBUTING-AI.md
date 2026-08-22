@@ -47,6 +47,22 @@ Branch protection on `main` requires exactly two contexts, and both always repor
 
 Component jobs (`Test & Build Gate`, `Growth OS build gate`, `Growth OS browser E2E gate`, integration, Docker validation) still run and still gate merge — through `PR Merge Gate`, which fails if any of them fails. They MUST NOT be named individually in branch protection: a job that legitimately does not run for a given diff would then block the PR forever on a context that never reports.
 
+Changing repository visibility deletes GitHub branch protection on plans where that behavior applies and does not restore it when the repository is made public again. After any visibility change, re-apply the contract and read it back before opening or merging a PR:
+
+```bash
+gh api -X PUT repos/mr3826/easymoderator-monorepo/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": {"strict": true, "contexts": ["PR Merge Gate", "Security Scan"]},
+  "enforce_admins": true,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "required_conversation_resolution": true
+}
+JSON
+```
+
 A coding agent MAY do all of the following autonomously, with no human approval:
 
 - create a branch, implement, test, push;

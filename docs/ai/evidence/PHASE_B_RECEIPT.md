@@ -28,6 +28,17 @@ their human review.
 - The seed evaluation corpus is content-hashed and the receipt reproduces its
   `receiptHash` bit-for-bit. The committed receipt is [`bd-eval-receipt.json`](./bd-eval-receipt.json).
 
+## Branch Protection Incident
+
+The repository visibility toggle deleted `main` branch protection and GitHub did
+not restore it when the repository became public again. As a result, PR `#66`
+merged with an empty PR check rollup; it was docs-only, and the post-merge push
+run on `54407ed` passed both gates: [CI / CD](https://github.com/mr3826/easymoderator-monorepo/actions/runs/32588448012)
+and [Security Scan](https://github.com/mr3826/easymoderator-monorepo/actions/runs/32588447505).
+Protection was restored and read back on `2026-08-23` with strict
+`PR Merge Gate` and `Security Scan` contexts, admin enforcement, force-push and
+deletion denial, and required conversation resolution.
+
 Named test homes include:
 
 - [`render-production-env.test.js`](../../../EasyMod-backend/scripts/__tests__/render-production-env.test.js)
