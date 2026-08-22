@@ -436,3 +436,17 @@ evidenced, but live Growth-origin TLS/browser delivery, operator bootstrap,
 rollback rehearsal and production delivery remain open and must not be
 represented as passed by this phase. The restore mechanism remains a release
 precondition, not authorization to deploy.
+
+## Growth OS current-state determination
+
+- `CURRENT_STATE_DOCUMENT`: `docs/growth-os/GROWTH_OS_CURRENT_STATE.md` — current-state
+  determination dated 2026-08-22; evidence basis is the merged Phase 3 line, not the
+  stale `easy-moderator` checkout.
+- `CURRENT_STATE_VERIFICATION`: read-back and citation review only. Cited paths, gate
+  values, and backlog gate effects were spot-checked against this checkout; the document
+  is ASCII-only. No application test, production host, database, or live gate was
+  exercised by it.
+- `CURRENT_STATE_VERDICT`: `NOT READY` — consistent with
+  `OVERALL_GROWTH_OS_RELEASE_VERDICT: NO-GO`; it closes no gate and changes no gate value.
+- `CURRENT_STATE_OPEN_ACTS`: first Growth rollout, Founder bootstrap, and the live
+  `growth.easymod.tech` browser walkthrough remain the three open release acts.

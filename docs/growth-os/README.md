@@ -12,9 +12,9 @@ standalone SaaS product.
 - The dated audit and architecture documents preserve historical repository
   evidence. Current code and tests take precedence when they differ.
 
-The repository does not recreate the missing `GROWTH_OS_GOAL.md` or
-`CURRENT_STATE.md` files. The tracked execution state and this index are the
-durable navigation points.
+The original `GROWTH_OS_GOAL.md` and `CURRENT_STATE.md` were never recovered.
+`GROWTH_OS_CURRENT_STATE.md` records the current-state determination; the tracked
+execution state and this index remain the durable navigation points.
 
 ## Access Boundary
 
