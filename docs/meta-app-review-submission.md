@@ -1,9 +1,10 @@
 # Meta App Review — Submission Sheet
 
-**App:** EasyModerator · **App ID:** `1609451646619088`
+**App:** EasyModerator · **App ID:** `2040799330176198` (Dashboard display name still reads `saas-easymod`; rename before recording)
 **Graph API:** v22.0 · **Login product:** Facebook Login for Business
 **Business Verification:** ✅ Verified
-**Last updated:** 2026-08-14 (Messenger-only launch; Facebook only)
+**Last updated:** 2026-08-20 (Messenger-only launch; Facebook only)
+**Dashboard audit:** every value below verified against the live dashboard on 2026-08-20.
 
 Paste-ready values for the Meta App Dashboard. Process and video script live in
 [META_APP_REVIEW_MASTER_GUIDE.md](META_APP_REVIEW_MASTER_GUIDE.md).
@@ -61,14 +62,28 @@ and Save" fail with no useful error.
 
 ## Pre-Submit Checklist
 
-1. App Dashboard contains only these permissions: `pages_show_list`, `pages_messaging`, `pages_manage_metadata`.
-2. Webhook subscription uses only the `messages` field on the `page` object.
-3. `pages_read_engagement`, `pages_manage_engagement`, `business_management`, and all `instagram_*` scopes are absent.
+1. ✅ The **App Review request** contains only these three permissions: `pages_show_list`, `pages_messaging`, `pages_manage_metadata`. Verified 2026-08-20 — App Review → Requests reads *Not submitted* with exactly those three under **New requests**.
+2. ✅ Webhook subscription uses only the `messages` field on the `page` object. Verified 2026-08-20.
+3. ⚠️ `pages_read_engagement`, `pages_manage_engagement`, `business_management`, `ads_management` and the `instagram_*` scopes are **not absent from the dashboard** — every Business app is auto-granted them at Standard access, and ours shows real traffic against several (`pages_read_engagement` 60 calls, Page Public Metadata Access 40, `pages_read_user_content` 32, `business_management` 18, `ads_management` 7, `instagram_basic` / `instagram_manage_comments` / `instagram_manage_messages` 5 each, as of 2026-08-20). What matters — and what is true — is that **none of them are in the review request**. Keep it that way. Be ready to explain the Instagram traffic if a reviewer asks, since this submission describes a Facebook-Messenger-only launch.
 4. Screencast demonstrates direct Messenger DM only, in one take, with the Facebook consent dialog visible.
 5. Test Page and tester customer account are added to App Roles, **and the invites are accepted from those accounts** — a pending invite does not enable webhook delivery.
 6. Privacy policy and Terms URLs resolve without authentication.
-7. Data deletion and deauthorize callback URLs are configured.
+7. ✅ Data deletion and deauthorize callback URLs are configured. Verified 2026-08-20: Settings → Basic → User data deletion is set to **Data deletion callback URL** = `https://api.easymod.tech/webhooks/meta/data-deletion`, and both endpoints answer a bare POST with `400 {"error":"Missing signed_request"}`.
 8. App icon uploaded.
 9. Reviewer credentials entered in the Dashboard's test-credentials fields, not just in the notes box — and **2FA is disabled** on that account.
 10. Reviewer account has an active subscription, conversation usage under 75%, and populated products/business info, so no setup checklist or upgrade banner greets the reviewer.
-11. Business Verification — ✅ already complete. Advanced Access to `pages_messaging` goes live for non-testers once App Review approves.
+11. ✅ Business Verification complete — **HexaByte Technologies**, ID `1268762121859445`, Verified (confirmed 2026-08-20).
+12. ⛔ **Access Verification (Tech Provider) — NOT STARTED. Deadline 2026-10-19.** Separate gate from App Review and not satisfied by it. `pages_show_list` sits in the dashboard's Tech-Provider-gated section, so without it every merchant who lacks a role on the app fails with error 100 once the app goes Live. Only a Business admin can complete it; ~5-day decision. Procedure: `.easymod/meta-app-review/business-verification.md` §6.
+13. ⬜ App Mode is still **Development**. Advanced Access to `pages_messaging` goes live for non-testers only after App Review approves *and* the app is switched to Live.
+
+### Known drift from this sheet (2026-08-20)
+
+| Field | This sheet says | Dashboard has |
+|---|---|---|
+| Display name | rename before recording | still `saas-easymod` |
+| Support / contact email | `support@easymod.tech` | `info@easymod.tech`, unverified |
+| Category | Business / **Messaging** | `Business and pages`, no sub-category |
+
+API-call prerequisite is satisfied for all three requested permissions —
+`pages_messaging` 172, `pages_show_list` 114, `pages_manage_metadata` 112 calls
+logged as of 2026-08-20, well past the "at least 1 within 30 days" bar.

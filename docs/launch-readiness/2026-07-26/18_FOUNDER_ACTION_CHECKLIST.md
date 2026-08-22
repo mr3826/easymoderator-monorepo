@@ -138,10 +138,46 @@ audit). Confirm no fifth permission and no extra webhook field is selected.
 
 ### Step 6 — App icon and business verification
 
+> ✅ **DONE — confirmed against the live dashboard 2026-08-20.** App icon is
+> uploaded, and Business Verification shows **HexaByte Technologies**, ID
+> `1268762121859445`, ● Verified. Finding F-10 is closed: the procedure is now
+> documented in
+> [`.easymod/meta-app-review/business-verification.md`](../../../EasyMod-backend/.easymod/meta-app-review/business-verification.md).
+> (Note the legal entity reads "HexaByte Technologies" in the dashboard, not
+> "Hexabyte Limited" as written below.)
+
 Upload the app icon (1024×1024 PNG) and complete Meta Business Verification for Hexabyte
 Limited. **Neither is covered by any current document** (finding F-10).
 **Verify:** dashboard shows the icon and "Verified".
 **Required before:** approval.
+
+### Step 6b — Access verification (Tech Provider) ⛔ NOT STARTED
+
+> **Added 2026-08-20. This step was missing from the original audit and it is
+> the only Meta gate with a hard deadline.**
+
+Business verification is *not* the last verification. Because EasyModerator
+connects **other businesses'** Pages, `pages_show_list` falls in the dashboard's
+Tech-Provider-gated section, and HexaByte must additionally be verified as a
+**Tech Provider**. The dashboard warns:
+
+> To avoid restrictions to 1 app, this must be completed by **10/19/2026**.
+
+Without it, once the app leaves Development mode every merchant who does not
+hold a role on the app fails with Graph error code 100. Passing App Review does
+not satisfy this — they are independent gates.
+
+**Where:** App settings → Basic → Business portfolio → Access verification →
+*View details* → **Start verification**
+(<https://developers.facebook.com/1268762121859445/access-verification/>)
+**Who:** a Business admin of HexaByte Technologies — the founder. An app role is
+not enough.
+**Answer from:** `.easymod/meta-app-review/permissions-justification.md`, so the
+story matches App Review.
+**Turnaround:** ~5 days.
+**Verify:** dashboard shows the business as a verified Tech Provider.
+**Required before:** any non-tester merchant can connect a Page.
+**Full procedure:** `.easymod/meta-app-review/business-verification.md` §6.
 
 ### Step 7 — Test assets and reviewer credentials (finding F-09)
 

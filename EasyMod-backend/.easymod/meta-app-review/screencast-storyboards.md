@@ -1,6 +1,6 @@
 # Meta App Review Screencast — Storyboard and Narration Script
 
-**App:** EasyModerator · **App ID:** `1609451646619088`
+**App:** EasyModerator · **App ID:** `2040799330176198` (Dashboard display name still reads `saas-easymod`; rename before recording)
 **Last updated:** 2026-08-14
 **Target length:** 3:30–4:30 · **Deliverable:** one continuous unedited screen
 recording, uploaded against **all three** permissions.

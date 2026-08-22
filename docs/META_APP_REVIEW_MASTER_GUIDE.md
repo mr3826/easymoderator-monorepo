@@ -1,9 +1,12 @@
 # Meta App Review — Master Guide (Dashboard → Submit)
 
-**App:** EasyModerator · **App ID:** `1609451646619088`
+**App:** EasyModerator · **App ID:** `2040799330176198` (Dashboard display name still reads `saas-easymod`; rename before recording)
 **Legal entity:** Hexabyte Technologies (Bangladesh)
-**Business Verification:** ✅ **Verified** — App Review is now the only remaining gate.
-**Last updated:** 2026-08-14
+**Business Verification:** ✅ **Verified** — HexaByte Technologies, ID `1268762121859445`.
+**Access Verification (Tech Provider):** ⛔ **NOT STARTED — deadline 2026-10-19.** This is a
+*second, separate* Meta gate, confirmed in the dashboard on 2026-08-20. App Review does not
+satisfy it and it does not satisfy App Review. See §1a.
+**Last updated:** 2026-08-20
 **Source of truth for this document:** the shipped frontend
 (`EasyMod-frontend/src`). Where a doc and the UI disagree, the UI wins and the
 doc is wrong.
@@ -48,17 +51,46 @@ of Service says so explicitly
 
 ## 1. Running order
 
-Business Verification is done, so this is now a straight line.
+Business Verification is done. Two gates remain, and they run **in parallel** —
+start row 1 today, because it has the only external deadline in the list.
 
 | # | Step | Gate |
 |---|---|---|
-| 1 | Confirm Dashboard config matches §2 | 30 min |
-| 2 | Set up reviewer merchant account + test Page + tester customer (§3) | 1 hour |
-| 3 | Run the pre-flight dry run (§4) | 30 min — **do not skip** |
-| 4 | Record the screencast (§5 + storyboard doc) | 1 hour |
-| 5 | Fill permission justifications + upload video + submit (§6) | 30 min |
-| 6 | Answer a Data Protection Assessment if one arrives | days |
-| 7 | Switch the app to **Live** mode after approval | — |
+| 1 | **Start Access Verification (Tech Provider) — §1a. Do this first; it runs in the background while you do everything else.** | ~5 days · **deadline 2026-10-19** |
+| 2 | Confirm Dashboard config matches §2 | 30 min |
+| 3 | Set up reviewer merchant account + test Page + tester customer (§3) | 1 hour |
+| 4 | Run the pre-flight dry run (§4) | 30 min — **do not skip** |
+| 5 | Record the screencast (§5 + storyboard doc) | 1 hour |
+| 6 | Fill permission justifications + upload video + submit (§6) | 30 min |
+| 7 | Answer a Data Protection Assessment if one arrives | days |
+| 8 | Switch the app to **Live** mode after approval **and** Tech Provider verification | — |
+
+---
+
+## 1a. Access Verification (Tech Provider) — start this first
+
+Confirmed in the dashboard 2026-08-20 and previously undocumented in this guide.
+
+Because EasyModerator connects **other businesses'** Pages, `pages_show_list`
+falls in the dashboard's Tech-Provider-gated section. Until HexaByte
+Technologies is verified as a Tech Provider, any merchant who does not hold a
+role on the app fails with Graph **error code 100** the moment the app leaves
+Development mode — i.e. every real customer. The dashboard warns:
+
+> To avoid restrictions to 1 app, this must be completed by **10/19/2026**.
+
+**Where:** App settings → Basic → Business portfolio → Access verification →
+*View details* → **Start verification**
+(<https://developers.facebook.com/1268762121859445/access-verification/>)
+**Who:** a Business admin of HexaByte Technologies. An app role is not enough.
+**Answer from:** `permissions-justification.md`, so the story matches §6.
+**Turnaround:** ~5 days.
+
+Prerequisites are already met (business verified, no account restrictions), so
+this is a form-fill and a wait. Nothing else in this guide blocks on it, and it
+blocks going Live — which is exactly why it goes first.
+
+Full procedure: `.easymod/meta-app-review/business-verification.md` §6.
 
 ---
 
@@ -239,16 +271,37 @@ The rules that decide pass/fail:
 
 ## 7. Acceptance checklist
 
+Verification gates
+
+- [x] Business Verification — HexaByte Technologies, ID `1268762121859445`, Verified (2026-08-20)
+- [ ] **Access Verification (Tech Provider) — NOT STARTED, deadline 2026-10-19** (§1a).
+      Blocks going Live independently of App Review.
+
 Configuration
 
 - [ ] Dashboard requests only `pages_show_list`, `pages_messaging`, `pages_manage_metadata`
 - [ ] Page webhook subscription contains `messages` and nothing else
-- [ ] No `pages_read_engagement` / `pages_manage_engagement` / `business_management` / `instagram_*`
+- [ ] No `pages_read_engagement` / `pages_manage_engagement` / `business_management` /
+      `instagram_*` **in the review request**. They cannot be removed from the dashboard
+      — every Business app carries them at Standard access, and ours has live traffic on
+      several (checked 2026-08-20). The request is what must stay clean.
 - [ ] Redirect URI matches `META_OAUTH_REDIRECT_URI` exactly, apex domain
 - [ ] Terms URL is `/terms`; Privacy URL is `/privacy-policy`; both load logged out
 - [ ] Data-deletion and deauthorize callbacks configured
 - [ ] App icon uploaded (`EasyMod-frontend/public/icon-1024.png`, 1024×1024)
 - [ ] Webhook verify-token handshake self-checked
+- [ ] **Data Use Checkup completed** — Meta requires it on all three permissions and
+      the submission gate will not open without it (`devtools_app_review requirements`)
+- [ ] **API pre-check cleared for `pages_messaging`** — needs at least one successful
+      live call. Verify with `devtools_api_usage call_volume`; `total_calls` must be
+      non-zero
+- [ ] **Test Page designated** in the Dashboard for `pages_messaging`
+- [ ] App display name reads **EasyModerator**, not `saas-easymod` — that name is on
+      the consent dialog the screencast records
+- [ ] Contact email verified; app description and short description filled in
+- [ ] GitHub secret `VITE_META_APP_ID` equals the submitted App ID. CI feeds it to
+      both the frontend and the backend (`ci-cd.yml:187,336`), so a wrong value aims
+      the entire OAuth flow at a different app
 
 Reviewer account
 
