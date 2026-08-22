@@ -25,6 +25,11 @@ const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
 const grounding = require('./grounding');
 const { withEvidenceSnapshot } = require('./contracts/evidence.contract');
+const {
+    NON_PRODUCT_CHATTER,
+    hasProductIntent,
+    isPlainGreeting,
+} = require('./intent/stage2-rules');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -48,38 +53,6 @@ const embeddingSemantic = () => {
         return false;
     }
 };
-
-// Keywords that indicate the message is about a product (price, availability, order).
-// Used to skip the DB product-search on messages like "hello", "thanks", "how are you".
-const PRODUCT_INTENT_KEYWORDS = [
-    // English
-    'available', 'price', 'cost', 'stock', 'buy', 'order', 'purchase',
-    'want', 'need', 'looking', 'show', 'color', 'colour', 'size', 'delivery',
-    'shipping', 'discount', 'offer', 'product', 'item',
-    // Banglish / Bengali (romanised)
-    'ache', 'nai', 'daam', 'dam', 'lagbe', 'nibo', 'chai', 'dekhao',
-    'pabo', 'koto', 'takar', 'taka', 'paoa', 'pawa', 'deliver', 'stock',
-    // Bengali script — without these, a customer typing "এই জামার দাম কত?"
-    // never triggers the live DB product/price lookup → the LLM hallucinates a price.
-    'দাম', 'মূল্য', 'কত', 'টাকা', 'দেখান', 'দেখাও', 'আছে', 'নাই', 'নেই',
-    'কিনব', 'কিনবো', 'লাগবে', 'চাই', 'অর্ডার', 'সাইজ', 'মাপ', 'রং', 'কালার',
-    'স্টক', 'ডেলিভারি', 'ছাড়', 'অফার', 'প্রোডাক্ট', 'পাব', 'পাবো', 'নিব', 'নিবো'
-];
-
-const hasProductIntent = (message) => {
-    const lower = message.toLowerCase();
-    return PRODUCT_INTENT_KEYWORDS.some(kw => lower.includes(kw));
-};
-
-// Messages that are definitely NOT about a product. Deliberately a CLOSED set
-// (greetings, thanks, farewells, bare acknowledgements) — unlike
-// PRODUCT_INTENT_KEYWORDS, which is an open-ended allowlist that can never be
-// complete and measurably blocked 10 of 49 real product queries, among them
-// "do you have the cotton jamdani saree", "what sarees do you have" and
-// "how much is the travel duffel bag". Those reached the LLM with no product
-// grounding at all, which is how a price gets invented.
-// See docs/ai-cost/RETRIEVAL_QUALITY_EVALUATION.md.
-const NON_PRODUCT_CHATTER = /^(?:ok(?:ay)?|thanks?|thank\s*you|thx|tnx|dhonnobad|ধন্যবাদ|আচ্ছা|ঠিক\s*আছে|acha|thik\s*ache|bye|good\s*bye|ta\s*ta|allah\s*hafez|আল্লাহ\s*হাফেজ|hmm+|yes|no|হ্যাঁ|না|ji|জি)[\s!.,👍🙏😊❤️]*$/i;
 
 /**
  * Should the live DB product search run for this message?
@@ -158,21 +131,6 @@ const GREETING_REPLIES = {
 
 const _greetingReply = (language = 'mixed') =>
     GREETING_REPLIES[language] || GREETING_REPLIES.mixed;
-
-// Regex fast-path for unambiguous greetings — runs before BERT so we still
-// short-circuit when the local ML service is unavailable or low-confidence.
-// Tight intentionally: only short messages that are PURELY greeting tokens.
-// If the customer wrote "hi, is this saree available?", product intent wins
-// and the LLM handles it.
-const GREETING_PATTERN = /^(?:hi|hii+|hey+|hello+|yo|salam|assalam(?:u)?\s*alaikum|walaikum\s*assalam|nomoshkar|নমস্কার|আসসালামু\s*আলাইকুম|ওয়ালাইকুম\s*আসসালাম|হ্যালো|হাই|good\s*(?:morning|afternoon|evening|night))[\s!.,👋😊🙏]*$/i;
-
-const isPlainGreeting = (message) => {
-    if (!message || typeof message !== 'string') return false;
-    const trimmed = message.trim();
-    if (trimmed.length === 0 || trimmed.length > 40) return false;
-    if (hasProductIntent(trimmed)) return false;
-    return GREETING_PATTERN.test(trimmed);
-};
 
 // ---------------------------------------------------------------------------
 // Core routing
