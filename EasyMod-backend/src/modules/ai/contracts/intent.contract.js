@@ -10,6 +10,10 @@ const RESERVED = 'RESERVED';
 const DEPRECATED = 'DEPRECATED';
 const INTENT_STATUSES = Object.freeze([ACTIVE, RESERVED, DEPRECATED]);
 const INTENT_SOURCES = Object.freeze(['RULE', 'CLASSIFIER', 'LLM', 'HUMAN']);
+const INTENT_EVALUATION_CLASSES = Object.freeze({
+    UTTERANCE: 'UTTERANCE',
+    RUNTIME_OUTCOME: 'RUNTIME_OUTCOME',
+});
 
 const deepFreeze = (value) => {
     if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -18,24 +22,26 @@ const deepFreeze = (value) => {
     return value;
 };
 
-const intent = (domain, requiredSlots, status = ACTIVE) => ({
+const intent = (domain, requiredSlots, status = ACTIVE, evaluationClass = null) => ({
     domain,
     requiredSlots,
     status,
     version: 1,
+    ...(evaluationClass ? { evaluationClass } : {}),
 });
 
-const pairedIntent = (domains, requiredSlots, status = ACTIVE) => ({
+const pairedIntent = (domains, requiredSlots, status = ACTIVE, evaluationClass = null) => ({
     domains,
     requiredSlots,
     status,
     version: 1,
+    ...(evaluationClass ? { evaluationClass } : {}),
 });
 
 const INTENTS = deepFreeze({
     STOP_OPT_OUT: intent('SUPPORT', []),
     GREETING: intent('KNOWLEDGE', ['language']),
-    GENERAL_CHAT_OR_UNKNOWN: intent('KNOWLEDGE', []),
+    GENERAL_CHAT_OR_UNKNOWN: intent('KNOWLEDGE', [], ACTIVE, INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME),
     PRODUCT_INQUIRY: intent('PRODUCT', ['productReference']),
     PRODUCT_ATTRIBUTE: intent('PRODUCT', ['productReference', 'attribute']),
     PRODUCT_AVAILABILITY: intent('PRODUCT', ['productReference']),
@@ -54,7 +60,12 @@ const INTENTS = deepFreeze({
     SENTIMENT_HANDOFF: intent('SUPPORT', ['sentiment']),
     ORDER_POST_PURCHASE_REQUEST: intent('SUPPORT', ['reason']),
     HUMAN_HANDOFF_REQUEST: intent('SUPPORT', []),
-    LOW_CONFIDENCE_OR_GROUNDING_FAILURE: intent('SUPPORT', ['reasonCode']),
+    LOW_CONFIDENCE_OR_GROUNDING_FAILURE: intent(
+        'SUPPORT',
+        ['reasonCode'],
+        ACTIVE,
+        INTENT_EVALUATION_CLASSES.RUNTIME_OUTCOME,
+    ),
 
     PRODUCT_COMPARE: intent('PRODUCT', [], RESERVED),
     PRODUCT_RECOMMEND: intent('PRODUCT', [], RESERVED),
@@ -156,6 +167,7 @@ module.exports = {
     CONTRACT_VERSION,
     DEPRECATED,
     INTENT_REGISTRY_HASH: registryHash,
+    INTENT_EVALUATION_CLASSES,
     INTENT_REGISTRY_VERSION,
     INTENT_SOURCES,
     INTENT_STATUSES,

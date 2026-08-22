@@ -39,6 +39,18 @@ Protection was restored and read back on `2026-08-23` with strict
 `PR Merge Gate` and `Security Scan` contexts, admin enforcement, force-push and
 deletion denial, and required conversation resolution.
 
+## Evaluation Harness Correction
+
+The original Phase B receipt counted 241 fixtures, including ten synthetic
+`LOW_CONFIDENCE_OR_GROUNDING_FAILURE` messages that described internal
+retrieval or grounding outcomes as if they were customer utterances. The
+corrected receipt removes those impossible utterance fixtures, marks
+`GENERAL_CHAT_OR_UNKNOWN` and `LOW_CONFIDENCE_OR_GROUNDING_FAILURE` as runtime
+outcome classes, and records their exemption reasons separately from intent
+accuracy. The corrected seed currently contains 231 fixtures and reports
+handoff recall against 60 actual human-required turns; C3 rule coverage and
+Bangladesh Language QA remain pending.
+
 Named test homes include:
 
 - [`render-production-env.test.js`](../../../EasyMod-backend/scripts/__tests__/render-production-env.test.js)
@@ -52,8 +64,9 @@ Named test homes include:
 
 ## Not Proved
 
-- This is not the 2,000-turn launch corpus. The committed corpus contains 241
-  regression fixtures and is honestly labelled `SEED`.
+- This is not the 2,000-turn launch corpus. The corrected committed corpus
+  contains 231 regression fixtures and is honestly labelled `SEED`; the
+  superseded Phase B receipt contained 241 before the harness correction.
 - No Cohen's kappa measurement or double-labelled human sample exists here.
 - No native Bangladesh Language QA review has happened.
 - No 10 real shop profiles, 14 consecutive production days, or production

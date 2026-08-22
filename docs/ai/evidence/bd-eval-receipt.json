@@ -1,42 +1,56 @@
 {
-  "release": "phase-b-seed",
+  "release": "phase-c2-harness-correction",
   "corpusStatus": "SEED",
   "dateRange": {
     "from": "2026-08-22T00:00:00.000Z",
     "to": "2026-08-22T00:00:00.000Z"
   },
-  "releaseNotes": "Engineering seed receipt; QA sign-off and human signatures are pending.",
+  "releaseNotes": "Corrected handoff measurement and runtime-outcome exclusions; C3 rule fixes and QA sign-off remain pending.",
+  "supersedes": "sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557",
   "contractVersion": "1.0",
   "registryVersion": "1.0.0",
+  "registryHash": "sha256:b3c99d3f25a1a5798b2ec590e10383ee67d013f1f6310a2533462b249188d1dd",
+  "rulesetVersion": "1.0.0",
   "promptVersion": "none-deterministic-shadow",
-  "corpusVersion": "sha256:ef09de24eb494ea85d0fca01a9c0e387db7fec9e00b49610fb9a9058134ba0b8",
-  "labelledTurns": 241,
+  "corpusVersion": "sha256:fab3d71aa048a33f00d5cb5d5c1ca52a56bd7c12995766de68a0a2a23f2aac14",
+  "labelledTurns": 231,
   "shopCount": 3,
   "localeCounts": {
-    "bn": 61,
-    "banglish": 60,
-    "en": 60,
-    "mixed": 60
+    "bn": 58,
+    "banglish": 58,
+    "en": 58,
+    "mixed": 57
   },
   "denominators": {
-    "domain": 241,
-    "intent": 241,
-    "falsePurchaseStarts": 231,
-    "falseOrderCreations": 241,
-    "handoffRecall": 70,
+    "domain": 231,
+    "intent": 220,
+    "falsePurchaseStarts": 201,
+    "purchaseFlowFalseStarts": 20,
+    "falseOrderCreations": 231,
+    "handoffRecall": 60,
     "negatedPurchase": 10,
+    "runtimeOutcomes": 11,
     "providerFallback": 0
   },
   "domainAccuracy": {
     "successes": 195,
-    "denominator": 241,
-    "value": 0.809129,
+    "denominator": 231,
+    "value": 0.844156,
     "confidenceInterval95": {
-      "lower": 0.754814,
-      "upper": 0.853743
+      "lower": 0.791796,
+      "upper": 0.885256
     }
   },
-  "intentMacroAccuracy": 0.746694,
+  "runtimeOutcomeAccuracy": {
+    "successes": 8,
+    "denominator": 11,
+    "value": 0.727273,
+    "confidenceInterval95": {
+      "lower": 0.43435,
+      "upper": 0.902541
+    }
+  },
+  "intentMacroAccuracy": 0.785,
   "perClassAccuracy": {
     "STOP_OPT_OUT": {
       "correct": 9,
@@ -54,15 +68,6 @@
       "confidenceInterval95": {
         "lower": 0.595844,
         "upper": 0.982124
-      }
-    },
-    "GENERAL_CHAT_OR_UNKNOWN": {
-      "correct": 8,
-      "denominator": 11,
-      "accuracy": 0.727273,
-      "confidenceInterval95": {
-        "lower": 0.43435,
-        "upper": 0.902541
       }
     },
     "PRODUCT_INQUIRY": {
@@ -226,42 +231,114 @@
         "lower": 0.396773,
         "upper": 0.892211
       }
-    },
-    "LOW_CONFIDENCE_OR_GROUNDING_FAILURE": {
-      "correct": 0,
-      "denominator": 10,
-      "accuracy": 0,
-      "confidenceInterval95": {
-        "lower": 0,
-        "upper": 0.27754
+    }
+  },
+  "evaluationExemptions": {
+    "intentClasses": {
+      "GENERAL_CHAT_OR_UNKNOWN": {
+        "evaluationClass": "RUNTIME_OUTCOME",
+        "reason": "fallback or conversational outcome, not a labelled utterance class"
+      },
+      "LOW_CONFIDENCE_OR_GROUNDING_FAILURE": {
+        "evaluationClass": "RUNTIME_OUTCOME",
+        "reason": "runtime outcome emitted after confidence or grounding evaluation, not a customer utterance class"
       }
     }
   },
+  "handoffResolution": {
+    "intentClasses": [
+      "STOP_OPT_OUT",
+      "SELF_MFS_PAYMENT_VERIFICATION",
+      "SENTIMENT_HANDOFF",
+      "ORDER_POST_PURCHASE_REQUEST",
+      "HUMAN_HANDOFF_REQUEST"
+    ],
+    "deniedReadReasonCodes": [
+      "customer_identity_unbound",
+      "tenant_context_incomplete",
+      "tenant_scope_mismatch",
+      "evidence_snapshot_stale",
+      "read_action_contract_invalid",
+      "audit_unavailable"
+    ],
+    "runtimeFailureSignals": [
+      "grounding_failure",
+      "confidence_hold"
+    ],
+    "signalHits": {
+      "intent:STOP_OPT_OUT": 9,
+      "read_denied:customer_identity_unbound": 10,
+      "intent:SELF_MFS_PAYMENT_VERIFICATION": 10,
+      "intent:SENTIMENT_HANDOFF": 8,
+      "intent:ORDER_POST_PURCHASE_REQUEST": 8,
+      "intent:HUMAN_HANDOFF_REQUEST": 7
+    }
+  },
   "falsePurchaseStarts": {
-    "successes": 4,
-    "denominator": 231,
-    "value": 0.017316,
+    "successes": 0,
+    "denominator": 201,
+    "value": 0,
     "confidenceInterval95": {
-      "lower": 0.006754,
-      "upper": 0.04367
+      "lower": 0,
+      "upper": 0.018754
+    }
+  },
+  "purchaseFlowFalseStarts": {
+    "successes": 4,
+    "denominator": 20,
+    "value": 0.2,
+    "confidenceInterval95": {
+      "lower": 0.080656,
+      "upper": 0.416022
     }
   },
   "falseOrderCreations": {
     "successes": 0,
-    "denominator": 241,
+    "denominator": 231,
     "value": 0,
     "confidenceInterval95": {
       "lower": 0,
-      "upper": 0.01569
+      "upper": 0.016358
     }
   },
   "handoffRecall": {
-    "successes": 32,
-    "denominator": 70,
-    "value": 0.457143,
+    "successes": 52,
+    "denominator": 60,
+    "value": 0.866667,
     "confidenceInterval95": {
-      "lower": 0.345726,
-      "upper": 0.573019
+      "lower": 0.758346,
+      "upper": 0.93086
+    }
+  },
+  "runtimeScenarioCoverage": {
+    "scenarios": [
+      {
+        "scenarioId": "bd-runtime-grounding-failure",
+        "expectedCustomerState": "HUMAN_REQUIRED",
+        "resolved": true,
+        "resolvedState": "HUMAN_REQUIRED",
+        "reasons": [
+          "grounding_failure"
+        ]
+      },
+      {
+        "scenarioId": "bd-runtime-confidence-hold",
+        "expectedCustomerState": "HUMAN_REQUIRED",
+        "resolved": true,
+        "resolvedState": "HUMAN_REQUIRED",
+        "reasons": [
+          "confidence_hold"
+        ]
+      }
+    ],
+    "metric": {
+      "successes": 2,
+      "denominator": 2,
+      "value": 1,
+      "confidenceInterval95": {
+        "lower": 0.342372,
+        "upper": 1
+      }
     }
   },
   "negatedPurchaseSafety": {
@@ -298,24 +375,33 @@
   "latencyMeasurement": "deterministic seed-fixture clock; production timing pending QA traffic",
   "localeSlices": {
     "bn": {
-      "denominator": 61,
+      "denominator": 58,
       "shopCount": 3,
       "domainAccuracy": {
         "successes": 50,
-        "denominator": 61,
-        "value": 0.819672,
+        "denominator": 58,
+        "value": 0.862069,
         "confidenceInterval95": {
-          "lower": 0.705256,
-          "upper": 0.89621
+          "lower": 0.750739,
+          "upper": 0.928416
         }
       },
       "intentAccuracy": {
-        "successes": 44,
-        "denominator": 61,
-        "value": 0.721311,
+        "successes": 42,
+        "denominator": 55,
+        "value": 0.763636,
         "confidenceInterval95": {
-          "lower": 0.598283,
-          "upper": 0.818116
+          "lower": 0.636514,
+          "upper": 0.856335
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 3,
+        "value": 0.666667,
+        "confidenceInterval95": {
+          "lower": 0.207655,
+          "upper": 0.93851
         }
       },
       "dateRange": {
@@ -324,24 +410,33 @@
       }
     },
     "banglish": {
-      "denominator": 60,
+      "denominator": 58,
       "shopCount": 3,
       "domainAccuracy": {
         "successes": 48,
-        "denominator": 60,
-        "value": 0.8,
+        "denominator": 58,
+        "value": 0.827586,
         "confidenceInterval95": {
-          "lower": 0.68218,
-          "upper": 0.881716
+          "lower": 0.710915,
+          "upper": 0.903558
         }
       },
       "intentAccuracy": {
-        "successes": 45,
-        "denominator": 60,
-        "value": 0.75,
+        "successes": 43,
+        "denominator": 55,
+        "value": 0.781818,
         "confidenceInterval95": {
-          "lower": 0.627677,
-          "upper": 0.842236
+          "lower": 0.656297,
+          "upper": 0.870541
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 3,
+        "value": 0.666667,
+        "confidenceInterval95": {
+          "lower": 0.207655,
+          "upper": 0.93851
         }
       },
       "dateRange": {
@@ -350,24 +445,33 @@
       }
     },
     "en": {
-      "denominator": 60,
+      "denominator": 58,
       "shopCount": 3,
       "domainAccuracy": {
         "successes": 48,
-        "denominator": 60,
-        "value": 0.8,
+        "denominator": 58,
+        "value": 0.827586,
         "confidenceInterval95": {
-          "lower": 0.68218,
-          "upper": 0.881716
+          "lower": 0.710915,
+          "upper": 0.903558
         }
       },
       "intentAccuracy": {
-        "successes": 48,
-        "denominator": 60,
-        "value": 0.8,
+        "successes": 46,
+        "denominator": 55,
+        "value": 0.836364,
         "confidenceInterval95": {
-          "lower": 0.68218,
-          "upper": 0.881716
+          "lower": 0.71736,
+          "upper": 0.911447
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 3,
+        "value": 0.666667,
+        "confidenceInterval95": {
+          "lower": 0.207655,
+          "upper": 0.93851
         }
       },
       "dateRange": {
@@ -376,24 +480,33 @@
       }
     },
     "mixed": {
-      "denominator": 60,
+      "denominator": 57,
       "shopCount": 3,
       "domainAccuracy": {
         "successes": 49,
-        "denominator": 60,
-        "value": 0.816667,
+        "denominator": 57,
+        "value": 0.859649,
         "confidenceInterval95": {
-          "lower": 0.7008,
-          "upper": 0.894423
+          "lower": 0.746753,
+          "upper": 0.927128
         }
       },
       "intentAccuracy": {
-        "successes": 45,
-        "denominator": 60,
-        "value": 0.75,
+        "successes": 43,
+        "denominator": 55,
+        "value": 0.781818,
         "confidenceInterval95": {
-          "lower": 0.627677,
-          "upper": 0.842236
+          "lower": 0.656297,
+          "upper": 0.870541
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 2,
+        "value": 1,
+        "confidenceInterval95": {
+          "lower": 0.342372,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -404,24 +517,33 @@
   },
   "shopSlices": {
     "seed-shop-dhaka": {
-      "denominator": 81,
+      "denominator": 77,
       "shopCount": 1,
       "domainAccuracy": {
         "successes": 65,
-        "denominator": 81,
-        "value": 0.802469,
+        "denominator": 77,
+        "value": 0.844156,
         "confidenceInterval95": {
-          "lower": 0.702954,
-          "upper": 0.874593
+          "lower": 0.747061,
+          "upper": 0.908542
         }
       },
       "intentAccuracy": {
-        "successes": 60,
-        "denominator": 81,
-        "value": 0.740741,
+        "successes": 58,
+        "denominator": 73,
+        "value": 0.794521,
         "confidenceInterval95": {
-          "lower": 0.635954,
-          "upper": 0.823726
+          "lower": 0.688261,
+          "upper": 0.871331
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 4,
+        "value": 0.5,
+        "confidenceInterval95": {
+          "lower": 0.150036,
+          "upper": 0.849964
         }
       },
       "dateRange": {
@@ -430,24 +552,33 @@
       }
     },
     "seed-shop-chattogram": {
-      "denominator": 80,
+      "denominator": 77,
       "shopCount": 1,
       "domainAccuracy": {
         "successes": 66,
-        "denominator": 80,
-        "value": 0.825,
+        "denominator": 77,
+        "value": 0.857143,
         "confidenceInterval95": {
-          "lower": 0.727423,
-          "upper": 0.892795
+          "lower": 0.762025,
+          "upper": 0.918318
         }
       },
       "intentAccuracy": {
-        "successes": 62,
-        "denominator": 80,
-        "value": 0.775,
+        "successes": 60,
+        "denominator": 74,
+        "value": 0.810811,
         "confidenceInterval95": {
-          "lower": 0.67213,
-          "upper": 0.852669
+          "lower": 0.707122,
+          "upper": 0.883821
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 2,
+        "denominator": 3,
+        "value": 0.666667,
+        "confidenceInterval95": {
+          "lower": 0.207655,
+          "upper": 0.93851
         }
       },
       "dateRange": {
@@ -456,24 +587,33 @@
       }
     },
     "seed-shop-sylhet": {
-      "denominator": 80,
+      "denominator": 77,
       "shopCount": 1,
       "domainAccuracy": {
         "successes": 64,
-        "denominator": 80,
-        "value": 0.8,
+        "denominator": 77,
+        "value": 0.831169,
         "confidenceInterval95": {
-          "lower": 0.699536,
-          "upper": 0.872973
+          "lower": 0.732269,
+          "upper": 0.898594
         }
       },
       "intentAccuracy": {
-        "successes": 60,
-        "denominator": 80,
-        "value": 0.75,
+        "successes": 56,
+        "denominator": 73,
+        "value": 0.767123,
         "confidenceInterval95": {
-          "lower": 0.645151,
-          "upper": 0.831939
+          "lower": 0.658325,
+          "upper": 0.849212
+        }
+      },
+      "runtimeOutcomeAccuracy": {
+        "successes": 4,
+        "denominator": 4,
+        "value": 1,
+        "confidenceInterval95": {
+          "lower": 0.5101,
+          "upper": 1
         }
       },
       "dateRange": {
@@ -490,5 +630,5 @@
     "locales": 4,
     "boundaryPhrases": 4
   },
-  "receiptHash": "sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557"
+  "receiptHash": "sha256:9d4339f36592b67f33df934c77a900d6e3bcd1cfb75066d4e217988c2140ada5"
 }
