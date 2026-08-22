@@ -36,7 +36,38 @@ Coding agents use only the skills that gate this work:
 
 The skills support the repository documents; they do not override them.
 
-## 3. Review Checklist
+## 3. Git And Merge Autonomy
+
+Branch protection on `main` requires exactly two contexts, and both always report on every PR into `main`:
+
+| Required context | Emitted by | Always reports |
+| --- | --- | --- |
+| `PR Merge Gate` | `.github/workflows/ci-cd.yml` job `pr-merge-gate` | Yes — no `if`, no paths filter |
+| `Security Scan` | `.github/workflows/security-scan.yml` job `gate` | Yes — no `if`, no paths filter |
+
+Component jobs (`Test & Build Gate`, `Growth OS build gate`, `Growth OS browser E2E gate`, integration, Docker validation) still run and still gate merge — through `PR Merge Gate`, which fails if any of them fails. They MUST NOT be named individually in branch protection: a job that legitimately does not run for a given diff would then block the PR forever on a context that never reports.
+
+A coding agent MAY do all of the following autonomously, with no human approval:
+
+- create a branch, implement, test, push;
+- open a PR, update it, retarget a stacked PR once its base has merged;
+- diagnose and repair a failing check;
+- merge when the required contexts are green, and delete the merged branch.
+
+A human gate is REQUIRED, and only for:
+
+- production deployment approval;
+- enabling production AI mutations (`PRODUCTION_DEPLOY_ENABLED`, production automation-mode activation);
+- destructive production data operations;
+- secret disclosure or rotation requiring human custody;
+- any branch-protection bypass;
+- a cross-tenant or security exception;
+- an irreversible infrastructure action;
+- an explicit architecture exception to the normative documents above.
+
+No other human checkpoint is introduced. Ordinary Git and PR mechanics are not one.
+
+## 4. Review Checklist
 
 - [ ] The change names its owning document and authority section.
 - [ ] The action or intent is registered, versioned, and observable.
