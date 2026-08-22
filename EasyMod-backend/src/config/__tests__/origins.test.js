@@ -7,6 +7,7 @@ describe('canonical origins', () => {
         expect(getOrigins({ NODE_ENV: 'production' })).toEqual({
             marketing: 'https://easymod.tech',
             app: 'https://app.easymod.tech',
+            growth: 'https://growth.easymod.tech',
             api: 'https://api.easymod.tech',
             publicAssets: 'https://api.easymod.tech',
         });
@@ -16,10 +17,12 @@ describe('canonical origins', () => {
         expect(getOrigins({
             NODE_ENV: 'production',
             FRONTEND_URL: 'https://merchant.example.com',
+            GROWTH_FRONTEND_URL: 'https://growth.example.com',
             BASE_URL: 'https://backend.example.com',
             PUBLIC_BASE_URL: 'https://media.example.com',
         })).toMatchObject({
             app: 'https://merchant.example.com',
+            growth: 'https://growth.example.com',
             api: 'https://backend.example.com',
             publicAssets: 'https://media.example.com',
         });

@@ -79,6 +79,40 @@ describe('access-token revocation state', () => {
             attributes: ['token_version'],
         });
         expect(req.user).toMatchObject({ userId: 'user-1', shopId: 'shop-1' });
+        expect(req.user.mfaVerified).toBe(false);
+    });
+
+    test('propagates the server-issued MFA assurance claim', async () => {
+        mockVerifyAccessToken.mockReturnValue({
+            userId: 'user-1',
+            shopId: 'shop-1',
+            email: 'operator@example.test',
+            tokenVersion: 0,
+            mfaVerified: true,
+            exp: 123,
+        });
+        mockUserFindByPk.mockResolvedValue({ token_version: 0 });
+
+        const { error, req } = await runAuthenticate();
+
+        expect(error).toBeUndefined();
+        expect(req.user.mfaVerified).toBe(true);
+    });
+
+    test('returns a temporary authentication failure when the revocation store is unavailable', async () => {
+        mockVerifyAccessToken.mockReturnValue({
+            userId: 'user-1',
+            shopId: 'shop-1',
+            email: 'operator@example.test',
+            tokenVersion: 0,
+            exp: 123,
+        });
+        mockIsTokenBlacklisted.mockRejectedValue(new Error('redis unavailable'));
+
+        const { error } = await runAuthenticate();
+
+        expect(error).toMatchObject({ status: 503, code: 'AUTH_SERVICE_UNAVAILABLE' });
+        expect(error.message).not.toContain('redis unavailable');
     });
 
     test('fails closed when subscription state cannot be read', async () => {

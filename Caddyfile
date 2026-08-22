@@ -203,7 +203,10 @@ easymod.tech {
 
 growth.easymod.tech {
     # ── Growth OS backend API proxy ─────────────────────────────────────────
-    handle /api/* {
+    # Keep this host limited to the auth/session contract used by the Growth
+    # SPA. Merchant and provider APIs remain on their canonical hosts.
+    @growth_api path /api/csrf /api/auth/* /api/internal/growth-os/*
+    handle @growth_api {
         reverse_proxy backend:3000 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
@@ -213,6 +216,12 @@ growth.easymod.tech {
                 write_timeout 120s
             }
         }
+    }
+
+    # Never let an unsupported API path fall through to the SPA and look like
+    # a successful HTML response.
+    handle /api/* {
+        respond "Not found" 404
     }
 
     # ── Growth OS SPA ───────────────────────────────────────────────────────

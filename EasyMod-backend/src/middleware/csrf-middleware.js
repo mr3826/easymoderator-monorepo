@@ -12,8 +12,9 @@ const { AppError } = require('../utils/AppError');
 const isTrustedAuthOrigin = (
     origin,
     environment = config.env,
-    appOrigin = config.origins?.app
-) => environment !== 'production' || origin === appOrigin;
+    appOrigin = config.origins?.app,
+    growthOrigin = config.origins?.growth,
+) => environment !== 'production' || [appOrigin, growthOrigin].includes(origin);
 
 // Enhanced CSRF configuration with better error handling
 const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
@@ -99,7 +100,7 @@ const csrfProtectionMiddleware = (req, res, next) => {
     ]);
     if (anonymousAuthPaths.has(req.path)) {
         if (!isTrustedAuthOrigin(req.get('Origin'))) {
-            return next(new AppError('Authentication requests must originate from the merchant app.', 403));
+            return next(new AppError('Authentication requests must originate from an approved EasyModerator application.', 403));
         }
         return next();
     }

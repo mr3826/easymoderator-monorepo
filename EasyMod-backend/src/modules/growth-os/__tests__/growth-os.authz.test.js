@@ -8,9 +8,17 @@ const roleHolder = {
 
 const mockConfig = {
   growthOsEnabled: true,
+  env: 'test',
+};
+
+const mockCacheRedis = {
+  status: 'ready',
+  _isMemoryFallback: false,
 };
 
 jest.mock('../../../config/config', () => mockConfig);
+
+jest.mock('../../../config/redis', () => ({ cacheRedis: mockCacheRedis }));
 
 jest.mock('../../../middleware/auth.middleware', () => ({
   authenticate: (req, _res, next) => {
@@ -30,6 +38,14 @@ jest.mock('../../../middleware/auth.middleware', () => ({
 jest.mock('../../../utils/cache.service', () => ({
   get: jest.fn(async () => null),
   set: jest.fn(async () => {}),
+  getStrict: jest.fn(async () => null),
+  setStrict: jest.fn(async () => true),
+  delete: jest.fn(async () => true),
+}));
+
+jest.mock('../growth-os.roles.service', () => ({
+  grantRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'READ_ONLY_ANALYST' })),
+  revokeRole: jest.fn(async () => ({ id: 'role-1', userId: 'target-1', role: 'READ_ONLY_ANALYST' })),
 }));
 
 jest.mock('../../entities', () => ({
@@ -39,7 +55,11 @@ jest.mock('../../entities', () => ({
         ? [{ role: roleHolder.growthRole, user_id: roleHolder.user?.userId, id: 'role-1', granted_at: new Date() }]
         : []
     )),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    count: jest.fn(),
   },
+  AuditLog: { create: jest.fn() },
   User: {
     findByPk: jest.fn(async (id) => ({
       id,
@@ -52,6 +72,7 @@ jest.mock('../../entities', () => ({
 const express = require('express');
 const request = require('supertest');
 const growthOsRoutes = require('../growth-os.routes');
+const growthRoleService = require('../growth-os.roles.service');
 
 function buildApp() {
   const app = express();
@@ -71,6 +92,9 @@ describe('Growth OS session authorization', () => {
     jest.clearAllMocks();
     app = buildApp();
     mockConfig.growthOsEnabled = true;
+    mockConfig.env = 'test';
+    mockCacheRedis.status = 'ready';
+    mockCacheRedis._isMemoryFallback = false;
     roleHolder.user = null;
     roleHolder.growthRole = null;
     roleHolder.frontendGuardClaim = null;
@@ -92,7 +116,7 @@ describe('Growth OS session authorization', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('GROWTH_OS_DISABLED');
-    expect(cacheService.get).not.toHaveBeenCalled();
+    expect(cacheService.getStrict).not.toHaveBeenCalled();
     expect(GrowthOsUserRole.findAll).not.toHaveBeenCalled();
   });
 
@@ -124,8 +148,39 @@ describe('Growth OS session authorization', () => {
     expect(res.body.message).not.toContain('database connection details');
   });
 
-  it('allows an authorized founder and returns safe session fields', async () => {
+  it('fails closed when the deployed Growth OS Redis authorization cache is unavailable', async () => {
     roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech' };
+    mockConfig.env = 'production';
+    mockCacheRedis.status = 'end';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      code: 'GROWTH_OS_REDIS_UNAVAILABLE',
+      message: 'Growth OS authorization cache is temporarily unavailable.',
+    });
+    expect(require('../../../utils/cache.service').getStrict).not.toHaveBeenCalled();
+  });
+
+  it('does not turn an authorization-cache read failure into a database allow', async () => {
+    const cacheService = require('../../../utils/cache.service');
+    const { GrowthOsUserRole } = require('../../entities');
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech', mfaVerified: true };
+    cacheService.getStrict.mockRejectedValueOnce(new Error('redis connection lost'));
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      code: 'GROWTH_OS_AUTHZ_UNAVAILABLE',
+      message: 'Growth OS authorization service is temporarily unavailable.',
+    });
+    expect(GrowthOsUserRole.findAll).not.toHaveBeenCalled();
+  });
+
+  it('allows an authorized founder and returns safe session fields', async () => {
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech', mfaVerified: true };
     roleHolder.growthRole = 'FOUNDER';
 
     const res = await request(app).get('/api/internal/growth-os/session');
@@ -154,6 +209,16 @@ describe('Growth OS session authorization', () => {
     expect(res.body.data.permissions).not.toContain('growth_os.prospects.read_all');
   });
 
+  it('requires MFA assurance for privileged Growth roles', async () => {
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech', mfaVerified: false };
+    roleHolder.growthRole = 'FOUNDER';
+
+    const res = await request(app).get('/api/internal/growth-os/session');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('GROWTH_OS_MFA_REQUIRED');
+  });
+
   it('does not trust a frontend route guard claim without backend access', async () => {
     roleHolder.user = { userId: 'merchant-owner-1', email: 'owner@example.com', shopId: 'shop-1' };
     roleHolder.frontendGuardClaim = 'allowed';
@@ -161,5 +226,33 @@ describe('Growth OS session authorization', () => {
     const res = await request(app).get('/api/internal/growth-os/session');
 
     expect(res.status).toBe(403);
+  });
+
+  it('protects direct privileged role APIs with the same backend guard', async () => {
+    roleHolder.user = { userId: 'founder-1', email: 'founder@easymod.tech', mfaVerified: true };
+    roleHolder.growthRole = 'FOUNDER';
+
+    const res = await request(app)
+      .post('/api/internal/growth-os/roles')
+      .send({ userId: 'target-1', role: 'READ_ONLY_ANALYST', reason: 'Access review' });
+
+    expect(res.status).toBe(201);
+    expect(growthRoleService.grantRole).toHaveBeenCalledWith(expect.objectContaining({
+      actorUserId: 'founder-1',
+      targetUserId: 'target-1',
+      role: 'READ_ONLY_ANALYST',
+      reason: 'Access review',
+    }));
+  });
+
+  it('denies a merchant direct privileged role API call', async () => {
+    roleHolder.user = { userId: 'merchant-owner-1', email: 'owner@example.com', mfaVerified: false };
+
+    const res = await request(app)
+      .post('/api/internal/growth-os/roles')
+      .send({ userId: 'target-1', role: 'FOUNDER', reason: 'forged' });
+
+    expect(res.status).toBe(403);
+    expect(growthRoleService.grantRole).not.toHaveBeenCalled();
   });
 });

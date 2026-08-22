@@ -7,6 +7,27 @@
 const { v4: uuidv4 } = require('uuid');
 const { createLogger } = require('../utils/structured-logger');
 
+const SAFE_QUERY_KEYS = new Set([
+    'status',
+    'source',
+    'linked',
+    'page',
+    'pagesize',
+    'timelinepage',
+    'timelinepagesize',
+    'limit',
+    'offset',
+]);
+
+function safeQueryForLog(query = {}) {
+    return Object.fromEntries(Object.entries(query).map(([key, value]) => [
+        key,
+        SAFE_QUERY_KEYS.has(String(key).toLowerCase()) && value !== null && typeof value !== 'object'
+            ? value
+            : '[REDACTED]',
+    ]));
+}
+
 /**
  * Middleware to attach request context
  * Every request gets a unique ID for tracing and audit
@@ -30,7 +51,7 @@ const requestContextMiddleware = (req, res, next) => {
     req.logger.info('Incoming request', {
         method: req.method,
         path: req.path,
-        query: req.query,
+        query: safeQueryForLog(req.query),
         ip: req.ip
     });
     
@@ -49,5 +70,6 @@ const requestContextMiddleware = (req, res, next) => {
 };
 
 module.exports = {
-    requestContextMiddleware
+    requestContextMiddleware,
+    safeQueryForLog,
 };

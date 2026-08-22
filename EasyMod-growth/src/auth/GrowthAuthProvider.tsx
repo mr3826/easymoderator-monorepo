@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiError, growthApi, type GrowthSession, type SigninPayload } from '@/api/client';
 
-type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'two-factor' | 'access-denied' | 'session-expired' | 'error';
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'two-factor' | 'access-denied' | 'session-expired' | 'unavailable' | 'error';
 
 interface GrowthAuthState {
   status: AuthStatus;
@@ -12,6 +12,7 @@ interface GrowthAuthState {
   signin: (payload: SigninPayload) => Promise<void>;
   verifyTwoFactor: (token: string) => Promise<void>;
   logout: () => Promise<void>;
+  reportApiError: (error: unknown) => boolean;
 }
 
 const GrowthAuthContext = createContext<GrowthAuthState | undefined>(undefined);
@@ -28,7 +29,17 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      const nextSession = await growthApi.getSession();
+      let nextSession: GrowthSession;
+      try {
+        nextSession = await growthApi.getSession();
+      } catch (err) {
+        // A valid refresh cookie can recover an expired access cookie. Retry
+        // exactly once so a stale session never becomes a frontend-only
+        // authorization decision.
+        if (!(err instanceof ApiError) || err.status !== 401) throw err;
+        await growthApi.refresh();
+        nextSession = await growthApi.getSession();
+      }
       setSession(nextSession);
       setStatus('authenticated');
     } catch (err) {
@@ -42,10 +53,33 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
         setStatus('access-denied');
         return;
       }
+      if (err instanceof ApiError && err.status === 503) {
+        setStatus('unavailable');
+        setError(err.message);
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Unable to load Growth OS.');
       setStatus('error');
     }
   }, [session]);
+
+  const reportApiError = useCallback((requestError: unknown) => {
+    if (!(requestError instanceof ApiError)) return false;
+    if (requestError.status === 401) {
+      void refreshSession();
+      return true;
+    }
+    if (requestError.status === 403) {
+      setStatus('access-denied');
+      return true;
+    }
+    if (requestError.status === 503) {
+      setError(requestError.message);
+      setStatus('unavailable');
+      return true;
+    }
+    return false;
+  }, [refreshSession]);
 
   useEffect(() => {
     void refreshSession();
@@ -68,6 +102,11 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       if (err instanceof ApiError && err.status === 403) {
         setStatus('access-denied');
+        return;
+      }
+      if (err instanceof ApiError && err.status === 503) {
+        setStatus('unavailable');
+        setError(err.message);
         return;
       }
       setStatus('unauthenticated');
@@ -98,10 +137,19 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
   }, [tempToken]);
 
   const logout = useCallback(async () => {
-    await growthApi.logout();
-    setSession(null);
-    setTempToken(null);
-    setStatus('unauthenticated');
+    setError(null);
+    try {
+      await growthApi.logout();
+      setSession(null);
+      setTempToken(null);
+      setStatus('unauthenticated');
+    } catch (err) {
+      // Keep the authenticated state when server-side revocation fails. The
+      // user sees the error and can retry instead of believing the cookie was
+      // revoked when it was not.
+      setError(err instanceof Error ? err.message : 'Unable to complete sign out. Please retry.');
+      setStatus('authenticated');
+    }
   }, []);
 
   const value = useMemo(() => ({
@@ -113,7 +161,8 @@ export function GrowthAuthProvider({ children }: { children: ReactNode }) {
     signin,
     verifyTwoFactor,
     logout,
-  }), [status, session, error, refreshSession, signin, verifyTwoFactor, logout]);
+    reportApiError,
+  }), [status, session, error, refreshSession, signin, verifyTwoFactor, logout, reportApiError]);
 
   return (
     <GrowthAuthContext.Provider value={value}>

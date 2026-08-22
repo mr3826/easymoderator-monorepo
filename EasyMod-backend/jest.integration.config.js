@@ -21,7 +21,10 @@ const quarantined = require('./tests/quarantine.json').files.map((f) => f.file);
 module.exports = {
     testEnvironment: 'node',
     rootDir: __dirname,
-    testMatch: ['<rootDir>/**/*.integration.test.js'],
+    // Use a relative glob. Jest 30 does not normalize the absolute Windows
+    // rootDir form consistently, which previously made this suite report
+    // "No tests found" even when integration files existed.
+    testMatch: ['**/*.integration.test.js'],
     testPathIgnorePatterns: ['/node_modules/', ...quarantined],
     // env.js must run before any application module captures process.env, and
     // before anything can issue a destructive statement — it holds the

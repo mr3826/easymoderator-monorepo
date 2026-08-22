@@ -33,11 +33,21 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 
 function run(command, args, env) {
     return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {
+        const spawnOptions = {
             cwd: repoRoot,
             env,
             stdio: 'inherit',
             windowsHide: true,
+        };
+        // Node on Windows cannot spawn npm.cmd directly under the current
+        // runtime. The arguments are fixed by this script, so using the shell
+        // here is limited to the package-manager wrapper and does not accept
+        // user-supplied command text.
+        if (process.platform === 'win32' && command.endsWith('.cmd')) {
+            spawnOptions.shell = true;
+        }
+        const child = spawn(command, args, {
+            ...spawnOptions,
         });
         activeChild = child;
 
@@ -84,6 +94,17 @@ async function main() {
         if (interruptRequested) {
             exitCode = 130;
             return;
+        }
+        // The disposable stack starts empty. Run the same migration path used
+        // by CI before Jest so this wrapper proves schema compatibility rather
+        // than only proving that PostgreSQL and Redis accept connections.
+        const migrateCode = await run(
+            npmCommand,
+            ['run', 'migrate', '--workspace=easymod-backend'],
+            testEnv,
+        );
+        if (migrateCode !== 0) {
+            throw new Error('Disposable integration database migrations failed.');
         }
         exitCode = await run(
             npmCommand,

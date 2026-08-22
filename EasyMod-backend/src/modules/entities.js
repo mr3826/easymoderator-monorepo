@@ -43,6 +43,43 @@ const CourierCodCollection = require('./reconciliation/courier-collection.entity
 const ReconciliationDispute = require('./reconciliation/reconciliation-dispute.entity');
 const GrowthOsUserRole = require('./growth-os/growth-os-user-role.entity');
 
+let growthOsProspect;
+let growthOsProspectEvent;
+let growthOsProspectAssociationsReady = false;
+
+function loadGrowthOsProspectEntities() {
+    if (!growthOsProspect) {
+        growthOsProspect = require('./growth-os/growth-os-prospect.entity');
+        growthOsProspectEvent = require('./growth-os/growth-os-prospect-event.entity');
+    }
+
+    if (!growthOsProspectAssociationsReady) {
+        growthOsProspect.belongsTo(User, { foreignKey: 'owner_user_id', as: 'ownerUser' });
+        growthOsProspect.belongsTo(User, { foreignKey: 'assigned_by', as: 'assignedBy' });
+        growthOsProspect.belongsTo(User, { foreignKey: 'linked_user_id', as: 'linkedUser' });
+        growthOsProspect.belongsTo(User, { foreignKey: 'created_by', as: 'createdBy' });
+        growthOsProspect.belongsTo(Shop, { foreignKey: 'linked_shop_id', as: 'linkedShop' });
+        growthOsProspect.belongsTo(growthOsProspect, { foreignKey: 'merged_into_id', as: 'mergedInto' });
+        User.hasMany(growthOsProspect, { foreignKey: 'owner_user_id', as: 'ownedGrowthProspects' });
+        User.hasMany(growthOsProspect, { foreignKey: 'assigned_by', as: 'assignedGrowthProspects' });
+        User.hasMany(growthOsProspect, { foreignKey: 'linked_user_id', as: 'linkedGrowthProspects' });
+        User.hasMany(growthOsProspect, { foreignKey: 'created_by', as: 'createdGrowthProspects' });
+        Shop.hasMany(growthOsProspect, { foreignKey: 'linked_shop_id', as: 'growthOsProspects' });
+        growthOsProspect.hasMany(growthOsProspect, { foreignKey: 'merged_into_id', as: 'mergedProspects' });
+        growthOsProspect.hasMany(growthOsProspectEvent, {
+            foreignKey: 'prospect_id',
+            as: 'events',
+            onDelete: 'CASCADE',
+        });
+        growthOsProspectEvent.belongsTo(growthOsProspect, { foreignKey: 'prospect_id', as: 'prospect' });
+        growthOsProspectEvent.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor' });
+        User.hasMany(growthOsProspectEvent, { foreignKey: 'actor_user_id', as: 'growthOsProspectEvents' });
+        growthOsProspectAssociationsReady = true;
+    }
+
+    return { GrowthOsProspect: growthOsProspect, GrowthOsProspectEvent: growthOsProspectEvent };
+}
+
 // Phase 1 — Meta Integration Redesign: new unified channel entities
 const MetaChannel = require('./channel-providers/meta-channel.entity');
 const MetaChannelSettings = require('./channel-providers/meta-channel-settings.entity');
@@ -517,3 +554,14 @@ module.exports = {
     MetaWebhookReceipt,
     PolicyDecision,
 };
+
+Object.defineProperties(module.exports, {
+    GrowthOsProspect: {
+        enumerable: true,
+        get: () => loadGrowthOsProspectEntities().GrowthOsProspect,
+    },
+    GrowthOsProspectEvent: {
+        enumerable: true,
+        get: () => loadGrowthOsProspectEntities().GrowthOsProspectEvent,
+    },
+});

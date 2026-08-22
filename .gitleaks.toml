@@ -31,3 +31,10 @@ paths = [
   '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/frontend\.js$''',
   '''^\.windsurf/skills/tech-debt-tracker/assets/sample_codebase/src/user_service\.py$''',
 ]
+
+[[allowlists]]
+description = "Reviewed test-only Growth E2E CSRF fixture; it was never a credential."
+regexTarget = "match"
+regexes = [
+  '''growth-e2e-csrf-secret-at-least-32-characters''',
+]
