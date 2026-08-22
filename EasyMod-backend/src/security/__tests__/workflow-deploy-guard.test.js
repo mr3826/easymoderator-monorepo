@@ -20,6 +20,12 @@ describe('production workflow branch safety', () => {
         expect(deployBlock).toContain("if: github.ref == 'refs/heads/main'");
     });
 
+    test('deploy passes the Action Gate secret to production rendering', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}');
+    });
+
     test('pull requests can run tests but cannot build deployable images', () => {
         const buildBlock = workflow.match(/\n  build:\n([\s\S]*?)\n  # ── 4\./)?.[1];
         expect(buildBlock).toContain("github.event_name != 'pull_request'");
