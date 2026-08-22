@@ -27,6 +27,7 @@ const {
     emptyEvidence,
     withSourceText,
 } = require('./grounding.contract');
+const { withEvidenceSnapshot } = require('../contracts/evidence.contract');
 
 /**
  * Terms that express *intent*, not product identity. Removing them is what
@@ -325,7 +326,7 @@ const resolveProductEvidence = ({ shopId, message, candidates = [], retrievalFai
         evidence.productStatus = ProductEvidenceStatus.RETRIEVAL_FAILED;
         evidence.failure = 'product_retrieval_error';
         evidence.mediaStatus = mediaRequested ? MediaStatus.NO_PRODUCT : MediaStatus.NOT_REQUESTED;
-        return evidence;
+        return withEvidenceSnapshot(evidence);
     }
 
     if (terms.length === 0) {
@@ -333,7 +334,7 @@ const resolveProductEvidence = ({ shopId, message, candidates = [], retrievalFai
         // its own — the reply carries no product claim to ground.
         evidence.productStatus = ProductEvidenceStatus.NONE;
         evidence.mediaStatus = mediaRequested ? MediaStatus.NO_PRODUCT : MediaStatus.NOT_REQUESTED;
-        return evidence;
+        return withEvidenceSnapshot(evidence);
     }
 
     const verified = [];
@@ -373,7 +374,7 @@ const resolveProductEvidence = ({ shopId, message, candidates = [], retrievalFai
         }
     }
 
-    return evidence;
+    return withEvidenceSnapshot(evidence);
 };
 
 /**
@@ -420,14 +421,14 @@ const resolveContextualAttributeEvidence = ({ shopId, message, contextProducts =
     if (retrievalFailed) {
         evidence.productStatus = ProductEvidenceStatus.RETRIEVAL_FAILED;
         evidence.failure = 'product_retrieval_error';
-        return evidence;
+        return withEvidenceSnapshot(evidence);
     }
-    if (!contextProducts.length) return evidence; // NONE — ask which product
+    if (!contextProducts.length) return withEvidenceSnapshot(evidence); // NONE — ask which product
 
     evidence.verifiedProducts = contextProducts
         .filter(p => p && p.id && p.name)
         .map(p => toVerifiedProduct(p, shopId, terms));
-    if (!evidence.verifiedProducts.length) return evidence;
+    if (!evidence.verifiedProducts.length) return withEvidenceSnapshot(evidence);
     evidence.productStatus = ProductEvidenceStatus.VERIFIED;
 
     // A photo may only accompany a confirmed "yes". If we cannot confirm the
@@ -448,7 +449,7 @@ const resolveContextualAttributeEvidence = ({ shopId, message, contextProducts =
         }
     }
 
-    return evidence;
+    return withEvidenceSnapshot(evidence);
 };
 
 /** Product IDs this conversation has already grounded, newest turn first. */

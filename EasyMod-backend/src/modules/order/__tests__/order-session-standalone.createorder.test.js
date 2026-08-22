@@ -18,6 +18,7 @@ jest.mock('../order.service', () => ({
     createOrderInternal: jest.fn().mockResolvedValue({ id: 'ord-1', order_number: '1001', total: 1260 }),
 }));
 jest.mock('../../payment/self-mfs-handler.service', () => ({ verifyPaymentScreenshot: jest.fn() }));
+jest.mock('../../ai/action-gate', () => ({ verifyAuthorization: jest.fn(() => true) }));
 
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
@@ -42,12 +43,15 @@ describe('createOrderFromSession', () => {
             notes: null,
         };
 
-        const order = await OrderSessionService.createOrderFromSession(session, stepData);
+        const order = await OrderSessionService.createOrderFromSession(session, stepData, {
+            authorization: { actionType: 'CREATE_ORDER', shopId: 'shop-1', idempotencyKey: 'test' },
+            conversationId: 'conv-1',
+        });
 
         expect(createOrderInternal).toHaveBeenCalledTimes(1);
         const [shopIdArg, orderData, requestId] = createOrderInternal.mock.calls[0];
         expect(shopIdArg).toBe('shop-1');
-        expect(requestId).toBe('sess-1'); // session id == idempotency key (retry-safe)
+        expect(requestId).toMatch(/^[a-f0-9]{64}$/);
         expect(orderData).toEqual(expect.objectContaining({
             customer_id: 'cust-1',
             customer_name: 'Rahim',
@@ -57,7 +61,7 @@ describe('createOrderFromSession', () => {
             order_status: 'confirmed',
             payment_status: 'unpaid', // COD → unpaid
             payment_method: 'cod',
-            idempotency_key: 'sess-1',
+            idempotency_key: expect.stringMatching(/^[a-f0-9]{64}$/),
         }));
         // price omitted on purpose — the server uses the live catalog price
         expect(orderData.items).toEqual([{ product_id: 'prod-1', quantity: 1 }]);
@@ -86,7 +90,10 @@ describe('createOrderFromSession', () => {
             ],
         };
 
-        await OrderSessionService.createOrderFromSession(session, stepData);
+        await OrderSessionService.createOrderFromSession(session, stepData, {
+            authorization: { actionType: 'CREATE_ORDER', shopId: 'shop-1', idempotencyKey: 'test' },
+            conversationId: 'conv-1',
+        });
 
         const [, orderData] = createOrderInternal.mock.calls[0];
         // Catalog-priced (price omitted); one entry per cart line, quantities preserved.

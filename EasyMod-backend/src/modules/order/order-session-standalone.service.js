@@ -420,7 +420,11 @@ class OrderSessionService {
     /**
      * Handle the current step in the order flow
      */
-    static async handleCurrentStep(session, answer, rawMessage, { mutationsAllowed = true } = {}) {
+    static async handleCurrentStep(session, answer, rawMessage, {
+        mutationsAllowed = true,
+        conversationId = null,
+        traceId = null,
+    } = {}) {
         const { current_step } = session;
         // Spread into a new object so Sequelize's dirty-tracking detects the change
         const step_data = { ...(session.step_data || {}) };
@@ -771,8 +775,14 @@ class OrderSessionService {
                         };
                     }
 
+                    const contractSummary = this.buildContractOrderSummary(session, step_data);
+                    const confirmedSummaryHash = require('../ai/contracts/action.contract')
+                        .confirmedSummaryHash(contractSummary);
+                    step_data.confirmed_summary_hash = confirmedSummaryHash;
+
                     // Re-check stock for EVERY line in the cart before committing.
                     const cart = OrderSessionService.getCartItems(session, step_data);
+                    let priceChanged = false;
                     for (const item of cart) {
                         if (!item.product_id) continue;
                         const stockCheck = await productSearch.checkStock(item.product_id, session.shop_id, item.quantity || 1);
@@ -787,13 +797,109 @@ class OrderSessionService {
                                 cancelled: true
                             };
                         }
+                        if (stockCheck.product?.price != null
+                            && Number(stockCheck.product.price) !== Number(item.price)) {
+                            item.price = stockCheck.product.price;
+                            priceChanged = true;
+                        }
+                    }
+
+                    if (priceChanged) {
+                        step_data.cart = cart;
+                        return {
+                            session_id: session.id,
+                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                                pickLang(
+                                    lang,
+                                    'দাম পরিবর্তন হয়েছে। অর্ডার করতে নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।',
+                                    'The price changed. Please confirm the new summary to place the order.'
+                                ),
+                            current_step: 'ORDER_SUMMARY',
+                            state: 'AWAITING_CONFIRMATION',
+                            step_data,
+                            completed: false,
+                            confirmation_invalidated: true,
+                        };
+                    }
+
+                    const { createProposedAction, deriveCreateOrderIdempotencyKey } = require('../ai/contracts/action.contract');
+                    const { withEvidenceSnapshot } = require('../ai/contracts/evidence.contract');
+                    const { authorize } = require('../ai/action-gate');
+                    const summaryEvidence = withEvidenceSnapshot({
+                        shopId: session.shop_id,
+                        sourceText: this.generateOrderSummary(session, step_data, lang),
+                        summaryHash: confirmedSummaryHash,
+                        productIds: cart.map(item => item.product_id).filter(Boolean),
+                    });
+                    const orderIdempotencyKey = deriveCreateOrderIdempotencyKey({
+                        shopId: session.shop_id,
+                        conversationId,
+                        orderSessionId: session.id,
+                        confirmedSummaryHash,
+                    });
+                    const orderAction = createProposedAction({
+                        requestedByAgent: 'OrderAgent',
+                        actionType: 'CREATE_ORDER',
+                        domain: 'ORDER',
+                        shopId: session.shop_id,
+                        conversationId,
+                        idempotencyKey: orderIdempotencyKey,
+                        evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                        payload: { orderSessionId: session.id, summaryHash: confirmedSummaryHash },
+                        confirmation: {
+                            summaryHash: confirmedSummaryHash,
+                            confirmedBy: 'CUSTOMER',
+                            orderSessionId: session.id,
+                        },
+                    });
+                    const gateResult = await authorize(orderAction, {
+                        traceId: traceId || conversationId || session.id,
+                        tenant: {
+                            shopId: session.shop_id,
+                            channelId: session.channel,
+                            platform: 'META_MESSENGER',
+                            customerId: session.customer_id,
+                            conversationId,
+                        },
+                        tenantRecordsMatch: true,
+                        currentDomain: 'ORDER',
+                        domainHops: 0,
+                        expectedIdempotencyKey: orderIdempotencyKey,
+                        idempotencyCommitted: false,
+                        evidenceSnapshot: summaryEvidence,
+                        materialStateRevalidated: true,
+                        customerConfirmationValid: true,
+                        merchantModeAllowsMutation: mutationsAllowed,
+                        costBudgetAvailable: true,
+                    });
+                    if (!gateResult.authorized) {
+                        return {
+                            session_id: session.id,
+                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                                pickLang(
+                                    lang,
+                                    'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
+                                    'A team member will confirm this order.'
+                                ),
+                            current_step: 'ORDER_SUMMARY',
+                            state: 'AWAITING_CONFIRMATION',
+                            step_data,
+                            completed: false,
+                            mutation_blocked: true,
+                            action_gate_reason: gateResult.reasonCode,
+                        };
                     }
 
                     // Create the actual Order record
                     let order = null;
                     let orderPrompt;
                     try {
-                        order = await OrderSessionService.createOrderFromSession(session, step_data);
+                        order = await OrderSessionService.createOrderFromSession(session, step_data, {
+                            authorization: gateResult.authorization,
+                            conversationId,
+                            confirmedSummaryHash,
+                            evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                        });
                         createdOrder = order;
                         orderPrompt = pickLang(lang,
                             `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}`,
@@ -865,8 +971,73 @@ class OrderSessionService {
                         ).catch(() => {}); // non-blocking
                     }
 
-                    // Auto-dispatch parcel with retry (fire-and-forget — does not block confirmation)
-                    setImmediate(() => OrderSessionService.dispatchParcelWithRetry(order, step_data, session.shop_id));
+                    // Courier booking is a separate material action. Authorize it
+                    // before the fire-and-forget provider call; "active" is the
+                    // stable provider alias because the delivery service resolves
+                    // the configured provider at dispatch time.
+                    let courierAuthorization = null;
+                    try {
+                        const { createProposedAction, deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
+                        const { authorize } = require('../ai/action-gate');
+                        const courierIdempotencyKey = deriveBookCourierIdempotencyKey({
+                            shopId: session.shop_id,
+                            orderId: order.id,
+                            provider: 'active',
+                        });
+                        const courierAction = createProposedAction({
+                            requestedByAgent: 'OrderAgent',
+                            actionType: 'BOOK_COURIER',
+                            domain: 'COMMERCE_OPS',
+                            shopId: session.shop_id,
+                            conversationId,
+                            idempotencyKey: courierIdempotencyKey,
+                            evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                            payload: { orderId: order.id, provider: 'active' },
+                        });
+                        const courierGate = await authorize(courierAction, {
+                            traceId: traceId || conversationId || session.id,
+                            tenant: {
+                                shopId: session.shop_id,
+                                channelId: session.channel,
+                                platform: 'META_MESSENGER',
+                                customerId: session.customer_id,
+                                conversationId,
+                            },
+                            tenantRecordsMatch: true,
+                            currentDomain: 'ORDER',
+                            domainHops: 1,
+                            expectedIdempotencyKey: courierIdempotencyKey,
+                            idempotencyCommitted: false,
+                            evidenceSnapshot: summaryEvidence,
+                            materialStateRevalidated: true,
+                            customerConfirmationValid: true,
+                            merchantModeAllowsMutation: mutationsAllowed,
+                            costBudgetAvailable: true,
+                        });
+                        if (courierGate.authorized) courierAuthorization = courierGate.authorization;
+                        else await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            session.shop_id,
+                            'active',
+                            `action_gate_denied:${courierGate.reasonCode}`
+                        );
+                    } catch (courierGateErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            session.shop_id,
+                            'active',
+                            `action_gate_failed:${courierGateErr.message}`
+                        );
+                    }
+
+                    if (courierAuthorization) {
+                        setImmediate(() => OrderSessionService.dispatchParcelWithRetry(
+                            order,
+                            step_data,
+                            session.shop_id,
+                            { authorization: courierAuthorization, evidenceSnapshotHash: summaryEvidence.snapshotHash }
+                        ));
+                    }
 
                     completed = true;
                     prompt = orderPrompt;
@@ -1166,12 +1337,38 @@ class OrderSessionService {
      * Convert a completed order session into an Order record.
      * Uses createOrderInternal (no user auth required).
      */
-    static async createOrderFromSession(session, stepData) {
+    static async createOrderFromSession(session, stepData, {
+        authorization,
+        conversationId,
+        confirmedSummaryHash,
+        evidenceSnapshotHash,
+    } = {}) {
         const { createOrderInternal } = getOrderServiceImports();
+        const { deriveCreateOrderIdempotencyKey, confirmedSummaryHash: hashSummary } = require('../ai/contracts/action.contract');
+        const { verifyAuthorization } = require('../ai/action-gate');
         const cart = OrderSessionService.getCartItems(session, stepData);
 
         if (!cart.length) {
             throw new Error('Cannot create order: no product linked to this session');
+        }
+
+        if (!conversationId) throw new Error('Conversation context is required to create an order');
+        const summaryHash = confirmedSummaryHash || stepData.confirmed_summary_hash || hashSummary(
+            OrderSessionService.buildContractOrderSummary(session, stepData)
+        );
+        const idempotencyKey = deriveCreateOrderIdempotencyKey({
+            shopId: session.shop_id,
+            conversationId,
+            orderSessionId: session.id,
+            confirmedSummaryHash: summaryHash,
+        });
+        if (!verifyAuthorization(authorization, {
+            actionType: 'CREATE_ORDER',
+            shopId: session.shop_id,
+            idempotencyKey,
+            evidenceSnapshotHash,
+        })) {
+            throw new Error('Valid CREATE_ORDER authorization is required');
         }
 
         const orderData = {
@@ -1192,11 +1389,12 @@ class OrderSessionService {
             payment_status: GATEWAY_PAYMENT_STATUS[stepData.payment_method] || 'pending',
             payment_method: stepData.payment_method || null,
             note: stepData.notes || null,
-            // Session idempotency: use session ID so a retry yields the same order
-            idempotency_key: session.id
+            // Deterministic idempotency binds tenant, conversation, session, and
+            // the exact customer-confirmed summary.
+            idempotency_key: idempotencyKey,
         };
 
-        return createOrderInternal(session.shop_id, orderData, session.id);
+        return createOrderInternal(session.shop_id, orderData, idempotencyKey);
     }
 
     // ─── Customer enrichment ──────────────────────────────────────────────────
@@ -1231,9 +1429,14 @@ class OrderSessionService {
      * @param {object} stepData — session step_data (has name, phone, address, total, notes)
      * @param {string} shopId
      */
-    static async dispatchParcel(order, stepData, shopId) {
+    static async dispatchParcel(order, stepData, shopId, { authorization, evidenceSnapshotHash } = {}) {
         const { formatForCourier } = require('../delivery/bd-phone-validator.service');
         const deliveryService = require('../delivery/delivery.service');
+        const { verifyAuthorization } = require('../ai/action-gate');
+
+        if (!verifyAuthorization(authorization, { actionType: 'BOOK_COURIER', shopId, evidenceSnapshotHash })) {
+            throw new Error('Valid BOOK_COURIER authorization is required');
+        }
 
         const orderData = {
             order_number:    order.order_number,
@@ -1373,7 +1576,7 @@ class OrderSessionService {
      * @param {object} stepData
      * @param {string} shopId
      */
-    static async dispatchParcelWithRetry(order, stepData, shopId) {
+    static async dispatchParcelWithRetry(order, stepData, shopId, options = {}) {
         const RETRY_DELAYS_MS = [5000, 25000]; // delays between attempt 1→2 and 2→3
         const MAX_ATTEMPTS = 3;
         let provider = null;
@@ -1410,7 +1613,7 @@ class OrderSessionService {
             }
 
             try {
-                return await OrderSessionService.dispatchParcel(order, stepData, shopId);
+                return await OrderSessionService.dispatchParcel(order, stepData, shopId, options);
             } catch (err) {
                 console.error(`[AutoParcel] Attempt ${attempt}/${MAX_ATTEMPTS} failed for ${order.order_number}: ${err.message}`);
 
@@ -1911,6 +2114,29 @@ class OrderSessionService {
     }
 
     // ─── Order summary ────────────────────────────────────────────────────────
+
+    static buildContractOrderSummary(session, stepData) {
+        const cart = OrderSessionService.getCartItems(session, stepData);
+        const deliveryCharge = Number(stepData.delivery_charge || 0);
+        const items = cart.map(item => ({
+            productId: item.product_id,
+            variantId: item.variant_id || null,
+            quantity: item.quantity || 1,
+            unitPrice: item.price || 0,
+            lineTotal: (item.price || 0) * (item.quantity || 1),
+        }));
+        return {
+            currency: 'BDT',
+            customerName: stepData.name,
+            customerPhone: stepData.phone,
+            address: stepData.address,
+            deliveryCharge,
+            deliveryMethod: stepData.delivery_method || 'COURIER',
+            paymentMethod: stepData.payment_method,
+            items,
+            total: items.reduce((sum, item) => sum + item.lineTotal, 0) + deliveryCharge,
+        };
+    }
 
     static generateOrderSummary(session, stepData, lang) {
         const L = lang || stepData?.language || 'bn';

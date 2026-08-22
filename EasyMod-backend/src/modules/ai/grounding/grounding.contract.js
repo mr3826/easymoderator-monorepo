@@ -102,6 +102,9 @@ const ReasonCode = Object.freeze({
  * @property {string} sourceText               - every authoritative string given to the model
  * @property {string[]} allowedUrls            - the only URLs a reply may contain
  * @property {string|null} failure             - retrieval error class, if any
+ * @property {string|null} retrievedAt         - retrieval timestamp
+ * @property {string|null} freshnessExpiresAt  - evidence expiry timestamp
+ * @property {string|null} snapshotHash        - hash of the retrieval snapshot
  */
 
 /** An empty evidence record — the safe default when nothing has been retrieved yet. */
@@ -120,6 +123,9 @@ const emptyEvidence = (shopId = null) => ({
     sourceText: '',
     allowedUrls: [],
     failure: null,
+    retrievedAt: null,
+    freshnessExpiresAt: null,
+    snapshotHash: null,
 });
 
 /**
