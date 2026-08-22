@@ -31,6 +31,7 @@ describe('app auth attempt rate limiting', () => {
             META_APP_SECRET: 'test-meta-app-secret-strong-value-0006',
             META_OAUTH_REDIRECT_URI: 'https://app.easymod.tech/channels/oauth-callback',
             PAYMENT_CALLBACK_HMAC_SECRET: 'test-payment-callback-strong-value-007',
+            AI_ACTION_GATE_SECRET: 'test-action-gate-secret-strong-value-009',
             BKASH_WEBHOOK_SECRET: 'test-bkash-webhook-strong-value-0008',
             RESEND_API_KEY: 're_test_only_not_a_real_key',
             EMAIL_FROM: 'security-test@easymod.tech',

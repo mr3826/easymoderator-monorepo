@@ -36,6 +36,7 @@ const PaymentTransaction = require('./billing/payment-transaction.entity');
 const OwnerNotification = require('./notification/owner-notification.entity');
 const OrderInvoice = require('./billing/invoice.entity');
 const DeliveryTracking = require('./order/delivery-tracking.entity');
+const CourierDispatch = require('./delivery/courier-dispatch.entity');
 const PushSubscription = require('./notification/push-subscription.entity');
 const TelegramNotificationBinding = require('./notification/telegram-notification-binding.entity');
 const CustomerDeliveryStats = require('./rto-shield/customer-delivery-stats.entity');
@@ -405,6 +406,12 @@ Order.hasMany(OrderInvoice, { foreignKey: 'order_id', as: 'invoices' });
 DeliveryTracking.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Order.hasMany(DeliveryTracking, { foreignKey: 'order_id', as: 'delivery_tracking' });
 
+// Durable courier booking claim/reconciliation state
+CourierDispatch.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+CourierDispatch.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+Shop.hasMany(CourierDispatch, { foreignKey: 'shop_id', as: 'courier_dispatches' });
+Order.hasMany(CourierDispatch, { foreignKey: 'order_id', as: 'courier_dispatches' });
+
 // Push Subscription relationships
 PushSubscription.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(PushSubscription, { foreignKey: 'shop_id', as: 'push_subscriptions' });
@@ -538,6 +545,7 @@ module.exports = {
     OwnerNotification,
     OrderInvoice,
     DeliveryTracking,
+    CourierDispatch,
     PushSubscription,
     TelegramNotificationBinding,
     PasswordResetToken,

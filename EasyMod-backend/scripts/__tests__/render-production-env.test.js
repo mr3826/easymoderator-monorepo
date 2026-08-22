@@ -42,6 +42,7 @@ function validSource(overrides = {}) {
         DELIVERY_ENCRYPTION_KEY: hex64('2'),
         CHANNEL_ENCRYPTION_KEY: hex64('3'),
         PAYMENT_CALLBACK_HMAC_SECRET: hex64('g'),
+        AI_ACTION_GATE_SECRET: hex64('i'),
         MARKETING_URL: 'https://easymod.tech',
         APP_URL: 'https://app.easymod.tech',
         API_URL: 'https://api.easymod.tech',

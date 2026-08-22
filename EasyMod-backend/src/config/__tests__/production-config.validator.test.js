@@ -5,6 +5,7 @@ const {
     validateProductionConfig,
 } = require('../production-config.validator');
 const { normalizeRenderedEnvironment } = require('../rendered-env');
+const { _private: actionGatePrivate } = require('../../modules/ai/action-gate/action-gate.service');
 
 function validEnv(overrides = {}) {
     const secret = (letter) => letter.repeat(64);
@@ -32,6 +33,7 @@ function validEnv(overrides = {}) {
         DELIVERY_ENCRYPTION_KEY: secret('2'),
         CHANNEL_ENCRYPTION_KEY: secret('3'),
         PAYMENT_CALLBACK_HMAC_SECRET: secret('g'),
+        AI_ACTION_GATE_SECRET: secret('i'),
         BKASH_WEBHOOK_SECRET: secret('h'),
         RESEND_API_KEY: 're_test_key',
         EMAIL_FROM: 'EasyModerator <no-reply@easymod.tech>',
@@ -154,6 +156,20 @@ describe('production configuration validation', () => {
 
     test('does not make development or tests require production secrets', () => {
         expect(validateProductionConfig({ NODE_ENV: 'test' })).toMatchObject({ valid: true });
+    });
+
+    test('production never falls back to the test-only Action Gate secret', () => {
+        const previousNodeEnv = process.env.NODE_ENV;
+        const previousSecret = process.env.AI_ACTION_GATE_SECRET;
+        try {
+            process.env.NODE_ENV = 'production';
+            delete process.env.AI_ACTION_GATE_SECRET;
+            expect(actionGatePrivate.getSecret()).toBeNull();
+        } finally {
+            process.env.NODE_ENV = previousNodeEnv;
+            if (previousSecret === undefined) delete process.env.AI_ACTION_GATE_SECRET;
+            else process.env.AI_ACTION_GATE_SECRET = previousSecret;
+        }
     });
 
     test('rejects marketing in the credentialed CORS allowlist', () => {

@@ -148,13 +148,18 @@ class SteadfastProvider {
             if (response.data.status === 200) {
                 return {
                     invoice: invoice,
+                    consignment_id: response.data.consignment_id || response.data.consignment?.consignment_id || null,
+                    tracking_code: response.data.tracking_code || response.data.consignment?.tracking_code || null,
                     delivery_status: response.data.delivery_status
                 };
             }
 
             throw new Error('Status check failed');
         } catch (error) {
-            throw new Error(`Steadfast status check failed: ${error.response?.data?.message || error.message}`);
+            const wrapped = new Error(`Steadfast status check failed: ${error.response?.data?.message || error.message}`);
+            wrapped.status = error.response?.status;
+            wrapped.statusCode = error.response?.status;
+            throw wrapped;
         }
     }
 

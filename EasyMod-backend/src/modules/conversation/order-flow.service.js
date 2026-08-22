@@ -142,6 +142,9 @@ function cancelMessage(language) {
  * @param {object} [params.entities]
  * @param {string} [params.language]         - 'bn' | 'en' | 'mixed'
  * @param {string[]} [params.imageUrls]
+ * @param {boolean} [params.mutationsAllowed=true] - Whether ORDER_SUMMARY may create an Order
+ * @param {string} [params.conversationId]
+ * @param {string} [params.traceId]
  * @returns {Promise<{handled: boolean, response?: string, confidence?: number,
  *                     sourceReferences?: null, meta?: object}>}
  */
@@ -153,6 +156,9 @@ async function handleOrderFlow({
     entities = {},
     language = 'mixed',
     imageUrls = [],
+    mutationsAllowed = true,
+    conversationId = null,
+    traceId = null,
 }) {
     // ── 1. Continue an active session ────────────────────────────────────────
     const active = await OrderSessionService.getActiveSession(shopId, customerChannelId);
@@ -166,13 +172,29 @@ async function handleOrderFlow({
         }
 
         const rawMessage = imageUrls.length ? { imageUrl: imageUrls[0] } : null;
-        const step = await OrderSessionService.processStep(active.id, shopId, message, rawMessage);
+        const stepOptions = { mutationsAllowed };
+        if (conversationId) stepOptions.conversationId = conversationId;
+        if (traceId) stepOptions.traceId = traceId;
+        const step = await OrderSessionService.processStep(
+            active.id,
+            shopId,
+            message,
+            rawMessage,
+            stepOptions
+        );
         return {
             handled: true,
             response: step.prompt,
             confidence: 1.0,
             sourceReferences: null,
-            meta: { order_session: 'continue', step: step.current_step, completed: !!step.completed },
+            meta: {
+                order_session: 'continue',
+                step: step.current_step,
+                state: step.state || null,
+                completed: !!step.completed,
+                mutation_blocked: !!step.mutation_blocked,
+                order: step.order || null,
+            },
         };
     }
 

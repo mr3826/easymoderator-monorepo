@@ -24,6 +24,17 @@ jest.mock('../../shop/shop.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../payment/payment-config.entity', () => ({ findAll: jest.fn() }));
 jest.mock('../../shop/shop-bd-settings', () => ({ getBdSettings: jest.fn(), hasSelfMfs: jest.fn() }));
 jest.mock('../../invoice/chat-invoice.service', () => ({ issueInvoiceForOrder: jest.fn() }));
+jest.mock('../../ai/action-gate', () => ({
+    authorize: jest.fn(async (action) => ({
+        authorized: true,
+        authorization: {
+            actionType: action.actionType,
+            shopId: action.shopId,
+            idempotencyKey: action.idempotencyKey,
+        },
+    })),
+    verifyAuthorization: jest.fn(() => true),
+}));
 
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
@@ -103,7 +114,7 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         });
         const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null, { conversationId: 'conv-1' });
         await drainImmediates();
 
         expect(OrderSessionService.dispatchParcelWithRetry).toHaveBeenCalled();
@@ -121,12 +132,57 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         issueInvoiceForOrder.mockRejectedValue(new Error('db hiccup'));
         const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null, { conversationId: 'conv-1' });
         await drainImmediates();
 
         expect(res.completed).toBe(true);
         expect(res.prompt).toContain('100001');
         expect(res.prompt).toMatch(/অর্ডার সফলভাবে|placed successfully/);
+    });
+
+    test.each([
+        'y',
+        'হ্যাঁ না',
+        'na hoile',
+        'nibo na',
+        'why so expensive?',
+        'ok kintu address change korbo',
+    ])('does not create an order for non-confirmation "%s"', async (answer) => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null, { conversationId: 'conv-1' });
+
+        expect(res.completed).toBe(false);
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
+
+    test.each(['ha', 'confirm korun', 'জি'])('accepts an exact confirmation "%s"', async (answer) => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(session, answer, null, { conversationId: 'conv-1' });
+        await drainImmediates();
+
+        expect(res.completed).toBe(true);
+        expect(createOrderInternal).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps a confirmed summary awaiting confirmation when mutations are disabled', async () => {
+        const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
+
+        const res = await OrderSessionService.handleCurrentStep(
+            session,
+            'YES',
+            null,
+            { mutationsAllowed: false }
+        );
+
+        expect(res.completed).toBe(false);
+        expect(res.mutation_blocked).toBe(true);
+        expect(res.state).toBe('AWAITING_CONFIRMATION');
+        expect(res.current_step).toBe('ORDER_SUMMARY');
+        expect(res.prompt).toMatch(/team member|টিম সদস্য/i);
+        expect(createOrderInternal).not.toHaveBeenCalled();
     });
 
     // Founder's live failure: order creation threw a 400 "Insufficient stock"
@@ -138,7 +194,7 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
         createOrderInternal.mockRejectedValue(appErr);
         const session = makeSession({ current_step: 'ORDER_SUMMARY', step_data: stepData });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null, { conversationId: 'conv-1' });
 
         expect(res.completed).toBeFalsy();
         expect(res.current_step).toBe('ORDER_SUMMARY');           // stays so they can adjust
@@ -153,7 +209,7 @@ describe('ORDER_SUMMARY confirmation → order + invoice', () => {
             step_data: { ...stepData, language: 'en' },
         });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'YES', null, { conversationId: 'conv-1' });
 
         expect(res.completed).toBeFalsy();
         expect(res.prompt).toMatch(/contact you shortly/i);       // generic, not the raw DB error
@@ -449,7 +505,7 @@ describe('multi-item order: summary, create, invoice', () => {
             step_data: stepData(),
         });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null, { conversationId: 'conv-1' });
         await drainImmediates();
 
         expect(res.completed).toBe(true);
@@ -493,7 +549,7 @@ describe('multi-item order: summary, create, invoice', () => {
             },
         });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null, { conversationId: 'conv-1' });
         await drainImmediates();
 
         expect(res.completed).toBe(true);
@@ -512,7 +568,7 @@ describe('multi-item order: summary, create, invoice', () => {
             step_data: stepData(),
         });
 
-        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null);
+        const res = await OrderSessionService.handleCurrentStep(session, 'confirm', null, { conversationId: 'conv-1' });
 
         expect(res.completed).toBeFalsy();
         expect(res.cancelled).toBe(true);

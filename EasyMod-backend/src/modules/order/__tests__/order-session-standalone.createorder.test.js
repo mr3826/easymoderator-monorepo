@@ -18,6 +18,7 @@ jest.mock('../order.service', () => ({
     createOrderInternal: jest.fn().mockResolvedValue({ id: 'ord-1', order_number: '1001', total: 1260 }),
 }));
 jest.mock('../../payment/self-mfs-handler.service', () => ({ verifyPaymentScreenshot: jest.fn() }));
+jest.mock('../../ai/action-gate', () => ({ verifyAuthorization: jest.fn(() => true) }));
 
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
@@ -42,12 +43,15 @@ describe('createOrderFromSession', () => {
             notes: null,
         };
 
-        const order = await OrderSessionService.createOrderFromSession(session, stepData);
+        const order = await OrderSessionService.createOrderFromSession(session, stepData, {
+            authorization: { actionType: 'CREATE_ORDER', shopId: 'shop-1', idempotencyKey: 'test' },
+            conversationId: 'conv-1',
+        });
 
         expect(createOrderInternal).toHaveBeenCalledTimes(1);
         const [shopIdArg, orderData, requestId] = createOrderInternal.mock.calls[0];
         expect(shopIdArg).toBe('shop-1');
-        expect(requestId).toBe('sess-1'); // session id == idempotency key (retry-safe)
+        expect(requestId).toMatch(/^[a-f0-9]{64}$/);
         expect(orderData).toEqual(expect.objectContaining({
             customer_id: 'cust-1',
             customer_name: 'Rahim',
@@ -57,7 +61,7 @@ describe('createOrderFromSession', () => {
             order_status: 'confirmed',
             payment_status: 'unpaid', // COD → unpaid
             payment_method: 'cod',
-            idempotency_key: 'sess-1',
+            idempotency_key: expect.stringMatching(/^[a-f0-9]{64}$/),
         }));
         // price omitted on purpose — the server uses the live catalog price
         expect(orderData.items).toEqual([{ product_id: 'prod-1', quantity: 1 }]);
@@ -86,7 +90,10 @@ describe('createOrderFromSession', () => {
             ],
         };
 
-        await OrderSessionService.createOrderFromSession(session, stepData);
+        await OrderSessionService.createOrderFromSession(session, stepData, {
+            authorization: { actionType: 'CREATE_ORDER', shopId: 'shop-1', idempotencyKey: 'test' },
+            conversationId: 'conv-1',
+        });
 
         const [, orderData] = createOrderInternal.mock.calls[0];
         // Catalog-priced (price omitted); one entry per cart line, quantities preserved.
@@ -100,6 +107,37 @@ describe('createOrderFromSession', () => {
         await expect(
             OrderSessionService.createOrderFromSession({ id: 's', shop_id: 'sh', product_info: null }, {})
         ).rejects.toThrow(/no product/i);
+        expect(createOrderInternal).not.toHaveBeenCalled();
+    });
+
+    test('mutationsAllowed=false leaves the confirmed session awaiting confirmation', async () => {
+        const session = {
+            id: 'sess-draft',
+            shop_id: 'shop-1',
+            current_step: 'ORDER_SUMMARY',
+            step_data: {
+                language: 'en',
+                name: 'Rahim',
+                phone: '01711111111',
+                address: 'Mirpur, Dhaka',
+                delivery_charge: 60,
+                payment_method: 'cod',
+                cart: [{ product_id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 }],
+            },
+            product_info: { id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 },
+            update: jest.fn(),
+        };
+
+        const result = await OrderSessionService.handleCurrentStep(
+            session,
+            'YES',
+            null,
+            { mutationsAllowed: false }
+        );
+
+        expect(result.current_step).toBe('ORDER_SUMMARY');
+        expect(result.state).toBe('AWAITING_CONFIRMATION');
+        expect(result.mutation_blocked).toBe(true);
         expect(createOrderInternal).not.toHaveBeenCalled();
     });
 });

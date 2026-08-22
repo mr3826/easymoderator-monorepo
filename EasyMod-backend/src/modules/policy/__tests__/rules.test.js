@@ -356,7 +356,7 @@ describe('rateLimit.rule — reserveSendSlot / releaseSendSlot (atomic reservati
 
 describe('draftMode.rule', () => {
     const rule = require('src/modules/policy/rules/draftMode.rule');
-    test.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL'])('denies when automation_mode=%s', async (mode) => {
+    test.each(['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL'])('denies when automation_mode=%s', async (mode) => {
         const r = await rule.evaluate({}, { settings: { automation_mode: mode } });
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('DRAFT_MODE');
@@ -369,5 +369,21 @@ describe('draftMode.rule', () => {
         const r = await rule.evaluate({}, {});
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('DRAFT_MODE');
+    });
+
+    // Regression guard: AI_ACTIVE is the ONLY mode that may deliver to a
+    // customer. HUMAN_ACTIVE shipped absent from the deny set and therefore
+    // auto-sent. Enumerating the persisted enum here means a mode added to the
+    // column but forgotten in NON_DELIVERING_MODES fails this test instead of
+    // silently auto-sending in production.
+    const PERSISTED_AUTOMATION_MODES = ['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT'];
+    test('AI_ACTIVE is the only persisted mode that delivers', async () => {
+        const delivering = [];
+        for (const mode of PERSISTED_AUTOMATION_MODES) {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await rule.evaluate({}, { settings: { automation_mode: mode } });
+            if (r.allow) delivering.push(mode);
+        }
+        expect(delivering).toEqual(['AI_ACTIVE']);
     });
 });

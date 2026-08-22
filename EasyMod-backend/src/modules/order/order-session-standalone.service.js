@@ -213,6 +213,64 @@ const normalizeAddMoreDecisionText = (text) => String(text || '')
     .replace(/\s+/g, ' ')
     .trim();
 
+const BARE_CONFIRMATIONS = new Set([
+    'yes', 'y', 'ok', 'okay', 'confirm', 'confirm korun', 'confirm koren',
+    'confirm koro', 'order confirm', 'ha', 'haa', 'han', 'hae', 'ji', 'jwi',
+    'জি', 'জ্বি', 'হ্যাঁ', 'ঠিক আছে', 'thik ache', 'thik ace', 'acha', 'accha',
+    'আচ্ছা', 'done', 'hmm', 'হুম', 'কনফার্ম', 'কনফার্ম করুন',
+]);
+
+const CONFIRMATION_PHRASES = new Set([
+    'order confirm korun',
+    'order confirm koren',
+    'order confirm koro',
+    'ha nibo',
+    'haa nibo',
+    'confirm kore din',
+    'confirm kore den',
+    'yes please',
+    'yes confirm',
+    'send koro',
+    'send koren',
+    'pathao',
+    'পাঠান',
+    'দিন',
+    'dien',
+    'din',
+    'nibo',
+    'nibo bhai',
+    'nilam',
+    'নিব',
+    'নিবো',
+    'নিলাম',
+    'order dibo',
+    'order korbo',
+    'order chai',
+    'করব',
+    'korbo',
+    'agree',
+    'জি',
+    'জ্বি',
+    'jwi',
+]);
+
+const NEGATION_TOKENS = new Set([
+    'na', 'nah', 'nai', 'nei', 'না', 'নাই', 'নেই', "don't", 'dont', 'no',
+]);
+
+const normalizeConfirmationText = (text) => String(text || '')
+    .normalize('NFC')
+    .toLowerCase()
+    .trim()
+    .replace(/[\p{P}\p{S}\u200d]+$/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const containsConfirmationNegation = (normalized) => {
+    const tokens = normalized.split(' ');
+    return tokens.some(token => NEGATION_TOKENS.has(token)) || normalized.includes('do not');
+};
+
 class OrderSessionService {
     /**
      * Start a new order session
@@ -339,7 +397,7 @@ class OrderSessionService {
     /**
      * Process a step in the order flow
      */
-    static async processStep(sessionId, shopId, answer, rawMessage = null) {
+    static async processStep(sessionId, shopId, answer, rawMessage = null, options = {}) {
         const session = await OrderSession.findOne({
             where: { id: sessionId, shop_id: shopId, status: 'ACTIVE' }
         });
@@ -354,7 +412,7 @@ class OrderSessionService {
         });
 
         // Process current step
-        const result = await this.handleCurrentStep(session, answer, rawMessage);
+        const result = await this.handleCurrentStep(session, answer, rawMessage, options);
 
         return result;
     }
@@ -362,7 +420,11 @@ class OrderSessionService {
     /**
      * Handle the current step in the order flow
      */
-    static async handleCurrentStep(session, answer, rawMessage) {
+    static async handleCurrentStep(session, answer, rawMessage, {
+        mutationsAllowed = true,
+        conversationId = null,
+        traceId = null,
+    } = {}) {
         const { current_step } = session;
         // Spread into a new object so Sequelize's dirty-tracking detects the change
         const step_data = { ...(session.step_data || {}) };
@@ -370,6 +432,7 @@ class OrderSessionService {
         let nextStep = current_step;
         let prompt = '';
         let completed = false;
+        let createdOrder = null;
 
         switch (current_step) {
             case 'SELECTING_PRODUCT': {
@@ -683,9 +746,8 @@ class OrderSessionService {
 
             case 'ORDER_SUMMARY': {
                 // A per-line edit ("remove the dupatta", "saree 3 ta koro") takes
-                // priority over confirmation: extractConfirmation uses includes(),
-                // so an edit phrase containing a confirm-substring must NOT place
-                // the order. Only fall through to confirm when it's not an edit.
+                // priority over confirmation. Only fall through to confirm when it
+                // is not an edit.
                 const summaryCart = OrderSessionService.getCartItems(session, step_data);
                 const edit = OrderSessionService.detectCartEdit(answer, summaryCart);
                 if (edit.action) {
@@ -696,8 +758,31 @@ class OrderSessionService {
 
                 const orderConfirmation = this.extractConfirmation(answer);
                 if (orderConfirmation) {
+                    if (!mutationsAllowed) {
+                        return {
+                            session_id: session.id,
+                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                                pickLang(
+                                    lang,
+                                    'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
+                                    'A team member will confirm this order.'
+                                ),
+                            current_step: 'ORDER_SUMMARY',
+                            state: 'AWAITING_CONFIRMATION',
+                            step_data,
+                            completed: false,
+                            mutation_blocked: true,
+                        };
+                    }
+
+                    const contractSummary = this.buildContractOrderSummary(session, step_data);
+                    const confirmedSummaryHash = require('../ai/contracts/action.contract')
+                        .confirmedSummaryHash(contractSummary);
+                    step_data.confirmed_summary_hash = confirmedSummaryHash;
+
                     // Re-check stock for EVERY line in the cart before committing.
                     const cart = OrderSessionService.getCartItems(session, step_data);
+                    let priceChanged = false;
                     for (const item of cart) {
                         if (!item.product_id) continue;
                         const stockCheck = await productSearch.checkStock(item.product_id, session.shop_id, item.quantity || 1);
@@ -712,13 +797,134 @@ class OrderSessionService {
                                 cancelled: true
                             };
                         }
+                        if (stockCheck.product?.price != null
+                            && Number(stockCheck.product.price) !== Number(item.price)) {
+                            item.price = stockCheck.product.price;
+                            priceChanged = true;
+                        }
+                    }
+
+                    if (priceChanged) step_data.cart = cart;
+
+                    const {
+                        createProposedAction,
+                        deriveCreateOrderIdempotencyKey,
+                        confirmedSummaryHash: hashSummary,
+                    } = require('../ai/contracts/action.contract');
+                    const { withEvidenceSnapshot } = require('../ai/contracts/evidence.contract');
+                    const { authorize } = require('../ai/action-gate');
+                    const { findOrderByIdempotencyKey } = require('./order-idempotency.service');
+                    const { getMutationBudgetState } = require('../ai/cost.service');
+                    const { Conversation } = require('../conversation/conversation.entity');
+                    const freshSummaryHash = priceChanged
+                        ? hashSummary(this.buildContractOrderSummary(session, step_data))
+                        : confirmedSummaryHash;
+                    const summaryEvidence = withEvidenceSnapshot({
+                        shopId: session.shop_id,
+                        sourceText: this.generateOrderSummary(session, step_data, lang),
+                        summaryHash: freshSummaryHash,
+                        productIds: cart.map(item => item.product_id).filter(Boolean),
+                    });
+                    const orderIdempotencyKey = deriveCreateOrderIdempotencyKey({
+                        shopId: session.shop_id,
+                        conversationId,
+                        orderSessionId: session.id,
+                        confirmedSummaryHash,
+                    });
+                    const matchingConversation = conversationId && session.customer_id
+                        ? await Conversation.findOne({
+                            where: {
+                                id: conversationId,
+                                shop_id: session.shop_id,
+                                customer_id: session.customer_id,
+                            },
+                            attributes: ['id', 'shop_id', 'customer_id'],
+                        }).catch(() => null)
+                        : null;
+                    const existingOrder = await findOrderByIdempotencyKey(session.shop_id, orderIdempotencyKey);
+                    const budgetState = getMutationBudgetState({ estimatedCostUsd: 0 });
+                    const tenantRecordsMatch = Boolean(
+                        matchingConversation
+                            && matchingConversation.shop_id === session.shop_id
+                            && matchingConversation.customer_id === session.customer_id
+                    );
+                    const materialStateRevalidated = !priceChanged;
+                    const customerConfirmationValid = Boolean(
+                        !priceChanged
+                            && orderConfirmation
+                            && confirmedSummaryHash === step_data.confirmed_summary_hash
+                    );
+                    const orderAction = createProposedAction({
+                        requestedByAgent: 'OrderAgent',
+                        actionType: 'CREATE_ORDER',
+                        domain: 'ORDER',
+                        shopId: session.shop_id,
+                        conversationId,
+                        idempotencyKey: orderIdempotencyKey,
+                        evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                        payload: { orderSessionId: session.id, summaryHash: confirmedSummaryHash },
+                        confirmation: {
+                            summaryHash: confirmedSummaryHash,
+                            confirmedBy: 'CUSTOMER',
+                            orderSessionId: session.id,
+                        },
+                    });
+                    const gateResult = await authorize(orderAction, {
+                        traceId: traceId || conversationId || session.id,
+                        tenant: {
+                            shopId: session.shop_id,
+                            channelId: session.channel,
+                            platform: 'META_MESSENGER',
+                            customerId: session.customer_id,
+                            conversationId,
+                        },
+                        tenantRecordsMatch,
+                        currentDomain: 'ORDER',
+                        domainHops: 0,
+                        expectedIdempotencyKey: orderIdempotencyKey,
+                        idempotencyCommitted: Boolean(existingOrder),
+                        evidenceSnapshot: summaryEvidence,
+                        materialStateRevalidated,
+                        customerConfirmationValid,
+                        merchantModeAllowsMutation: mutationsAllowed,
+                        costBudgetAvailable: budgetState.available,
+                    });
+                    if (!gateResult.authorized) {
+                        const confirmationInvalidated = priceChanged
+                            || gateResult.reasonCode === 'material_state_revalidated'
+                            || gateResult.reasonCode === 'customer_confirmation_valid';
+                        return {
+                            session_id: session.id,
+                            prompt: `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                                pickLang(
+                                    lang,
+                                    confirmationInvalidated
+                                        ? 'দাম বা অর্ডারের তথ্য পরিবর্তিত হয়েছে। নতুন সারসংক্ষেপটি আবার নিশ্চিত করুন।'
+                                        : 'একজন টিম সদস্য অর্ডারটি নিশ্চিত করবেন।',
+                                    confirmationInvalidated
+                                        ? 'The order changed. Please confirm the new summary before placing it.'
+                                        : 'A team member will confirm this order.'
+                                ),
+                            current_step: 'ORDER_SUMMARY',
+                            state: 'AWAITING_CONFIRMATION',
+                            step_data,
+                            completed: false,
+                            mutation_blocked: true,
+                            action_gate_reason: gateResult.reasonCode,
+                        };
                     }
 
                     // Create the actual Order record
                     let order = null;
                     let orderPrompt;
                     try {
-                        order = await OrderSessionService.createOrderFromSession(session, step_data);
+                        order = await OrderSessionService.createOrderFromSession(session, step_data, {
+                            authorization: gateResult.authorization,
+                            conversationId,
+                            confirmedSummaryHash,
+                            evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                        });
+                        createdOrder = order;
                         orderPrompt = pickLang(lang,
                             `✅ অর্ডার সফলভাবে সম্পন্ন হয়েছে! অর্ডার নম্বর: ${order.order_number}`,
                             `✅ Order placed successfully! Order number: ${order.order_number}`);
@@ -789,14 +995,85 @@ class OrderSessionService {
                         ).catch(() => {}); // non-blocking
                     }
 
-                    // Auto-dispatch parcel with retry (fire-and-forget — does not block confirmation)
-                    setImmediate(() => OrderSessionService.dispatchParcelWithRetry(order, step_data, session.shop_id));
+                    // Courier booking is a separate material action. Authorize it
+                    // before the fire-and-forget provider call; "active" is the
+                    // stable provider alias because the delivery service resolves
+                    // the configured provider at dispatch time.
+                    let courierAuthorization = null;
+                    try {
+                        const { createProposedAction, deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
+                        const { authorize } = require('../ai/action-gate');
+                        const existingCourierDispatch = await OrderSessionService.getCourierDispatchRecord(
+                            order,
+                            session.shop_id,
+                            'active'
+                        );
+                        const courierIdempotencyKey = deriveBookCourierIdempotencyKey({
+                            shopId: session.shop_id,
+                            orderId: order.id,
+                            provider: 'active',
+                        });
+                        const courierAction = createProposedAction({
+                            requestedByAgent: 'OrderAgent',
+                            actionType: 'BOOK_COURIER',
+                            domain: 'COMMERCE_OPS',
+                            shopId: session.shop_id,
+                            conversationId,
+                            idempotencyKey: courierIdempotencyKey,
+                            evidenceSnapshotHash: summaryEvidence.snapshotHash,
+                            payload: { orderId: order.id, provider: 'active' },
+                        });
+                        const courierGate = await authorize(courierAction, {
+                            traceId: traceId || conversationId || session.id,
+                            tenant: {
+                                shopId: session.shop_id,
+                                channelId: session.channel,
+                                platform: 'META_MESSENGER',
+                                customerId: session.customer_id,
+                                conversationId,
+                            },
+                        tenantRecordsMatch,
+                            currentDomain: 'ORDER',
+                            domainHops: 1,
+                            expectedIdempotencyKey: courierIdempotencyKey,
+                        idempotencyCommitted: existingCourierDispatch?.status === 'COMMITTED',
+                        evidenceSnapshot: summaryEvidence,
+                        materialStateRevalidated,
+                        customerConfirmationValid,
+                        merchantModeAllowsMutation: mutationsAllowed,
+                        costBudgetAvailable: budgetState.available,
+                        });
+                        if (courierGate.authorized) courierAuthorization = courierGate.authorization;
+                        else await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            session.shop_id,
+                            'active',
+                            `action_gate_denied:${courierGate.reasonCode}`
+                        );
+                    } catch (courierGateErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            session.shop_id,
+                            'active',
+                            `action_gate_failed:${courierGateErr.message}`
+                        );
+                    }
+
+                    if (courierAuthorization) {
+                        setImmediate(() => OrderSessionService.dispatchParcelWithRetry(
+                            order,
+                            step_data,
+                            session.shop_id,
+                            { authorization: courierAuthorization, evidenceSnapshotHash: summaryEvidence.snapshotHash }
+                        ));
+                    }
 
                     completed = true;
                     prompt = orderPrompt;
                 } else {
-                    nextStep = 'COLLECTING_NOTES';
-                    prompt = pickLang(lang, 'কি পরিবর্তন করতে চান?', 'What would you like to change?');
+                    nextStep = 'ORDER_SUMMARY';
+                    prompt = `${this.generateOrderSummary(session, step_data, lang)}\n\n` +
+                        pickLang(lang, 'কী পরিবর্তন করতে চান, অথবা অর্ডার নিশ্চিত করতে একটি সম্পূর্ণ নিশ্চিতকরণ লিখুন?', 'What would you like to change, or write a full confirmation to place the order?');
                 }
                 break;
             }
@@ -808,13 +1085,18 @@ class OrderSessionService {
             step_data
         });
 
-        return {
-            session_id: session.id,
-            prompt,
-            current_step: nextStep,
-            step_data,
-            completed
-        };
+                    return {
+                        session_id: session.id,
+                        prompt,
+                        current_step: nextStep,
+                        step_data,
+                        completed,
+                        order: createdOrder ? {
+                            id: createdOrder.id,
+                            order_number: createdOrder.order_number,
+                            order_status: createdOrder.order_status || 'confirmed',
+                        } : null,
+                    };
     }
 
     /**
@@ -1084,12 +1366,38 @@ class OrderSessionService {
      * Convert a completed order session into an Order record.
      * Uses createOrderInternal (no user auth required).
      */
-    static async createOrderFromSession(session, stepData) {
+    static async createOrderFromSession(session, stepData, {
+        authorization,
+        conversationId,
+        confirmedSummaryHash,
+        evidenceSnapshotHash,
+    } = {}) {
         const { createOrderInternal } = getOrderServiceImports();
+        const { deriveCreateOrderIdempotencyKey, confirmedSummaryHash: hashSummary } = require('../ai/contracts/action.contract');
+        const { verifyAuthorization } = require('../ai/action-gate');
         const cart = OrderSessionService.getCartItems(session, stepData);
 
         if (!cart.length) {
             throw new Error('Cannot create order: no product linked to this session');
+        }
+
+        if (!conversationId) throw new Error('Conversation context is required to create an order');
+        const summaryHash = confirmedSummaryHash || stepData.confirmed_summary_hash || hashSummary(
+            OrderSessionService.buildContractOrderSummary(session, stepData)
+        );
+        const idempotencyKey = deriveCreateOrderIdempotencyKey({
+            shopId: session.shop_id,
+            conversationId,
+            orderSessionId: session.id,
+            confirmedSummaryHash: summaryHash,
+        });
+        if (!verifyAuthorization(authorization, {
+            actionType: 'CREATE_ORDER',
+            shopId: session.shop_id,
+            idempotencyKey,
+            evidenceSnapshotHash,
+        })) {
+            throw new Error('Valid CREATE_ORDER authorization is required');
         }
 
         const orderData = {
@@ -1110,11 +1418,12 @@ class OrderSessionService {
             payment_status: GATEWAY_PAYMENT_STATUS[stepData.payment_method] || 'pending',
             payment_method: stepData.payment_method || null,
             note: stepData.notes || null,
-            // Session idempotency: use session ID so a retry yields the same order
-            idempotency_key: session.id
+            // Deterministic idempotency binds tenant, conversation, session, and
+            // the exact customer-confirmed summary.
+            idempotency_key: idempotencyKey,
         };
 
-        return createOrderInternal(session.shop_id, orderData, session.id);
+        return createOrderInternal(session.shop_id, orderData, idempotencyKey);
     }
 
     // ─── Customer enrichment ──────────────────────────────────────────────────
@@ -1149,9 +1458,14 @@ class OrderSessionService {
      * @param {object} stepData — session step_data (has name, phone, address, total, notes)
      * @param {string} shopId
      */
-    static async dispatchParcel(order, stepData, shopId) {
+    static async dispatchParcel(order, stepData, shopId, { authorization, evidenceSnapshotHash } = {}) {
         const { formatForCourier } = require('../delivery/bd-phone-validator.service');
         const deliveryService = require('../delivery/delivery.service');
+        const { verifyAuthorization } = require('../ai/action-gate');
+
+        if (!verifyAuthorization(authorization, { actionType: 'BOOK_COURIER', shopId, evidenceSnapshotHash })) {
+            throw new Error('Valid BOOK_COURIER authorization is required');
+        }
 
         const orderData = {
             order_number:    order.order_number,
@@ -1165,11 +1479,180 @@ class OrderSessionService {
         };
 
         try {
-            await deliveryService.createDeliveryOrder(shopId, orderData);
+            const deliveryResult = await deliveryService.createDeliveryOrder(shopId, orderData);
+            await OrderSessionService.persistDeliveryResult(order, deliveryResult);
             console.info(`[AutoParcel] Dispatched order ${order.order_number} for shop ${shopId}`);
+            return deliveryResult;
         } catch (err) {
             console.error(`[AutoParcel] Dispatch failed for order ${order.order_number}:`, err.message);
             throw err; // re-throw so dispatchParcelWithRetry can count the attempt
+        }
+    }
+
+    static async persistDeliveryResult(order, deliveryResult) {
+        const trackingNumber = deliveryResult?.tracking_code || deliveryResult?.consignment_id;
+        if (!trackingNumber) {
+            throw new Error('Courier returned no tracking reference');
+        }
+
+        if (order?.delivery_consignment_id || order?.delivery_tracking_code) {
+            return deliveryResult;
+        }
+
+        const deliveryTrackingService = require('../delivery/delivery-tracking.service');
+        await deliveryTrackingService.createTrackingRecord(order, deliveryResult);
+        return deliveryResult;
+    }
+
+    static async getCourierDispatchRecord(order, shopId, provider) {
+        const CourierDispatch = require('../delivery/courier-dispatch.entity');
+        if (!CourierDispatch || typeof CourierDispatch.findOne !== 'function') return null;
+        return CourierDispatch.findOne({
+            where: { shop_id: shopId, order_id: order.id, provider },
+        });
+    }
+
+    static async claimCourierDispatch(order, shopId, provider) {
+        const { deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
+        const CourierDispatch = require('../delivery/courier-dispatch.entity');
+        if (!CourierDispatch || typeof CourierDispatch.findOrCreate !== 'function') {
+            return { state: 'unavailable', provider, record: null };
+        }
+
+        const idempotencyKey = deriveBookCourierIdempotencyKey({
+            shopId,
+            orderId: order.id,
+            provider,
+        });
+        const [record, created] = await CourierDispatch.findOrCreate({
+            where: { shop_id: shopId, order_id: order.id, provider },
+            defaults: { idempotency_key: idempotencyKey, status: 'PENDING' },
+        });
+        if (record.status === 'COMMITTED') return { state: 'committed', provider, record };
+        return { state: created ? 'claimed' : 'existing', provider, record };
+    }
+
+    static async updateCourierDispatch(record, values) {
+        if (!record || typeof record.update !== 'function') return record;
+        await record.update(values);
+        return record;
+    }
+
+    static async lookupExistingCourierOrder(shopId, orderNumber, order = null) {
+        const deliveryService = require('../delivery/delivery.service');
+        let activeProvider;
+        try {
+            activeProvider = await deliveryService.getActiveProvider(shopId);
+        } catch (err) {
+            return { state: 'unknown', provider: null, error: err };
+        }
+
+        if (!activeProvider?.provider || !activeProvider.instance) {
+            return {
+                state: 'unknown',
+                provider: activeProvider?.provider || null,
+                error: new Error('Active courier provider could not be resolved'),
+            };
+        }
+
+        const { provider, instance } = activeProvider;
+        const localDispatch = order
+            ? await OrderSessionService.getCourierDispatchRecord(order, shopId, provider)
+            : null;
+        if (localDispatch?.status === 'COMMITTED' && (localDispatch.tracking_code || localDispatch.consignment_id)) {
+            return {
+                state: 'found',
+                provider,
+                record: localDispatch,
+                result: {
+                    provider,
+                    consignment_id: localDispatch.consignment_id || localDispatch.tracking_code,
+                    tracking_code: localDispatch.tracking_code || localDispatch.consignment_id,
+                    status: 'booked',
+                    invoice: orderNumber,
+                },
+            };
+        }
+        if (provider !== 'steadfast' || typeof instance.getOrderStatusByInvoice !== 'function') {
+            return { state: 'unsupported', provider };
+        }
+
+        try {
+            const response = await instance.getOrderStatusByInvoice(orderNumber);
+            const consignmentId = response?.consignment_id || response?.consignmentId || null;
+            const trackingCode = response?.tracking_code || response?.trackingCode || consignmentId;
+            if (!trackingCode) {
+                return {
+                    state: 'unknown',
+                    provider,
+                    error: new Error('Courier status lookup returned no tracking reference'),
+                };
+            }
+            return {
+                state: 'found',
+                provider,
+                result: {
+                    provider,
+                    consignment_id: consignmentId || trackingCode,
+                    tracking_code: trackingCode,
+                    status: response.delivery_status || response.order_status || 'booked',
+                    invoice: response.invoice || orderNumber,
+                },
+            };
+        } catch (err) {
+            const status = err?.status || err?.statusCode || err?.response?.status;
+            if (status === 404 || err?.code === 'NOT_FOUND') {
+                return { state: 'absent', provider };
+            }
+            return { state: 'unknown', provider, error: err };
+        }
+    }
+
+    static async markDispatchIndeterminate(order, shopId, provider, reason) {
+        try {
+            const localDispatch = await OrderSessionService.getCourierDispatchRecord(order, shopId, provider);
+            await OrderSessionService.updateCourierDispatch(localDispatch, {
+                status: 'INDETERMINATE',
+                error: reason,
+            });
+        } catch (err) {
+            console.error('[AutoParcel] Failed to update courier_dispatch indeterminate state:', err.message);
+        }
+
+        try {
+            if (typeof order?.update === 'function') {
+                await order.update({ delivery_status: 'dispatch_indeterminate' });
+            } else {
+                const { Order } = require('../entities');
+                await Order.update(
+                    { delivery_status: 'dispatch_indeterminate' },
+                    { where: { id: order.id } }
+                );
+            }
+        } catch (err) {
+            console.error('[AutoParcel] Failed to mark dispatch_indeterminate:', err.message);
+        }
+
+        try {
+            const merchantNotificationService = require('../notification/merchant-notification.service');
+            const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
+            await merchantNotificationService.notifyShop(
+                shopId,
+                NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED,
+                {
+                    orderId: order?.id,
+                    orderNumber: order?.order_number,
+                    provider,
+                    reason,
+                    status: 'dispatch_indeterminate',
+                },
+                {
+                    dedupeKey: `${order?.id || order?.order_number}:dispatch_indeterminate`,
+                    dedupeTtlSeconds: 24 * 60 * 60,
+                }
+            );
+        } catch (err) {
+            console.error('[AutoParcel] Failed to notify dispatch_indeterminate:', err.message);
         }
     }
 
@@ -1183,19 +1666,150 @@ class OrderSessionService {
      * @param {object} stepData
      * @param {string} shopId
      */
-    static async dispatchParcelWithRetry(order, stepData, shopId) {
+    static async dispatchParcelWithRetry(order, stepData, shopId, options = {}) {
         const RETRY_DELAYS_MS = [5000, 25000]; // delays between attempt 1→2 and 2→3
         const MAX_ATTEMPTS = 3;
+        let provider = null;
+        let dispatchRecord = null;
+
+        try {
+            const deliveryService = require('../delivery/delivery.service');
+            const activeProvider = await deliveryService.getActiveProvider(shopId);
+            provider = activeProvider?.provider || null;
+            if (provider) {
+                const claim = await OrderSessionService.claimCourierDispatch(order, shopId, provider);
+                dispatchRecord = claim.record;
+                if (claim.state === 'committed') {
+                    const result = {
+                        provider,
+                        consignment_id: dispatchRecord.consignment_id || dispatchRecord.tracking_code,
+                        tracking_code: dispatchRecord.tracking_code || dispatchRecord.consignment_id,
+                        status: 'booked',
+                        invoice: order.order_number,
+                    };
+                    await OrderSessionService.persistDeliveryResult(order, result);
+                    return result;
+                }
+                if (claim.state === 'existing') {
+                    const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number);
+                    if (existing.state === 'found') {
+                        await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
+                        return existing.result;
+                    }
+                    if (existing.state !== 'absent') {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            existing.state === 'unsupported'
+                                ? 'provider_has_no_invoice_lookup'
+                                : 'courier_status_lookup_failed'
+                        );
+                        return null;
+                    }
+                }
+            }
+        } catch (err) {
+            await OrderSessionService.markDispatchIndeterminate(order, shopId, provider || 'active', `courier_dispatch_claim_failed:${err.message}`);
+            return null;
+        }
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
+                provider = existing.provider || provider;
+                if (existing.state === 'found') {
+                    try {
+                        await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
+                        return existing.result;
+                    } catch (persistErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            `existing_courier_order_persist_failed:${persistErr.message}`
+                        );
+                        return null;
+                    }
+                }
+                if (existing.state !== 'absent') {
+                    await OrderSessionService.markDispatchIndeterminate(
+                        order,
+                        shopId,
+                        provider,
+                        existing.state === 'unsupported'
+                            ? 'provider_has_no_invoice_lookup'
+                            : 'courier_status_lookup_failed'
+                    );
+                    return null;
+                }
+            }
+
             try {
-                await OrderSessionService.dispatchParcel(order, stepData, shopId);
-                return; // success — done
+                const result = await OrderSessionService.dispatchParcel(order, stepData, shopId, options);
+                await OrderSessionService.updateCourierDispatch(dispatchRecord, {
+                    status: 'COMMITTED',
+                    consignment_id: result?.consignment_id || null,
+                    tracking_code: result?.tracking_code || null,
+                    error: null,
+                });
+                return result;
             } catch (err) {
                 console.error(`[AutoParcel] Attempt ${attempt}/${MAX_ATTEMPTS} failed for ${order.order_number}: ${err.message}`);
+
+                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
+                provider = existing.provider || provider;
+                if (existing.state === 'found') {
+                    try {
+                        const result = await OrderSessionService.persistDeliveryResult(order, existing.result);
+                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
+                            status: 'COMMITTED',
+                            consignment_id: existing.result.consignment_id,
+                            tracking_code: existing.result.tracking_code,
+                            error: null,
+                        });
+                        return result;
+                    } catch (persistErr) {
+                        await OrderSessionService.markDispatchIndeterminate(
+                            order,
+                            shopId,
+                            provider,
+                            `existing_courier_order_persist_failed:${persistErr.message}`
+                        );
+                        return null;
+                    }
+                }
+                if (existing.state !== 'absent') {
+                    await OrderSessionService.markDispatchIndeterminate(
+                        order,
+                        shopId,
+                        provider,
+                        existing.state === 'unsupported'
+                            ? 'provider_has_no_invoice_lookup'
+                            : 'courier_status_lookup_failed'
+                    );
+                    return null;
+                }
+
                 if (attempt < MAX_ATTEMPTS) {
                     await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
                 } else {
+                    await OrderSessionService.updateCourierDispatch(dispatchRecord, {
+                        status: 'FAILED',
+                        error: err.message,
+                    });
                     // All attempts exhausted — surface failure to shop owner via order record
                     try {
                         const { Order } = require('../entities');
@@ -1258,28 +1872,14 @@ class OrderSessionService {
      * Exact equality only; never substring (would reject real names like "Jia").
      */
     static isBareConfirmationWord(text) {
-        const BARE_CONFIRMATIONS = new Set([
-            'yes', 'y', 'ok', 'okay', 'confirm', 'confirm korun', 'confirm koren',
-            'confirm koro', 'order confirm', 'ha', 'haa', 'han', 'hae', 'ji', 'jwi',
-            'জি', 'জ্বি', 'হ্যাঁ', 'ঠিক আছে', 'thik ache', 'thik ace', 'acha', 'accha',
-            'আচ্ছা', 'done', 'hmm', 'হুম', 'কনফার্ম', 'কনফার্ম করুন'
-        ]);
-        return BARE_CONFIRMATIONS.has(String(text || '').toLowerCase().trim());
+        return BARE_CONFIRMATIONS.has(normalizeConfirmationText(text));
     }
 
     static extractConfirmation(text) {
-        // BD F-commerce buyers confirm with many local phrases — catch all common ones
-        const confirmations = [
-            'yes', 'y', 'হ্যাঁ', 'ha', 'haa', 'han', 'confirm', 'ok', 'okay',
-            'ঠিক আছে', 'thik ache', 'thik ace', 'thikace',
-            'send koro', 'send koren', 'pathao', 'পাঠান',
-            'দিন', 'dien', 'din',
-            'nibo', 'nibo bhai', 'nilam', 'নিব', 'নিলাম',
-            'order dibo', 'order korbo', 'order chai', 'করব', 'korbo',
-            'agree', 'done', 'ji', 'জি', 'জ্বি', 'jwi'
-        ];
-        const textLower = text.toLowerCase().trim();
-        return confirmations.some(conf => textLower.includes(conf));
+        const normalized = normalizeConfirmationText(text);
+        if (!normalized || [...normalized].length === 1) return false;
+        if (containsConfirmationNegation(normalized)) return false;
+        return BARE_CONFIRMATIONS.has(normalized) || CONFIRMATION_PHRASES.has(normalized);
     }
 
     static extractPhoneNumber(text) {
@@ -1677,6 +2277,29 @@ class OrderSessionService {
     }
 
     // ─── Order summary ────────────────────────────────────────────────────────
+
+    static buildContractOrderSummary(session, stepData) {
+        const cart = OrderSessionService.getCartItems(session, stepData);
+        const deliveryCharge = Number(stepData.delivery_charge || 0);
+        const items = cart.map(item => ({
+            productId: item.product_id,
+            variantId: item.variant_id || null,
+            quantity: item.quantity || 1,
+            unitPrice: item.price || 0,
+            lineTotal: (item.price || 0) * (item.quantity || 1),
+        }));
+        return {
+            currency: 'BDT',
+            customerName: stepData.name,
+            customerPhone: stepData.phone,
+            address: stepData.address,
+            deliveryCharge,
+            deliveryMethod: stepData.delivery_method || 'COURIER',
+            paymentMethod: stepData.payment_method,
+            items,
+            total: items.reduce((sum, item) => sum + item.lineTotal, 0) + deliveryCharge,
+        };
+    }
 
     static generateOrderSummary(session, stepData, lang) {
         const L = lang || stepData?.language || 'bn';
