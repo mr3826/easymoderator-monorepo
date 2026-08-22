@@ -17,6 +17,9 @@ jest.mock('../../delivery/delivery.service', () => ({
 jest.mock('../../delivery/delivery-tracking.service', () => ({
     createTrackingRecord: jest.fn(async () => ({ id: 'tracking-1' })),
 }));
+jest.mock('../../ai/action-gate', () => ({
+    verifyAuthorization: jest.fn(() => true),
+}));
 jest.mock('../../notification/merchant-notification.service', () => ({
     notifyShop: jest.fn(async () => ({ queued: true })),
 }));
@@ -72,7 +75,9 @@ describe('courier dispatch reconciliation', () => {
         });
         deliveryService.createDeliveryOrder.mockRejectedValueOnce(new Error('provider timeout'));
 
-        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP);
+        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP, {
+            authorization: { actionType: 'BOOK_COURIER', shopId: SHOP },
+        });
 
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);
         expect(getOrderStatusByInvoice).toHaveBeenCalledWith(order.order_number);
@@ -100,7 +105,9 @@ describe('courier dispatch reconciliation', () => {
                 status: 'pending',
             });
 
-        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP);
+        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP, {
+            authorization: { actionType: 'BOOK_COURIER', shopId: SHOP },
+        });
 
         expect(getOrderStatusByInvoice).toHaveBeenCalledTimes(2);
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(2);
@@ -114,7 +121,9 @@ describe('courier dispatch reconciliation', () => {
         });
         deliveryService.createDeliveryOrder.mockRejectedValueOnce(new Error('pathao timeout'));
 
-        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP);
+        const result = await OrderSessionService.dispatchParcelWithRetry(order, stepData, SHOP, {
+            authorization: { actionType: 'BOOK_COURIER', shopId: SHOP },
+        });
 
         expect(result).toBeNull();
         expect(deliveryService.createDeliveryOrder).toHaveBeenCalledTimes(1);

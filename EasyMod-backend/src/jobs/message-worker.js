@@ -565,6 +565,8 @@ async function processMessageJob(job) {
             imageUrls: effImageUrls,
             mutationsAllowed: aiSettings.automation_mode === 'AI_ACTIVE'
                 && channelAISettings.allow_order_creation !== false,
+            conversationId,
+            traceId: job.id || effExternalId || conversationId,
         });
     } catch (ofErr) {
         console.error(`[worker] handleOrderFlow failed for conv ${conversationId}:`, ofErr.message);

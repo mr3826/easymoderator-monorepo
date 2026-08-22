@@ -143,6 +143,8 @@ function cancelMessage(language) {
  * @param {string} [params.language]         - 'bn' | 'en' | 'mixed'
  * @param {string[]} [params.imageUrls]
  * @param {boolean} [params.mutationsAllowed=true] - Whether ORDER_SUMMARY may create an Order
+ * @param {string} [params.conversationId]
+ * @param {string} [params.traceId]
  * @returns {Promise<{handled: boolean, response?: string, confidence?: number,
  *                     sourceReferences?: null, meta?: object}>}
  */
@@ -155,6 +157,8 @@ async function handleOrderFlow({
     language = 'mixed',
     imageUrls = [],
     mutationsAllowed = true,
+    conversationId = null,
+    traceId = null,
 }) {
     // ── 1. Continue an active session ────────────────────────────────────────
     const active = await OrderSessionService.getActiveSession(shopId, customerChannelId);
@@ -168,12 +172,15 @@ async function handleOrderFlow({
         }
 
         const rawMessage = imageUrls.length ? { imageUrl: imageUrls[0] } : null;
+        const stepOptions = { mutationsAllowed };
+        if (conversationId) stepOptions.conversationId = conversationId;
+        if (traceId) stepOptions.traceId = traceId;
         const step = await OrderSessionService.processStep(
             active.id,
             shopId,
             message,
             rawMessage,
-            { mutationsAllowed }
+            stepOptions
         );
         return {
             handled: true,

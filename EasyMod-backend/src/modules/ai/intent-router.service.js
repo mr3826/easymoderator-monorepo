@@ -24,6 +24,7 @@ const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
 const grounding = require('./grounding');
+const { withEvidenceSnapshot } = require('./contracts/evidence.contract');
 const CACHE_TTL = parseInt(process.env.INTENT_CACHE_TTL_SECONDS || '1800', 10);
 const SEMANTIC_THRESHOLD = parseFloat(process.env.SEMANTIC_SCORE_THRESHOLD || '0.82');
 const CONTEXT_WINDOW = 10; // last N messages passed to LLM verbatim
@@ -665,6 +666,7 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
         });
     evidence.knowledgeIds = knowledge.knowledgeIds;
     evidence.knowledgeFound = Boolean(knowledge.snippets);
+    Object.assign(evidence, withEvidenceSnapshot(evidence));
 
     for (const product of [...evidence.verifiedProducts, ...evidence.relatedProducts]) {
         sourceReferences.push({ kind: 'product', id: product.id, title: product.name });
@@ -738,6 +740,11 @@ const _callLlm = async ({ shopId, message, history, conversationId, language, sy
             ...grounding.extractUrls(knowledge.snippets),
         );
     }
+
+    // Product retrieval adds knowledge and prompt source text after the pure
+    // evidence resolver returns. Re-hash the complete snapshot before generation
+    // so Action Gate and the outbound verifier see exactly the same evidence.
+    Object.assign(evidence, withEvidenceSnapshot(evidence));
 
     const effectiveProvider = preferredProvider;
 
