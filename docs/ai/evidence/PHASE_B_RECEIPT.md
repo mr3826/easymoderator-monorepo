@@ -39,6 +39,31 @@ Protection was restored and read back on `2026-08-23` with strict
 `PR Merge Gate` and `Security Scan` contexts, admin enforcement, force-push and
 deletion denial, and required conversation resolution.
 
+## Production Meta Credential Correction
+
+PR [`#72`](https://github.com/mr3826/easymoderator-monorepo/pull/72) merged
+between C3 and C4 and is recorded here because it changed production identity,
+not Phase B runtime behaviour.
+
+Production OAuth was initiating against Meta App ID `1609451646619088` while the
+only app this account holds a role on — and the app every review document names
+— is `2040799330176198`. Production's `META_APP_SECRET` did not belong to
+`2040799330176198` either, so a webhook POST signed with that app's real secret
+returned `403` from `https://api.easymod.tech/webhooks/meta`: every genuine
+delivery from the owned app was being rejected. Both repository secrets were
+rotated together, because correcting only the App ID would have left OAuth code
+exchange broken.
+
+The root cause is that `META_APP_ID` and `META_APP_SECRET` reach the deploy from
+two differently-named secrets (`VITE_META_APP_ID` feeds `META_APP_ID`), so
+nothing coupled them. `#72` adds the coupling as a deploy-time gate: one Graph
+`client_credentials` call fails the deploy when the pair does not resolve to a
+single Meta app. Neither value is printed.
+
+Secret rotation is a human-custody gate under `CONTRIBUTING-AI.md` §3. This
+entry exists so the rotation is visible in the Phase B evidence trail rather
+than only in a pull request body.
+
 ## Evaluation Harness Correction
 
 The original Phase B receipt counted 241 fixtures, including ten synthetic
@@ -118,6 +143,15 @@ because a turn that delivered at 7.9 seconds must not send a contradictory
 reassurance afterward. The five- and eight-second timers share the same
 Redis-durable holding key for a turn/recovery kind, so one retry cannot send a
 second holding message.
+
+The correction PRs `#69`–`#73` were developed on branches named `phase-c/c1`
+through `phase-c/c4`. Those names refer to the four correction slices, **not**
+to `ROLLOUT_PLAN.md` Phase C (Merchant readiness: catalog, policy, payment,
+delivery, and FAQ completeness scoring), which has not started. Phase B itself
+cannot be marked complete until it carries a signed evidence receipt
+(`ROLLOUT_PLAN.md` §1), and `signedBy` is still `[]`. Read `phase-c/*` in the
+branch history as "Phase B correction", and do not treat those merges as
+evidence of rollout Phase C progress.
 
 ## Meaning Of “Signed”
 
