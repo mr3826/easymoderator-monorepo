@@ -13,6 +13,7 @@ const Order = require('./order/order.entity');
 const OrderReturn = require('./order/order-return.entity');
 const OrderItem = require('./order/order-item.entity');
 const { Conversation, Message } = require('./conversation/conversation.entity');
+const ConversationTurn = require('./conversation/conversation-turn.entity');
 const AuditLog = require('./audit/audit-log.entity');
 const IdempotencyKey = require('./audit/idempotency-key.entity');
 const DeliveryIntegration = require('./delivery/delivery-integration.entity');
@@ -294,6 +295,28 @@ Conversation.belongsTo(Customer, {
     as: 'customer'
 });
 
+Conversation.hasMany(ConversationTurn, {
+    foreignKey: 'conversation_id',
+    as: 'turns',
+    onDelete: 'CASCADE',
+});
+
+ConversationTurn.belongsTo(Conversation, {
+    foreignKey: 'conversation_id',
+    as: 'conversation',
+});
+
+Shop.hasMany(ConversationTurn, {
+    foreignKey: 'shop_id',
+    as: 'conversation_turns',
+    onDelete: 'CASCADE',
+});
+
+ConversationTurn.belongsTo(Shop, {
+    foreignKey: 'shop_id',
+    as: 'shop',
+});
+
 // Define Conversation-Message relationship
 Conversation.hasMany(Message, {
     foreignKey: 'conversation_id',
@@ -522,6 +545,7 @@ module.exports = {
     OrderItem,
     Conversation,
     Message,
+    ConversationTurn,
     AuditLog,
     IdempotencyKey,
     DeliveryIntegration,
