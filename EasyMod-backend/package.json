@@ -37,6 +37,7 @@
     "backup:media:verify": "node scripts/restore-media.js verify",
     "setup:monitoring": "node scripts/setup-monitoring.js",
     "launch:check": "node scripts/launch-readiness.js",
+    "eval:bd": "node scripts/bd-eval/run-eval.js",
     "test:csrf": "node scripts/test-csrf.js",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",

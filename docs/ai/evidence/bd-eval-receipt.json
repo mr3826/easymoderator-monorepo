@@ -1,0 +1,494 @@
+{
+  "release": "phase-b-seed",
+  "corpusStatus": "SEED",
+  "dateRange": {
+    "from": "2026-08-22T00:00:00.000Z",
+    "to": "2026-08-22T00:00:00.000Z"
+  },
+  "releaseNotes": "Engineering seed receipt; QA sign-off and human signatures are pending.",
+  "contractVersion": "1.0",
+  "registryVersion": "1.0.0",
+  "promptVersion": "none-deterministic-shadow",
+  "corpusVersion": "sha256:ef09de24eb494ea85d0fca01a9c0e387db7fec9e00b49610fb9a9058134ba0b8",
+  "labelledTurns": 241,
+  "shopCount": 3,
+  "localeCounts": {
+    "bn": 61,
+    "banglish": 60,
+    "en": 60,
+    "mixed": 60
+  },
+  "denominators": {
+    "domain": 241,
+    "intent": 241,
+    "falsePurchaseStarts": 231,
+    "falseOrderCreations": 241,
+    "handoffRecall": 70,
+    "negatedPurchase": 10,
+    "providerFallback": 0
+  },
+  "domainAccuracy": {
+    "successes": 195,
+    "denominator": 241,
+    "value": 0.809129,
+    "confidenceInterval95": {
+      "lower": 0.754814,
+      "upper": 0.853743
+    }
+  },
+  "intentMacroAccuracy": 0.746694,
+  "perClassAccuracy": {
+    "STOP_OPT_OUT": {
+      "correct": 9,
+      "denominator": 10,
+      "accuracy": 0.9,
+      "confidenceInterval95": {
+        "lower": 0.595844,
+        "upper": 0.982124
+      }
+    },
+    "GREETING": {
+      "correct": 9,
+      "denominator": 10,
+      "accuracy": 0.9,
+      "confidenceInterval95": {
+        "lower": 0.595844,
+        "upper": 0.982124
+      }
+    },
+    "GENERAL_CHAT_OR_UNKNOWN": {
+      "correct": 8,
+      "denominator": 11,
+      "accuracy": 0.727273,
+      "confidenceInterval95": {
+        "lower": 0.43435,
+        "upper": 0.902541
+      }
+    },
+    "PRODUCT_INQUIRY": {
+      "correct": 7,
+      "denominator": 10,
+      "accuracy": 0.7,
+      "confidenceInterval95": {
+        "lower": 0.396773,
+        "upper": 0.892211
+      }
+    },
+    "PRODUCT_ATTRIBUTE": {
+      "correct": 9,
+      "denominator": 10,
+      "accuracy": 0.9,
+      "confidenceInterval95": {
+        "lower": 0.595844,
+        "upper": 0.982124
+      }
+    },
+    "PRODUCT_AVAILABILITY": {
+      "correct": 5,
+      "denominator": 10,
+      "accuracy": 0.5,
+      "confidenceInterval95": {
+        "lower": 0.23659,
+        "upper": 0.76341
+      }
+    },
+    "PRODUCT_PHOTO_LOOKUP": {
+      "correct": 10,
+      "denominator": 10,
+      "accuracy": 1,
+      "confidenceInterval95": {
+        "lower": 0.72246,
+        "upper": 1
+      }
+    },
+    "FAQ_KNOWLEDGE_QUESTION": {
+      "correct": 8,
+      "denominator": 10,
+      "accuracy": 0.8,
+      "confidenceInterval95": {
+        "lower": 0.490157,
+        "upper": 0.943319
+      }
+    },
+    "DELIVERY_POLICY": {
+      "correct": 9,
+      "denominator": 10,
+      "accuracy": 0.9,
+      "confidenceInterval95": {
+        "lower": 0.595844,
+        "upper": 0.982124
+      }
+    },
+    "DELIVERY_CHARGE": {
+      "correct": 17,
+      "denominator": 20,
+      "accuracy": 0.85,
+      "confidenceInterval95": {
+        "lower": 0.639577,
+        "upper": 0.947632
+      }
+    },
+    "PAYMENT_POLICY": {
+      "correct": 17,
+      "denominator": 20,
+      "accuracy": 0.85,
+      "confidenceInterval95": {
+        "lower": 0.639577,
+        "upper": 0.947632
+      }
+    },
+    "PAYMENT_METHODS": {
+      "correct": 10,
+      "denominator": 10,
+      "accuracy": 1,
+      "confidenceInterval95": {
+        "lower": 0.72246,
+        "upper": 1
+      }
+    },
+    "ORDER_STATUS_LOOKUP": {
+      "correct": 10,
+      "denominator": 10,
+      "accuracy": 1,
+      "confidenceInterval95": {
+        "lower": 0.72246,
+        "upper": 1
+      }
+    },
+    "PURCHASE_INTENT_START": {
+      "correct": 9,
+      "denominator": 10,
+      "accuracy": 0.9,
+      "confidenceInterval95": {
+        "lower": 0.595844,
+        "upper": 0.982124
+      }
+    },
+    "ORDER_SESSION_CHECKOUT": {
+      "correct": 0,
+      "denominator": 10,
+      "accuracy": 0,
+      "confidenceInterval95": {
+        "lower": 0,
+        "upper": 0.27754
+      }
+    },
+    "CART_EDIT_OR_ADD_MORE": {
+      "correct": 4,
+      "denominator": 10,
+      "accuracy": 0.4,
+      "confidenceInterval95": {
+        "lower": 0.168178,
+        "upper": 0.68733
+      }
+    },
+    "ORDER_SESSION_CANCEL": {
+      "correct": 8,
+      "denominator": 10,
+      "accuracy": 0.8,
+      "confidenceInterval95": {
+        "lower": 0.490157,
+        "upper": 0.943319
+      }
+    },
+    "SELF_MFS_PAYMENT_VERIFICATION": {
+      "correct": 10,
+      "denominator": 10,
+      "accuracy": 1,
+      "confidenceInterval95": {
+        "lower": 0.72246,
+        "upper": 1
+      }
+    },
+    "SENTIMENT_HANDOFF": {
+      "correct": 8,
+      "denominator": 10,
+      "accuracy": 0.8,
+      "confidenceInterval95": {
+        "lower": 0.490157,
+        "upper": 0.943319
+      }
+    },
+    "ORDER_POST_PURCHASE_REQUEST": {
+      "correct": 8,
+      "denominator": 10,
+      "accuracy": 0.8,
+      "confidenceInterval95": {
+        "lower": 0.490157,
+        "upper": 0.943319
+      }
+    },
+    "HUMAN_HANDOFF_REQUEST": {
+      "correct": 7,
+      "denominator": 10,
+      "accuracy": 0.7,
+      "confidenceInterval95": {
+        "lower": 0.396773,
+        "upper": 0.892211
+      }
+    },
+    "LOW_CONFIDENCE_OR_GROUNDING_FAILURE": {
+      "correct": 0,
+      "denominator": 10,
+      "accuracy": 0,
+      "confidenceInterval95": {
+        "lower": 0,
+        "upper": 0.27754
+      }
+    }
+  },
+  "falsePurchaseStarts": {
+    "successes": 4,
+    "denominator": 231,
+    "value": 0.017316,
+    "confidenceInterval95": {
+      "lower": 0.006754,
+      "upper": 0.04367
+    }
+  },
+  "falseOrderCreations": {
+    "successes": 0,
+    "denominator": 241,
+    "value": 0,
+    "confidenceInterval95": {
+      "lower": 0,
+      "upper": 0.01569
+    }
+  },
+  "handoffRecall": {
+    "successes": 32,
+    "denominator": 70,
+    "value": 0.457143,
+    "confidenceInterval95": {
+      "lower": 0.345726,
+      "upper": 0.573019
+    }
+  },
+  "negatedPurchaseSafety": {
+    "successes": 10,
+    "denominator": 10,
+    "value": 1,
+    "confidenceInterval95": {
+      "lower": 0.72246,
+      "upper": 1
+    }
+  },
+  "slotAccuracy": {
+    "successes": 14,
+    "denominator": 20,
+    "value": 0.7,
+    "confidenceInterval95": {
+      "lower": 0.481023,
+      "upper": 0.854525
+    }
+  },
+  "p50TurnLatencyMs": 4,
+  "p95TurnLatencyMs": 7,
+  "unsafeShadowActions": 0,
+  "shadowMutationCandidates": 13,
+  "shadowMutationExecutions": 0,
+  "shadowSafetyEvaluation": {
+    "evaluatedCandidates": 13,
+    "unsafeCandidates": 0,
+    "mutationExecutionPolicy": "SHADOW_NO_MUTATION"
+  },
+  "providerFallbackRate": null,
+  "providerFallbackNumerator": 0,
+  "providerFallbackDenominator": 0,
+  "latencyMeasurement": "deterministic seed-fixture clock; production timing pending QA traffic",
+  "localeSlices": {
+    "bn": {
+      "denominator": 61,
+      "shopCount": 3,
+      "domainAccuracy": {
+        "successes": 50,
+        "denominator": 61,
+        "value": 0.819672,
+        "confidenceInterval95": {
+          "lower": 0.705256,
+          "upper": 0.89621
+        }
+      },
+      "intentAccuracy": {
+        "successes": 44,
+        "denominator": 61,
+        "value": 0.721311,
+        "confidenceInterval95": {
+          "lower": 0.598283,
+          "upper": 0.818116
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    "banglish": {
+      "denominator": 60,
+      "shopCount": 3,
+      "domainAccuracy": {
+        "successes": 48,
+        "denominator": 60,
+        "value": 0.8,
+        "confidenceInterval95": {
+          "lower": 0.68218,
+          "upper": 0.881716
+        }
+      },
+      "intentAccuracy": {
+        "successes": 45,
+        "denominator": 60,
+        "value": 0.75,
+        "confidenceInterval95": {
+          "lower": 0.627677,
+          "upper": 0.842236
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    "en": {
+      "denominator": 60,
+      "shopCount": 3,
+      "domainAccuracy": {
+        "successes": 48,
+        "denominator": 60,
+        "value": 0.8,
+        "confidenceInterval95": {
+          "lower": 0.68218,
+          "upper": 0.881716
+        }
+      },
+      "intentAccuracy": {
+        "successes": 48,
+        "denominator": 60,
+        "value": 0.8,
+        "confidenceInterval95": {
+          "lower": 0.68218,
+          "upper": 0.881716
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    "mixed": {
+      "denominator": 60,
+      "shopCount": 3,
+      "domainAccuracy": {
+        "successes": 49,
+        "denominator": 60,
+        "value": 0.816667,
+        "confidenceInterval95": {
+          "lower": 0.7008,
+          "upper": 0.894423
+        }
+      },
+      "intentAccuracy": {
+        "successes": 45,
+        "denominator": 60,
+        "value": 0.75,
+        "confidenceInterval95": {
+          "lower": 0.627677,
+          "upper": 0.842236
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    }
+  },
+  "shopSlices": {
+    "seed-shop-dhaka": {
+      "denominator": 81,
+      "shopCount": 1,
+      "domainAccuracy": {
+        "successes": 65,
+        "denominator": 81,
+        "value": 0.802469,
+        "confidenceInterval95": {
+          "lower": 0.702954,
+          "upper": 0.874593
+        }
+      },
+      "intentAccuracy": {
+        "successes": 60,
+        "denominator": 81,
+        "value": 0.740741,
+        "confidenceInterval95": {
+          "lower": 0.635954,
+          "upper": 0.823726
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    "seed-shop-chattogram": {
+      "denominator": 80,
+      "shopCount": 1,
+      "domainAccuracy": {
+        "successes": 66,
+        "denominator": 80,
+        "value": 0.825,
+        "confidenceInterval95": {
+          "lower": 0.727423,
+          "upper": 0.892795
+        }
+      },
+      "intentAccuracy": {
+        "successes": 62,
+        "denominator": 80,
+        "value": 0.775,
+        "confidenceInterval95": {
+          "lower": 0.67213,
+          "upper": 0.852669
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    },
+    "seed-shop-sylhet": {
+      "denominator": 80,
+      "shopCount": 1,
+      "domainAccuracy": {
+        "successes": 64,
+        "denominator": 80,
+        "value": 0.8,
+        "confidenceInterval95": {
+          "lower": 0.699536,
+          "upper": 0.872973
+        }
+      },
+      "intentAccuracy": {
+        "successes": 60,
+        "denominator": 80,
+        "value": 0.75,
+        "confidenceInterval95": {
+          "lower": 0.645151,
+          "upper": 0.831939
+        }
+      },
+      "dateRange": {
+        "from": "2026-08-22T00:00:00.000Z",
+        "to": "2026-08-22T00:00:00.000Z"
+      }
+    }
+  },
+  "signedBy": [],
+  "measuredAt": "2026-08-22T00:00:00.000Z",
+  "declaredMinimums": {
+    "labelledFixtures": 200,
+    "shops": 3,
+    "locales": 4,
+    "boundaryPhrases": 4
+  },
+  "receiptHash": "sha256:ccd265c2d7fe0fbaa10b6ccc4709e988d55ede3ea470db2ba5826a96a9136557"
+}
