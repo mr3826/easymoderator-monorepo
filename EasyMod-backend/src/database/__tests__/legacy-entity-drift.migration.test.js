@@ -13,6 +13,7 @@ describe('20260823_002_reconcile_legacy_entity_drift', () => {
         expect(migration.name).toBe('20260823_002_reconcile_legacy_entity_drift');
         const sql = await run('up');
         expect(sql).toMatch(/payment_configs[\s\S]*credentials TYPE TEXT/);
+        expect(sql).toContain("credentials_type = 'jsonb'");
         expect(sql).toContain('payment_configs ALTER COLUMN provider DROP NOT NULL');
         expect(sql).toContain('product_variants ALTER COLUMN shop_id DROP NOT NULL');
         expect(sql).toContain('product_variants ALTER COLUMN name DROP NOT NULL');
