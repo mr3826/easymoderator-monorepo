@@ -8,26 +8,69 @@ module.exports = {
         // PaymentConfig encrypts credentials as an iv:ciphertext string. The
         // squash-era JSONB column rejects that runtime value.
         await sequelize.query(`
-            ALTER TABLE payment_configs
-            ALTER COLUMN credentials DROP DEFAULT;
-        `);
-        await sequelize.query(`
-            ALTER TABLE payment_configs
-            ALTER COLUMN credentials TYPE TEXT
-            USING CASE
-                WHEN credentials IS NULL THEN NULL
-                WHEN jsonb_typeof(credentials) = 'string' THEN credentials #>> '{}'
-                ELSE credentials::text
-            END;
-        `);
-        // gateway is the current entity field; provider is retained only for
-        // legacy reads and must not block current inserts.
-        await sequelize.query(`ALTER TABLE payment_configs ALTER COLUMN provider DROP NOT NULL;`);
+            DO $migration$
+            DECLARE credentials_type TEXT;
+            BEGIN
+                SELECT data_type
+                  INTO credentials_type
+                  FROM information_schema.columns
+                 WHERE table_schema = current_schema()
+                   AND table_name = 'payment_configs'
+                   AND column_name = 'credentials';
 
-        // ProductVariant derives shop ownership from its Product association and
-        // uses option_name/option_value instead of the old name/shop_id fields.
-        await sequelize.query(`ALTER TABLE product_variants ALTER COLUMN shop_id DROP NOT NULL;`);
-        await sequelize.query(`ALTER TABLE product_variants ALTER COLUMN name DROP NOT NULL;`);
+                IF credentials_type IS NOT NULL THEN
+                    EXECUTE 'ALTER TABLE payment_configs ALTER COLUMN credentials DROP DEFAULT';
+                END IF;
+
+                IF credentials_type = 'jsonb' THEN
+                    EXECUTE $sql$
+                        ALTER TABLE payment_configs
+                        ALTER COLUMN credentials TYPE TEXT
+                        USING CASE
+                            WHEN credentials IS NULL THEN NULL
+                            WHEN jsonb_typeof(credentials) = 'string' THEN credentials #>> '{}'
+                            ELSE credentials::text
+                        END;
+                    $sql$;
+                END IF;
+            END
+            $migration$;
+        `);
+        // Legacy columns may already have been removed by the entity-shaped
+        // production schema. Drop the constraints only when the columns exist.
+        await sequelize.query(`
+            DO $migration$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'payment_configs'
+                      AND column_name = 'provider'
+                ) THEN
+                    EXECUTE 'ALTER TABLE payment_configs ALTER COLUMN provider DROP NOT NULL';
+                END IF;
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'product_variants'
+                      AND column_name = 'shop_id'
+                ) THEN
+                    EXECUTE 'ALTER TABLE product_variants ALTER COLUMN shop_id DROP NOT NULL';
+                END IF;
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'product_variants'
+                      AND column_name = 'name'
+                ) THEN
+                    EXECUTE 'ALTER TABLE product_variants ALTER COLUMN name DROP NOT NULL';
+                END IF;
+            END
+            $migration$;
+        `);
     },
 
     down: async (sequelize) => {
