@@ -1,163 +1,147 @@
 /**
- * Payment Settings — Playwright System Tests
- * Tests Self MFS vs Merchant API toggle for bKash, Nagad, Rocket
+ * Payment Settings - Playwright system tests.
+ *
+ * Tests the current COD + bKash payment gateway UI. Nagad and Rocket are not
+ * rendered in the current component. Merchant API mode is tested as
+ * presentation only because the backend does not support merchant credentials
+ * under the self-mfs gateway.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const mockUser = { id: 'user-1', full_name: 'Test Owner', email: 'owner@shop.bd' };
 const mockShop = { id: 'shop-1', unique_code: 'SHOP1', shop_name: 'My BD Shop', role: 'owner' };
 
-const mockPaymentSettings = {
-    bkash: { enabled: true, mfs_mode: 'self', phone: '01711000000' },
-    nagad: { enabled: false, mfs_mode: 'self', phone: '' },
-    rocket: { enabled: false, mfs_mode: 'self', phone: '' }
-};
+function jsonResponse(data: unknown, status = 200) {
+    return {
+        status,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: status < 400, data }),
+    };
+}
 
-const mockMerchantSettings = {
-    bkash: { enabled: true, mfs_mode: 'merchant', app_key: 'app-key-123', app_secret: 'app-secret-456', username: 'merchant@shop.bd', password: 'securepass' },
-    nagad: { enabled: false, mfs_mode: 'self', phone: '' },
-    rocket: { enabled: false, mfs_mode: 'self', phone: '' }
-};
-
-async function setupRoutes(page: any, paymentData = mockPaymentSettings) {
+async function setupRoutes(page: Page, options: { savedConfigs?: any[] } = {}) {
     let authenticated = false;
-    await page.route('**/api/**', async (route: any) => {
+    const savedConfigs = options.savedConfigs || [];
+
+    await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route) => {
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
 
-        if (path === '/api/csrf') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ csrfToken: 'csrf-test' }) });
+        if (path === '/api/csrf') return route.fulfill(jsonResponse({ csrfToken: 'csrf-test' }));
         if (path === '/api/auth/signin' && method === 'POST') {
             authenticated = true;
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
+            return route.fulfill(jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] }));
         }
         if (path === '/api/auth/me') {
-            if (!authenticated) return route.fulfill({ status: 401, body: '{"success":false}', contentType: 'application/json' });
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
+            return route.fulfill(authenticated
+                ? jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] })
+                : jsonResponse({}, 401));
         }
-        if (path.match(/\/api\/shops\/[\w-]+\/settings\/payment/) && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: paymentData }) });
-        if (path.match(/\/api\/shops\/[\w-]+\/settings\/payment/) && method === 'PUT') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: paymentData }) });
+        if (path === '/api/payment/config' && method === 'GET') {
+            return route.fulfill(jsonResponse(savedConfigs));
+        }
+        if (path === '/api/payment/config/test' && method === 'POST') {
+            return route.fulfill(jsonResponse({ success: true, message: 'Connection verified' }));
+        }
+        if (path === '/api/payment/config' && method === 'POST') {
+            return route.fulfill(jsonResponse({ id: 'cfg-1', gateway: 'self-mfs', is_enabled: false }));
+        }
+        if (path.startsWith('/api/payment/config/') && method === 'DELETE') {
+            return route.fulfill(jsonResponse({ success: true }));
+        }
+        if (path === '/api/shop/me') {
+            return route.fulfill(jsonResponse({ ...mockShop, settings: {} }));
+        }
+        if (path === '/api/shop/platform-priority') {
+            return route.fulfill(jsonResponse({ payment: [], delivery: [] }));
+        }
+        if (path === '/api/shop/update') {
+            return route.fulfill(jsonResponse({}));
+        }
+        if (path === '/api/notifications/in-app') {
+            return route.fulfill(jsonResponse([]));
+        }
+        if (path.startsWith('/api/subscription')) {
+            return route.fulfill(jsonResponse({ plan_code: 'FREE', plan_name: 'Free', features: {} }));
+        }
 
-        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true,"data":{}}' });
+        return route.fulfill(jsonResponse({}));
     });
 }
 
-async function loginAndGo(page: any, path = '/settings/payment') {
+async function loginAndGo(page: Page) {
     await page.goto('/signin');
-    await page.fill('input[type="email"]', 'owner@shop.bd');
-    await page.fill('input[type="password"]', 'password123');
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/dashboard|settings/);
-    await page.goto(path);
+    await page.getByLabel(/email/i).fill(mockUser.email);
+    await page.getByLabel(/password/i).fill('password123');
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto('/manage-shop/payment-settings');
+    // Wait for the Suspense-loaded PaymentSettings component to mount
+    await expect(page.getByRole('heading', { name: 'Payment Settings' })).toBeVisible();
+    // Gateway cards render after lazy chunk loads; allow extra time
+    await expect(page.getByText('Cash on Delivery')).toBeVisible({ timeout: 15_000 });
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-test('payment settings page loads', async ({ page }) => {
+test('payment settings page loads with COD and bKash', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('bKash').or(page.getByText('Payment'))).toBeVisible();
+
+    await expect(page.getByText('Cash on Delivery')).toBeVisible();
+    await expect(page.getByText('bKash', { exact: true })).toBeVisible();
 });
 
-test('bKash payment section is visible', async ({ page }) => {
+test('bKash expand reveals self-MFS phone input', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('bKash')).toBeVisible();
+
+    // Locate the bKash gateway card by its unique text content, then click the expand button
+    const bkashCard = page.locator('div.border.border-gray-200', { hasText: 'bKash' }).first();
+    await bkashCard.locator('button.p-2').click();
+
+    await expect(page.getByPlaceholder('01XXXXXXXXX')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: /Self MFS/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Merchant API/i })).toBeVisible();
 });
 
-test('Nagad payment section is visible', async ({ page }) => {
+test('save bKash self-MFS calls test then save endpoint', async ({ page }) => {
     await setupRoutes(page);
-    await loginAndGo(page);
-    await expect(page.getByText('Nagad')).toBeVisible();
-});
+    let testCalled = false;
+    let saveCalled = false;
 
-test('Rocket payment section is visible', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await expect(page.getByText('Rocket')).toBeVisible();
-});
-
-test('Self MFS mode shows phone number field', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    // Self MFS mode is default — phone field should be visible
-    await expect(page.locator('input[type="tel"], input[placeholder*="phone"], input[name*="phone"]').first()).toBeVisible();
-});
-
-test('Merchant API mode shows credential fields', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    // Find mode toggle and switch to Merchant
-    const merchantRadio = page.getByLabel(/merchant api/i).or(page.getByText(/merchant api/i));
-    if (await merchantRadio.isVisible()) {
-        await merchantRadio.click();
-        await expect(
-            page.locator('input[name*="app_key"], input[placeholder*="App Key"], input[name*="appKey"]').first()
-        ).toBeVisible({ timeout: 3000 });
-    }
-});
-
-test('switching to Merchant mode hides phone field', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    const merchantRadio = page.getByLabel(/merchant api/i).or(page.getByText(/merchant api/i));
-    if (await merchantRadio.isVisible()) {
-        await merchantRadio.click();
-        await expect(page.locator('input[placeholder*="01"]').first()).not.toBeVisible({ timeout: 3000 });
-    }
-});
-
-test('Self MFS info tooltip or description is visible', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    // Info icon or description about self MFS screenshot verification
-    await expect(
-        page.getByText(/screenshot/i).or(page.locator('[data-testid="mfs-info"], [title*="MFS"], [aria-label*="info"]').first())
-    ).toBeVisible({ timeout: 5000 });
-});
-
-test('save Self MFS settings calls API with mfs_mode: self', async ({ page }) => {
-    await setupRoutes(page);
-    let savedData: any = null;
-    await page.route('**/api/shops/*/settings/payment', async (route) => {
-        if (route.request().method() === 'PUT') {
-            savedData = JSON.parse(route.request().postData() || '{}');
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: savedData }) });
-        }
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockPaymentSettings }) });
+    await page.route((url) => new URL(url).pathname === '/api/payment/config/test', async (route) => {
+        testCalled = true;
+        const body = route.request().postDataJSON();
+        expect(body.gateway).toBe('self-mfs');
+        expect(body.credentials.mfs_number).toBe('01711000000');
+        return route.fulfill(jsonResponse({ success: true, message: 'Verified' }));
     });
+    await page.route((url) => new URL(url).pathname === '/api/payment/config', async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback();
+        saveCalled = true;
+        return route.fulfill(jsonResponse({ id: 'cfg-1', gateway: 'self-mfs', is_enabled: false }));
+    });
+
     await loginAndGo(page);
-    const saveBtn = page.getByRole('button', { name: /save/i }).first();
-    if (await saveBtn.isVisible()) {
-        await saveBtn.click();
-        await page.waitForTimeout(500);
-        if (savedData) {
-            const bkash = savedData.bkash || savedData;
-            expect(bkash.mfs_mode || 'self').toBe('self');
-        }
-    }
+
+    // Expand the bKash card by locating it via unique text, then click expand button
+    const bkashCard = page.locator('div.border.border-gray-200', { hasText: 'bKash' }).first();
+    await bkashCard.locator('button.p-2').click();
+    await page.getByPlaceholder('01XXXXXXXXX').fill('01711000000');
+    await page.getByRole('button', { name: /Save bKash/i }).click();
+
+    await expect.poll(() => testCalled).toBe(true);
+    await expect.poll(() => saveCalled).toBe(true);
 });
 
-test('settings show success notification on save', async ({ page }) => {
+test('advance payment radio selection changes state', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    const saveBtn = page.getByRole('button', { name: /save/i }).first();
-    if (await saveBtn.isVisible()) {
-        await saveBtn.click();
-        await expect(
-            page.getByText(/saved|success|updated/i).or(page.locator('.sonner-toast'))
-        ).toBeVisible({ timeout: 5000 });
-    }
-});
 
-test('merchant settings pre-populate when loaded from API', async ({ page }) => {
-    await setupRoutes(page, mockMerchantSettings);
-    await loginAndGo(page);
-    // bKash is in merchant mode — credential fields should be pre-filled
-    await expect(
-        page.locator('input[value*="app-key"], input[value="app-key-123"]').or(
-            page.getByDisplayValue('app-key-123')
-        )
-    ).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('input[name="advance-payment"][value="none"]')).toBeChecked();
+
+    await page.locator('input[name="advance-payment"][value="percentage"]').check();
+    await expect(page.locator('input[name="advance-payment"][value="percentage"]')).toBeChecked();
+    await expect(page.locator('input[type="number"]:not([disabled])')).toBeVisible();
 });
