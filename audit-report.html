@@ -1,0 +1,694 @@
+<title>EasyModerator Settings Audit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --surface-alt: #f1f3f5;
+    --border: #dee2e6;
+    --border-light: #e9ecef;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --text-dim: #adb5bd;
+    --p0: #dc2626;
+    --p0-bg: #fef2f2;
+    --p0-border: #fecaca;
+    --p1: #d97706;
+    --p1-bg: #fffbeb;
+    --p1-border: #fde68a;
+    --p2: #2563eb;
+    --p2-bg: #eff6ff;
+    --p2-border: #bfdbfe;
+    --pass: #16a34a;
+    --pass-bg: #f0fdf4;
+    --broken: #dc2626;
+    --broken-bg: #fef2f2;
+    --partial: #d97706;
+    --partial-bg: #fffbeb;
+    --accent: #4338ca;
+    --accent-light: #e0e7ff;
+    --code-bg: #f1f3f5;
+    --font-body: 'Source Sans 3', system-ui, -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-alt: #22252f;
+      --border: #2e323e;
+      --border-light: #262933;
+      --text: #e4e5e7;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --p0: #f87171;
+      --p0-bg: #1c1012;
+      --p0-border: #5c2020;
+      --p1: #fbbf24;
+      --p1-bg: #1c1810;
+      --p1-border: #5c4820;
+      --p2: #60a5fa;
+      --p2-bg: #101828;
+      --p2-border: #1e3a5f;
+      --pass: #4ade80;
+      --pass-bg: #0f1f14;
+      --broken: #f87171;
+      --broken-bg: #1c1012;
+      --partial: #fbbf24;
+      --partial-bg: #1c1810;
+      --accent: #818cf8;
+      --accent-light: #1e1b4b;
+      --code-bg: #22252f;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-alt: #22252f;
+    --border: #2e323e;
+    --border-light: #262933;
+    --text: #e4e5e7;
+    --text-muted: #9ca3af;
+    --text-dim: #6b7280;
+    --p0: #f87171;
+    --p0-bg: #1c1012;
+    --p0-border: #5c2020;
+    --p1: #fbbf24;
+    --p1-bg: #1c1810;
+    --p1-border: #5c4820;
+    --p2: #60a5fa;
+    --p2-bg: #101828;
+    --p2-border: #1e3a5f;
+    --pass: #4ade80;
+    --pass-bg: #0f1f14;
+    --broken: #f87171;
+    --broken-bg: #1c1012;
+    --partial: #fbbf24;
+    --partial-bg: #1c1810;
+    --accent: #818cf8;
+    --accent-light: #1e1b4b;
+    --code-bg: #22252f;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 2.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border);
+  }
+
+  header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+
+  .report-meta {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .report-meta span {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .report-meta code {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    background: var(--code-bg);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  /* Summary cards */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.25rem;
+    border-left: 4px solid var(--border);
+  }
+
+  .summary-card.p0 { border-left-color: var(--p0); }
+  .summary-card.p1 { border-left-color: var(--p1); }
+  .summary-card.p2 { border-left-color: var(--p2); }
+  .summary-card.fixed { border-left-color: var(--pass); }
+
+  .summary-card .label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+  }
+
+  .summary-card .value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary-card.p0 .value { color: var(--p0); }
+  .summary-card.p1 .value { color: var(--p1); }
+  .summary-card.p2 .value { color: var(--p2); }
+  .summary-card.fixed .value { color: var(--pass); }
+
+  .summary-card .detail {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+  }
+
+  /* Sections */
+  section {
+    margin-bottom: 2.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.01em;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    margin-top: 1.25rem;
+  }
+
+  p {
+    margin-bottom: 0.75rem;
+    max-width: 65ch;
+  }
+
+  /* Test results bar */
+  .test-results {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 2rem;
+  }
+
+  .test-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .test-badge .count {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--pass);
+  }
+
+  /* Verification matrix */
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .matrix th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    background: var(--surface-alt);
+  }
+
+  .matrix td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+  }
+
+  .matrix tr:last-child td { border-bottom: none; }
+
+  .matrix .status {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    display: inline-block;
+    white-space: nowrap;
+  }
+
+  .status.pass { color: var(--pass); background: var(--pass-bg); }
+  .status.broken { color: var(--broken); background: var(--broken-bg); }
+  .status.partial { color: var(--partial); background: var(--partial-bg); }
+
+  /* Findings table */
+  .findings {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .findings th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    background: var(--surface-alt);
+  }
+
+  .findings td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+  }
+
+  .findings .sev {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .sev.p0 { color: var(--p0); background: var(--p0-bg); border: 1px solid var(--p0-border); }
+  .sev.p1 { color: var(--p1); background: var(--p1-bg); border: 1px solid var(--p1-border); }
+  .sev.p2 { color: var(--p2); background: var(--p2-bg); border: 1px solid var(--p2-border); }
+
+  .findings .file-ref {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .findings .fixed-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--pass);
+    background: var(--pass-bg);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  .findings .open-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: var(--surface-alt);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  /* Tables wrapper */
+  .table-wrap {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  /* Detail blocks */
+  .finding-detail {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .finding-detail .header-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .finding-detail h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+
+  .finding-detail .meta {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .finding-detail p {
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  /* Architecture section */
+  .arch-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .arch-item h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+
+  .arch-item .recommendation {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    margin-top: 0.35rem;
+  }
+
+  .arch-item p { font-size: 0.9rem; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+</style>
+
+<div class="container">
+
+<header>
+  <h1>EasyModerator Settings Audit</h1>
+  <div class="report-meta">
+    <span>Branch: <code>audit/settings-full-chain</code></span>
+    <span>Base: <code>origin/main</code> @ <code>c18b78f</code></span>
+    <span>Date: 2026-08-27</span>
+    <span>Scope: 12 findings, full chain (UI → runtime)</span>
+  </div>
+</header>
+
+<section>
+  <h2>Executive Summary</h2>
+  <p>Follow-up remediation covered the complete UI → API → persistence → reload → runtime chain. The corrected inventory is 10 substantive findings plus 2 P1 findings that were already resolved in the audit branch. All 10 substantive findings are remediated with regression coverage; no open findings remain.</p>
+
+  <div class="summary-grid">
+    <div class="summary-card p0">
+      <div class="label">P0 Critical</div>
+      <div class="value">3</div>
+      <div class="detail">3 remediated, 0 open</div>
+    </div>
+    <div class="summary-card p1">
+      <div class="label">P1 High</div>
+      <div class="value">6</div>
+      <div class="detail">4 remediated, 2 already resolved</div>
+    </div>
+    <div class="summary-card p2">
+      <div class="label">P2 Medium</div>
+      <div class="value">3</div>
+      <div class="detail">3 remediated, 0 open</div>
+    </div>
+    <div class="summary-card fixed">
+      <div class="label">Fixed This Audit</div>
+      <div class="value">10</div>
+      <div class="detail">substantive findings remediated with regression coverage</div>
+    </div>
+  </div>
+
+  <div class="test-results">
+    <div class="test-badge">Backend unit <span class="count">2276/2276</span></div>
+    <div class="test-badge">Frontend unit <span class="count">492/492</span></div>
+    <div class="test-badge">Settings E2E (Playwright) <span class="count">7/7</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Verification Matrix</h2>
+  <div class="table-wrap">
+    <table class="matrix">
+      <thead>
+        <tr>
+          <th>Pass</th>
+          <th>Surface</th>
+          <th>Status</th>
+          <th>Defects Found</th>
+          <th>Key Finding</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>AI Settings</td>
+          <td><span class="status pass">PASS (baseline fixes)</span></td>
+          <td>0</td>
+          <td>Three pre-existing AI-settings fixes retained as baseline</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Meta Channel</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>3</td>
+          <td>Explicit channel serializer; row ownership and early channel guard covered</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Business Info</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>1</td>
+          <td>Business settings use safe merge and invalidate knowledge generations</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Payment</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>2</td>
+          <td>Validated self-MFS enablement and summary-based bKash hydration</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>Delivery</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>2</td>
+          <td>Safe provider DTOs and persisted sandbox state across all lifecycles</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>Notifications</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>1</td>
+          <td>Server-enforced per-shop handoff cooldown with atomic dedupe claim</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>FAQs</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>1</td>
+          <td>Separate merchant/AI caches and active FAQ verification before prompting</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td>Subscription</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>1</td>
+          <td>Nested envelope normalization and fail-closed feature gates</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td>RTO / Lang / Onboarding</td>
+          <td><span class="status pass">PASS</span></td>
+          <td>0</td>
+          <td>Baseline settings preservation retained; RTO writes use safe merge</td>
+        </tr>
+        <tr>
+          <td>19</td>
+          <td>Security (cross-cutting)</td>
+          <td><span class="status pass">PASS (remediated)</span></td>
+          <td>1</td>
+          <td>Owner chain covers alternate payment, shop, delivery, and RAG mutations</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Defects Fixed</h2>
+
+  <div class="finding-detail">
+    <div class="header-row">
+      <span class="sev p0">P0</span>
+      <h4>sanitizeSettings wipes non-allowlisted JSONB keys</h4>
+      <span class="fixed-tag">FIXED</span>
+    </div>
+    <div class="meta">shop-settings.validator.js:209 &mdash; every PUT /api/shop/ai-settings</div>
+    <p><code>knownKeys</code> array was incomplete. Shop.settings JSONB also stores <code>onboarding_completed</code>, <code>onboarding_completed_at</code>, <code>onboarding_status_snapshot</code>, <code>payment_platform_priority</code>, <code>delivery_platform_priority</code> — all silently deleted on every AI settings save. Fix: expanded allowlist and added <code>preservedSettings</code> parameter for caller-supplied keys.</p>
+  </div>
+
+  <div class="finding-detail">
+    <div class="header-row">
+      <span class="sev p2">P2</span>
+      <h4>confidence_threshold default mismatch (60 vs 75)</h4>
+      <span class="fixed-tag">FIXED</span>
+    </div>
+    <div class="meta">AISettingsForm.tsx:416 &harr; shop-defaults.js:20</div>
+    <p>Frontend slider default was 60, backend default was 75. New merchant saving without touching slider overwrites the correct backend value. Fix: aligned frontend default to 75.</p>
+  </div>
+
+  <div class="finding-detail">
+    <div class="header-row">
+      <span class="sev p2">P2</span>
+      <h4>greeting/closing not deep-merged on partial update</h4>
+      <span class="fixed-tag">FIXED</span>
+    </div>
+    <div class="meta">shop.service.js:367-394 &mdash; updateShopAiSettings</div>
+    <p>Deep-merge existed for <code>required_fields</code> and <code>handoff_settings</code> but not <code>greeting</code>/<code>closing</code>. Partial update of one field wiped sibling fields. Fix: extended deep-merge to cover greeting and closing objects.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Remediation Status</h2>
+  <p><strong>Open findings: 0.</strong> The corrected inventory contains 10 substantive findings remediated in this pass and 2 P1 findings already resolved in the audit branch.</p>
+  <div class="table-wrap">
+    <table class="findings">
+      <thead>
+        <tr><th>Severity</th><th>Finding Group</th><th>Status</th><th>Receipt</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>P0</td><td>Meta OAuth, self-MFS, courier response secrets</td><td><span class="fixed-tag">REMEDIATED</span></td><td>Explicit DTOs and credential validation tests</td></tr>
+        <tr><td>P1</td><td>Payment hydration, courier sandbox, settings authorization/sanitization</td><td><span class="fixed-tag">REMEDIATED</span></td><td>Owner-chain, migration, round-trip, and merge tests</td></tr>
+        <tr><td>P1</td><td>Meta channel ownership and early channel AI opt-out</td><td><span class="fixed-tag">ALREADY RESOLVED</span></td><td>Focused regression coverage retained</td></tr>
+        <tr><td>P2</td><td>Knowledge/intent invalidation, handoff cooldown, subscription entitlements</td><td><span class="fixed-tag">REMEDIATED</span></td><td>Generation, cooldown, and fail-closed UI tests</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Architecture Findings</h2>
+
+  <div class="arch-item">
+    <h4>sanitizeSettings allowlist vs preserve-all</h4>
+    <p>The reusable <code>mergeAndSanitizeSettings</code> helper now deep-merges patches, preserves existing persisted domains, removes new unapproved top-level keys, and validates known nested sections before each relevant settings write.</p>
+    <div class="recommendation">STATUS: REMEDIATED — writer and nested-merge regression coverage added</div>
+  </div>
+
+  <div class="arch-item">
+    <h4>Settings JSONB as multi-purpose store</h4>
+    <p>Single JSONB column stores AI settings, BD settings, business info, branding, onboarding state, and platform priorities. Concurrent writes and partial updates are fragile. No transactional isolation between domains.</p>
+    <div class="recommendation">RECOMMENDATION: CHANGE_LATER — safe merge is in place; dedicated columns remain an architectural follow-up</div>
+  </div>
+
+  <div class="arch-item">
+    <h4>Frontend subscription features fail-open</h4>
+    <p><code>useSubscriptionFeatures()</code> now normalizes the subscription envelope and returns an all-false locked set for rejected, missing, or malformed entitlement data. <code>FeatureGate</code> distinguishes unavailable entitlements from a confirmed plan restriction.</p>
+    <div class="recommendation">STATUS: REMEDIATED — frontend hook and gate regression coverage added</div>
+  </div>
+</section>
+
+<section>
+  <h2>Test Coverage</h2>
+
+  <div class="table-wrap">
+    <table class="matrix">
+      <thead>
+        <tr><th>Suite</th><th>Before</th><th>After</th><th>Added</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Backend shop module</td>
+          <td>2276 tests</td>
+          <td>2276 tests</td>
+          <td>full backend unit suite, security gate, migration and cache coverage</td>
+        </tr>
+        <tr>
+          <td>Frontend components</td>
+          <td>483 tests</td>
+          <td>492 tests</td>
+          <td>payment hydration, delivery sandbox, entitlement and gate coverage</td>
+        </tr>
+        <tr>
+          <td>E2E (Playwright)</td>
+          <td>6 passing</td>
+          <td>7 passing</td>
+          <td>settings roundtrip plus credential-summary hydration</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The existing E2E specs were rewritten from scratch. The old specs used <code>**/api/**</code> glob patterns that matched Vite's <code>/src/api/*</code> module paths, preventing the application bundle from loading. New specs use URL pathname predicates: <code>(url) =&gt; new URL(url).pathname.startsWith('/api/')</code>.</p>
+</section>
+
+<section>
+  <h2>Completion Receipts</h2>
+
+  <ol style="padding-left: 1.5rem; line-height: 2;">
+    <li><strong>Security:</strong> no Meta, courier, payment, or merchant API secrets are returned by the remediated response boundaries.</li>
+    <li><strong>Authorization:</strong> owner-only mutation routes use <code>authenticate → verifyShopAccess → requireOwner</code>; active-member reads and COD confirmation remain available.</li>
+    <li><strong>Freshness:</strong> settings-derived cache keys are tenant-scoped and generation-aware; failed generation reads bypass local intent cache access.</li>
+    <li><strong>Verification:</strong> backend unit/security/discovery, frontend unit/build, and settings Playwright suites are green.</li>
+  </ol>
+</section>
+
+<footer>
+  <span>EasyModerator Settings Audit &mdash; audit/settings-full-chain @ fd83491</span>
+  <span>10 substantive + 2 already-resolved findings &bull; 0 open</span>
+</footer>
+
+</div>

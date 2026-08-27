@@ -7,6 +7,9 @@
 
 process.env.NODE_ENV = 'test';
 
+const mockNotifyShop = jest.fn().mockResolvedValue({ queued: true });
+const mockGetShopAiSettings = jest.fn();
+
 jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
 jest.mock('src/modules/channel-providers/provider.registry', () => ({ getProvider: jest.fn() }));
 jest.mock('src/modules/conversation/escalation-auto-reply.service', () => ({
@@ -19,6 +22,12 @@ jest.mock('src/modules/entities', () => ({
     Customer: { findOne: jest.fn() },
     MetaChannelSettings: { findOne: jest.fn() },
 }));
+jest.mock('src/modules/shop/shop.service', () => ({
+    getShopAiSettings: mockGetShopAiSettings,
+}));
+jest.mock('src/modules/notification/merchant-notification.service', () => ({
+    notifyShop: mockNotifyShop,
+}));
 
 const sseManager = require('src/utils/sse-manager');
 const { getProvider } = require('src/modules/channel-providers/provider.registry');
@@ -30,6 +39,9 @@ const { escalateToHuman } = require('src/modules/conversation/human-handoff.serv
 describe('escalateToHuman', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockGetShopAiSettings.mockResolvedValue({
+            handoff_settings: { cooldown_minutes: 30 },
+        });
         Customer.findOne.mockResolvedValue({ id: 'cust-1' });
         MetaChannelSettings.findOne.mockResolvedValue({ channel_id: 'ch1' });
         policyEngine.evaluateOutbound.mockResolvedValue({
@@ -127,5 +139,42 @@ describe('escalateToHuman', () => {
         });
 
         expect(getProvider).not.toHaveBeenCalled();
+    });
+});
+
+describe('configured handoff notification cooldown', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockGetShopAiSettings.mockResolvedValue({ handoff_settings: { cooldown_minutes: 45 } });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'holding-1', content: 'A human will help shortly' });
+    });
+
+    test('uses one shop-wide dedupe key and the configured TTL', async () => {
+        await escalateToHuman({
+            conversation: { id: 'conversation-1', hitl: false, update: jest.fn().mockResolvedValue(undefined) },
+            shopId: 'shop-1', conversationId: 'conversation-1', platform: 'messenger',
+            recipientId: 'customer-1', channel: null, reason: 'low_confidence',
+        });
+
+        expect(mockNotifyShop).toHaveBeenCalledWith(
+            'shop-1', 'ai_hitl',
+            expect.objectContaining({ conversationId: 'conversation-1' }),
+            { dedupeKey: 'shop:shop-1:ai_handoff', dedupeTtlSeconds: 45 * 60 },
+        );
+    });
+
+    test('zero disables the configurable shop-wide suppression key', async () => {
+        mockGetShopAiSettings.mockResolvedValue({ handoff_settings: { cooldown_minutes: 0 } });
+
+        await escalateToHuman({
+            conversation: { id: 'conversation-2', hitl: false, update: jest.fn().mockResolvedValue(undefined) },
+            shopId: 'shop-1', conversationId: 'conversation-2', platform: 'messenger',
+            recipientId: 'customer-2', channel: null, reason: 'sentiment_angry',
+        });
+
+        expect(mockNotifyShop).toHaveBeenCalledWith(
+            'shop-1', 'ai_hitl',
+            expect.objectContaining({ conversationId: 'conversation-2' }), {},
+        );
     });
 });

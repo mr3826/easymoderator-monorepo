@@ -80,10 +80,16 @@ if (hasRedisConfig && !forceMemoryStore) {
 
         get:     (key)            => cache.get(key),
         set:     (key, val, ...a) => cache.set(key, val, ...a),
-        setex:   (key, ttl, val)  => cache.setex(key, ttl, val),
-        del:     (...keys)        => cache.del(...keys),
+         setex:   (key, ttl, val)  => cache.setex(key, ttl, val),
+         incrby:  (key, amount)    => cache.incrby(key, amount),
+         del:     (...keys)        => cache.del(...keys),
         exists:  (key)            => cache.exists(key),
-        scan:    (cursor, opts)   => cache.scan(cursor, opts),
+         scan:    (cursor, ...args) => {
+             const opts = args.length === 1 && typeof args[0] === 'object'
+                 ? args[0]
+                 : { MATCH: args[1], COUNT: args[3] };
+             return cache.scan(cursor, opts);
+         },
         flushall:()               => cache.flushall(),
         quit:    async ()         => Promise.resolve('OK'),
         on:      (event, cb)      => { if (event === 'connect') setTimeout(cb, 10); },

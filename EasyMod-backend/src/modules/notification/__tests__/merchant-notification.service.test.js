@@ -1,5 +1,7 @@
 'use strict';
 
+const mockClaimForShop = jest.fn();
+
 jest.mock('../../entities', () => ({
     OwnerNotification: {
         create: jest.fn()
@@ -7,6 +9,7 @@ jest.mock('../../entities', () => ({
 }));
 
 jest.mock('../../../utils/cache.service', () => ({
+    claimForShop: mockClaimForShop,
     getForShop: jest.fn(),
     setForShop: jest.fn()
 }));
@@ -44,6 +47,7 @@ describe('merchant-notification.service', () => {
         jest.clearAllMocks();
         cacheService.getForShop.mockResolvedValue(null);
         cacheService.setForShop.mockResolvedValue(true);
+        mockClaimForShop.mockResolvedValue(true);
         OwnerNotification.create.mockResolvedValue({ id: 'notif-1' });
     });
 
@@ -69,7 +73,7 @@ describe('merchant-notification.service', () => {
     });
 
     it('skips duplicate notifications inside the dedupe window', async () => {
-        cacheService.getForShop.mockResolvedValueOnce(true);
+        mockClaimForShop.mockResolvedValueOnce(false);
 
         const result = await merchantNotificationService.notifyShop(
             'shop-1',
@@ -80,6 +84,28 @@ describe('merchant-notification.service', () => {
 
         expect(result).toEqual({ queued: false, skipped: true, reason: 'duplicate' });
         expect(OwnerNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('suppresses a second conversation during a configured shop cooldown', async () => {
+        await merchantNotificationService.notifyShop(
+            'shop-1', NOTIFICATION_EVENTS.AI_HITL,
+            { conversationId: 'conversation-1' },
+            { dedupeKey: 'shop:shop-1:ai_handoff', dedupeTtlSeconds: 45 * 60 },
+        );
+
+        mockClaimForShop.mockResolvedValue(false);
+        const second = await merchantNotificationService.notifyShop(
+            'shop-1', NOTIFICATION_EVENTS.AI_HITL,
+            { conversationId: 'conversation-2' },
+            { dedupeKey: 'shop:shop-1:ai_handoff', dedupeTtlSeconds: 45 * 60 },
+        );
+
+        expect(second).toEqual({ queued: false, skipped: true, reason: 'duplicate' });
+        expect(mockClaimForShop).toHaveBeenCalledWith(
+            'shop-1',
+            'notification:dedupe:ai_hitl:shop:shop-1:ai_handoff',
+            45 * 60,
+        );
     });
 
     it('dispatches queued notifications to browser push and Telegram', async () => {

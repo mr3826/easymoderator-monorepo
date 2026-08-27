@@ -2,7 +2,11 @@ const { User, Shop, UserShop, Tenant } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
-const { validateAISettings, validateSettings, sanitizeSettings } = require('./shop-settings.validator');
+const {
+    validateAISettings,
+    mergeAndSanitizeSettings
+} = require('./shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 
 /**
  * Get the single shop for a user.
@@ -117,35 +121,40 @@ const updateShopById = async (shopId, userId, updateData) => {
         throw new AppError('Shop not found', 404);
     }
 
-    // Don't allow updating unique_code
-    delete updateData.id;
+    const nextUpdate = { ...updateData };
 
-    if (updateData.shop_name && !updateData.name) {
-        updateData.name = updateData.shop_name;
+    // Don't allow updating unique_code
+    delete nextUpdate.id;
+
+    if (nextUpdate.shop_name && !nextUpdate.name) {
+        nextUpdate.name = nextUpdate.shop_name;
     }
 
-    // Always deep-merge settings instead of replacing — preserves unrelated keys.
     const currentSettings = shop.settings || {};
-    if (updateData.settings) {
-        updateData.settings = { ...currentSettings, ...updateData.settings };
+    if (nextUpdate.settings) {
+        nextUpdate.settings = mergeAndSanitizeSettings(currentSettings, nextUpdate.settings);
     }
 
     // Bug #13: keep settings.businessInfo.shopName in sync with the shop name column
     // so Knowledge Base and ManageShop always show the same value.
-    const newShopName = updateData.shop_name || updateData.name;
+    const newShopName = nextUpdate.shop_name || nextUpdate.name;
     if (newShopName) {
-        const mergedSettings = updateData.settings || currentSettings;
-        const currentBusinessInfo = mergedSettings.businessInfo || {};
-        updateData.settings = {
-            ...mergedSettings,
-            businessInfo: {
-                ...currentBusinessInfo,
-                shopName: newShopName
+        nextUpdate.settings = mergeAndSanitizeSettings(
+            currentSettings,
+            {
+                ...(nextUpdate.settings || {}),
+                businessInfo: {
+                    ...(nextUpdate.settings?.businessInfo || {}),
+                    shopName: newShopName
+                }
             }
-        };
+        );
     }
 
-    await shop.update(updateData);
+    await shop.update(nextUpdate);
+    if (nextUpdate.settings || newShopName) {
+        await invalidateShopSettingsCaches(shopId);
+    }
 
     return {
         ...shop.toJSON(),
@@ -387,11 +396,10 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
         newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...updates.intent_confidence_map };
     }
 
-    // Sanitize and validate complete settings
-    const sanitizedSettings = sanitizeSettings({ ...currentSettings, ai: newAI }, currentSettings);
-    validateSettings(sanitizedSettings);
+    const sanitizedSettings = mergeAndSanitizeSettings(currentSettings, { ai: newAI });
 
     await shop.update({ settings: sanitizedSettings });
+    await invalidateShopSettingsCaches(shopId);
     return newAI;
 };
 
@@ -452,14 +460,14 @@ const applyBrandingPreset = async (shopId, presetName) => {
     const newBranding = { ...currentBranding, ...preset, preset: presetName };
 
     await shop.update({
-        settings: {
-            ...currentSettings,
+        settings: mergeAndSanitizeSettings(currentSettings, {
             ai: {
                 ...currentAI,
                 branding: newBranding
             }
-        }
+        })
     });
+    await invalidateShopSettingsCaches(shopId);
 
     return newBranding;
 };

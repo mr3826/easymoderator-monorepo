@@ -6,6 +6,8 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 const cacheService = require('../../utils/cache.service');
 const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
+const { mergeAndSanitizeSettings } = require('./shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 
 // Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
 // Fails open to 'FREE' so plan checks never lock out users due to DB errors.
@@ -120,12 +122,11 @@ const completeOnboarding = async (req, res, next) => {
         const shop = await Shop.findByPk(shopId);
         if (!shop) throw new AppError('Shop not found', 404);
         await shop.update({
-            settings: {
-                ...(shop.settings || {}),
+            settings: mergeAndSanitizeSettings(shop.settings || {}, {
                 onboarding_completed: true,
                 onboarding_completed_at: new Date().toISOString(),
                 onboarding_status_snapshot: status,
-            },
+            }),
         });
 
         const nextSetupStatus = await setupStatusService.getSetupStatus({ shopId, userId });
@@ -621,12 +622,12 @@ const updatePlatformPriority = async (req, res, next) => {
         if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
         // Merge into settings JSONB (preserve other keys like onboarding_completed).
         await shop.update({
-            settings: {
-                ...(shop.settings || {}),
+            settings: mergeAndSanitizeSettings(shop.settings || {}, {
                 payment_platform_priority: payment,
                 delivery_platform_priority: delivery
-            }
+            })
         });
+        await invalidateShopSettingsCaches(shopId);
         res.json({ success: true, data: { payment, delivery } });
     } catch (error) {
         next(error);

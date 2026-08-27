@@ -1801,6 +1801,8 @@
     "title": "প্ল্যান ও বিলিং",
     "subtitle": "Messenger replies, order capture ও billing চালু রাখুন",
     "loading": "সাবস্ক্রিপশনের বিবরণ লোড হচ্ছে...",
+    "entitlementsUnavailable": "ফিচারের তথ্য এখন পাওয়া যাচ্ছে না।",
+    "loadingFeatures": "ফিচারের উপলভ্যতা যাচাই হচ্ছে...",
     "noData": "Billing details এখনো ready নয়",
     "noDataMsg": "এই shop-এর billing details পাওয়া যায়নি। Reload করুন; আবার হলে support-এ যোগাযোগ করুন।",
     "reload": "পুনরায় লোড করুন",

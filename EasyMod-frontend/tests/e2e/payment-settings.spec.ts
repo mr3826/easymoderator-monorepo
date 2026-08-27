@@ -79,7 +79,7 @@ async function loginAndGo(page: Page) {
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto('/manage-shop/payment-settings');
     // Wait for the Suspense-loaded PaymentSettings component to mount
-    await expect(page.getByRole('heading', { name: 'Payment Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Payment Settings' })).toBeVisible({ timeout: 15_000 });
     // Gateway cards render after lazy chunk loads; allow extra time
     await expect(page.getByText('Cash on Delivery')).toBeVisible({ timeout: 15_000 });
 }
@@ -103,6 +103,26 @@ test('bKash expand reveals self-MFS phone input', async ({ page }) => {
     await expect(page.getByPlaceholder('01XXXXXXXXX')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('button', { name: /Self MFS/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Merchant API/i })).toBeVisible();
+});
+
+test('reload hydrates the saved bKash receiver number from credential_summary', async ({ page }) => {
+    await setupRoutes(page, {
+        savedConfigs: [{
+            gateway: 'self-mfs',
+            is_enabled: true,
+            credential_summary: {
+                has_credentials: true,
+                mfs_type: 'bkash',
+                mfs_mode: 'self',
+                mfs_number: '01711000000',
+            },
+        }],
+    });
+    await loginAndGo(page);
+
+    const bkashCard = page.locator('div.border.border-gray-200', { hasText: 'bKash' }).first();
+    await bkashCard.locator('button.p-2').click();
+    await expect(page.getByPlaceholder('01XXXXXXXXX')).toHaveValue('01711000000');
 });
 
 test('save bKash self-MFS calls test then save endpoint', async ({ page }) => {

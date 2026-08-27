@@ -147,6 +147,22 @@ class CacheService {
     }
 
     /**
+     * Read a tenant-scoped value without converting a real Redis outage into a
+     * cache miss. The in-memory development client remains usable; a configured
+     * but unavailable Redis client is treated as unavailable by callers that
+     * require freshness guarantees.
+     */
+    async getForShopStrict(shopId, key) {
+        const rawKey = this._tenantKey(shopId, key);
+        if (cacheRedis?._isMemoryFallback === true) return this._get(rawKey);
+        if (!cacheRedis || cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        const value = await cacheRedis.get(rawKey);
+        return value ? JSON.parse(value) : undefined;
+    }
+
+    /**
      * Set a tenant-scoped cache value.
      * @param {string} shopId - Tenant identifier
      * @param {string} key
@@ -213,6 +229,36 @@ class CacheService {
         } catch (error) {
             console.error('Cache incrementForShop error:', error);
             return 0;
+        }
+    }
+
+    /**
+     * Atomically claim a tenant-scoped key for a TTL. Used for notification
+     * dedupe where a get-then-set sequence would allow concurrent workers to
+     * queue duplicate alerts.
+     */
+    async claimForShop(shopId, key, ttlSeconds) {
+        try {
+            const rawKey = this._tenantKey(shopId, key);
+            if (cacheRedis && cacheRedis.status === 'ready') {
+                const result = await cacheRedis.set(
+                    rawKey,
+                    '1',
+                    'EX',
+                    Math.max(1, Number(ttlSeconds) || 1),
+                    'NX'
+                );
+                return result === 'OK' || result === true;
+            }
+            if (this.memoryCache.has(rawKey)) return false;
+            this.memoryCache.set(rawKey, true);
+            if (ttlSeconds) {
+                setTimeout(() => this.memoryCache.delete(rawKey), Number(ttlSeconds) * 1000);
+            }
+            return true;
+        } catch (error) {
+            console.error('Cache claimForShop error:', error);
+            return false;
         }
     }
 

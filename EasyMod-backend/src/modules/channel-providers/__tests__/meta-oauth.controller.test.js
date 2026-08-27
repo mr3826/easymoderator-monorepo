@@ -21,6 +21,7 @@ jest.mock('src/modules/channel-providers/meta-oauth.service', () => ({
 
 const oauthService = require('src/modules/channel-providers/meta-oauth.service');
 const controller = require('src/modules/channel-providers/meta-oauth.controller');
+const { serializeChannel } = require('../meta-channel.serializer');
 
 function mkRes() {
     const res = {};
@@ -91,7 +92,12 @@ describe('meta-oauth.controller', () => {
     describe('connectAsset', () => {
         test('forwards (assetId, displayName, tempToken, userId, shopId, platform) → connectPage', async () => {
             oauthService.connectPage.mockResolvedValue({
-                id: 'ch-1', webhookWarning: null, webhookSubscribed: true,
+                id: 'ch-1',
+                webhookWarning: null,
+                webhookSubscribed: true,
+                page_access_token_ct: 'page-secret-token',
+                access_token: 'oauth-user-token',
+                pageAccessToken: 'page-secret-alias',
             });
             const req = {
                 user: { userId: 'u1', shopId: 's1' },
@@ -115,10 +121,66 @@ describe('meta-oauth.controller', () => {
                 's1',
                 'facebook'
             );
-            expect(res.json).toHaveBeenCalledWith({
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
                 success: true,
-                data: { id: 'ch-1', webhookWarning: null, webhookSubscribed: true },
-            });
+                data: expect.objectContaining({
+                    id: 'ch-1',
+                    webhookWarning: null,
+                    webhookSubscribed: true,
+                }),
+            }));
+
+            const responseData = res.json.mock.calls[0][0].data;
+            expect(responseData).not.toHaveProperty('page_access_token_ct');
+            expect(responseData).not.toHaveProperty('access_token');
+            expect(responseData).not.toHaveProperty('pageAccessToken');
+        });
+    });
+
+    test('the shared serializer excludes token and credential fields from toJSON output', () => {
+        const serialized = serializeChannel({
+            toJSON: () => ({
+                id: 'channel-1',
+                shop_id: 'shop-1',
+                page_access_token_ct: 'secret-page-token',
+                access_token: 'secret-oauth-token',
+                credentials: { app_secret: 'secret' },
+                settings: { purpose_label: 'Sales' },
+            }),
+        }, { webhookWarning: null });
+
+        expect(serialized).toEqual(expect.objectContaining({
+            id: 'channel-1',
+            shopId: 'shop-1',
+            purposeLabel: 'Sales',
+            webhookWarning: null,
+        }));
+        expect(serialized).not.toHaveProperty('page_access_token_ct');
+        expect(serialized).not.toHaveProperty('access_token');
+        expect(serialized).not.toHaveProperty('credentials');
+    });
+
+    test('Meta settings PATCH rejects a foreign channel before the service mutation', async () => {
+        const channelModel = { findByPk: jest.fn().mockResolvedValue({ id: 'channel-1', shop_id: 'shop-2' }) };
+        const channelService = { updateSettings: jest.fn(), getSettings: jest.fn() };
+
+        await jest.isolateModulesAsync(async () => {
+            jest.doMock('../meta-channel.entity', () => channelModel);
+            jest.doMock('../meta-channel.service', () => channelService);
+            jest.doMock('../meta-channel-settings.entity', () => ({ findOne: jest.fn() }));
+            jest.doMock('../meta-channel-consent-event.entity', () => ({ count: jest.fn(), findAll: jest.fn() }));
+            jest.doMock('../provider.registry', () => ({ getProvider: jest.fn() }));
+
+            const channelController = require('../meta-channel.controller');
+            const next = jest.fn();
+            await channelController.updateChannelSettings({
+                params: { channelId: 'channel-1' },
+                user: { shopId: 'shop-1' },
+                body: { aiAutoReply: false },
+            }, mkRes(), next);
+
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({ status: 403 }));
+            expect(channelService.updateSettings).not.toHaveBeenCalled();
         });
     });
 });

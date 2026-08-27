@@ -110,6 +110,7 @@ jest.mock('src/utils/cache.service', () => ({
     getForShop:    jest.fn(() => Promise.resolve(null)),
     setForShop:    jest.fn(() => Promise.resolve()),
     deleteForShop: jest.fn(() => Promise.resolve()),
+    incrementForShop: jest.fn(() => Promise.resolve(1)),
 }));
 
 // ── Mock shop service (used inside knowledge.service for AI settings) ─────
@@ -211,6 +212,51 @@ describe('Knowledge API', () => {
             UserShop.findOne.mockResolvedValueOnce(null); // no access
             const res = await request(app).get('/api/knowledge');
             expect(res.status).toBe(403);
+        });
+
+        it('keeps merchant and AI knowledge caches separate so inactive FAQs do not cross the boundary', async () => {
+            const cacheService = require('src/utils/cache.service');
+            const knowledgeService = require('src/modules/knowledge/knowledge.service');
+            Shop.findByPk.mockResolvedValue(mockShop);
+            FaqResponse.findAll
+                .mockResolvedValueOnce([{
+                    id: 'faq-inactive', category: 'Old', template_en: 'Inactive answer',
+                    template_bn: null, is_active: false, use_count: 0, priority: 1,
+                    created_at: new Date(), updated_at: new Date(),
+                }])
+                .mockResolvedValueOnce([{
+                    id: 'faq-active', category: 'Current', template_en: 'Active answer',
+                    template_bn: null, is_active: true, use_count: 0, priority: 1,
+                    created_at: new Date(), updated_at: new Date(),
+                }]);
+            cacheService.getForShop.mockResolvedValue(null);
+
+            const merchant = await knowledgeService.getKnowledge('user-1', 'shop-1');
+            const ai = await knowledgeService.getKnowledgeForAI('shop-1');
+
+            expect(merchant.faqs.map((faq) => faq.id)).toEqual(['faq-inactive']);
+            expect(ai.faqs.map((faq) => faq.id)).toEqual(['faq-active']);
+            expect(cacheService.getForShop).toHaveBeenNthCalledWith(1, 'shop-1', 'knowledge:summary');
+            expect(cacheService.getForShop).toHaveBeenNthCalledWith(2, 'shop-1', 'knowledge:ai-summary');
+        });
+
+        it('uses a tenant generation and fails closed when generation reads fail', async () => {
+            const cacheService = require('src/utils/cache.service');
+            const {
+                getShopSettingsGeneration,
+                invalidateShopSettingsCaches,
+            } = require('src/utils/shop-settings-cache');
+
+            cacheService.getForShop.mockResolvedValueOnce('7');
+            await expect(getShopSettingsGeneration('shop-1')).resolves.toBe(7);
+
+            cacheService.getForShop.mockRejectedValueOnce(new Error('redis unavailable'));
+            await expect(getShopSettingsGeneration('shop-1')).resolves.toBeNull();
+
+            await invalidateShopSettingsCaches('shop-1');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:ai-summary');
+            expect(cacheService.incrementForShop).toHaveBeenCalledWith('shop-1', 'settings:generation');
         });
 
     });
@@ -564,6 +610,8 @@ describe('Knowledge API', () => {
             }));
             expect(ragService.ingestData.mock.calls.at(-1)[0].text).toContain('Additional shop owner info: Exchange requires an unboxing video.');
             expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:ai-summary');
+            expect(cacheService.incrementForShop).toHaveBeenCalledWith('shop-1', 'settings:generation');
             expect(geminiCache.invalidate).toHaveBeenCalledWith('shop-1');
         });
 

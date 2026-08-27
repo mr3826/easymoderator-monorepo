@@ -60,7 +60,12 @@ const AI_SETTINGS_SCHEMA = {
     return (
       (!('trigger_keywords' in val) || (Array.isArray(val.trigger_keywords) && val.trigger_keywords.every(v => typeof v === 'string'))) &&
       (!('notification_channel' in val) || NOTIFICATION_CHANNELS.includes(val.notification_channel)) &&
-      (!('cooldown_minutes' in val) || (typeof val.cooldown_minutes === 'number' && val.cooldown_minutes >= 0))
+      (!('cooldown_minutes' in val) || (
+        typeof val.cooldown_minutes === 'number'
+        && Number.isInteger(val.cooldown_minutes)
+        && val.cooldown_minutes >= 0
+        && val.cooldown_minutes <= 1440
+      ))
     );
   },
   greeting: isValidMessageBlock,
@@ -94,7 +99,7 @@ const BUSINESS_INFO_SCHEMA = {
  * @throws {AppError} If validation fails
  */
 const validateAISettings = (settings) => {
-  if (typeof settings !== 'object' || settings === null) {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
     throw new AppError('AI settings must be an object', 400);
   }
 
@@ -121,7 +126,7 @@ const validateAISettings = (settings) => {
  * @throws {AppError} If validation fails
  */
 const validateBDSettings = (settings) => {
-  if (typeof settings !== 'object' || settings === null) {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
     throw new AppError('BD settings must be an object', 400);
   }
 
@@ -148,7 +153,7 @@ const validateBDSettings = (settings) => {
  * @throws {AppError} If validation fails
  */
 const validateBusinessInfo = (info) => {
-  if (typeof info !== 'object' || info === null) {
+  if (typeof info !== 'object' || info === null || Array.isArray(info)) {
     throw new AppError('Business info must be an object', 400);
   }
 
@@ -175,7 +180,7 @@ const validateBusinessInfo = (info) => {
  * @throws {AppError} If validation fails
  */
 const validateSettings = (settings) => {
-  if (typeof settings !== 'object' || settings === null) {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
     throw new AppError('Settings must be an object', 400);
   }
 
@@ -242,12 +247,50 @@ const sanitizeSettings = (settings, preservedSettings = {}) => {
   return sanitized;
 };
 
+const isPlainObject = (value) => (
+  value !== null &&
+  typeof value === 'object' &&
+  !Array.isArray(value)
+);
+
+const cloneSettingValue = (value) => {
+  if (Array.isArray(value)) return value.map(cloneSettingValue);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, cloneSettingValue(nested)]));
+};
+
+const mergeSettingObjects = (current, patch) => {
+  const merged = isPlainObject(current) ? cloneSettingValue(current) : {};
+  if (!isPlainObject(patch)) return merged;
+
+  for (const [key, value] of Object.entries(patch)) {
+    merged[key] = isPlainObject(value) && isPlainObject(merged[key])
+      ? mergeSettingObjects(merged[key], value)
+      : cloneSettingValue(value);
+  }
+  return merged;
+};
+
+/**
+ * Merge a merchant settings patch without dropping existing domains or
+ * accepting new arbitrary top-level keys. Known nested sections are validated
+ * after the merge; caller-owned objects are never mutated.
+ */
+const mergeAndSanitizeSettings = (currentSettings, patch) => {
+  const current = isPlainObject(currentSettings) ? currentSettings : {};
+  const merged = mergeSettingObjects(current, patch);
+  const sanitized = sanitizeSettings(merged, current);
+  validateSettings(sanitized);
+  return sanitized;
+};
+
 module.exports = {
   validateAISettings,
   validateBDSettings,
   validateBusinessInfo,
   validateSettings,
   sanitizeSettings,
+  mergeAndSanitizeSettings,
   AI_SETTINGS_SCHEMA,
   BD_SETTINGS_SCHEMA,
   BUSINESS_INFO_SCHEMA

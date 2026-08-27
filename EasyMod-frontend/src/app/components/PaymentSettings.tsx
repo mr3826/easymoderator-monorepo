@@ -92,14 +92,34 @@ export default function PaymentSettings() {
         
         setGateways(prev => prev.map(gw => {
           const config = loadedConfigs.find((c: any) => c.gateway === gw.id);
-          const mfsConfig = loadedConfigs.find((c: any) => c.gateway === 'self-mfs' && c.credentials?.mfs_type === gw.id);
+          const mfsConfig = loadedConfigs.find((c: any) => (
+            c.gateway === 'self-mfs' && c.credential_summary?.mfs_type === gw.id
+          ));
           const matched = config || mfsConfig;
           if (matched) {
-            savedSet.add(gw.id); // Mark gateway as having saved config
+            const hasCredentials = matched.gateway === 'cod'
+              || matched.credential_summary?.has_credentials === true;
+            if (hasCredentials) savedSet.add(gw.id);
+
+            const summary = matched.credential_summary;
+            const hydratedConfig = gw.config && summary
+              ? {
+                  ...gw.config,
+                  ...(summary.mfs_number ? { phone: summary.mfs_number } : {}),
+                  ...(summary.mfs_mode ? {
+                    accountType: summary.mfs_mode === 'business' || summary.mfs_mode === 'merchant'
+                      ? 'merchant'
+                      : 'self'
+                  } : {})
+                }
+              : gw.config;
+
             return {
               ...gw,
               enabled: matched.is_enabled,
-              // Don't overwrite config if credentials exist but keep UI fields empty for security
+              // Only the non-secret summary is hydrated. Merchant API secrets
+              // intentionally remain blank and must be re-entered to change them.
+              ...(hydratedConfig ? { config: hydratedConfig } : {})
             };
           }
           return gw;
@@ -149,6 +169,10 @@ export default function PaymentSettings() {
       // Prepare credentials based on gateway type
       if (isMfsGateway(gatewayId) && gateway.config) {
         const isMerchant = gateway.config.accountType === 'merchant';
+        if (!gateway.config.phone) {
+          setError(t('manageShop.paymentSettings.errors.phoneRequired', 'MFS phone number is required'));
+          return;
+        }
         if (isMerchant) {
           if (!gateway.config.app_key || !gateway.config.app_secret) {
             setError(t('manageShop.paymentSettings.errors.merchantCredentialsRequired'));
@@ -157,6 +181,7 @@ export default function PaymentSettings() {
           credentials = {
             mfs_type: gatewayId,
             mfs_mode: 'merchant',
+            mfs_number: gateway.config.phone,
             app_key: gateway.config.app_key,
             app_secret: gateway.config.app_secret,
             username: gateway.config.username || '',
@@ -450,21 +475,28 @@ export default function PaymentSettings() {
                           </p>
                         </div>
 
-                        {/* Self MFS fields */}
-                        {(gateway.config.accountType || 'self') === 'self' && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {t('manageShop.paymentSettings.mfsPhoneNumber', { name: gateway.name })}
-                            </label>
-                            <input
-                              type="tel"
-                              value={gateway.config.phone || ''}
-                              onChange={(e) => updateGatewayConfig(gateway.id, 'phone', e.target.value)}
-                              placeholder="01XXXXXXXXX"
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </div>
-                        )}
+                            {/* Receiver number is required for both supported modes. */}
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                {t('manageShop.paymentSettings.mfsPhoneNumber', { name: gateway.name })}
+                              </label>
+                              <input
+                                type="tel"
+                                value={gateway.config.phone || ''}
+                                onChange={(e) => updateGatewayConfig(gateway.id, 'phone', e.target.value)}
+                                placeholder="01XXXXXXXXX"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+
+                            {/* Self MFS fields */}
+                            {(gateway.config.accountType || 'self') === 'self' && (
+                              <div>
+                                <p className="text-xs text-gray-500">
+                                  {t('manageShop.paymentSettings.modeSelfHint')}
+                                </p>
+                              </div>
+                            )}
 
                         {/* Merchant API fields */}
                         {gateway.config.accountType === 'merchant' && (

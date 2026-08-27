@@ -153,10 +153,16 @@ const getOrCreate = async (shopId, systemPrompt, model) => {
  */
 const invalidate = async (shopId) => {
     try {
-        if (!redis) return;
+        if (!redis || typeof redis.scan !== 'function') return;
         const pattern = `gemini_cache:${shopId}:*`;
-        const keys = await redis.keys(pattern);
-        if (keys.length > 0) await redis.del(...keys);
+        let cursor = '0';
+        do {
+            const [nextCursor, keys] = await redis.scan(
+                cursor, 'MATCH', pattern, 'COUNT', 100
+            );
+            cursor = nextCursor;
+            if (keys.length > 0) await redis.del(...keys);
+        } while (cursor !== '0');
     } catch { /* ignore */ }
 };
 

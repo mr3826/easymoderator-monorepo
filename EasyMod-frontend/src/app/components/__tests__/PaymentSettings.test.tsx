@@ -17,11 +17,16 @@ const {
     mockGetPaymentConfig: vi.fn().mockResolvedValue({
         success: true,
         // Component expects an array: Array.isArray(response.data) ? response.data : []
-        // Each entry: { gateway: 'self-mfs', credentials: { mfs_type, mfs_number, mfs_mode }, is_enabled }
+        // Credential details arrive through the non-secret summary contract.
         data: [
             {
                 gateway: 'self-mfs',
-                credentials: { mfs_type: 'bkash', mfs_number: '01711000000', mfs_mode: 'self' },
+                credential_summary: {
+                    has_credentials: true,
+                    mfs_type: 'bkash',
+                    mfs_number: '01711000000',
+                    mfs_mode: 'self',
+                },
                 is_enabled: true,
             },
         ],
@@ -92,7 +97,12 @@ describe('PaymentSettings', () => {
             data: [
                 {
                     gateway: 'self-mfs',
-                    credentials: { mfs_type: 'bkash', mfs_number: '01711000000', mfs_mode: 'self' },
+                    credential_summary: {
+                        has_credentials: true,
+                        mfs_type: 'bkash',
+                        mfs_number: '01711000000',
+                        mfs_mode: 'self',
+                    },
                     is_enabled: true,
                 },
             ],
@@ -129,13 +139,9 @@ describe('PaymentSettings', () => {
         const expandBtn = Array.from(document.querySelectorAll('button')).find(
             b => b.className.includes('p-2') && b.className.includes('gray-600')
         );
-        if (expandBtn) {
-            fireEvent.click(expandBtn);
-            await waitFor(() => {
-                const phoneInput = document.querySelector('input[type="tel"], input[placeholder*="01"], input[name*="phone"]');
-                expect(phoneInput).not.toBeNull();
-            }, { timeout: 3000 });
-        }
+        expect(expandBtn).toBeTruthy();
+        fireEvent.click(expandBtn as HTMLElement);
+        expect(await screen.findByDisplayValue('01711000000')).toBeInTheDocument();
     });
 
     it('pre-fills phone number from loaded config', async () => {
@@ -143,13 +149,10 @@ describe('PaymentSettings', () => {
         const expandBtn = Array.from(document.querySelectorAll('button')).find(
             b => b.className.includes('p-2') && b.className.includes('gray-600')
         );
-        if (expandBtn) {
-            fireEvent.click(expandBtn);
-            await waitFor(() => {
-                const phoneInput = document.querySelector('input[value="01711000000"]') as HTMLInputElement;
-                if (phoneInput) expect(phoneInput.value).toBe('01711000000');
-            });
-        }
+        expect(expandBtn).toBeTruthy();
+        fireEvent.click(expandBtn as HTMLElement);
+        const phoneInput = await screen.findByDisplayValue('01711000000') as HTMLInputElement;
+        expect(phoneInput.value).toBe('01711000000');
     });
 
     it('calls savePaymentConfig when save button clicked', async () => {
@@ -157,8 +160,8 @@ describe('PaymentSettings', () => {
         const expandBtn = Array.from(document.querySelectorAll('button')).find(
             b => b.className.includes('p-2') && b.className.includes('gray-600')
         );
-        if (!expandBtn) return;
-        fireEvent.click(expandBtn);
+        expect(expandBtn).toBeTruthy();
+        fireEvent.click(expandBtn as HTMLElement);
         const saveBtn = await screen.findByRole('button', { name: /save bkash/i }, { timeout: 3000 });
         // Phone input is type="tel" (not type="text") — ensure it has a value
         // before saving in case async config load hasn't propagated into state yet
@@ -177,8 +180,8 @@ describe('PaymentSettings', () => {
         const expandBtn = Array.from(document.querySelectorAll('button')).find(
             b => b.className.includes('p-2') && b.className.includes('gray-600')
         );
-        if (!expandBtn) return;
-        fireEvent.click(expandBtn);
+        expect(expandBtn).toBeTruthy();
+        fireEvent.click(expandBtn as HTMLElement);
         const saveBtn = await screen.findByRole('button', { name: /save bkash/i }, { timeout: 3000 });
         const phoneInput = document.querySelector('input[type="tel"]') as HTMLInputElement | null;
         if (phoneInput && !phoneInput.value) {
@@ -197,8 +200,8 @@ describe('PaymentSettings', () => {
         const expandBtn = Array.from(document.querySelectorAll('button')).find(
             b => b.className.includes('p-2') && b.className.includes('gray-600')
         );
-        if (!expandBtn) return;
-        fireEvent.click(expandBtn);
+        expect(expandBtn).toBeTruthy();
+        fireEvent.click(expandBtn as HTMLElement);
         const saveBtn = await screen.findByRole('button', { name: /save bkash/i }, { timeout: 3000 });
         const phoneInput = document.querySelector('input[type="tel"]') as HTMLInputElement | null;
         if (phoneInput && !phoneInput.value) {

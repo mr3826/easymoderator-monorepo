@@ -19,6 +19,8 @@
 
 const Shop = require('../shop/shop.entity');
 const { AppError } = require('../../utils/AppError');
+const { mergeAndSanitizeSettings } = require('../shop/shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 
 const DEFAULT_NETWORK_SETTINGS = {
   contribute: true,
@@ -54,7 +56,10 @@ const updateNetworkSettings = async (shopId, updates) => {
   const currentNetwork = currentSettings.rto_network || {};
   const newNetwork = { ...DEFAULT_NETWORK_SETTINGS, ...currentNetwork, ...clean };
 
-  await shop.update({ settings: { ...currentSettings, rto_network: newNetwork } });
+  await shop.update({
+    settings: mergeAndSanitizeSettings(currentSettings, { rto_network: newNetwork })
+  });
+  await invalidateShopSettingsCaches(shopId);
   return newNetwork;
 };
 

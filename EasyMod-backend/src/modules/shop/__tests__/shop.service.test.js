@@ -52,6 +52,9 @@ jest.mock('../shop-settings.validator', () => ({
     validateAISettings: jest.fn().mockReturnValue({ valid: true }),
     validateSettings: jest.fn().mockReturnValue({ valid: true }),
     sanitizeSettings: jest.fn(jest.requireActual('../shop-settings.validator').sanitizeSettings),
+    mergeAndSanitizeSettings: jest.fn((current, patch) => (
+        jest.requireActual('../shop-settings.validator').mergeAndSanitizeSettings(current, patch)
+    )),
 }));
 
 const { Shop, UserShop } = require('../../entities');
@@ -167,7 +170,7 @@ describe('Shop Service', () => {
             .rejects.toMatchObject({ status: 404 });
     });
 
-    it('updateShopById — deep-merges settings instead of replacing', async () => {
+    it('updateShopById — preserves known settings and drops new arbitrary top-level keys', async () => {
         const shopWithSettings = {
             ...mockShop,
             settings: { aiEnabled: true, paymentMethods: ['bkash'] },
@@ -176,7 +179,7 @@ describe('Shop Service', () => {
         Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
 
         await shopService.updateShopById('shop-1', 'user-1', {
-            settings: { newSetting: 'value' }
+            settings: { newSetting: 'value', delivery: { default_delivery_charge: 80 } }
         });
 
         expect(shopWithSettings.update).toHaveBeenCalledWith(
@@ -184,10 +187,11 @@ describe('Shop Service', () => {
                 settings: expect.objectContaining({
                     aiEnabled: true,
                     paymentMethods: ['bkash'],
-                    newSetting: 'value',
+                    delivery: { default_delivery_charge: 80 },
                 })
             })
         );
+        expect(shopWithSettings.update.mock.calls[0][0].settings).not.toHaveProperty('newSetting');
     });
 
     it('updateShopById — syncs settings.businessInfo.shopName when shop_name changes', async () => {

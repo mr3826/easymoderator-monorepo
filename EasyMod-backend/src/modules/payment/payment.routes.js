@@ -2,6 +2,8 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const paymentController = require('./payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { requireOwner } = require('../../middleware/shop-permission.middleware');
 const {
     paymentGatewayIpAllowlist,
     paymentCallbackHmacVerify,
@@ -36,12 +38,12 @@ const paymentCallbackAuth = [
 
 // Payment configuration routes (require authentication)
 router.get('/config', authenticate, paymentController.getPaymentConfigs);
-router.post('/config', authenticate, validate(savePaymentConfigValidator), paymentController.savePaymentConfig);
-router.post('/config/test', authenticate, validate(savePaymentConfigValidator), paymentController.testPaymentConnection);
-router.delete('/config/:gateway', authenticate, paymentController.deletePaymentConfig);
+router.post('/config', authenticate, verifyShopAccess, requireOwner, validate(savePaymentConfigValidator), paymentController.savePaymentConfig);
+router.post('/config/test', authenticate, verifyShopAccess, requireOwner, validate(savePaymentConfigValidator), paymentController.testPaymentConnection);
+router.delete('/config/:gateway', authenticate, verifyShopAccess, requireOwner, paymentController.deletePaymentConfig);
 
 // COD payment confirmation (requires authentication)
-router.post('/cod/confirm', authenticate, validate(confirmCodPaymentValidator), paymentController.confirmCodPayment);
+router.post('/cod/confirm', authenticate, verifyShopAccess, validate(confirmCodPaymentValidator), paymentController.confirmCodPayment);
 
 
 module.exports = router;

@@ -10,13 +10,14 @@
  *   BD F-commerce conversations are 3–8 turns; step_data holds all order state.
  *
  * Environment variables:
- *   INTENT_CACHE_TTL_SECONDS    (default: 300)  — how long to cache responses
+ *   INTENT_CACHE_TTL_SECONDS    (default: 1800)  — how long to cache responses
  *   SEMANTIC_SCORE_THRESHOLD    (default: 0.82) — min cosine score for FAQ hit
  *   INTENT_ROUTER_DISABLED      set to "true" to skip routing (use LLM directly)
  */
 
 const llmService = require('./llm.service');
 const { MemoryCache } = require('../../config/memory-cache');
+const { getShopSettingsGeneration } = require('../../utils/shop-settings-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
 const { scrubPII } = require('./prompt-sanitizer.service');
@@ -78,8 +79,8 @@ const shouldSearchProducts = (message) => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const normalisedKey = (shopId, message) =>
-    `intent:${shopId}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`;
+const normalisedKey = (shopId, generation, message) =>
+    `intent:${shopId}:v${generation}:${message.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200)}`;
 
 /**
  * A cached reply is replayed straight to a customer, so it must carry the
@@ -253,7 +254,12 @@ const route = async ({
     // ------------------------------------------------------------------
     // Stage 1: Exact-match response cache (skip for image and order messages)
     // ------------------------------------------------------------------
-    const cacheKey = imageUrls.length > 0 ? null : normalisedKey(shopId, message);
+    const settingsGeneration = await getShopSettingsGeneration(shopId);
+    // A generation read failure must not turn into generation zero: bypass the
+    // local cache so a stale response cannot be replayed after a settings write.
+    const cacheKey = imageUrls.length > 0 || settingsGeneration === null
+        ? null
+        : normalisedKey(shopId, settingsGeneration, message);
     if (cacheKey) {
         const cached = decodeCacheEntry(await intentCache.get(cacheKey));
         if (cached) {
@@ -425,6 +431,48 @@ const _retrieveKnowledge = async (shopId, message) => {
 
         const usedResults = ragResult.results.filter(r => r.score > 0.5);
 
+        // FAQ vectors can outlive a deactivation/delete operation. Resolve every
+        // FAQ hit against the active FAQ rows for this shop before allowing its
+        // text into an AI prompt. A lookup failure is fail-closed for FAQ hits.
+        const faqIdForResult = (result) => {
+            const metadata = result.metadata || {};
+            const rawId = metadata.faq_id
+                ?? metadata.documentId
+                ?? metadata.id;
+            const isFaq = metadata.type === 'faq'
+                || metadata.type === 'faq_response'
+                || metadata.faq_id !== undefined
+                || (typeof rawId === 'string' && rawId.startsWith('faq-'));
+            if (!isFaq || rawId === undefined || rawId === null) return null;
+            return String(rawId).replace(/^faq-/, '');
+        };
+        const isFaqResult = (result) => {
+            const metadata = result.metadata || {};
+            const rawId = metadata.faq_id ?? metadata.documentId ?? metadata.id;
+            return metadata.type === 'faq'
+                || metadata.type === 'faq_response'
+                || metadata.faq_id !== undefined
+                || (typeof rawId === 'string' && rawId.startsWith('faq-'));
+        };
+        const faqIds = [...new Set(usedResults.map(faqIdForResult).filter(Boolean))];
+        let activeFaqIds = null;
+        if (faqIds.length > 0) {
+            try {
+                const { FaqResponse } = require('../entities');
+                const activeFaqs = await FaqResponse.findAll({
+                    where: {
+                        shop_id: shopId,
+                        is_active: true,
+                        id: { [require('sequelize').Op.in]: faqIds }
+                    },
+                    attributes: ['id']
+                });
+                activeFaqIds = new Set(activeFaqs.map(faq => String(faq.id)));
+            } catch (_) {
+                activeFaqIds = new Set();
+            }
+        }
+
         // Product embeddings deliberately EXCLUDE price and stock (they change too
         // often), so the stored product text must never be quoted as ground truth.
         // Vector product hits are re-fetched live below. On the local n-gram hash
@@ -436,6 +484,8 @@ const _retrieveKnowledge = async (shopId, message) => {
         const knowledgeResults = [];
         for (const r of usedResults) {
             const md = r.metadata || {};
+            const faqId = faqIdForResult(r);
+            if (isFaqResult(r) && (!faqId || !activeFaqIds || !activeFaqIds.has(faqId))) continue;
             if (md.type === 'product' && md.product_id) {
                 if (semanticEmbeddings) productIds.push(String(md.product_id));
             } else if (md.type !== 'business_info' && r.content) {
@@ -447,16 +497,20 @@ const _retrieveKnowledge = async (shopId, message) => {
             snippets: knowledgeResults.map(r => r.content.trim()).join('\n---\n'),
             references: knowledgeResults.map(r => {
                 const md = r.metadata || {};
+                const sourceId = md.documentId || md.faq_id || md.id || null;
                 return {
                     kind: 'rag',
-                    id: md.documentId || md.id || null,
+                    id: sourceId,
                     title: md.title || md.source || md.kind || null,
                     score: typeof r.score === 'number' ? Number(r.score.toFixed(3)) : null,
                 };
             }),
             productIds,
             knowledgeIds: knowledgeResults
-                .map(r => (r.metadata || {}).documentId || (r.metadata || {}).id)
+                .map(r => {
+                    const md = r.metadata || {};
+                    return md.documentId || md.faq_id || md.id;
+                })
                 .filter(Boolean)
                 .map(String),
         };
@@ -1027,4 +1081,11 @@ const buildSystemPrompt = (shopKnowledge, language = 'mixed', hasImages = false,
     ].filter(Boolean).join('\n');
 };
 
-module.exports = { route, buildSystemPrompt };
+module.exports = {
+    route,
+    buildSystemPrompt,
+    _private: {
+        normalisedKey,
+        retrieveKnowledge: _retrieveKnowledge,
+    },
+};

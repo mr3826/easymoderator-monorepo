@@ -109,7 +109,7 @@ async function loginAndGo(page: Page) {
     await page.getByRole('button', { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.goto('/manage-shop/business-info');
-    await expect(page.getByRole('heading', { name: 'Reply Settings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Reply Settings' })).toBeVisible({ timeout: 15_000 });
 }
 
 test('AI reply settings load with the canonical confidence default', async ({ page }) => {

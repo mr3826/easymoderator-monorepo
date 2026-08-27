@@ -8,6 +8,7 @@ const {
   validateBusinessInfo,
   validateSettings,
   sanitizeSettings,
+  mergeAndSanitizeSettings,
   AI_SETTINGS_SCHEMA,
   BD_SETTINGS_SCHEMA,
   BUSINESS_INFO_SCHEMA
@@ -480,6 +481,35 @@ describe('Shop Settings Validator', () => {
         ai: { automation_mode: 'AUTO' },
       });
       expect(sanitized.newUnknownKey).toBeUndefined();
+    });
+  });
+
+  describe('mergeAndSanitizeSettings', () => {
+    it('deep-merges a patch without mutating current or patch objects', () => {
+      const current = {
+        businessInfo: { shopName: 'Shop', address: 'Dhaka' },
+        ai: { greeting: { enabled: true, custom_text: 'Hi' } },
+        legacy_domain: { enabled: true },
+      };
+      const patch = { ai: { greeting: { custom_text: 'Hello' } }, unknown: 'drop me' };
+      const currentSnapshot = JSON.parse(JSON.stringify(current));
+      const patchSnapshot = JSON.parse(JSON.stringify(patch));
+
+      const merged = mergeAndSanitizeSettings(current, patch);
+
+      expect(merged).toEqual({
+        businessInfo: { shopName: 'Shop', address: 'Dhaka' },
+        ai: { greeting: { enabled: true, custom_text: 'Hello' } },
+        legacy_domain: { enabled: true },
+      });
+      expect(current).toEqual(currentSnapshot);
+      expect(patch).toEqual(patchSnapshot);
+    });
+
+    it('validates known sections after the merge', () => {
+      expect(() => mergeAndSanitizeSettings({}, {
+        ai: { handoff_settings: { cooldown_minutes: 1441 } },
+      })).toThrow(AppError);
     });
   });
 

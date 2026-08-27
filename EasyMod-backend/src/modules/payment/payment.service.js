@@ -7,17 +7,112 @@ const GATEWAY_ALIAS_TO_CANONICAL = {
     bkash: 'self-mfs'
 };
 
-const normalizeGateway = (gateway) => GATEWAY_ALIAS_TO_CANONICAL[gateway] || gateway;
+const VALID_MFS_TYPES = ['bkash', 'nagad', 'rocket'];
+const VALID_MFS_MODES = ['self', 'business'];
+const SENSITIVE_PAYMENT_KEY = /(?:credential|secret|token|password|api[_-]?key|private[_-]?key)/i;
+
+const normalizeGateway = (gateway) => {
+    if (typeof gateway !== 'string') return gateway;
+    const normalized = gateway.toLowerCase();
+    return GATEWAY_ALIAS_TO_CANONICAL[normalized] || normalized;
+};
+
+const normalizeMfsMode = (mode) => {
+    if (mode === 'merchant') return 'business';
+    if (mode === 'personal') return 'self';
+    return mode;
+};
+
+const isNonEmptyCredentials = (credentials) => (
+    credentials !== null &&
+    typeof credentials === 'object' &&
+    !Array.isArray(credentials) &&
+    Object.keys(credentials).length > 0
+);
+
+const sanitizePaymentConfigOptions = (value) => {
+    if (Array.isArray(value)) return value.map(sanitizePaymentConfigOptions);
+    if (!value || typeof value !== 'object') return value;
+
+    return Object.fromEntries(
+        Object.entries(value)
+            .filter(([key]) => !SENSITIVE_PAYMENT_KEY.test(key))
+            .map(([key, nested]) => [key, sanitizePaymentConfigOptions(nested)])
+    );
+};
 
 const normalizeCredentialsForGateway = (gateway, credentials = {}) => {
-    if (gateway === 'bkash') {
+    if (credentials === null || credentials === undefined) return null;
+    if (typeof credentials !== 'object' || Array.isArray(credentials)) return credentials;
+
+    const normalizedGateway = normalizeGateway(gateway);
+    const source = { ...credentials };
+    if (normalizedGateway === 'self-mfs') {
+        const mfsType = typeof source.mfs_type === 'string'
+            ? source.mfs_type.toLowerCase()
+            : source.mfs_type;
+        const mode = normalizeMfsMode(source.mfs_mode || source.accountType);
+
         return {
-            mfs_type: gateway,
-            mfs_number: credentials.mfs_number || credentials.phone || credentials.merchant_id || credentials.merchantId || '',
-            mfs_mode: credentials.mfs_mode || credentials.accountType || 'self'
+            ...source,
+            ...(mfsType ? { mfs_type: mfsType } : {}),
+            ...(mode ? { mfs_mode: mode } : {}),
+            ...(gateway?.toLowerCase?.() === 'bkash' ? {
+                mfs_type: 'bkash',
+                mfs_number: source.mfs_number || source.phone || source.merchant_id || source.merchantId || '',
+                mfs_mode: mode || 'self'
+            } : {})
         };
     }
-    return credentials;
+    return source;
+};
+
+const validateSelfMfsCredentials = (credentials) => {
+    if (!isNonEmptyCredentials(credentials)) {
+        throw new AppError('Self MFS credentials are required', 400);
+    }
+
+    const mfsType = typeof credentials.mfs_type === 'string'
+        ? credentials.mfs_type.toLowerCase()
+        : credentials.mfs_type;
+    if (!VALID_MFS_TYPES.includes(mfsType)) {
+        throw new AppError(`mfs_type must be one of: ${VALID_MFS_TYPES.join(', ')}`, 400);
+    }
+
+    const mfsMode = normalizeMfsMode(credentials.mfs_mode);
+    if (!VALID_MFS_MODES.includes(mfsMode)) {
+        throw new AppError(`mfs_mode must be one of: ${VALID_MFS_MODES.join(', ')}`, 400);
+    }
+
+    const { validatePhone } = require('../../utils/validators/phone.validator');
+    if (!validatePhone(credentials.mfs_number)) {
+        throw new AppError('mfs_number must be a valid Bangladesh mobile number', 400);
+    }
+
+    return {
+        ...credentials,
+        mfs_type: mfsType,
+        mfs_mode: mfsMode,
+        mfs_number: credentials.mfs_number
+    };
+};
+
+const buildCredentialSummary = (config) => {
+    const credentials = config?.credentials;
+    const hasCredentials = isNonEmptyCredentials(credentials);
+    const mfsMode = hasCredentials
+        ? normalizeMfsMode(credentials.mfs_mode || credentials.accountType)
+        : null;
+    return {
+        has_credentials: hasCredentials,
+        mfs_type: hasCredentials && typeof credentials.mfs_type === 'string'
+            ? credentials.mfs_type
+            : null,
+        mfs_mode: mfsMode || null,
+        mfs_number: hasCredentials
+            ? credentials.mfs_number || credentials.phone || null
+            : null
+    };
 };
 
 /**
@@ -72,7 +167,15 @@ module.exports = {
     getPaymentConfigs,
     savePaymentConfig,
     testPaymentConnection,
-    deletePaymentConfig
+    deletePaymentConfig,
+    _private: {
+        normalizeGateway,
+        normalizeCredentialsForGateway,
+        validateSelfMfsCredentials,
+        buildCredentialSummary,
+        isNonEmptyCredentials,
+        sanitizePaymentConfigOptions
+    }
 };
 
 /**
@@ -90,7 +193,10 @@ async function getPaymentConfigs(shopId, userId) {
         id: config.id,
         gateway: config.gateway,
         is_enabled: config.is_enabled,
-        config: config.config,
+        config: sanitizePaymentConfigOptions(config.config),
+        ...(config.gateway === 'self-mfs'
+            ? { credential_summary: buildCredentialSummary(config) }
+            : {}),
         created_at: config.created_at,
         updated_at: config.updated_at
     }));
@@ -103,13 +209,25 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
     await verifyShopAccess(userId, shopId);
     const originalGateway = gateway;
     gateway = normalizeGateway(gateway);
-    credentials = normalizeCredentialsForGateway(originalGateway, credentials);
 
     // Validate gateway
     const validGateways = ['cod', 'self-mfs'];
     if (!validGateways.includes(gateway)) {
         throw new AppError('Invalid payment gateway', 400);
     }
+
+    const normalizedCredentials = normalizeCredentialsForGateway(originalGateway, credentials);
+    const hasIncomingCredentials = isNonEmptyCredentials(normalizedCredentials);
+    if (gateway === 'self-mfs' && credentials !== undefined && credentials !== null && !hasIncomingCredentials) {
+        // Empty objects are treated as omitted, while malformed non-object
+        // values are rejected rather than silently ignored.
+        if (typeof credentials !== 'object' || Array.isArray(credentials)) {
+            validateSelfMfsCredentials(normalizedCredentials);
+        }
+    }
+    const validatedIncomingCredentials = gateway === 'self-mfs' && hasIncomingCredentials
+        ? validateSelfMfsCredentials(normalizedCredentials)
+        : null;
 
     // Idempotency key logic
     const idempotencyKey = config?.idempotency_key || null;
@@ -124,30 +242,34 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
     try {
         paymentConfig = await PaymentConfig.findOne({ where: { shop_id: shopId, gateway } });
         if (paymentConfig) {
+            const storedCredentials = gateway === 'self-mfs' ? paymentConfig.credentials : null;
+            const effectiveCredentials = validatedIncomingCredentials || storedCredentials;
+            const nextEnabled = isEnabled !== undefined ? isEnabled : paymentConfig.is_enabled;
+
+            if (gateway === 'self-mfs' && nextEnabled) {
+                validateSelfMfsCredentials(effectiveCredentials);
+            }
+
             if (isEnabled !== undefined) {
-                if (isEnabled && gateway !== 'cod') {
-                    if (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0) {
-                        throw new AppError('Cannot enable payment method without credentials. Please save credentials first.', 400);
-                    }
-                }
                 paymentConfig.is_enabled = isEnabled;
             }
-            if (credentials) {
-                paymentConfig.credentials = credentials;
+            if (validatedIncomingCredentials) {
+                paymentConfig.credentials = validatedIncomingCredentials;
             }
             if (config) {
                 paymentConfig.config = config;
             }
             await paymentConfig.save();
         } else {
-            if (gateway !== 'cod' && (!credentials || Object.keys(credentials).length === 0)) {
-                throw new AppError('Credentials are required to create payment configuration', 400);
+            const nextEnabled = isEnabled !== undefined ? isEnabled : false;
+            if (gateway === 'self-mfs' && nextEnabled) {
+                validateSelfMfsCredentials(validatedIncomingCredentials);
             }
             paymentConfig = await PaymentConfig.create({
                 shop_id: shopId,
                 gateway,
-                is_enabled: isEnabled !== undefined ? isEnabled : false,
-                credentials,
+                is_enabled: nextEnabled,
+                credentials: gateway === 'self-mfs' ? validatedIncomingCredentials : null,
                 config: config || {},
                 idempotency_key: idempotencyKey
             });
@@ -159,20 +281,15 @@ async function savePaymentConfig(shopId, userId, gateway, isEnabled, credentials
         // Robust error handling
         throw new AppError('Payment config update failed: ' + err.message, 500);
     }
-    // Safe state transitions
-    if (paymentConfig.is_enabled && (!paymentConfig.credentials || Object.keys(paymentConfig.credentials).length === 0)) {
-        paymentConfig.is_enabled = false;
-        await paymentConfig.save();
-    }
-
     // Sync self-mfs credentials into shop.settings.bd so the chatbot can read them
-    if (gateway === 'self-mfs' && credentials && credentials.mfs_number) {
+    const credentialsForSync = validatedIncomingCredentials || (gateway === 'self-mfs' ? paymentConfig.credentials : null);
+    if (gateway === 'self-mfs' && credentialsForSync?.mfs_number) {
         try {
             const { updateBdSettings } = require('../shop/shop-bd-settings');
             await updateBdSettings(shopId, {
-                mfs_type: credentials.mfs_type,
-                mfs_number: credentials.mfs_number,
-                mfs_mode: credentials.mfs_mode || 'self'
+                mfs_type: credentialsForSync.mfs_type,
+                mfs_number: credentialsForSync.mfs_number,
+                mfs_mode: credentialsForSync.mfs_mode || 'self'
             });
         } catch (_) { /* non-fatal — chatbot will degrade to manual payment */ }
     }
@@ -187,7 +304,6 @@ async function testPaymentConnection(shopId, userId, gateway, credentials) {
     await verifyShopAccess(userId, shopId);
     const originalGateway = gateway;
     gateway = normalizeGateway(gateway);
-    credentials = normalizeCredentialsForGateway(originalGateway, credentials);
 
     if (gateway === 'cod') {
         return {
@@ -195,16 +311,11 @@ async function testPaymentConnection(shopId, userId, gateway, credentials) {
             message: 'COD does not require credentials'
         };
     } else if (gateway === 'self-mfs') {
-        if (!credentials || !credentials.mfs_number) {
-            throw new AppError('Self MFS requires mfs_number (01XXXXXXXXX)', 400);
-        }
-        const { validatePhone } = require('../../utils/validators/phone.validator');
-        if (!validatePhone(credentials.mfs_number)) {
-            throw new AppError('mfs_number must be a valid Bangladesh mobile number', 400);
-        }
+        const normalizedCredentials = normalizeCredentialsForGateway(originalGateway, credentials);
+        const validatedCredentials = validateSelfMfsCredentials(normalizedCredentials);
         return {
             success: true,
-            message: `${credentials.mfs_type || 'MFS'} number verified`
+            message: `${validatedCredentials.mfs_type} number verified`
         };
     }
 

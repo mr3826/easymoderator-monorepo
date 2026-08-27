@@ -4,6 +4,8 @@ const { COURIER_REGISTRY } = require('./providers/provider.registry');
 const deliveryService = require('./delivery.service');
 const { AppError } = require('../../utils/AppError');
 const { Shop } = require('../entities');
+const { mergeAndSanitizeSettings } = require('../shop/shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 
 const DELIVERY_ZONES = ['inside_dhaka', 'sub_dhaka', 'outside_dhaka'];
 
@@ -63,6 +65,51 @@ const applyDeliveryDefaults = (settings = {}) => {
     };
 };
 
+const serializeStore = (store) => {
+    if (!store || typeof store !== 'object') return null;
+    const safe = {};
+    for (const key of ['store_id', 'store_name', 'city_id', 'zone_id', 'area_id']) {
+        if (store[key] !== undefined) safe[key] = store[key];
+    }
+    return safe;
+};
+
+const serializeProviderMetadata = (metadata = {}) => {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
+
+    const safe = {};
+    for (const key of ['store_id', 'store_name']) {
+        if (metadata[key] !== undefined) safe[key] = metadata[key];
+    }
+    if (Array.isArray(metadata.stores)) {
+        safe.stores = metadata.stores.map(serializeStore).filter(Boolean);
+    }
+    if (Number.isFinite(Number(metadata.balance))) {
+        safe.balance = Number(metadata.balance);
+    }
+    return safe;
+};
+
+const serializeProviderValidation = (validation = {}) => {
+    const source = validation && typeof validation === 'object' ? validation : {};
+    const safe = { valid: source.valid === true };
+    if (Array.isArray(source.stores)) {
+        safe.stores = source.stores.map(serializeStore).filter(Boolean);
+    }
+    if (source.balance !== undefined && Number.isFinite(Number(source.balance))) {
+        safe.balance = Number(source.balance);
+    }
+    if (!safe.valid && typeof source.error === 'string') {
+        safe.error = source.error;
+    }
+    return safe;
+};
+
+const forwardSafeProviderError = (next, error, message) => {
+    if (error instanceof AppError) return next(error);
+    return next(new AppError(message, 502));
+};
+
 const pickDeliverySettings = (payload = {}) => {
     const allowed = [
         'default_delivery_charge',
@@ -94,7 +141,7 @@ class DeliveryController {
 
             const integrations = await DeliveryIntegration.findAll({
                 where: { shop_id: shopId },
-                attributes: ['id', 'provider', 'is_active', 'is_connected', 'metadata', 'last_validated_at', 'created_at']
+                attributes: ['id', 'provider', 'is_active', 'is_connected', 'is_sandbox', 'metadata', 'last_validated_at', 'created_at']
             });
 
             const shop = await Shop.findByPk(shopId, { attributes: ['id', 'settings'] });
@@ -110,7 +157,8 @@ class DeliveryController {
                     display_name: `${providerMeta.label} Courier`,
                     is_connected: integration ? integration.is_connected : false,
                     is_active: integration ? integration.is_active : false,
-                    metadata: integration ? integration.metadata : {},
+                    is_sandbox: integration ? integration.is_sandbox === true : false,
+                    metadata: integration ? serializeProviderMetadata(integration.metadata) : {},
                     last_validated_at: integration ? integration.last_validated_at : null,
                     connected_at: integration ? integration.created_at : null
                 };
@@ -143,17 +191,22 @@ class DeliveryController {
             const existingSettings = shop.settings || {};
             const existingDelivery = existingSettings.delivery || {};
             const incoming = pickDeliverySettings(req.body || {});
-            const merged = applyDeliveryDefaults({
+            const normalizedDelivery = applyDeliveryDefaults({
                 ...existingDelivery,
                 ...incoming
             });
-
-            await shop.update({
-                settings: {
-                    ...existingSettings,
-                    delivery: merged
+            const mergedSettings = mergeAndSanitizeSettings(existingSettings, {
+                delivery: {
+                    ...existingDelivery,
+                    ...normalizedDelivery
                 }
             });
+            const merged = mergedSettings.delivery;
+
+            await shop.update({
+                settings: mergedSettings
+            });
+            await invalidateShopSettingsCaches(shopId);
 
             res.json({
                 success: true,
@@ -171,6 +224,7 @@ class DeliveryController {
         try {
             const shopId = req.user.shopId;
             const { provider, credentials, is_sandbox = false, metadata = {} } = req.body;
+            const isSandbox = is_sandbox === true;
 
             // Check if provider already exists
             let integration = await DeliveryIntegration.findOne({
@@ -187,14 +241,15 @@ class DeliveryController {
             }
             const ProviderClass = providerMeta.Provider;
 
-            const providerInstance = new ProviderClass(credentials, is_sandbox);
+            const providerInstance = new ProviderClass(credentials, isSandbox);
             const validation = await providerInstance.validateCredentials();
+            const safeValidation = serializeProviderValidation(validation);
 
             if (!validation.valid) {
                 return res.status(400).json({
                     success: false,
                     message: 'Credential validation failed',
-                    error: validation.error
+                    error: 'Credential validation failed'
                 });
             }
 
@@ -206,22 +261,23 @@ class DeliveryController {
             }
 
             // Update provider metadata if available
-            let finalMetadata = { ...metadata };
-            if (provider === 'pathao' && validation.stores) {
-                finalMetadata.stores = validation.stores;
+            let finalMetadata = serializeProviderMetadata(metadata);
+            if (provider === 'pathao' && safeValidation.stores) {
+                finalMetadata.stores = safeValidation.stores;
                 // Set default store if only one exists
-                if (validation.stores.length === 1) {
-                    finalMetadata.store_id = validation.stores[0].store_id;
+                if (safeValidation.stores.length === 1) {
+                    finalMetadata.store_id = safeValidation.stores[0].store_id;
                 }
             }
-            if (provider === 'steadfast' && validation.balance !== undefined) {
-                finalMetadata.balance = validation.balance;
+            if (provider === 'steadfast' && safeValidation.balance !== undefined) {
+                finalMetadata.balance = safeValidation.balance;
             }
 
             if (integration) {
                 // Update existing integration
                 integration.credentials = finalCredentials;
                 integration.is_connected = true;
+                integration.is_sandbox = isSandbox;
                 integration.metadata = finalMetadata;
                 integration.last_validated_at = new Date();
                 await integration.save();
@@ -233,6 +289,7 @@ class DeliveryController {
                     credentials: finalCredentials,
                     is_connected: true,
                     is_active: false, // Merchant needs to activate it
+                    is_sandbox: isSandbox,
                     metadata: finalMetadata,
                     last_validated_at: new Date()
                 });
@@ -245,11 +302,12 @@ class DeliveryController {
                     provider: integration.provider,
                     is_connected: integration.is_connected,
                     is_active: integration.is_active,
-                    metadata: integration.metadata
+                    is_sandbox: integration.is_sandbox === true,
+                    metadata: serializeProviderMetadata(integration.metadata)
                 }
             });
         } catch (error) {
-            next(error);
+            forwardSafeProviderError(next, error, 'Delivery provider connection failed');
         }
     }
 
@@ -352,14 +410,18 @@ class DeliveryController {
             }
             const ProviderClass = providerMeta.Provider;
 
-            const providerInstance = new ProviderClass(integration.credentials);
+            const providerInstance = new ProviderClass(
+                integration.credentials,
+                integration.is_sandbox === true
+            );
             const validation = await providerInstance.validateCredentials();
+            const safeValidation = serializeProviderValidation(validation);
 
             if (!validation.valid) {
                 return res.status(400).json({
                     success: false,
                     message: 'Connection test failed',
-                    error: validation.error
+                    error: 'Connection test failed'
                 });
             }
 
@@ -370,10 +432,10 @@ class DeliveryController {
             res.json({
                 success: true,
                 message: 'Connection test successful',
-                data: validation
+                data: safeValidation
             });
         } catch (error) {
-            next(error);
+            forwardSafeProviderError(next, error, 'Delivery provider test failed');
         }
     }
 
@@ -400,24 +462,28 @@ class DeliveryController {
                 throw new AppError('Pathao not connected', 400);
             }
 
-            const pathaoInstance = new PathaoProvider(integration.credentials);
+            const pathaoInstance = new PathaoProvider(
+                integration.credentials,
+                integration.is_sandbox === true
+            );
             const stores = await pathaoInstance.getStores();
+            const safeStores = (Array.isArray(stores) ? stores : []).map(serializeStore).filter(Boolean);
 
             // Update metadata with latest stores
             integration.metadata = {
-                ...integration.metadata,
-                stores
+                ...serializeProviderMetadata(integration.metadata),
+                stores: safeStores
             };
             await integration.save();
 
             res.json({
                 success: true,
                 data: {
-                    stores
+                    stores: safeStores
                 }
             });
         } catch (error) {
-            next(error);
+            forwardSafeProviderError(next, error, 'Delivery provider store lookup failed');
         }
     }
 
@@ -441,17 +507,17 @@ class DeliveryController {
                 throw new AppError('Provider not found', 404);
             }
 
-            integration.metadata = {
+            integration.metadata = serializeProviderMetadata({
                 ...integration.metadata,
                 ...metadata
-            };
+            });
             await integration.save();
 
             res.json({
                 success: true,
                 message: 'Metadata updated successfully',
                 data: {
-                    metadata: integration.metadata
+                    metadata: serializeProviderMetadata(integration.metadata)
                 }
             });
         } catch (error) {

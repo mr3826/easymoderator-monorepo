@@ -1,6 +1,8 @@
 const express = require('express');
 const shopController = require('./shop.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { requireOwner } = require('../../middleware/shop-permission.middleware');
 const {
     shopCreateValidator,
     shopUpdateValidator,
@@ -26,7 +28,7 @@ router.get('/me', shopController.getShop);
 router.post('/create', shopCreateValidator, shopController.createShop);
 
 // POST /shop/update - Update shop
-router.post('/update', shopUpdateValidator, shopController.updateShop);
+router.post('/update', verifyShopAccess, requireOwner, shopUpdateValidator, shopController.updateShop);
 
 // POST /shop/delete - Delete shop
 router.post('/delete', shopGetValidator, shopController.deleteShop);
@@ -44,7 +46,7 @@ router.post('/update-role', updateRoleValidator, shopController.updateUserRole);
 router.get('/business-info', shopController.getBusinessInfo);
 
 // PUT /shop/business-info - Update business info for current shop
-router.put('/business-info', shopBusinessInfoValidator, shopController.updateBusinessInfo);
+router.put('/business-info', verifyShopAccess, requireOwner, shopBusinessInfoValidator, shopController.updateBusinessInfo);
 
 // GET /shop/onboarding/status - Server-computed first-launch checklist
 router.get('/onboarding/status', shopController.getOnboardingStatus);
@@ -62,7 +64,7 @@ router.put('/llm-config', shopController.updateLLMConfig);
 router.get('/ai-settings', shopController.getAISettings);
 
 // PUT /shop/ai-settings - Update AI behaviour settings
-router.put('/ai-settings', shopController.updateAISettings);
+router.put('/ai-settings', verifyShopAccess, requireOwner, shopController.updateAISettings);
 
 // GET /shop/ai-settings/intent-thresholds - Get per-intent confidence thresholds
 router.get('/ai-settings/intent-thresholds', shopController.getIntentThresholds);
@@ -80,7 +82,7 @@ router.post('/branding-preset', shopController.applyBrandingPreset);
 router.get('/bd-settings', shopController.getBdSettings);
 
 // PUT /shop/bd-settings - Update BD-specific settings
-router.put('/bd-settings', shopController.updateBdSettings);
+router.put('/bd-settings', verifyShopAccess, requireOwner, shopController.updateBdSettings);
 
 // GET /shop/agents - List team members for the current shop (used by inbox assignment)
 router.get('/agents', shopController.getShopAgents);
@@ -89,7 +91,7 @@ router.get('/agents', shopController.getShopAgents);
 router.get('/platform-priority', shopController.getPlatformPriority);
 
 // PUT /shop/platform-priority - Update payment/delivery platform priority order
-router.put('/platform-priority', shopController.updatePlatformPriority);
+router.put('/platform-priority', verifyShopAccess, requireOwner, shopController.updatePlatformPriority);
 
 // GET /shop/ai-diagnostics - Debug auto-reply: queue stats, channel settings, recent policy denials
 router.get('/ai-diagnostics', shopController.getAIDiagnostics);

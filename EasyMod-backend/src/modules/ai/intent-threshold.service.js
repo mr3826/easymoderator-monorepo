@@ -1,5 +1,7 @@
 const { AppError } = require('../../utils/AppError');
 const shopService = require('../shop/shop.service');
+const { mergeAndSanitizeSettings } = require('../shop/shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 
 /**
  * Get the effective confidence threshold for a specific intent in a shop.
@@ -61,14 +63,14 @@ const updateIntentThresholds = async (shopId, thresholdMap) => {
     const newThresholds = { ...existingThresholds, ...thresholdMap };
 
     await shop.update({
-        settings: {
-            ...currentSettings,
+        settings: mergeAndSanitizeSettings(currentSettings, {
             ai: {
                 ...currentAI,
                 intentThresholds: newThresholds
             }
-        }
+        })
     });
+    await invalidateShopSettingsCaches(shopId);
 
     return newThresholds;
 };

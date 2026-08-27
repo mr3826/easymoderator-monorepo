@@ -19,6 +19,7 @@ const MetaUserIdentity = require('./meta-user-identity.entity');
 const { sequelize } = require('../../utils/database/database-setup');
 const { getProvider } = require('./provider.registry');
 const { createLogger } = require('../../utils/structured-logger');
+const { serializeChannel } = require('./meta-channel.serializer');
 const stateStore = require('./oauth-state.store');
 const config = require('../../config/config');
 
@@ -248,7 +249,7 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     }
 
     logger.info('Asset connected', { shopId, assetId, channelId: channel.id, webhookWarning: !!webhookWarning });
-    return { ...channel.toJSON(), webhookWarning };
+    return serializeChannel(channel, { webhookWarning });
 }
 
 module.exports = { initiateOAuth, handleCallback, connectPage, _private: { callbackKey, findAuthorizedPage } };
