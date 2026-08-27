@@ -153,7 +153,7 @@ const getOrCreate = async (shopId, systemPrompt, model) => {
  */
 const invalidate = async (shopId) => {
     try {
-        if (!redis || typeof redis.scan !== 'function') return;
+        if (!redis || typeof redis.scan !== 'function') return true;
         const pattern = `gemini_cache:${shopId}:*`;
         let cursor = '0';
         do {
@@ -163,7 +163,8 @@ const invalidate = async (shopId) => {
             cursor = nextCursor;
             if (keys.length > 0) await redis.del(...keys);
         } while (cursor !== '0');
-    } catch { /* ignore */ }
+        return true;
+    } catch { return false; }
 };
 
 module.exports = { getOrCreate, invalidate };

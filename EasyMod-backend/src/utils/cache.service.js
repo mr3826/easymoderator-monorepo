@@ -181,6 +181,23 @@ class CacheService {
     }
 
     /**
+     * Delete a tenant-scoped value without converting a Redis outage into a
+     * successful no-op. The in-memory fallback remains valid for local runs.
+     */
+    async deleteForShopStrict(shopId, key) {
+        const rawKey = this._tenantKey(shopId, key);
+        if (cacheRedis?._isMemoryFallback === true) {
+            await cacheRedis.del(rawKey);
+            return true;
+        }
+        if (!cacheRedis || cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        await cacheRedis.del(rawKey);
+        return true;
+    }
+
+    /**
      * Delete tenant-scoped entries matching a pattern (SCAN-based, non-blocking).
      * @param {string} shopId - Tenant identifier
      * @param {string} pattern - Glob pattern relative to tenant namespace (e.g. 'product:*')
@@ -230,6 +247,21 @@ class CacheService {
             console.error('Cache incrementForShop error:', error);
             return 0;
         }
+    }
+
+    /**
+     * Increment a tenant-scoped counter without hiding a Redis outage. This
+     * is used for cache generations, where a missed increment can replay data.
+     */
+    async incrementForShopStrict(shopId, key, amount = 1) {
+        const rawKey = this._tenantKey(shopId, key);
+        if (cacheRedis?._isMemoryFallback === true) {
+            return cacheRedis.incrby(rawKey, amount);
+        }
+        if (!cacheRedis || cacheRedis.status !== 'ready') {
+            throw new Error('Redis cache is unavailable');
+        }
+        return cacheRedis.incrby(rawKey, amount);
     }
 
     /**

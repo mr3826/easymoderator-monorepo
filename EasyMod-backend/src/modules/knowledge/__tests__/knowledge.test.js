@@ -259,6 +259,20 @@ describe('Knowledge API', () => {
             expect(cacheService.incrementForShop).toHaveBeenCalledWith('shop-1', 'settings:generation');
         });
 
+        it('retries settings cache invalidation after a transient cache outage', async () => {
+            jest.useFakeTimers();
+            const cacheService = require('src/utils/cache.service');
+            const { invalidateShopSettingsCaches } = require('src/utils/shop-settings-cache');
+            cacheService.deleteForShop.mockRejectedValueOnce(new Error('redis unavailable'));
+
+            await invalidateShopSettingsCaches('shop-1');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
+
+            await jest.advanceTimersByTimeAsync(1000);
+            expect(cacheService.deleteForShop).toHaveBeenCalledTimes(3);
+            jest.useRealTimers();
+        });
+
     });
 
     // ── Removed starter FAQ seeding ───────────────────────────────────────
