@@ -194,21 +194,47 @@ const validateSettings = (settings) => {
 };
 
 /**
- * Sanitize settings object (removes unknown keys)
+ * Sanitize settings object (removes unknown keys unless they already exist in
+ * the persisted settings object being updated).
+ *
  * @param {object} settings - Settings to sanitize
+ * @param {object} [preservedSettings] - Existing persisted settings to retain
  * @returns {object} Sanitized settings
  */
-const sanitizeSettings = (settings) => {
+const sanitizeSettings = (settings, preservedSettings = {}) => {
   if (typeof settings !== 'object' || settings === null) {
     return {};
   }
 
   const sanitized = {};
-  
-  // Only keep known top-level keys
-  const knownKeys = ['ai', 'bd', 'businessInfo', 'branding'];
-  for (const key of knownKeys) {
-    if (key in settings) {
+
+  // Keep the known schema sections and settings written by other domains.
+  // Existing keys are included separately so adding a new settings domain does
+  // not make an AI update silently delete data until this list is updated.
+  const knownKeys = new Set([
+    'ai',
+    'bd',
+    'businessInfo',
+    'branding',
+    'brandingRules',
+    'delivery',
+    'documents',
+    'policies',
+    'rto_network',
+    'activation',
+    'onboarding',
+    'onboarding_completed',
+    'onboarding_completed_at',
+    'onboarding_status_snapshot',
+    'payment_platform_priority',
+    'delivery_platform_priority',
+  ]);
+  if (preservedSettings && typeof preservedSettings === 'object') {
+    for (const key of Object.keys(preservedSettings)) knownKeys.add(key);
+  }
+
+  for (const key of Object.keys(settings)) {
+    if (knownKeys.has(key)) {
       sanitized[key] = settings[key];
     }
   }

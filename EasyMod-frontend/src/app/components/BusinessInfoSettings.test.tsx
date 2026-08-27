@@ -28,7 +28,7 @@ const {
   };
   const mockAISettings = {
     automation_mode: 'DRAFT',
-    confidence_threshold: 60,
+    confidence_threshold: 75,
     auto_reply_enabled: false,
     max_auto_order_value: 5000,
     ask_email: false,
@@ -51,7 +51,7 @@ const mockBusinessInfo = {
   brandingRules: {}, faqs: [], documents: [], ai_settings: {},
 };
 const mockAISettings = {
-  automation_mode: 'DRAFT', confidence_threshold: 60, auto_reply_enabled: false,
+  automation_mode: 'DRAFT', confidence_threshold: 75, auto_reply_enabled: false,
   max_auto_order_value: 5000, ask_email: false, primary_language: 'mixed',
   required_fields: { customer_name: true, mobile_number: true, delivery_address: true, payment_method: true, email_address: false, special_instructions: false },
   handoff_settings: { trigger_keywords: ['complain', 'problem'], notification_channel: 'in_app', cooldown_minutes: 30 },

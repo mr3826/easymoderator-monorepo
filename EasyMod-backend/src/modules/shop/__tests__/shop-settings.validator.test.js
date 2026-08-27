@@ -460,6 +460,27 @@ describe('Shop Settings Validator', () => {
       const sanitized = sanitizeSettings(settings);
       expect(sanitized.ai.nested.deep).toBe('value');
     });
+
+    it('preserves existing settings keys while sanitizing an AI update', () => {
+      const existingSettings = {
+        legacy_domain_setting: { enabled: true },
+        onboarding_completed: true,
+        payment_platform_priority: ['bkash'],
+        delivery_platform_priority: ['pathao'],
+      };
+
+      const sanitized = sanitizeSettings({
+        ...existingSettings,
+        ai: { automation_mode: 'AUTO' },
+        newUnknownKey: 'must not be introduced',
+      }, existingSettings);
+
+      expect(sanitized).toEqual({
+        ...existingSettings,
+        ai: { automation_mode: 'AUTO' },
+      });
+      expect(sanitized.newUnknownKey).toBeUndefined();
+    });
   });
 
   describe('Schema exports', () => {

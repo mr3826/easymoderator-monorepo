@@ -367,7 +367,8 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     const currentSettings = shop.settings || {};
     const currentAI = currentSettings.ai || {};
 
-    // Deep-merge required_fields and handoff_settings sub-objects
+    // Deep-merge nested settings blocks so partial updates do not erase
+    // sibling values that were not included in the request.
     const newAI = { ...currentAI, ...updates };
     if (updates.required_fields) {
         newAI.required_fields = { ...(currentAI.required_fields || {}), ...updates.required_fields };
@@ -375,13 +376,19 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     if (updates.handoff_settings) {
         newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...updates.handoff_settings };
     }
+    if (updates.greeting) {
+        newAI.greeting = { ...(currentAI.greeting || {}), ...updates.greeting };
+    }
+    if (updates.closing) {
+        newAI.closing = { ...(currentAI.closing || {}), ...updates.closing };
+    }
     // Deep-merge intent_confidence_map to preserve per-intent settings
     if (updates.intent_confidence_map) {
         newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...updates.intent_confidence_map };
     }
 
     // Sanitize and validate complete settings
-    const sanitizedSettings = sanitizeSettings({ ...currentSettings, ai: newAI });
+    const sanitizedSettings = sanitizeSettings({ ...currentSettings, ai: newAI }, currentSettings);
     validateSettings(sanitizedSettings);
 
     await shop.update({ settings: sanitizedSettings });

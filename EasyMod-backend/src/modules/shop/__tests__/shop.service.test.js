@@ -51,7 +51,7 @@ jest.mock('../shop-defaults', () => ({
 jest.mock('../shop-settings.validator', () => ({
     validateAISettings: jest.fn().mockReturnValue({ valid: true }),
     validateSettings: jest.fn().mockReturnValue({ valid: true }),
-    sanitizeSettings: jest.fn((s) => s),
+    sanitizeSettings: jest.fn(jest.requireActual('../shop-settings.validator').sanitizeSettings),
 }));
 
 const { Shop, UserShop } = require('../../entities');

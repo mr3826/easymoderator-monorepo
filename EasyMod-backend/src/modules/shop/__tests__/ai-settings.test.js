@@ -248,6 +248,27 @@ describe('Shop AI Settings API', () => {
             expect(mockShop.settings.ai.closing).toEqual({ enabled: false, custom_text: 'Thanks' });
         });
 
+        it('returns saved AI settings after a reload-style GET', async () => {
+            const save = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({
+                    automation_mode: 'AUTO',
+                    confidence_threshold: 85,
+                    primary_language: 'en',
+                });
+
+            expect(save.status).toBe(200);
+
+            const reload = await request(app).get('/api/shop/ai-settings');
+            expect(reload.status).toBe(200);
+            expect(reload.body.data).toEqual(expect.objectContaining({
+                automation_mode: 'AI_ACTIVE',
+                confidence_threshold: 85,
+                primary_language: 'en',
+                auto_reply_enabled: true,
+            }));
+        });
+
         it('converts auto_reply_enabled to boolean', async () => {
             const res = await request(app)
                 .put('/api/shop/ai-settings')
@@ -329,6 +350,62 @@ describe('Shop AI Settings API', () => {
             const updateCall = shopWithSettings.update.mock.calls[0][0];
             // businessInfo must be preserved at the top level
             expect(updateCall.settings.businessInfo).toEqual({ shopName: 'My Shop' });
+        });
+
+        it('preserves persisted settings domains that are not in the AI payload', async () => {
+            const shopWithSettings = {
+                ...mockShop,
+                settings: {
+                    ai: { automation_mode: 'DRAFT' },
+                    onboarding_completed: true,
+                    onboarding_completed_at: '2026-08-01T00:00:00.000Z',
+                    onboarding_status_snapshot: { can_complete: true },
+                    payment_platform_priority: ['bkash', 'cod'],
+                    delivery_platform_priority: ['pathao', 'steadfast'],
+                    legacy_domain_setting: { keep: true },
+                },
+                update: jest.fn(() => Promise.resolve()),
+            };
+            Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+            const shopService = require('src/modules/shop/shop.service');
+            await shopService.updateShopAiSettings('shop-1', 'user-1', {
+                confidence_threshold: 80,
+            });
+
+            const saved = shopWithSettings.update.mock.calls[0][0].settings;
+            expect(saved).toEqual(expect.objectContaining({
+                onboarding_completed: true,
+                onboarding_completed_at: '2026-08-01T00:00:00.000Z',
+                onboarding_status_snapshot: { can_complete: true },
+                payment_platform_priority: ['bkash', 'cod'],
+                delivery_platform_priority: ['pathao', 'steadfast'],
+                legacy_domain_setting: { keep: true },
+            }));
+        });
+
+        it('deep-merges partial greeting and closing updates', async () => {
+            const shopWithSettings = {
+                ...mockShop,
+                settings: {
+                    ai: {
+                        greeting: { enabled: true, custom_text: 'Welcome', tone: 'warm' },
+                        closing: { enabled: true, custom_text: 'Thanks', include_socials: true },
+                    },
+                },
+                update: jest.fn(() => Promise.resolve()),
+            };
+            Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+            const shopService = require('src/modules/shop/shop.service');
+            await shopService.updateShopAiSettings('shop-1', 'user-1', {
+                greeting: { custom_text: 'Hello' },
+                closing: { enabled: false },
+            });
+
+            const saved = shopWithSettings.update.mock.calls[0][0].settings.ai;
+            expect(saved.greeting).toEqual({ enabled: true, custom_text: 'Hello', tone: 'warm' });
+            expect(saved.closing).toEqual({ enabled: false, custom_text: 'Thanks', include_socials: true });
         });
     });
 });
