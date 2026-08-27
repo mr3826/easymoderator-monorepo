@@ -228,12 +228,34 @@ describe('Order Domain API', () => {
       const mockResponse = {
         data: {
           data: {
-            default_delivery_charge: 50,
-            cod_enabled: true,
             providers: [
-              { provider: 'pathao', enabled: true },
-              { provider: 'steadfast', enabled: false },
+              {
+                provider: 'pathao',
+                display_name: 'Pathao Courier',
+                is_connected: true,
+                is_active: true,
+                is_sandbox: false,
+                last_validated_at: null,
+                connected_at: null,
+              },
+              {
+                provider: 'steadfast',
+                display_name: 'Steadfast Courier',
+                is_connected: false,
+                is_active: false,
+                is_sandbox: false,
+                last_validated_at: null,
+                connected_at: null,
+              },
             ],
+            settings: {
+              default_delivery_charge: 50,
+              cod_enabled: true,
+              cod_charge: 0,
+              non_refundable: false,
+              area_pricing: [],
+              weight_tiers: [],
+            },
           },
         },
       };

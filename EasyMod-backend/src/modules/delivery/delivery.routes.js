@@ -3,10 +3,13 @@ const router = express.Router();
 const deliveryController = require('./delivery.controller');
 const { deliveryValidators } = require('./delivery.validator');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { requireOwner } = require('../../middleware/shop-permission.middleware');
 const validate = require('../../middleware/validate.middleware');
 
 // All delivery routes require authentication
 router.use(authenticate);
+router.use(verifyShopAccess);
 
 /**
  * GET /shop/delivery/settings
@@ -23,6 +26,7 @@ router.get(
  */
 router.put(
     '/settings',
+    requireOwner,
     validate(deliveryValidators.updateSettings),
     deliveryController.updateSettings
 );
@@ -33,6 +37,7 @@ router.put(
  */
 router.post(
     '/connect',
+    requireOwner,
     validate(deliveryValidators.connectProvider),
     deliveryController.connectProvider
 );
@@ -43,6 +48,7 @@ router.post(
  */
 router.post(
     '/disconnect',
+    requireOwner,
     validate(deliveryValidators.disconnectProvider),
     deliveryController.disconnectProvider
 );
@@ -53,6 +59,7 @@ router.post(
  */
 router.post(
     '/toggle',
+    requireOwner,
     validate(deliveryValidators.toggleProvider),
     deliveryController.toggleProvider
 );
@@ -63,6 +70,7 @@ router.post(
  */
 router.post(
     '/test',
+    requireOwner,
     validate(deliveryValidators.disconnectProvider), // Reuse same validation (just needs provider)
     deliveryController.testConnection
 );
@@ -73,6 +81,7 @@ router.post(
  */
 router.get(
     '/:provider/stores',
+    requireOwner,
     deliveryController.getProviderStores
 );
 
@@ -82,6 +91,7 @@ router.get(
  */
 router.put(
     '/:provider/metadata',
+    requireOwner,
     validate(deliveryValidators.updateMetadata),
     deliveryController.updateMetadata
 );

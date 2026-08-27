@@ -6,9 +6,14 @@ const {
     requirePlatformAdmin,
     PLATFORM_ROLES,
 } = require('../../middleware/platform-admin.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { requireOwner } = require('../../middleware/shop-permission.middleware');
 
 const router = express.Router();
 const superAdminOnly = requirePlatformAdmin(PLATFORM_ROLES.SUPER_ADMIN);
+
+const memberShopAccess = [bindAuthenticatedShop, verifyShopAccess];
+const ownerShopAccess = [bindAuthenticatedShop, verifyShopAccess, requireOwner];
 
 router.use(authenticate);
 
@@ -86,7 +91,7 @@ router.post('/initialize', superAdminOnly, DeliveryRAGController.initializeColle
  */
 router.post(
     '/zones',
-    bindAuthenticatedShop,
+    ...ownerShopAccess,
     validateAddDeliveryZone,
     DeliveryRAGController.addDeliveryZone,
 );
@@ -97,7 +102,7 @@ router.post(
  */
 router.post(
     '/zones/batch',
-    bindAuthenticatedShop,
+    ...ownerShopAccess,
     validateBatchAddDeliveryZones,
     DeliveryRAGController.batchAddDeliveryZones,
 );
@@ -106,7 +111,7 @@ router.post(
  * GET /api/delivery/rag/zones
  * Get all delivery zones for a shop
  */
-router.get('/zones', bindAuthenticatedShop, DeliveryRAGController.getDeliveryZones);
+router.get('/zones', ...memberShopAccess, DeliveryRAGController.getDeliveryZones);
 
 /**
  * PUT /api/delivery/rag/zones/:shop_id/:zone_name
@@ -114,7 +119,7 @@ router.get('/zones', bindAuthenticatedShop, DeliveryRAGController.getDeliveryZon
  */
 router.put(
     '/zones/:shop_id/:zone_name',
-    bindAuthenticatedShop,
+    ...ownerShopAccess,
     validateUpdateDeliveryZone,
     DeliveryRAGController.updateDeliveryZone,
 );
@@ -125,7 +130,7 @@ router.put(
  */
 router.delete(
     '/zones/:shop_id/:zone_name',
-    bindAuthenticatedShop,
+    ...ownerShopAccess,
     DeliveryRAGController.deleteDeliveryZone,
 );
 
@@ -135,7 +140,7 @@ router.delete(
  */
 router.post(
     '/match-address',
-    bindAuthenticatedShop,
+    ...memberShopAccess,
     validateMatchAddress,
     DeliveryRAGController.matchAddress,
 );
@@ -146,7 +151,7 @@ router.post(
  */
 router.post(
     '/calculate-charge',
-    bindAuthenticatedShop,
+    ...memberShopAccess,
     validateCalculateDeliveryCharge,
     DeliveryRAGController.calculateDeliveryCharge,
 );
@@ -155,13 +160,13 @@ router.post(
  * GET /api/delivery/rag/stats
  * Get delivery statistics
  */
-router.get('/stats', bindAuthenticatedShop, DeliveryRAGController.getDeliveryStats);
+router.get('/stats', ...memberShopAccess, DeliveryRAGController.getDeliveryStats);
 
 /**
  * GET /api/delivery/rag/test
  * Test address matching with sample data
  */
-router.get('/test', bindAuthenticatedShop, DeliveryRAGController.testAddressMatching);
+router.get('/test', ...memberShopAccess, DeliveryRAGController.testAddressMatching);
 
 module.exports = router;
 module.exports._private = { bindAuthenticatedShop };

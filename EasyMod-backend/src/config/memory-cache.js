@@ -64,6 +64,13 @@ class MemoryCache {
         return 'OK';
     }
 
+    async incrby(key, amount = 1) {
+        const current = await this.get(key);
+        const next = (Number(current) || 0) + Number(amount);
+        await this.set(key, next);
+        return next;
+    }
+
     /**
      * Delete one or more keys
      */

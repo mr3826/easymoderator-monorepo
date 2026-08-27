@@ -20,6 +20,24 @@ const { getProvider } = require('../channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const policyEngine = require('../policy/policy.engine');
 const { Customer, MetaChannelSettings } = require('../entities');
+const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
+const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
+const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
+
+async function getHandoffCooldownMinutes(shopId) {
+    try {
+        const shopService = require('../shop/shop.service');
+        const settings = await shopService.getShopAiSettings(shopId);
+        const configured = settings?.handoff_settings?.cooldown_minutes;
+        if (typeof configured === 'number'
+            && Number.isFinite(configured)
+            && configured >= 0
+            && configured <= MAX_HANDOFF_COOLDOWN_MINUTES) {
+            return configured;
+        }
+    } catch (_) { /* use the canonical default when settings are unavailable */ }
+    return DEFAULT_HANDOFF_COOLDOWN_MINUTES;
+}
 
 /**
  * @param {object}   params
@@ -50,7 +68,14 @@ async function escalateToHuman({
             try {
                 const merchantNotificationService = require('../notification/merchant-notification.service');
                 const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
-                merchantNotificationService.notifyShop(
+                const cooldownMinutes = await getHandoffCooldownMinutes(shopId);
+                const notificationOptions = cooldownMinutes > 0
+                    ? {
+                        dedupeKey: `shop:${shopId}:ai_handoff`,
+                        dedupeTtlSeconds: cooldownMinutes * 60,
+                    }
+                    : {};
+                Promise.resolve(merchantNotificationService.notifyShop(
                     shopId,
                     NOTIFICATION_EVENTS.AI_HITL,
                     {
@@ -58,8 +83,8 @@ async function escalateToHuman({
                         reason,
                         platform
                     },
-                    { dedupeKey: `${convId}:${reason || 'handoff'}` }
-                ).catch(() => {});
+                    notificationOptions
+                )).catch(() => {});
             } catch (_) { /* alert failure must never block HITL */ }
         }
         sseManager.emit(shopId, 'hitl_changed', { conversation_id: convId, hitl: true });
@@ -126,4 +151,7 @@ async function escalateToHuman({
     return holdingMsg;
 }
 
-module.exports = { escalateToHuman };
+module.exports = {
+    escalateToHuman,
+    _private: { getHandoffCooldownMinutes }
+};

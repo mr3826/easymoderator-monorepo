@@ -57,4 +57,35 @@ describe('launch route perimeter contracts', () => {
         expect(controller).not.toMatch(/const \{ shop_id[^}]*\} = req\.(body|query|params)/);
         expect(controller).toContain('req.authenticatedShopId');
     });
+
+    test('Meta channel settings PATCH checks row ownership before mutation', () => {
+        const controller = source('src/modules/channel-providers/meta-channel.controller.js');
+        const ownershipCheck = controller.indexOf('await assertChannelBelongsToShop(channelId, shopId);');
+        const mutation = controller.indexOf('await metaChannelService.updateSettings(channelId, patch);');
+
+        expect(ownershipCheck).toBeGreaterThan(-1);
+        expect(mutation).toBeGreaterThan(ownershipCheck);
+    });
+
+    test('planned settings mutations use the owner middleware after active membership', () => {
+        const paymentRoutes = source('src/modules/payment/payment.routes.js');
+        const legacyPaymentRoutes = source('src/modules/payment/payment-methods.routes.js');
+        const shopRoutes = source('src/modules/shop/shop.routes.js');
+        const deliveryRoutes = source('src/modules/delivery/delivery.routes.js');
+        const deliveryRagRoutes = source('src/modules/delivery/delivery-rag.routes.js');
+
+        expect(paymentRoutes).toContain('verifyShopAccess');
+        expect(paymentRoutes).toContain('requireOwner');
+        expect(legacyPaymentRoutes).toContain('verifyShopAccess');
+        expect(legacyPaymentRoutes).toContain('requireOwner');
+        expect(shopRoutes).toContain("router.post('/update', verifyShopAccess, requireOwner");
+        expect(shopRoutes).toContain("router.put('/business-info', verifyShopAccess, requireOwner");
+        expect(shopRoutes).toContain("router.put('/ai-settings', verifyShopAccess, requireOwner");
+        expect(shopRoutes).toContain("router.put('/bd-settings', verifyShopAccess, requireOwner");
+        expect(shopRoutes).toContain("router.put('/platform-priority', verifyShopAccess, requireOwner");
+        expect(deliveryRoutes).toContain('router.use(verifyShopAccess)');
+        expect(deliveryRoutes).toContain('requireOwner');
+        expect(deliveryRagRoutes).toContain('verifyShopAccess');
+        expect(deliveryRagRoutes).toContain('requireOwner');
+    });
 });

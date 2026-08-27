@@ -96,6 +96,9 @@ jest.mock('../shop-settings.validator', () => ({
     validateAISettings: jest.fn().mockReturnValue({ valid: true }),
     validateSettings: jest.fn().mockReturnValue({ valid: true }),
     sanitizeSettings: jest.fn((s) => s),
+    mergeAndSanitizeSettings: jest.fn((current, patch) => (
+        jest.requireActual('../shop-settings.validator').mergeAndSanitizeSettings(current, patch)
+    )),
 }));
 
 // ── JWT auth ──────────────────────────────────────────────────────────────────
@@ -234,7 +237,7 @@ describe('POST /shop/update', () => {
         expect(res.body.success).toBe(true);
     });
 
-    it('returns 404 when shop not found', async () => {
+    it('returns 403 when the authenticated user has no active membership', async () => {
         const { UserShop } = require('../../entities');
         UserShop.findOne.mockResolvedValueOnce(null);
 
@@ -243,7 +246,21 @@ describe('POST /shop/update', () => {
             .set('Authorization', authHeader)
             .send({ shopId: 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee', shop_name: 'X' });
 
-        expect(res.status).toBe(404);
+        expect(res.status).toBe(403);
+    });
+
+    it.each(['admin', 'staff'])('returns 403 for active non-owner %s before the controller', async (role) => {
+        const { UserShop, Shop } = require('../../entities');
+        UserShop.findOne.mockResolvedValueOnce({ ...mockUserShop, role, is_active: true });
+        Shop.findByPk.mockClear();
+
+        const res = await request(app)
+            .post('/shop/update')
+            .set('Authorization', authHeader)
+            .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd', shop_name: 'X' });
+
+        expect(res.status).toBe(403);
+        expect(Shop.findByPk).not.toHaveBeenCalled();
     });
 
     it('returns 401 without auth token', async () => {

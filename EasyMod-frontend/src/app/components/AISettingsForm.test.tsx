@@ -31,7 +31,7 @@ describe('AISettingsForm', () => {
 
   const defaultSettings: ShopAISettings = {
     automation_mode: 'DRAFT',
-    confidence_threshold: 60,
+    confidence_threshold: 75,
     auto_reply_enabled: false,
     max_auto_order_value: 5000,
     ask_email: false,
@@ -60,6 +60,7 @@ describe('AISettingsForm', () => {
     
     expect(screen.getByText('Reply Settings')).toBeInTheDocument();
     expect(screen.getByText('Choose when EasyModerator drafts, sends, or pauses replies.')).toBeInTheDocument();
+    expect(screen.getByText('75%')).toBeInTheDocument();
   });
 
   it('renders automation mode options', () => {

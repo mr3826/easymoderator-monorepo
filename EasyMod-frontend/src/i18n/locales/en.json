@@ -1801,6 +1801,8 @@
     "title": "Plan & Billing",
     "subtitle": "Keep Messenger replies, order capture, and billing running",
     "loading": "Loading subscription details...",
+    "entitlementsUnavailable": "Feature availability is temporarily unavailable.",
+    "loadingFeatures": "Checking feature availability...",
     "noData": "Billing details are not ready yet",
     "noDataMsg": "We could not find billing details for this shop. Reload, then contact support if it happens again.",
     "reload": "Reload",

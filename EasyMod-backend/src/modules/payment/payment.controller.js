@@ -1,13 +1,56 @@
 const paymentService = require('./payment.service');
 const { AppError } = require('../../utils/AppError');
 
-// PaymentConfig decrypts credentials through its Sequelize getter. Never
-// serialize that getter's value into an API response: the UI only needs the
-// configuration metadata and whether credentials have been stored.
+const SAFE_PAYMENT_CONFIG_FIELDS = [
+    'id', 'shop_id', 'gateway', 'is_enabled', 'config',
+    'created_at', 'updated_at'
+];
+const SENSITIVE_PAYMENT_KEY = /(?:credential|secret|token|password|api[_-]?key|private[_-]?key)/i;
+
+const sanitizePaymentConfigOptions = (value) => {
+    if (Array.isArray(value)) return value.map(sanitizePaymentConfigOptions);
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(
+        Object.entries(value)
+            .filter(([key]) => !SENSITIVE_PAYMENT_KEY.test(key))
+            .map(([key, nested]) => [key, sanitizePaymentConfigOptions(nested)])
+    );
+};
+
+// PaymentConfig decrypts credentials through its Sequelize getter. Serialize
+// an explicit allowlist and an approved summary instead of relying on a model's
+// toJSON implementation to remain secret-free.
 const sanitizePaymentConfig = (config) => {
     if (!config) return config;
     const plain = typeof config.toJSON === 'function' ? config.toJSON() : { ...config };
-    const { credentials: _credentials, ...safe } = plain;
+    const safe = {};
+    for (const field of SAFE_PAYMENT_CONFIG_FIELDS) {
+        if (plain[field] !== undefined) {
+            safe[field] = field === 'config'
+                ? sanitizePaymentConfigOptions(plain[field])
+                : plain[field];
+        }
+    }
+
+    const credentials = plain.credentials;
+    const summary = plain.credential_summary || (
+        plain.gateway === 'self-mfs' && credentials && typeof credentials === 'object'
+            ? {
+                has_credentials: Object.keys(credentials).length > 0,
+                mfs_type: credentials.mfs_type ?? null,
+                mfs_mode: credentials.mfs_mode ?? credentials.accountType ?? null,
+                mfs_number: credentials.mfs_number ?? credentials.phone ?? null,
+            }
+            : null
+    );
+    if (summary && typeof summary === 'object') {
+        safe.credential_summary = {
+            has_credentials: summary.has_credentials === true,
+            mfs_type: summary.mfs_type ?? null,
+            mfs_mode: summary.mfs_mode ?? null,
+            mfs_number: summary.mfs_number ?? null,
+        };
+    }
     return safe;
 };
 

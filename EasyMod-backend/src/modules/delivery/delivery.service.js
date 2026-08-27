@@ -35,7 +35,7 @@ class DeliveryService extends EventEmitter {
         }
 
         const credentials = integration.credentials;
-        return new entry.Provider(credentials);
+        return new entry.Provider(credentials, integration.is_sandbox === true);
     }
 
     /**

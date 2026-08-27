@@ -1,137 +1,142 @@
 /**
- * LLM Settings — Playwright System Tests
- * Verifies Gemini + OpenAI only (no Claude, vLLM, DeepSeek in UI)
+ * AI reply settings - Playwright system tests.
+ *
+ * These tests intentionally exercise the current embedded AI settings form on
+ * the Business Information page rather than the removed standalone provider
+ * settings screen.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const mockUser = { id: 'user-1', full_name: 'Test Owner', email: 'owner@shop.bd' };
 const mockShop = { id: 'shop-1', unique_code: 'SHOP1', shop_name: 'My BD Shop', role: 'owner' };
 
-const mockAISettings = {
-    primary_provider: 'gemini',
-    fallback_provider: 'openai',
-    gemini_api_key: 'AIza-existing-key',
-    openai_api_key: 'sk-existing-key',
-    model_preset: 'balanced',
-    max_tokens: 500
+const mockBusinessInfo = {
+    shopName: 'My BD Shop',
+    phone: '01711000000',
+    address: 'Dhaka, Bangladesh',
+    additionalInfo: '',
+    socialLinks: {},
 };
 
-async function setupRoutes(page: any) {
+const mockAISettings = {
+    automation_mode: 'DRAFT',
+    confidence_threshold: 75,
+    auto_reply_enabled: false,
+    max_auto_order_value: 5000,
+    ask_email: false,
+    primary_language: 'mixed',
+    tone_persona: 'friendly_bd',
+    greeting: { enabled: true, custom_text: 'Welcome' },
+    closing: { enabled: true, custom_text: 'Thanks' },
+    payment_methods: ['COD'],
+    escalation_reply_template: 'Our team will follow up.',
+    intent_confidence_map: {},
+    required_fields: {
+        customer_name: true,
+        mobile_number: true,
+        delivery_address: true,
+        payment_method: true,
+        email_address: false,
+        special_instructions: false,
+    },
+    handoff_settings: {
+        trigger_keywords: ['refund'],
+        notification_channel: 'in_app',
+        cooldown_minutes: 30,
+    },
+};
+
+function jsonResponse(data: unknown, status = 200) {
+    return {
+        status,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: status < 400, data }),
+    };
+}
+
+async function setupRoutes(page: Page) {
     let authenticated = false;
-    await page.route('**/api/**', async (route: any) => {
+    let persistedAI = structuredClone(mockAISettings);
+
+    // Match API path segments only. '**/api/**' also matches Vite's
+    // '/src/api/*' modules and prevents the application bundle from loading.
+    await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route) => {
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
 
-        if (path === '/api/csrf') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ csrfToken: 'csrf-test' }) });
+        if (path === '/api/csrf') {
+            return route.fulfill(jsonResponse({ csrfToken: 'csrf-test' }));
+        }
         if (path === '/api/auth/signin' && method === 'POST') {
             authenticated = true;
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
+            return route.fulfill(jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] }));
         }
         if (path === '/api/auth/me') {
-            if (!authenticated) return route.fulfill({ status: 401, body: '{"success":false}', contentType: 'application/json' });
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
+            return route.fulfill(authenticated
+                ? jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] })
+                : jsonResponse({}, 401));
         }
-        if (path.match(/\/api\/shops\/[\w-]+\/settings\/ai/) && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockAISettings }) });
-        if (path.match(/\/api\/shops\/[\w-]+\/settings\/ai/) && method === 'PUT') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockAISettings }) });
+        if (path === '/api/shop/business-info' && method === 'GET') {
+            return route.fulfill(jsonResponse({ businessInfo: mockBusinessInfo, shop: mockShop }));
+        }
+        if (path === '/api/shop/ai-settings' && method === 'GET') {
+            return route.fulfill(jsonResponse(persistedAI));
+        }
+        if (path === '/api/shop/ai-settings' && method === 'PUT') {
+            persistedAI = { ...persistedAI, ...(route.request().postDataJSON() || {}) };
+            return route.fulfill(jsonResponse(persistedAI));
+        }
+        if (path === '/api/notifications/telegram') {
+            return route.fulfill(jsonResponse({ connected: false }));
+        }
+        if (path === '/api/notifications/in-app') {
+            return route.fulfill(jsonResponse([]));
+        }
+        if (path.startsWith('/api/subscription')) {
+            return route.fulfill(jsonResponse({ plan_code: 'FREE', plan_name: 'Free', features: {} }));
+        }
 
-        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true,"data":{}}' });
+        return route.fulfill(jsonResponse({}));
     });
 }
 
-async function loginAndGo(page: any, path = '/settings/ai') {
+async function loginAndGo(page: Page) {
     await page.goto('/signin');
-    await page.fill('input[type="email"]', 'owner@shop.bd');
-    await page.fill('input[type="password"]', 'password123');
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/dashboard|settings/);
-    await page.goto(path);
+    await page.getByLabel(/email/i).fill(mockUser.email);
+    await page.getByLabel(/password/i).fill('password123');
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.goto('/manage-shop/business-info');
+    await expect(page.getByRole('heading', { name: 'Reply Settings' })).toBeVisible({ timeout: 15_000 });
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-test('AI settings page loads', async ({ page }) => {
+test('AI reply settings load with the canonical confidence default', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(
-        page.getByText(/AI|chatbot|LLM|intelligence/i).first()
-    ).toBeVisible({ timeout: 5000 });
+
+    await expect(page.getByRole('slider')).toHaveValue('75');
+    await expect(page.getByRole('button', { name: 'Save Reply Settings' })).toBeDisabled();
 });
 
-test('Gemini is shown as primary provider', async ({ page }) => {
+test('AI settings survive save and reload', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText(/gemini/i)).toBeVisible({ timeout: 5000 });
-});
 
-test('OpenAI is shown as fallback provider', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await expect(page.getByText(/openai/i)).toBeVisible({ timeout: 5000 });
-});
+    const maxOrderValue = page.locator('#max-auto-order-value');
+    await maxOrderValue.fill('7500');
 
-test('Claude / Anthropic is NOT visible in provider list', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await page.waitForTimeout(2000);
-    await expect(page.getByText(/claude/i)).not.toBeVisible();
-    await expect(page.getByText(/anthropic/i)).not.toBeVisible();
-});
+    const saveRequest = page.waitForRequest((request) =>
+        request.url().endsWith('/api/shop/ai-settings') && request.method() === 'PUT'
+    );
+    await page.getByRole('button', { name: 'Save Reply Settings' }).click();
 
-test('vLLM is NOT visible in provider options', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await page.waitForTimeout(2000);
-    await expect(page.getByText(/vllm/i)).not.toBeVisible();
-});
+    const request = await saveRequest;
+    expect(request.postDataJSON()).toEqual(expect.objectContaining({ max_auto_order_value: 7500 }));
+    await expect(page.getByText('Reply settings saved.')).toBeVisible();
 
-test('DeepSeek is NOT visible in provider options', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await page.waitForTimeout(2000);
-    await expect(page.getByText(/deepseek/i)).not.toBeVisible();
-});
-
-test('Gemini API key field is present', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    await expect(
-        page.locator('input[name*="gemini"], input[placeholder*="Gemini"], input[placeholder*="AIza"]').or(
-            page.getByLabel(/gemini api key/i)
-        )
-    ).toBeVisible({ timeout: 5000 });
-});
-
-test('save Gemini API key calls API', async ({ page }) => {
-    await setupRoutes(page);
-    let apiCalled = false;
-    await page.route('**/api/shops/*/settings/ai', async (route) => {
-        if (route.request().method() === 'PUT') {
-            apiCalled = true;
-            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockAISettings }) });
-        }
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockAISettings }) });
-    });
-    await loginAndGo(page);
-    const geminiInput = page.locator('input[name*="gemini"], input[placeholder*="Gemini"], input[placeholder*="AIza"]').first();
-    if (await geminiInput.isVisible()) {
-        await geminiInput.fill('AIza-new-key-12345');
-        const saveBtn = page.getByRole('button', { name: /save/i }).first();
-        await saveBtn.click();
-        await page.waitForTimeout(500);
-        expect(apiCalled).toBe(true);
-    }
-});
-
-test('save shows success notification', async ({ page }) => {
-    await setupRoutes(page);
-    await loginAndGo(page);
-    const saveBtn = page.getByRole('button', { name: /save/i }).first();
-    if (await saveBtn.isVisible()) {
-        await saveBtn.click();
-        await expect(
-            page.getByText(/saved|success|updated/i).or(page.locator('.sonner-toast'))
-        ).toBeVisible({ timeout: 5000 });
-    }
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Reply Settings' })).toBeVisible();
+    await expect(page.locator('#max-auto-order-value')).toHaveValue('7500');
 });

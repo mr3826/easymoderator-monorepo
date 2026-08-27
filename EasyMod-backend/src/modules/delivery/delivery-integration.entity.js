@@ -88,6 +88,11 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
         type: DataTypes.BOOLEAN,
         defaultValue: false
     },
+    is_sandbox: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
     metadata: {
         type: DataTypes.JSON,
         defaultValue: {}

@@ -197,7 +197,7 @@ async function hasPriorCustomerVisibleAiDisclosure(conversationId) {
 async function shouldApplyAiDisclosureGreeting({ conversationId, currentTurnMessageIds, aiSettings } = {}) {
     const mode = normalizeAutomationMode(aiSettings?.automation_mode || 'DRAFT');
     if (mode !== 'AI_ACTIVE') return false;
-    if (aiSettings?.ai_auto_reply === false) return false;
+    if (isChannelAutoReplyDisabled(aiSettings)) return false;
     if (!(await isFirstCustomerTurn(conversationId, currentTurnMessageIds))) return false;
     return !(await hasPriorCustomerVisibleAiDisclosure(conversationId));
 }
@@ -532,6 +532,8 @@ function isShopManualKillSwitch(settings = {}) {
     return normalizeAutomationMode(settings?.automation_mode) === 'MANUAL';
 }
 
+const isChannelAutoReplyDisabled = (settings = {}) => settings?.ai_auto_reply === false;
+
 async function resolveStaticConfigAvailability(shopId, aiSettings = {}) {
     if (aiSettings.staticConfigAvailable !== undefined) return aiSettings.staticConfigAvailable;
     try {
@@ -799,7 +801,7 @@ async function processMessageJob(job) {
 
     // ── Guard 4b: Per-channel ai_auto_reply flag ────────────────────────────
     // Explicit false disables auto-reply for this channel regardless of mode.
-    if (channelAISettings.ai_auto_reply === false) {
+    if (isChannelAutoReplyDisabled(channelAISettings)) {
         return { skipped: true, reason: 'channel_ai_disabled' };
     }
 
@@ -1294,12 +1296,32 @@ async function processMessageJob(job) {
     }).catch(() => null);
     const channel = jobChannel;
     let channelSettings = aiSettings;
+    let latestChannelAISettings = channelAISettings;
     if (channel) {
         try {
             const s = await metaChannelService.getSettings(channel.id);
-            const latestChannelAISettings = { ...channelAISettings, ...(s?.toJSON?.() || s || {}) };
+            latestChannelAISettings = { ...channelAISettings, ...(s?.toJSON?.() || s || {}) };
             channelSettings = resolveEffectiveAiSettings(shopAISettings, latestChannelAISettings);
         } catch { /* fall back to aiSettings */ }
+    }
+
+    // The setting can change while the LLM is running. Re-check the latest
+    // channel opt-out immediately before policy/send so a disabled Page cannot
+    // receive a response generated before the change. Keep the candidate
+    // visible to the merchant as a held suggestion instead of dropping it.
+    if (isChannelAutoReplyDisabled(latestChannelAISettings)) {
+        const heldMessage = (await storeAiResponse(rawResponse, false)).message;
+        await finalizeAiMessage(heldMessage, shopId, conversationId, {
+            delivered: false,
+            heldReason: 'channel_ai_disabled',
+        });
+        return {
+            success: true,
+            conversationId,
+            confidence,
+            sent: false,
+            reason: 'channel_ai_disabled',
+        };
     }
 
     const normalizedOutbound = {
@@ -1512,6 +1534,7 @@ module.exports = {
         normalizeAutomationMode,
         resolveEffectiveAiSettings,
         isShopManualKillSwitch,
+        isChannelAutoReplyDisabled,
         signalBillingPause,
         createRecoveryControl,
         resolveStaticConfigAvailability,

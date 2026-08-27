@@ -22,32 +22,9 @@ const oauthService = require('./meta-oauth.service');
 const { getProvider } = require('./provider.registry');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
+const { serializeChannel } = require('./meta-channel.serializer');
 
 const logger = createLogger('MetaChannelController');
-
-function serializeChannel(channel) {
-    if (!channel) return null;
-    const settings = channel.settings ?? channel.get?.('settings') ?? null;
-    return {
-        id: channel.id,
-        shopId: channel.shop_id,
-        platform: channel.platform,
-        metaAssetId: channel.meta_asset_id,
-        displayName: channel.display_name,
-        pictureUrl: channel.picture_url,
-        status: channel.status,
-        lastError: channel.last_error,
-        tokenExpiresAt: channel.token_expires_at,
-        tokenLastRefreshedAt: channel.token_last_refreshed_at,
-        webhookSubscribedFields: channel.webhook_subscribed_fields ?? [],
-        webhookLastVerifiedAt: channel.webhook_last_verified_at,
-        connectedAt: channel.connected_at,
-        disconnectedAt: channel.disconnected_at,
-        createdAt: channel.created_at,
-        updatedAt: channel.updated_at,
-        purposeLabel: settings?.purpose_label ?? null,
-    };
-}
 
 async function assertChannelBelongsToShop(channelId, shopId) {
     const row = await MetaChannel.findByPk(channelId);

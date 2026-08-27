@@ -215,6 +215,8 @@ export default function DeliverySettings() {
       setError(null);
       const settings = await apiClient.getDeliverySettings();
       setProviders(settings.providers);
+      const pathaoStatus = settings.providers.find((provider) => provider.provider === 'pathao');
+      setIsSandbox(pathaoStatus?.is_sandbox === true);
       setDeliverySettings(applyDefaults(settings.settings));
     } catch (err: any) {
       setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.loadFailed')));
@@ -415,7 +417,9 @@ export default function DeliverySettings() {
   const openCredentialsForm = (provider: DeliveryProvider) => {
     setShowCredentialsForm(provider);
     setCredentials({});
-    setIsSandbox(false);
+    setIsSandbox(provider === 'pathao'
+      ? providers.find((item) => item.provider === 'pathao')?.is_sandbox === true
+      : false);
     setError(null);
     setSuccessMessage(null);
   };
@@ -698,18 +702,26 @@ export default function DeliverySettings() {
                         )}
                       </div>
                       <p className="text-sm text-gray-600 mt-1">{config.description}</p>
-                      {isConnected && (
-                        <div className="flex items-center gap-4 mt-2">
+                       {isConnected && (
+                         <div className="flex items-center gap-4 mt-2">
                           <div className="flex items-center gap-1.5">
                             <div className="w-2 h-2 rounded-full bg-green-500"></div>
                             <span className="text-xs text-gray-600">{t('manageShop.deliverySettings.connected')}</span>
                           </div>
-                          {providerStatus?.last_validated_at && (
+                           {providerStatus?.last_validated_at && (
                             <span className="text-xs text-gray-500">
                               {t('manageShop.deliverySettings.lastTested', { date: new Date(providerStatus.last_validated_at).toLocaleDateString() })}
                             </span>
-                          )}
-                        </div>
+                           )}
+                           {config.provider === 'pathao' && (
+                             <span
+                               data-testid="pathao-environment"
+                               className="text-xs font-medium text-blue-700"
+                             >
+                               {providerStatus?.is_sandbox ? 'Sandbox' : 'Production'}
+                             </span>
+                           )}
+                         </div>
                       )}
                     </div>
                   </div>

@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 process.env.NODE_ENV = 'test';
 
 jest.mock('bullmq', () => ({
@@ -188,6 +191,27 @@ describe('message-worker AI disclosure greeting gate', () => {
             currentTurnMessageIds: ['msg-1'],
             aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
         })).resolves.toBe(false);
+    });
+});
+
+describe('message-worker channel auto-reply final-send guard', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../message-worker.js'), 'utf8');
+
+    it('keeps the early channel opt-out decision', () => {
+        expect(source).toContain('isChannelAutoReplyDisabled(channelAISettings)');
+        expect(source).toContain("return { skipped: true, reason: 'channel_ai_disabled' }");
+    });
+
+    it('rechecks reloaded settings before the final provider send', () => {
+        const reloadIndex = source.indexOf('latestChannelAISettings = { ...channelAISettings');
+        const guardIndex = source.indexOf('isChannelAutoReplyDisabled(latestChannelAISettings)');
+        const sendIndex = source.indexOf('provider.sendMessage({', guardIndex);
+
+        expect(reloadIndex).toBeGreaterThan(-1);
+        expect(guardIndex).toBeGreaterThan(reloadIndex);
+        expect(sendIndex).toBeGreaterThan(guardIndex);
+        expect(source.slice(guardIndex, sendIndex)).toContain("heldReason: 'channel_ai_disabled'");
+        expect(source.slice(guardIndex, sendIndex)).toContain('delivered: false');
     });
 });
 

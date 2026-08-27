@@ -98,12 +98,35 @@ interface FeatureGateProps {
  */
 export function FeatureGate({ feature, featureLabel, requiredPlan, children }: FeatureGateProps) {
   const { t } = useTranslation();
-  const { features, loading } = useSubscriptionFeatures();
+  const { features, loading, error } = useSubscriptionFeatures();
   const [showModal, setShowModal] = useState(false);
 
-  // While loading, render children normally (avoid flash of lock)
-  if (loading || features[feature]) {
+  if (features[feature] && !loading && !error) {
     return <>{children}</>;
+  }
+
+  // Entitlement failures are not confirmed plan restrictions. Keep the feature
+  // unavailable without showing an upgrade CTA that could mislead the user.
+  if (loading || error) {
+    return (
+      <div
+        data-testid={error ? "feature-gate-unavailable" : "feature-gate-loading"}
+        className="relative select-none"
+        aria-busy={loading}
+      >
+        <div className="absolute inset-0 z-10 rounded-lg bg-white/70 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="flex items-center gap-1.5 bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full text-sm font-medium shadow-sm text-center">
+            <Lock className="w-3.5 h-3.5" />
+            <span>
+              {error
+                ? t("subscription.entitlementsUnavailable", "Feature availability is temporarily unavailable.")
+                : t("subscription.loadingFeatures", "Checking feature availability...")}
+            </span>
+          </div>
+        </div>
+        <div className="pointer-events-none opacity-40">{children}</div>
+      </div>
+    );
   }
 
   return (

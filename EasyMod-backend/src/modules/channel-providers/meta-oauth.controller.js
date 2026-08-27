@@ -11,6 +11,7 @@
 
 const oauthService = require('./meta-oauth.service');
 const { createLogger } = require('../../utils/structured-logger');
+const { serializeChannel } = require('./meta-channel.serializer');
 
 const logger = createLogger('MetaOAuthController');
 
@@ -66,7 +67,10 @@ exports.connectAsset = async (req, res, next) => {
             platform
         );
         logger.info('Asset connected', { shopId, assetId, platform, hasWarning: !!channel.webhookWarning });
-        res.json({ success: true, data: channel });
+        res.json({
+            success: true,
+            data: serializeChannel(channel, { webhookWarning: channel.webhookWarning }),
+        });
     } catch (err) {
         next(err);
     }

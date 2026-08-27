@@ -15,6 +15,9 @@ const RATE_WINDOW_MAX = 30;
 async function claimDedupe(shopId, eventType, dedupeKey, ttlSeconds = DEDUPE_TTL_SECONDS) {
     if (!dedupeKey) return true;
     const key = `notification:dedupe:${eventType}:${dedupeKey}`;
+    if (typeof cacheService.claimForShop === 'function') {
+        return cacheService.claimForShop(shopId, key, ttlSeconds || DEDUPE_TTL_SECONDS);
+    }
     const existing = await cacheService.getForShop(shopId, key);
     if (existing) return false;
     await cacheService.setForShop(shopId, key, true, ttlSeconds);

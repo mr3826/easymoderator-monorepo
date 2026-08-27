@@ -63,6 +63,7 @@ export interface DeliveryProviderStatus {
   display_name: string;
   is_connected: boolean;
   is_active: boolean;
+  is_sandbox: boolean;
   metadata?: Record<string, unknown>;
   last_validated_at: string | null;
   connected_at: string | null;

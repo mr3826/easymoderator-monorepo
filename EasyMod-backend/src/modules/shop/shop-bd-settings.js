@@ -21,6 +21,8 @@
 const { Shop } = require('./shop.entity');
 const { AppError } = require('../../utils/AppError');
 const { bdMobileRegex: BD_PHONE_REGEX } = require('../../utils/validators/phone.validator');
+const { mergeAndSanitizeSettings } = require('./shop-settings.validator');
+const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 const VALID_MFS_TYPES = ['bkash', 'nagad', 'rocket'];
 const VALID_MFS_MODES = ['self', 'business'];
 
@@ -64,11 +66,18 @@ const updateBdSettings = async (shopId, updates) => {
         throw new AppError('mfs_number must be a valid Bangladesh mobile number', 400);
     }
 
+    const allowedKeys = new Set([
+        'mfs_mode', 'mfs_type', 'mfs_number', 'google_sheet_id', 'google_sheet_range'
+    ]);
+    const bdUpdates = Object.fromEntries(
+        Object.entries(updates).filter(([key]) => allowedKeys.has(key))
+    );
     const currentSettings = shop.settings || {};
-    const currentBd = currentSettings.bd || {};
-    const newBd = { ...currentBd, ...updates };
+    const newSettings = mergeAndSanitizeSettings(currentSettings, { bd: bdUpdates });
+    const newBd = newSettings.bd || {};
 
-    await shop.update({ settings: { ...currentSettings, bd: newBd } });
+    await shop.update({ settings: newSettings });
+    await invalidateShopSettingsCaches(shopId);
     return { ...DEFAULT_BD_SETTINGS, ...newBd };
 };
 

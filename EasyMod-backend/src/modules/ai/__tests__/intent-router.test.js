@@ -15,8 +15,21 @@
 
 process.env.NODE_ENV = 'test';
 
+const mockGetGeneration = jest.fn();
+const mockIntentEntries = new Map();
+const mockSetIntentEntry = jest.fn(async (key, _ttl, value) => {
+    mockIntentEntries.set(key, value);
+    return 'OK';
+});
+
 jest.mock('src/config/memory-cache', () => ({
-    MemoryCache: class { async get() { return null; } async setex() { return 'OK'; } }
+    MemoryCache: class {
+        async get(key) { return mockIntentEntries.get(key) || null; }
+        async setex(...args) { return mockSetIntentEntry(...args); }
+    }
+}));
+jest.mock('src/utils/shop-settings-cache', () => ({
+    getShopSettingsGeneration: mockGetGeneration,
 }));
 jest.mock('src/modules/ai/llm.service', () => ({ chat: jest.fn() }));
 jest.mock('src/modules/ai/bert-client.service', () => ({ classify: jest.fn(async () => null) }));
@@ -37,6 +50,7 @@ const { route } = require('src/modules/ai/intent-router.service');
 const llm = require('src/modules/ai/llm.service');
 const productSearch = require('src/modules/product/product-search.service');
 const rag = require('src/modules/rag/rag.service');
+const { FaqResponse } = require('src/modules/entities');
 
 const SHOP = 'shop-1';
 const lastSystemPrompt = () => {
@@ -46,6 +60,8 @@ const lastSystemPrompt = () => {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    mockIntentEntries.clear();
+    mockGetGeneration.mockResolvedValue(0);
     llm.chat.mockResolvedValue({ text: 'ok', provider: 'gemini' });
     rag.queryData.mockResolvedValue({ results: [] });
     productSearch.searchByAttributes.mockResolvedValue([]);
@@ -147,6 +163,10 @@ describe('C — RAG product hit re-fetched live', () => {
                 metadata: { type: 'faq', documentId: 'faq-7', shopId: SHOP },
             }],
         });
+
+        FaqResponse.findAll
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: '7' }]);
 
         await route({ shopId: SHOP, message: 'tell me about delivery time', systemPrompt: 'BASE' });
 
@@ -322,5 +342,51 @@ describe('D — customer photo → product matching', () => {
         expect(productSearch.searchByAttributes).toHaveBeenCalledWith(
             expect.objectContaining({ query: 'eita ache?' }));
         expect(lastSystemPrompt()).toContain('CANNOT see images');
+    });
+});
+
+describe('settings generation and inactive FAQ cache boundaries', () => {
+    test('generation changes invalidate the process-local intent entry', async () => {
+        mockGetGeneration.mockResolvedValue(1);
+        await route({ shopId: SHOP, message: 'hello', language: 'en' });
+        await route({ shopId: SHOP, message: 'hello', language: 'en' });
+        expect(mockSetIntentEntry).toHaveBeenCalledWith(
+            'intent:shop-1:v1:hello', expect.any(Number), expect.any(String),
+        );
+        expect(mockSetIntentEntry).toHaveBeenCalledTimes(1);
+
+        mockGetGeneration.mockResolvedValue(2);
+        await route({ shopId: SHOP, message: 'hello', language: 'en' });
+        expect(mockSetIntentEntry).toHaveBeenCalledWith(
+            'intent:shop-1:v2:hello', expect.any(Number), expect.any(String),
+        );
+    });
+
+    test('generation read failures bypass local cache reads and writes', async () => {
+        mockGetGeneration.mockResolvedValue(null);
+
+        const result = await route({ shopId: SHOP, message: 'hello', language: 'en' });
+
+        expect(result.source).toBe('greeting_fastpath');
+        expect(mockSetIntentEntry).not.toHaveBeenCalled();
+    });
+
+    test('vector FAQ content is admitted only after active shop-scoped verification', async () => {
+        rag.queryData.mockResolvedValue({
+            success: true,
+            results: [{
+                score: 0.9,
+                content: 'FAQ answer',
+                metadata: { type: 'faq', faq_id: 'faq-7' },
+            }],
+        });
+        FaqResponse.findAll.mockResolvedValueOnce([]);
+
+        await expect(require('src/modules/ai/intent-router.service')._private.retrieveKnowledge(SHOP, 'faq'))
+            .resolves.toEqual(expect.objectContaining({ snippets: '', knowledgeIds: [] }));
+
+        FaqResponse.findAll.mockResolvedValueOnce([{ id: '7' }]);
+        await expect(require('src/modules/ai/intent-router.service')._private.retrieveKnowledge(SHOP, 'faq'))
+            .resolves.toEqual(expect.objectContaining({ snippets: 'FAQ answer', knowledgeIds: ['faq-7'] }));
     });
 });

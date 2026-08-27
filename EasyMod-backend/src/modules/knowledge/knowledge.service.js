@@ -4,11 +4,16 @@ const KnowledgeGap = require('../analytics/knowledge-gap.entity');
 const { AppError } = require('../../utils/AppError');
 const ragService = require('../rag/rag.service');
 const cacheService = require('../../utils/cache.service');
-const geminiCache = require('../ai/gemini-cache.service');
+const { mergeAndSanitizeSettings } = require('../shop/shop-settings.validator');
+const {
+    MERCHANT_KNOWLEDGE_CACHE_KEY,
+    AI_KNOWLEDGE_CACHE_KEY,
+    invalidateShopSettingsCaches,
+} = require('../../utils/shop-settings-cache');
 const crypto = require('crypto');
 const { Op, fn, col, literal } = require('sequelize');
 
-const KNOWLEDGE_CACHE_KEY = 'knowledge:summary';
+const KNOWLEDGE_CACHE_KEY = MERCHANT_KNOWLEDGE_CACHE_KEY;
 const KNOWLEDGE_CACHE_TTL = 300; // 5 minutes
 const MAX_DOC_SIZE = 100 * 1024; // 100 KB
 
@@ -116,8 +121,7 @@ const syncBusinessInfoRagIndex = async (shopId, businessInfo) => {
 };
 
 const invalidateShopKnowledgeCaches = async (shopId) => {
-    await cacheService.deleteForShop(shopId, KNOWLEDGE_CACHE_KEY).catch(() => {});
-    await geminiCache.invalidate(shopId).catch(() => {});
+    await invalidateShopSettingsCaches(shopId);
 };
 
 // ── JSON helpers ──────────────────────────────────────────────────────────────
@@ -212,7 +216,9 @@ const updateBusinessInfo = async (userId, shopId, data) => {
         socialLinks:    data.socialLinks    !== undefined ? normalizeObject(data.socialLinks)    : normalizeObject(existing.socialLinks),
     };
 
-    const shopUpdates = { settings: { ...settings, businessInfo } };
+    const shopUpdates = {
+        settings: mergeAndSanitizeSettings(settings, { businessInfo })
+    };
     if (data.shopName && String(data.shopName).trim()) {
         shopUpdates.shop_name = data.shopName.trim();
         shopUpdates.name = data.shopName.trim();
@@ -232,7 +238,9 @@ const updateBrandingRules = async (userId, shopId, brandingRules) => {
     const shop = await getShop(shopId);
 
     const settings = normalizeObject(shop.settings);
-    await shop.update({ settings: { ...settings, brandingRules: brandingRules || {} } });
+    await shop.update({
+        settings: mergeAndSanitizeSettings(settings, { brandingRules: brandingRules || {} })
+    });
     await invalidateShopKnowledgeCaches(shopId);
 
     return { brandingRules };
@@ -378,7 +386,9 @@ const createDocument = async (userId, shopId, document) => {
     };
 
     documents.push(newDocument);
-    await shop.update({ settings: { ...settings, documents } });
+    await shop.update({
+        settings: mergeAndSanitizeSettings(settings, { documents })
+    });
 
     // Fix #8: Non-blocking RAG ingestion — update status in background
     if (document?.text) {
@@ -400,7 +410,10 @@ const createDocument = async (userId, shopId, document) => {
             const docs = normalizeArray(st.documents).map(d =>
                 d.id === newDocument.id ? { ...d, status: 'indexed' } : d
             );
-            await s.update({ settings: { ...st, documents: docs } });
+            await s.update({
+                settings: mergeAndSanitizeSettings(st, { documents: docs })
+            });
+            await invalidateShopKnowledgeCaches(shopId);
         }).catch(async (err) => {
             console.warn(`RAG ingest (doc-${newDocument.id}) failed:`, err.message);
             // Update status to failed
@@ -410,7 +423,10 @@ const createDocument = async (userId, shopId, document) => {
             const docs = normalizeArray(st.documents).map(d =>
                 d.id === newDocument.id ? { ...d, status: 'failed', error: err.message } : d
             );
-            await s.update({ settings: { ...st, documents: docs } }).catch(() => {});
+            await s.update({
+                settings: mergeAndSanitizeSettings(st, { documents: docs })
+            }).catch(() => {});
+            await invalidateShopKnowledgeCaches(shopId);
         });
     }
 
@@ -423,8 +439,11 @@ const deleteDocument = async (userId, shopId, documentId) => {
 
     const settings = normalizeObject(shop.settings);
     const documents = normalizeArray(settings.documents).filter(doc => doc.id !== documentId);
-    await shop.update({ settings: { ...settings, documents } });
+    await shop.update({
+        settings: mergeAndSanitizeSettings(settings, { documents })
+    });
     ragService.deletePoint(documentId, shopId).catch(() => {});
+    await invalidateShopKnowledgeCaches(shopId);
 
     return { message: 'Document deleted successfully' };
 };
@@ -540,10 +559,11 @@ const cacheLanguageLearning = async (payload) => {
 /**
  * Returns structured shop knowledge for system-prompt building.
  * Called by the AI chatbot pipeline — no JWT user, just shop ID.
- * Uses the same cache as getKnowledge (5 min TTL).
+ * Uses a separate cache from the merchant-facing read because inactive FAQs
+ * must never enter an AI prompt.
  */
 const getKnowledgeForAI = async (shopId) => {
-    const cached = await cacheService.getForShop(shopId, KNOWLEDGE_CACHE_KEY);
+    const cached = await cacheService.getForShop(shopId, AI_KNOWLEDGE_CACHE_KEY);
     if (cached) return cached;
 
     const [shop, faqs] = await Promise.all([
@@ -562,7 +582,7 @@ const getKnowledgeForAI = async (shopId) => {
         ai_settings: aiSettings
     };
 
-    await cacheService.setForShop(shopId, KNOWLEDGE_CACHE_KEY, result, KNOWLEDGE_CACHE_TTL).catch(() => {});
+    await cacheService.setForShop(shopId, AI_KNOWLEDGE_CACHE_KEY, result, KNOWLEDGE_CACHE_TTL).catch(() => {});
     return result;
 };
 

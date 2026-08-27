@@ -27,3 +27,11 @@ test('a live key still reads back', async () => {
     await expect(cache.get('k')).resolves.toBe('v');
     await expect(cache.exists('k')).resolves.toBe(1);
 });
+
+test('Redis-compatible increment persists a numeric tenant generation', async () => {
+    const cache = new MemoryCache();
+
+    await expect(cache.incrby('generation', 1)).resolves.toBe(1);
+    await expect(cache.incrby('generation', 2)).resolves.toBe(3);
+    await expect(cache.get('generation')).resolves.toBe(3);
+});
