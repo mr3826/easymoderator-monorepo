@@ -96,13 +96,18 @@ jobs:
             RUNNING_BACKEND_IMAGE=$(docker inspect easymod-backend-1 --format '{{.Config.Image}}')
             RUNNING_WORKER_IMAGE=$(docker inspect easymod-worker-1 --format '{{.Config.Image}}')
             RUNNING_FRONTEND_IMAGE=$(docker inspect easymod-frontend-1 --format '{{.Config.Image}}')
+            RUNNING_GROWTH_IMAGE=$(docker inspect easymod-growth-frontend-1 --format '{{.Config.Image}}' 2>/dev/null || true)
 
             if [ "$RUNNING_BACKEND_IMAGE" != "$RUNNING_WORKER_IMAGE" ]; then
               echo "::error::BACKUP_IMAGE_CONTRACT_FAILED backend-and-worker-images-differ"
               exit 1
             fi
+            if [ -z "$RUNNING_GROWTH_IMAGE" ]; then
+              echo "::error::BACKUP_GROWTH_IMAGE_CONTRACT_FAILED growth-frontend-is-not-running"
+              exit 1
+            fi
 
-            for IMAGE_REF in "$RUNNING_BACKEND_IMAGE" "$RUNNING_FRONTEND_IMAGE"; do
+            for IMAGE_REF in "$RUNNING_BACKEND_IMAGE" "$RUNNING_FRONTEND_IMAGE" "$RUNNING_GROWTH_IMAGE"; do
               if ! printf '%s' "$IMAGE_REF" | grep -Eq '^.+@sha256:[0-9a-f]{64}$'; then
                 echo "::error::BACKUP_IMAGE_CONTRACT_FAILED image-is-not-digest-pinned"
                 exit 1
@@ -111,11 +116,14 @@ jobs:
 
             export GHCR_IMAGE_BACKEND="$RUNNING_BACKEND_IMAGE"
             export GHCR_IMAGE_FRONTEND="$RUNNING_FRONTEND_IMAGE"
+            export GHCR_IMAGE_GROWTH="$RUNNING_GROWTH_IMAGE"
             echo "Immutable compose image contract verified for running release"
 
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}.dump"
+            BACKUP_TMP_FILE="$BACKUP_FILE.partial"
             UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}.tar.gz"
+            trap 'rm -f "$BACKUP_TMP_FILE"' EXIT
 
             echo "Starting backup: $BACKUP_FILE"
 
@@ -128,7 +136,7 @@ jobs:
             # exited 0 against an empty `easymod` database while the app's data
             # lived elsewhere — a backup of nothing that looked like a success.
             docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
-              sh -c 'pg_dump --format=custom --compress=9 -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$BACKUP_FILE"
+              sh -c 'pg_dump --format=custom --compress=9 -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$BACKUP_TMP_FILE"
 
             # A pg_dump that fails mid-stream still leaves a valid gzip of a
             # partial dump, so size-check the result rather than trusting exit 0.
@@ -136,9 +144,9 @@ jobs:
             # pipe — `pg_restore -l -` fails with "could not open input file
             # "-"" even though it accepts the flag syntactically, so the dump
             # is copied into the container as a real file first.
-            BACKUP_BYTES=$(wc -c < "$BACKUP_FILE")
+            BACKUP_BYTES=$(wc -c < "$BACKUP_TMP_FILE")
             docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
-              sh -c 'cat > /tmp/backup-verify.dump' < "$BACKUP_FILE"
+              sh -c 'cat > /tmp/backup-verify.dump' < "$BACKUP_TMP_FILE"
             TABLE_COUNT=$(docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
               sh -c 'pg_restore -l /tmp/backup-verify.dump | grep -c "TABLE "; rm -f /tmp/backup-verify.dump' || true)
             echo "Dump: ${BACKUP_BYTES} bytes custom format, ${TABLE_COUNT} table entries"
@@ -147,6 +155,10 @@ jobs:
               exit 1
             fi
 
+            # Publish the dump only after the custom-format and table-count
+            # checks pass. A failed stream must never become the newest file
+            # selected by the always-run isolated restore drill.
+            mv "$BACKUP_TMP_FILE" "$BACKUP_FILE"
             echo "Backup complete: $(du -sh "$BACKUP_FILE" | cut -f1)"
 
             echo "Starting uploads volume backup: $BACKUP_DIR/$UPLOADS_BACKUP_FILE"
