@@ -51,10 +51,17 @@ const buildApp = () => {
 
 describe('webhook route contracts', () => {
     let app;
+    const originalRedxWebhookSecret = process.env.REDX_WEBHOOK_SECRET;
 
     beforeEach(() => {
         jest.clearAllMocks();
+        process.env.REDX_WEBHOOK_SECRET = 'redx-webhook-secret';
         app = buildApp();
+    });
+
+    afterAll(() => {
+        if (originalRedxWebhookSecret === undefined) delete process.env.REDX_WEBHOOK_SECRET;
+        else process.env.REDX_WEBHOOK_SECRET = originalRedxWebhookSecret;
     });
 
     it('exposes the documented bKash payment callback route', async () => {
@@ -104,19 +111,35 @@ describe('webhook route contracts', () => {
         expect(deliveryTrackingService.handleDeliveryWebhook).not.toHaveBeenCalled();
     });
 
-    it('requires the exact RedX bearer credential', async () => {
+    it('requires the exact RedX query token and canonical tracking number', async () => {
         await request(app)
             .post('/api/webhooks/delivery/redx')
-            .set('authorization', 'Bearer wrong-key')
-            .send({ tracking_id: 'CN-1', status: 'delivered' })
+            .send({ tracking_number: 'CN-1', status: 'delivered' })
             .expect(401);
         expect(deliveryTrackingService.handleDeliveryWebhook).not.toHaveBeenCalled();
 
         await request(app)
             .post('/api/webhooks/delivery/redx')
-            .set('authorization', 'Bearer redx-key')
-            .send({ tracking_id: 'CN-1', status: 'delivered' })
+            .query({ token: 'wrong-token' })
+            .send({ tracking_number: 'CN-1', status: 'delivered' })
+            .expect(401);
+        expect(deliveryTrackingService.handleDeliveryWebhook).not.toHaveBeenCalled();
+
+        await request(app)
+            .post('/api/webhooks/delivery/redx')
+            .query({ token: 'redx-webhook-secret' })
+            .send({ tracking_number: 'CN-1', status: 'delivered' })
             .expect(200);
+    });
+
+    it('does not accept the legacy bearer token or tracking_id payload', async () => {
+        await request(app)
+            .post('/api/webhooks/delivery/redx')
+            .set('authorization', 'Bearer redx-key')
+            .query({ token: 'redx-webhook-secret' })
+            .send({ tracking_id: 'CN-1', status: 'delivered' })
+            .expect(400);
+        expect(deliveryTrackingService.handleDeliveryWebhook).not.toHaveBeenCalled();
     });
 
     it('fails closed when an active integration lacks verification credentials', async () => {

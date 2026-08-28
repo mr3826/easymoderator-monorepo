@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Truck, Check, X, AlertCircle, Loader2, Power, TestTube, Star } from 'lucide-react';
-import { apiClient } from '@/api';
+import * as orderApi from '@/api/domains/order';
 import { getErrorMessage } from '@shared/lib/http/errors';
 import type {
+  DeliveryActivationStatus,
   DeliveryProvider, 
   DeliveryProviderStatus, 
   DeliveryShopSettings,
+  PickupLocationSummary,
   PathaoCredentials, 
   SteadfastCredentials,
   RedxCredentials
 } from '@/api/types/order';
+import PickupDetailsModal from './PickupDetailsModal';
 
 interface ProviderConfig {
   provider: DeliveryProvider;
@@ -24,13 +27,6 @@ interface ProviderConfig {
     placeholder: string;
     required: boolean;
   }[];
-}
-
-interface PlatformPriorityResponse {
-  data?: {
-    payment?: string[];
-    delivery?: string[];
-  };
 }
 
 const PROVIDER_CONFIGS: ProviderConfig[] = [
@@ -155,6 +151,103 @@ const applyDefaults = (settings?: Partial<DeliveryShopSettings> | null): Deliver
   };
 };
 
+const ACTIVATION_STATUS_LABELS: Record<DeliveryActivationStatus, string> = {
+  NOT_CONFIGURED: 'manageShop.deliverySettings.statuses.notConfigured',
+  SETUP_INCOMPLETE: 'manageShop.deliverySettings.statuses.setupIncomplete',
+  VALIDATING: 'manageShop.deliverySettings.statuses.validating',
+  ACTIVE: 'manageShop.deliverySettings.statuses.active',
+  ACTION_REQUIRED: 'manageShop.deliverySettings.statuses.actionRequired',
+};
+
+const ACTIVATION_STATUS_CLASSES: Record<DeliveryActivationStatus, string> = {
+  NOT_CONFIGURED: 'bg-gray-100 text-gray-700',
+  SETUP_INCOMPLETE: 'bg-amber-100 text-amber-800',
+  VALIDATING: 'bg-blue-100 text-blue-800',
+  ACTIVE: 'bg-green-100 text-green-700',
+  ACTION_REQUIRED: 'bg-red-100 text-red-700',
+};
+
+const normalizeActivationStatus = (status: DeliveryProviderStatus | undefined): DeliveryActivationStatus => {
+  const rawStatus = typeof status?.activation_status === 'string'
+    ? status.activation_status.toUpperCase() as DeliveryActivationStatus
+    : undefined;
+  if (rawStatus && rawStatus in ACTIVATION_STATUS_LABELS) return rawStatus;
+  if (!status?.is_connected) return 'NOT_CONFIGURED';
+  if (status.is_active) return 'ACTIVE';
+  return 'SETUP_INCOMPLETE';
+};
+
+const isProviderAiDefault = (status: DeliveryProviderStatus | undefined): boolean => {
+  if (!status) return false;
+  if (Object.prototype.hasOwnProperty.call(status, 'is_ai_default')) return status.is_ai_default === true;
+  return status.metadata?.is_ai_default === true || status.metadata?.ai_default === true;
+};
+
+const getProviderMissing = (status: DeliveryProviderStatus | undefined): string[] => {
+  if (!status) return [];
+  const legacyMissing = (status as DeliveryProviderStatus & { missing_fields?: unknown }).missing_fields;
+  if (Array.isArray(status.missing)) return status.missing.filter((value): value is string => typeof value === 'string');
+  if (Array.isArray(legacyMissing)) return legacyMissing.filter((value): value is string => typeof value === 'string');
+  return [];
+};
+
+const normalizePickupSummary = (pickup: PickupLocationSummary): PickupLocationSummary => {
+  const legacy = pickup as PickupLocationSummary & {
+    name?: string | null;
+    area?: string | null;
+    pickup_address?: string | null;
+  };
+  return {
+    ...pickup,
+    display_name: pickup.display_name ?? pickup.contact_name ?? legacy.name,
+    area_name: pickup.area_name ?? legacy.area,
+    address: pickup.address ?? legacy.pickup_address,
+  };
+};
+
+const getPickupSummary = (status: DeliveryProviderStatus | undefined): PickupLocationSummary | null => {
+  if (!status) return null;
+  if (status.pickup_summary) return normalizePickupSummary(status.pickup_summary);
+  const legacyPickup = (status as DeliveryProviderStatus & { pickup?: PickupLocationSummary | null }).pickup;
+  return legacyPickup ? normalizePickupSummary(legacyPickup) : null;
+};
+
+const isConflictError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as {
+    statusCode?: unknown;
+    status?: unknown;
+    type?: unknown;
+    response?: { status?: unknown };
+  };
+  return candidate.statusCode === 409
+    || candidate.status === 409
+    || candidate.response?.status === 409
+    || candidate.type === 'CONFLICT';
+};
+
+const getConflictMissing = (error: unknown, fallback: string[]): string[] => {
+  if (!error || typeof error !== 'object') return fallback;
+  const candidate = error as {
+    missing?: unknown;
+    details?: { missing?: unknown; missing_fields?: unknown };
+    data?: { missing?: unknown; details?: { missing?: unknown } };
+    response?: { data?: { missing?: unknown; details?: { missing?: unknown }; error?: { details?: { missing?: unknown } } } };
+  };
+  const values = [
+    candidate.missing,
+    candidate.details?.missing,
+    candidate.details?.missing_fields,
+    candidate.data?.missing,
+    candidate.data?.details?.missing,
+    candidate.response?.data?.missing,
+    candidate.response?.data?.details?.missing,
+    candidate.response?.data?.error?.details?.missing,
+  ];
+  const found = values.find((value): value is unknown[] => Array.isArray(value));
+  return found?.filter((value): value is string => typeof value === 'string') ?? fallback;
+};
+
 export default function DeliverySettings() {
   const { t } = useTranslation();
   const areaZoneOptions = [
@@ -175,37 +268,32 @@ export default function DeliverySettings() {
   const [isSandbox, setIsSandbox] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
-  const [priority, setPriority] = useState<{ payment: string[]; delivery: string[] }>({ payment: [], delivery: [] });
-  const [settingDefaultProvider, setSettingDefaultProvider] = useState<DeliveryProvider | null>(null);
+  const [settingAiDefaultProvider, setSettingAiDefaultProvider] = useState<DeliveryProvider | null>(null);
+  const [pickupModal, setPickupModal] = useState<{
+    provider: DeliveryProvider;
+    missing: string[];
+    pickup: PickupLocationSummary | null;
+    providerPickupMeta: DeliveryProviderStatus['provider_pickup_meta'];
+  } | null>(null);
 
   // Load delivery settings on mount
   useEffect(() => {
-    loadDeliverySettings();
-    apiClient.get<PlatformPriorityResponse>('/shop/platform-priority')
-      .then(res => setPriority({
-        payment: res.data?.data?.payment || [],
-        delivery: res.data?.data?.delivery || [],
-      }))
-      .catch(() => {});
+    void loadDeliverySettings();
   }, []);
 
-  const defaultProvider = priority.delivery[0];
-
-  const handleSetDefault = async (provider: DeliveryProvider) => {
+  const handleSetAiDefault = async (provider: DeliveryProvider) => {
     try {
-      setSettingDefaultProvider(provider);
+      setSettingAiDefaultProvider(provider);
       setError(null);
       setSuccessMessage(null);
-      const nextDelivery = [provider, ...priority.delivery.filter((p) => p !== provider)];
-      const nextPriority = { payment: priority.payment, delivery: nextDelivery };
-      await apiClient.put('/shop/platform-priority', nextPriority);
-      setPriority(nextPriority);
+      await orderApi.setAiDefaultDeliveryProvider(provider);
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
-      setSuccessMessage(t('manageShop.deliverySettings.setDefaultSuccess', { provider: config?.display_name }));
+      setSuccessMessage(t('manageShop.deliverySettings.aiDefaultSuccess', { provider: config?.display_name }));
+      await loadDeliverySettings();
     } catch (err: any) {
-      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.updateDefaultFailed')));
+      setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.aiDefaultFailed')));
     } finally {
-      setSettingDefaultProvider(null);
+      setSettingAiDefaultProvider(null);
     }
   };
 
@@ -213,7 +301,7 @@ export default function DeliverySettings() {
     try {
       setLoading(true);
       setError(null);
-      const settings = await apiClient.getDeliverySettings();
+      const settings = await orderApi.getDeliverySettings();
       setProviders(settings.providers);
       const pathaoStatus = settings.providers.find((provider) => provider.provider === 'pathao');
       setIsSandbox(pathaoStatus?.is_sandbox === true);
@@ -238,7 +326,7 @@ export default function DeliverySettings() {
         return;
       }
 
-      await apiClient.updateDeliverySettings(deliverySettings);
+      await orderApi.updateDeliverySettings(deliverySettings);
       setDeliverySettings(applyDefaults(deliverySettings));
       setSuccessMessage(t('manageShop.deliverySettings.success.settingsSaved'));
     } catch (err: any) {
@@ -334,7 +422,7 @@ export default function DeliverySettings() {
         }
       }
 
-      await apiClient.connectDeliveryProvider({
+       await orderApi.connectDeliveryProvider({
         provider,
         credentials: credentials as any,
         is_sandbox: isSandbox
@@ -363,7 +451,7 @@ export default function DeliverySettings() {
       setError(null);
       setSuccessMessage(null);
 
-      await apiClient.disconnectDeliveryProvider(provider);
+       await orderApi.disconnectDeliveryProvider(provider);
 
       setSuccessMessage(t('manageShop.deliverySettings.success.disconnected', { provider: config?.display_name }));
       await loadDeliverySettings();
@@ -375,20 +463,35 @@ export default function DeliverySettings() {
     }
   };
 
-  const handleToggle = async (provider: DeliveryProvider, currentStatus: boolean) => {
+  const handleToggle = async (provider: DeliveryProvider, currentStatus: DeliveryActivationStatus) => {
+    const activating = currentStatus !== 'ACTIVE';
     try {
       setTogglingProvider(provider);
       setError(null);
       setSuccessMessage(null);
 
-      await apiClient.toggleDeliveryProvider(provider, !currentStatus);
+      if (activating) {
+        await orderApi.activateDeliveryProvider(provider);
+      } else {
+        await orderApi.deactivateDeliveryProvider(provider);
+      }
 
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
-      setSuccessMessage(!currentStatus
+      setSuccessMessage(activating
         ? t('manageShop.deliverySettings.success.activated', { provider: config?.display_name })
         : t('manageShop.deliverySettings.success.deactivated', { provider: config?.display_name }));
       await loadDeliverySettings();
     } catch (err: any) {
+      if (activating && isConflictError(err)) {
+        const providerStatus = providers.find((item) => item.provider === provider);
+        setPickupModal({
+          provider,
+          missing: getConflictMissing(err, getProviderMissing(providerStatus)),
+          pickup: getPickupSummary(providerStatus),
+          providerPickupMeta: providerStatus?.provider_pickup_meta ?? null,
+        });
+        return;
+      }
       setError(getErrorMessage(err, t('manageShop.deliverySettings.errors.toggleFailed')));
       console.error('Failed to toggle provider:', err);
     } finally {
@@ -402,7 +505,7 @@ export default function DeliverySettings() {
       setError(null);
       setSuccessMessage(null);
 
-      await apiClient.testDeliveryConnection(provider);
+      await orderApi.testDeliveryConnection(provider);
 
       const config = PROVIDER_CONFIGS.find(c => c.provider === provider);
       setSuccessMessage(t('manageShop.deliverySettings.success.testSuccess', { provider: config?.display_name }));
@@ -417,9 +520,7 @@ export default function DeliverySettings() {
   const openCredentialsForm = (provider: DeliveryProvider) => {
     setShowCredentialsForm(provider);
     setCredentials({});
-    setIsSandbox(provider === 'pathao'
-      ? providers.find((item) => item.provider === 'pathao')?.is_sandbox === true
-      : false);
+    setIsSandbox(providers.find((item) => item.provider === provider)?.is_sandbox === true);
     setError(null);
     setSuccessMessage(null);
   };
@@ -675,7 +776,11 @@ export default function DeliverySettings() {
         {PROVIDER_CONFIGS.map((config) => {
           const providerStatus = providers.find(p => p.provider === config.provider);
           const isConnected = providerStatus?.is_connected || false;
-          const isActive = providerStatus?.is_active || false;
+          const activationStatus = normalizeActivationStatus(providerStatus);
+          const isActive = activationStatus === 'ACTIVE';
+          const isAiDefault = isProviderAiDefault(providerStatus);
+          const missing = getProviderMissing(providerStatus);
+          const pickupSummary = getPickupSummary(providerStatus);
           const isConnecting = connectingProvider === config.provider;
           const isDisconnecting = disconnectingProvider === config.provider;
           const isTesting = testingProvider === config.provider;
@@ -694,60 +799,89 @@ export default function DeliverySettings() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-lg font-semibold text-gray-900">{config.display_name}</h3>
-                        {defaultProvider === config.provider && (
+                        {isAiDefault && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                             <Star className="w-3 h-3 fill-current" />
-                            {t('manageShop.deliverySettings.defaultBadge')}
+                            {t('manageShop.deliverySettings.aiDefaultBadge')}
                           </span>
                         )}
                       </div>
                       <p className="text-sm text-gray-600 mt-1">{config.description}</p>
-                       {isConnected && (
-                         <div className="flex items-center gap-4 mt-2">
+                      {isConnected && (
+                        <div className="flex items-center gap-4 mt-2 flex-wrap">
                           <div className="flex items-center gap-1.5">
                             <div className="w-2 h-2 rounded-full bg-green-500"></div>
                             <span className="text-xs text-gray-600">{t('manageShop.deliverySettings.connected')}</span>
                           </div>
-                           {providerStatus?.last_validated_at && (
+                          {providerStatus?.last_validated_at && (
                             <span className="text-xs text-gray-500">
                               {t('manageShop.deliverySettings.lastTested', { date: new Date(providerStatus.last_validated_at).toLocaleDateString() })}
                             </span>
-                           )}
-                           {config.provider === 'pathao' && (
-                             <span
-                               data-testid="pathao-environment"
-                               className="text-xs font-medium text-blue-700"
-                             >
-                               {providerStatus?.is_sandbox ? 'Sandbox' : 'Production'}
-                             </span>
-                           )}
-                         </div>
+                          )}
+                          {(config.provider === 'pathao' || config.provider === 'redx') && (
+                            <span
+                              data-testid={`${config.provider}-environment`}
+                              className="text-xs font-medium text-blue-700"
+                            >
+                              {providerStatus?.is_sandbox ? 'Sandbox' : 'Production'}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Status Badge */}
-                  <div>
-                    {isActive && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                        {t('manageShop.deliverySettings.statusActive')}
-                      </span>
-                    )}
-                    {isConnected && !isActive && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                        {t('manageShop.deliverySettings.statusInactive')}
-                      </span>
-                    )}
-                    {!isConnected && (
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
-                        {t('manageShop.deliverySettings.statusNotConnected')}
-                      </span>
-                    )}
-                  </div>
+                  <span
+                    data-testid={`activation-status-${config.provider}`}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${ACTIVATION_STATUS_CLASSES[activationStatus]}`}
+                  >
+                    {t(ACTIVATION_STATUS_LABELS[activationStatus])}
+                  </span>
                 </div>
 
+                {isConnected && (
+                  <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {t('manageShop.deliverySettings.pickupDetails')}
+                        </p>
+                        {pickupSummary ? (
+                          <p className="mt-1 text-sm text-gray-800" data-testid={`pickup-summary-${config.provider}`}>
+                            {[pickupSummary.display_name, pickupSummary.area_name, pickupSummary.address].filter(Boolean).join(' · ')}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-sm text-amber-700" data-testid={`pickup-missing-${config.provider}`}>
+                            {t('manageShop.deliverySettings.pickupMissing')}
+                          </p>
+                        )}
+                        {providerStatus?.activation_error && (
+                          <p className="mt-2 flex items-start gap-1.5 text-sm text-red-700" role="alert">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span>{providerStatus.activation_error}</span>
+                          </p>
+                        )}
+                      </div>
+                      {missing.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPickupModal({
+                            provider: config.provider,
+                            missing,
+                            pickup: pickupSummary,
+                            providerPickupMeta: providerStatus?.provider_pickup_meta ?? null,
+                          })}
+                          className="shrink-0 self-start text-left text-sm font-semibold text-blue-700 hover:text-blue-800 hover:underline"
+                        >
+                          {t('manageShop.deliverySettings.completePickupDetails')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Actions */}
-                <div className="flex items-center gap-3 mt-6">
+                <div className="flex flex-wrap items-center gap-3 mt-6">
                   {!isConnected && (
                     <button
                       onClick={() => openCredentialsForm(config.provider)}
@@ -759,26 +893,26 @@ export default function DeliverySettings() {
                     </button>
                   )}
 
-                  {isConnected && isActive && defaultProvider !== config.provider && (
+                  {isConnected && isActive && !isAiDefault && (
                     <button
-                      onClick={() => handleSetDefault(config.provider)}
-                      disabled={settingDefaultProvider === config.provider}
+                      onClick={() => void handleSetAiDefault(config.provider)}
+                      disabled={settingAiDefaultProvider === config.provider}
                       className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-medium rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 border border-emerald-200"
                     >
-                      {settingDefaultProvider === config.provider
+                      {settingAiDefaultProvider === config.provider
                         ? <Loader2 className="w-4 h-4 animate-spin" />
                         : <Star className="w-4 h-4" />}
-                      {t('manageShop.deliverySettings.setAsDefault')}
+                      {t('manageShop.deliverySettings.setAsAiDefault')}
                     </button>
                   )}
 
                   {isConnected && (
                     <>
                       <button
-                        onClick={() => handleToggle(config.provider, isActive)}
+                        onClick={() => void handleToggle(config.provider, activationStatus)}
                         disabled={isToggling}
                         className={`px-4 py-2 text-sm font-medium rounded-lg flex items-center gap-2 ${
-                          isActive
+                           isActive
                             ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             : 'bg-green-600 text-white hover:bg-green-700'
                         } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -836,16 +970,16 @@ export default function DeliverySettings() {
                       </div>
                     ))}
 
-                    {config.provider === 'pathao' && (
+                    {(config.provider === 'pathao' || config.provider === 'redx') && (
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          id="sandbox"
+                          id={`sandbox-${config.provider}`}
                           checked={isSandbox}
                           onChange={(e) => setIsSandbox(e.target.checked)}
                           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                         />
-                        <label htmlFor="sandbox" className="text-sm text-gray-700">
+                        <label htmlFor={`sandbox-${config.provider}`} className="text-sm text-gray-700">
                           {t('manageShop.deliverySettings.useSandbox')}
                         </label>
                       </div>
@@ -877,6 +1011,21 @@ export default function DeliverySettings() {
           );
         })}
       </div>
+
+      {pickupModal && (
+        <PickupDetailsModal
+          provider={pickupModal.provider}
+          missing={pickupModal.missing}
+          initialPickup={pickupModal.pickup}
+          providerPickupMeta={pickupModal.providerPickupMeta}
+          onClose={() => setPickupModal(null)}
+          onSaved={async () => {
+            await loadDeliverySettings();
+            const config = PROVIDER_CONFIGS.find((item) => item.provider === pickupModal.provider);
+            setSuccessMessage(t('manageShop.deliverySettings.pickupSaved', { provider: config?.display_name }));
+          }}
+        />
+      )}
 
     </div>
   );

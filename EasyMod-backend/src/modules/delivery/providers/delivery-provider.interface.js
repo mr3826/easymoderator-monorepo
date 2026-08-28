@@ -35,6 +35,24 @@
 const { createLogger } = require('../../../utils/structured-logger');
 const { AppError } = require('../../../utils/AppError');
 
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const redactProviderSecrets = (message, secrets = []) => {
+  let safeMessage = String(message || 'Provider request failed');
+  const values = secrets
+    .filter((secret) => secret !== undefined && secret !== null && String(secret) !== '')
+    .map((secret) => String(secret).replace(/^Bearer\s+/i, '').trim())
+    .filter(Boolean);
+
+  for (const secret of values) {
+    safeMessage = safeMessage.replace(new RegExp(escapeRegExp(secret), 'g'), '[REDACTED]');
+  }
+
+  return safeMessage
+    .replace(/\b(API-ACCESS-TOKEN|Authorization)\s*[:=]\s*(?:Bearer\s+)?[^\s,;}]+/gi, '$1: [REDACTED]')
+    .replace(/\bBearer\s+[^\s,;}]+/gi, 'Bearer [REDACTED]');
+};
+
 class DeliveryProviderInterface {
   /**
    * Initialize delivery provider
@@ -46,6 +64,47 @@ class DeliveryProviderInterface {
     this.providerName = providerName;
     this.credentials = credentials;
     this.logger = createLogger(`Provider-${providerName}`);
+  }
+
+  /**
+   * Normalize an upstream provider failure without retaining its response body.
+   * Provider responses and request errors may contain credentials in messages or
+   * serialized headers, so only a selected message and HTTP status are copied.
+   *
+   * @param {Object|Error} error - Upstream error
+   * @param {string} operation - Human-readable operation name
+   * @param {Array<string>} [secrets=[]] - Additional values to redact
+   * @returns {Error} Sanitized provider error
+   */
+  normalizeError(error, operation, secrets = []) {
+    const responseData = error?.response?.data;
+    const responseMessage = typeof responseData === 'string'
+      ? responseData
+      : responseData?.message
+        || responseData?.error?.message
+        || (typeof responseData?.error === 'string' ? responseData.error : null);
+    const message = responseMessage || error?.message || 'Provider request failed';
+    const credentialSecrets = Object.entries(
+      this.credentials && typeof this.credentials === 'object' ? this.credentials : {}
+    )
+      .filter(([key]) => /(api|token|secret|password|authorization|key)/i.test(key))
+      .map(([, value]) => value);
+    const safeMessage = redactProviderSecrets(message, [...credentialSecrets, ...secrets]);
+    const label = (() => {
+      try {
+        return this.getLabel();
+      } catch (_) {
+        return this.providerName;
+      }
+    })();
+    const normalized = new Error(`${label} ${operation} failed: ${safeMessage}`);
+    normalized.name = 'DeliveryProviderError';
+
+    const status = Number(error?.response?.status || error?.status || error?.statusCode);
+    normalized.status = Number.isInteger(status) && status > 0 ? status : 502;
+    normalized.statusCode = normalized.status;
+    normalized.code = error?.code || 'DELIVERY_PROVIDER_ERROR';
+    return normalized;
   }
 
   /**
@@ -127,7 +186,7 @@ class DeliveryProviderInterface {
    * Map provider status to internal status
    * 
    * Converts a provider's status string to internal format using the
-   * status map. Returns 'unknown' if status is not recognized.
+   * status map. Unknown non-empty values are preserved for reconciliation.
    * 
    * @param {string} providerStatus - Status string from provider API
    * @returns {string} Internal status (lowercase)
@@ -137,7 +196,9 @@ class DeliveryProviderInterface {
    */
   mapStatus(providerStatus) {
     const statusMap = this.getStatusMap();
-    return statusMap[providerStatus] || 'unknown';
+    if (providerStatus === undefined || providerStatus === null || providerStatus === '') return 'unknown';
+    const raw = String(providerStatus);
+    return statusMap[raw] || statusMap[raw.toLowerCase()] || raw;
   }
 
   /**
@@ -215,17 +276,22 @@ class DeliveryProviderInterface {
    * @param {Object} orderData - Order data to validate
    * @throws {AppError} If validation fails
    */
-  validateOrderData(orderData) {
-    if (!orderData.receiver_name) {
-      throw new AppError('receiver_name is required', 400);
+  validateOrderData(orderData = {}) {
+    const customerName = orderData.customer_name || orderData.receiver_name;
+    const customerPhone = orderData.customer_phone || orderData.receiver_phone;
+    const deliveryAddress = orderData.delivery_address || orderData.receiver_address;
+
+    if (!customerName) {
+      throw new AppError('customer_name is required', 400);
     }
-    if (!orderData.receiver_phone) {
-      throw new AppError('receiver_phone is required', 400);
+    if (!customerPhone) {
+      throw new AppError('customer_phone is required', 400);
     }
-    if (!orderData.receiver_address) {
-      throw new AppError('receiver_address is required', 400);
+    if (!deliveryAddress) {
+      throw new AppError('delivery_address is required', 400);
     }
-    if (orderData.weight_kg && orderData.weight_kg > this.getCapabilities().max_package_weight_kg) {
+    const weight = orderData.item_weight ?? orderData.weight_kg;
+    if (weight && weight > this.getCapabilities().max_package_weight_kg) {
       throw new AppError(
         `Weight exceeds provider limit of ${this.getCapabilities().max_package_weight_kg}kg`,
         400

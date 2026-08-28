@@ -52,6 +52,34 @@ describe('delivery tracking tenant and replay safeguards', () => {
         expect(tracking.order.update).not.toHaveBeenCalled();
     });
 
+    test('appends a changed status to status_history without a reference error', async () => {
+        const tracking = {
+            id: 'tracking-2',
+            current_status: 'in_transit',
+            status_history: [{ status: 'booked' }],
+            order: {
+                shop_id: 'shop-1',
+                customer_phone: '01700000000',
+                update: jest.fn(),
+            },
+            update: jest.fn(),
+        };
+        mockDeliveryTracking.findOne.mockResolvedValue(tracking);
+
+        const result = await service.handleDeliveryWebhook('pathao', 'CN-2', {
+            status: 'DELIVERED',
+            location: 'Dhaka',
+        });
+
+        expect(result.success).toBe(true);
+        expect(tracking.update).toHaveBeenCalledWith(expect.objectContaining({
+            status_history: [
+                { status: 'booked' },
+                expect.objectContaining({ status: 'delivered', location: 'Dhaka' }),
+            ],
+        }));
+    });
+
     test('order tracking lookup binds the tenant through the real Order foreign key', async () => {
         mockDeliveryTracking.findOne.mockResolvedValue({ id: 'tracking-1' });
 

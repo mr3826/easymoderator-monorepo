@@ -43,11 +43,20 @@ const deliveryValidators = {
                 then: Joi.required().messages({ 'any.required': 'Password is required for Pathao' }),
                 otherwise: Joi.optional()
             }),
-            // Steadfast-specific fields
-            api_key: Joi.string().when('/provider', {
-                is: 'steadfast',
-                then: Joi.required().messages({ 'any.required': 'API Key is required for Steadfast' }),
-                otherwise: Joi.optional()
+            // API-key based provider fields
+            api_key: Joi.string().trim().when('/provider', {
+                is: 'redx',
+                then: Joi.required().messages({
+                    'string.empty': 'API Key is required for RedX',
+                    'any.required': 'API Key is required for RedX'
+                }),
+                otherwise: Joi.when('/provider', {
+                    is: 'steadfast',
+                    then: Joi.required().messages({
+                        'any.required': 'API Key is required for Steadfast'
+                    }),
+                    otherwise: Joi.optional()
+                })
             }),
             secret_key: Joi.string().when('/provider', {
                 is: 'steadfast',
@@ -135,7 +144,15 @@ const deliveryValidators = {
                     }).unknown(true)
                 )
                 .optional(),
-            balance: Joi.number().min(0).optional()
+            balance: Joi.number().min(0).optional(),
+            pickup_store_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            provider_store_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            pickup_location_id: Joi.string().uuid().optional(),
+            city_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            zone_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            area_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+            delivery_area: Joi.string().max(255).optional(),
+            delivery_area_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional()
         })
             .max(20)
             .required()
@@ -255,6 +272,31 @@ const deliveryValidators = {
                 'array.base': 'weight_tiers must be an array',
                 'any.invalid': 'Invalid weight tier configuration'
             })
+    }),
+
+    activateProvider: Joi.object({
+        provider: Joi.string().valid(...PROVIDER_NAMES).required()
+    }),
+
+    deactivateProvider: Joi.object({
+        provider: Joi.string().valid(...PROVIDER_NAMES).required()
+    }),
+
+    setAiDefaultProvider: Joi.object({
+        provider: Joi.string().valid(...PROVIDER_NAMES).required()
+    }),
+
+    pickupLocation: Joi.object({
+        display_name: Joi.string().trim().max(255).required(),
+        contact_name: Joi.string().trim().max(255).required(),
+        phone: Joi.string().trim().max(50).required(),
+        secondary_phone: Joi.string().trim().max(50).allow('', null).optional(),
+        address: Joi.string().trim().max(2000).required(),
+        city_name: Joi.string().trim().max(255).allow('', null).optional(),
+        zone_name: Joi.string().trim().max(255).allow('', null).optional(),
+        area_name: Joi.string().trim().max(255).allow('', null).optional(),
+        postal_code: Joi.string().trim().max(20).allow('', null).optional(),
+        is_default: Joi.boolean().optional()
     })
 };
 

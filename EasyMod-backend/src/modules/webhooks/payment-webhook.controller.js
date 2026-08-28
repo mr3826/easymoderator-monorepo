@@ -160,18 +160,24 @@ class PaymentWebhookController {
             });
 
             // Check if there's an active order session to complete
-            const activeSession = await OrderSession.findOne({
-                where: {
-                    shop_id: order.shop_id,
-                    customer_id: order.customer_id,
-                    status: 'ACTIVE'
-                },
-                order: [['last_activity_at', 'DESC']]
-            });
+            const activeSession = OrderSession && typeof OrderSession.findOne === 'function'
+                ? await OrderSession.findOne({
+                    where: {
+                        shop_id: order.shop_id,
+                        customer_id: order.customer_id,
+                        status: 'ACTIVE'
+                    },
+                    order: [['last_activity_at', 'DESC']]
+                })
+                : null;
 
             if (activeSession) {
-                // Complete the order session
-                await OrderSessionService.autoConfirmOrder(activeSession);
+                // Older deployments do not expose a session auto-confirm
+                // method. Payment fulfilment must continue without turning that
+                // compatibility gap into a failed order/payment webhook.
+                if (typeof OrderSessionService.autoConfirmOrder === 'function') {
+                    await OrderSessionService.autoConfirmOrder(activeSession);
+                }
             }
 
             // Trigger invoice generation. chat-invoice, NOT the legacy
@@ -182,25 +188,30 @@ class PaymentWebhookController {
             await issueInvoiceForOrder(order).catch(err =>
                 this.logger.warn('Invoice generation failed (continuing fulfillment)', { error: err.message }));
 
-            // Trigger delivery booking
-            const deliveryService = require('../delivery/delivery.service');
-            const activeProvider = await deliveryService.getActiveProvider(order.shop_id);
-            
-            if (activeProvider && order.total > 0) {
-                const deliveryPayload = {
-                    order_number: order.order_number,
-                    customer_name: order.customer_name,
-                    customer_phone: order.customer_phone,
-                    delivery_address: order.delivery_address,
-                    total: parseFloat(order.total),
-                    note: order.note,
-                    item_quantity: 1,
-                    item_weight: 0.5,
-                    item_description: `Order ${order.order_number}`,
-                    delivery_type: 48
-                };
-
-                await deliveryService.createDeliveryOrder(order.shop_id, deliveryPayload);
+            // Trigger delivery booking through the canonical order path. A
+            // missing courier setup is an operational state and must not roll
+            // back or corrupt a payment-confirmed order.
+            const orderService = require('../order/order.service');
+            const booking = typeof orderService.bookForOrder === 'function'
+                ? await orderService.bookForOrder(order, {
+                    shopId: order.shop_id,
+                    requireAiDefault: true,
+                    throwOnError: false,
+                    stepData: {
+                        name: order.customer_name,
+                        phone: order.customer_phone,
+                        address: order.delivery_address,
+                        notes: order.note || order.notes || null,
+                    },
+                })
+                : { failed: true, status: 'dispatch_failed', reason: 'canonical booking service unavailable' };
+            if (booking?.blocked || booking?.failed) {
+                this.logger.warn('Payment-confirmed order was not courier-booked', {
+                    orderId: order.id,
+                    orderNumber: order.order_number,
+                    status: booking.status,
+                    reason: booking.reason,
+                });
             }
 
             // Send confirmation to customer

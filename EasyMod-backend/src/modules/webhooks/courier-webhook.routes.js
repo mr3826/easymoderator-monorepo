@@ -31,19 +31,36 @@ function timingSafeStringEqual(received, expected) {
  * Returns null if consignment not found.
  */
 async function resolveShopCredentials(provider, consignmentId) {
-    const tracking = await DeliveryTracking.findOne({
+    let tracking = await DeliveryTracking.findOne({
         where: { tracking_number: consignmentId, provider },
         include: [{
             model: Order,
             as: 'order',
-            attributes: ['shop_id'],
+            attributes: ['id', 'shop_id', 'delivery_consignment_id'],
             required: true,
         }],
     });
+    if (!tracking && typeof Order.findOne === 'function') {
+        const order = await Order.findOne({
+            where: { delivery_consignment_id: consignmentId },
+            attributes: ['id', 'shop_id', 'delivery_consignment_id'],
+        });
+        if (order) {
+            tracking = await DeliveryTracking.findOne({
+                where: { order_id: order.id, provider },
+                include: [{
+                    model: Order,
+                    as: 'order',
+                    attributes: ['id', 'shop_id', 'delivery_consignment_id'],
+                    required: true,
+                }],
+            });
+        }
+    }
     if (!tracking) return null;
 
     const integration = await DeliveryIntegration.findOne({
-        where: { shop_id: tracking.order.shop_id, provider, is_active: true }
+        where: { shop_id: tracking.order.shop_id, provider, is_active: true, is_connected: true }
     });
     return integration ? { tracking, credentials: integration.credentials } : { tracking, credentials: null };
 }
@@ -91,31 +108,33 @@ async function validateSteadfastSignature(req, res, next) {
 
 /**
  * Validate RedX webhook.
- * RedX sends Authorization: Bearer <api_key>.
+ * RedX sends a query-string token. It is deliberately separate from the API
+ * credential used for outbound parcel calls.
  */
 async function validateRedxSignature(req, res, next) {
     try {
-        const authHeader = req.headers['authorization'] || '';
-        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-        const consignmentId = req.body?.tracking_id || req.body?.parcel?.tracking_id;
+        const token = typeof req.query?.token === 'string' ? req.query.token : null;
+        const webhookSecret = process.env.REDX_WEBHOOK_SECRET;
+        const consignmentId = req.body?.tracking_number
+            || req.body?.parcel?.tracking_number;
 
         if (!consignmentId) {
-            return res.status(400).json({ error: 'Missing tracking_id in payload' });
+            return res.status(400).json({ error: 'Missing tracking_number in payload' });
+        }
+
+        if (!webhookSecret) {
+            logger.error('RedX webhook rejected: REDX_WEBHOOK_SECRET is not configured');
+            return res.status(503).json({ error: 'Webhook verification unavailable' });
+        }
+        if (webhookSecret && !timingSafeStringEqual(token, webhookSecret)) {
+            logger.warn('RedX webhook: missing or invalid query token', { consignmentId });
+            return res.status(401).json({ error: 'Invalid webhook token' });
         }
 
         const resolved = await resolveShopCredentials('redx', consignmentId);
         if (!resolved) {
             logger.warn('RedX webhook: tracking record not found', { consignmentId });
             return res.status(404).json({ error: 'Order not found' });
-        }
-
-        if (!resolved.credentials?.api_key) {
-            logger.error('RedX webhook rejected: active integration has no verification credential');
-            return res.status(503).json({ error: 'Webhook verification unavailable' });
-        }
-        if (!timingSafeStringEqual(token, resolved.credentials.api_key)) {
-            logger.warn('RedX webhook: missing or invalid authorization', { consignmentId });
-            return res.status(401).json({ error: 'Invalid API key' });
         }
 
         req.resolvedTracking = resolved.tracking;
@@ -180,8 +199,13 @@ function extractStatusData(provider, body) {
     }
     if (provider === 'redx') {
         return {
-            trackingNumber: body.tracking_id || body.parcel?.tracking_id,
-            status: body.status || body.parcel?.status,
+            trackingNumber: body.tracking_number || body.parcel?.tracking_number,
+            status: body.status
+                || body.parcel?.status
+                || body.delivery_status
+                || body.parcel_status
+                || body.parcel?.delivery_status
+                || body.parcel?.parcel_status,
             location: body.location
         };
     }

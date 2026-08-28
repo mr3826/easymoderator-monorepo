@@ -49,6 +49,44 @@ describe('telegram-alert.formatter', () => {
         expect(alert.deepLink).toBe('https://app.easymod.tech/orders');
     });
 
+    it('formats courier setup blockers with merchant-safe readiness details', () => {
+        const alert = formatTelegramAlert(NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED, {
+            orderId: 'order-1',
+            orderNumber: 'EM-100',
+            provider: 'pathao',
+            missing: ['pickup_location', 'provider_store'],
+            status: 'SETUP_INCOMPLETE',
+            reasonCode: 'pickup_profile_required',
+            customerName: 'Customer secret',
+            error: 'provider token must not be exposed'
+        });
+
+        expect(alert.title).toBe('Courier setup required');
+        expect(alert.body).toContain('Order: #EM-100');
+        expect(alert.body).toContain('Courier: pathao');
+        expect(alert.body).toContain('Missing: pickup_location, provider_store');
+        expect(alert.body).toContain('Reason: pickup_profile_required');
+        expect(alert.body).not.toContain('Customer secret');
+        expect(alert.body).not.toContain('provider token must not be exposed');
+        expect(alert.deepLink).toBe('https://app.easymod.tech/manage-shop/delivery-settings');
+    });
+
+    it('sanitizes and bounds readiness values instead of stringifying objects', () => {
+        const alert = formatTelegramAlert(NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED, {
+            orderNumber: 'EM-1\r\nInjected line',
+            provider: 'pathao\t',
+            missing: ['pickup_location\ninjected', { secret: 'token' }],
+            reason: 'r'.repeat(200)
+        });
+
+        expect(alert.body).toContain('Order: #EM-1 Injected line');
+        expect(alert.body).toContain('Missing: pickup_location injected');
+        expect(alert.body).not.toContain('[object Object]');
+        expect(alert.body).not.toContain('token');
+        expect(alert.body).toContain(`Reason: ${'r'.repeat(160)}`);
+        expect(alert.body).not.toContain(`Reason: ${'r'.repeat(161)}`);
+    });
+
     it('converts an alert into a browser push payload', () => {
         const payload = toPushPayload(NOTIFICATION_EVENTS.AI_HITL, { conversationId: 'conv-1' });
 

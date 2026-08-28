@@ -17,6 +17,7 @@ name: CI / CD
 #   TELEGRAM_BOT_TOKEN   — optional; required only when TELEGRAM_ENABLED=true
 #   TELEGRAM_BOT_USERNAME — optional; bot username without @
 #   TELEGRAM_WEBHOOK_SECRET — optional; required only when Telegram is enabled
+#   REDX_WEBHOOK_SECRET  — required for RedX delivery webhook verification
 #   API_URL / BASE_URL   — https://api.easymod.tech (API + public uploads)
 #   BODY_SIZE_LIMIT      — 35mb (Messenger attachment upload payloads)
 #   PRODUCT_IMAGE_QUOTA_BYTES — 104857600 (per-shop product-image cap)
@@ -348,6 +349,7 @@ jobs:
           CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
           PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
           DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          REDX_WEBHOOK_SECRET: ${{ secrets.REDX_WEBHOOK_SECRET }}
           CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
           AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}
@@ -717,6 +719,7 @@ jobs:
           CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
           PAYMENT_ENCRYPTION_KEY: ${{ secrets.PAYMENT_ENCRYPTION_KEY }}
           DELIVERY_ENCRYPTION_KEY: ${{ secrets.DELIVERY_ENCRYPTION_KEY }}
+          REDX_WEBHOOK_SECRET: ${{ secrets.REDX_WEBHOOK_SECRET }}
           CHANNEL_ENCRYPTION_KEY: ${{ secrets.CHANNEL_ENCRYPTION_KEY }}
           PAYMENT_CALLBACK_HMAC_SECRET: ${{ secrets.PAYMENT_CALLBACK_HMAC_SECRET }}
           AI_ACTION_GATE_SECRET: ${{ secrets.AI_ACTION_GATE_SECRET }}

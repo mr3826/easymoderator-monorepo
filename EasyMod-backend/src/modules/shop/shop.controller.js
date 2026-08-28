@@ -1,5 +1,5 @@
 const shopService = require('./shop.service');
-const { Shop } = require('../entities');
+const { Shop, DeliveryIntegration } = require('../entities');
 const knowledgeService = require('../knowledge/knowledge.service');
 const setupStatusService = require('../setup/setup-status.service');
 const { validationResult } = require('express-validator');
@@ -620,6 +620,22 @@ const updatePlatformPriority = async (req, res, next) => {
         }
         const shop = await Shop.findByPk(shopId);
         if (!shop) return res.status(404).json({ success: false, message: 'Shop not found' });
+
+        if (delivery.length > 0) {
+            const integrations = await DeliveryIntegration.findAll({
+                where: { shop_id: shopId, is_active: true, is_connected: true },
+                attributes: ['provider']
+            });
+            const connectedProviders = new Set(integrations.map((integration) => integration.provider));
+            const invalidProvider = delivery.find((provider) => !connectedProviders.has(provider));
+            if (invalidProvider !== undefined) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Delivery priority provider is not active and connected: ${invalidProvider}`
+                });
+            }
+        }
+
         // Merge into settings JSONB (preserve other keys like onboarding_completed).
         await shop.update({
             settings: mergeAndSanitizeSettings(shop.settings || {}, {

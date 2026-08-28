@@ -17,7 +17,8 @@
  *   - Payment ground truth: shop.settings.bd (self-MFS = owner's personal
  *     bKash/Nagad/Rocket number) via shop-bd-settings. There is no automated
  *     online gateway — without self-MFS the shop is COD-only.
- *   - Courier ground truth: delivery_integrations (is_active + is_connected).
+ *   - Courier ground truth: the shop's database-enforced AI-default delivery
+ *     integration (is_ai_default + is_active + is_connected).
  *   Built fresh from the DB on every reply, so a setting change is reflected the
  *   instant the owner saves it — no re-embedding, no cache to invalidate.
  *
@@ -31,16 +32,15 @@ const MFS_LABEL = { bkash: 'bKash', nagad: 'Nagad', rocket: 'Rocket' };
 const COURIER_LABEL = { steadfast: 'Steadfast', redx: 'RedX', pathao: 'Pathao Courier' };
 
 /**
- * Resolve the connected courier's display name, or null if none is connected.
+ * Resolve the AI-default courier's display name, or null if none is configured.
  * Reads the provider name only (no provider-instance construction) so a shop
- * with stale credentials still reports its courier without throwing.
+ * with stale credentials still reports its configured courier without throwing.
  */
 const getActiveCourierName = async (shopId) => {
     try {
         const DeliveryIntegration = require('../delivery/delivery-integration.entity');
         const integration = await DeliveryIntegration.findOne({
-            where: { shop_id: shopId, is_active: true, is_connected: true },
-            order: [['updated_at', 'DESC']],
+            where: { shop_id: shopId, is_ai_default: true, is_active: true, is_connected: true },
             attributes: ['provider'],
         });
         if (!integration) return null;

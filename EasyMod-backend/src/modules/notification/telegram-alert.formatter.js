@@ -22,6 +22,26 @@ function compactLines(lines) {
     return lines.filter(Boolean).join('\n');
 }
 
+function safeAlertText(value, maxLength = 160) {
+    if (typeof value === 'number' && !Number.isFinite(value)) return null;
+    if (typeof value !== 'string' && typeof value !== 'number') return null;
+
+    const normalized = String(value)
+        .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function safeMissingFields(value) {
+    const values = Array.isArray(value) ? value : [value];
+    const normalized = values
+        .map(item => safeAlertText(item, 80))
+        .filter(Boolean)
+        .slice(0, 8);
+    return normalized.length ? normalized.join(', ') : null;
+}
+
 function formatTelegramAlert(eventType, payload = {}) {
     const orderNumber = payload.orderNumber || payload.order_number;
     const customerName = payload.customerName || payload.customer_name;
@@ -86,6 +106,33 @@ function formatTelegramAlert(eventType, payload = {}) {
                     payload.error ? `Reason: ${String(payload.error).slice(0, 220)}` : null
                 ]),
                 deepLink: url
+            };
+        }
+        case NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED: {
+            const safeOrderNumber = safeAlertText(orderNumber);
+            const safeProvider = safeAlertText(provider);
+            const safeMissing = safeMissingFields(
+                payload.missing ?? payload.missingFields ?? payload.missing_fields
+            );
+            const safeStatus = safeAlertText(
+                payload.status ?? payload.activationStatus ?? payload.activation_status
+            );
+            const safeReason = safeAlertText(
+                payload.reasonCode ?? payload.reason_code ?? payload.reason
+            );
+
+            return {
+                title: 'Courier setup required',
+                body: compactLines([
+                    'Courier setup required / কুরিয়ার সেটআপ প্রয়োজন',
+                    safeOrderNumber ? `Order: #${safeOrderNumber}` : null,
+                    safeProvider ? `Courier: ${safeProvider}` : null,
+                    safeMissing ? `Missing: ${safeMissing}` : null,
+                    safeStatus ? `Status: ${safeStatus}` : null,
+                    safeReason ? `Reason: ${safeReason}` : null,
+                    'Open Delivery Settings to complete courier setup before dispatching.'
+                ]),
+                deepLink: deepLink('/manage-shop/delivery-settings')
             };
         }
         case NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE: {

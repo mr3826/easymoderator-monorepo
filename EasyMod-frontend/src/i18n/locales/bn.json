@@ -1512,6 +1512,13 @@
       "statusActive": "সক্রিয়",
       "statusInactive": "নিষ্ক্রিয়",
       "statusNotConnected": "সংযুক্ত নেই",
+      "statuses": {
+        "notConfigured": "কনফিগার করা হয়নি",
+        "setupIncomplete": "সেটআপ অসম্পূর্ণ",
+        "validating": "যাচাই হচ্ছে",
+        "active": "সক্রিয়",
+        "actionRequired": "অ্যাকশন প্রয়োজন"
+      },
       "activate": "সক্রিয় করুন",
       "deactivate": "নিষ্ক্রিয় করুন",
       "testConnection": "সংযোগ পরীক্ষা করুন",
@@ -1535,11 +1542,19 @@
         "disconnectFailed": "প্রদানকারী বিচ্ছিন্ন করতে ব্যর্থ",
         "toggleFailed": "প্রদানকারী টগল করতে ব্যর্থ",
         "testFailed": "সংযোগ পরীক্ষা ব্যর্থ",
-        "updateDefaultFailed": "ডিফল্ট আপডেট করা যায়নি"
+        "updateDefaultFailed": "ডিফল্ট আপডেট করা যায়নি",
+        "aiDefaultFailed": "AI ডিফল্ট কুরিয়ার আপডেট করা যায়নি"
       },
       "setDefaultSuccess": "{{provider}} এখন ডিফল্ট কুরিয়ার হিসেবে ব্যবহৃত হচ্ছে",
       "defaultBadge": "ডিফল্ট",
       "setAsDefault": "ডিফল্ট হিসেবে সেট করুন",
+      "aiDefaultBadge": "AI ডিফল্ট",
+      "setAsAiDefault": "AI ডিফল্ট হিসেবে সেট করুন",
+      "aiDefaultSuccess": "{{provider}} এখন AI ডিফল্ট কুরিয়ার",
+      "pickupDetails": "পিকআপের বিবরণ",
+      "pickupMissing": "সক্রিয় করার আগে পিকআপের বিবরণ প্রয়োজন",
+      "completePickupDetails": "পিকআপের বিবরণ সম্পূর্ণ করুন",
+      "pickupSaved": "{{provider}} পিকআপের বিবরণ সংরক্ষণ ও যাচাই হয়েছে",
       "removeArea": "এলাকা সরান",
       "removeTier": "টিয়ার সরান",
       "weightTierTooltip": "ওজন টিয়ার গাইড: ওজন অনুযায়ী অতিরিক্ত চার্জ যোগ করুন। যেমন: ০-১ কেজি = ০, ১-৩ কেজি = ২০। অতিরিক্ত চার্জ বেস ডেলিভারি চার্জের সাথে যোগ হয়।",
@@ -2008,6 +2023,29 @@
     "bookButton": "কুরিয়ার বুক করুন",
     "bookingSuccess": "কুরিয়ার বুক হয়েছে! ট্র্যাকিং ID: {{trackingId}}",
     "trackingId": "ট্র্যাকিং ID",
+    "pickup": {
+      "title": "পিকআপের বিবরণ",
+      "description": "কুরিয়ার কোথা থেকে আপনার অর্ডার সংগ্রহ করবে তা জানান।",
+      "name": "পিকআপের নাম",
+      "namePlaceholder": "প্রধান পিকআপ পয়েন্ট",
+      "phone": "পিকআপ ফোন",
+      "city": "শহর",
+      "zone": "জোন",
+      "area": "এলাকা",
+      "areaPlaceholder": "পিকআপ এলাকা লিখুন",
+      "address": "পিকআপ ঠিকানা",
+      "addressPlaceholder": "সম্পূর্ণ পিকআপ ঠিকানা লিখুন",
+      "selectCity": "শহর নির্বাচন করুন",
+      "selectZone": "জোন নির্বাচন করুন",
+      "selectArea": "এলাকা নির্বাচন করুন",
+      "saveValidate": "সংরক্ষণ ও যাচাই করুন",
+      "saving": "সংরক্ষণ ও যাচাই হচ্ছে...",
+      "errors": {
+        "fieldsRequired": "সব প্রয়োজনীয় পিকআপের তথ্য পূরণ করুন",
+        "locationsLoadFailed": "কুরিয়ার লোকেশন লোড করা যায়নি",
+        "syncFailed": "পিকআপের তথ্য যাচাই করা যায়নি"
+      }
+    },
     "errors": {
       "fieldsRequired": "সব প্রয়োজনীয় তথ্য পূরণ করুন",
       "bookingFailed": "কুরিয়ার বুক করতে ব্যর্থ। Settings-এ কুরিয়ার credentials যাচাই করুন।"

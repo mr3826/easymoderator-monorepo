@@ -1,15 +1,25 @@
 const axios = require('axios');
+const DeliveryProviderInterface = require('./delivery-provider.interface');
 
 /**
  * Steadfast Courier Provider Adapter
  * Implements API-Key based authentication
  */
-class SteadfastProvider {
-    constructor(credentials) {
+class SteadfastProvider extends DeliveryProviderInterface {
+    constructor(credentials = {}) {
+        super('steadfast', credentials);
         this.credentials = credentials;
         this.baseUrl = 'https://portal.packzy.com/api/v1';
         this.apiKey = credentials.api_key;
         this.secretKey = credentials.secret_key;
+    }
+
+    getLabel() {
+        return 'Steadfast';
+    }
+
+    getCredentialFields() {
+        return ['api_key', 'secret_key'];
     }
 
     /**

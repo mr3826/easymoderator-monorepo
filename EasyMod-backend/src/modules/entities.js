@@ -19,6 +19,7 @@ const IdempotencyKey = require('./audit/idempotency-key.entity');
 const DeliveryIntegration = require('./delivery/delivery-integration.entity');
 const DeliveryCost = require('./delivery/delivery-cost.entity');
 const KnownArea = require('./delivery/known-area.entity');
+const ShopPickupLocation = require('./delivery/shop-pickup-location.entity');
 const PaymentConfig = require('./payment/payment-config.entity');
 const Subscription = require('./subscription/subscription.entity');
 const Invoice = require('./subscription/invoice.entity');
@@ -353,6 +354,10 @@ DeliveryCost.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(DeliveryCost, { foreignKey: 'shop_id', as: 'delivery_costs' });
 KnownArea.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
 Shop.hasMany(KnownArea, { foreignKey: 'shop_id', as: 'known_areas' });
+ShopPickupLocation.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
+Shop.hasMany(ShopPickupLocation, { foreignKey: 'shop_id', as: 'pickup_locations' });
+DeliveryIntegration.belongsTo(ShopPickupLocation, { foreignKey: 'pickup_location_id', as: 'pickup_location' });
+ShopPickupLocation.hasMany(DeliveryIntegration, { foreignKey: 'pickup_location_id', as: 'delivery_integrations' });
 
 // Define payment config relationships
 PaymentConfig.belongsTo(Shop, { foreignKey: 'shop_id', as: 'shop' });
@@ -551,6 +556,7 @@ module.exports = {
     DeliveryIntegration,
     DeliveryCost,
     KnownArea,
+    ShopPickupLocation,
     PaymentConfig,
     Subscription,
     Invoice,
