@@ -1116,7 +1116,7 @@ class OrderSessionService {
                             } else {
                                 const courierOrderData = typeof orderService.buildCourierOrderData === 'function'
                                     ? orderService.buildCourierOrderData(order, {
-                                        stepData,
+                                        stepData: step_data,
                                         pickup: courierResolution.pickup,
                                     })
                                     : null;

@@ -30,6 +30,17 @@ jest.mock('../../modules/delivery/delivery.service', () => ({
         provider: 'steadfast',
         instance: { getOrderStatusByInvoice: mockLookupCourierOrder },
     })),
+    // AI dispatch resolves the shop's explicit AI default; without this the
+    // resolver blocks on AI_DEFAULT_NOT_CONFIGURED and never reaches the gate
+    // traversal this suite exists to exercise.
+    resolveAiDefaultProvider: jest.fn(async () => ({
+        blocked: false,
+        provider: 'steadfast',
+        instance: { getOrderStatusByInvoice: mockLookupCourierOrder },
+        pickup: null,
+        readiness: { ready: true, status: 'ACTIVE', missing: [] },
+        source: 'ai_default',
+    })),
     createDeliveryOrder: mockCreateDeliveryOrder,
 }));
 jest.mock('../../modules/policy/policy.engine', () => ({
