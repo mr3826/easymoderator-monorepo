@@ -46,6 +46,10 @@ const CourierDispatch = sequelize.define('CourierDispatch', {
         type: DataTypes.TEXT,
         allowNull: true,
     },
+    dispatch_owner_token: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+    },
     created_at: {
         type: DataTypes.DATE,
         allowNull: false,

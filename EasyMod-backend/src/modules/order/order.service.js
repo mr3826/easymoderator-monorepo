@@ -1,4 +1,5 @@
 const { Order, OrderItem, Product, Customer, UserShop, OrderReturn, CourierDispatch } = require('../entities');
+const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 const { AppError, sanitizeErrorMessage } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
@@ -1251,24 +1252,45 @@ const markCourierSetupRequired = async (order, shopId, resolution = {}) => {
     };
 };
 
-const markCourierDispatchIndeterminate = async (order, shopId, provider, record, reason) => {
+const transitionCourierDispatchRecord = async (record, values, options = {}) => courierDispatchClaims.transitionCourierDispatch(
+    record,
+    values,
+    {
+        model: options.model || getCourierDispatchModel(),
+        ownerToken: options.ownerToken,
+        expectedStatus: options.expectedStatus,
+    },
+);
+
+const markCourierDispatchIndeterminate = async (order, shopId, provider, record, reason, ownerToken) => {
     const safeReason = asSafeReason(reason, 'courier_dispatch_indeterminate');
+    let claimTransition;
     try {
-        if (record && typeof record.update === 'function') {
-            await record.update({ status: 'INDETERMINATE', error: safeReason });
-        }
+        claimTransition = await transitionCourierDispatchRecord(
+            record,
+            { status: 'INDETERMINATE', error: safeReason },
+            { ownerToken, expectedStatus: 'PENDING' },
+        );
     } catch (_) {
-        // The provider result remains the source of uncertainty.
+        return false;
     }
+    if (!claimTransition.updated) return false;
 
     try {
-        if (typeof order?.update === 'function') {
-            await order.update({ delivery_status: DISPATCH_INDETERMINATE_STATUS });
-        } else if (typeof Order?.update === 'function' && order?.id) {
+        if (typeof Order?.update === 'function' && order?.id) {
             await Order.update(
                 { delivery_status: DISPATCH_INDETERMINATE_STATUS },
-                { where: { id: order.id, shop_id: shopId } }
+                {
+                    where: {
+                        id: order.id,
+                        shop_id: shopId,
+                        delivery_consignment_id: null,
+                        delivery_tracking_code: null,
+                    },
+                },
             );
+        } else if (typeof order?.update === 'function') {
+            await order.update({ delivery_status: DISPATCH_INDETERMINATE_STATUS });
         }
     } catch (_) {
         // Operational status is best effort and must not mask the provider error.
@@ -1287,18 +1309,21 @@ const markCourierDispatchIndeterminate = async (order, shopId, provider, record,
         },
         `${order?.id || order?.order_number || 'order'}:dispatch_indeterminate`
     );
+    return true;
 };
 
-const markCourierDispatchFailed = async (record, reason) => {
+const markCourierDispatchFailed = async (record, reason, ownerToken) => {
     try {
-        if (record && typeof record.update === 'function') {
-            await record.update({
+        return await transitionCourierDispatchRecord(
+            record,
+            {
                 status: 'FAILED',
                 error: asSafeReason(reason, 'courier_booking_failed'),
-            });
-        }
+            },
+            { ownerToken, expectedStatus: 'PENDING' },
+        );
     } catch (_) {
-        // The provider rejection remains visible to the caller.
+        return { updated: false, record };
     }
 };
 
@@ -1312,13 +1337,13 @@ const claimCourierDispatchRecord = async (order, shopId, provider) => {
         orderId: order.id,
         provider,
     });
-    const [record, created] = await model.findOrCreate({
-        where: { shop_id: shopId, order_id: order.id, provider },
-        defaults: { idempotency_key: idempotencyKey, status: 'PENDING' },
+    return courierDispatchClaims.claimCourierDispatch({
+        model,
+        shopId,
+        orderId: order.id,
+        provider,
+        idempotencyKey,
     });
-    const status = String(record?.status || '').toUpperCase();
-    if (status === 'COMMITTED') return { state: 'committed', provider, record, idempotencyKey };
-    return { state: created ? 'claimed' : 'existing', provider, record, idempotencyKey };
 };
 
 const synthesizeCourierResult = (order, provider, record) => ({
@@ -1456,36 +1481,37 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         }
     }
 
-    let dispatchRecord = options.dispatchRecord || null;
+    let dispatchRecord = null;
+    let dispatchOwnerToken = null;
     let providerCallStarted = false;
     let providerCallCompleted = false;
     try {
-        if (!options.skipClaim) {
-            const claim = await claimCourierDispatchRecord(order, shopId, resolution.provider);
-            dispatchRecord = claim.record;
-            if (claim.state === 'committed') {
-                const committedResult = synthesizeCourierResult(order, resolution.provider, dispatchRecord);
-                await persistDeliveryResult(order, committedResult);
-                return committedResult;
-            }
-            if (claim.state === 'existing') {
-                const status = String(dispatchRecord?.status || '').toUpperCase();
-                if (status === 'PENDING' || status === 'INDETERMINATE') {
-                    await markCourierDispatchIndeterminate(
-                        order,
-                        shopId,
-                        resolution.provider,
-                        dispatchRecord,
-                        'existing_courier_dispatch_claim'
-                    );
-                    return {
-                        blocked: true,
-                        status: DISPATCH_INDETERMINATE_STATUS,
-                        provider: resolution.provider,
-                        reason: 'existing_courier_dispatch_claim',
-                    };
-                }
-            }
+        const claim = await claimCourierDispatchRecord(order, shopId, resolution.provider);
+        dispatchRecord = claim.record;
+        dispatchOwnerToken = claim.ownerToken || null;
+        if (claim.state === 'unavailable') {
+            const claimError = new Error('Courier dispatch claim service is unavailable');
+            claimError.code = 'COURIER_DISPATCH_CLAIM_UNAVAILABLE';
+            throw claimError;
+        }
+        if (claim.state === 'committed') {
+            const committedResult = synthesizeCourierResult(order, resolution.provider, dispatchRecord);
+            await persistDeliveryResult(order, committedResult);
+            return committedResult;
+        }
+        if (claim.state === 'existing') {
+            return {
+                blocked: true,
+                status: DISPATCH_INDETERMINATE_STATUS,
+                provider: resolution.provider,
+                reason: 'existing_courier_dispatch_claim',
+            };
+        }
+
+        if (!dispatchOwnerToken) {
+            const claimError = new Error('Courier dispatch claim owner is missing');
+            claimError.code = 'COURIER_DISPATCH_OWNER_MISSING';
+            throw claimError;
         }
 
         if (typeof deliveryService.createDeliveryOrder !== 'function') {
@@ -1505,13 +1531,27 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
         };
         await persistDeliveryResult(order, result);
 
-        if (dispatchRecord && typeof dispatchRecord.update === 'function') {
-            await dispatchRecord.update({
+        const committed = await transitionCourierDispatchRecord(
+            dispatchRecord,
+            {
                 status: 'COMMITTED',
                 consignment_id: result.consignment_id || result.tracking_code || null,
                 tracking_code: result.tracking_code || result.consignment_id || null,
                 error: null,
+            },
+            { ownerToken: dispatchOwnerToken, expectedStatus: 'PENDING' },
+        );
+        if (!committed.updated) {
+            const latest = await getCourierDispatchModel()?.findOne?.({
+                where: { shop_id: shopId, order_id: order.id, provider: resolution.provider },
             });
+            if (String(latest?.status || '').toUpperCase() === 'COMMITTED'
+                && (latest.consignment_id || latest.tracking_code) === (result.consignment_id || result.tracking_code)) {
+                return result;
+            }
+            const claimError = new Error('Courier dispatch claim was lost after provider booking');
+            claimError.code = 'COURIER_CLAIM_LOST_AFTER_PROVIDER';
+            throw claimError;
         }
         return result;
     } catch (error) {
@@ -1519,14 +1559,15 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
             && !providerCallCompleted
             && isDefinitiveProviderRejection(error);
         if (definitiveProviderRejection) {
-            await markCourierDispatchFailed(dispatchRecord, error.message);
+            await markCourierDispatchFailed(dispatchRecord, error.message, dispatchOwnerToken);
         } else if (providerCallStarted) {
             await markCourierDispatchIndeterminate(
                 order,
                 shopId,
                 resolution.provider,
                 dispatchRecord,
-                error.message
+                error.message,
+                dispatchOwnerToken,
             );
         }
         if (options.throwOnError === false) {
@@ -1556,6 +1597,9 @@ module.exports = {
     cancelOrder,
     createReturnRequest,
     bookForOrder,
+    claimCourierDispatchRecord,
+    transitionCourierDispatchRecord,
+    markCourierDispatchIndeterminate,
     resolveCourierProvider,
     markCourierSetupRequired,
     buildCourierOrderData

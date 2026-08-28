@@ -3,6 +3,8 @@
 const mockOrder = {};
 const mockCourierDispatch = {
     findOrCreate: jest.fn(),
+    update: jest.fn(),
+    findOne: jest.fn(),
 };
 
 jest.mock('../../entities', () => ({
@@ -124,6 +126,26 @@ describe('canonical courier booking', () => {
         expect(order.fulfillment_status).toBe('unfulfilled');
     });
 
+    it('does not honor skipClaim when another caller owns a pending claim', async () => {
+        const order = makeOrder();
+        mockCourierDispatch.findOrCreate.mockResolvedValueOnce([{
+            id: 'dispatch-existing',
+            status: 'PENDING',
+            dispatch_owner_token: 'other-owner',
+        }, false]);
+
+        const result = await orderService.bookForOrder(order, {
+            shopId: 'shop-1',
+            skipClaim: true,
+        });
+
+        expect(result).toMatchObject({
+            blocked: true,
+            reason: 'existing_courier_dispatch_claim',
+        });
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+    });
+
     it('marks setup required without claiming or calling a provider when readiness blocks booking', async () => {
         const order = makeOrder();
         deliveryService.resolveAiDefaultProvider.mockResolvedValue({
@@ -184,5 +206,120 @@ describe('canonical courier booking', () => {
             error: 'Invalid pickup address',
         });
         expect(order.update).not.toHaveBeenCalledWith({ delivery_status: 'dispatch_indeterminate' });
+    });
+
+    it('does not let a pending-claim loser overwrite the committed winner', async () => {
+        let row = null;
+        let providerStarted;
+        let releaseProvider;
+        const providerReady = new Promise(resolve => { providerStarted = resolve; });
+        const providerResult = new Promise(resolve => { releaseProvider = resolve; });
+
+        mockCourierDispatch.findOrCreate.mockImplementation(async ({ defaults }) => {
+            if (!row) {
+                row = { id: 'dispatch-1', ...defaults };
+                return [row, true];
+            }
+            return [row, false];
+        });
+        mockCourierDispatch.update.mockImplementation(async (values, { where }) => {
+            const matches = row
+                && row.status === where.status
+                && row.dispatch_owner_token === where.dispatch_owner_token;
+            if (!matches) return [0];
+            Object.assign(row, values);
+            return [1];
+        });
+        mockCourierDispatch.findOne.mockImplementation(async () => row);
+        deliveryService.createDeliveryOrder.mockImplementation(async () => {
+            providerStarted();
+            return providerResult;
+        });
+
+        const winnerPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        await providerReady;
+
+        const loserResult = await orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        expect(loserResult).toMatchObject({
+            blocked: true,
+            reason: 'existing_courier_dispatch_claim',
+        });
+        expect(mockCourierDispatch.update).not.toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'INDETERMINATE' }),
+            expect.anything(),
+        );
+
+        releaseProvider({
+            provider: 'pathao',
+            consignment_id: 'CN-RACE-1',
+            tracking_code: 'TRK-RACE-1',
+            status: 'pending',
+        });
+        await winnerPromise;
+
+        expect(row).toMatchObject({
+            status: 'COMMITTED',
+            consignment_id: 'CN-RACE-1',
+            tracking_code: 'TRK-RACE-1',
+        });
+    });
+
+    it('keeps a committed winner when a stale loser resumes afterward', async () => {
+        let row = null;
+        let providerStarted;
+        let releaseProvider;
+        let existingObserved;
+        let releaseExisting;
+        const providerReady = new Promise(resolve => { providerStarted = resolve; });
+        const providerResult = new Promise(resolve => { releaseProvider = resolve; });
+        const loserObserved = new Promise(resolve => { existingObserved = resolve; });
+        const loserResume = new Promise(resolve => { releaseExisting = resolve; });
+
+        mockCourierDispatch.findOrCreate.mockImplementation(async ({ defaults }) => {
+            if (!row) {
+                row = { id: 'dispatch-2', ...defaults };
+                return [row, true];
+            }
+            existingObserved();
+            await loserResume;
+            return [row, false];
+        });
+        mockCourierDispatch.update.mockImplementation(async (values, { where }) => {
+            const matches = row
+                && row.status === where.status
+                && row.dispatch_owner_token === where.dispatch_owner_token;
+            if (!matches) return [0];
+            Object.assign(row, values);
+            return [1];
+        });
+        mockCourierDispatch.findOne.mockImplementation(async () => row);
+        deliveryService.createDeliveryOrder.mockImplementation(async () => {
+            providerStarted();
+            return providerResult;
+        });
+
+        const winnerPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        await providerReady;
+        const loserPromise = orderService.bookForOrder(makeOrder(), { shopId: 'shop-1' });
+        await loserObserved;
+
+        releaseProvider({
+            provider: 'pathao',
+            consignment_id: 'CN-RACE-2',
+            tracking_code: 'TRK-RACE-2',
+            status: 'pending',
+        });
+        await winnerPromise;
+        releaseExisting();
+
+        await expect(loserPromise).resolves.toMatchObject({
+            provider: 'pathao',
+            tracking_code: 'TRK-RACE-2',
+        });
+        expect(row).toMatchObject({
+            status: 'COMMITTED',
+            consignment_id: 'CN-RACE-2',
+            tracking_code: 'TRK-RACE-2',
+        });
     });
 });

@@ -11,6 +11,7 @@ const CustomerEntity = require('../customer/customer.entity');
 const { getBdSettings, hasSelfMfs } = require('../shop/shop-bd-settings');
 const { verifyPaymentScreenshot } = require('../payment/self-mfs-handler.service');
 const { isNegatedMutation } = require('../ai/intent/stage2-rules');
+const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 
 // Define OrderSession model directly
 const OrderSession = sequelize.define('OrderSession', {
@@ -1628,7 +1629,6 @@ class OrderSessionService {
      * @param {string} shopId
      */
     static async dispatchParcel(order, stepData, shopId, options = {}) {
-        const { authorization, evidenceSnapshotHash } = options;
         const orderService = getOrderServiceImports();
         if (typeof orderService.bookForOrder === 'function') {
             return orderService.bookForOrder(order, {
@@ -1636,69 +1636,17 @@ class OrderSessionService {
                 stepData,
                 provider: options.provider || null,
                 resolvedProvider: options.resolvedProvider || null,
-                dispatchRecord: options.dispatchRecord || null,
-                skipClaim: options.skipClaim === true,
-                authorization,
-                evidenceSnapshotHash,
+                authorization: options.authorization,
+                evidenceSnapshotHash: options.evidenceSnapshotHash,
                 idempotencyKey: options.idempotencyKey,
                 requireAuthorization: true,
                 throwOnError: true,
             });
         }
 
-        // Compatibility path for isolated tests/older deployments that load a
-        // pre-dispatch order service without the canonical helper.
-        const { formatForCourier } = require('../delivery/bd-phone-validator.service');
-        const deliveryService = require('../delivery/delivery.service');
-        const { verifyAuthorization } = require('../ai/action-gate');
-
-        if (!verifyAuthorization(authorization, {
-            actionType: 'BOOK_COURIER',
-            shopId,
-            evidenceSnapshotHash,
-            idempotencyKey: options.idempotencyKey,
-        })) {
-            const authorizationError = new Error('Valid BOOK_COURIER authorization is required');
-            authorizationError.code = 'BOOK_COURIER_UNAUTHORIZED';
-            throw authorizationError;
-        }
-
-        const customerPhone = formatForCourier(stepData.phone || order.customer_phone || '');
-        const deliveryAddress = typeof (stepData.address || order.delivery_address) === 'object'
-            ? JSON.stringify(stepData.address || order.delivery_address)
-            : (stepData.address || order.delivery_address || '');
-        const orderData = {
-            id: order.id,
-            order_number: order.order_number || String(order.id).slice(0, 8).toUpperCase(),
-            customer_name: stepData.name || order.customer_name || 'Customer',
-            customer_phone: customerPhone,
-            delivery_address: deliveryAddress,
-            total: order.total || 0,
-            note: stepData.notes || order.note || '',
-            item_quantity: (order.items || []).reduce((sum, i) => sum + (i.quantity || 1), 0) || 1,
-            item_weight: stepData.item_weight || 0.5,
-            item_description: (order.items || []).map(i => i.name || i.product_name || '').filter(Boolean).join(', ') || `Order ${order.order_number || String(order.id).slice(0, 8).toUpperCase()}`,
-            delivery_type: 48,
-            recipient_name: stepData.name || order.customer_name || 'Customer',
-            recipient_phone: customerPhone,
-            recipient_address: deliveryAddress,
-            cod_amount: order.total || 0,
-            weight: stepData.item_weight || 0.5,
-        };
-
-        try {
-            const deliveryResult = await deliveryService.createDeliveryOrder(
-                shopId,
-                orderData,
-                options.provider || null
-            );
-            await OrderSessionService.persistDeliveryResult(order, deliveryResult);
-            console.info(`[AutoParcel] Dispatched order ${order.order_number} for shop ${shopId}`);
-            return deliveryResult;
-        } catch (err) {
-            console.error(`[AutoParcel] Dispatch failed for order ${order.order_number}:`, err.message);
-            throw err; // re-throw so dispatchParcelWithRetry can count the attempt
-        }
+        const claimError = new Error('Canonical courier booking service is unavailable');
+        claimError.code = 'COURIER_DISPATCH_CLAIM_UNAVAILABLE';
+        throw claimError;
     }
 
     static async persistDeliveryResult(order, deliveryResult) {
@@ -1775,35 +1723,32 @@ class OrderSessionService {
 
     static async claimCourierDispatch(order, shopId, provider) {
         const { deriveBookCourierIdempotencyKey } = require('../ai/contracts/action.contract');
-        let CourierDispatch = null;
-        try {
-            CourierDispatch = require('../entities').CourierDispatch;
-        } catch (_) {
-            try { CourierDispatch = require('../delivery/courier-dispatch.entity'); } catch (_) { /* unavailable */ }
-        }
-        if (!CourierDispatch || typeof CourierDispatch.findOrCreate !== 'function') {
-            return { state: 'unavailable', provider, record: null };
-        }
-
         const idempotencyKey = deriveBookCourierIdempotencyKey({
             shopId,
             orderId: order.id,
             provider,
         });
-        const [record, created] = await CourierDispatch.findOrCreate({
-            where: { shop_id: shopId, order_id: order.id, provider },
-            defaults: { idempotency_key: idempotencyKey, status: 'PENDING' },
-        });
-        if (String(record.status || '').toUpperCase() === 'COMMITTED') {
-            return { state: 'committed', provider, record };
+
+        const orderService = getOrderServiceImports();
+        if (typeof orderService.claimCourierDispatchRecord === 'function') {
+            return orderService.claimCourierDispatchRecord(order, shopId, provider);
         }
-        return { state: created ? 'claimed' : 'existing', provider, record };
+
+        return courierDispatchClaims.claimCourierDispatch({
+            shopId,
+            orderId: order.id,
+            provider,
+            idempotencyKey,
+        });
     }
 
-    static async updateCourierDispatch(record, values) {
-        if (!record || typeof record.update !== 'function') return record;
-        await record.update(values);
-        return record;
+    static async updateCourierDispatch(record, values, options = {}) {
+        const orderService = getOrderServiceImports();
+        if (typeof orderService.transitionCourierDispatchRecord === 'function') {
+            return orderService.transitionCourierDispatchRecord(record, values, options);
+        }
+
+        return courierDispatchClaims.transitionCourierDispatch(record, values, options);
     }
 
     static async lookupExistingCourierOrder(shopId, orderNumber, order = null) {
@@ -1908,15 +1853,30 @@ class OrderSessionService {
         }
     }
 
-    static async markDispatchIndeterminate(order, shopId, provider, reason) {
+    static async markDispatchIndeterminate(order, shopId, provider, reason, ownerToken) {
+        const orderService = getOrderServiceImports();
+        if (typeof orderService.markCourierDispatchIndeterminate === 'function') {
+            return orderService.markCourierDispatchIndeterminate(
+                order,
+                shopId,
+                provider,
+                await OrderSessionService.getCourierDispatchRecord(order, shopId, provider),
+                reason,
+                ownerToken,
+            );
+        }
+
         try {
             const localDispatch = await OrderSessionService.getCourierDispatchRecord(order, shopId, provider);
-            await OrderSessionService.updateCourierDispatch(localDispatch, {
-                status: 'INDETERMINATE',
-                error: reason,
-            });
+            const transition = await OrderSessionService.updateCourierDispatch(
+                localDispatch,
+                { status: 'INDETERMINATE', error: reason },
+                { ownerToken, expectedStatus: 'PENDING' },
+            );
+            if (!transition?.updated) return false;
         } catch (err) {
             console.error('[AutoParcel] Failed to update courier_dispatch indeterminate state:', err.message);
+            return false;
         }
 
         try {
@@ -1954,6 +1914,7 @@ class OrderSessionService {
         } catch (err) {
             console.error('[AutoParcel] Failed to notify dispatch_indeterminate:', err.message);
         }
+        return true;
     }
 
     static async markCourierSetupRequired(order, shopId, resolution = {}) {
@@ -2002,22 +1963,18 @@ class OrderSessionService {
     }
 
     /**
-     * Fix 12: Dispatch parcel with exponential backoff retry.
-     * Attempts: 1 immediate + 2 retries (5 s, 25 s delay).
-     * On total failure, marks order.delivery_status = 'dispatch_failed' so the
-     * shop owner can see it in the order list and retry manually.
+     * Dispatch one parcel attempt. An ambiguous provider result remains owned
+     * by the durable claim until reconciliation explicitly makes another
+     * attempt safe; a provider 404 is never treated as permission to bypass it.
      *
      * @param {object} order
      * @param {object} stepData
      * @param {string} shopId
      */
     static async dispatchParcelWithRetry(order, stepData, shopId, options = {}) {
-        const RETRY_DELAYS_MS = [5000, 25000]; // delays between attempt 1→2 and 2→3
-        const MAX_ATTEMPTS = 3;
         const orderService = getOrderServiceImports();
         let provider = options.provider && options.provider !== 'active' ? options.provider : null;
         let resolvedProvider = options.resolvedProvider || null;
-        let dispatchRecord = options.dispatchRecord || null;
 
         try {
             const deliveryService = require('../delivery/delivery.service');
@@ -2029,8 +1986,6 @@ class OrderSessionService {
             } else if (!resolvedProvider && typeof deliveryService.resolveAiDefaultProvider === 'function' && !provider) {
                 resolvedProvider = await deliveryService.resolveAiDefaultProvider(shopId);
             } else if (!resolvedProvider && process.env.NODE_ENV === 'test') {
-                // Compatibility for focused fixtures that mock the older order
-                // service. Never select an arbitrary active courier in prod.
                 const activeProvider = await deliveryService.getActiveProvider(shopId);
                 resolvedProvider = activeProvider
                     ? { ...activeProvider, blocked: false }
@@ -2051,7 +2006,7 @@ class OrderSessionService {
                 await OrderSessionService.markCourierSetupRequired(
                     order,
                     shopId,
-                    resolvedProvider || { reason: 'AI_DEFAULT_NOT_CONFIGURED' }
+                    resolvedProvider || { reason: 'AI_DEFAULT_NOT_CONFIGURED' },
                 );
                 return null;
             }
@@ -2073,206 +2028,20 @@ class OrderSessionService {
                     return null;
                 }
             }
-            if (provider) {
-                if (!dispatchRecord) {
-                    const claim = await OrderSessionService.claimCourierDispatch(order, shopId, provider);
-                    dispatchRecord = claim.record;
-                    if (claim.state === 'committed') {
-                        const result = {
-                            provider,
-                            consignment_id: dispatchRecord.consignment_id || dispatchRecord.tracking_code,
-                            tracking_code: dispatchRecord.tracking_code || dispatchRecord.consignment_id,
-                            status: 'booked',
-                            invoice: order.order_number,
-                        };
-                        await OrderSessionService.persistDeliveryResult(order, result);
-                        return result;
-                    }
-                    if (claim.state === 'existing') {
-                        const existing = await OrderSessionService.lookupExistingCourierOrder(
-                            shopId,
-                            order.order_number,
-                            order
-                        );
-                        if (existing.state === 'found') {
-                            await OrderSessionService.persistDeliveryResult(order, existing.result);
-                            await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
-                                status: 'COMMITTED',
-                                consignment_id: existing.result.consignment_id,
-                                tracking_code: existing.result.tracking_code,
-                                error: null,
-                            });
-                            return existing.result;
-                        }
-                        if (existing.state !== 'absent') {
-                            await OrderSessionService.markDispatchIndeterminate(
-                                order,
-                                shopId,
-                                provider,
-                                existing.state === 'unsupported'
-                                    ? 'provider_has_no_invoice_lookup'
-                                    : existing.state === 'blocked'
-                                        ? 'courier_default_changed_during_dispatch'
-                                        : 'courier_status_lookup_failed'
-                            );
-                            return null;
-                        }
-                    }
-                } else if (String(dispatchRecord?.status || '').toUpperCase() === 'COMMITTED'
-                    || options.dispatchState === 'committed') {
-                    const result = {
-                        provider,
-                        consignment_id: dispatchRecord.consignment_id || dispatchRecord.tracking_code,
-                        tracking_code: dispatchRecord.tracking_code || dispatchRecord.consignment_id,
-                        status: 'booked',
-                        invoice: order.order_number,
-                    };
-                    await OrderSessionService.persistDeliveryResult(order, result);
-                    return result;
-                }
-            }
+
+            const result = await OrderSessionService.dispatchParcel(order, stepData, shopId, {
+                ...options,
+                provider,
+                resolvedProvider,
+                idempotencyKey: options.idempotencyKey || require('../ai/contracts/action.contract')
+                    .deriveBookCourierIdempotencyKey({ shopId, orderId: order.id, provider }),
+            });
+            return result?.blocked || result?.failed ? null : result;
         } catch (err) {
-            await OrderSessionService.markDispatchIndeterminate(
-                order,
-                shopId,
-                provider || null,
-                `courier_dispatch_claim_failed:${err.message}`
-            );
+            if (err.code !== 'BOOK_COURIER_UNAUTHORIZED') {
+                console.error(`[AutoParcel] Courier dispatch stopped for ${order.order_number}: ${err.message}`);
+            }
             return null;
-        }
-
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            if (attempt > 1) {
-                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
-                provider = existing.provider || provider;
-                if (existing.state === 'found') {
-                    try {
-                        await OrderSessionService.persistDeliveryResult(order, existing.result);
-                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
-                            status: 'COMMITTED',
-                            consignment_id: existing.result.consignment_id,
-                            tracking_code: existing.result.tracking_code,
-                            error: null,
-                        });
-                        return existing.result;
-                    } catch (persistErr) {
-                        await OrderSessionService.markDispatchIndeterminate(
-                            order,
-                            shopId,
-                            provider,
-                            `existing_courier_order_persist_failed:${persistErr.message}`
-                        );
-                        return null;
-                    }
-                }
-                if (existing.state !== 'absent') {
-                    await OrderSessionService.markDispatchIndeterminate(
-                        order,
-                        shopId,
-                        provider,
-                        existing.state === 'unsupported'
-                            ? 'provider_has_no_invoice_lookup'
-                            : existing.state === 'blocked'
-                                ? 'courier_default_changed_during_dispatch'
-                                : 'courier_status_lookup_failed'
-                    );
-                    return null;
-                }
-            }
-
-            try {
-                const result = await OrderSessionService.dispatchParcel(order, stepData, shopId, {
-                    ...options,
-                    provider,
-                    resolvedProvider,
-                    dispatchRecord,
-                    skipClaim: true,
-                    idempotencyKey: options.idempotencyKey || require('../ai/contracts/action.contract')
-                        .deriveBookCourierIdempotencyKey({ shopId, orderId: order.id, provider }),
-                });
-                if (!result || result.blocked || result.failed) return null;
-                await OrderSessionService.updateCourierDispatch(dispatchRecord, {
-                    status: 'COMMITTED',
-                    consignment_id: result?.consignment_id || null,
-                    tracking_code: result?.tracking_code || null,
-                    error: null,
-                });
-                return result;
-            } catch (err) {
-                if (err.code === 'BOOK_COURIER_UNAUTHORIZED') {
-                    await OrderSessionService.updateCourierDispatch(dispatchRecord, {
-                        status: 'FAILED',
-                        error: 'BOOK_COURIER authorization rejected',
-                    });
-                    return null;
-                }
-                if (err.code === 'COURIER_RESULT_PERSIST_FAILED') {
-                    await OrderSessionService.markDispatchIndeterminate(
-                        order,
-                        shopId,
-                        provider,
-                        `courier_result_persist_failed:${err.message}`
-                    );
-                    return null;
-                }
-                console.error(`[AutoParcel] Attempt ${attempt}/${MAX_ATTEMPTS} failed for ${order.order_number}: ${err.message}`);
-
-                const existing = await OrderSessionService.lookupExistingCourierOrder(shopId, order.order_number, order);
-                provider = existing.provider || provider;
-                if (existing.state === 'found') {
-                    try {
-                        const result = await OrderSessionService.persistDeliveryResult(order, existing.result);
-                        await OrderSessionService.updateCourierDispatch(existing.record || dispatchRecord, {
-                            status: 'COMMITTED',
-                            consignment_id: existing.result.consignment_id,
-                            tracking_code: existing.result.tracking_code,
-                            error: null,
-                        });
-                        return result;
-                    } catch (persistErr) {
-                        await OrderSessionService.markDispatchIndeterminate(
-                            order,
-                            shopId,
-                            provider,
-                            `existing_courier_order_persist_failed:${persistErr.message}`
-                        );
-                        return null;
-                    }
-                }
-                if (existing.state !== 'absent') {
-                    await OrderSessionService.markDispatchIndeterminate(
-                        order,
-                        shopId,
-                        provider,
-                        existing.state === 'unsupported'
-                            ? 'provider_has_no_invoice_lookup'
-                            : existing.state === 'blocked'
-                                ? 'courier_default_changed_during_dispatch'
-                                : 'courier_status_lookup_failed'
-                    );
-                    return null;
-                }
-
-                if (attempt < MAX_ATTEMPTS) {
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
-                } else {
-                    await OrderSessionService.updateCourierDispatch(dispatchRecord, {
-                        status: 'FAILED',
-                        error: err.message,
-                    });
-                    // All attempts exhausted — surface failure to shop owner via order record
-                    try {
-                        const { Order } = require('../entities');
-                        await Order.update(
-                            { delivery_status: 'dispatch_failed' },
-                            { where: { id: order.id, shop_id: shopId } }
-                        );
-                        console.error(`[AutoParcel] All ${MAX_ATTEMPTS} attempts failed. Order ${order.order_number} marked dispatch_failed.`);
-                    } catch (dbErr) {
-                        console.error('[AutoParcel] Failed to mark dispatch_failed on order:', dbErr.message);
-                    }
-                }
-            }
         }
     }
 
