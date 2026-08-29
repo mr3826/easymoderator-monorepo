@@ -1428,6 +1428,9 @@ const bookForOrder = async (orderOrShopId, orderOrOptions, maybeOptions) => {
     if (!order?.id || !shopId) {
         throw new AppError('Order and shop are required for courier booking', 400, 'VALIDATION_ERROR');
     }
+    if (order.shop_id && String(order.shop_id) !== String(shopId)) {
+        throw new AppError('Order does not belong to the selected shop', 403, 'TENANT_MISMATCH');
+    }
 
     if (order.delivery_consignment_id || order.delivery_tracking_code) {
         return synthesizeCourierResult(order, options.provider || order.delivery_provider, options.dispatchRecord);

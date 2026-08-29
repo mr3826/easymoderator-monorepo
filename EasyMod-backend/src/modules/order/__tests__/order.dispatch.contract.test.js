@@ -126,6 +126,15 @@ describe('canonical courier booking', () => {
         expect(order.fulfillment_status).toBe('unfulfilled');
     });
 
+    it('rejects a courier booking request scoped to another shop', async () => {
+        const order = makeOrder();
+
+        await expect(orderService.bookForOrder(order, { shopId: 'shop-foreign' }))
+            .rejects.toMatchObject({ status: 403, code: 'TENANT_MISMATCH' });
+        expect(deliveryService.createDeliveryOrder).not.toHaveBeenCalled();
+        expect(mockCourierDispatch.findOrCreate).not.toHaveBeenCalled();
+    });
+
     it('does not honor skipClaim when another caller owns a pending claim', async () => {
         const order = makeOrder();
         mockCourierDispatch.findOrCreate.mockResolvedValueOnce([{
