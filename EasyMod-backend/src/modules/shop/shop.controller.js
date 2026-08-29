@@ -8,20 +8,22 @@ const cacheService = require('../../utils/cache.service');
 const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
 const { mergeAndSanitizeSettings } = require('./shop-settings.validator');
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
+const { PlanCode, normalizePlanCode } = require('../subscription/subscription.plans');
 
 // Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
-// Fails open to 'FREE' so plan checks never lock out users due to DB errors.
+// Missing/error states fail closed to the free Shuru entitlement; they must not
+// normalize to Growth and accidentally grant paid capabilities.
 async function getShopPlanCode(shopId) {
     try {
         const cached = await cacheService.getForShop(shopId, 'subscription:plan_code');
-        if (cached) return cached;
+        if (cached) return normalizePlanCode(cached);
         const { Subscription } = require('../entities');
         const sub = await Subscription.findOne({ where: { shop_id: shopId }, attributes: ['plan_code'] });
-        const planCode = sub?.plan_code || 'FREE';
+        const planCode = normalizePlanCode(sub?.plan_code || PlanCode.SHURU);
         await cacheService.setForShop(shopId, 'subscription:plan_code', planCode, 300);
         return planCode;
     } catch (_) {
-        return 'FREE';
+        return PlanCode.SHURU;
     }
 }
 
@@ -390,7 +392,7 @@ const getAISettings = async (req, res, next) => {
 
         // Include plan capabilities so the frontend can render locked fields
         const { getTierByCode } = require('../subscription/subscription.plans');
-        const tier = getTierByCode(planCode) || getTierByCode('FREE');
+        const tier = getTierByCode(planCode) || getTierByCode(PlanCode.SHURU);
         const planCapabilities = {
             plan_code: planCode,
             ai_settings_access: [...tier.ai_settings_access],
@@ -753,4 +755,5 @@ module.exports = {
     getPlatformPriority,
     updatePlatformPriority,
     getAIDiagnostics,
+    getShopPlanCode,
 };

@@ -430,7 +430,7 @@ class ConversationController {
                 }
             };
 
-            const conversation = await conversationService.createConversation(shopId, conversationData);
+            const conversation = await conversationService.createConversation(shopId, conversationData, req.requestId);
 
             res.status(201).json({
                 conversation_id: conversation.id,

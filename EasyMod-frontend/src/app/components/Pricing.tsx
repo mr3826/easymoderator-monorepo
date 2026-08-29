@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Zap, ArrowRight, MessageSquare, ShoppingCart, Package, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { subscriptionPlans, type SubscriptionPlanDefinition } from "@/app/lib/subscriptionPlans";
+import {
+  subscriptionPlans,
+  type SubscriptionPlanDefinition,
+} from "@/app/lib/subscriptionPlans";
+import { getSubscriptionPlans } from "@/api/domains/subscription";
 import { publicApiPost } from "@/shared/lib/http/public-client";
 import BrandLogo from "./BrandLogo";
 import { buildAppUrl } from "@/app/lib/config";
 import Seo from "./Seo";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+
 
 const FEATURE_ROWS: { labelKey: string; key: keyof SubscriptionPlanDefinition["features"] }[] = [
   { labelKey: "pricing.features.imageUnderstanding", key: "image_understanding" },
@@ -77,12 +85,13 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
               {t("pricing.partnerModal.successMessage")}
             </p>
             <p className="text-gray-400 text-xs">{t("pricing.partnerModal.successMessageEn")}</p>
-            <button
-              onClick={onClose}
-              className="mt-6 px-6 py-2.5 bg-[#00A651] text-white rounded-xl font-semibold hover:bg-[#008040] transition-colors"
-            >
-              {t("pricing.partnerModal.ok")}
-            </button>
+           <Button
+             type="button"
+             onClick={onClose}
+             className="mt-6 bg-brand text-white hover:bg-brand-hover"
+           >
+             {t("pricing.partnerModal.ok")}
+           </Button>
           </div>
         ) : (
           <>
@@ -100,7 +109,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.businessName}
                   onChange={(e) => setForm({ ...form, businessName: e.target.value })}
                   placeholder={t("pricing.partnerModal.businessNamePlaceholder")}
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.businessName ? "border-red-400" : "border-gray-300"}`}
+                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.businessName ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.businessName && <p className="text-xs text-red-500 mt-1">{errors.businessName}</p>}
               </div>
@@ -113,7 +122,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+880 1XXX-XXXXXX"
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.phone ? "border-red-400" : "border-gray-300"}`}
+                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.phone ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
               </div>
@@ -126,7 +135,7 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   value={form.pageLink}
                   onChange={(e) => setForm({ ...form, pageLink: e.target.value })}
                   placeholder="https://facebook.com/yourpage"
-                  className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#00A651] ${errors.pageLink ? "border-red-400" : "border-gray-300"}`}
+                   className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand ${errors.pageLink ? "border-red-400" : "border-gray-300"}`}
                 />
                 {errors.pageLink && <p className="text-xs text-red-500 mt-1">{errors.pageLink}</p>}
               </div>
@@ -135,13 +144,13 @@ function PartnerApplicationModal({ onClose }: { onClose: () => void }) {
                   {submitError}
                 </p>
               )}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full py-2.5 bg-[#00A651] text-white font-semibold rounded-xl hover:bg-[#008040] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {submitting ? t("pricing.partnerModal.submitting") : t("pricing.partnerModal.submit")}
-              </button>
+               <Button
+                 type="submit"
+                 disabled={submitting}
+                 className="w-full rounded-xl bg-brand py-2.5 text-white hover:bg-brand-hover"
+               >
+                 {submitting ? t("pricing.partnerModal.submitting") : t("pricing.partnerModal.submit")}
+               </Button>
             </form>
           </>
         )}
@@ -157,98 +166,109 @@ function PlanCard({
   plan: SubscriptionPlanDefinition;
   onSelect: () => void;
 }) {
-  const { t } = useTranslation();
-  const isPopular = plan.popular;
-  const isPartner = plan.id === "partner";
+  const { t, i18n } = useTranslation();
+  const formatNumber = (value: number) => value.toLocaleString(i18n.language === "bn" ? "bn-BD" : "en-US");
+  const code = plan.code.toLowerCase();
+  const isPopular = plan.code === "GROWTH";
+  const isPartner = plan.code === "PARTNER";
+  const translatedFeatures = t(`pricing.planFeatures.${code}`, { returnObjects: true });
+  const features = Array.isArray(translatedFeatures) ? translatedFeatures as string[] : plan.highlights;
 
   return (
-    <div
-      className={`relative flex flex-col rounded-2xl border p-6 ${
-        isPopular
-          ? "border-[#00A651] bg-[#0F172A] text-white shadow-xl shadow-emerald-900/20"
-          : "border-gray-200 bg-white"
-      }`}
-    >
+    <Card className={`relative h-full overflow-visible ${isPopular ? "border-brand bg-slate-950 text-white shadow-xl shadow-emerald-900/20" : "border-gray-200 bg-white"}`}>
       {isPopular && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-[#00A651] text-white text-xs font-bold px-3 py-1 rounded-full">
+          <Badge className="border-transparent bg-brand text-white">
             {t("pricing.mostPopular")}
-          </span>
+          </Badge>
         </div>
       )}
       {isPartner && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-          <span className="bg-slate-900 text-white text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap">
+          <Badge className="whitespace-nowrap border-transparent bg-slate-900 text-white">
             {t("pricing.partnerEligibleBadge")}
-          </span>
+          </Badge>
         </div>
       )}
 
-      <div className="mb-4">
-        <p className={`text-lg font-bold ${isPopular ? "text-white" : "text-gray-900"}`}>
-          {plan.name}
+      <CardHeader className="px-6 pt-8">
+        <CardTitle className={isPopular ? "text-white" : "text-gray-900"}>
+          {t(`pricing.plans.${code}.name`, plan.name)}
+        </CardTitle>
+        <p className={`text-sm ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
+          {t(`pricing.plans.${code}.description`, plan.description)}
         </p>
-        <p className={`text-sm mt-0.5 ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
-          {plan.description}
-        </p>
-      </div>
-
-      <div className="mb-5">
-        <div className="flex items-end gap-1">
-          <span className={`text-4xl font-extrabold ${isPopular ? "text-white" : "text-gray-900"}`}>
-            ৳{plan.monthlyPrice.toLocaleString()}
-          </span>
-          <span className={`text-sm mb-1 ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>{t("pricing.perMonth")}</span>
-        </div>
-        {!isPartner && (
-          <p className={`text-xs mt-1 ${isPopular ? "text-emerald-100" : "text-gray-400"}`}>
-            {t("pricing.yearlyNote", { price: plan.yearlyPrice.toLocaleString() })}
-          </p>
-        )}
-        {isPartner && (
-          <p className={`text-xs mt-1 ${isPopular ? "text-emerald-100" : "text-gray-400"}`}>
-            {t("pricing.partnerApplyNote")}
-          </p>
-        )}
-      </div>
-
-      {/* Limits */}
-      <div className={`rounded-xl p-3 mb-5 space-y-1.5 ${isPopular ? "bg-white/10" : "bg-gray-50"}`}>
-        {[
-          // Fair-use framing — we intentionally don't headline the 300 cap.
-          { icon: MessageSquare, label: plan.limits.conversations === -1 ? t("pricing.limits.unlimitedConversations") : t("pricing.limits.conversationsFairUse") },
-          { icon: ShoppingCart, label: plan.limits.orders === -1 ? t("pricing.limits.unlimitedOrders") : t("pricing.limits.ordersPerMonth", { count: plan.limits.orders }) },
-          { icon: Package, label: plan.limits.products === -1 ? t("pricing.limits.unlimitedProducts") : t("pricing.limits.products", { count: plan.limits.products }) },
-        ].map(({ icon: Icon, label }) => (
-          <div key={label} className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-600"}`}>
-            <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-            {label}
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col px-6">
+        <div className="mb-5 mt-2">
+          <div className="flex items-end gap-1">
+            <span className={`text-4xl font-extrabold ${isPopular ? "text-white" : "text-gray-900"}`}>
+              ৳{formatNumber(plan.monthlyPrice)}
+            </span>
+            <span className={`mb-1 text-sm ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
+              {isPartner ? t("pricing.partnerPriceUnit") : t("pricing.perMonth")}
+            </span>
           </div>
-        ))}
-      </div>
+          <p className={`mt-1 text-xs ${isPopular ? "text-emerald-100" : "text-gray-500"}`}>
+            {isPartner ? t("pricing.partnerApplyNote") : t(`pricing.plans.${code}.priceNote`)}
+          </p>
+        </div>
 
-      {/* Features */}
-      <ul className="space-y-2 flex-1 mb-6">
-        {plan.highlights.map((h) => (
-          <li key={h} className={`flex items-start gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-600"}`}>
-            <Check className={`w-4 h-4 flex-shrink-0 mt-0.5 ${isPopular ? "text-white" : "text-green-600"}`} />
-            {h}
-          </li>
-        ))}
-      </ul>
+        <div className={`mb-5 space-y-1.5 rounded-xl p-3 ${isPopular ? "bg-white/10" : "bg-gray-50"}`}>
+          <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
+            <MessageSquare className="h-4 w-4 shrink-0" />
+            {plan.limits.conversations < 0
+              ? t("pricing.limits.unlimitedConversations")
+               : t("pricing.limits.conversationsPerMonth", { count: plan.limits.conversations })}
+          </div>
+          {isPartner && (
+            <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
+              <ShoppingCart className="h-4 w-4 shrink-0" />
+              {t("pricing.limits.deliveredOrders")}
+            </div>
+          )}
+          {!isPartner && (
+            <div className={`flex items-center gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-700"}`}>
+              <Package className="h-4 w-4 shrink-0" />
+              {t("pricing.limits.manualInbox")}
+            </div>
+          )}
+        </div>
+        {isPartner && plan.partnerOrderTiers && (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <p className="mb-1 font-semibold">{t("pricing.partnerRateBandsTitle")}</p>
+            {plan.partnerOrderTiers.map((tier) => (
+              <p key={`${tier.minOrders}-${tier.maxOrders}`}>
+                {t("pricing.partnerRateBand", {
+                  min: formatNumber(tier.minOrders),
+                  max: tier.maxOrders ? formatNumber(tier.maxOrders) : "+",
+                  rate: formatNumber(tier.rateBdt),
+                })}
+              </p>
+            ))}
+          </div>
+        )}
 
-      <button
+        <ul className="mb-6 flex-1 space-y-2">
+          {features.map((feature) => (
+            <li key={feature} className={`flex items-start gap-2 text-sm ${isPopular ? "text-white/90" : "text-gray-600"}`}>
+              <Check className={`mt-0.5 h-4 w-4 shrink-0 ${isPopular ? "text-white" : "text-brand"}`} />
+              {feature}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+      <CardFooter className="px-6 pb-6">
+      <Button
+        type="button"
         onClick={onSelect}
-        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm transition-all ${
-          isPopular
-            ? "bg-white text-[#00A651] hover:bg-emerald-50"
-            : "bg-[#00A651] text-white hover:bg-[#008040]"
-        }`}
+        className={`w-full ${isPopular ? "bg-white text-brand hover:bg-emerald-50" : "bg-brand text-white hover:bg-brand-hover"}`}
       >
-        {isPartner ? t("pricing.applyNow") : t("pricing.startFreeTrial")}
+        {t(`pricing.plans.${code}.cta`)}
         <ArrowRight className="w-4 h-4" />
-      </button>
-    </div>
+      </Button>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -256,14 +276,26 @@ export default function Pricing() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [showPartnerModal, setShowPartnerModal] = useState(false);
+  const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>(subscriptionPlans);
+
+  useEffect(() => {
+    let mounted = true;
+    getSubscriptionPlans()
+      .then((serverPlans) => {
+        if (mounted && serverPlans.length > 0) setPlans(serverPlans);
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   const faqs = [
     { q: t("pricing.faq.q1"), a: t("pricing.faq.a1") },
-    { q: t("pricing.faq.q2"), a: t("pricing.faq.a2") },
+    { q: t("pricing.faq.q2"), a: t("pricing.faq.a2", { price: plans.find((plan) => plan.code === "GROWTH")?.monthlyPrice ?? 999 }) },
     { q: t("pricing.faq.q3"), a: t("pricing.faq.a3") },
     { q: t("pricing.faq.q4"), a: t("pricing.faq.a4") },
     { q: t("pricing.faq.q5"), a: t("pricing.faq.a5") },
   ];
+  const growthPrice = plans.find((plan) => plan.code === "GROWTH")?.monthlyPrice ?? 999;
 
   const handlePlanSelect = (planId: string) => {
     if (planId === "partner") {
@@ -274,7 +306,7 @@ export default function Pricing() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4fbf7]">
+    <div className="min-h-screen bg-[#f4fbf7] font-bn">
       <Seo
         title="EasyModerator Pricing"
         description="Compare EasyModerator plans for Facebook Messenger automation, order capture, and customer support."
@@ -295,7 +327,7 @@ export default function Pricing() {
             </a>
             <a
               href={buildAppUrl("/signup")}
-              className="flex items-center gap-1.5 rounded-lg bg-[#00A651] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#008040]"
+              className="flex items-center gap-1.5 rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
             >
               <Zap className="w-3.5 h-3.5" />
               {t("landing.nav.getStarted")}
@@ -307,7 +339,7 @@ export default function Pricing() {
       <main className="mx-auto max-w-6xl px-6 py-16">
         {/* Hero */}
         <div className="mb-14 text-center">
-          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-brand">
             {t("pricing.label")}
           </p>
           <h1 className="mb-4 text-4xl font-extrabold text-gray-900 md:text-5xl">
@@ -323,10 +355,9 @@ export default function Pricing() {
           </div>
         </div>
 
-        {/* Single Growth plan — one simple price. Partner applies separately. */}
-        <div className="flex justify-center mb-6">
-          {subscriptionPlans.filter(p => p.id !== 'partner').map((plan) => (
-            <div key={plan.id} className="w-full max-w-sm">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          {plans.map((plan) => (
+            <div key={plan.id} className="min-w-0">
               <PlanCard
                 plan={plan}
                 onSelect={() => handlePlanSelect(plan.id)}
@@ -335,39 +366,34 @@ export default function Pricing() {
           ))}
         </div>
 
-        {/* Partner plan teaser */}
-        <p className="mb-16 text-center text-sm text-gray-500">
+        <p className="mb-16 mt-6 text-center text-sm text-gray-500">
           {t("pricing.partnerTeaser.question")}{" "}
           <button
             type="button"
             onClick={() => setShowPartnerModal(true)}
-            className="text-[#00A651] underline hover:text-[#008040]"
+            className="font-semibold text-brand underline hover:text-brand-hover"
           >
             {t("pricing.partnerTeaser.link")}
           </button>
         </p>
 
-        {/* Everything included — Growth bundles every feature at one price. */}
+        {/* Core features are shared; the cards above describe scale-specific limits. */}
         <div className="mb-16 overflow-hidden rounded-2xl border border-emerald-100 bg-white">
           <div className="border-b border-emerald-50 px-6 py-5">
             <h2 className="text-xl font-bold text-gray-900">{t("pricing.included.heading")}</h2>
-            <p className="text-sm text-gray-500 mt-0.5">{t("pricing.included.subheading")}</p>
+             <p className="text-sm text-gray-500 mt-0.5">{t("pricing.included.subheading", { price: growthPrice.toLocaleString() })}</p>
           </div>
           <div className="grid grid-cols-1 gap-px bg-emerald-50 sm:grid-cols-2">
             {FEATURE_ROWS.map(({ labelKey }) => (
               <div key={labelKey} className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
-                <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                 <Check className="w-5 h-5 flex-shrink-0 text-brand" />
                 {t(labelKey)}
               </div>
             ))}
             <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
-              <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-              {t("pricing.features.facebookInbox")}
-            </div>
-            <div className="flex items-center gap-2 bg-white p-4 text-sm text-gray-700">
-              <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-              {t("pricing.features.extraConversationPack")}
-            </div>
+               <Check className="w-5 h-5 flex-shrink-0 text-brand" />
+               {t("pricing.features.facebookInbox")}
+             </div>
           </div>
         </div>
 
@@ -388,7 +414,7 @@ export default function Pricing() {
           <p className="mb-6 text-emerald-100">{t("pricing.cta.subheading")}</p>
           <a
             href={buildAppUrl("/signup")}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#00A651] px-8 py-3 font-bold text-white transition-colors hover:bg-[#008040]"
+            className="inline-flex items-center gap-2 rounded-xl bg-brand px-8 py-3 font-bold text-white transition-colors hover:bg-brand-hover"
           >
             <Zap className="w-4 h-4" />
             {t("pricing.cta.button")}

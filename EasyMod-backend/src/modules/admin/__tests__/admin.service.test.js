@@ -25,7 +25,7 @@ const adminService = require('../admin.service');
 describe('admin.service.getDashboard', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('buckets shop counts by subscription status and returns Phase-2 nulls', async () => {
+   it('buckets shop counts by entitlement and returns Phase-2 nulls', async () => {
     entities.Shop.count.mockResolvedValue(10);
     entities.Subscription.count
       .mockResolvedValueOnce(6)  // active
@@ -38,7 +38,7 @@ describe('admin.service.getDashboard', () => {
 
     const data = await adminService.getDashboard();
 
-    expect(data.shops).toEqual({ total: 10, active: 6, trial: 3, suspended: 1 });
+    expect(data.shops).toEqual({ total: 10, active: 6, shuru: 3, suspended: 1 });
     expect(data.today.messages).toBe(120);
     expect(data.today.aiAutoReplies).toBe(45);
     expect(data.today.orders).toBe(8);
@@ -87,22 +87,6 @@ describe('admin.service mutations', () => {
 
   it('setShopStatus rejects an invalid status', async () => {
     await expect(adminService.setShopStatus('shop-1', 'frozen')).rejects.toThrow(/status must be/);
-  });
-
-  it('extendTrial advances trial_ends_at and keeps trialing', async () => {
-    const update = jest.fn().mockResolvedValue(true);
-    const existingEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
-    entities.Subscription.findOne.mockResolvedValue({ status: 'trialing', trial_ends_at: existingEnd, update });
-
-    const res = await adminService.extendTrial('shop-1', 7);
-
-    expect(update).toHaveBeenCalledTimes(1);
-    const arg = update.mock.calls[0][0];
-    expect(arg.status).toBe('trialing');
-    // 2 existing + 7 added = ~9 days out
-    const daysOut = (new Date(arg.trial_ends_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
-    expect(daysOut).toBeGreaterThan(8.5);
-    expect(res.after.status).toBe('trialing');
   });
 
   it('addCredits calls grantBonusConversations with the amount', async () => {

@@ -10,6 +10,8 @@ const subscriptionService = require('../subscription/subscription.service');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const shopService = require('../shop/shop.service');
 const { AppError } = require('../../utils/AppError');
+const { effectiveConversationLimit } = require('../subscription/subscription.access');
+const { countRecentDeliveredOrders } = require('../subscription/partner.service');
 
 function startOfTodayUTC() {
   const d = new Date();
@@ -29,12 +31,12 @@ async function getDashboard() {
 
   const since = startOfTodayUTC();
   const [
-    totalShops, activeShops, trialShops, suspendedShops,
+     totalShops, activeShops, shuruShops, suspendedShops,
     messagesToday, aiRepliesToday, ordersToday,
   ] = await Promise.all([
     Shop.count(),
     Subscription.count({ where: { status: 'active' } }),
-    Subscription.count({ where: { status: 'trialing' } }),
+    Subscription.count({ where: { plan_code: 'SHURU', status: 'active' } }),
     Subscription.count({ where: { status: 'suspended' } }),
     Message.count({ where: { created_at: { [Op.gte]: since } } }),
     Message.count({ where: { created_at: { [Op.gte]: since }, sender: 'ai' } }),
@@ -42,7 +44,7 @@ async function getDashboard() {
   ]);
 
   const data = {
-    shops: { total: totalShops, active: activeShops, trial: trialShops, suspended: suspendedShops },
+    shops: { total: totalShops, active: activeShops, shuru: shuruShops, suspended: suspendedShops },
     today: {
       messages: messagesToday,
       aiAutoReplies: aiRepliesToday,
@@ -156,8 +158,7 @@ async function listShops({ search = '', page = 1, limit = 20 } = {}) {
       owner: owner ? { name: owner.full_name, email: owner.email, phone: owner.phone } : null,
       plan: sub.plan_name || null,
       status: sub.status || null,
-      trialEndsAt: sub.trial_ends_at || null,
-      channelCount: channelCountByShop[shop.id] || 0,
+       channelCount: channelCountByShop[shop.id] || 0,
       conversationsUsed: sub.conversations_used ?? null,
       conversationsLimit: sub.conversations_limit ?? null,
       createdAt: shop.created_at,
@@ -184,6 +185,7 @@ async function getShopOverview(shopId) {
   const sub = shop.subscription || {};
   const owner = (shop.users || []).find((u) => u.UserShop?.role === 'owner') || (shop.users || [])[0] || null;
   const settings = shop.settings || {};
+  const partnerOrders30d = await countRecentDeliveredOrders(shopId).catch(() => 0);
 
   return {
     shop: {
@@ -198,13 +200,18 @@ async function getShopOverview(shopId) {
     subscription: {
       planName: sub.plan_name || null,
       status: sub.status || null,
-      trialEndsAt: sub.trial_ends_at || null,
       currentPeriodEnd: sub.current_period_end || null,
     },
     usage: {
       conversationsUsed: sub.conversations_used ?? null,
       conversationsLimit: sub.conversations_limit ?? null,
+      effectiveConversationLimit: effectiveConversationLimit(sub),
       topupBalance: sub.topup_balance ?? 0,
+      partnerEligibility: {
+        delivered_orders_30d: partnerOrders30d,
+        minimum_delivered_orders: 300,
+        eligible: partnerOrders30d >= 300,
+      },
     },
     onboarding: {
       completed: Boolean(settings.onboarding?.completed ?? settings.onboardingCompleted ?? false),
@@ -245,6 +252,7 @@ async function getShopBilling(shopId) {
   const outstanding = invoices
     .filter((i) => i.status === 'pending' || i.status === 'overdue')
     .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+  const partnerOrders30d = await countRecentDeliveredOrders(shopId).catch(() => 0);
 
   return {
     planName: sub.plan_name,
@@ -252,16 +260,18 @@ async function getShopBilling(shopId) {
     billingCycle: sub.billing_cycle,
     billingModel: sub.billing_model,
     status: sub.status,
-    trialStart: sub.current_period_start,
-    trialEndsAt: sub.trial_ends_at,
+    periodStart: sub.current_period_start,
     currentPeriodEnd: sub.current_period_end,
     nextBillingDate: sub.next_billing_date,
     conversationsLimit: sub.conversations_limit,
+    effectiveConversationLimit: effectiveConversationLimit(sub),
     conversationsUsed: sub.conversations_used,
     topupBalance: sub.topup_balance,
-    // Accrued, not-yet-invoiced overage (cleared when the monthly invoice is cut).
-    extraConversations: sub.extra_conversations || 0,
-    extraCharge: parseFloat(sub.extra_charge || 0),
+    partnerEligibility: {
+      delivered_orders_30d: partnerOrders30d,
+      minimum_delivered_orders: 300,
+      eligible: partnerOrders30d >= 300,
+    },
     outstandingAmount: outstanding,
     invoices: invoices.map((i) => ({
       id: i.id,
@@ -334,20 +344,6 @@ async function setShopStatus(shopId, status) {
   return { before, after: { status } };
 }
 
-async function extendTrial(shopId, days) {
-  const n = parseInt(days, 10);
-  if (!Number.isInteger(n) || n <= 0 || n > 90) throw new AppError('days must be 1..90', 400);
-  const sub = await Subscription.findOne({ where: { shop_id: shopId } });
-  if (!sub) throw new AppError('Subscription not found', 404);
-  const base = sub.trial_ends_at && new Date(sub.trial_ends_at) > new Date()
-    ? new Date(sub.trial_ends_at) : new Date();
-  const newEnd = new Date(base.getTime() + n * 24 * 60 * 60 * 1000);
-  const before = { trial_ends_at: sub.trial_ends_at, status: sub.status };
-  await sub.update({ trial_ends_at: newEnd, status: 'trialing' });
-  await bustSubscriptionStatusCache(shopId);
-  return { before, after: { trial_ends_at: newEnd, status: 'trialing' } };
-}
-
 async function addCredits(shopId, amount, reason = 'admin_grant') {
   const n = parseInt(amount, 10);
   if (!Number.isInteger(n) || n <= 0 || n > 100000) throw new AppError('amount must be 1..100000', 400);
@@ -400,5 +396,5 @@ module.exports = {
   getDashboard, getMetaIdentityReadiness, listShops, getShopOverview,
   getShopChannels, getShopBilling, getAuditLogs,
   // mutations
-  setShopStatus, extendTrial, addCredits, changePlan, markChannelReconnect, emergencyDisableAi,
+  setShopStatus, addCredits, changePlan, markChannelReconnect, emergencyDisableAi,
 };

@@ -194,6 +194,12 @@ const createUserWithShop = async (userData) => {
             is_active: true
         }, { transaction });
 
+        // Materialize the free entitlement with the account so the first
+        // inbound conversation is metered instead of relying on a later lazy
+        // read that could race or fail independently of signup.
+        const { createDefaultSubscription } = require('../subscription/subscription.service');
+        await createDefaultSubscription(shop.id, { transaction, emitEvent: false });
+
         await transaction.commit();
 
         // Set the first shop as last logged shop

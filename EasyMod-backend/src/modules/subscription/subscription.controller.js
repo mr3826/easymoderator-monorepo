@@ -3,6 +3,13 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 const { Shop } = require('../entities');
 
+const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 /**
  * Get subscription details
  */
@@ -49,40 +56,6 @@ const updatePlan = async (req, res, next) => {
             success: true,
             message: 'Subscription plan updated successfully',
             data: subscription
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-/**
- * Request conversation pack
- */
-const requestConversationPack = async (req, res, next) => {
-    try {
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            throw new AppError(errors.array()[0].msg, 400);
-        }
-
-        const { shopId } = req.user;
-        if (!shopId) {
-            throw new AppError('No shop selected. Please login again.', 400);
-        }
-
-        const { amount, price } = req.body;
-
-        const result = await subscriptionService.requestConversationPack(
-            shopId,
-            req.user.userId,
-            amount,
-            price
-        );
-
-        res.status(200).json({
-            success: true,
-            message: result.message,
-            data: result.invoice
         });
     } catch (error) {
         next(error);
@@ -207,6 +180,22 @@ const getInvoicePdf = async (req, res, next) => {
             : null;
 
         const statusColor = invoice.status === 'paid' ? '#15803d' : invoice.status === 'pending' ? '#b45309' : '#dc2626';
+        let partnerMetadata = invoice.metadata || {};
+        if (typeof partnerMetadata === 'string') {
+            try { partnerMetadata = JSON.parse(partnerMetadata || '{}'); } catch (_) { partnerMetadata = {}; }
+        }
+        const hasPartnerDerivation = invoice.invoice_type === 'partner_per_order'
+            || partnerMetadata.delivered_orders !== undefined;
+        const partnerDerivation = hasPartnerDerivation ? `
+  <div style="margin-bottom:24px;padding:16px;border:1px solid #e5e7eb;border-radius:8px">
+    <div class="label">Partner delivery calculation</div>
+    <div class="value">Delivered orders: ${escapeHtml(partnerMetadata.delivered_orders ?? partnerMetadata.deliveredOrders ?? 0)}</div>
+    <div class="value">Rate band: ${escapeHtml(partnerMetadata.rate_band ?? '—')}</div>
+    <div class="value">Rate: ৳${escapeHtml(partnerMetadata.rate_bdt ?? partnerMetadata.partnerRateBdt ?? 0)} per delivered order</div>
+    ${Number(partnerMetadata.adjustment_credit || 0) > 0 ? `<div class="value">Return credits: -৳${escapeHtml(partnerMetadata.adjustment_credit)}</div>` : ''}
+     <div class="value" style="font-weight:600">Computed Partner fee: ৳${escapeHtml(partnerMetadata.computed_total ?? partnerMetadata.partnerCharge ?? 0)}</div>
+   </div>` : '';
+        const usageChargeLabel = hasPartnerDerivation ? 'Delivered-order charges' : 'Usage charges';
 
         const html = `<!DOCTYPE html>
 <html lang="en">
@@ -240,17 +229,17 @@ const getInvoicePdf = async (req, res, next) => {
   <div class="header">
     <div class="brand">EasyModerator<span>Messenger Sales Assistant</span></div>
     <div class="invoice-meta">
-      <h1>INVOICE</h1>
-      <div style="font-size:14px;color:#6b7280;margin-top:4px">${invoice.invoice_number}</div>
-      <div class="status-badge">${invoice.status}</div>
+       <h1>INVOICE</h1>
+       <div style="font-size:14px;color:#6b7280;margin-top:4px">${escapeHtml(invoice.invoice_number)}</div>
+       <div class="status-badge">${escapeHtml(invoice.status)}</div>
     </div>
   </div>
 
   <div class="grid">
     <div>
       <div class="label">Billed To</div>
-      <div class="value" style="font-weight:600">${shop?.name || 'Shop'}</div>
-      ${shop?.email ? `<div class="value" style="color:#6b7280">${shop.email}</div>` : ''}
+       <div class="value" style="font-weight:600">${escapeHtml(shop?.name || 'Shop')}</div>
+       ${shop?.email ? `<div class="value" style="color:#6b7280">${escapeHtml(shop.email)}</div>` : ''}
     </div>
     <div style="text-align:right">
       <div class="label">Invoice Date</div>
@@ -273,12 +262,12 @@ const getInvoicePdf = async (req, res, next) => {
     </thead>
     <tbody>
       <tr class="amount-row">
-        <td>${invoice.invoice_type || 'Subscription'}</td>
-        <td style="color:#6b7280">${invoice.billing_period || '—'}</td>
+         <td>${escapeHtml(invoice.invoice_type || 'Subscription')}</td>
+         <td style="color:#6b7280">${escapeHtml(invoice.billing_period || '—')}</td>
         <td style="text-align:right">৳${parseFloat(invoice.base_amount || invoice.amount).toLocaleString()}</td>
       </tr>
-      ${parseFloat(invoice.extra_usage_amount || 0) > 0 ? `
-      <tr><td>Extra Usage</td><td></td><td style="text-align:right">৳${parseFloat(invoice.extra_usage_amount).toLocaleString()}</td></tr>` : ''}
+       ${parseFloat(invoice.extra_usage_amount || 0) > 0 ? `
+       <tr><td>${usageChargeLabel}</td><td></td><td style="text-align:right">৳${parseFloat(invoice.extra_usage_amount).toLocaleString()}</td></tr>` : ''}
       ${parseFloat(invoice.addon_amount || 0) > 0 ? `
       <tr><td>Add-ons</td><td></td><td style="text-align:right">৳${parseFloat(invoice.addon_amount).toLocaleString()}</td></tr>` : ''}
       <tr class="total-row">
@@ -288,7 +277,8 @@ const getInvoicePdf = async (req, res, next) => {
     </tbody>
   </table>
 
-  ${invoice.notes ? `<div style="font-size:13px;color:#6b7280;margin-bottom:24px"><strong>Notes:</strong> ${invoice.notes}</div>` : ''}
+  ${partnerDerivation}
+  ${invoice.notes ? `<div style="font-size:13px;color:#6b7280;margin-bottom:24px"><strong>Notes:</strong> ${escapeHtml(invoice.notes)}</div>` : ''}
 
   <hr class="divider">
   <div class="footer">EasyModerator &bull; easymod.tech &bull; This is a computer-generated invoice.</div>
@@ -311,7 +301,6 @@ const getInvoicePdf = async (req, res, next) => {
 module.exports = {
     getSubscription,
     updatePlan,
-    requestConversationPack,
     getInvoices,
     getInvoiceById,
     checkRateLimit,

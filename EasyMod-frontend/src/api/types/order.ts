@@ -38,18 +38,20 @@ export interface CreateOrderPayload {
 
 export interface Order {
   id: string;
+  orderNumber?: string;
   customerName: string;
   customerPhone?: string;
   deliveryAddress?: string;
   delivery_address?: DeliveryAddress;
   items: OrderItem[];
   total: number;
-  status: 'draft' | 'confirmed' | 'processing' | 'completed' | 'cancelled';
+  status: 'draft' | 'pending' | 'confirmed' | 'processing' | 'completed' | 'delivered' | 'cancelled';
   channel: string;
   createdAt: string;
   updatedAt: string;
   rto_risk?: 'high' | 'medium' | 'low';
   payment_status?: string;
+  payment_method?: string;
   delivery_tracking_code?: string;
   delivery_provider?: string;
   delivery_booked_at?: string;

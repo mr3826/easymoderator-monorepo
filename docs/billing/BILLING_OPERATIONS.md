@@ -24,10 +24,28 @@ Concretely, for a subscription paid at `T0`:
 | `invoice_type` | `monthly_subscription` | `yearly_subscription` |
 | dunning may begin | after that invoice's 3-day due window | after that invoice's 3-day due window |
 
-`invoice-generator` runs monthly (`0 1 1 * *` UTC) but bills only subscriptions
+`invoice-generator` runs daily (`0 1 * * *` UTC) and bills only subscriptions
 whose `next_billing_date` has passed — see `InvoiceGenerator.isRenewalDue`. The
-cron is a *polling cadence*, not the billing rule. A yearly subscriber is
-therefore skipped on eleven of twelve runs.
+usage reset runs at `00:00` UTC. The `usage_reset_at < current_period_start`
+marker lets the `01:00` invoice run derive the exact period that just ended
+before the next period is billed.
+
+## Current commercial model
+
+| Plan | Price | Conversation allowance | Top-ups | Billing |
+|---|---:|---:|---|---|
+| Shuru | ৳0 | 100/month | No | Free forever |
+| Growth | ৳999/month | 500/month | Yes: `PACK_100` ৳250, `PACK_300` ৳500, `PACK_700` ৳1,000 | Flat monthly |
+| Partner | ৳0 upfront | Unlimited | No | 300–999 delivered orders ৳15/order; 1,000–2,999 ৳12/order; 3,000+ ৳10/order |
+
+Every plan shares the same core features. A new shop is created as active
+Shuru with a synthetic monthly period anchored at signup. Annual Growth rows
+remain valid for renewal but annual billing is not marketed to new signups.
+
+Conversation metering consumes the included allowance, then `topup_balance`.
+When both are exhausted, the inbound message remains in the manual inbox and
+the worker skips only the automated reply with reason `usage_exhausted`. No
+conversation overage charge is generated.
 
 **What broke before.** The generator billed every `status='active'` subscription
 on the 1st of the month with no reference to its period, typed every non-per-order
@@ -82,7 +100,9 @@ One real Messenger turn — `Premium Black Panjabi ache?` — end to end:
 | Redis | `maxmemory-policy = noeviction`, `evicted_keys 0` |
 | health | `/health` ok, `/health/ready` ready, DB + Redis connected |
 
-Subscription state at the time of the turn, unmodified:
+Subscription state at the time of the turn, unmodified. This is a **legacy
+annual Growth subscriber** retained to prove anniversary billing; it is not a
+new-signup or current Shuru default:
 
 ```
 GROWTH / yearly / active   ৳11,988
@@ -142,6 +162,32 @@ preferences and rate limiting apply as they do for any other alert.
 on the 3rd?" is asked much later than that.
 
 Covered by `src/jobs/__tests__/message-worker.billing-pause.test.js`.
+
+### When conversation allowance pauses the AI
+
+The same operator-visible behavior applies when a fresh conversation crosses
+the effective allowance:
+
+```
+conversation is metered → included allowance/topup balance is consumed
+  → within_allowance=false is persisted on the usage event and job payload
+  → worker records ai_skipped_reason=usage_exhausted
+  → merchant receives one daily subscription/usage alert
+  → manual inbox remains available; customer receives no automated billing message
+```
+
+The worker does not query usage again, and jobs from before the payload field
+was deployed fail open during a rolling deploy. Covered by
+`src/jobs/__tests__/message-worker.billing-pause.test.js` and the subscription
+usage integration suite.
+
+### Partner reversals
+
+Courier delivery callbacks stamp `orders.delivered_at` once. If an admin later
+approves or refunds a return after a paid Partner invoice covered that order,
+the settled invoice is never rewritten. A row in
+`partner_billing_adjustments` records the per-order credit, and the next
+month-end Partner invoice applies it as `adjustment_credit` in its metadata.
 
 ## Test reconciliation and revenue
 

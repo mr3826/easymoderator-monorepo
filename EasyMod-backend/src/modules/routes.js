@@ -30,6 +30,7 @@ const router = express.Router();
 
 // Register routes
 router.use('/public', require('./public/public-stats.routes')); // unauthenticated marketing stats
+router.use('/subscription/plans', require('./public/subscription-plans.routes'));
 router.use('/auth', authRoutes);
 router.use('/shop', shopRoutes);
 router.use('/setup', setupRoutes);

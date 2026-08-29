@@ -25,6 +25,7 @@ tags:
   - name: Integration:Meta
   - name: Delivery
   - name: Subscription
+  - name: Partner
   - name: Webhooks
 paths:
   /category/:
@@ -1464,6 +1465,25 @@ paths:
       responses:
         '200': { description: Updated }
 
+  /subscription/plans:
+    get:
+      tags: [Subscription]
+      summary: Get public subscription plans
+      security: []
+      responses:
+        '200':
+          description: Server-authoritative plan catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/PublicPlan' }
+
   /subscription:
     parameters:
       - $ref: '#/components/parameters/XShopId'
@@ -1492,31 +1512,120 @@ paths:
         content:
           application/json:
             example:
-              plan_name: Pro
+              plan_code: GROWTH
               billing_cycle: monthly
             schema:
               type: object
+              required: [plan_code]
+              properties:
+                plan_code:
+                  type: string
+                  enum: [SHURU, GROWTH]
+                billing_cycle:
+                  type: string
+                  enum: [monthly, yearly]
       responses:
         '200': { description: Plan updated }
 
-  /subscription/conversation-pack:
-    parameters:
-      - $ref: '#/components/parameters/XShopId'
-      - $ref: '#/components/parameters/RateLimitInfo'
+  /subscription/topup/packs:
+    get:
+      tags: [Subscription]
+      summary: List Growth top-up packs
+      responses:
+        '200': { description: Top-up catalog }
+
+  /subscription/topup/initiate:
     post:
       tags: [Subscription]
-      summary: Request conversation pack
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      summary: Start a Growth top-up payment
       requestBody:
+        required: true
         content:
           application/json:
-            example:
-              pack_size: 1000
             schema:
               type: object
+              required: [pack_code]
+              properties:
+                pack_code: { type: string, enum: [PACK_100, PACK_300, PACK_700] }
       responses:
-        '200': { description: Requested }
+        '201': { description: bKash checkout created }
+        '403': { description: Top-ups are restricted to Growth }
+
+  /subscription/topup/complete:
+    post:
+      tags: [Subscription]
+      summary: Complete a bound Growth top-up payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topup_id, payment_id]
+              properties:
+                topup_id: { type: string, format: uuid }
+                payment_id: { type: string }
+      responses:
+        '200': { description: Top-up completed or duplicate }
+        '403': { description: Payment ID is not bound to the transaction }
+
+  /subscription/renew:
+    post:
+      tags: [Subscription]
+      summary: Start a subscription renewal payment
+      responses:
+        '201': { description: bKash checkout created }
+
+  /subscription/invoices/pay/complete:
+    post:
+      tags: [Subscription]
+      summary: Complete a bound invoice payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoice_id, payment_id]
+              properties:
+                invoice_id: { type: string, format: uuid }
+                payment_id: { type: string }
+      responses:
+        '200': { description: Invoice completed or duplicate }
+        '403': { description: Payment ID is not bound to the invoice }
+
+  /subscription/invoices/{invoiceId}/pay:
+    post:
+      tags: [Subscription]
+      summary: Start payment for a specific invoice
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: bKash checkout created }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /partner/apply:
+    post:
+      tags: [Partner]
+      summary: Submit a public Partner application
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, phone, pageLink]
+              properties:
+                businessName: { type: string }
+                phone: { type: string }
+                pageLink: { type: string, format: uri }
+      responses:
+        '200': { description: Application recorded with eligibility snapshot }
+        '422': { description: Invalid application }
 
   /subscription/invoices:
     parameters:
@@ -1742,6 +1851,10 @@ components:
           type: string
         total:
           type: number
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
         customer_id:
           type: string
         items:
@@ -1772,19 +1885,108 @@ components:
       properties:
         id:
           type: string
+        plan_code:
+          type: string
+          enum: [SHURU, GROWTH, PARTNER]
         plan_name:
           type: string
+        plan_price:
+          type: number
+        billing_cycle:
+          type: string
+          enum: [monthly, yearly, per_order]
         status:
           type: string
+        conversations_limit:
+          type: integer
+        topup_balance:
+          type: integer
+          minimum: 0
         conversations_used:
           type: integer
         orders_used:
           type: integer
         products_used:
           type: integer
+        current_period_start:
+          type: string
+          format: date-time
+        current_period_end:
+          type: string
+          format: date-time
         next_billing_date:
           type: string
           format: date-time
+        usage:
+          type: object
+          properties:
+            conversations: { $ref: '#/components/schemas/UsageMetric' }
+            orders: { $ref: '#/components/schemas/UsageMetric' }
+            products: { $ref: '#/components/schemas/UsageMetric' }
+        effective_conversation_limit:
+          type: integer
+        conversation_quota_exhausted:
+          type: boolean
+        period:
+          type: object
+          properties:
+            start: { type: string, format: date-time }
+            end: { type: string, format: date-time }
+        partner_eligibility:
+          type: object
+          properties:
+            delivered_orders_30d: { type: integer }
+            minimum_delivered_orders: { type: integer }
+            eligible: { type: boolean }
+            available: { type: boolean }
+        extra_usage:
+          type: object
+          properties:
+            conversations: { type: integer }
+            charge: { type: number }
+    UsageMetric:
+      type: object
+      properties:
+        used: { type: integer }
+        limit: { type: integer }
+        included_limit: { type: integer }
+        topup_balance: { type: integer }
+        percentage: { type: number }
+        status: { type: string, enum: [safe, warning, exceeded] }
+    PublicPlan:
+      type: object
+      required: [code, name, billing_model, price_bdt_monthly, conversations_limit, can_purchase_topups]
+      properties:
+        code: { type: string, enum: [SHURU, GROWTH, PARTNER] }
+        name: { type: string }
+        description: { type: string }
+        billing_model: { type: string, enum: [flat_monthly, per_order] }
+        price_bdt_monthly: { type: number, minimum: 0 }
+        price_bdt_yearly: { type: number, minimum: 0 }
+        conversations_limit: { type: integer }
+        orders_limit: { type: integer }
+        products_limit: { type: integer }
+        can_purchase_topups: { type: boolean }
+        per_order_charge_bdt: { type: number, nullable: true }
+        features: { type: object }
+        topup_packs:
+          type: array
+          items: { $ref: '#/components/schemas/TopupPack' }
+        partner_order_tiers:
+          type: array
+          items:
+            type: object
+            properties:
+              minOrders: { type: integer }
+              maxOrders: { type: integer, nullable: true }
+              rateBdt: { type: number }
+    TopupPack:
+      type: object
+      required: [code, conversations, priceBdt]
+      properties:
+        code: { type: string, enum: [PACK_100, PACK_300, PACK_700] }
+        conversations: { type: integer }
+        priceBdt: { type: number }
     Invoice:
       type: object
       properties:
@@ -1796,6 +1998,10 @@ components:
           type: string
         amount:
           type: number
+        payment_id:
+          type: string
+        metadata:
+          type: object
         status:
           type: string
         due_date:

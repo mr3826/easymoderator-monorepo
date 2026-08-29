@@ -18,6 +18,8 @@
  * suite at its service containers.
  */
 
+const { assertDisposableDatabase } = require('../helpers/disposable-database');
+
 const def = (key, value) => {
     if (!process.env[key]) process.env[key] = value;
 };
@@ -25,11 +27,17 @@ const def = (key, value) => {
 process.env.NODE_ENV = 'test';
 
 // ── Infrastructure ───────────────────────────────────────────────────────────
-// Defaults match `npm run docker:up` (EasyMod-backend/docker-compose.yml), with
-// a DEDICATED database name so the suite can never truncate a dev catalog.
-def('DATABASE_URL', 'postgres://easymod_user:easymod_password@127.0.0.1:5432/easymod_e2e');
+// Defaults target the Meta E2E wrapper's dedicated database and Redis endpoint,
+// so this suite cannot truncate integration or development state.
+def('DATABASE_URL', 'postgres://meta_e2e:meta_e2e@127.0.0.1:55433/easymod_meta_e2e');
 def('DB_SSL', 'false');
-def('REDIS_URL', 'redis://127.0.0.1:6379');
+def('REDIS_URL', 'redis://127.0.0.1:56380');
+def('REDIS_SESSION_DB', '20');
+def('REDIS_CACHE_DB', '21');
+def('REDIS_RATELIMIT_DB', '22');
+def('REDIS_QUEUE_DB', '23');
+def('REDIS_LEGACY_DB', '24');
+def('REDIS_SSE_DB', '25');
 
 // ── Meta ─────────────────────────────────────────────────────────────────────
 def('META_APP_ID', 'e2e-app-id');
@@ -83,3 +91,5 @@ def('INTENT_CACHE_TTL_SECONDS', '0');
 delete process.env.SLACK_ALERT_WEBHOOK_URL;
 delete process.env.SENTRY_DSN;
 delete process.env.QDRANT_URL;
+
+assertDisposableDatabase(process.env.DATABASE_URL, 'the Meta E2E suite');

@@ -31,11 +31,13 @@ Exit code `0` = all hard gates pass. The script prints PASS/FAIL per gate.
 | 8 | **Alerting actually reaches a human** — `SLACK_ALERT_WEBHOOK_URL` and/or `SENTRY_DSN` set in prod and a test alert was received | Trigger a test alert; confirm receipt | Eng |
 | 9 | **Shared Inbox upload volume ready** — outbound attachments persist on the droplet and are publicly reachable for Meta Messenger | Manual upload smoke test below | Eng |
 | 10 | **Meta deletion identity coverage ready** — every connected active pilot/reviewer Page has a legitimate app-scoped/Page-scoped identity mapping | `GET /api/admin/meta-identity-readiness` reports `connectedChannelsMissingMappings: 0`; reconnect missing channels before Meta submission/public launch | Eng |
+| 11 | **Commercial model is live and honest** — Shuru signup, Growth quota/top-ups, Partner eligibility/bands, and payment replay guards match the server catalog | Apply migration `20260828_004_commercial_model`; smoke-test `/api/subscription/plans`, `/pricing`, a 100/500-conversation boundary, and a forged/replayed bKash callback | Eng |
 
 ## Informational (track, not blocking)
 
 - **Retention** — how many activated shops transacted this week (`/api/analytics/growth` → `totals.retainedThisWeek` / `retentionRate`). Watch the week-1 → week-2 trend before spending on ads.
 - **Activation speed** — `daysToActivation` per shop. A high number means onboarding friction.
+- **Commercial conversion** — Shuru signups, Growth upgrades, top-up purchases, and Partner applications are recorded as funnel events; no annual or trial CTA should appear for new users.
 
 ---
 
@@ -86,6 +88,8 @@ Then verify the live Shared Inbox flow with a Facebook Page tester:
 4. Reply with a PDF/common file; confirm customer receives it and the metadata URL opens over HTTPS.
 5. Force or observe an attachment failure; confirm failed/retry appears and retry sends a fresh outbound message.
 6. Re-check the 24-hour window/tag behavior still blocks/allows correctly.
+7. Open `/pricing` in English and Bengali. Confirm Shuru is free forever, Growth is ৳999/month for 500 conversations, Partner shows the delivered-order bands, and no trial/annual/overage claim appears.
+8. Verify a Growth top-up uses `PACK_100`, `PACK_300`, or `PACK_700`; replaying the same callback does not credit twice, and a mismatched payment ID/amount is rejected.
 
 ---
 
@@ -101,5 +105,6 @@ Then verify the live Shared Inbox flow with a Facebook Page tester:
 - [ ] Gate 8 — Alerting verified reaching a human
 - [ ] Gate 9 — Shared Inbox upload volume + attachment round-trip verified
 - [ ] Gate 10 — All connected pilot/reviewer Meta channels have valid identity mappings
+- [ ] Gate 11 — Commercial model, quota, and payment replay smoke tests green
 
 **Launch approved by:** ______________________  **Date:** ____________

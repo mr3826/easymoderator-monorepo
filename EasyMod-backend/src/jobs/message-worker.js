@@ -666,6 +666,82 @@ async function signalBillingPause({ shopId, conversationId, messageId, status, p
 }
 
 /**
+ * Make a hard conversation-quota pause visible to the merchant. The inbound
+ * message remains in the manual inbox; only the automated reply is withheld.
+ * Jobs from before the quota deploy do not carry this signal and are resolved
+ * from the persisted conversation/subscription state instead of bypassing a
+ * finite allowance.
+ */
+async function signalUsageExhausted({ shopId, conversationId, messageId, platform }) {
+    try {
+        if (messageId) {
+            const inbound = await Message.findByPk(messageId);
+            if (inbound) {
+                await inbound.update({
+                    metadata: {
+                        ...(inbound.metadata || {}),
+                        ai_skipped_reason: 'usage_exhausted',
+                        ai_skipped_at: new Date().toISOString(),
+                    },
+                });
+            }
+        }
+    } catch (err) {
+        console.warn(`[worker] Could not record usage exhaustion on message ${messageId}: ${err.message}`);
+    }
+
+    try {
+        const merchantNotificationService = require('../modules/notification/merchant-notification.service');
+        const { NOTIFICATION_EVENTS } = require('../modules/notification/notification-events');
+        await merchantNotificationService.notifyShop(
+            shopId,
+            NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+            {
+                issue: 'AI replies are paused because the conversation allowance is used. '
+                    + 'Upgrade to Growth or buy a top-up if available; otherwise wait for the next reset. '
+                    + 'Customer messages are still available for manual replies.',
+                conversationId,
+                platform,
+            },
+            {
+                dedupeKey: `usage_exhausted:${shopId}:${new Date().toISOString().split('T')[0]}`,
+                dedupeTtlSeconds: 24 * 60 * 60,
+            },
+        );
+    } catch (err) {
+        console.warn(`[worker] Could not queue usage-exhaustion alert for shop ${shopId}: ${err.message}`);
+    }
+
+    try {
+        sseManager.emit(shopId, 'ai_paused', {
+            conversation_id: conversationId,
+            reason: 'usage_exhausted',
+        });
+    } catch (_) { /* SSE is a convenience, never a requirement */ }
+}
+
+function resolveAllowanceDecision({ jobDecision, conversationMetadata, subscription }) {
+    if (subscription === null) return false;
+    if (typeof jobDecision === 'boolean') return jobDecision;
+
+    let metadata = conversationMetadata || {};
+    if (typeof metadata === 'string') {
+        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+    }
+    if (typeof metadata.within_allowance === 'boolean') return metadata.within_allowance;
+
+    if (subscription && Number.isFinite(Number(subscription.conversations_limit))) {
+        const { isConversationQuotaExhausted } = require('../modules/subscription/subscription.access');
+        return !isConversationQuotaExhausted(subscription);
+    }
+
+    // Real signups always have a subscription row with quota fields. A missing
+    // row cannot prove entitlement and must stop automated AI; old test-only
+    // status fixtures without quota fields retain their legacy behavior.
+    return subscription ? true : false;
+}
+
+/**
  * Core job handler. Called by the BullMQ worker for each message job.
  *
  * Expected job.data shape:
@@ -697,6 +773,7 @@ async function processMessageJob(job) {
         traceId: jobTraceId = null,
         idempotencyKey: jobIdempotencyKey = null,
         turnId: requestedTurnId = null,
+        within_allowance: jobWithinAllowance,
     } = job.data;
 
     // ── Burst flush: coalesce a rapid-fire multi-message turn into ONE reply ──
@@ -769,7 +846,7 @@ async function processMessageJob(job) {
     // ── Guard 2: HITL (human-in-the-loop) ──────────────────────────────────
     const conversation = await Conversation.findOne({
         where: { id: conversationId, shop_id: shopId },
-        attributes: ['id', 'hitl', 'status'],
+        attributes: ['id', 'hitl', 'status', 'metadata'],
     });
     if (!conversation) {
         console.warn(`[worker] Conversation ${conversationId} not found for shop ${shopId} — skipping job`);
@@ -806,17 +883,18 @@ async function processMessageJob(job) {
     }
 
     // ── Guard 4c: Subscription billing status ───────────────────────────────
-    // Pause automated AI replies when the shop's 14-day trial has expired or its
-    // plan is suspended/cancelled. The inbound message is already persisted and
+    // Pause automated AI replies when the shop's plan is suspended/cancelled. The
+    // inbound message is already persisted and
     // the manual inbox still works — we withhold only the *automated* reply, and
     // do so before the (LLM-costing) sentiment/AI steps below. Fails open: a
     // missing subscription row never blocks AI.
+    let billingSub = null;
     {
         const { Subscription } = require('../modules/entities');
         const { isAiActive } = require('../modules/subscription/subscription.access');
-        const billingSub = await Subscription.findOne({
+        billingSub = await Subscription.findOne({
             where: { shop_id: shopId },
-            attributes: ['status'],
+            attributes: ['status', 'conversations_limit', 'conversations_used', 'topup_balance'],
         }).catch(() => null);
         if (!isAiActive(billingSub)) {
             console.log(`[worker] AI paused for shop ${shopId}: subscription status=${billingSub?.status}`);
@@ -829,6 +907,26 @@ async function processMessageJob(job) {
             });
             return { skipped: true, reason: 'subscription_inactive', status: billingSub?.status || null };
         }
+    }
+
+    // ── Guard 4d: Conversation allowance ────────────────────────────────────
+    // Metering decides this at the moment a fresh 24h conversation opens. Do
+    // not query usage here when the decision is present: a burst can contain
+    // many replies, all of which must follow the first conversation decision.
+    // Older jobs without the field are resolved from persisted state below.
+    const allowanceDecision = resolveAllowanceDecision({
+        jobDecision: jobWithinAllowance,
+        conversationMetadata: conversation.metadata,
+        subscription: billingSub,
+    });
+    if (allowanceDecision === false) {
+        await signalUsageExhausted({
+            shopId,
+            conversationId,
+            messageId,
+            platform,
+        });
+        return { skipped: true, reason: 'usage_exhausted' };
     }
 
     // ── Guard 5: Sentiment — auto-escalate angry/frustrated customers ──────
@@ -1536,6 +1634,8 @@ module.exports = {
         isShopManualKillSwitch,
         isChannelAutoReplyDisabled,
         signalBillingPause,
+        signalUsageExhausted,
+        resolveAllowanceDecision,
         createRecoveryControl,
         resolveStaticConfigAvailability,
     },

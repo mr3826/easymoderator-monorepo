@@ -14,7 +14,7 @@ const mockShop = {
 };
 
 async function mockAuthenticatedApi(page: Page) {
-  await page.route('**/api/**', async (route) => {
+  await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;

@@ -6,19 +6,31 @@ const { spawn } = require('child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const composeFile = path.join(repoRoot, 'docker-compose.test.yml');
 const projectName = `easymod-backend-test-${process.pid}`;
-const postgresPort = process.env.TEST_POSTGRES_PORT || '5432';
-const redisPort = process.env.TEST_REDIS_PORT || '6379';
+const postgresPort = process.env.TEST_POSTGRES_PORT || '55432';
+const redisPort = process.env.TEST_REDIS_PORT || '56379';
+const postgresUser = process.env.TEST_POSTGRES_USER || 'e2e';
+const postgresPassword = process.env.TEST_POSTGRES_PASSWORD || 'e2e';
+const postgresDatabase = process.env.TEST_POSTGRES_DB || `easymod_integration_${process.pid}_test`;
 const composeEnv = {
     ...process.env,
     TEST_POSTGRES_PORT: postgresPort,
     TEST_REDIS_PORT: redisPort,
+    TEST_POSTGRES_USER: postgresUser,
+    TEST_POSTGRES_PASSWORD: postgresPassword,
+    TEST_POSTGRES_DB: postgresDatabase,
 };
 const testEnv = {
     ...composeEnv,
     NODE_ENV: 'test',
     DB_SSL: 'false',
-    DATABASE_URL: `postgres://e2e:e2e@127.0.0.1:${postgresPort}/easymod_e2e`,
+    DATABASE_URL: `postgres://${postgresUser}:${postgresPassword}@127.0.0.1:${postgresPort}/${postgresDatabase}`,
     REDIS_URL: `redis://127.0.0.1:${redisPort}`,
+    REDIS_SESSION_DB: '10',
+    REDIS_CACHE_DB: '11',
+    REDIS_RATELIMIT_DB: '12',
+    REDIS_QUEUE_DB: '13',
+    REDIS_LEGACY_DB: '14',
+    REDIS_SSE_DB: '15',
 };
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let activeChild = null;

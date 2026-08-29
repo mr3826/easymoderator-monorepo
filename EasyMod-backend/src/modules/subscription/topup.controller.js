@@ -42,16 +42,22 @@ const getPacks = async (req, res, next) => {
 const initiateTopup = async (req, res, next) => {
     try {
         const { shopId } = req.user;
-        const { pack_code, phone, name } = req.body;
+        const { pack_code, phone, name, idempotency_key: bodyIdempotencyKey } = req.body;
+        const headerIdempotencyKey = typeof req.get === 'function'
+            ? req.get('Idempotency-Key')
+            : req.headers?.['idempotency-key'];
+        const idempotencyKey = headerIdempotencyKey || bodyIdempotencyKey;
 
         if (!pack_code) throw new AppError('pack_code is required', 400);
         const contact = await resolvePaymentContact(req, { phone, name });
 
-        const result = await topupService.initiateTopup(shopId, pack_code, {
+        const paymentOptions = {
             phone: contact.phone,
             name: contact.name,
             callbackUrl: joinOrigin(getOrigins().app, '/subscription')
-        });
+        };
+        if (idempotencyKey) paymentOptions.idempotencyKey = idempotencyKey;
+        const result = await topupService.initiateTopup(shopId, pack_code, paymentOptions);
 
         res.status(201).json({ success: true, data: result });
     } catch (err) { next(err); }

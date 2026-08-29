@@ -19,7 +19,7 @@
  * meta_webhook_receipts first, and every terminal outcome is written back.
  */
 
-const { Customer } = require('../entities');
+const { Customer, AuditLog } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
 const sseManager = require('../../utils/sse-manager');
@@ -88,6 +88,13 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
             metaChannelId: metaChannelId || null,
             hasExternalId: true,
         };
+
+        // The fallback is intentional while the profile feature is disabled;
+        // do not report that expected path as an enrichment failure.
+        if (process.env.META_USER_PROFILE_ENABLED !== 'true') {
+            void applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+            return;
+        }
 
         enrichCustomerNameFromMeta({
             customerId: customer.id,
@@ -171,14 +178,19 @@ async function dispatchMessageJob(storeResult, event) {
 
     try {
         const { scheduleBurstFlush } = require('../../jobs/burst-coalescer');
-        await scheduleBurstFlush({
+        const burstPayload = {
             shopId: shop_id,
             conversationId: conversation_id,
             platform,
             recipientId: sender,
             metaChannelId: meta_channel_id,
             senderInfo: { customer_id },
-        });
+            messageId: storeResult.message_id || storeResult.id,
+        };
+        if (storeResult.within_allowance !== undefined) {
+            burstPayload.within_allowance = storeResult.within_allowance;
+        }
+        await scheduleBurstFlush(burstPayload);
     } catch (err) {
         logger.error('Failed to schedule burst flush — message stored but auto-reply skipped', err, {
             shop_id,
@@ -294,13 +306,25 @@ async function storeIncomingMessage(event) {
         const { Op } = require('sequelize');
         const channelType = platform === 'facebook' ? 'messenger' : platform;
         let customerForEnrichment = null;
-        let isNewConversation = false;
 
         const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
         if (externalId) {
             const existing = await Message.findOne({ where: { external_id: externalId } });
             if (existing) {
                 logger.debug(`Duplicate webhook event skipped (external_id=${externalId})`);
+                let withinAllowance = false;
+                if (typeof Conversation.findByPk === 'function') {
+                    const existingConversation = await Conversation.findByPk(existing.conversation_id, {
+                        attributes: ['metadata'],
+                    }).catch(() => null);
+                    let metadata = existingConversation?.metadata;
+                    if (typeof metadata === 'string') {
+                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+                    }
+                    if (typeof metadata?.within_allowance === 'boolean') {
+                        withinAllowance = metadata.within_allowance;
+                    }
+                }
                 return {
                     customer_id: existing.customer_id,
                     customer_name: null,
@@ -308,6 +332,7 @@ async function storeIncomingMessage(event) {
                     message_id: existing.id,
                     message: existing,
                     shop_id: event.shop_id,
+                    within_allowance: withinAllowance,
                     duplicate: true
                 };
             }
@@ -362,8 +387,6 @@ async function storeIncomingMessage(event) {
                     message: message,
                     metadata: { source: 'webhook', platform }
                 }, { transaction: t });
-                // Opening a fresh 24h conversation window = one billable conversation.
-                isNewConversation = true;
             }
 
             const attachments = event.attachments || [];
@@ -395,20 +418,20 @@ async function storeIncomingMessage(event) {
                 conversation_id: conversation.id,
                 message_id: msgRecord.id,
                 message: msgRecord,
-                shop_id
+                shop_id,
+                conversation_metadata: conversation.metadata || {},
             };
         });
 
-        // Meter the conversation against the shop's plan the first time a 24h
-        // window opens for this customer. This is the ONLY usage signal billing
-        // relies on, so it runs after the storage transaction commits (so a
-        // metering hiccup can never lose the message), is idempotent on the
-        // conversation id, and is strictly non-fatal — it must never block
-        // ingestion or the AI reply.
-        if (isNewConversation && storedMessage?.conversation_id) {
+        // Meter every inbound message using the conversation id as the
+        // idempotency key. New conversations increment usage; later messages
+        // reuse the original decision without incrementing again. Persisting the
+        // decision on the conversation prevents a later message from bypassing
+        // an exhausted Shuru allowance after the burst job has completed.
+        if (storedMessage?.conversation_id) {
             try {
                 const subscriptionService = require('../subscription/subscription.service');
-                await subscriptionService.trackUsage(
+                const usageResult = await subscriptionService.trackUsage(
                     shop_id,
                     'conversations',
                     1,
@@ -418,12 +441,58 @@ async function storeIncomingMessage(event) {
                     storedMessage.conversation_id,
                     { resourceId: storedMessage.conversation_id, channel: channelType }
                 );
+                storedMessage.within_allowance = usageResult.within_allowance === true;
+                if (typeof Conversation.update === 'function') {
+                    let metadata = storedMessage.conversation_metadata || {};
+                    if (typeof metadata === 'string') {
+                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+                    }
+                    await Conversation.update(
+                        { metadata: { ...metadata, within_allowance: storedMessage.within_allowance } },
+                        { where: { id: storedMessage.conversation_id, shop_id } },
+                    );
+                }
             } catch (usageErr) {
                 logger.warn('Conversation usage metering failed (non-fatal)', {
                     shopId: shop_id,
                     conversationId: storedMessage.conversation_id,
                     error: usageErr.message,
                 });
+                opsAlert('Conversation usage metering failed — quota decision unavailable', {
+                    detail: `shop=${shop_id} conversation=${storedMessage.conversation_id}. `
+                        + 'The message was retained and the AI path was stopped safely.',
+                    level: 'warning',
+                    context: {
+                        shopId: shop_id,
+                        conversationId: storedMessage.conversation_id,
+                        error: usageErr.message,
+                    },
+                }).catch(() => {});
+                if (AuditLog && typeof AuditLog.create === 'function') {
+                    AuditLog.create({
+                        shop_id,
+                        resource_type: 'subscription_usage',
+                        resource_id: storedMessage.conversation_id,
+                        action: 'usage_metering_failed',
+                        metadata: {
+                            conversationId: storedMessage.conversation_id,
+                            error: usageErr.message,
+                        },
+                        user_id: null,
+                        idempotency_key: `usage_metering_failed:${storedMessage.conversation_id}`,
+                    }).catch(() => {});
+                }
+                storedMessage.within_allowance = false;
+                if (typeof Conversation.update === 'function') {
+                    let metadata = storedMessage.conversation_metadata || {};
+                    if (typeof metadata === 'string') {
+                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+                    }
+                    Conversation.update(
+                        { metadata: { ...metadata, within_allowance: false } },
+                        { where: { id: storedMessage.conversation_id, shop_id } },
+                    ).catch(() => {});
+                }
             }
         }
 

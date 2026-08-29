@@ -84,7 +84,8 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
             orders_limit: 100,
             products_limit: -1,
             extra_conversations: 0,
-            extra_charge: 0
+            extra_charge: 0,
+            topup_balance: 0
         });
         await subscription.reload();
     });
@@ -465,12 +466,9 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
         });
 
         test('Error contains limit details for client handling', async () => {
-            // 'orders', not 'conversations'. subscription.service.js:359 exempts
-            // conversations from the hard limit on purpose — they bill as
-            // overage (see the extra-charge case below) — so this never threw
-            // and fell through to `fail(...)`, which modern Jest does not
-            // define. The resulting ReferenceError was swallowed by the same
-            // catch, and error.code read undefined.
+            // 'orders', not 'conversations'. Conversations are deliberately
+            // recorded even when their allowance is exhausted so the worker can
+            // pause only the automated reply for that fresh conversation.
             await subscription.update({ orders_limit: 2 });
 
             // Fill to limit
@@ -608,20 +606,20 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
     });
 
     // =====================================================================
-    // TEST 8: Extra Charge Calculation
+    // TEST 8: Conversation allowance and top-up draw-down
     // =====================================================================
-    describe('Extra Charges: Overage Billing', () => {
-        test('Extra charge calculated for conversations over limit', async () => {
+    describe('Conversation allowance: hard pause with top-ups', () => {
+        test('records an exhausted allowance without accruing an overage charge', async () => {
             await subscription.update({
                 conversations_limit: 2,
                 conversations_used: 1,
                 extra_conversations: 0,
-                extra_charge: 0
+                extra_charge: 0,
+                topup_balance: 0
             });
 
             // Increment by 2, would exceed limit
-            // Expected: new usage = 3, extra = 1, charge = ৳2.5
-            await subscriptionService.trackUsage(
+            const result = await subscriptionService.trackUsage(
                 shop.id,
                 'conversations',
                 2,
@@ -631,18 +629,61 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
 
             await subscription.reload();
             
-            // 1 + 2 = 3, limit is 2, so 1 over
+            // 1 + 2 = 3, limit is 2, so the event is outside the allowance.
             expect(subscription.conversations_used).toBe(3);
-            expect(subscription.extra_conversations).toBe(1);
-            expect(parseFloat(subscription.extra_charge)).toBe(2.5);
+            expect(result.within_allowance).toBe(false);
+            expect(subscription.extra_conversations).toBe(0);
+            expect(parseFloat(subscription.extra_charge)).toBe(0);
+        });
+
+        test('consumes top-up balance after included conversations and never goes negative', async () => {
+            await subscription.update({
+                conversations_limit: 2,
+                conversations_used: 2,
+                topup_balance: 1,
+                extra_conversations: 0,
+                extra_charge: 0
+            });
+
+            const covered = await subscriptionService.trackUsage(
+                shop.id, 'conversations', 1, uuidv4(), { resourceId: uuidv4() }
+            );
+            expect(covered.within_allowance).toBe(true);
+
+            const exhausted = await subscriptionService.trackUsage(
+                shop.id, 'conversations', 1, uuidv4(), { resourceId: uuidv4() }
+            );
+
+            await subscription.reload();
+            expect(exhausted.within_allowance).toBe(false);
+            expect(subscription.topup_balance).toBe(0);
+            expect(subscription.topup_balance).toBeGreaterThanOrEqual(0);
 
             // Restore
             await subscription.update({
                 conversations_limit: 100,
                 conversations_used: 0,
                 extra_conversations: 0,
-                extra_charge: 0
+                extra_charge: 0,
+                topup_balance: 0
             });
+        });
+
+        test('serializes concurrent fresh conversations at the allowance boundary', async () => {
+            await subscription.update({ conversations_limit: 2, conversations_used: 1, topup_balance: 0 });
+
+            const results = await Promise.all(
+                [1, 2].map(() => subscriptionService.trackUsage(
+                    shop.id, 'conversations', 1, uuidv4(), { resourceId: uuidv4() }
+                ))
+            );
+
+            await subscription.reload();
+            expect(subscription.conversations_used).toBe(3);
+            expect(results.filter((result) => result.within_allowance === false)).toHaveLength(1);
+            expect(subscription.topup_balance).toBeGreaterThanOrEqual(0);
+
+            await subscription.update({ conversations_limit: 100, conversations_used: 0, topup_balance: 0 });
         });
     });
 });

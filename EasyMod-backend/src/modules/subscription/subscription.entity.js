@@ -20,12 +20,12 @@ const Subscription = sequelize.define('Subscription', {
     plan_code: {
         type: DataTypes.STRING(20),
         allowNull: true,
-        defaultValue: null
+        defaultValue: 'SHURU'
     },
     plan_name: {
         type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: 'Growth'
+        defaultValue: 'Shuru'
     },
     plan_price: {
         type: DataTypes.DECIMAL(10, 2),
@@ -49,32 +49,30 @@ const Subscription = sequelize.define('Subscription', {
         allowNull: true,
         defaultValue: null
     },
-    // Running count of delivered orders in current weekly billing window
+    // Legacy weekly accrual fields retained for old rows; month-end billing now
+    // recomputes from orders.delivered_at and never writes these fields.
     partner_orders_this_week: {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    // Accumulated charge (partner_orders_this_week × per_order_charge_bdt)
-    // Reset to 0 after each weekly invoice is generated
     partner_pending_invoice_amount: {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0
     },
     status: {
-        // trialing      — card-less 14-day GROWTH trial (full AI)
-        // active         — paid & current (or approved Partner)
-        // past_due       — invoice 7+ days overdue; AI still on (grace + dunning)
-        // trial_expired  — trial ended unpaid; AI paused, manual inbox stays
-        // suspended      — invoice 30+ days overdue; AI paused
+        // active         — current Shuru/Growth subscription or approved Partner
+        // past_due       — recurring invoice is overdue; billing dunning owns it
+        // suspended      — recurring invoice is materially overdue; AI paused
+        // trialing/trial_expired remain readable for pre-migration rows only
         type: DataTypes.ENUM('active', 'inactive', 'cancelled', 'suspended', 'trialing', 'trial_expired', 'past_due'),
         allowNull: false,
-        defaultValue: 'trialing'
+        defaultValue: 'active'
     },
     // Usage limits
     conversations_limit: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 300
+        defaultValue: 100
     },
     orders_limit: {
         type: DataTypes.INTEGER,
@@ -99,7 +97,8 @@ const Subscription = sequelize.define('Subscription', {
         type: DataTypes.INTEGER,
         defaultValue: 0
     },
-    // Extra usage
+    // Legacy overage fields retained for historical rows. New usage never writes
+    // or invoices these fields; purchased/bonus credit uses topup_balance.
     extra_conversations: {
         type: DataTypes.INTEGER,
         defaultValue: 0
@@ -108,18 +107,15 @@ const Subscription = sequelize.define('Subscription', {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0
     },
-    // Conversation top-up packs purchased separately (via BKash). Added to the
-    // effective limit by conversation-limit.middleware.js. Column exists in the
-    // initial schema migration; this attribute lets Sequelize read/write it.
+    // Conversation top-up packs purchased separately via bKash.
     topup_balance: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0
     },
-    // Grace buffer (+50) granted once the plan limit is exhausted; charged
-    // against the next billing cycle. Read/written by the conversation-limit
-    // middleware when the limit is hit.
-    threshold_conversations: {
+    // Legacy threshold debt column retained so old rows remain readable. The
+    // retired grace-buffer flow no longer changes it.
+    threshold_debt: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0
@@ -147,6 +143,10 @@ const Subscription = sequelize.define('Subscription', {
     next_billing_date: {
         type: DataTypes.DATE,
         allowNull: false
+    },
+    usage_reset_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     },
     trial_ends_at: {
         type: DataTypes.DATE,

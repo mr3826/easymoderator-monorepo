@@ -188,17 +188,54 @@
     "pricing": {
       "label": "Pricing",
       "heading": "Smooth and honest pricing",
-      "subheading": "One Growth plan, one partner path, and no hidden fees.",
-      "badge1": "14-day free trial",
-      "badge2": "Everything included",
+      "subheading": "Start free with Shuru, grow with Growth, or join the Partner path.",
+      "badge1": "Free forever",
+      "badge2": "No hidden fees",
       "details": "See pricing details",
       "perMonth": "/mo",
       "mostPopular": "Most Popular",
-      "getStarted": "Start 14-day free trial",
-      "partnerBadge": "300+ orders/month",
-      "partnerPrice": "৳10–15",
-      "partnerPriceUnit": "/delivered order",
-      "becomePartner": "Become a Partner →"
+      "getStarted": "Start free with Shuru",
+      "partnerBadge": "300+ delivered orders",
+      "partnerPrice": "৳0",
+      "partnerPriceUnit": "upfront",
+      "becomePartner": "Apply for Partner →",
+      "freeForever": "Free forever",
+      "unlimitedConversations": "Unlimited conversations",
+      "conversationsPerMonth": "{{count}} conversations each month",
+      "partnerRateBands": "Delivered-order bands",
+      "partnerRateBand": "{{min}}–{{max}}: ৳{{rate}} per delivered order",
+      "plans": {
+        "shuru": {
+          "description": "Free forever for getting started with Messenger sales.",
+          "cta": "Create free account",
+          "highlights": [
+            "100 customer conversations each month",
+            "Facebook Messenger inbox",
+            "Order capture and COD risk checks",
+            "Manual replies always available"
+          ]
+        },
+        "growth": {
+          "description": "The full Messenger sales assistant for growing shops.",
+          "cta": "Start with Growth",
+          "highlights": [
+            "500 customer conversations each month",
+            "Facebook Messenger inbox",
+            "Order capture and COD risk checks",
+            "Top-ups when you need more conversations"
+          ]
+        },
+        "partner": {
+          "description": "No upfront fee; pay for successfully delivered orders.",
+          "cta": "Apply for Partner",
+          "highlights": [
+            "300+ delivered orders in 30 days to qualify",
+            "No monthly fee",
+            "Unlimited customer conversations",
+            "Flat rate by delivered-order band"
+          ]
+        }
+      }
     },
     "testimonials": {
       "label": "Pilot scorecard",
@@ -291,27 +328,19 @@
       "badge": "🇧🇩 Private BD seller pilot",
       "heading": "Start Today",
       "subheading": "Start replying faster and capturing orders in about 5 minutes.",
-      "choosePlan": "14-day Growth trial",
-      "annualSavings": "No credit card required. Upgrade anytime.",
-      "trialEyebrow": "14-day free trial",
-      "trialTitle": "Growth trial included",
-      "trialSubtitle": "Every new shop starts with the Growth plan trial. Create your account, prepare your shop, then upgrade only when you are ready to keep replies and order capture running.",
-      "trialBenefits": [
-        "No credit card required",
-        "Upgrade anytime",
-        "Business setup opens next"
+      "choosePlan": "Shuru free forever",
+      "shuruEyebrow": "Shuru · free forever",
+      "shuruTitle": "Start selling with Shuru",
+      "shuruSubtitle": "Create your shop, connect Messenger, and start with 100 customer conversations every month. Upgrade only when your volume grows.",
+      "shuruBenefits": [
+        "No card required",
+        "100 conversations each month",
+        "Upgrade anytime"
       ],
       "monthly": "Monthly",
-      "annual": "Annual",
-      "twoMonthsFree": "2 months free",
-      "perMonth": "/mo",
-      "annualBilling": "Annual billing",
-      "monthlyBilling": "Monthly billing",
-      "popular": "Popular",
       "free": "Free",
-      "selectedPlan": "✓ Selected plan",
       "createAccountHeading": "Create Account",
-      "activatePlan": "trial starts after account setup.",
+      "activateFreePlan": "is free forever after account setup.",
       "fullName": "Full Name",
       "fullNamePlaceholder": "Enter your name",
       "email": "Email Address",
@@ -329,9 +358,8 @@
       "plan": "Plan",
       "billing": "Billing",
       "payToday": "Payment today",
-      "devModeAmount": "৳0 (Dev Mode)",
-      "freeAmount": "৳0 — 14-day trial",
-      "noCardFree": "No card needed — 14-day free trial",
+      "freeAmount": "৳0",
+      "freeForever": "No payment today — Shuru is free forever",
       "upgradeAnytime": "After signup, we will open Business Setup.",
       "startFreeButton": "Create account and start setup →",
       "creating": "Creating account...",
@@ -359,7 +387,6 @@
         "acceptTerms": "Please accept the terms to continue.",
         "unableToCreate": "We could not create your account. Check the details and try again."
       },
-      "toggleAnnualBilling": "Toggle annual billing",
       "subscriptionPaymentMethod": "Subscription payment method"
     },
     "forgotPassword": {
@@ -573,7 +600,7 @@
     }
   },
   "inbox": {
-    "title": "Inbox",
+    "title": "Shared Inbox",
     "active": "{{count}} active",
     "searchPlaceholder": "Search customers...",
     "tabAll": "All",
@@ -1079,9 +1106,11 @@
     "emptyState": "No orders found.",
     "status": {
       "draft": "Draft",
+      "pending": "Pending",
       "confirmed": "Confirmed",
       "processing": "Processing",
       "completed": "Completed",
+      "delivered": "Delivered",
       "cancelled": "Cancelled"
     },
     "row": {
@@ -1292,6 +1321,7 @@
       "addAnother": "Add another Facebook Page",
       "loginPopup": "Log in to Meta in the pop-up...",
       "selectPagesHint": "Select the Pages you want to connect (one or more)",
+      "pageTaskRequired": "You need Messaging access on this Page",
       "connectCount": "Connect ({{count}})"
     },
     "test": {
@@ -1814,7 +1844,7 @@
   },
   "subscription": {
     "title": "Plan & Billing",
-    "subtitle": "Keep Messenger replies, order capture, and billing running",
+    "subtitle": "Choose a plan, track your allowance, and keep your shop in control",
     "loading": "Loading subscription details...",
     "entitlementsUnavailable": "Feature availability is temporarily unavailable.",
     "loadingFeatures": "Checking feature availability...",
@@ -1826,14 +1856,10 @@
     "price": "৳{{price}} BDT / {{cycle}}",
     "nextBilling": "Next billing: {{date}}",
     "addConversations": "Add Customer Conversations",
-    "upgradePlan": "Keep Replies Running",
+    "upgradePlan": "Move to Growth",
+    "renew": "Renew subscription",
     "plansTitle": "Plans",
-    "plansSubtitle": "Review billing options for the Growth plan.",
-    "monthly": "Monthly",
-    "annual": "Annual",
-    "twoMonthsFree": "2 months free",
-    "billedAnnually": "Billed annually",
-    "billedMonthly": "Billed monthly",
+    "plansSubtitle": "Simple plans with the same core features for every shop.",
     "conversationsLimit": "Conversations:",
     "ordersLimit": "Orders:",
     "productsLimit": "Products:",
@@ -1843,15 +1869,30 @@
     "usagePerMonth": "{{used}} / {{limit}} per month",
     "statusSafe": "Safe",
     "statusAlmostUsed": "Almost Used",
-    "statusExtra": "Extra Usage Active",
-    "extraUsageNote": "Extra usage will be added to next bill",
+    "statusExhausted": "Allowance used",
     "ordersCreated": "Orders Created",
     "productsUsed": "Products Used",
-    "extraAlert": "Replies are still running",
-    "extraAlertMsg": "You have used {{count}} extra customer conversations. Replies and order capture are not stopped.",
-    "extraCount": "Extra usage count:",
-    "extraCharge": "Estimated extra charge:",
-    "nextInvoiceNote": "This amount will be added to your next invoice.",
+    "usageTitle": "This period's usage",
+    "usageSubtitle": "AI pauses only after the included allowance and any top-up balance are used.",
+    "conversationsUsed": "Customer conversations",
+    "conversationsPerMonth": "{{count}} conversations each month",
+    "includedConversations": "Included allowance: {{count}}",
+    "topupBalance": "Top-up balance: {{count}}",
+    "aiPausedForUsage": "AI replies are paused for this allowance; manual replies remain available.",
+    "statusNeedsAttention": "Needs attention",
+    "period": "Current period",
+    "perMonth": "/ month",
+    "perYear": "/ year",
+    "partnerUpfront": "upfront",
+    "flatBillingSummary": "Flat monthly plan with a clear conversation allowance.",
+    "partnerBillingSummary": "No monthly fee; billed by delivered-order band.",
+    "partnerRateBands": "Delivered-order rates",
+    "perDeliveredOrder": "per delivered order",
+    "partnerEligibility": "Delivered in the last 30 days: {{count}} / {{minimum}} required.",
+    "partnerNoTopups": "Partner includes unlimited conversations; top-ups are not available.",
+    "growthTopupsOnly": "Conversation top-ups are available on Growth.",
+    "viewPartnerApplication": "Apply on pricing page",
+    "subscriptionInvoice": "Subscription",
     "addConversationsTitle": "Add Customer Conversations",
     "addedToCurrentPlan": "Added to your current plan",
     "requestInvoice": "Request Invoice",
@@ -1866,8 +1907,6 @@
     ],
     "billingTitle": "Billing Summary",
     "basePlan": "Base Plan Price",
-    "extraUsageCharge": "Extra Usage Charge",
-    "addedConversations": "Added Conversations",
     "estimatedInvoice": "Estimated Next Invoice",
     "invoiceDisclaimer": "Final invoice will be issued before billing date.",
     "invoicesTitle": "Invoices",
@@ -1881,8 +1920,7 @@
     },
     "paid": "Paid",
     "pending": "Pending",
-    "toastThreshold": "You have used {{threshold}}% of your monthly conversation limit ({{used}}/{{limit}}).",
-    "toastUpgradeHint": "Upgrade or buy an extra pack.",
+    "toastThreshold": "You have used {{threshold}}% of your conversation allowance ({{used}}/{{limit}}).",
     "paymentCancelled": "Payment was cancelled or not completed. Please try again.",
     "topupPaymentSuccess": "Payment successful! {{count}} conversations added to your balance.",
     "invoicePaymentSuccessActive": "Payment successful. Your replies and order automation stay active.",
@@ -1893,68 +1931,37 @@
     "planUpdateSuccess": "Subscription plan updated successfully",
     "planUpdateFailed": "Failed to update plan",
     "bkashStartFailed": "Failed to start bKash payment",
-    "trialEndsUrgent": "⚠️ Trial ends in {{count}} day!",
-    "trialEndsUrgent_other": "⚠️ Trial ends in {{count}} days!",
-    "trialRemaining": "Trial: {{count}} day remaining",
-    "trialRemaining_other": "Trial: {{count}} days remaining",
-    "trialUrgentMsg": "Upgrade to keep Messenger replies and order capture running.",
-    "trialMsg": "Do not miss customer replies after your trial. Pick a plan before it ends.",
-    "viewPlans": "View plans",
-    "statusTrial": "Trial",
     "statusPaymentDue": "Payment due",
-    "statusTrialEnded": "Trial ended",
     "statusAiPaused": "Automatic replies paused",
     "statusCancelled": "Cancelled",
-    "invoiceDueWarning": "Your monthly invoice is due. If it is not paid within 3 days, automatic replies may pause.",
+    "invoiceDueWarning": "Your recurring invoice is due. If it is not paid, automatic replies may pause.",
     "aiPausedNote": "Automatic replies are paused. Pay your monthly subscription to resume reply drafts and order automation.",
     "payActivateBkash": "Pay ৳{{price}} with bKash",
     "popular": "Popular",
     "perMonthShort": "/mo",
     "unlimited": "Unlimited",
-    "bkashUnavailable": "bKash payment is not available yet. You can use every feature during your trial.",
+    "unlimitedConversations": "Unlimited conversations",
+    "bkashUnavailable": "bKash payment is not available right now.",
     "perMonthCount": "{{count}}/mo",
     "applyNow": "Apply now →",
     "slashUnlimited": "/ Unlimited",
     "slashPerMonth": "/ {{limit}}/mo",
-    "percentUsed": "{{percent}}% used",
-    "forecastReached": "You have reached your limit!",
     "forecastDays": "At this rate your limit will run out in {{count}} day.",
     "forecastDays_other": "At this rate your limit will run out in {{count}} days.",
-    "buyExtraPack": "Buy an extra pack",
     "conversationsCount": "{{count}} conversations",
     "plusConversations": "+{{count}} conversations",
-    "addedToMonthlyLimit": "Added to your monthly limit",
+    "addedToBalance": "Added to your top-up balance",
     "imageUnderstandingTitle": "Understands Product Photos",
     "imageUnderstandingDesc": "Uses product photos to answer customer questions more accurately",
     "advancedAiTitle": "Better Reply Accuracy",
     "advancedAiDesc": "More accurate replies for product, delivery, payment, and order questions",
-    "toggleAnnualBilling": "Toggle annual billing",
     "payInvoiceTitle": "Pay this invoice with bKash",
     "viewInvoiceTitle": "View / Print invoice",
     "downloadInvoiceTitle": "Download invoice (print to PDF)",
     "payWithBkash": "Pay with bKash",
     "topupBkashNote": "Once payment succeeds, the conversations are added to your balance instantly.",
-    "percentUsedShort": "{{percent}}% used",
-    "limitExceeded": "Limit exceeded",
-    "warning": "Warning",
-    "toastLimitFull": "Conversation limit is full ({{used}}/{{limit}}). Please upgrade.",
-    "toastLimit80": "You have used 80% of your conversation limit ({{used}}/{{limit}}).",
-    "usageTitle": "This month's usage",
-    "conversations": "Conversations",
-    "orders": "Orders",
-    "products": "Products",
-    "buyConvPack": "Buy a Conversation Pack",
-    "convPackHint": "Buy a pack for extra conversations. An invoice is created and it activates once paid.",
-    "conversationsLabel": "conversations",
-    "testMode": "Test mode",
-    "testModeNote": "Test mode: no real payment will be made.",
-    "invoiceCreateFailed": "Failed to create invoice",
-    "invoiceCreatedMsg": "Invoice created ({{number}}). Please pay {{price}} BDT via bKash and contact support@easymod.tech to activate your pack.",
-    "yearly": "Yearly",
     "free": "Free",
     "perOrder": "/order",
-    "perMonth": "/month",
-    "perMonthBilledYearly": "/month (billed yearly)",
     "confirmPlan": "Change plan",
     "upgradeToUnlock": "Upgrade to reply faster",
     "featureAvailablePrefix": "is available on the",
@@ -1965,30 +1972,34 @@
     "upgradeNow": "Upgrade now",
     "upgradeUnlockTitle": "Upgrade to {{plan}} to keep {{feature}} available",
     "upgradeToPlan": "Upgrade to {{plan}}",
+    "noInvoices": "No invoices yet.",
+    "usageExhaustedAction": "AI replies are paused at the conversation allowance. Move to Growth or wait for the next period; manual replies remain available.",
+    "planDescriptions": {
+      "shuru": "Free forever for getting started with Messenger sales.",
+      "growth": "The full Messenger sales assistant for growing shops.",
+      "partner": "No upfront fee; pay for successfully delivered orders."
+    },
     "plans": {
-      "growth": {
-        "name": "Growth",
-        "description": "Messenger sales and order automation — one simple price. 14-day free trial, no card needed.",
-        "highlights": {
-          "0": "Everything you need to start selling on Messenger",
-          "1": "Facebook sales inbox",
-          "2": "COD risk checks and performance reports",
-          "3": "Campaigns plus voice and product photo support",
-          "4": "14-day free trial — no card required"
-        }
-      },
-      "partner": {
-        "name": "Partner",
-        "description": "Have 300+ orders a month? Become our partner.",
-        "highlights": {
-          "0": "Only ৳10–15 per delivered order",
-          "1": "No monthly fee",
-          "2": "Unlimited conversations",
-          "3": "Facebook Messenger focused",
-          "4": "Dedicated support manager"
-        }
-      }
+      "shuru": { "name": "Shuru", "description": "Free forever for getting started with Messenger sales." },
+      "growth": { "name": "Growth", "description": "The full Messenger sales assistant for growing shops." },
+      "partner": { "name": "Partner", "description": "No upfront fee; pay for successfully delivered orders." }
     }
+  },
+  "conversationAlert": {
+    "threshold70": {
+      "title": "Conversation usage is getting busy",
+      "message": "You have used {{used}} of {{limit}} conversations this period."
+    },
+    "threshold90": {
+      "title": "Conversation allowance is nearly used",
+      "message": "You have used {{used}} of {{limit}} conversations. Review your plan before AI replies pause."
+    },
+    "threshold100": {
+      "title": "AI replies are paused",
+      "message": "The {{limit}} conversation allowance is used. Manual replies remain available."
+    },
+    "manage": "Manage plan",
+    "dismiss": "Dismiss conversation usage alert"
   },
   "bd_lite": {
     "todayQueue": "Today's Queue",
@@ -2084,14 +2095,17 @@
     "label": "Pricing",
     "mostPopular": "Most Popular",
     "perMonth": "/mo",
-    "yearlyNote": "or ৳{{price}}/yr · save 2 months",
-    "partnerApplyNote": "Apply · activated after eligibility check",
-    "partnerEligibleBadge": "300+ orders/month eligible",
+    "partnerApplyNote": "Apply after 300+ delivered orders in 30 days",
+    "partnerPriceUnit": "upfront",
+    "partnerEligibleBadge": "300+ delivered orders",
+    "partnerRateBandsTitle": "Pay per delivered order",
+    "partnerRateBand": "{{min}}–{{max}} orders: ৳{{rate}} each",
     "applyNow": "Apply now",
-    "startFreeTrial": "Start 14-day free trial",
     "limits": {
       "unlimitedConversations": "Unlimited conversations",
-      "conversationsFairUse": "Customer conversations — fair use",
+      "conversationsPerMonth": "{{count}} customer conversations each month",
+      "deliveredOrders": "300+ delivered orders in 30 days to qualify",
+      "manualInbox": "Manual replies always available",
       "unlimitedOrders": "Unlimited orders",
       "ordersPerMonth": "{{count}} orders/mo",
       "unlimitedProducts": "Unlimited products",
@@ -2102,45 +2116,84 @@
       "advancedAi": "Better reply accuracy",
       "prioritySupport": "Priority Support",
       "customBranding": "Custom Branding (White-label)",
-      "facebookInbox": "Facebook sales inbox",
-      "extraConversationPack": "Extra conversation pack — top up whenever you need"
+      "facebookInbox": "Facebook sales inbox"
+    },
+    "planFeatures": {
+      "shuru": [
+        "100 customer conversations each month",
+        "Facebook Messenger inbox",
+        "Order capture and COD risk checks",
+        "Manual replies always available"
+      ],
+      "growth": [
+        "500 customer conversations each month",
+        "Facebook Messenger inbox",
+        "Order capture and COD risk checks",
+        "Top-ups when you need more conversations"
+      ],
+      "partner": [
+        "300+ delivered orders in 30 days to qualify",
+        "No monthly fee",
+        "Unlimited customer conversations",
+        "Flat rate by delivered-order band"
+      ]
+    },
+    "plans": {
+      "shuru": {
+        "name": "Shuru",
+        "description": "Free forever for getting started with Messenger sales.",
+        "priceNote": "Free forever",
+        "cta": "Create free account"
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "The full Messenger sales assistant for growing shops.",
+        "priceNote": "Simple monthly billing",
+        "cta": "Start with Growth"
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "No upfront fee; pay for successfully delivered orders.",
+        "priceNote": "Flat rate by delivered-order band",
+        "cta": "Apply for Partner"
+      }
     },
     "hero": {
       "heading": "Smooth and honest pricing",
-      "subheading": "One Growth plan, one partner path, and no hidden fees.",
+      "subheading": "Start free with Shuru, grow with Growth, or join the Partner path.",
       "badge1": "Messenger-only launch scope",
-      "badge2": "14-day free trial",
+      "badge2": "Free forever",
       "badge3": "No hidden fees"
     },
     "partnerTeaser": {
-      "question": "Have 300+ orders a month?",
+      "question": "Have 300+ delivered orders in 30 days?",
       "link": "Learn about the Partner Plan →"
     },
     "included": {
-      "heading": "Everything is in Growth",
-      "subheading": "No feature locks — one price, ৳999/month."
+      "heading": "The same core features for every shop",
+      "subheading": "Choose your scale, not a restricted feature set. Growth is ৳{{price}}/month."
     },
     "faq": {
       "heading": "Frequently asked questions",
-      "q1": "Is there a free trial?",
-      "a1": "Yes — new shops get a 14-day free trial, no card required. All Growth features stay active during the trial.",
-      "q2": "What happens when the trial ends?",
-      "a2": "After the trial, upgrade to ৳999/month to keep automatic replies and order capture running. If you do not, automatic replies pause, but you can still reply yourself from the inbox — no data is lost.",
+      "q1": "Is Shuru really free?",
+      "a1": "Yes — Shuru is free forever with 100 customer conversations each month. No card is required.",
+      "q2": "What is Growth?",
+      "a2": "Growth is ৳{{price}}/month with 500 customer conversations each month. Growth shops can buy a top-up when needed.",
       "q3": "How many customer conversations do I get per month?",
-      "a3": "Enough for a typical growing shop (fair-use). If you need more, you can buy a conversation top-up anytime from the Subscription page.",
+      "a3": "Shuru includes 100 conversations each month. Growth includes 500. Growth shops can buy a top-up when needed.",
       "q4": "What happens when the conversation limit runs out?",
-      "a4": "You get a free buffer; after that, AI auto-reply pauses. Buy a top-up pack from the Subscription page to resume instantly.",
+      "a4": "AI replies pause after the included allowance and any Growth top-up balance are used. Manual replies remain available.",
       "q5": "How do I apply for the Partner plan?",
-      "a5": "Apply via 'Learn about the Partner Plan' at the bottom of the Pricing page. We verify 300+ orders/month and activate it — charged per delivered order, with no monthly fee."
+      "a5": "Apply from the Pricing page after building 300+ delivered orders in 30 days. Partner has no monthly fee and uses flat delivered-order bands: ৳15, ৳12, or ৳10."
     },
     "cta": {
       "heading": "Ready to turn more messages into orders?",
-      "subheading": "Start your Growth trial today. No hidden fees.",
+      "subheading": "Start free with Shuru. Upgrade when your Messenger volume grows.",
       "button": "Get started now"
     },
     "partnerModal": {
       "title": "Apply to become a Partner",
-      "subtitle": "Have 300+ orders a month? Charged per delivered order — no monthly fee.",
+      "subtitle": "Have 300+ delivered orders in 30 days? Partner has no monthly fee and flat delivered-order bands.",
       "businessNameLabel": "Business Name",
       "businessNamePlaceholder": "Your shop's name",
       "phoneLabel": "Phone Number",
@@ -2177,7 +2230,7 @@
         "owner": "Owner",
         "plan": "Plan",
         "status": "Status",
-        "trialEnds": "Trial ends",
+        "periodEnd": "Period ends",
         "conversations": "Conversations",
         "onboarding": "Business Setup",
         "complete": "Complete",
@@ -2206,12 +2259,10 @@
         "conversations": "Conversations",
         "topupBalance": "Top-up balance",
         "nextBilling": "Next billing",
-        "trialEnds": "Trial ends",
-        "accruedOverage": "Accrued overage",
-        "overageValue": "{{count}} conv · ৳{{charge}}",
+        "effectiveLimit": "Effective conversation allowance",
+        "partnerEligibility": "Partner eligibility",
         "outstanding": "Outstanding",
         "superAdminNote": "SUPER_ADMIN required for billing actions.",
-        "extendTrial": "Extend trial 7d",
         "addCredits": "Add 50 credits",
         "reactivate": "Reactivate",
         "reactivateAiOn": "Reactivate (AI on)",

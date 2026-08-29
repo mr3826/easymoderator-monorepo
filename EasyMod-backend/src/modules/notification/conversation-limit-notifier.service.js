@@ -3,7 +3,7 @@
 /**
  * Centralised notification service for EasyModerator.
  *
- * Handles conversation-limit threshold notifications (75%, 90%, exceeded)
+ * Handles conversation-limit threshold notifications (70%, 90%, 100%)
  * via web push (VAPID) and in-app notification records.
  */
 
@@ -18,10 +18,10 @@ const logger = createLogger('NotificationService');
  * Notification type definitions.
  */
 const NOTIFICATION_TYPES = Object.freeze({
-    CONV_LIMIT_75: {
-        title: '⚠️ কথোপকথন সীমা ৭৫% পৌঁছেছে',
-        body: (data) => `আপনার ${data.pct || 75}% কথোপকথন সীমা ব্যবহার হয়েছে। টপ-আপ করুন বা প্ল্যান আপগ্রেড করুন।`,
-        bodyEn: (data) => `You've used ${data.pct || 75}% of your conversation limit. Consider topping up or upgrading.`,
+    CONV_LIMIT_70: {
+        title: '⚠️ কথোপকথন সীমা ৭০% পৌঁছেছে',
+        body: (data) => `আপনার ${data.pct || 70}% কথোপকথন সীমা ব্যবহার হয়েছে। টপ-আপ করুন বা প্ল্যান আপগ্রেড করুন।`,
+        bodyEn: (data) => `You've used ${data.pct || 70}% of your conversation limit. Consider topping up or upgrading.`,
         urgency: 'normal'
     },
     CONV_LIMIT_90: {
@@ -31,29 +31,11 @@ const NOTIFICATION_TYPES = Object.freeze({
         urgency: 'high'
     },
     CONV_LIMIT_EXCEEDED: {
-        title: '🚀 কথোপকথন সীমা শেষ — ৫০টি ফ্রি বাফার চালু',
-        body: () => '+৫০টি ফ্রি কথোপকথন যোগ করা হলো। শেষ হওয়ার আগে টপ-আপ করুন বা আপগ্রেড করুন যাতে AI চালু থাকে।',
-        bodyEn: () => '+50 free conversations added. Top up or upgrade before they run out to keep your AI replying.',
+        title: '🚫 কথোপকথন সীমা শেষ — AI বিরতি নিয়েছে',
+        body: () => 'আপনার কথোপকথন সীমা শেষ। AI অটো-রিপ্লাই বিরতি নিয়েছে — টপ-আপ করুন বা Growth-এ আপগ্রেড করুন।',
+        bodyEn: () => 'Your conversation allowance is exhausted. AI auto-replies are paused; top up or upgrade to Growth.',
         urgency: 'high'
     },
-    CONV_THRESHOLD_ACTIVE: {
-        title: '⚡ ফ্রি বাফার ব্যবহার হচ্ছে',
-        body: () => 'আপনার ফ্রি বাফার শেষ হয়ে আসছে। AI চালু রাখতে টপ-আপ করুন বা প্ল্যান আপগ্রেড করুন।',
-        bodyEn: () => 'Your free buffer is running low. Top up or upgrade to keep your AI replying.',
-        urgency: 'high'
-    },
-    TRIAL_ENDING: {
-        title: '⏳ আপনার ফ্রি ট্রায়াল শেষ হতে চলেছে',
-        body: (data) => `আপনার ১৪-দিনের ফ্রি ট্রায়ালে আর ${data.daysLeft || 1} দিন বাকি। ৳৯৯৯-এ আপগ্রেড করে AI চালু রাখুন।`,
-        bodyEn: (data) => `Only ${data.daysLeft || 1} day(s) left in your free trial. Upgrade for ৳999 to keep your AI running.`,
-        urgency: 'normal'
-    },
-    TRIAL_EXPIRED: {
-        title: '🔔 ট্রায়াল শেষ — AI বিরতি নিয়েছে',
-        body: () => 'আপনার ফ্রি ট্রায়াল শেষ। AI অটো-রিপ্লাই বন্ধ — তবে আপনি নিজে রিপ্লাই দিতে পারবেন। ৳৯৯৯-এ আপগ্রেড করুন।',
-        bodyEn: () => 'Your free trial has ended. AI auto-reply is paused (you can still reply manually). Upgrade for ৳999 to resume.',
-        urgency: 'high'
-    }
 });
 
 /**

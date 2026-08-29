@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-28T08:40:38.611Z",
+  "generatedAt": "2026-08-28T16:49:30.625Z",
   "pricingVersion": "2026-07-28.1",
   "pricingRetrievedAt": "2026-07-28",
   "fx": {
@@ -88,7 +88,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "chat_reply_photo_message_efficient",
@@ -148,7 +148,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "chat_reply_text_efficient",
@@ -188,7 +188,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "chat_reply_photo_message_efficient",
@@ -380,7 +380,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -460,7 +460,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -520,7 +520,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -600,7 +600,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -772,7 +772,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -852,7 +852,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -912,7 +912,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -992,7 +992,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -1187,7 +1187,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -1279,7 +1279,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           }
         ],
         "totals": {
@@ -1524,7 +1524,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -1616,7 +1616,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",
@@ -1749,7 +1749,7 @@
             "costBdt": 0,
             "measurementSource": "tokenizer_estimate",
             "confidence": "high",
-            "notes": "rag.service.queryData → getEmbedding. Costs $0 while EMBEDDING_PROVIDER resolves to the local n-gram fallback."
+            "notes": "rag.service.queryData → provider-bound getEmbeddingResult. Local n-gram is dev-only; production uses a READY homogeneous fallback collection when configured."
           },
           {
             "operation": "sentiment_classify",

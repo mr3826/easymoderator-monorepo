@@ -5,7 +5,6 @@ const config = require('../config/config');
 const { connection, messageQueue } = require('./message-queue');
 
 const {
-    DailyOverageCalculator,
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
@@ -13,7 +12,6 @@ const {
     CustomerWaitingNotifier,
     MetaTokenRefreshJob,
     PipelineCanaryJob,
-    TrialExpiryJob,
     WebhookReceiptReconcilerJob,
 } = require('./index');
 
@@ -39,7 +37,6 @@ class QueueManager {
         };
 
         const billingQueues = [
-            ['daily-overage-calculator', 'dailyOverage', DailyOverageCalculator],
             ['monthly-usage-reset', 'monthlyReset', MonthlyUsageReset],
             ['invoice-generator', 'invoiceGenerator', InvoiceGenerator],
             ['failed-payment-reconciler', 'paymentReconciler', FailedPaymentReconciler],
@@ -49,8 +46,6 @@ class QueueManager {
             ['meta-token-refresh', 'metaTokenRefresh', MetaTokenRefreshJob],
             // Reliability — auto-reply pipeline canary (every 5 min, see scheduleJobs)
             ['pipeline-canary', 'pipelineCanary', PipelineCanaryJob],
-            // Pricing — expire 14-day GROWTH trials + trial-ending nudges (daily)
-            ['trial-expiry', 'trialExpiry', TrialExpiryJob],
             // Reliability — replay inbound Meta events held as durable receipts
             ['webhook-receipt-reconciler', 'webhookReceiptReconciler', WebhookReceiptReconcilerJob],
         ];
@@ -136,21 +131,15 @@ class QueueManager {
             return;
         }
 
-        await this.queues.dailyOverage.upsertJobScheduler(
-            'daily-overage-calculator',
-            { pattern: '0 0 * * *', tz: 'UTC' },
-            { name: 'run', data: { dryRun: false } }
-        );
-
         await this.queues.monthlyReset.upsertJobScheduler(
             'monthly-usage-reset',
-            { pattern: '0 0 1 * *', tz: 'UTC' },
+            { pattern: '0 0 * * *', tz: 'UTC' },
             { name: 'run', data: { dryRun: false } }
         );
 
         await this.queues.invoiceGenerator.upsertJobScheduler(
             'invoice-generator',
-            { pattern: '0 1 1 * *', tz: 'UTC' },
+            { pattern: '0 1 * * *', tz: 'UTC' },
             { name: 'run', data: { dryRun: false } }
         );
 
@@ -189,14 +178,6 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
-        // Pricing — expire 14-day GROWTH trials + send trial-ending nudges daily
-        // at 04:00 UTC (10:00 Bangladesh time).
-        await this.queues.trialExpiry.upsertJobScheduler(
-            'trial-expiry',
-            { pattern: '0 4 * * *', tz: 'UTC' },
-            { name: 'run', data: { dryRun: false } }
-        );
-
         // Reliability — replay held inbound Meta events every 2 minutes. A
         // message whose Page was momentarily unresolved reaches the merchant in
         // minutes rather than never.
@@ -211,7 +192,6 @@ class QueueManager {
 
     async triggerJob(jobName, options = {}) {
         const queueMap = {
-            'daily_overage_calculator': 'dailyOverage',
             'monthly_usage_reset': 'monthlyReset',
             'invoice_generator': 'invoiceGenerator',
             'failed_payment_reconciler': 'paymentReconciler',
@@ -219,7 +199,6 @@ class QueueManager {
             'customer_waiting_notifier': 'customerWaitingNotifier',
             'meta_token_refresh': 'metaTokenRefresh',
             'pipeline_canary': 'pipelineCanary',
-            'trial_expiry': 'trialExpiry',
             'webhook_receipt_reconciler': 'webhookReceiptReconciler',
         };
 

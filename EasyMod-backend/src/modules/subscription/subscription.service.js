@@ -1,6 +1,16 @@
 const { Subscription, Invoice, UsageEvent, AuditLog } = require('../entities');
 const crypto = require('crypto');
 const { v5: uuidv5, validate: uuidValidate } = require('uuid');
+
+const recordFunnelEventSafe = (event, values) => {
+    try {
+        return require('../analytics/funnel-events.service')
+            .recordFunnelEvent({ event, ...values })
+            .catch(() => {});
+    } catch (_) {
+        return Promise.resolve();
+    }
+};
 const { AppError } = require('../../utils/AppError');
 const { UserShop } = require('../entities');
 const { Op, Transaction } = require('sequelize');
@@ -10,15 +20,16 @@ const cacheService = require('../../utils/cache.service');
 const {
     PlanCode,
     PRICING_TIERS,
+    getTierByCode,
     isUnlimitedLimit,
     isLimitExceeded,
-    getTierByCode,
-    getTierByPlanName,
-    isPerOrderBilling,
-    getPerOrderCharge,
     RECURRING_INVOICE_TYPES,
     recurringInvoiceTypeFor
 } = require('./subscription.plans');
+const {
+    effectiveConversationLimit,
+    isConversationQuotaExhausted
+} = require('./subscription.access');
 
 /**
  * Fixed namespace for hashing non-UUID idempotency keys into usage_events.
@@ -76,18 +87,22 @@ const getSubscription = async (shopId, userId) => {
         where: { shop_id: shopId }
     });
 
-    // If no subscription exists, start the card-less 14-day GROWTH trial
+    // If no subscription exists, create the free-forever Shuru entitlement.
     if (!subscription) {
         subscription = await createDefaultSubscription(shopId);
     }
+
+    const conversationLimit = effectiveConversationLimit(subscription);
 
     // Calculate usage percentages and statuses
     const usage = {
         conversations: {
             used: subscription.conversations_used,
-            limit: subscription.conversations_limit,
-            percentage: getUsagePercentage(subscription.conversations_used, subscription.conversations_limit),
-            status: getUsageStatus(subscription.conversations_used, subscription.conversations_limit)
+            limit: conversationLimit,
+            included_limit: subscription.conversations_limit,
+            topup_balance: Math.max(0, Number(subscription.topup_balance) || 0),
+            percentage: getUsagePercentage(subscription.conversations_used, conversationLimit),
+            status: getUsageStatus(subscription.conversations_used, conversationLimit)
         },
         orders: {
             used: subscription.orders_used,
@@ -103,12 +118,41 @@ const getSubscription = async (shopId, userId) => {
         }
     };
 
+    let partnerEligibility = {
+        delivered_orders_30d: 0,
+        minimum_delivered_orders: 300,
+        eligible: false,
+        available: true
+    };
+    try {
+        const { countRecentDeliveredOrders } = require('./partner.service');
+        const deliveredOrders = await countRecentDeliveredOrders(shopId);
+        partnerEligibility = {
+            delivered_orders_30d: deliveredOrders,
+            minimum_delivered_orders: 300,
+            eligible: deliveredOrders >= 300,
+            available: true
+        };
+    } catch (error) {
+        partnerEligibility = {
+            ...partnerEligibility,
+            available: false
+        };
+    }
+
     return {
         subscription,
         usage,
+        effective_conversation_limit: conversationLimit,
+        conversation_quota_exhausted: isConversationQuotaExhausted(subscription),
+        period: {
+            start: subscription.current_period_start,
+            end: subscription.current_period_end
+        },
+        partner_eligibility: partnerEligibility,
         extra_usage: {
-            conversations: subscription.extra_conversations,
-            charge: parseFloat(subscription.extra_charge)
+            conversations: 0,
+            charge: 0
         }
     };
 };
@@ -119,51 +163,57 @@ const getSubscription = async (shopId, userId) => {
 const getUsageStatus = (used, limit) => {
     if (isUnlimitedLimit(limit)) return 'safe';
     const percentage = (used / limit) * 100;
-    if (isLimitExceeded(used, limit)) return 'exceeded';
-    if (percentage >= 80) return 'warning';
+    if (used >= limit) return 'exceeded';
+    if (percentage >= 70) return 'warning';
     return 'safe';
 };
 
 const getUsagePercentage = (used, limit) => {
     if (isUnlimitedLimit(limit) || limit === 0) return 0;
-    return (used / limit) * 100;
+    return Math.min(100, Math.max(0, (used / limit) * 100));
 };
 
-/** Length of the card-less trial granted to every new shop. */
-const TRIAL_DAYS = 14;
-
 /**
- * Create the default subscription for a new shop: a card-less 14-day GROWTH
- * trial. The shop gets full Growth access immediately (every feature, the
- * 300-conv fair-use cap + 50 grace buffer). At `trial_ends_at` the trial-expiry
- * job flips `trialing → trial_expired` (AI pauses; manual inbox stays) unless
- * the owner activates the ৳999 plan first.
+ * Create the default subscription for a new shop: free-forever SHURU.
+ * Shuru uses a synthetic monthly period anchored at signup; the daily reset job
+ * advances that period from its recorded boundary rather than relying on a
+ * calendar-month or trial countdown.
  */
-const createDefaultSubscription = async (shopId) => {
+const createDefaultSubscription = async (shopId, { transaction = null, emitEvent = true } = {}) => {
     const now = new Date();
-    const trialEnds = new Date(now);
-    trialEnds.setDate(trialEnds.getDate() + TRIAL_DAYS);
-    const growthTier = PRICING_TIERS[PlanCode.GROWTH];
+    const nextPeriod = new Date(now);
+    nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+    const shuruTier = PRICING_TIERS[PlanCode.SHURU];
 
-    return await Subscription.create({
+    const values = {
         shop_id: shopId,
-        plan_code: growthTier.code,
-        plan_name: growthTier.name,
-        plan_price: growthTier.priceBdtMonthly,
+        plan_code: shuruTier.code,
+        plan_name: shuruTier.name,
+        plan_price: shuruTier.priceBdtMonthly,
         billing_cycle: 'monthly',
-        billing_model: growthTier.billingModel,
-        per_order_charge_bdt: growthTier.perOrderChargeBdt,
-        status: 'trialing',
-        trial_ends_at: trialEnds,
-        conversations_limit: growthTier.conversationsLimit,
-        orders_limit: growthTier.ordersLimit,
-        products_limit: growthTier.productsLimit,
-        // During the trial the "billing period" is the trial window itself.
+        billing_model: shuruTier.billingModel,
+        per_order_charge_bdt: shuruTier.perOrderChargeBdt,
+        status: 'active',
+        trial_ends_at: null,
+        conversations_limit: shuruTier.conversationsLimit,
+        orders_limit: shuruTier.ordersLimit,
+        products_limit: shuruTier.productsLimit,
         current_period_start: now,
-        current_period_end: trialEnds,
-        next_billing_date: trialEnds,
-        features: growthTier.features
-    });
+        current_period_end: nextPeriod,
+        next_billing_date: nextPeriod,
+        features: shuruTier.features
+    };
+    const subscription = transaction
+        ? await Subscription.create(values, { transaction })
+        : await Subscription.create(values);
+    if (emitEvent) {
+        recordFunnelEventSafe('plan_assigned_shuru', {
+            shopId,
+            metadata: { plan_code: PlanCode.SHURU },
+            onceKey: `plan_assigned_shuru:${shopId}`,
+        });
+    }
+    return subscription;
 };
 
 /**
@@ -180,26 +230,55 @@ const updatePlan = async (shopId, userId, planData) => {
         subscription = await createDefaultSubscription(shopId);
     }
 
+    const requestedCode = String(planData?.plan_code || '').toUpperCase();
+    if (![PlanCode.SHURU, PlanCode.GROWTH].includes(requestedCode)) {
+        throw new AppError('Only Shuru and Growth can be selected from the merchant billing page', 403);
+    }
+
+    const selectedTier = PRICING_TIERS[requestedCode];
+    const billingCycle = planData.billing_cycle || 'monthly';
+    if (!['monthly', 'yearly'].includes(billingCycle)) {
+        throw new AppError('Invalid billing cycle', 400);
+    }
+    // Annual Growth remains readable and renewable for existing customers, but
+    // new plan selections are monthly-only because annual is retired from the
+    // marketing/signup flow.
+    if (billingCycle === 'yearly'
+        && !(subscription.plan_code === PlanCode.GROWTH && subscription.billing_cycle === 'yearly')) {
+        throw new AppError('Annual billing is available only to existing annual Growth subscribers', 400);
+    }
+
+    const currentPlanCode = String(subscription.plan_code || '').toUpperCase();
+    if (requestedCode === PlanCode.GROWTH) {
+        const isSameActivePlan = currentPlanCode === PlanCode.GROWTH
+            && subscription.status === 'active'
+            && billingCycle === subscription.billing_cycle;
+        if (isSameActivePlan) return subscription;
+
+        throw new AppError(
+            'Growth activation requires a successful bKash payment',
+            402,
+            'PAYMENT_REQUIRED',
+        );
+    }
+
     const now = new Date();
     const nextPeriod = new Date(now);
-    
-    if (planData.billing_cycle === 'yearly') {
+
+    if (billingCycle === 'yearly') {
         nextPeriod.setFullYear(nextPeriod.getFullYear() + 1);
     } else {
         nextPeriod.setMonth(nextPeriod.getMonth() + 1);
     }
 
-    const selectedTier =
-        getTierByCode(planData.plan_code) || getTierByPlanName(planData.plan_name);
-
-    const fallbackMonthlyPrice = parseFloat(planData.plan_price || 0);
-    const tierMonthlyPrice = selectedTier ? selectedTier.priceBdtMonthly : fallbackMonthlyPrice;
-    const calculatedPlanPrice =
-        planData.billing_cycle === 'yearly' ? tierMonthlyPrice * 12 : tierMonthlyPrice;
+    const calculatedPlanPrice = billingCycle === 'yearly'
+        ? selectedTier.priceBdtYearly
+        : selectedTier.priceBdtMonthly;
 
     const oldPrice = parseFloat(subscription.plan_price || 0);
-    const newPrice = selectedTier ? calculatedPlanPrice : parseFloat(planData.plan_price || 0);
-    const newPlanName = selectedTier ? selectedTier.name : planData.plan_name;
+    const oldPlanCode = subscription.plan_code;
+    const newPrice = calculatedPlanPrice;
+    const newPlanName = selectedTier.name;
 
     // Proration: on upgrade mid-cycle, charge the difference for remaining days.
     // Downgrade takes effect at the next billing date — no immediate charge.
@@ -245,14 +324,19 @@ const updatePlan = async (shopId, userId, planData) => {
     }
 
     await subscription.update({
-        plan_code: selectedTier ? selectedTier.code : subscription.plan_code,
+        plan_code: selectedTier.code,
         plan_name: newPlanName,
-        plan_price: selectedTier ? calculatedPlanPrice : planData.plan_price,
-        billing_cycle: planData.billing_cycle,
-        conversations_limit: selectedTier ? selectedTier.conversationsLimit : planData.conversations_limit,
-        orders_limit: selectedTier ? selectedTier.ordersLimit : planData.orders_limit,
-        products_limit: selectedTier ? selectedTier.productsLimit : planData.products_limit,
-        features: selectedTier ? selectedTier.features : (planData.features || subscription.features),
+        plan_price: calculatedPlanPrice,
+        billing_cycle: billingCycle,
+        billing_model: selectedTier.billingModel,
+        per_order_charge_bdt: selectedTier.perOrderChargeBdt,
+        conversations_limit: selectedTier.conversationsLimit,
+        orders_limit: selectedTier.ordersLimit,
+        products_limit: selectedTier.productsLimit,
+        features: selectedTier.features,
+        status: 'active',
+        trial_ends_at: null,
+        usage_reset_at: null,
         current_period_start: now,
         current_period_end: nextPeriod,
         next_billing_date: nextPeriod
@@ -260,6 +344,15 @@ const updatePlan = async (shopId, userId, planData) => {
 
     // Invalidate cached subscription/limits so the next request reflects the new plan
     await cacheService.clearForShop(shopId);
+
+    recordFunnelEventSafe(selectedTier.code === PlanCode.SHURU ? 'plan_assigned_shuru' : 'plan_upgraded', {
+        shopId,
+        metadata: {
+            from_plan: oldPlanCode,
+            to_plan: selectedTier.code,
+            billing_cycle: billingCycle,
+        },
+    });
 
     return subscription;
 };
@@ -271,7 +364,7 @@ const updatePlan = async (shopId, userId, planData) => {
  * - Usage increments ONLY inside committed transactions
  * - If transaction fails → usage MUST NOT increment
  * - Prevent double counting using idempotency keys (shop_id, resource_type, request_id)
- * - Hard errors if limits exceeded
+ * - Conversation allowance is decided at conversation-metering time
  * - Persist every increment into audit_logs
  * 
  * @param {string} shopId - Shop UUID
@@ -279,8 +372,8 @@ const updatePlan = async (shopId, userId, planData) => {
  * @param {number} amount - Amount to increment (default: 1)
  * @param {string} requestId - Idempotency key (required for transaction safety)
  * @param {object} metadata - Additional context (resource_id, etc)
- * @returns {Promise<object>} { subscription, usageEvent, isRetry, transactionId }
- * @throws {AppError} If subscription not found, limits exceeded, or transaction fails
+ * @returns {Promise<object>} { subscription, usageEvent, isRetry, transactionId, within_allowance }
+ * @throws {AppError} If subscription not found, an invalid amount is supplied, or transaction fails
  */
 const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metadata = {}) => {
     if (!requestId) {
@@ -289,6 +382,9 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
 
     if (!['conversations', 'orders', 'products'].includes(usageType)) {
         throw new AppError(`Invalid usage type: ${usageType}`, 400);
+    }
+    if (!Number.isInteger(amount) || amount <= 0) {
+        throw new AppError('amount must be a positive integer', 400);
     }
 
     const idempotencyKey = usageRequestKey(requestId);
@@ -326,6 +422,9 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                     usageEvent: existingEvent,
                     isRetry: true,
                     transactionId: existingEvent.transaction_id,
+                    within_allowance: usageType === 'conversations'
+                        ? existingEvent.resource_metadata?.within_allowance === true
+                        : true,
                     message: 'Usage already tracked for this request (idempotent)'
                 };
             }
@@ -353,8 +452,37 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         // Step 4: Validate limits before transaction
         const field = `${usageType}_used`;
         const limitField = `${usageType}_limit`;
-        const newUsage = subscription[field] + amount;
+        let currentUsage = Number(subscription[field]) || 0;
+        let newUsage = currentUsage + amount;
         const limit = subscription[limitField];
+
+        let periodResetUpdates = {};
+        const currentPeriodEnd = subscription.current_period_end
+            ? new Date(subscription.current_period_end)
+            : null;
+        const now = new Date();
+        if (currentPeriodEnd && !Number.isNaN(currentPeriodEnd.getTime()) && currentPeriodEnd <= now) {
+            let nextPeriodStart = currentPeriodEnd;
+            let nextPeriodEnd = new Date(nextPeriodStart);
+            const yearly = subscription.billing_cycle === 'yearly';
+            do {
+                if (yearly) nextPeriodEnd.setFullYear(nextPeriodEnd.getFullYear() + 1);
+                else nextPeriodEnd.setMonth(nextPeriodEnd.getMonth() + 1);
+                if (nextPeriodEnd <= now) nextPeriodStart = nextPeriodEnd;
+            } while (nextPeriodEnd <= now);
+
+            currentUsage = 0;
+            newUsage = amount;
+            periodResetUpdates = {
+                conversations_used: 0,
+                orders_used: 0,
+                products_used: 0,
+                current_period_start: nextPeriodStart,
+                current_period_end: nextPeriodEnd,
+                next_billing_date: nextPeriodEnd,
+                usage_reset_at: currentPeriodEnd,
+            };
+        }
 
         if (usageType !== 'conversations' && isLimitExceeded(newUsage, limit)) {
             // Hard error if limit exceeded for non-conversation usage
@@ -368,6 +496,34 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
             throw error;
         }
 
+        // A conversation consumes the included plan allowance first, then any
+        // purchased/bonus top-up balance. The event is still recorded when the
+        // allowance is exhausted so the worker can pause only that AI turn.
+        let topupBalance = Math.max(0, Number(subscription.topup_balance) || 0);
+        let withinAllowance = true;
+        let crossedThresholds = [];
+        let allowanceForEvent = null;
+        if (usageType === 'conversations' && !isUnlimitedLimit(limit)) {
+            const allowanceBefore = Number(limit) + topupBalance;
+            allowanceForEvent = allowanceBefore;
+            const includedRemaining = Math.max(0, Number(limit) - currentUsage);
+            const beyondPlan = Math.max(0, amount - includedRemaining);
+            const availableTopup = topupBalance;
+            const fromTopup = Math.min(availableTopup, beyondPlan);
+            topupBalance -= fromTopup;
+            withinAllowance = beyondPlan <= availableTopup;
+            const previousPercentage = allowanceBefore > 0 ? (currentUsage / allowanceBefore) * 100 : 100;
+            const nextPercentage = allowanceBefore > 0 ? (newUsage / allowanceBefore) * 100 : 100;
+            crossedThresholds = [70, 90, 100].filter((threshold) => (
+                previousPercentage < threshold && nextPercentage >= threshold
+            ));
+        }
+
+        const usageMetadata = {
+            ...(metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {}),
+            within_allowance: withinAllowance
+        };
+
         // Step 5: Create UsageEvent record (marks transaction as pending)
         const usageEvent = await UsageEvent.create({
             shop_id: shopId,
@@ -376,40 +532,14 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
             delta: amount,
             transaction_id: transaction.id,
             status: 'pending',
-            resource_id: metadata.resourceId || null,
-            resource_metadata: metadata || null
+            resource_id: usageMetadata.resourceId || null,
+            resource_metadata: usageMetadata
         }, { transaction });
 
         // Step 6: Increment subscription counter (ATOMIC inside transaction)
-        let extraCharge = parseFloat(subscription.extra_charge || 0);
-        let extraConversations = subscription.extra_conversations || 0;
-        let topupBalance = subscription.topup_balance || 0;
-
-        // Conversations are soft-metered: never hard-blocked here (AI availability
-        // is governed by billing status, not the quota). Once the plan quota is
-        // used up, draw down any purchased top-up credit first; only accrue
-        // billable overage (charged on the next invoice) once top-up is exhausted.
-        // The drawn-down top-up balance carries over; extra_charge /
-        // extra_conversations accumulate until the invoice-generator resets them.
-        if (usageType === 'conversations' && isLimitExceeded(newUsage, limit)) {
-            // Portion of THIS increment that falls beyond the plan quota.
-            const beyondPlan = subscription[field] >= limit ? amount : (newUsage - limit);
-            const fromTopup = Math.min(topupBalance, beyondPlan);
-            topupBalance -= fromTopup;
-            const billableOverage = beyondPlan - fromTopup;
-            if (billableOverage > 0) {
-                const perConversationCharge = 2.5;
-                extraConversations += billableOverage;
-                extraCharge += billableOverage * perConversationCharge;
-            }
-        }
-
-        await subscription.update({
-            [field]: newUsage,
-            topup_balance: topupBalance,
-            extra_conversations: extraConversations,
-            extra_charge: extraCharge
-        }, { transaction });
+        const subscriptionUpdates = { ...periodResetUpdates, [field]: newUsage };
+        if (usageType === 'conversations') subscriptionUpdates.topup_balance = topupBalance;
+        await subscription.update(subscriptionUpdates, { transaction });
 
         // Step 7: Create audit log entry (ensures auditability)
         //
@@ -430,6 +560,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                 amount,
                 newTotal: newUsage,
                 limit,
+                withinAllowance,
                 requestId,
                 usageEventId: usageEvent.id
             },
@@ -446,11 +577,24 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
         // Step 9: Commit transaction
         await transaction.commit();
 
+        for (const threshold of crossedThresholds) {
+            recordFunnelEventSafe(`usage_threshold_${threshold}`, {
+                shopId,
+                metadata: {
+                    usage_type: usageType,
+                    used: newUsage,
+                    allowance: allowanceForEvent,
+                },
+                onceKey: `usage_threshold:${shopId}:${subscription.current_period_start}:${threshold}`,
+            });
+        }
+
         logger.info('Usage tracked successfully (transaction committed)', {
             usageType,
             delta: amount,
             newTotal: newUsage,
             limit,
+            withinAllowance,
             status: getUsageStatus(newUsage, limit)
         });
 
@@ -459,6 +603,7 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
             usageEvent,
             isRetry: false,
             transactionId: transaction.id,
+            within_allowance: withinAllowance,
             message: 'Usage tracked successfully'
         };
 
@@ -501,6 +646,9 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                     usageEvent: winner,
                     isRetry: true,
                     transactionId: winner.transaction_id,
+                    within_allowance: usageType === 'conversations'
+                        ? winner.resource_metadata?.within_allowance === true
+                        : true,
                     message: 'Usage already tracked for this request (idempotent)'
                 };
             }
@@ -554,47 +702,6 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
 };
 
 /**
- * Request conversation pack
- */
-const requestConversationPack = async (shopId, userId, packAmount, packPrice) => {
-    await verifyShopAccess(userId, shopId);
-
-    const subscription = await Subscription.findOne({
-        where: { shop_id: shopId }
-    });
-
-    if (!subscription) {
-        throw new AppError('Subscription not found', 404);
-    }
-
-    // Create an invoice for the pack
-    const invoiceNumber = `INV-${new Date().getFullYear()}-${String(crypto.randomInt(1000, 9999))}`;  // crypto-safe: not guessable
-    const now = new Date();
-    const dueDate = new Date(now);
-    dueDate.setDate(dueDate.getDate() + 7); // 7 days to pay
-
-    const invoice = await Invoice.create({
-        subscription_id: subscription.id,
-        shop_id: shopId,
-        invoice_number: invoiceNumber,
-        billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
-        invoice_type: `Conversation Pack (${packAmount} conversations)`,
-        amount: packPrice,
-        base_amount: packPrice,
-        extra_usage_amount: 0,
-        addon_amount: 0,
-        status: 'pending',
-        due_date: dueDate,
-        notes: `Add-on: ${packAmount} customer conversations`
-    });
-
-    return {
-        invoice,
-        message: `Invoice ${invoiceNumber} created for ${packAmount} conversations. Conversations will be added after payment.`
-    };
-};
-
-/**
  * Get invoices for a shop
  */
 const getInvoices = async (shopId, userId) => {
@@ -639,13 +746,11 @@ const resetUsageCounters = async (subscriptionId) => {
         throw new AppError('Subscription not found', 404);
     }
 
-    await subscription.update({
-        conversations_used: 0,
-        orders_used: 0,
-        products_used: 0,
-        extra_conversations: 0,
-        extra_charge: 0
-    });
+        await subscription.update({
+            conversations_used: 0,
+            orders_used: 0,
+            products_used: 0,
+        });
 
     // Invalidate cached limits so the reset is immediately visible
     await cacheService.clearForShop(subscription.shop_id);
@@ -772,35 +877,9 @@ const incrementRateLimit = async (shopId, userId, customerId) => {
 };
 
 /**
- * Deliver conversation pack credit after successful payment.
- * Parses pack size from invoice_type, increments extra_conversations,
- * and marks the invoice as paid.
- *
- * @param {Object} invoice - Invoice Sequelize instance
- */
-const deliverConversationPackCredit = async (invoice) => {
-    if (!invoice?.invoice_type?.startsWith('Conversation Pack (')) return;
-
-    const match = invoice.invoice_type.match(/Conversation Pack \((\d+) conversations\)/);
-    if (!match) return;
-
-    const packAmount = parseInt(match[1], 10);
-
-    // Atomic increment — safe under concurrent requests
-    await Subscription.increment(
-        { extra_conversations: packAmount },
-        { where: { shop_id: invoice.shop_id } }
-    );
-
-    await Invoice.update(
-        { status: 'paid', paid_at: new Date() },
-        { where: { id: invoice.id } }
-    );
-};
-
-/**
  * Grant bonus conversations to a shop (e.g. referral reward, promo credit).
- * Atomic increment on extra_conversations; safe under concurrency.
+ * Atomic increment on topup_balance; safe under concurrency and consumed after
+ * the included plan allowance.
  * No-op if the shop has no subscription row yet (lazy-created on first use).
  *
  * @param {string} shopId - Shop UUID
@@ -814,7 +893,7 @@ const grantBonusConversations = async (shopId, amount, reason = 'bonus') => {
     }
 
     const [affected] = await Subscription.increment(
-        { extra_conversations: amount },
+        { topup_balance: amount },
         { where: { shop_id: shopId } }
     );
 
@@ -846,28 +925,65 @@ const BD_VAT_RATE = 0;
  * @param {Object} subscription - Subscription Sequelize instance
  * @returns {Promise<Object>} the updated subscription
  */
-const activateFromPaidInvoice = async (subscription) => {
+const activateFromPaidInvoice = async (subscription, {
+    targetPlanCode = null,
+    targetBillingCycle = null,
+    preservePeriod = false,
+    billingPeriodEnd = null,
+    transaction = null,
+} = {}) => {
+    const currentPlanCode = String(subscription.plan_code || '').toUpperCase();
+    const resolvedPlanCode = String(targetPlanCode || currentPlanCode).toUpperCase();
+    const targetTier = getTierByCode(resolvedPlanCode);
+    const billingCycle = targetBillingCycle || subscription.billing_cycle || 'monthly';
     const now = new Date();
-    const nextPeriod = new Date(now);
-    if (subscription.billing_cycle === 'yearly') {
-        nextPeriod.setFullYear(nextPeriod.getFullYear() + 1);
+    let periodStart = now;
+    let periodEnd = new Date(now);
+    if (preservePeriod && subscription.current_period_start && subscription.current_period_end) {
+        periodStart = new Date(subscription.current_period_start);
+        periodEnd = new Date(subscription.current_period_end);
+    } else if (preservePeriod && billingPeriodEnd) {
+        periodStart = new Date(billingPeriodEnd);
+        periodEnd = new Date(periodStart);
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
+    } else if (billingCycle === 'yearly') {
+        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     } else {
-        nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+        periodEnd.setMonth(periodEnd.getMonth() + 1);
     }
 
-    await subscription.update({
+    const updates = {
         status: 'active',
-        current_period_start: now,
-        current_period_end: nextPeriod,
-        next_billing_date: nextPeriod
-    });
+        usage_reset_at: preservePeriod ? subscription.usage_reset_at || null : null,
+        trial_ends_at: null,
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        next_billing_date: periodEnd
+    };
+    if (targetTier) {
+        Object.assign(updates, {
+            plan_code: targetTier.code,
+            plan_name: targetTier.name,
+            plan_price: billingCycle === 'yearly' ? targetTier.priceBdtYearly : targetTier.priceBdtMonthly,
+            billing_cycle: billingCycle,
+            billing_model: targetTier.billingModel,
+            per_order_charge_bdt: targetTier.perOrderChargeBdt,
+            conversations_limit: targetTier.conversationsLimit,
+            orders_limit: targetTier.ordersLimit,
+            products_limit: targetTier.productsLimit,
+            features: targetTier.features,
+        });
+    }
 
-    await cacheService.clearForShop(subscription.shop_id);
+    if (transaction) await subscription.update(updates, { transaction });
+    else await subscription.update(updates);
+
+    if (!transaction) await cacheService.clearForShop(subscription.shop_id);
 
     const logger = createLogger('subscription-activate', subscription.shop_id);
     logger.info('Subscription activated after invoice payment', {
         subscriptionId: subscription.id,
-        nextBillingDate: nextPeriod
+        nextBillingDate: periodEnd
     });
 
     return subscription;
@@ -877,17 +993,18 @@ const activateFromPaidInvoice = async (subscription) => {
  * Ensure the shop has an open (payable) monthly subscription invoice it can settle
  * to (re)activate the AI. Returns an existing open `monthly_subscription` invoice if
  * one is outstanding (never stacks duplicates), otherwise creates a fresh one priced
- * at the plan fee + 15% VAT (identical to the monthly invoice-generator).
+ * at the canonical plan fee with the current all-in VAT policy (identical to
+ * the monthly invoice-generator).
  *
- * This is the activation path for a trialing / trial_expired / suspended owner: the
- * invoice-generator only bills `status='active'` subscriptions, so a lapsed shop would
- * otherwise never get an invoice to pay. The "Pay / Renew with bKash" action calls this.
+ * This is the activation path for a lapsed / suspended owner: the invoice-generator
+ * only bills `status='active'` subscriptions, so a shop can otherwise lack an invoice
+ * to pay. The "Pay / Renew with bKash" action calls this.
  *
  * @param {string} shopId
  * @param {string} userId
  * @returns {Promise<Object>} the open or newly-created Invoice instance
  */
-const ensureRenewalInvoice = async (shopId, userId) => {
+const ensureRenewalInvoice = async (shopId, userId, targetPlanCode = null) => {
     await verifyShopAccess(userId, shopId);
 
     let subscription = await Subscription.findOne({ where: { shop_id: shopId } });
@@ -895,33 +1012,81 @@ const ensureRenewalInvoice = async (shopId, userId) => {
         subscription = await createDefaultSubscription(shopId);
     }
 
+    const currentPlanCode = String(subscription.plan_code || '').toUpperCase();
+    const requestedPlanCode = String(targetPlanCode || currentPlanCode).toUpperCase();
+
     // Per-order Partner shops are billed from delivered orders, not a flat renewal.
-    if (subscription.billing_model === 'per_order') {
+    if (requestedPlanCode === PlanCode.PARTNER || subscription.billing_model === 'per_order') {
         throw new AppError('Partner (per-order) plans are billed per delivered order, not by renewal', 400);
     }
+
+    if (requestedPlanCode !== PlanCode.GROWTH) {
+        throw new AppError('This plan has no payable subscription fee', 400);
+    }
+
+    const targetTier = PRICING_TIERS[PlanCode.GROWTH];
+    const targetBillingCycle = currentPlanCode === PlanCode.GROWTH
+        ? (subscription.billing_cycle === 'yearly' ? 'yearly' : 'monthly')
+        : 'monthly';
+    const targetInvoiceType = recurringInvoiceTypeFor(targetBillingCycle);
 
     // Reuse any already-open recurring invoice so the owner pays it instead of
     // stacking a new one. Matching the whole recurring set, not just the monthly
     // type — a yearly subscriber with an open annual renewal must be handed that
     // invoice rather than issued a second one alongside it.
-    const existing = await Invoice.findOne({
-        where: {
-            subscription_id: subscription.id,
-            invoice_type: { [Op.in]: RECURRING_INVOICE_TYPES },
-            status: { [Op.in]: ['pending', 'overdue'] }
-        },
-        order: [['created_at', 'DESC']]
-    });
+    let existing = null;
+    if (typeof Invoice.findAll === 'function') {
+        const openInvoices = await Invoice.findAll({
+            where: {
+                subscription_id: subscription.id,
+                invoice_type: { [Op.in]: RECURRING_INVOICE_TYPES },
+                status: { [Op.in]: ['pending', 'overdue'] }
+            },
+            order: [['created_at', 'DESC']]
+        });
+        existing = openInvoices.find((invoice) => {
+            if (invoice.invoice_type !== targetInvoiceType) return false;
+            let metadata = invoice.metadata || {};
+            if (typeof metadata === 'string') {
+                try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+            }
+            return String(metadata.target_plan_code || currentPlanCode).toUpperCase() === requestedPlanCode;
+        }) || null;
+    } else if (typeof Invoice.findOne === 'function') {
+        existing = await Invoice.findOne({
+            where: {
+                subscription_id: subscription.id,
+                invoice_type: targetInvoiceType,
+                status: { [Op.in]: ['pending', 'overdue'] }
+            },
+            order: [['created_at', 'DESC']]
+        });
+        if (existing) {
+            let metadata = existing.metadata || {};
+            if (typeof metadata === 'string') {
+                try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+            }
+            if (existing.invoice_type !== targetInvoiceType
+                || String(metadata.target_plan_code || currentPlanCode).toUpperCase() !== requestedPlanCode) {
+                existing = null;
+            }
+        }
+    }
     if (existing) return existing;
 
-    const baseAmount = parseFloat(subscription.plan_price || 0);
+    const baseAmount = targetBillingCycle === 'yearly'
+        ? targetTier.priceBdtYearly
+        : targetTier.priceBdtMonthly;
     if (!(baseAmount > 0)) {
         throw new AppError('This plan has no payable subscription fee', 400);
     }
 
     const now = new Date();
+    const billingPeriodStart = subscription.current_period_start
+        ? new Date(subscription.current_period_start)
+        : now;
     const periodEnd = new Date(now);
-    if (subscription.billing_cycle === 'yearly') {
+    if (targetBillingCycle === 'yearly') {
         periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     } else {
         periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -933,75 +1098,43 @@ const ensureRenewalInvoice = async (shopId, userId) => {
     const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
     const invoiceNumber = `INV-${yearMonth}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-    const invoice = await Invoice.create({
+    const values = {
         subscription_id: subscription.id,
         shop_id: shopId,
         invoice_number: invoiceNumber,
-        invoice_type: recurringInvoiceTypeFor(subscription.billing_cycle),
+        invoice_type: targetInvoiceType,
         amount: totalAmount,
         base_amount: baseAmount,
         extra_usage_amount: 0,
         addon_amount: 0,
-        billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
-        billing_period_start: now,
+        billing_period: billingPeriodStart.toLocaleString('default', { month: 'long', year: 'numeric' }),
+        billing_period_start: billingPeriodStart,
         billing_period_end: periodEnd,
         status: 'pending',
+        metadata: {
+            target_plan_code: requestedPlanCode,
+            target_billing_cycle: targetBillingCycle,
+        },
         // 3-day due threshold — matches the recurring invoice-generator + reconciler.
         due_date: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000),
         notes: 'Subscription activation / renewal'
-    });
-
-    return invoice;
-};
-
-/**
- * PARTNER PLAN: Charge per delivered order.
- *
- * Called by order.service.js whenever an order transitions to order_status = 'delivered'.
- * Atomically increments the weekly accumulator fields on the subscription.
- * The Sunday partnerWeeklyInvoice Bull job reads these and generates an invoice.
- *
- * Cancelled / RTO / pending orders must NEVER call this function.
- *
- * @param {string} shopId  - Shop UUID
- * @param {string} orderId - Order UUID (for audit trail)
- * @returns {Promise<{ charged: boolean, amount: number, weekTotal: number }>}
- */
-const chargePartnerOrder = async (shopId, orderId) => {
-    const subscription = await Subscription.findOne({ where: { shop_id: shopId } });
-    if (!subscription) return { charged: false, amount: 0, weekTotal: 0 };
-
-    // Only PARTNER (per_order billing model) shops are charged here
-    if (subscription.billing_model !== 'per_order') {
-        return { charged: false, amount: 0, weekTotal: 0 };
-    }
-
-    const chargeAmount = parseFloat(subscription.per_order_charge_bdt || 22);
-
-    // Atomic increment — safe under concurrent deliveries
-    await Subscription.increment(
-        {
-            partner_orders_this_week: 1,
-            partner_pending_invoice_amount: chargeAmount
-        },
-        { where: { shop_id: shopId } }
-    );
-
-    // Refresh to get updated totals
-    await subscription.reload();
-
-    const logger = createLogger('partner-charge', shopId);
-    logger.info('Partner order charge applied', {
-        orderId,
-        chargeAmount,
-        weekTotal: parseFloat(subscription.partner_pending_invoice_amount)
-    });
-
-    return {
-        charged: true,
-        amount: chargeAmount,
-        weekTotal: parseFloat(subscription.partner_pending_invoice_amount)
     };
+
+    try {
+        return await Invoice.create(values);
+    } catch (error) {
+        if (error?.name === 'SequelizeUniqueConstraintError' && typeof Invoice.findOne === 'function') {
+            const existing = await Invoice.findOne({
+                where: {
+                    subscription_id: subscription.id,
+                    invoice_type: targetInvoiceType,
+                    billing_period_start: billingPeriodStart,
+                },
+            });
+            if (existing) return existing;
+        }
+        throw error;
+    }
 };
 
 module.exports = {
@@ -1009,8 +1142,6 @@ module.exports = {
     updatePlan,
     trackUsage,
     checkOrderLimit,
-    chargePartnerOrder,
-    requestConversationPack,
     getInvoices,
     getInvoiceById,
     resetUsageCounters,
@@ -1019,7 +1150,6 @@ module.exports = {
     verifyNoDoubleCount,
     checkRateLimit,
     incrementRateLimit,
-    deliverConversationPackCredit,
     grantBonusConversations,
     activateFromPaidInvoice,
     ensureRenewalInvoice

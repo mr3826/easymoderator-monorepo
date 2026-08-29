@@ -10,7 +10,6 @@
  *   node src/jobs/job-runner.js <job-name> [--dry-run] [--date=YYYY-MM-DD]
  * 
  * Examples:
- *   node src/jobs/job-runner.js daily_overage_calculator --dry-run
  *   node src/jobs/job-runner.js monthly_usage_reset --date=2026-02-01
  *   node src/jobs/job-runner.js invoice_generator
  *   node src/jobs/job-runner.js failed_payment_reconciler --dry-run
@@ -19,12 +18,10 @@
 const jobs = require('./index');
 
 const JOB_MAP = {
-    'daily_overage_calculator': jobs.DailyOverageCalculator,
     'monthly_usage_reset': jobs.MonthlyUsageReset,
     'invoice_generator': jobs.InvoiceGenerator,
     'failed_payment_reconciler': jobs.FailedPaymentReconciler,
     'courier_reconciliation': jobs.CourierReconciliationJob,  // Schedule: cron '0 3 * * 0' (Sunday 03:00 UTC)
-    'trial_expiry': jobs.TrialExpiryJob  // Schedule: cron '0 4 * * *' (daily 04:00 UTC)
 };
 
 async function runJob() {

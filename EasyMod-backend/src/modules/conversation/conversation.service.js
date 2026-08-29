@@ -204,6 +204,7 @@ class ConversationService {
         const logger = createLogger(requestId, shopId);
         const { sequelize } = require('../../utils/database/database-setup');
         const transaction = await sequelize.transaction();
+        let committed = false;
         
         try {
             const resolvedTitle = conversationData.title
@@ -231,6 +232,7 @@ class ConversationService {
 
             // Commit transaction - NOW conversation is persisted
             await transaction.commit();
+            committed = true;
 
             // ATOMIC: Track usage ONLY after successful DB commit
             // Uses transaction-safe idempotent tracking with request_id
@@ -240,7 +242,7 @@ class ConversationService {
                     shopId,
                     'conversations',
                     1,
-                    requestId, // Request-scoped idempotency key - prevents double counting
+                    requestId || conversation.id, // Request-scoped idempotency key - prevents double counting
                     {
                         resourceId: conversation.id,
                         channel: conversation.channel,
@@ -255,22 +257,16 @@ class ConversationService {
                     isRetry: usageResult.isRetry
                 });
             } catch (usageError) {
-                // CRITICAL errors: usage_limit_exceeded, validation errors
-                if (usageError.code === 'USAGE_LIMIT_EXCEEDED') {
-                    logger.error('Usage limit exceeded on conversation', usageError, { severity: 'critical' });
-                    throw usageError;
-                }
-                
-                // Non-critical errors: transient tracking issues don't fail conversation
                 logger.error('Failed to track conversation usage', usageError, {
                     conversationId: conversation.id,
-                    severity: 'warning'
+                    severity: usageError.code === 'USAGE_LIMIT_EXCEEDED' ? 'critical' : 'error'
                 });
+                throw usageError;
             }
 
             return conversation;
         } catch (error) {
-            await transaction.rollback();
+            if (!committed) await transaction.rollback();
             if (error instanceof AppError) throw error;
             logger.error('Failed to create conversation', error);
             throw new AppError(`Failed to create conversation: ${error.message}`, 500);

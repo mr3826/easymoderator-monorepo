@@ -32,8 +32,12 @@ router.post('/apply', publicPartnerWriteLimiter, validate, async (req, res) => {
     const shopId = req.user?.shopId || null;
 
     try {
-        const application = await partnerService.applyForPartner({ businessName, phone, pageLink, shopId });
-        return res.status(200).json({ success: true, application_id: application.id });
+        const result = await partnerService.applyForPartner({ businessName, phone, pageLink, shopId });
+        return res.status(200).json({
+            success: true,
+            application_id: result.application.id,
+            eligibility: result.eligibility
+        });
     } catch (err) {
         // Never leak internals to the public form; the email is best-effort and
         // persistence failure is the only real error path.

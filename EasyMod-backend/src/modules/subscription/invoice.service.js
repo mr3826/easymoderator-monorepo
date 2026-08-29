@@ -140,7 +140,7 @@ const generateSubscriptionInvoice = async ({
         doc.font('Helvetica');
         if (subtotalBdt != null && taxBdt != null) {
             doc.text(`Subtotal: BDT ${parseFloat(subtotalBdt).toFixed(2)}`);
-            const vatPct = vatRate != null ? Math.round(vatRate * 100) : 15;
+            const vatPct = vatRate != null ? Math.round(vatRate * 100) : 0;
             doc.text(`VAT (${vatPct}%): BDT ${parseFloat(taxBdt).toFixed(2)}`);
         }
         doc.text(`Total: BDT ${parseFloat(amountBdt).toFixed(2)}`);

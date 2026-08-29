@@ -51,9 +51,9 @@ function unwrapList<T>(response: AxiosResponse<ApiEnvelope<T[] | Record<string, 
 function normalizeOrderItem(raw: any): OrderItem {
   return {
     productId: raw?.product_id ?? raw?.productId ?? '',
-    productName: raw?.productName ?? raw?.product_name ?? raw?.name ?? '',
+    productName: raw?.productName ?? raw?.product_name ?? raw?.name ?? raw?.product?.name ?? '',
     quantity: Number(raw?.quantity ?? 1),
-    price: Number(raw?.price ?? 0),
+    price: Number(raw?.price ?? raw?.product?.price ?? 0),
   };
 }
 
@@ -69,11 +69,12 @@ function normalizeOrder(raw: any): Order {
   return {
     ...raw,
     id: raw.id,
-    customerName: raw.customerName ?? raw.customer_name ?? '',
-    customerPhone: raw.customerPhone ?? raw.customer_phone ?? '',
+    orderNumber: raw.orderNumber ?? raw.order_number ?? raw.id,
+    customerName: raw.customerName ?? raw.customer_name ?? raw.customer?.name ?? raw.customer?.display_name ?? '',
+    customerPhone: raw.customerPhone ?? raw.customer_phone ?? raw.customer?.phone ?? '',
     status: raw.status ?? raw.order_status ?? 'draft',
     channel: raw.channel ?? '',
-    total: Number(raw.total ?? 0),
+    total: Number(raw.total ?? raw.total_amount ?? 0),
     deliveryAddress: deliveryAddressStr,
     // Keep the structured object only when it really is one, so the detail panel's
     // structured branch is used for manual orders and the plain-text branch for
@@ -83,6 +84,7 @@ function normalizeOrder(raw: any): Order {
     createdAt: raw.createdAt ?? raw.created_at ?? '',
     updatedAt: raw.updatedAt ?? raw.updated_at ?? '',
     payment_status: raw.payment_status ?? raw.paymentStatus,
+    payment_method: raw.payment_method ?? raw.paymentMethod,
     note: raw.note ?? '',
   } as Order;
 }

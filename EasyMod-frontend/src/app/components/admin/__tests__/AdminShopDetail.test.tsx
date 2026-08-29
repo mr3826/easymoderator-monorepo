@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   getShopBilling: vi.fn(),
   emergencyAiOff: vi.fn(),
   markReconnect: vi.fn(),
-  extendTrial: vi.fn(),
   addCredits: vi.fn(),
   setStatus: vi.fn(),
   useIsPlatformAdmin: vi.fn(),
@@ -21,7 +20,6 @@ vi.mock('@/api/domains/admin', () => ({
     getShopBilling: mocks.getShopBilling,
     emergencyAiOff: mocks.emergencyAiOff,
     markReconnect: mocks.markReconnect,
-    extendTrial: mocks.extendTrial,
     addCredits: mocks.addCredits,
     setStatus: mocks.setStatus,
   },
@@ -45,13 +43,13 @@ describe('AdminShopDetail', () => {
     mocks.getShop.mockResolvedValue({
       shop: { shopName: 'Demo Shop' },
       owner: { email: 'owner@example.com' },
-      subscription: { planName: 'Pro', status: 'active' },
+       subscription: { planName: 'Shuru', status: 'active' },
       usage: { conversationsUsed: 1, conversationsLimit: 100 },
       onboarding: { completed: true },
     });
     mocks.getShopChannels.mockResolvedValue([{ id: 'ch-1', displayName: 'Main Page', platform: 'facebook', status: 'CONNECTED' }]);
     mocks.getShopBilling.mockResolvedValue({
-      planName: 'Pro',
+       planName: 'Shuru',
       status: 'active',
       conversationsUsed: 1,
       conversationsLimit: 100,
@@ -59,7 +57,6 @@ describe('AdminShopDetail', () => {
     });
     mocks.emergencyAiOff.mockResolvedValue({});
     mocks.markReconnect.mockResolvedValue({});
-    mocks.extendTrial.mockResolvedValue({});
     mocks.addCredits.mockResolvedValue({});
     mocks.setStatus.mockResolvedValue({});
   });
@@ -75,7 +72,6 @@ describe('AdminShopDetail', () => {
     expect(screen.getByText('SUPER_ADMIN required for channel actions.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Billing' }));
-    expect(await screen.findByRole('button', { name: 'Extend trial 7d' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add 50 credits' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Suspend/ })).toBeDisabled();
     expect(screen.getByText('SUPER_ADMIN required for billing actions.')).toBeInTheDocument();

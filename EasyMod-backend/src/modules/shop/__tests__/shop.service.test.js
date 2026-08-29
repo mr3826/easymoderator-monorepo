@@ -31,6 +31,7 @@ jest.mock('../../entities', () => ({
         update: jest.fn(),
         destroy: jest.fn(),
     },
+    Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
 }));
 
@@ -57,7 +58,7 @@ jest.mock('../shop-settings.validator', () => ({
     )),
 }));
 
-const { Shop, UserShop } = require('../../entities');
+const { Shop, UserShop, Subscription } = require('../../entities');
 const shopService = require('src/modules/shop/shop.service');
 
 // ── Test Data ─────────────────────────────────────────────────────────────────
@@ -133,6 +134,10 @@ describe('Shop Service', () => {
         expect(Shop.create).toHaveBeenCalled();
         expect(UserShop.create).toHaveBeenCalledWith(
             expect.objectContaining({ user_id: 'user-1', role: 'owner' }),
+            expect.anything()
+        );
+        expect(Subscription.create).toHaveBeenCalledWith(
+            expect.objectContaining({ shop_id: 'shop-1', plan_code: 'SHURU', conversations_limit: 100 }),
             expect.anything()
         );
         expect(result.role).toBe('owner');

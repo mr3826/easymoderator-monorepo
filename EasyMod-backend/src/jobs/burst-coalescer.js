@@ -46,10 +46,10 @@ const KEY_TTL_SECONDS = Math.ceil((BURST_MAX_WAIT_MS + BURST_WINDOW_MS) / 1000) 
  * Remove a queued (delayed/waiting) flush job. Safe to call when the job has
  * already started (active) or no longer exists — those are left untouched.
  */
-async function removeQueuedJob(jobId) {
+async function removeQueuedJob(jobId, existingJob = null) {
     if (!jobId) return;
     try {
-        const job = await messageQueue.getJob(jobId);
+        const job = existingJob || await messageQueue.getJob(jobId);
         if (!job) return;
         const state = await job.getState().catch(() => null);
         if (state === 'delayed' || state === 'waiting' || state === 'prioritized') {
@@ -89,7 +89,13 @@ async function scheduleBurstFlush(payload) {
     // ── Cancel the previously-scheduled flush, then schedule a fresh one ─────
     try {
         const prevJobId = await cacheRedis.get(pendingKey(conversationId));
-        await removeQueuedJob(prevJobId);
+        const previousJob = prevJobId
+            ? await Promise.resolve(messageQueue.getJob(prevJobId)).catch(() => null)
+            : null;
+        if (payload.within_allowance === undefined && previousJob?.data?.within_allowance !== undefined) {
+            payload.within_allowance = previousJob.data.within_allowance;
+        }
+        await removeQueuedJob(prevJobId, previousJob);
     } catch (_) { /* best-effort */ }
 
     // Unique per burst — Date.now() alone collides when two messages land in the

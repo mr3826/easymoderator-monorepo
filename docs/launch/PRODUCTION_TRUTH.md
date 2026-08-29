@@ -21,6 +21,16 @@ Update the "Current production state" table on every production deploy.
 | Deployment workflow | PR #73 merge deployment succeeded at `2026-07-23T01:15:14Z` | [Actions run 29971092335](https://github.com/mr3826/easymod-backend/actions/runs/29971092335) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
+## Commercial model rollout status
+
+The Shuru/Growth/Partner commercial model is implemented in the current working
+tree but is **not deployed**. The release must apply
+`20260828_004_commercial_model` after the existing same-day courier migration
+`20260828_003_courier_dispatch_claim_owner`; the sequence is intentionally
+non-colliding. Production verification must confirm the three public plan rows,
+Growth top-up amounts, quota pause metadata, Partner `delivered_at` billing, and
+payment-ID/amount replay protection before bKash is enabled.
+
 ## Post-deploy verification (run on the droplet after each deploy)
 
 ```bash

@@ -168,7 +168,8 @@ class DeliveryTrackingService {
             if (normalizedStatus === 'delivered') {
                 Object.assign(orderUpdates, {
                     fulfillment_status: 'delivered',
-                    order_status: 'delivered'
+                    order_status: 'delivered',
+                    delivered_at: new Date()
                 });
                 terminalOutcome = 'delivered';
             } else if (normalizedStatus.includes('cancelled') || normalizedStatus === 'returned') {

@@ -38,11 +38,12 @@ const renew = async (req, res, next) => {
         const { shopId, userId, phone, name } = req.user;
         if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
 
-        const { phone: bodyPhone, name: bodyName } = req.body;
+        const { phone: bodyPhone, name: bodyName, plan_code: planCode } = req.body;
 
         const result = await invoicePaymentService.initiateRenewalPayment(shopId, userId, {
             phone: bodyPhone || phone,
             name: bodyName || name,
+            plan_code: planCode,
             callbackUrl: subscriptionCallbackUrl()
         });
 

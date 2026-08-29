@@ -29,7 +29,7 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 - AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
-- Public pricing lives at `/pricing` and is the detailed Growth/Partner application page; the landing page pricing section stays the primary conversion surface.
+- Public pricing lives at `/pricing` and is driven by the public server plan catalog; the landing page pricing section stays the primary conversion surface.
 - Business Info includes an optional owner-written "additional info" field. It is stored with the shop profile, used in reply context immediately, and included in the scheduled business-info search index.
 - Payment and delivery defaults come from the live shop operating context; FAQs are optional shop-specific knowledge, not required starter setup.
 - FAQ management lives under `Manage Shop -> FAQs` (`/manage-shop/faqs`). The retired `/knowledge` page redirects there for old bookmarks. FAQ create/update/delete operations sync the matching `faq-<id>` search record immediately so reply answers do not wait for the scheduled auto-index job. Low-confidence and unknown reply turns are captured as knowledge gaps for FAQ improvement.
@@ -40,7 +40,7 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 
 ## First-Time Setup Dashboard
 
-New shops receive the Growth trial automatically after signup; there is no self-service package picker before account creation. After signup, merchants land in Business Setup before seeing the normal dashboard.
+New shops receive the free-forever Shuru plan automatically after signup; there is no self-service paid package picker before account creation. After signup, merchants land in Business Setup before seeing the normal dashboard.
 
 The setup source of truth is `GET /api/setup/status`. The UI only uses localStorage for presentation state: whether the merchant has started the welcome screen and whether the final completion celebration was dismissed for that shop.
 

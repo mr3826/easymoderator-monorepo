@@ -6,24 +6,31 @@ import { httpClient } from '@/shared/lib/http/client';
 import type { ApiResponse } from '../types/common';
 import type {
   Subscription,
-  SubscriptionPlan,
+  SubscriptionData,
   PaymentMethod,
   Invoice,
 } from '../types/subscription';
 import type { AxiosResponse } from 'axios';
+import { publicApiGet } from '@/shared/lib/http/public-client';
+import {
+  subscriptionPlans,
+  publicPlanToDefinition,
+  type PublicSubscriptionPlanPayload,
+  type SubscriptionPlanDefinition,
+} from '@/app/lib/subscriptionPlans';
 
 /**
  * Get current subscription details
- * @returns Promise resolving to subscription object
+ * @returns Promise resolving to the subscription and allowance envelope
  * @throws {Error} When subscription retrieval fails
  * @example
  * ```typescript
- * const subscription = await getSubscription();
- * console.log('Plan:', subscription.plan.name);
+ * const details = await getSubscription();
+ * console.log('Plan:', details.subscription.plan_name);
  * ```
  */
-export async function getSubscription(): Promise<Subscription> {
-  const response: AxiosResponse<ApiResponse<Subscription>> = await httpClient.get('/api/subscription');
+export async function getSubscription(): Promise<SubscriptionData> {
+  const response: AxiosResponse<ApiResponse<SubscriptionData>> = await httpClient.get('/api/subscription');
   return response.data.data;
 }
 
@@ -37,11 +44,20 @@ export async function getSubscription(): Promise<Subscription> {
  * console.log('Available plans:', plans.length);
  * ```
  */
-export async function getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-  const response: AxiosResponse<ApiResponse<SubscriptionPlan[]>> = await httpClient.get(
-    '/api/subscription/plans'
-  );
-  return response.data.data;
+const fallbackPlan = (plan: SubscriptionPlanDefinition): SubscriptionPlanDefinition => plan;
+
+export async function getSubscriptionPlans(): Promise<SubscriptionPlanDefinition[]> {
+  try {
+    const response = await publicApiGet<ApiResponse<PublicSubscriptionPlanPayload[]>>(
+      '/api/subscription/plans',
+    );
+    if (Array.isArray(response.data) && response.data.length > 0) {
+      return response.data.map(publicPlanToDefinition);
+    }
+  } catch {
+    // The static values are deliberately small and pinned to the backend model.
+  }
+  return subscriptionPlans.map(fallbackPlan);
 }
 
 /**
@@ -62,7 +78,7 @@ export async function subscribeToPlan(
 ): Promise<Subscription> {
   const response: AxiosResponse<ApiResponse<Subscription>> = await httpClient.put(
     '/api/subscription/plan',
-    { plan_code: planId, billing_cycle: billingCycle }
+    { plan_code: planId.toUpperCase(), billing_cycle: billingCycle }
   );
   return response.data.data;
 }
@@ -207,23 +223,6 @@ export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return response.data.data;
 }
 
-/**
- * Purchase a conversation top-up pack (creates an invoice)
- * @param amount - Number of conversations in the pack
- * @param price - Price of the pack in BDT
- * @returns Promise resolving to the created invoice
- */
-export async function purchaseConversationPack(payload: {
-  amount: number;
-  price: number;
-}): Promise<any> {
-  const response: AxiosResponse<any> = await httpClient.post(
-    '/api/subscription/conversation-pack',
-    payload
-  );
-  return response.data;
-}
-
 // ── bKash invoice payment (monthly renewal / activation) ────────────────────
 
 export interface BkashCheckout {
@@ -253,10 +252,10 @@ export async function payInvoice(
 
 /**
  * Ensure a monthly renewal invoice exists and start a bKash checkout for it.
- * Used by the "Activate / Renew with bKash" CTA for trial/lapsed shops.
+ * Used by the "Activate / Renew with bKash" CTA for lapsed shops.
  */
 export async function renewSubscription(
-  extra?: { phone?: string; name?: string }
+  extra?: { phone?: string; name?: string; plan_code?: string }
 ): Promise<BkashCheckout> {
   const response: AxiosResponse<ApiResponse<BkashCheckout>> = await httpClient.post(
     '/api/subscription/renew',
@@ -301,7 +300,7 @@ export async function getTopupPacks(): Promise<TopupPack[]> {
  */
 export async function initiateTopup(
   packCode: string,
-  extra?: { phone?: string; name?: string }
+  extra?: { phone?: string; name?: string; idempotency_key?: string }
 ): Promise<{ topup_id: string; bkash_url: string; payment_id: string; invoice_number?: string }> {
   const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
     '/api/subscription/topup/initiate',

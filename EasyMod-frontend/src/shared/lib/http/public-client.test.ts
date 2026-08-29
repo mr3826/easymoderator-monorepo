@@ -24,4 +24,22 @@ describe("public API client", () => {
       expect.objectContaining({ method: "POST", credentials: "omit" }),
     );
   });
+
+  it("fetches the public plan catalog without credentials", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.easymod.tech");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const { publicApiGet } = await import("./public-client");
+
+    await publicApiGet("/api/subscription/plans");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.easymod.tech/subscription/plans",
+      expect.objectContaining({ method: "GET", credentials: "omit" }),
+    );
+  });
 });

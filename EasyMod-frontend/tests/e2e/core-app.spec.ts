@@ -11,6 +11,7 @@ const mockShop = {
   unique_code: 'QA123',
   shop_name: 'QA Shop',
   role: 'owner',
+  settings: { onboarding_completed: true },
 };
 
 const dashboardMetrics = {
@@ -39,13 +40,13 @@ test('privacy policy includes Meta platform section', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Privacy Policy' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Meta Platform Data' })).toBeVisible();
-  await expect(page.getByRole('cell', { name: /Send and receive WhatsApp Business messages/i })).toBeVisible();
+  await expect(page.getByRole('cell', { name: /Send and receive Facebook Messenger messages/i })).toBeVisible();
 });
 
 test('sign in flow reaches dashboard with mocked backend', async ({ page }) => {
   let authenticated = false;
 
-  await page.route('**/api/**', async (route) => {
+  await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -110,6 +111,17 @@ test('sign in flow reaches dashboard with mocked backend', async ({ page }) => {
       });
     }
 
+    if (path === '/api/setup/status' && method === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { isComplete: true, completedCount: 4, totalCount: 4, progressPercent: 100, tasks: [] },
+        }),
+      });
+    }
+
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -117,13 +129,16 @@ test('sign in flow reaches dashboard with mocked backend', async ({ page }) => {
     });
   });
 
+  await page.addInitScript(() => {
+    window.localStorage.setItem('easymod:business-setup:default:complete-dismissed', '1');
+    window.localStorage.setItem('easymod:business-setup:shop-qa-1:complete-dismissed', '1');
+  });
   await page.goto('/signin');
   await page.fill('#email', 'qa@example.com');
   await page.fill('#password', 'strong-password');
   await page.locator('button[type="submit"]').click();
 
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(page.getByRole('main').getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '12' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '8' })).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible();
+  await expect(page.getByText("Today's Sales")).toBeVisible();
 });

@@ -4,8 +4,7 @@ const topupController = require('./topup.controller');
 const invoicePaymentController = require('./invoice-payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
 const {
-    updatePlanValidator,
-    requestConversationPackValidator
+    updatePlanValidator
 } = require('./subscription.validator');
 
 const router = express.Router();
@@ -22,9 +21,6 @@ router.post('/rate-limit/increment', subscriptionController.incrementRateLimit);
 
 // PUT /subscription/plan - Update subscription plan
 router.put('/plan', updatePlanValidator, subscriptionController.updatePlan);
-
-// POST /subscription/conversation-pack - Request conversation pack
-router.post('/conversation-pack', requestConversationPackValidator, subscriptionController.requestConversationPack);
 
 // GET /subscription/invoices - Get all invoices
 router.get('/invoices', subscriptionController.getInvoices);

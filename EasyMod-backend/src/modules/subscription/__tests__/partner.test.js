@@ -1,38 +1,59 @@
 /**
  * Partner billing + onboarding tests.
- *  - calculatePartnerCharge: tiered per-delivered-order math (pure).
+ *  - calculatePartnerCharge: flat per-delivered-order band math (pure).
  *  - partner.service.approvePartner: flips a shop's subscription to PARTNER.
  */
 
 jest.mock('../../entities', () => ({
     PartnerApplication: { findOne: jest.fn(), create: jest.fn(), findAll: jest.fn() },
     Subscription: { findOne: jest.fn(), create: jest.fn() },
+    Order: { count: jest.fn() },
 }));
 
-const { PartnerApplication, Subscription } = require('../../entities');
+const { PartnerApplication, Subscription, Order } = require('../../entities');
 const { calculatePartnerCharge, PARTNER_ORDER_TIERS } = require('../subscription.plans');
 const partnerService = require('../partner.service');
 
-describe('calculatePartnerCharge — tiered per-order rates', () => {
-    it('charges the entry tier within the first bracket', () => {
-        // Tier 1: up to 500 @ 15
-        expect(calculatePartnerCharge(100)).toBe(100 * 15);
-        expect(calculatePartnerCharge(500)).toBe(500 * 15);
+describe('calculatePartnerCharge — flat per-order bands', () => {
+    it('does not charge below the 300-order qualification threshold', () => {
+        expect(calculatePartnerCharge(299)).toBe(0);
     });
 
-    it('spans bracket boundaries correctly', () => {
-        // 600 = 500@15 + 100@12 = 7500 + 1200
-        expect(calculatePartnerCharge(600)).toBe(500 * 15 + 100 * 12);
-        // 1200 = 500@15 + 500@12 + 200@10 = 7500 + 6000 + 2000
-        expect(calculatePartnerCharge(1200)).toBe(500 * 15 + 500 * 12 + 200 * 10);
+    it.each([
+        [300, 300 * 15],
+        [999, 999 * 15],
+        [1000, 1000 * 12],
+        [2999, 2999 * 12],
+        [3000, 3000 * 10],
+    ])('charges every order at the rate for the %s band', (orders, expected) => {
+        expect(calculatePartnerCharge(orders)).toBe(expected);
     });
 
     it('returns 0 for no delivered orders', () => {
         expect(calculatePartnerCharge(0)).toBe(0);
     });
 
-    it('keeps the tier table as documented (15/12/10)', () => {
+    it('keeps the flat band table as documented', () => {
+        expect(PARTNER_ORDER_TIERS.map((t) => [t.minOrders, t.maxOrders])).toEqual([
+            [300, 999], [1000, 2999], [3000, null]
+        ]);
         expect(PARTNER_ORDER_TIERS.map((t) => t.rateBdt)).toEqual([15, 12, 10]);
+    });
+});
+
+describe('countRecentDeliveredOrders', () => {
+    it('counts only delivered orders in the rolling window', async () => {
+        Order.count.mockResolvedValueOnce(301);
+        const { countRecentDeliveredOrders } = partnerService;
+
+        await expect(countRecentDeliveredOrders('shop-1')).resolves.toBe(301);
+        expect(Order.count).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({
+                shop_id: 'shop-1',
+                order_status: 'delivered',
+                delivered_at: expect.any(Object),
+            }),
+        }));
     });
 });
 

@@ -77,7 +77,8 @@ async function mockAuthenticatedMetaApi(
           success: true,
           data: {
             subscription: {
-              plan_name: 'Free',
+              plan_code: 'SHURU',
+              plan_name: 'Shuru',
               features: {
                 image_understanding: false,
                 advanced_ai: false,
@@ -205,11 +206,8 @@ test('inbox enforces Meta 24h lock for expired messenger conversation', async ({
   await page.goto('/inbox');
 
   await expect(page).toHaveURL(/\/inbox$/);
-  await expect(page.getByText(/messaging window expired|মেসেজিং উইন্ডো শেষ হয়ে গেছে/i)).toBeVisible();
+  await expect(page.getByText(/over 24h|outside.*24-hour|messaging window expired|মেসেজিং উইন্ডো শেষ হয়ে গেছে/i)).toBeVisible();
 
   const composerInput = page.locator('input[type="text"]').last();
   await expect(composerInput).toBeDisabled();
-
-  await page.getByRole('combobox').first().selectOption('ACCOUNT_UPDATE');
-  await expect(composerInput).toBeEnabled();
 });

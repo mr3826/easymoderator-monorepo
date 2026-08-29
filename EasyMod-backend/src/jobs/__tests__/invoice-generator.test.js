@@ -9,14 +9,22 @@
  * suspended by the failed-payment reconciler.
  */
 
+jest.mock('../../utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(async (callback) => callback({ LOCK: { UPDATE: 'UPDATE' } })),
+    },
+}));
+
 jest.mock('../../modules/entities', () => ({
     Subscription: { findAll: jest.fn() },
     Invoice: { findOne: jest.fn(), create: jest.fn() },
     Shop: {},
     Order: { count: jest.fn().mockResolvedValue(0) },
+    PartnerBillingAdjustment: { findAll: jest.fn().mockResolvedValue([]) },
 }));
 
 const { Subscription, Invoice } = require('../../modules/entities');
+const { Order, PartnerBillingAdjustment } = require('../../modules/entities');
 const InvoiceGenerator = require('../invoice-generator');
 
 const MONTHLY_PRICE = 999;
@@ -74,6 +82,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     Invoice.findOne.mockResolvedValue(null);
     Invoice.create.mockImplementation(async (v) => ({ id: 'inv-1', ...v }));
+    PartnerBillingAdjustment.findAll.mockResolvedValue([]);
 });
 
 describe('BILLING-YEARLY-002 — one month into a paid year', () => {
@@ -121,7 +130,7 @@ describe('BILLING-YEARLY-003 — the annual boundary', () => {
         expect(Invoice.create).toHaveBeenCalledTimes(1);
         expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
             invoice_type: 'yearly_subscription',
-        }));
+        }), expect.anything());
         expect(res.invoicesGenerated).toBe(1);
     });
 
@@ -178,7 +187,7 @@ describe('BILLING-MONTHLY-REGRESSION — monthly subscriptions still renew month
         expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
             invoice_type: 'monthly_subscription',
             amount: MONTHLY_PRICE,
-        }));
+        }), expect.anything());
         expect(res.invoicesGenerated).toBe(1);
     });
 
@@ -233,15 +242,89 @@ describe('subscriptions with no recorded period', () => {
     });
 });
 
-describe('FREE tier', () => {
+describe('SHURU tier', () => {
     it('is never invoiced even once its period has lapsed', async () => {
         const sub = monthlySubscription(new Date('2026-01-01T00:00:00.000Z'), {
-            plan_code: 'FREE', plan_price: '0',
+            plan_code: 'SHURU', plan_name: 'Shuru', plan_price: '0',
         });
 
         const res = await runWith([sub]);
 
         expect(Invoice.create).not.toHaveBeenCalled();
         expect(res.invoicesSkipped).toBe(1);
+    });
+});
+
+describe('PARTNER delivery derivation', () => {
+    it('uses delivered_at and records the flat rate band in invoice metadata', async () => {
+        const sub = makeSubscription({
+            plan_code: 'PARTNER',
+            plan_name: 'Partner',
+            plan_price: '0',
+            billing_model: 'per_order',
+            billing_cycle: 'per_order',
+            next_billing_date: null,
+        });
+        Order.count.mockResolvedValueOnce(1000);
+
+        await runWith([sub], new Date('2026-09-01T01:00:00.000Z'));
+
+        expect(Order.count).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({
+                order_status: 'delivered',
+                delivered_at: expect.any(Object),
+            }),
+        }));
+        expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
+            amount: 12000,
+            metadata: expect.objectContaining({
+                delivered_orders: 1000,
+                rate_band: '1000-2999',
+                rate_bdt: 12,
+                computed_total: 12000,
+            }),
+        }), expect.anything());
+    });
+
+    it('nets a settled-return credit into the next Partner invoice', async () => {
+        const sub = makeSubscription({
+            plan_code: 'PARTNER',
+            plan_name: 'Partner',
+            plan_price: '0',
+            billing_model: 'per_order',
+            billing_cycle: 'per_order',
+            next_billing_date: null,
+        });
+        const adjustment = { amount_bdt: '15.00', update: jest.fn().mockResolvedValue(undefined) };
+        Order.count.mockResolvedValueOnce(300);
+        PartnerBillingAdjustment.findAll.mockResolvedValueOnce([adjustment]);
+
+        await runWith([sub], new Date('2026-09-01T01:00:00.000Z'));
+
+        expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
+            amount: 4485,
+            metadata: expect.objectContaining({ adjustment_credit: 15, computed_total: 4485 }),
+        }), expect.anything());
+        expect(adjustment.update).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'applied', invoice_id: 'inv-1',
+        }), expect.anything());
+    });
+});
+
+describe('daily reset/invoice handoff', () => {
+    it('invoices the period that reset just advanced past', async () => {
+        const sub = monthlySubscription(new Date('2026-02-28T12:00:00.000Z'), {
+            current_period_start: new Date('2026-02-28T12:00:00.000Z'),
+            current_period_end: new Date('2026-03-28T12:00:00.000Z'),
+            next_billing_date: new Date('2026-03-28T12:00:00.000Z'),
+            usage_reset_at: new Date('2026-01-31T12:00:00.000Z'),
+        });
+
+        await runWith([sub], new Date('2026-03-01T01:00:00.000Z'));
+
+        expect(Invoice.create).toHaveBeenCalledWith(expect.objectContaining({
+            billing_period_start: new Date('2026-01-31T12:00:00.000Z'),
+            billing_period_end: new Date('2026-02-28T12:00:00.000Z'),
+        }), expect.anything());
     });
 });

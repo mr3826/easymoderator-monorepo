@@ -35,7 +35,7 @@ export async function disconnectTelegramAlerts(): Promise<TelegramNotificationSt
 export async function getInAppNotifications(limit = 20): Promise<OwnerNotification[]> {
   const response: AxiosResponse<{ success: boolean; data: OwnerNotification[] }> =
     await httpClient.get('/api/notifications/in-app', { params: { limit } });
-  return response.data.data || [];
+  return Array.isArray(response.data.data) ? response.data.data : [];
 }
 
 export async function markInAppNotificationRead(id: string): Promise<void> {

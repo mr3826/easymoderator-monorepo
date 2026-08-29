@@ -60,8 +60,8 @@ export default function AdminShopDetail() {
           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.owner')}</dt><dd>{overview.owner?.email || '—'}</dd></div>
           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.plan')}</dt><dd>{overview.subscription?.planName || '—'}</dd></div>
           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.status')}</dt><dd>{overview.subscription?.status || '—'}</dd></div>
-          <div><dt className="text-gray-500">{t('admin.shopDetail.overview.trialEnds')}</dt><dd>{overview.subscription?.trialEndsAt ? new Date(overview.subscription.trialEndsAt).toLocaleDateString() : '—'}</dd></div>
-          <div><dt className="text-gray-500">{t('admin.shopDetail.overview.conversations')}</dt><dd>{overview.usage?.conversationsUsed ?? '—'}/{overview.usage?.conversationsLimit ?? '—'}</dd></div>
+           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.periodEnd')}</dt><dd>{overview.subscription?.currentPeriodEnd ? new Date(overview.subscription.currentPeriodEnd).toLocaleDateString() : '—'}</dd></div>
+           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.conversations')}</dt><dd>{overview.usage?.conversationsUsed ?? '—'}/{overview.usage?.effectiveConversationLimit ?? overview.usage?.conversationsLimit ?? '—'}</dd></div>
           <div><dt className="text-gray-500">{t('admin.shopDetail.overview.onboarding')}</dt><dd>{overview.onboarding?.completed ? t('admin.shopDetail.overview.complete') : t('admin.shopDetail.overview.incomplete')}</dd></div>
         </dl>
       )}
@@ -132,16 +132,15 @@ export default function AdminShopDetail() {
             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.conversations')}</dt><dd>{billing.conversationsUsed ?? '—'}/{billing.conversationsLimit ?? '—'}</dd></div>
             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.topupBalance')}</dt><dd>{billing.topupBalance ?? 0}</dd></div>
             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.nextBilling')}</dt><dd>{billing.nextBillingDate ? new Date(billing.nextBillingDate).toLocaleDateString() : '—'}</dd></div>
-            <div><dt className="text-gray-500">{t('admin.shopDetail.billing.trialEnds')}</dt><dd>{billing.trialEndsAt ? new Date(billing.trialEndsAt).toLocaleDateString() : '—'}</dd></div>
-            <div><dt className="text-gray-500">{t('admin.shopDetail.billing.accruedOverage')}</dt><dd>{t('admin.shopDetail.billing.overageValue', { count: billing.extraConversations ?? 0, charge: (billing.extraCharge ?? 0).toLocaleString() })}</dd></div>
+             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.effectiveLimit')}</dt><dd>{billing.effectiveConversationLimit ?? billing.conversationsLimit ?? '—'}</dd></div>
+             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.partnerEligibility')}</dt><dd>{billing.partnerEligibility?.delivered_orders_30d ?? 0} / {billing.partnerEligibility?.minimum_delivered_orders ?? 300}</dd></div>
             <div><dt className="text-gray-500">{t('admin.shopDetail.billing.outstanding')}</dt><dd className={billing.outstandingAmount > 0 ? 'text-amber-700 font-medium' : ''}>৳{(billing.outstandingAmount ?? 0).toLocaleString()}</dd></div>
           </dl>
 
           {!canMutate && <p className="text-xs text-gray-500">{t('admin.shopDetail.billing.superAdminNote')}</p>}
           <div className="flex flex-wrap gap-2">
-            <button disabled={!canMutate} onClick={() => act(() => adminApi.extendTrial(shopId, 7), t('admin.shopDetail.billing.extendTrial'))} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">{t('admin.shopDetail.billing.extendTrial')}</button>
             <button disabled={!canMutate} onClick={() => act(() => adminApi.addCredits(shopId, 50, 'admin_grant'), t('admin.shopDetail.billing.addCredits'))} className="rounded border px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-45">{t('admin.shopDetail.billing.addCredits')}</button>
-            {billing.status === 'suspended' || billing.status === 'trial_expired' || billing.status === 'past_due'
+             {billing.status === 'suspended' || billing.status === 'trial_expired' || billing.status === 'past_due' || billing.status === 'cancelled' || billing.status === 'inactive'
               ? <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'active'), t('admin.shopDetail.billing.reactivate'))} className="rounded border px-3 py-1.5 text-green-700 disabled:cursor-not-allowed disabled:opacity-45">{t('admin.shopDetail.billing.reactivateAiOn')}</button>
               : <button disabled={!canMutate} onClick={() => act(() => adminApi.setStatus(shopId, 'suspended'), t('admin.shopDetail.billing.suspend'))} className="rounded border px-3 py-1.5 text-red-700 disabled:cursor-not-allowed disabled:opacity-45">{t('admin.shopDetail.billing.suspendAiOff')}</button>}
           </div>

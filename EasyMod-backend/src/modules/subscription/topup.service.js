@@ -7,7 +7,8 @@
  * Flow:
  *   1. initiate()  — create pending transaction, start BKash payment
  *   2. complete()  — verify BKash payment, add conversations to subscription, generate invoice
- *   3. cancel()    — mark failed/cancelled
+ *      Failed gateway verification clears only the failed checkout binding so a
+ *      new idempotent attempt can be started safely.
  */
 
 const { sequelize } = require('../../utils/database/database-setup');
@@ -22,6 +23,33 @@ const crypto = require('crypto');
 const logger = createLogger('TopupService');
 const bdPayment = new BangladeshPaymentService();
 
+const timestampSql = () => (sequelize.getDialect?.() === 'sqlite' ? 'CURRENT_TIMESTAMP' : 'NOW()');
+
+const normalizeAmountToMinorUnits = (value) => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ''] = text.split('.');
+    return BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
+};
+
+const affectedRows = (result) => {
+    if (typeof result?.[0] === 'number') return result[0];
+    const metadata = result?.[1];
+    if (typeof metadata === 'number') return metadata;
+    return Number(metadata?.rowCount ?? metadata?.changes ?? 0);
+};
+
+const recordFunnelEventSafe = (event, values) => {
+    try {
+        return require('../analytics/funnel-events.service')
+            .recordFunnelEvent({ event, ...values })
+            .catch(() => {});
+    } catch (_) {
+        return Promise.resolve();
+    }
+};
+
 /**
  * List available top-up packs.
  */
@@ -32,35 +60,92 @@ const getTopupPacks = () => Object.values(TOPUP_PACKS);
  * Creates a topup_transaction record (status=pending) and starts BKash checkout.
  *
  * @param {string} shopId
- * @param {string} packCode  - e.g. 'TOPUP_100'
+ * @param {string} packCode  - e.g. 'PACK_100'
  * @param {{ phone: string, name: string, callbackUrl: string }} customerInfo
  * @returns {{ topupId, bkashUrl, paymentId, pack }}
  */
-const initiateTopup = async (shopId, packCode, { phone, name, callbackUrl }) => {
-    const pack = getTopupPack(packCode);
+const initiateTopup = async (shopId, packCode, { phone, name, callbackUrl, idempotencyKey }) => {
+    const pack = TOPUP_PACKS[packCode];
     if (!pack) throw new AppError(`Invalid top-up pack: ${packCode}`, 400);
 
+    const subscription = await Subscription.findOne({
+        where: { shop_id: shopId },
+        attributes: ['plan_code']
+    });
+    if (!subscription || String(subscription.plan_code || '').toUpperCase() !== 'GROWTH') {
+        throw new AppError('Conversation top-ups are available on the Growth plan only', 403);
+    }
+
     if (!phone) throw new AppError('phone is required for BKash payment', 400);
+    const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 128) {
+        throw new AppError('Idempotency-Key is required for BKash payment', 400);
+    }
 
-    const topupId = crypto.randomUUID();
-    const invoiceNumber = `TU-${new Date().toISOString().substring(0, 7).replace('-', '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-
-    // Insert pending transaction
-    await sequelize.query(
-        `INSERT INTO topup_transactions
-         (id, shop_id, pack_code, pack_conversations, amount_bdt, status, invoice_number, created_at)
-         VALUES (:id, :shopId, :packCode, :packConversations, :amountBdt, 'pending', :invoiceNumber, NOW())`,
+    const [existing] = await sequelize.query(
+        `SELECT * FROM topup_transactions
+          WHERE shop_id=:shopId AND idempotency_key=:idempotencyKey
+          LIMIT 1`,
         {
-            replacements: {
-                id: topupId,
-                shopId,
-                packCode,
-                packConversations: pack.conversations,
-                amountBdt: pack.priceBdt,
-                invoiceNumber
-            }
-        }
+            replacements: { shopId, idempotencyKey: normalizedIdempotencyKey },
+            type: sequelize.QueryTypes.SELECT,
+        },
     );
+
+    let topupId = existing?.id;
+    let invoiceNumber = existing?.invoice_number;
+    if (existing?.status === 'completed') {
+        return {
+            topup_id: existing.id,
+            already_completed: true,
+            invoice_number: existing.invoice_number,
+        };
+    }
+    if (existing?.status === 'pending' && existing.bkash_payment_id && existing.bkash_url) {
+        return {
+            topup_id: existing.id,
+            bkash_url: existing.bkash_url,
+            payment_id: existing.bkash_payment_id,
+            pack: getTopupPack(existing.pack_code) || pack,
+            invoice_number: existing.invoice_number,
+        };
+    }
+    if (existing?.status === 'pending' && existing.bkash_payment_id) {
+        throw new AppError('A bKash checkout is already in progress for this top-up', 409, 'PAYMENT_IN_PROGRESS');
+    }
+    if (existing && existing.status !== 'pending') {
+        throw new AppError('This Idempotency-Key was already used for a failed top-up', 409, 'IDEMPOTENCY_KEY_REUSED');
+    }
+
+    if (!topupId) {
+        topupId = crypto.randomUUID();
+        invoiceNumber = `TU-${new Date().toISOString().substring(0, 7).replace('-', '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        // Reserve the idempotency key before contacting bKash.
+        try {
+            await sequelize.query(
+                `INSERT INTO topup_transactions
+                 (id, shop_id, pack_code, pack_conversations, amount_bdt, status, invoice_number, idempotency_key, created_at)
+                  VALUES (:id, :shopId, :packCode, :packConversations, :amountBdt, 'pending', :invoiceNumber, :idempotencyKey, ${timestampSql()})`,
+                {
+                    replacements: {
+                        id: topupId,
+                        shopId,
+                        packCode,
+                        packConversations: pack.conversations,
+                        amountBdt: pack.priceBdt,
+                        invoiceNumber,
+                        idempotencyKey: normalizedIdempotencyKey,
+                    }
+                }
+            );
+        } catch (error) {
+            if (error?.name === 'SequelizeUniqueConstraintError') {
+                throw new AppError('This Idempotency-Key is already being processed', 409, 'IDEMPOTENCY_KEY_IN_PROGRESS');
+            }
+            throw error;
+        }
+    }
 
     // Start BKash payment
     const bkashResult = await bdPayment.initializeBkashPayment({
@@ -74,17 +159,40 @@ const initiateTopup = async (shopId, packCode, { phone, name, callbackUrl }) => 
 
     if (!bkashResult.success) {
         await sequelize.query(
-            `UPDATE topup_transactions SET status='failed' WHERE id=:id`,
-            { replacements: { id: topupId } }
+            `UPDATE topup_transactions SET status='failed' WHERE id=:id AND shop_id=:shopId`,
+            { replacements: { id: topupId, shopId } }
         );
         throw new AppError('BKash payment initiation failed', 502);
     }
+    if (!bkashResult.payment_id || !bkashResult.bkash_url) {
+        await sequelize.query(
+            `UPDATE topup_transactions SET status='failed' WHERE id=:id AND shop_id=:shopId AND status='pending'`,
+            { replacements: { id: topupId, shopId } },
+        );
+        throw new AppError('BKash payment initiation returned an incomplete checkout', 502);
+    }
 
-    // Store bkash_payment_id
-    await sequelize.query(
-        `UPDATE topup_transactions SET bkash_payment_id=:paymentId WHERE id=:id`,
-        { replacements: { paymentId: bkashResult.payment_id, id: topupId } }
-    );
+    // Bind the gateway payment to this one pending transaction. A concurrent
+    // checkout cannot overwrite an existing binding, and the unique index on
+    // the gateway id prevents reuse across two top-ups.
+    let bindResult;
+    try {
+        bindResult = await sequelize.query(
+            `UPDATE topup_transactions
+                SET bkash_payment_id=:paymentId, bkash_url=:bkashUrl
+              WHERE id=:id AND shop_id=:shopId AND status='pending'
+                AND bkash_payment_id IS NULL`,
+            { replacements: { paymentId: bkashResult.payment_id, bkashUrl: bkashResult.bkash_url, id: topupId, shopId } }
+        );
+    } catch (error) {
+        if (error?.name === 'SequelizeUniqueConstraintError') {
+            throw new AppError('This bKash payment is already bound to another top-up', 409, 'PAYMENT_ID_REUSED');
+        }
+        throw error;
+    }
+    if (affectedRows(bindResult) !== 1) {
+        throw new AppError('A bKash checkout is already in progress for this top-up', 409, 'PAYMENT_IN_PROGRESS');
+    }
 
     logger.info('Top-up initiated', { topupId, packCode, shopId, bkashPaymentId: bkashResult.payment_id });
 
@@ -108,7 +216,7 @@ const initiateTopup = async (shopId, packCode, { phone, name, callbackUrl }) => 
  */
 const completeTopup = async (shopId, topupId, bkashPaymentId) => {
     const [rows] = await sequelize.query(
-        `SELECT * FROM topup_transactions WHERE id=:id AND shop_id=:shopId FOR UPDATE`,
+        `SELECT * FROM topup_transactions WHERE id=:id AND shop_id=:shopId`,
         { replacements: { id: topupId, shopId }, type: sequelize.QueryTypes.SELECT }
     );
 
@@ -117,28 +225,86 @@ const completeTopup = async (shopId, topupId, bkashPaymentId) => {
         return { success: true, already_completed: true, invoice_url: rows.invoice_pdf_url };
     }
     if (rows.status === 'failed') throw new AppError('Top-up payment was already marked failed', 400);
+    if (!bkashPaymentId || rows.bkash_payment_id !== bkashPaymentId) {
+        throw new AppError('Payment is not bound to this top-up transaction', 403);
+    }
 
     // Verify BKash payment
     const verification = await bdPayment.verifyBkashPayment(bkashPaymentId);
 
     if (!verification.success || verification.status !== 'completed') {
-        await sequelize.query(
-            `UPDATE topup_transactions SET status='failed', completed_at=NOW(), bkash_trx_id=:trxId WHERE id=:id`,
-            { replacements: { trxId: verification.transaction_id || null, id: topupId } }
-        );
+        if (verification.status === 'failed') {
+            await sequelize.query(
+                `UPDATE topup_transactions
+                    SET bkash_payment_id=NULL, bkash_url=NULL
+                  WHERE id=:id AND shop_id=:shopId AND status='pending' AND bkash_payment_id=:paymentId`,
+                { replacements: { id: topupId, shopId, paymentId: bkashPaymentId } },
+            );
+        }
         throw new AppError('BKash payment verification failed', 402);
+    }
+
+    const expectedAmount = normalizeAmountToMinorUnits(rows.amount_bdt);
+    const providerAmount = normalizeAmountToMinorUnits(verification.amount);
+    if (expectedAmount === null || providerAmount === null || expectedAmount !== providerAmount) {
+        throw new AppError('Payment amount mismatch', 400);
+    }
+    if (verification.merchant_invoice
+        && String(verification.merchant_invoice) !== String(rows.invoice_number)) {
+        throw new AppError('Payment invoice mismatch', 400);
+    }
+    if (!verification.merchant_invoice || !verification.transaction_id
+        || String(verification.currency || '').toUpperCase() !== 'BDT') {
+        throw new AppError('Payment verification identity is incomplete', 400);
     }
 
     const trxId = verification.transaction_id;
     const pack = getTopupPack(rows.pack_code);
     const conversationsToAdd = rows.pack_conversations || pack?.conversations || 0;
 
-    // Credit conversations atomically
-    await sequelize.query(
-        `UPDATE subscriptions SET topup_balance = topup_balance + :add, updated_at=NOW()
-         WHERE shop_id=:shopId`,
-        { replacements: { add: conversationsToAdd, shopId } }
-    );
+    if (!(Number(conversationsToAdd) > 0)) {
+        throw new AppError('Top-up pack is not valid', 400);
+    }
+
+    // Claim and credit in one database transaction. Gateway verification happens
+    // before the claim, so a failed/aborted verification leaves the row pending
+    // and retryable. The conditional update is the concurrency arbiter.
+    try {
+        await sequelize.transaction(async (transaction) => {
+            const completeResult = await sequelize.query(
+                `UPDATE topup_transactions
+                    SET status='completed', bkash_trx_id=:trxId,
+                        completed_at=${timestampSql()}
+                  WHERE id=:id AND shop_id=:shopId AND status='pending' AND bkash_payment_id=:paymentId`,
+                { replacements: { trxId, id: topupId, shopId, paymentId: bkashPaymentId }, transaction }
+            );
+            if (affectedRows(completeResult) !== 1) {
+                const duplicate = new AppError('Top-up transaction was already handled', 409);
+                duplicate.code = 'TOPUP_ALREADY_HANDLED';
+                throw duplicate;
+            }
+
+            const creditResult = await sequelize.query(
+                `UPDATE subscriptions
+                    SET topup_balance = COALESCE(topup_balance, 0) + :add,
+                        updated_at=${timestampSql()}
+                  WHERE shop_id=:shopId`,
+                { replacements: { add: conversationsToAdd, shopId }, transaction }
+            );
+            if (affectedRows(creditResult) !== 1) {
+                throw new AppError('Subscription not found', 404);
+            }
+
+        });
+    } catch (error) {
+        if (error?.code === 'TOPUP_ALREADY_HANDLED') {
+            return { success: true, already_completed: true, invoice_url: rows.invoice_pdf_url };
+        }
+        if (error?.name === 'SequelizeUniqueConstraintError') {
+            throw new AppError('This bKash transaction is already bound to another top-up', 409, 'PAYMENT_ID_REUSED');
+        }
+        throw error;
+    }
 
     // Generate invoice PDF
     let invoiceUrl = null;
@@ -158,13 +324,16 @@ const completeTopup = async (shopId, topupId, bkashPaymentId) => {
         logger.error('Invoice generation failed (non-fatal)', { err: invErr.message });
     }
 
-    // Mark transaction completed
     await sequelize.query(
-        `UPDATE topup_transactions
-         SET status='completed', bkash_trx_id=:trxId, invoice_pdf_url=:invoiceUrl, completed_at=NOW()
-         WHERE id=:id`,
-        { replacements: { trxId, invoiceUrl, id: topupId } }
-    );
+        `UPDATE topup_transactions SET invoice_pdf_url=:invoiceUrl WHERE id=:id AND shop_id=:shopId`,
+        { replacements: { invoiceUrl, id: topupId, shopId } }
+    ).catch((error) => logger.warn('Top-up invoice URL update failed (non-fatal)', { error: error.message }));
+
+    recordFunnelEventSafe('topup_purchased', {
+        shopId,
+        metadata: { pack_code: rows.pack_code, conversations: conversationsToAdd },
+        onceKey: `topup_purchased:${topupId}`,
+    });
 
     logger.info('Top-up completed', { topupId, shopId, conversationsToAdd, trxId });
 

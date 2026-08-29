@@ -1,8 +1,16 @@
-const { Order, OrderItem, Product, UserShop } = require('../entities');
+const {
+    Order,
+    OrderItem,
+    Product,
+    UserShop,
+    Invoice,
+    PartnerBillingAdjustment,
+} = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { sequelize } = require('../../utils/database/database-setup');
 const { Op } = require('sequelize');
 const { invalidate: invalidateStock } = require('../product/stock-status-guard.service');
+const { getPartnerOrderTier } = require('../subscription/subscription.plans');
 
 /**
  * Verify user has access to the shop
@@ -17,13 +25,127 @@ const verifyShopAccess = async (userId, shopId) => {
     return userShop;
 };
 
+const parseMetadata = (value) => {
+    if (!value) return {};
+    if (typeof value === 'string') {
+        try { return JSON.parse(value); } catch (_) { return {}; }
+    }
+    return value;
+};
+
+const getInvoicePeriod = (invoice) => {
+    let start = invoice.billing_period_start ? new Date(invoice.billing_period_start) : null;
+    let end = invoice.billing_period_end ? new Date(invoice.billing_period_end) : null;
+    if (!start || Number.isNaN(start.getTime())) {
+        const label = String(invoice.billing_period || '');
+        const numeric = label.match(/^(\d{4})-(\d{1,2})$/);
+        const named = label.match(/^([A-Za-z]+)\s+(\d{4})$/);
+        let year;
+        let month;
+        if (numeric) {
+            year = Number(numeric[1]);
+            month = Number(numeric[2]) - 1;
+        } else if (named) {
+            year = Number(named[2]);
+            month = new Date(`${named[1]} 1, ${year}`).getMonth();
+        }
+        if (Number.isInteger(year) && month >= 0 && month <= 11) {
+            start = new Date(Date.UTC(year, month, 1));
+        }
+    }
+    if (start && (!end || Number.isNaN(end.getTime()))) {
+        end = new Date(start);
+        end.setUTCMonth(end.getUTCMonth() + 1);
+    }
+    return start && end ? { start, end } : null;
+};
+
+const isPartnerInvoice = (invoice) => {
+    if (invoice.invoice_type === 'partner_per_order') return true;
+    const metadata = parseMetadata(invoice.metadata);
+    return [metadata.plan_code, metadata.planCode, metadata.plan_name, metadata.planName, metadata.billing_model]
+        .some(value => String(value || '').toUpperCase().includes('PARTNER')
+            || String(value || '').toLowerCase() === 'per_order');
+};
+
+const findPartnerInvoiceForOrder = async (shopId, order, transaction) => {
+    const where = {
+        shop_id: shopId,
+        status: { [Op.in]: ['pending', 'overdue', 'paid'] },
+        invoice_type: { [Op.in]: ['partner_per_order', 'monthly_subscription', 'yearly_subscription'] },
+    };
+    let invoices = [];
+    if (typeof Invoice.findAll === 'function') {
+        invoices = await Invoice.findAll({
+            where,
+            order: [['billing_period_end', 'DESC']],
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+    } else if (typeof Invoice.findOne === 'function') {
+        const invoice = await Invoice.findOne({
+            where: {
+                ...where,
+                invoice_type: 'partner_per_order',
+                billing_period_start: { [Op.lte]: order.delivered_at || order.updated_at },
+                billing_period_end: { [Op.gt]: order.delivered_at || order.updated_at },
+            },
+            order: [['paid_at', 'DESC']],
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (invoice) invoices = [invoice];
+    }
+
+    const deliveryDate = new Date(order.delivered_at || order.updated_at);
+    return invoices
+        .filter(isPartnerInvoice)
+        .find((invoice) => {
+            const period = getInvoicePeriod(invoice);
+            return !period || (deliveryDate >= period.start && deliveryDate < period.end);
+        }) || null;
+};
+
+const getPartnerRate = async (invoice, shopId, transaction) => {
+    const metadata = parseMetadata(invoice.metadata);
+    const explicitRate = Number(
+        metadata.rate_bdt
+        ?? metadata.rateBdt
+        ?? metadata.rate_per_order
+        ?? metadata.partner_rate_bdt
+        ?? metadata.partnerRateBdt,
+    ) || 0;
+    if (explicitRate > 0) return explicitRate;
+
+    let deliveredOrders = Number(
+        metadata.delivered_orders
+        ?? metadata.deliveredOrders
+        ?? metadata.partner_orders
+        ?? metadata.partnerOrders
+        ?? metadata.orders_count
+        ?? metadata.orderCount,
+    ) || 0;
+    const period = getInvoicePeriod(invoice);
+    if (!deliveredOrders && period && typeof Order.count === 'function') {
+        deliveredOrders = await Order.count({
+            where: {
+                shop_id: shopId,
+                order_status: 'delivered',
+                delivered_at: { [Op.gte]: period.start, [Op.lt]: period.end },
+            },
+            transaction,
+        });
+    }
+    return getPartnerOrderTier(deliveredOrders)?.rateBdt || 0;
+};
+
 /**
  * Initiate a return request on a delivered order.
  * Verifies the order belongs to the shop, is 'delivered', and stores return metadata.
  * Returns the generated return reference.
  */
 const initiateReturn = async (shopId, orderId, customerId, reason) => {
-    const order = await Order.findOne({ where: { id: orderId, shop_id: shopId } });
+    let order = await Order.findOne({ where: { id: orderId, shop_id: shopId } });
     if (!order) {
         throw new AppError('Order not found', 404);
     }
@@ -35,7 +157,10 @@ const initiateReturn = async (shopId, orderId, customerId, reason) => {
         );
     }
 
-    const existingMeta = order.metadata || {};
+    let existingMeta = order.metadata || {};
+    if (typeof existingMeta === 'string') {
+        try { existingMeta = JSON.parse(existingMeta); } catch (_) { existingMeta = {}; }
+    }
     if (existingMeta.returnRequested) {
         throw new AppError('A return request already exists for this order', 409);
     }
@@ -67,27 +192,100 @@ const updateReturnStatus = async (shopId, orderId, status) => {
         throw new AppError(`Invalid return status. Must be one of: ${VALID_STATUSES.join(', ')}`, 400);
     }
 
-    const order = await Order.findOne({ where: { id: orderId, shop_id: shopId } });
+    let order = await Order.findOne({ where: { id: orderId, shop_id: shopId } });
     if (!order) {
         throw new AppError('Order not found', 404);
     }
 
-    const existingMeta = order.metadata || {};
+    let existingMeta = order.metadata || {};
+    if (typeof existingMeta === 'string') {
+        try { existingMeta = JSON.parse(existingMeta); } catch (_) { existingMeta = {}; }
+    }
     if (!existingMeta.returnRequested) {
         throw new AppError('No return request found for this order', 404);
     }
 
     await sequelize.transaction(async (transaction) => {
-        await order.update(
-            {
-                metadata: {
-                    ...existingMeta,
-                    returnStatus: status,
-                    returnStatusUpdatedAt: new Date()
+        const lockedOrder = typeof Order.findOne === 'function'
+            ? await Order.findOne({
+                where: { id: orderId, shop_id: shopId },
+                transaction,
+                lock: transaction.LOCK?.UPDATE,
+            })
+            : order;
+        if (!lockedOrder) throw new AppError('Order not found', 404);
+        order = lockedOrder;
+
+        let lockedMeta = order.metadata || {};
+        if (typeof lockedMeta === 'string') {
+            try { lockedMeta = JSON.parse(lockedMeta); } catch (_) { lockedMeta = {}; }
+        }
+        if (!lockedMeta.returnRequested) {
+            throw new AppError('No return request found for this order', 404);
+        }
+        if (['approved', 'refunded'].includes(lockedMeta.returnStatus)) {
+            if (lockedMeta.returnStatus === status) return;
+            throw new AppError('Return status is already finalized', 409);
+        }
+
+        const updatedMeta = {
+            ...lockedMeta,
+            returnStatus: status,
+            returnStatusUpdatedAt: new Date()
+        };
+
+        // A settled Partner invoice is immutable. Record one credit ledger row
+        // instead; the next Partner invoice can net it against new deliveries.
+        if ((status === 'approved' || status === 'refunded')
+            && (order.delivered_at || order.updated_at)
+            && !lockedMeta.partnerBillingAdjustmentId
+            && Invoice && typeof Invoice.findOne === 'function'
+            && PartnerBillingAdjustment && typeof PartnerBillingAdjustment.create === 'function') {
+            const settledInvoice = await findPartnerInvoiceForOrder(shopId, order, transaction);
+            const existingAdjustment = PartnerBillingAdjustment && typeof PartnerBillingAdjustment.findOne === 'function'
+                ? await PartnerBillingAdjustment.findOne({
+                    where: { shop_id: shopId, order_id: orderId },
+                    transaction,
+                })
+                : null;
+            if (settledInvoice && !existingAdjustment) {
+                const metadata = parseMetadata(settledInvoice.metadata);
+                const rateBdt = await getPartnerRate(settledInvoice, shopId, transaction);
+                if (rateBdt > 0) {
+                    const adjustment = await PartnerBillingAdjustment.create({
+                        shop_id: shopId,
+                        order_id: orderId,
+                        amount_bdt: rateBdt,
+                        reason: 'return_reversal'
+                    }, { transaction });
+                    updatedMeta.partnerBillingAdjustmentId = adjustment.id;
+                    updatedMeta.partnerBillingAdjustmentAmountBdt = rateBdt;
+
+                    if (settledInvoice.status !== 'paid') {
+                        const updatedInvoiceMetadata = {
+                            ...metadata,
+                            adjustment_credit: (Number(metadata.adjustment_credit) || 0) + rateBdt,
+                            computed_total: Math.max(0, Number(settledInvoice.amount) - rateBdt),
+                        };
+                        await settledInvoice.update({
+                            amount: Math.max(0, Number(settledInvoice.amount) - rateBdt),
+                            extra_usage_amount: Math.max(0, Number(settledInvoice.extra_usage_amount || 0) - rateBdt),
+                            metadata: updatedInvoiceMetadata,
+                        }, { transaction });
+                        await adjustment.update({
+                            status: 'applied',
+                            invoice_id: settledInvoice.id,
+                            applied_at: new Date(),
+                        }, { transaction });
+                    }
                 }
-            },
-            { transaction }
-        );
+            }
+        }
+        if (status === 'approved' || status === 'refunded') {
+            updatedMeta.partnerBillingReversalAt = updatedMeta.returnStatusUpdatedAt;
+        }
+
+        await order.update({ metadata: updatedMeta }, { transaction });
 
         // Restore inventory when return is approved
         if (status === 'approved') {

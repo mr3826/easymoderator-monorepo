@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as subscription from '../subscription';
 import { httpClient } from '@/shared/lib/http/client';
+import { publicApiGet } from '@/shared/lib/http/public-client';
 
 vi.mock('@/shared/lib/http/client', () => ({
   httpClient: {
@@ -12,6 +13,9 @@ vi.mock('@/shared/lib/http/client', () => ({
     post: vi.fn(),
     put: vi.fn(),
   },
+}));
+vi.mock('@/shared/lib/http/public-client', () => ({
+  publicApiGet: vi.fn(),
 }));
 
 describe('Subscription Domain API', () => {
@@ -24,9 +28,8 @@ describe('Subscription Domain API', () => {
       const mockResponse = {
         data: {
           data: {
-            plan: 'PRO',
-            status: 'active',
-            currentPeriodEnd: '2024-12-31',
+            subscription: { plan_code: 'SHURU', status: 'active' },
+            usage: {},
           },
         },
       };
@@ -35,26 +38,35 @@ describe('Subscription Domain API', () => {
       const result = await subscription.getSubscription();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/subscription');
-      expect(result.plan).toBe('PRO');
+      expect(result.subscription.plan_code).toBe('SHURU');
     });
   });
 
   describe('getSubscriptionPlans', () => {
     it('should return available plans', async () => {
       const mockResponse = {
-        data: {
-          data: [
-            { id: 'PACKAGE_1', name: 'Package 1', price: 750 },
-            { id: 'PACKAGE_2', name: 'Package 2', price: 1950 },
-          ],
-        },
+        success: true,
+        data: [
+          {
+            code: 'SHURU', name: 'Shuru', description: 'Free forever', billing_model: 'flat_monthly',
+            price_bdt_monthly: 0, price_bdt_yearly: 0, conversations_limit: 100,
+            orders_limit: -1, products_limit: -1, can_purchase_topups: false,
+            per_order_charge_bdt: null, features: {}, topup_packs: [], partner_order_tiers: [],
+          },
+          {
+            code: 'GROWTH', name: 'Growth', description: 'Growth', billing_model: 'flat_monthly',
+            price_bdt_monthly: 999, price_bdt_yearly: 9990, conversations_limit: 500,
+            orders_limit: -1, products_limit: -1, can_purchase_topups: true,
+            per_order_charge_bdt: null, features: {}, topup_packs: [], partner_order_tiers: [],
+          },
+        ],
       };
-      (httpClient.get as any).mockResolvedValue(mockResponse);
+      (publicApiGet as any).mockResolvedValue(mockResponse);
 
       const result = await subscription.getSubscriptionPlans();
 
-      expect(httpClient.get).toHaveBeenCalledWith('/api/subscription/plans');
-      expect(result).toHaveLength(2);
+      expect(publicApiGet).toHaveBeenCalledWith('/api/subscription/plans');
+      expect(result.map((plan) => plan.code)).toEqual(['SHURU', 'GROWTH']);
     });
   });
 
@@ -67,17 +79,17 @@ describe('Subscription Domain API', () => {
 
       const result = await subscription.subscribeToPlan('pro', 'yearly');
 
-      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'pro', billing_cycle: 'yearly' });
-      expect(result.plan).toBe('PRO');
+      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'PRO', billing_cycle: 'yearly' });
+      expect(result.status).toBe('active');
     });
 
     it('should use monthly as default billing cycle', async () => {
       const mockResponse = { data: { data: {} } };
       (httpClient.put as any).mockResolvedValue(mockResponse);
 
-      await subscription.subscribeToPlan('PACKAGE_1');
+      await subscription.subscribeToPlan('SHURU');
 
-      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'PACKAGE_1', billing_cycle: 'monthly' });
+      expect(httpClient.put).toHaveBeenCalledWith('/api/subscription/plan', { plan_code: 'SHURU', billing_cycle: 'monthly' });
     });
   });
 

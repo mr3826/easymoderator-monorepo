@@ -43,7 +43,7 @@ const { NOTIFICATION_EVENTS } = require('src/modules/notification/notification-e
 const { getProvider } = require('src/modules/channel-providers/provider.registry');
 const { _private } = require('src/jobs/message-worker');
 
-const { signalBillingPause } = _private;
+const { signalBillingPause, signalUsageExhausted, resolveAllowanceDecision } = _private;
 
 const ARGS = {
     shopId: 'shop-1',
@@ -175,5 +175,57 @@ describe('announcing the pause never breaks the job', () => {
 
         expect(Message.findByPk).not.toHaveBeenCalled();
         expect(merchantNotificationService.notifyShop).toHaveBeenCalled();
+    });
+});
+
+describe('conversation allowance exhaustion', () => {
+    it('fails closed when an old job has no decision and the finite allowance is exhausted', () => {
+        expect(resolveAllowanceDecision({
+            jobDecision: undefined,
+            conversationMetadata: {},
+            subscription: { conversations_limit: 100, conversations_used: 100, topup_balance: 0 },
+        })).toBe(false);
+    });
+
+    it('reuses the persisted conversation decision before consulting current usage', () => {
+        expect(resolveAllowanceDecision({
+            jobDecision: undefined,
+            conversationMetadata: { within_allowance: true },
+            subscription: { conversations_limit: 100, conversations_used: 100, topup_balance: 0 },
+        })).toBe(true);
+        expect(resolveAllowanceDecision({
+            jobDecision: undefined,
+            conversationMetadata: { within_allowance: false },
+            subscription: { conversations_limit: 100, conversations_used: 0, topup_balance: 0 },
+        })).toBe(false);
+    });
+
+    it('fails closed when no subscription row exists', () => {
+        expect(resolveAllowanceDecision({ jobDecision: undefined, conversationMetadata: {} })).toBe(false);
+    });
+
+    it('records the exhaustion reason and keeps the manual inbox available', async () => {
+        await signalUsageExhausted({ ...ARGS, platform: 'messenger' });
+
+        expect(inbound.update).toHaveBeenCalledWith({
+            metadata: expect.objectContaining({
+                ai_skipped_reason: 'usage_exhausted',
+                ai_skipped_at: expect.any(String),
+            }),
+        });
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            'shop-1',
+            NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE,
+            expect.objectContaining({
+                issue: expect.stringMatching(/manual replies/i),
+            }),
+            expect.objectContaining({
+                dedupeKey: expect.stringMatching(/^usage_exhausted:shop-1:/),
+            }),
+        );
+        expect(sseManager.emit).toHaveBeenCalledWith('shop-1', 'ai_paused', {
+            conversation_id: 'conv-1',
+            reason: 'usage_exhausted',
+        });
     });
 });

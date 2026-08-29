@@ -172,7 +172,7 @@ router.get('/detailed', authenticate, async (req, res) => {
 
     try {
         const queueManager = require('../jobs/queue-manager');
-        const queueNames = ['dailyOverage', 'monthlyReset', 'invoiceGenerator', 'paymentReconciler'];
+        const queueNames = ['monthlyReset', 'invoiceGenerator', 'paymentReconciler'];
         checks.queues = {};
         for (const name of queueNames) {
             const stats = await queueManager.getQueueStats(name);
