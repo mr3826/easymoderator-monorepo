@@ -9,6 +9,7 @@ jest.mock('axios', () => ({
 const axios = require('axios');
 const RedXProvider = require('../providers/redx.provider');
 const PathaoProvider = require('../providers/pathao.provider');
+const SteadfastProvider = require('../providers/steadfast.provider');
 const { COURIER_REGISTRY } = require('../providers/provider.registry');
 const { deliveryValidators } = require('../delivery.validator');
 
@@ -101,6 +102,18 @@ describe('courier provider adapters', () => {
         expect(error.message).toContain('Pathao stores fetch failed');
         expect(error.message).not.toContain('pathao-access-secret');
         expect(error.message).not.toContain('pathao-client-secret');
+    });
+
+    test('Steadfast order errors preserve provider 4xx status for claim recovery', async () => {
+        axios.post.mockRejectedValue({
+            response: { status: 422, data: { message: 'Invalid recipient phone' } },
+        });
+        const provider = new SteadfastProvider({ api_key: 'key', secret_key: 'secret' });
+
+        const error = await provider.createOrder({ customer_phone: 'invalid' }).catch((caught) => caught);
+
+        expect(error).toMatchObject({ status: 422, response: { status: 422 } });
+        expect(error.message).toContain('Invalid recipient phone');
     });
 
     test('RedX credentials and registry statuses preserve the provider contract', async () => {

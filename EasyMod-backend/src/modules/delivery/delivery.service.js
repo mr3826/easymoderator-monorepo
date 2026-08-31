@@ -28,6 +28,26 @@ const safeProviderPickupMetadata = (metadata = {}) => {
     return safe;
 };
 
+const normalizedPickupValue = (value) => String(value ?? '').trim().toLowerCase();
+
+const providerStoreMatchesPickup = (store, location, providerMeta) => {
+    const expected = [
+        ['city_id', providerMeta.city_id ?? location?.city_id],
+        ['zone_id', providerMeta.zone_id ?? location?.zone_id],
+        ['area_id', providerMeta.area_id ?? providerMeta.delivery_area_id ?? location?.area_id],
+    ].filter(([, value]) => value !== undefined && value !== null && value !== '');
+    const actual = (key) => store?.[key]
+        ?? store?.[`${key.replace('_id', '')}Id`]
+        ?? store?.[key.replace('_id', '')]?.id;
+    if (expected.length > 0) {
+        return expected.every(([key, value]) => normalizedPickupValue(actual(key)) === normalizedPickupValue(value));
+    }
+
+    const expectedName = normalizedPickupValue(location?.display_name || location?.name);
+    const actualName = normalizedPickupValue(store?.store_name || store?.name || store?.storeName);
+    return Boolean(expectedName && actualName && expectedName === actualName);
+};
+
 const hasAiDefaultFlag = (integration) => {
     const hasDatabaseFlag = integration
         && (Object.prototype.hasOwnProperty.call(integration, 'is_ai_default')
@@ -505,18 +525,24 @@ class DeliveryService extends EventEmitter {
         }
 
         const existingMetadata = integrationMetadata(integration);
+        const inputProviderMeta = safeProviderPickupMetadata(input.provider_pickup_meta ?? input.providerPickupMeta ?? {});
         const providerPickupMeta = {
             ...safeProviderPickupMetadata(existingMetadata.provider_pickup_meta),
-            ...safeProviderPickupMetadata(input.provider_pickup_meta ?? input.providerPickupMeta ?? {}),
+            ...inputProviderMeta,
         };
         let storeId = input.store_id
             ?? input.storeId
             ?? input.provider_store_id
-            ?? providerPickupMeta.pickup_store_id
-            ?? providerPickupMeta.provider_store_id
-            ?? existingMetadata.provider_store_id
-            ?? existingMetadata.pickup_store_id
-            ?? existingMetadata.store_id
+            ?? inputProviderMeta.pickup_store_id
+            ?? inputProviderMeta.provider_store_id
+            ?? location?.provider_store_id
+            ?? (!locationId ? (
+                providerPickupMeta.pickup_store_id
+                ?? providerPickupMeta.provider_store_id
+                ?? existingMetadata.provider_store_id
+                ?? existingMetadata.pickup_store_id
+                ?? existingMetadata.store_id
+            ) : null)
             ?? null;
 
         if (!storeId && (provider === 'pathao' || provider === 'redx') && location) {
@@ -541,8 +567,8 @@ class DeliveryService extends EventEmitter {
             if (!Array.isArray(stores)) {
                 stores = stores?.stores || stores?.data?.stores || stores?.data || [];
             }
-            const firstStore = stores.find(Boolean);
-            storeId = firstStore?.store_id ?? firstStore?.id ?? null;
+            const matchingStore = stores.find((store) => providerStoreMatchesPickup(store, location, providerPickupMeta));
+            storeId = matchingStore?.store_id ?? matchingStore?.id ?? null;
             if (!storeId) {
                 const createStore = provider === 'pathao'
                     ? instance.createStore

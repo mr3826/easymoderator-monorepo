@@ -396,6 +396,69 @@ describe('courier readiness and pickup sync contracts', () => {
         });
     });
 
+    test('matches an existing provider store to the selected pickup before reusing it', async () => {
+        await jest.isolateModulesAsync(async () => {
+            const provider = {
+                getStores: jest.fn().mockResolvedValue([
+                    { store_id: 'store-other', city_id: 9, zone_id: 9, area_id: 9 },
+                    { store_id: 'store-selected', city_id: 1, zone_id: 2, area_id: 3 },
+                ]),
+                createStore: jest.fn(),
+            };
+            const integration = {
+                id: 'integration-match',
+                provider: 'pathao',
+                is_connected: true,
+                is_active: false,
+                pickup_location_id: 'pickup-new',
+                provider_store_id: 'store-old',
+                pickup_store_id: 'store-old',
+                pickup_enabled: true,
+                metadata: { provider_store_id: 'store-old' },
+                save: jest.fn().mockResolvedValue(true),
+            };
+            const DeliveryIntegration = {
+                findOne: jest.fn().mockResolvedValue(integration),
+                sequelize: { query: jest.fn().mockResolvedValue([]) },
+            };
+            const pickupLocationService = {
+                getPickupLocation: jest.fn().mockResolvedValue({
+                    id: 'pickup-new',
+                    shop_id: 'shop-1',
+                    provider: 'manual',
+                    provider_store_id: null,
+                    display_name: 'New pickup',
+                    contact_name: 'Owner',
+                    phone: '01700000000',
+                    address: 'House 1, Dhaka',
+                    area_name: 'Dhanmondi',
+                    city_id: 1,
+                    zone_id: 2,
+                    area_id: 3,
+                }),
+                serializePickupLocation: jest.fn((location) => location),
+            };
+
+            jest.doMock('../delivery-integration.entity', () => DeliveryIntegration);
+            jest.doMock('../../entities', () => ({ DeliveryIntegration, ShopPickupLocation: {} }));
+            jest.doMock('../pickup-location.service', () => pickupLocationService);
+            jest.doMock('../pathao-token.service', () => ({ createProvider: jest.fn().mockResolvedValue(provider) }));
+            jest.doMock('../providers/provider.registry', () => ({
+                COURIER_REGISTRY: { pathao: { Provider: class FakePathaoProvider {} } },
+            }));
+
+            const deliveryService = require('../delivery.service');
+            await deliveryService.syncProviderPickup('shop-1', 'pathao', {
+                pickup_location_id: 'pickup-new',
+                provider_pickup_meta: { city_id: 1, zone_id: 2, area_id: 3 },
+            });
+
+            expect(provider.getStores).toHaveBeenCalledTimes(1);
+            expect(provider.createStore).not.toHaveBeenCalled();
+            expect(integration.provider_store_id).toBe('store-selected');
+        });
+    });
+
     test('requires concrete RedX credentials and delivery-area metadata', async () => {
         await jest.isolateModulesAsync(async () => {
             const DeliveryIntegration = {

@@ -46,6 +46,13 @@ class AppError extends Error {
       && typeof this.conflictingProspectId === 'string') {
       response.conflictingProspectId = this.conflictingProspectId;
     }
+    if (['DELIVERY_NOT_READY', 'DELIVERY_PROVIDER_SETUP_INCOMPLETE'].includes(this.code)) {
+      response.details = {
+        provider: this.details?.provider || null,
+        missing: Array.isArray(this.details?.missing) ? this.details.missing : [],
+        reason: this.details?.reason || null,
+      };
+    }
     return response;
   }
 

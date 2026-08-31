@@ -92,7 +92,10 @@ class SteadfastProvider extends DeliveryProviderInterface {
 
             throw new Error(response.data.message || 'Order creation failed');
         } catch (error) {
-            throw new Error(`Steadfast order creation failed: ${error.response?.data?.message || error.message}`);
+            const wrapped = new Error(`Steadfast order creation failed: ${error.response?.data?.message || error.message}`);
+            wrapped.response = error.response;
+            wrapped.status = error.response?.status;
+            throw wrapped;
         }
     }
 
