@@ -5,6 +5,7 @@ const NOTIFICATION_EVENTS = Object.freeze({
     AI_HITL: 'ai_hitl',
     CUSTOMER_WAITING_TOO_LONG: 'customer_waiting_too_long',
     COURIER_BOOKING_FAILED: 'courier_booking_failed',
+    COURIER_SETUP_REQUIRED: 'courier_setup_required',
     PAYMENT_SUBSCRIPTION_ISSUE: 'payment_subscription_issue',
     DAILY_SALES_SUMMARY: 'daily_sales_summary',
     TELEGRAM_TEST: 'telegram_test'
@@ -29,6 +30,11 @@ const NOTIFICATION_EVENT_META = Object.freeze({
     [NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED]: {
         label: 'Courier booking failed',
         labelBn: 'কুরিয়ার বুকিং ব্যর্থ',
+        defaultEnabled: true
+    },
+    [NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED]: {
+        label: 'Courier setup required',
+        labelBn: 'কুরিয়ার সেটআপ প্রয়োজন',
         defaultEnabled: true
     },
     [NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE]: {

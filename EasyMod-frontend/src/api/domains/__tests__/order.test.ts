@@ -335,4 +335,65 @@ describe('Order Domain API', () => {
       expect(httpClient.post).toHaveBeenCalledWith('/api/shop/delivery/test', { provider: 'pathao' });
     });
   });
+
+  describe('courier setup', () => {
+    it('activates, deactivates, and assigns the AI default through dedicated endpoints', async () => {
+      (httpClient.post as any).mockResolvedValue({ data: { data: { provider: 'pathao' } } });
+
+      await order.activateDeliveryProvider('pathao');
+      await order.deactivateDeliveryProvider('pathao');
+      await order.setAiDefaultDeliveryProvider('pathao');
+
+      expect(httpClient.post).toHaveBeenNthCalledWith(1, '/api/shop/delivery/activate', { provider: 'pathao' });
+      expect(httpClient.post).toHaveBeenNthCalledWith(2, '/api/shop/delivery/deactivate', { provider: 'pathao' });
+      expect(httpClient.post).toHaveBeenNthCalledWith(3, '/api/shop/delivery/ai-default', { provider: 'pathao' });
+    });
+
+    it('uses pickup CRUD and provider sync endpoints without legacy priority writes', async () => {
+      (httpClient.get as any).mockResolvedValue({ data: { success: true, data: { locations: [{ id: 'pickup-1' }] } } });
+      (httpClient.post as any).mockResolvedValue({ data: { success: true, data: { id: 'pickup-1' } } });
+      (httpClient.put as any).mockResolvedValue({ data: { success: true, data: { id: 'pickup-1' } } });
+
+      const payload = {
+        display_name: 'Warehouse',
+        phone: '01712345678',
+        address: 'Road 1',
+        area_name: 'Mirpur',
+      };
+      const locations = await order.getPickupLocations();
+      await order.createPickupLocation(payload);
+      await order.updatePickupLocation('pickup-1', payload);
+      await order.syncProviderPickup('redx', {
+        pickup_location_id: 'pickup-1',
+        provider_pickup_meta: { delivery_area_id: 9 },
+      });
+
+      expect(locations).toEqual([{ id: 'pickup-1' }]);
+      expect(httpClient.get).toHaveBeenCalledWith('/api/shop/delivery/pickup-locations');
+      expect(httpClient.post).toHaveBeenNthCalledWith(1, '/api/shop/delivery/pickup-locations', payload);
+      expect(httpClient.put).toHaveBeenCalledWith('/api/shop/delivery/pickup-locations', { ...payload, id: 'pickup-1' });
+      expect(httpClient.post).toHaveBeenNthCalledWith(2, '/api/shop/delivery/redx/pickup/sync', {
+        pickup_location_id: 'pickup-1',
+        provider_pickup_meta: { delivery_area_id: 9 },
+      });
+    });
+
+    it('unwraps Pathao and RedX location lists from their keyed response shapes', async () => {
+      (httpClient.get as any)
+        .mockResolvedValueOnce({ data: { success: true, data: { cities: [{ id: 1, name: 'Dhaka' }] } } })
+        .mockResolvedValueOnce({ data: { success: true, data: { zones: [{ id: 2, name: 'Gulshan' }] } } })
+        .mockResolvedValueOnce({ data: { success: true, data: { areas: [{ id: 3, name: 'Gulshan 1' }] } } })
+        .mockResolvedValueOnce({ data: { success: true, data: { areas: [{ id: 4, name: 'Mirpur' }] } } });
+
+      await expect(order.getPathaoCities()).resolves.toEqual([{ id: 1, name: 'Dhaka' }]);
+      await expect(order.getPathaoZones(1)).resolves.toEqual([{ id: 2, name: 'Gulshan' }]);
+      await expect(order.getPathaoAreas(2)).resolves.toEqual([{ id: 3, name: 'Gulshan 1' }]);
+      await expect(order.getProviderAreas('redx')).resolves.toEqual([{ id: 4, name: 'Mirpur' }]);
+
+      expect(httpClient.get).toHaveBeenNthCalledWith(1, '/api/shop/delivery/pathao/cities');
+      expect(httpClient.get).toHaveBeenNthCalledWith(2, '/api/shop/delivery/pathao/cities/1/zones');
+      expect(httpClient.get).toHaveBeenNthCalledWith(3, '/api/shop/delivery/pathao/zones/2/areas');
+      expect(httpClient.get).toHaveBeenNthCalledWith(4, '/api/shop/delivery/redx/areas');
+    });
+  });
 });

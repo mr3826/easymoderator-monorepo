@@ -58,12 +58,107 @@ export interface Order {
 
 export type DeliveryProvider = 'pathao' | 'steadfast' | 'redx';
 
+export type DeliveryActivationStatus =
+  | 'NOT_CONFIGURED'
+  | 'SETUP_INCOMPLETE'
+  | 'VALIDATING'
+  | 'ACTIVE'
+  | 'ACTION_REQUIRED';
+
+export interface ProviderPickupMetadata {
+  city_id?: string | number | null;
+  zone_id?: string | number | null;
+  area_id?: string | number | null;
+  delivery_area_id?: string | number | null;
+  pickup_store_id?: string | number | null;
+  [key: string]: unknown;
+}
+
+export interface PickupLocationSummary {
+  id?: string;
+  shop_id?: string;
+  display_name?: string | null;
+  contact_name?: string | null;
+  phone?: string | null;
+  secondary_phone?: string | null;
+  address?: string | null;
+  city_name?: string | null;
+  zone_name?: string | null;
+  area_name?: string | null;
+  postal_code?: string | null;
+  city_id?: string | number | null;
+  zone_id?: string | number | null;
+  area_id?: string | number | null;
+  provider?: string | null;
+  provider_store_id?: string | null;
+  is_active?: boolean;
+  metadata?: Record<string, unknown>;
+  is_default?: boolean;
+}
+
+export interface PickupLocation extends PickupLocationSummary {
+  id: string;
+  display_name: string;
+  phone: string;
+  address: string;
+  area_name: string;
+  is_default: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PickupLocationPayload {
+  display_name: string;
+  contact_name?: string;
+  phone: string;
+  secondary_phone?: string | null;
+  address: string;
+  city_name?: string | null;
+  zone_name?: string | null;
+  area_name: string;
+  postal_code?: string | null;
+  is_default?: boolean;
+}
+
+export interface ProviderPickupSyncRequest {
+  pickup_location_id?: string | null;
+  provider_pickup_meta?: ProviderPickupMetadata;
+}
+
+export interface DeliveryLocationOption {
+  id?: string | number;
+  name?: string;
+  name_bn?: string;
+  label?: string;
+  city_name?: string;
+  zone_name?: string;
+  area_name?: string;
+  city_name_bn?: string;
+  zone_name_bn?: string;
+  area_name_bn?: string;
+  city_id?: string | number;
+  zone_id?: string | number;
+  area_id?: string | number;
+  [key: string]: unknown;
+}
+
 export interface DeliveryProviderStatus {
   provider: DeliveryProvider;
   display_name: string;
   is_connected: boolean;
   is_active: boolean;
   is_sandbox: boolean;
+  activation_status?: DeliveryActivationStatus;
+  activation_error?: string | null;
+  is_ai_default?: boolean;
+  missing?: string[];
+  pickup_summary?: PickupLocationSummary | null;
+  provider_store_id?: string | number | null;
+  provider_pickup_meta?: ProviderPickupMetadata | null;
+  pickup_enabled?: boolean;
+  pickup_location_id?: string | null;
+  pickup_store_id?: string | null;
+  setup_complete?: boolean;
   metadata?: Record<string, unknown>;
   last_validated_at: string | null;
   connected_at: string | null;
@@ -93,6 +188,7 @@ export interface DeliveryShopSettings {
 export interface DeliverySettings {
   providers: DeliveryProviderStatus[];
   settings: DeliveryShopSettings;
+  pickup_locations?: PickupLocation[];
 }
 
 export interface CourierBookingPayload {

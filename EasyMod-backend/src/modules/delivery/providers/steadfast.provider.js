@@ -1,15 +1,25 @@
 const axios = require('axios');
+const DeliveryProviderInterface = require('./delivery-provider.interface');
 
 /**
  * Steadfast Courier Provider Adapter
  * Implements API-Key based authentication
  */
-class SteadfastProvider {
-    constructor(credentials) {
+class SteadfastProvider extends DeliveryProviderInterface {
+    constructor(credentials = {}) {
+        super('steadfast', credentials);
         this.credentials = credentials;
         this.baseUrl = 'https://portal.packzy.com/api/v1';
         this.apiKey = credentials.api_key;
         this.secretKey = credentials.secret_key;
+    }
+
+    getLabel() {
+        return 'Steadfast';
+    }
+
+    getCredentialFields() {
+        return ['api_key', 'secret_key'];
     }
 
     /**
@@ -82,7 +92,10 @@ class SteadfastProvider {
 
             throw new Error(response.data.message || 'Order creation failed');
         } catch (error) {
-            throw new Error(`Steadfast order creation failed: ${error.response?.data?.message || error.message}`);
+            const wrapped = new Error(`Steadfast order creation failed: ${error.response?.data?.message || error.message}`);
+            wrapped.response = error.response;
+            wrapped.status = error.response?.status;
+            throw wrapped;
         }
     }
 

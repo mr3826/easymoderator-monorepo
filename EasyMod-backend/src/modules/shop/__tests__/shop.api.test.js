@@ -53,6 +53,9 @@ jest.mock('../../entities', () => ({
         update: jest.fn(),
         destroy: jest.fn(),
     },
+    DeliveryIntegration: {
+        findAll: jest.fn(),
+    },
     Tenant: { findByPk: jest.fn() },
 }));
 
@@ -147,6 +150,8 @@ beforeEach(() => {
     UserShop.findOne.mockResolvedValue({ ...mockUserShop });
     UserShop.findAll.mockResolvedValue([{ ...mockUserShop }]);
     UserShop.create.mockResolvedValue({ id: 'us-1' });
+    const { DeliveryIntegration } = require('../../entities');
+    DeliveryIntegration.findAll.mockResolvedValue([]);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -317,6 +322,61 @@ describe('GET /shop/business-info', () => {
     it('returns 401 without auth token', async () => {
         const res = await request(app).get('/shop/business-info');
         expect(res.status).toBe(401);
+    });
+});
+
+describe('PUT /shop/platform-priority', () => {
+    it('accepts delivery providers that are active and connected for the shop', async () => {
+        const { DeliveryIntegration } = require('../../entities');
+        DeliveryIntegration.findAll.mockResolvedValueOnce([{ provider: 'pathao' }]);
+
+        const res = await request(app)
+            .put('/shop/platform-priority')
+            .set('Authorization', authHeader)
+            .send({ payment: ['unregistered-payment'], delivery: ['pathao'] });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual({ payment: ['unregistered-payment'], delivery: ['pathao'] });
+        expect(DeliveryIntegration.findAll).toHaveBeenCalledWith({
+            where: {
+                shop_id: 'dddddddd-4444-4444-8444-dddddddddddd',
+                is_active: true,
+                is_connected: true
+            },
+            attributes: ['provider']
+        });
+    });
+
+    it('rejects delivery providers that are not active and connected for the shop', async () => {
+        const { DeliveryIntegration, Shop } = require('../../entities');
+        const shop = { ...mockShopInstance, update: jest.fn().mockResolvedValue(true) };
+        Shop.findByPk.mockResolvedValueOnce(shop);
+        DeliveryIntegration.findAll.mockResolvedValueOnce([]);
+
+        const res = await request(app)
+            .put('/shop/platform-priority')
+            .set('Authorization', authHeader)
+            .send({ payment: ['unregistered-payment'], delivery: ['steadfast'] });
+
+        expect(res.status).toBe(400);
+        expect(res.body).toEqual({
+            success: false,
+            message: 'Delivery priority provider is not active and connected: steadfast'
+        });
+        expect(shop.update).not.toHaveBeenCalled();
+    });
+
+    it('preserves payment priority behavior when delivery priority is empty', async () => {
+        const { DeliveryIntegration } = require('../../entities');
+
+        const res = await request(app)
+            .put('/shop/platform-priority')
+            .set('Authorization', authHeader)
+            .send({ payment: ['unregistered-payment'], delivery: [] });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toEqual({ payment: ['unregistered-payment'], delivery: [] });
+        expect(DeliveryIntegration.findAll).not.toHaveBeenCalled();
     });
 });
 

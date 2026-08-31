@@ -13,8 +13,30 @@ import type {
   CourierBookingResult,
   ConnectDeliveryProviderRequest,
   DeliveryProvider,
+  DeliveryLocationOption,
+  DeliveryProviderStatus,
+  PickupLocation,
+  PickupLocationPayload,
+  ProviderPickupSyncRequest,
 } from '../types/order';
 import type { AxiosResponse } from 'axios';
+
+type ApiEnvelope<T> = ApiResponse<T> | T;
+
+function unwrapApiData<T>(response: AxiosResponse<ApiEnvelope<T>>): T {
+  const body = response.data;
+  if (body && typeof body === 'object' && 'data' in body) {
+    return (body as ApiResponse<T>).data;
+  }
+  return body as T;
+}
+
+function unwrapList<T>(response: AxiosResponse<ApiEnvelope<T[] | Record<string, unknown>>>, key: string): T[] {
+  const data = unwrapApiData<T[] | Record<string, unknown>>(response);
+  if (Array.isArray(data)) return data as T[];
+  if (data && Array.isArray(data[key])) return data[key] as T[];
+  return [];
+}
 
 /**
  * The backend serialises orders in snake_case (customer_name, order_status,
@@ -304,6 +326,106 @@ export async function updateDeliverySettings(settings: {
 
 export async function testDeliveryConnection(provider: DeliveryProvider): Promise<void> {
   await httpClient.post('/api/shop/delivery/test', { provider });
+}
+
+/** Activate a connected courier after its pickup readiness checks pass. */
+export async function activateDeliveryProvider(provider: DeliveryProvider): Promise<DeliveryProviderStatus> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryProviderStatus>> = await httpClient.post(
+    '/api/shop/delivery/activate',
+    { provider },
+  );
+  return unwrapApiData(response);
+}
+
+/** Deactivate a courier and clear any AI-default assignment server-side. */
+export async function deactivateDeliveryProvider(provider: DeliveryProvider): Promise<DeliveryProviderStatus> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryProviderStatus>> = await httpClient.post(
+    '/api/shop/delivery/deactivate',
+    { provider },
+  );
+  return unwrapApiData(response);
+}
+
+/** Make one ACTIVE courier the shop's AI default. */
+export async function setAiDefaultDeliveryProvider(provider: DeliveryProvider): Promise<DeliveryProviderStatus> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryProviderStatus>> = await httpClient.post(
+    '/api/shop/delivery/ai-default',
+    { provider },
+  );
+  return unwrapApiData(response);
+}
+
+/** List the shop's saved pickup locations. */
+export async function getPickupLocations(): Promise<PickupLocation[]> {
+  const response: AxiosResponse<ApiEnvelope<PickupLocation[] | { locations?: PickupLocation[] }>> = await httpClient.get(
+    '/api/shop/delivery/pickup-locations',
+  );
+  return unwrapList<PickupLocation>(response, 'locations');
+}
+
+/** Create a pickup location for the shop. */
+export async function createPickupLocation(payload: PickupLocationPayload): Promise<PickupLocation> {
+  const response: AxiosResponse<ApiEnvelope<PickupLocation>> = await httpClient.post(
+    '/api/shop/delivery/pickup-locations',
+    payload,
+  );
+  return unwrapApiData(response);
+}
+
+/** Update a pickup location. The pickup API accepts the location id in the body. */
+export async function updatePickupLocation(
+  locationId: string,
+  payload: PickupLocationPayload,
+): Promise<PickupLocation> {
+  const response: AxiosResponse<ApiEnvelope<PickupLocation>> = await httpClient.put(
+    '/api/shop/delivery/pickup-locations',
+    { ...payload, id: locationId },
+  );
+  return unwrapApiData(response);
+}
+
+/** Sync a saved pickup location into a provider-specific pickup store/mapping. */
+export async function syncProviderPickup(
+  provider: DeliveryProvider,
+  payload: ProviderPickupSyncRequest = {},
+): Promise<DeliveryProviderStatus> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryProviderStatus>> = await httpClient.post(
+    `/api/shop/delivery/${provider}/pickup/sync`,
+    payload,
+  );
+  return unwrapApiData(response);
+}
+
+/** Fetch provider-specific area options. */
+export async function getProviderAreas(provider: DeliveryProvider): Promise<DeliveryLocationOption[]> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryLocationOption[] | { areas?: DeliveryLocationOption[] }>> = await httpClient.get(
+    `/api/shop/delivery/${provider}/areas`,
+  );
+  return unwrapList<DeliveryLocationOption>(response, 'areas');
+}
+
+/** Fetch Pathao's city list for the pickup selector. */
+export async function getPathaoCities(): Promise<DeliveryLocationOption[]> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryLocationOption[] | { cities?: DeliveryLocationOption[] }>> = await httpClient.get(
+    '/api/shop/delivery/pathao/cities',
+  );
+  return unwrapList<DeliveryLocationOption>(response, 'cities');
+}
+
+/** Fetch Pathao zones for a selected city. */
+export async function getPathaoZones(cityId: string | number): Promise<DeliveryLocationOption[]> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryLocationOption[] | { zones?: DeliveryLocationOption[] }>> = await httpClient.get(
+    `/api/shop/delivery/pathao/cities/${encodeURIComponent(String(cityId))}/zones`,
+  );
+  return unwrapList<DeliveryLocationOption>(response, 'zones');
+}
+
+/** Fetch Pathao areas for a selected zone. */
+export async function getPathaoAreas(zoneId: string | number): Promise<DeliveryLocationOption[]> {
+  const response: AxiosResponse<ApiEnvelope<DeliveryLocationOption[] | { areas?: DeliveryLocationOption[] }>> = await httpClient.get(
+    `/api/shop/delivery/pathao/zones/${encodeURIComponent(String(zoneId))}/areas`,
+  );
+  return unwrapList<DeliveryLocationOption>(response, 'areas');
 }
 
 

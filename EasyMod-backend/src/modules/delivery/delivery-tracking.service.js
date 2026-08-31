@@ -8,6 +8,7 @@ const { DeliveryTracking, Order, Shop } = require('../entities');
 const { AppError } = require('../../utils/AppError');
 const { createLogger } = require('../../utils/structured-logger');
 const deliveryService = require('./delivery.service');
+const { COURIER_REGISTRY, normalizeStatus: normalizeRegistryStatus } = require('./providers/provider.registry');
 const RtoShieldService = require('../rto-shield/rto-shield.service');
 
 class DeliveryTrackingService {
@@ -50,10 +51,11 @@ class DeliveryTrackingService {
      */
     async createTrackingRecord(order, deliveryResult) {
         try {
+            const trackingNumber = deliveryResult.tracking_code || deliveryResult.consignment_id;
             const tracking = await DeliveryTracking.create({
                 order_id: order.id,
                 provider: deliveryResult.provider,
-                tracking_number: deliveryResult.tracking_code,
+                tracking_number: trackingNumber,
                 current_status: 'booked',
                 status_history: [{
                     status: 'booked',
@@ -61,14 +63,16 @@ class DeliveryTrackingService {
                     location: 'Processing center'
                 }],
                 estimated_delivery: deliveryResult.estimated_delivery,
-                webhook_received_at: new Date()
+                // Booking is not a webhook receipt. Leaving this null allows
+                // the polling worker to pick up providers that do not callback.
+                webhook_received_at: null
             });
 
             // Update order with delivery info
             await order.update({
                 delivery_provider: deliveryResult.provider,
                 delivery_consignment_id: deliveryResult.consignment_id,
-                delivery_tracking_code: deliveryResult.tracking_code,
+                delivery_tracking_code: trackingNumber,
                 delivery_status: 'booked',
                 delivery_dispatched_at: new Date()
             });
@@ -126,6 +130,7 @@ class DeliveryTrackingService {
             
             // Check if status actually changed
             if (normalizedStatus === tracking.current_status) {
+                await tracking.update({ webhook_received_at: new Date() });
                 return { success: true, message: 'No status change' };
             }
             if (['delivered', 'cancelled', 'returned'].includes(tracking.current_status)) {
@@ -147,41 +152,56 @@ class DeliveryTrackingService {
                 agent: statusData.delivery_agent
             });
 
-            await tracking.update({
+            const trackingUpdates = {
                 previous_status: tracking.current_status,
                 current_status: normalizedStatus,
-                status_history,
+                status_history: statusHistory,
                 location_info: statusData.location,
                 delivery_agent_info: statusData.delivery_agent,
                 webhook_received_at: new Date(),
                 last_api_check: new Date()
-            });
-
-            // Update order status
-            await tracking.order.update({
-                delivery_status: normalizedStatus
-            });
+            };
+            const orderUpdates = { delivery_status: normalizedStatus };
+            let terminalOutcome = null;
 
             // Handle special cases
             if (normalizedStatus === 'delivered') {
-                await tracking.order.update({
+                Object.assign(orderUpdates, {
                     fulfillment_status: 'delivered',
                     order_status: 'delivered'
                 });
+                terminalOutcome = 'delivered';
+            } else if (normalizedStatus.includes('cancelled') || normalizedStatus === 'returned') {
+                Object.assign(orderUpdates, {
+                    fulfillment_status: 'cancelled',
+                    order_status: 'cancelled'
+                });
+                terminalOutcome = 'failed';
+            } else if (normalizedStatus === 'failed_delivery') {
+                terminalOutcome = 'failed';
+            }
+
+            // Tracking and order state must move together. Tests and older
+            // lightweight harnesses may not expose a Sequelize transaction;
+            // production models always do.
+            const database = DeliveryTracking.sequelize || tracking.sequelize || Order.sequelize;
+            if (database && typeof database.transaction === 'function') {
+                await database.transaction(async (transaction) => {
+                    await tracking.update(trackingUpdates, { transaction });
+                    await tracking.order.update(orderUpdates, { transaction });
+                });
+            } else {
+                await tracking.update(trackingUpdates);
+                await tracking.order.update(orderUpdates);
+            }
+
+            if (terminalOutcome === 'delivered') {
                 await this.handleSuccessfulDelivery(tracking);
                 RtoShieldService.trackDeliveryOutcome(
                     tracking.order.customer_phone, tracking.order.shop_id, false
                 ).catch(() => {});
-            } else if (normalizedStatus.includes('cancelled') || normalizedStatus === 'returned') {
-                await tracking.order.update({
-                    fulfillment_status: 'cancelled',
-                    order_status: 'cancelled'
-                });
+            } else if (terminalOutcome === 'failed') {
                 await this.handleFailedDelivery(tracking);
-                RtoShieldService.trackDeliveryOutcome(
-                    tracking.order.customer_phone, tracking.order.shop_id, true
-                ).catch(() => {});
-            } else if (normalizedStatus === 'failed_delivery') {
                 RtoShieldService.trackDeliveryOutcome(
                     tracking.order.customer_phone, tracking.order.shop_id, true
                 ).catch(() => {});
@@ -291,38 +311,16 @@ class DeliveryTrackingService {
      * Normalize delivery status
      */
     normalizeStatus(provider, rawStatus) {
-        const statusMap = {
-            'pathao': {
-                'PACKAGE_RECEIVED': 'picked_up',
-                'IN_TRANSIT': 'in_transit',
-                'OUT_FOR_DELIVERY': 'out_for_delivery',
-                'DELIVERED': 'delivered',
-                'FAILED_DELIVERY': 'failed_delivery',
-                'CANCELLED': 'cancelled',
-                'RETURNED': 'returned'
-            },
-            'redx': {
-                'PICKED': 'picked_up',
-                'TRANSIT': 'in_transit',
-                'OUT_FOR_DELIVERY': 'out_for_delivery',
-                'DELIVERED': 'delivered',
-                'FAILED': 'failed_delivery',
-                'CANCELLED': 'cancelled',
-                'RETURNED': 'returned'
-            },
-            'ecourier': {
-                'PICKED_UP': 'picked_up',
-                'IN_TRANSIT': 'in_transit',
-                'OUT_FOR_DELIVERY': 'out_for_delivery',
-                'DELIVERED': 'delivered',
-                'DELIVERY_FAILED': 'failed_delivery',
-                'CANCELLED': 'cancelled',
-                'RETURNED': 'returned'
-            }
-        };
-
-        const providerMap = statusMap[provider.toLowerCase()];
-        return providerMap ? (providerMap[rawStatus] || rawStatus.toLowerCase()) : rawStatus.toLowerCase();
+        const raw = String(rawStatus ?? '').trim();
+        if (!raw) return 'unknown';
+        if (typeof deliveryService.normalizeDeliveryStatus === 'function') {
+            return deliveryService.normalizeDeliveryStatus(provider, raw);
+        }
+        const providerEntry = COURIER_REGISTRY[String(provider || '').toLowerCase()];
+        if (providerEntry && typeof normalizeRegistryStatus === 'function') {
+            return normalizeRegistryStatus(raw, providerEntry.statusMap);
+        }
+        return raw;
     }
 
     /**

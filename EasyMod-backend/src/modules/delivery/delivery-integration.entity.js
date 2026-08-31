@@ -82,10 +82,12 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
     },
     is_active: {
         type: DataTypes.BOOLEAN,
+        allowNull: false,
         defaultValue: false
     },
     is_connected: {
         type: DataTypes.BOOLEAN,
+        allowNull: false,
         defaultValue: false
     },
     is_sandbox: {
@@ -96,6 +98,54 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
     metadata: {
         type: DataTypes.JSON,
         defaultValue: {}
+    },
+    pickup_location_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+            model: 'shop_pickup_locations',
+            key: 'id'
+        },
+        onDelete: 'SET NULL'
+    },
+    provider_store_id: {
+        type: DataTypes.STRING(120),
+        allowNull: true
+    },
+    pickup_store_id: {
+        type: DataTypes.STRING(120),
+        allowNull: true
+    },
+    provider_pickup_meta: {
+        type: DataTypes.JSON,
+        allowNull: false,
+        defaultValue: {}
+    },
+    pickup_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    is_ai_default: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        validate: {
+            defaultRequiresActive(value) {
+                if (value && (this.is_active === false || this.is_connected === false)) {
+                    throw new Error('An inactive or disconnected provider cannot be the AI default');
+                }
+            }
+        }
+    },
+    activation_status: {
+        type: DataTypes.STRING(30),
+        allowNull: false,
+        defaultValue: 'NOT_CONFIGURED'
+    },
+    activation_error: {
+        type: DataTypes.TEXT,
+        allowNull: true
     },
     last_validated_at: {
         type: DataTypes.DATE,
@@ -118,6 +168,16 @@ const DeliveryIntegration = sequelize.define('DeliveryIntegration', {
         {
             fields: ['provider'],
             name: 'idx_delivery_provider'
+        },
+        {
+            fields: ['shop_id', 'pickup_location_id'],
+            name: 'idx_delivery_integrations_pickup_location'
+        },
+        {
+            unique: true,
+            fields: ['shop_id'],
+            name: 'idx_delivery_integrations_one_ai_default',
+            where: { is_ai_default: true }
         }
     ]
 });

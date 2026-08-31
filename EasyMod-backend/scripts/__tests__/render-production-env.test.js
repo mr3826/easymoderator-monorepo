@@ -40,6 +40,7 @@ function validSource(overrides = {}) {
         CSRF_SECRET: hex64('d'),
         PAYMENT_ENCRYPTION_KEY: 'legacy-non-hex-payment-key-value',
         DELIVERY_ENCRYPTION_KEY: hex64('2'),
+        REDX_WEBHOOK_SECRET: hex64('r'),
         CHANNEL_ENCRYPTION_KEY: hex64('3'),
         PAYMENT_CALLBACK_HMAC_SECRET: hex64('g'),
         AI_ACTION_GATE_SECRET: hex64('i'),

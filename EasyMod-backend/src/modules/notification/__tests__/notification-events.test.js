@@ -2,6 +2,7 @@
 
 const {
     NOTIFICATION_EVENTS,
+    NOTIFICATION_EVENT_META,
     DEFAULT_NOTIFICATION_PREFERENCES,
     normalizePreferences,
     isConfigurableEvent
@@ -14,9 +15,19 @@ describe('notification-events', () => {
             [NOTIFICATION_EVENTS.AI_HITL]: true,
             [NOTIFICATION_EVENTS.CUSTOMER_WAITING_TOO_LONG]: true,
             [NOTIFICATION_EVENTS.COURIER_BOOKING_FAILED]: true,
+            [NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED]: true,
             [NOTIFICATION_EVENTS.PAYMENT_SUBSCRIPTION_ISSUE]: true,
             [NOTIFICATION_EVENTS.DAILY_SALES_SUMMARY]: true
         }));
+    });
+
+    it('registers courier setup blocking as a configurable merchant alert', () => {
+        expect(NOTIFICATION_EVENT_META[NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED]).toEqual({
+            label: 'Courier setup required',
+            labelBn: 'কুরিয়ার সেটআপ প্রয়োজন',
+            defaultEnabled: true
+        });
+        expect(isConfigurableEvent(NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED)).toBe(true);
     });
 
     it('normalizes only known boolean preference keys', () => {

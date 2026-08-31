@@ -2,7 +2,6 @@ const orderService = require('./order.service');
 const returnService = require('./return.service');
 const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
-const deliveryService = require('../delivery/delivery.service');
 
 /**
  * Create a new order (legacy)
@@ -670,7 +669,18 @@ const bookCourier = async (req, res, next) => {
     try {
         const { orderId } = req.params;
         const shopId = req.user?.shopId;
-        const { provider, recipient_name, recipient_phone, recipient_address, cod_amount, weight_kg, item_description } = req.body;
+        const {
+            provider,
+            recipient_name,
+            recipient_phone,
+            recipient_address,
+            weight_kg,
+            item_weight,
+            item_description,
+            delivery_type,
+            item_type,
+            note,
+        } = req.body;
 
         if (!shopId) {
             return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Shop ID required' } });
@@ -682,25 +692,56 @@ const bookCourier = async (req, res, next) => {
             return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Order not found' } });
         }
 
-        const orderData = {
-            order_number: order.id.slice(0, 8).toUpperCase(),
-            recipient_name: recipient_name || order.customer_name,
-            recipient_phone: recipient_phone || order.customer_phone,
-            recipient_address: recipient_address || (typeof order.delivery_address === 'object' ? `${order.delivery_address.street_address}, ${order.delivery_address.upazila}, ${order.delivery_address.district}` : order.delivery_address),
-            cod_amount: cod_amount ?? order.total,
-            weight: weight_kg || 0.5,
-            note: item_description || '',
-        };
-
-        const result = await deliveryService.createDeliveryOrder(shopId, orderData, provider || null);
-
-        // Persist tracking info on the order
-        await order.update({
-            delivery_provider: result.provider || provider,
-            delivery_consignment_id: result.consignment_id,
-            delivery_tracking_code: result.tracking_code,
-            delivery_dispatched_at: new Date(),
+        const result = await orderService.bookForOrder(order, {
+            shopId,
+            provider: provider || null,
+            requireAiDefault: !provider,
+            overrides: {
+                // These fields remain accepted for the legacy endpoint, but the
+                // canonical helper prefers persisted order values over them.
+                recipient_name,
+                recipient_phone,
+                recipient_address,
+                item_weight: item_weight ?? weight_kg,
+                item_description,
+                delivery_type,
+                item_type,
+                note,
+            },
         });
+
+        if (result?.blocked && result.status === 'courier_setup_required') {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'COURIER_SETUP_REQUIRED',
+                    message: 'Courier setup is required before booking this order',
+                    missing: result.missing || [],
+                    provider: result.provider || provider || null,
+                },
+            });
+        }
+
+        if (result?.blocked) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'COURIER_DISPATCH_INDETERMINATE',
+                    message: 'Courier booking needs reconciliation before it can be retried',
+                    provider: result.provider || provider || null,
+                },
+            });
+        }
+
+        if (result?.failed) {
+            return res.status(502).json({
+                success: false,
+                error: {
+                    code: 'COURIER_BOOKING_FAILED',
+                    message: result.reason || 'Courier booking failed',
+                },
+            });
+        }
 
         res.json({
             success: true,

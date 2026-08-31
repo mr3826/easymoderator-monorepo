@@ -72,6 +72,32 @@ describe('merchant-notification.service', () => {
         expect(result.inAppNotificationId).toBe('notif-1');
     });
 
+    it('queues courier setup blockers with the supplied shop-scoped dedupe key', async () => {
+        const result = await merchantNotificationService.notifyShop(
+            'shop-1',
+            NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED,
+            { orderId: 'order-1', missing: ['pickup_location'] },
+            { dedupeKey: 'order-1:courier_setup', dedupeTtlSeconds: 24 * 60 * 60 }
+        );
+
+        expect(cacheService.claimForShop).toHaveBeenCalledWith(
+            'shop-1',
+            'notification:dedupe:courier_setup_required:order-1:courier_setup',
+            24 * 60 * 60
+        );
+        expect(queueManager.queues.notifications.add).toHaveBeenCalledWith(
+            'merchant-notification',
+            expect.objectContaining({
+                shopId: 'shop-1',
+                eventType: NOTIFICATION_EVENTS.COURIER_SETUP_REQUIRED,
+                payload: { orderId: 'order-1', missing: ['pickup_location'] },
+                dedupeKey: 'order-1:courier_setup'
+            }),
+            expect.objectContaining({ jobId: 'shop-1:courier_setup_required:order-1:courier_setup' })
+        );
+        expect(result.inAppNotificationId).toBe('notif-1');
+    });
+
     it('skips duplicate notifications inside the dedupe window', async () => {
         mockClaimForShop.mockResolvedValueOnce(false);
 

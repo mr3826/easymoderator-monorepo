@@ -5,12 +5,15 @@ jest.mock('../../delivery/delivery.service', () => ({
 jest.mock('../../entities', () => ({
     Order: {
         findOne: jest.fn()
+    },
+    CourierDispatch: {
+        findOrCreate: jest.fn()
     }
 }));
 
 const orderController = require('../order.controller');
 const deliveryService = require('../../delivery/delivery.service');
-const { Order } = require('../../entities');
+const { Order, CourierDispatch } = require('../../entities');
 
 describe('orderController.bookCourier', () => {
     let req;
@@ -44,6 +47,10 @@ describe('orderController.bookCourier', () => {
         };
         next = jest.fn();
         Order.findOne.mockResolvedValue(order);
+        CourierDispatch.findOrCreate.mockResolvedValue([{
+            status: 'PENDING',
+            update: jest.fn().mockResolvedValue(undefined),
+        }, true]);
         deliveryService.createDeliveryOrder.mockResolvedValue({
             provider: 'pathao',
             consignment_id: 'CN-1',

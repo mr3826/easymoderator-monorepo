@@ -26,11 +26,16 @@ function response() {
 describe('bKash payment webhook replay protection', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        require('../../entities').Order.findOne.mockResolvedValue({
+            id: 'order-1', order_number: 'ORDER-1', shop_id: 'shop-1',
+        });
     });
 
     test('does not repeat fulfillment for an already-paid callback', async () => {
         const payment = {
             id: 'payment-1',
+            order_id: 'order-1',
+            shop_id: 'shop-1',
             status: 'paid',
             update: jest.fn(),
         };
@@ -43,6 +48,7 @@ describe('bKash payment webhook replay protection', () => {
                 paymentID: 'gateway-payment-1',
                 transactionStatus: 'Completed',
                 trxID: 'trx-1',
+                merchantInvoiceNumber: 'ORDER-1',
                 amount: '100.00',
             },
         }, res);
@@ -56,6 +62,8 @@ describe('bKash payment webhook replay protection', () => {
     test('atomically claims a pending callback before fulfillment', async () => {
         const payment = {
             id: 'payment-1',
+            order_id: 'order-1',
+            shop_id: 'shop-1',
             amount: '100.00',
             status: 'pending',
             update: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +78,7 @@ describe('bKash payment webhook replay protection', () => {
                 paymentID: 'gateway-payment-1',
                 transactionStatus: 'Completed',
                 trxID: 'trx-1',
+                merchantInvoiceNumber: 'ORDER-1',
                 amount: '100.00',
             },
         }, res);
@@ -86,6 +95,8 @@ describe('bKash payment webhook replay protection', () => {
     test('rejects a completed callback whose amount differs from the transaction', async () => {
         const payment = {
             id: 'payment-1',
+            order_id: 'order-1',
+            shop_id: 'shop-1',
             amount: '100.00',
             status: 'pending',
             update: jest.fn(),
@@ -99,6 +110,7 @@ describe('bKash payment webhook replay protection', () => {
                 paymentID: 'gateway-payment-1',
                 transactionStatus: 'Completed',
                 trxID: 'trx-1',
+                merchantInvoiceNumber: 'ORDER-1',
                 amount: '99.00',
             },
         }, res);
@@ -112,6 +124,8 @@ describe('bKash payment webhook replay protection', () => {
     test('losing the atomic claim does not run fulfillment', async () => {
         const payment = {
             id: 'payment-1',
+            order_id: 'order-1',
+            shop_id: 'shop-1',
             amount: '100.00',
             status: 'pending',
             update: jest.fn(),
@@ -126,6 +140,7 @@ describe('bKash payment webhook replay protection', () => {
                 paymentID: 'gateway-payment-1',
                 transactionStatus: 'Completed',
                 trxID: 'trx-1',
+                merchantInvoiceNumber: 'ORDER-1',
                 amount: '100.00',
             },
         }, res);
@@ -133,6 +148,48 @@ describe('bKash payment webhook replay protection', () => {
         expect(res.status).toHaveBeenCalledWith(202);
         expect(res.json).toHaveBeenCalledWith({ success: true, pending: true });
         expect(fulfillment).not.toHaveBeenCalled();
+    });
+
+    test('rejects a completed callback with a different merchant invoice', async () => {
+        mockPaymentTransaction.findOne.mockResolvedValue({
+            id: 'payment-1', order_id: 'order-1', shop_id: 'shop-1', amount: '100.00', status: 'pending',
+        });
+        const res = response();
+
+        await controller.handleBkashWebhook({
+            body: {
+                paymentID: 'gateway-payment-1', transactionStatus: 'Completed', trxID: 'trx-1',
+                merchantInvoiceNumber: 'OTHER-ORDER', amount: '100.00',
+            },
+        }, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(mockPaymentTransaction.update).not.toHaveBeenCalled();
+    });
+
+    test('returns a failed fulfillment claim to pending for webhook retry', async () => {
+        const payment = {
+            id: 'payment-1', order_id: 'order-1', shop_id: 'shop-1', amount: '100.00', status: 'pending',
+            update: jest.fn(),
+        };
+        mockPaymentTransaction.findOne.mockResolvedValue(payment);
+        mockPaymentTransaction.update.mockResolvedValue([1]);
+        jest.spyOn(controller, 'processSuccessfulPayment').mockRejectedValueOnce(new Error('fulfillment failed'));
+        const res = response();
+
+        await controller.handleBkashWebhook({
+            body: {
+                paymentID: 'gateway-payment-1', transactionStatus: 'Completed', trxID: 'trx-1',
+                merchantInvoiceNumber: 'ORDER-1', amount: '100.00',
+            },
+        }, res);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect(mockPaymentTransaction.update).toHaveBeenLastCalledWith(
+            { status: 'pending', gateway_response: expect.any(Object) },
+            { where: { id: 'payment-1', status: 'processing' } },
+        );
+        expect(payment.update).not.toHaveBeenCalled();
     });
 
     test('a processing callback remains pending and cannot repeat fulfillment', async () => {

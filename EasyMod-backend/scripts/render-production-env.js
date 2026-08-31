@@ -134,6 +134,8 @@ function buildRenderedEnv(source = process.env) {
         CSRF_SECRET: required('CSRF_SECRET'),
         PAYMENT_ENCRYPTION_KEY: normalizePaymentEncryptionKey(source.PAYMENT_ENCRYPTION_KEY, source),
         DELIVERY_ENCRYPTION_KEY: required('DELIVERY_ENCRYPTION_KEY'),
+        REDX_WEBHOOK_SECRET: required('REDX_WEBHOOK_SECRET'),
+        REDX_REQUEST_TIMEOUT_MS: source.REDX_REQUEST_TIMEOUT_MS || '10000',
         CHANNEL_ENCRYPTION_KEY: required('CHANNEL_ENCRYPTION_KEY'),
         PAYMENT_CALLBACK_HMAC_SECRET: required('PAYMENT_CALLBACK_HMAC_SECRET'),
         AI_ACTION_GATE_SECRET: required('AI_ACTION_GATE_SECRET'),
