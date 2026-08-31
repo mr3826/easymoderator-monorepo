@@ -22,6 +22,81 @@ const hasColumn = async (sequelize, table, column) => {
     return columns.some((entry) => entry.name === column);
 };
 
+const ensureTopupTransactions = async (sequelize, postgres) => {
+    if (postgres) {
+        // Some production databases were bootstrapped by marking the earlier
+        // schema-drift migration as executed without running its DDL. Repair
+        // the table here before this migration reads it or creates indexes.
+        await sequelize.query(`
+            CREATE TABLE IF NOT EXISTS topup_transactions (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                shop_id UUID NOT NULL,
+                pack_code TEXT NOT NULL,
+                pack_conversations INTEGER NOT NULL,
+                amount_bdt DECIMAL(10,2) NOT NULL,
+                bkash_payment_id TEXT,
+                bkash_trx_id TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                invoice_number TEXT,
+                invoice_pdf_url TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMPTZ,
+                CONSTRAINT fk_topup_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE
+            )
+        `);
+        for (const [column, definition] of [
+            ['idempotency_key', 'VARCHAR(128)'],
+            ['bkash_url', 'VARCHAR(1024)'],
+            ['checkout_lease_id', 'VARCHAR(255)'],
+            ['checkout_lease_expires_at', 'TIMESTAMPTZ'],
+        ]) {
+            await sequelize.query(
+                `ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS ${column} ${definition}`
+            );
+        }
+        await sequelize.query(
+            'CREATE INDEX IF NOT EXISTS idx_topup_shop_status ON topup_transactions(shop_id, status)'
+        );
+        return;
+    }
+
+    await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS topup_transactions (
+            id TEXT PRIMARY KEY,
+            shop_id TEXT NOT NULL,
+            pack_code TEXT NOT NULL,
+            pack_conversations INTEGER NOT NULL,
+            amount_bdt DECIMAL(10,2) NOT NULL,
+            bkash_payment_id TEXT,
+            bkash_trx_id TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            invoice_number TEXT,
+            invoice_pdf_url TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            idempotency_key VARCHAR(128),
+            bkash_url VARCHAR(1024),
+            checkout_lease_id VARCHAR(255),
+            checkout_lease_expires_at DATETIME
+        )
+    `);
+    for (const [column, definition] of [
+        ['idempotency_key', 'VARCHAR(128)'],
+        ['bkash_url', 'VARCHAR(1024)'],
+        ['checkout_lease_id', 'VARCHAR(255)'],
+        ['checkout_lease_expires_at', 'DATETIME'],
+    ]) {
+        if (!(await hasColumn(sequelize, 'topup_transactions', column))) {
+            await sequelize.query(
+                `ALTER TABLE topup_transactions ADD COLUMN ${column} ${definition}`
+            );
+        }
+    }
+    await sequelize.query(
+        'CREATE INDEX IF NOT EXISTS idx_topup_shop_status ON topup_transactions(shop_id, status)'
+    );
+};
+
 module.exports = {
     name: '20260828_004_commercial_model',
 
@@ -39,6 +114,8 @@ module.exports = {
         const orderStatusExpr = postgres
             ? "LOWER(COALESCE(order_status::text, ''))"
             : "LOWER(COALESCE(order_status, ''))";
+
+        await ensureTopupTransactions(sequelize, postgres);
 
         // New signups are Shuru. Each default ALTER is isolated so a partial
         // schema cannot prevent the rest of the forward-compatible migration.
@@ -155,10 +232,6 @@ module.exports = {
             await sequelize.query('CREATE INDEX IF NOT EXISTS idx_partner_adjustments_pending ON partner_billing_adjustments (shop_id, status, created_at)');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_bkash_payment ON topup_transactions (bkash_payment_id) WHERE bkash_payment_id IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_bkash_trx ON topup_transactions (bkash_trx_id) WHERE bkash_trx_id IS NOT NULL');
-            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128)');
-            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS bkash_url VARCHAR(1024)');
-            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS checkout_lease_id VARCHAR(255)');
-            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS checkout_lease_expires_at TIMESTAMPTZ');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_shop_idempotency ON topup_transactions (shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_payment_id ON invoices (payment_id) WHERE payment_id IS NOT NULL');
             await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_recurring_period ON invoices (subscription_id, invoice_type, billing_period_start) WHERE invoice_type IN ('monthly_subscription', 'yearly_subscription', 'partner_per_order') AND billing_period_start IS NOT NULL");
@@ -205,18 +278,6 @@ module.exports = {
             await sequelize.query('CREATE INDEX IF NOT EXISTS idx_partner_adjustments_pending ON partner_billing_adjustments (shop_id, status, created_at)');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_bkash_payment ON topup_transactions (bkash_payment_id) WHERE bkash_payment_id IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_bkash_trx ON topup_transactions (bkash_trx_id) WHERE bkash_trx_id IS NOT NULL');
-            if (!(await hasColumn(sequelize, 'topup_transactions', 'idempotency_key'))) {
-                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN idempotency_key VARCHAR(128)');
-            }
-            if (!(await hasColumn(sequelize, 'topup_transactions', 'bkash_url'))) {
-                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN bkash_url VARCHAR(1024)');
-            }
-            if (!(await hasColumn(sequelize, 'topup_transactions', 'checkout_lease_id'))) {
-                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN checkout_lease_id VARCHAR(255)');
-            }
-            if (!(await hasColumn(sequelize, 'topup_transactions', 'checkout_lease_expires_at'))) {
-                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN checkout_lease_expires_at DATETIME');
-            }
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_shop_idempotency ON topup_transactions (shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_payment_id ON invoices (payment_id) WHERE payment_id IS NOT NULL');
             await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_recurring_period ON invoices (subscription_id, invoice_type, billing_period_start) WHERE invoice_type IN ('monthly_subscription', 'yearly_subscription', 'partner_per_order') AND billing_period_start IS NOT NULL");

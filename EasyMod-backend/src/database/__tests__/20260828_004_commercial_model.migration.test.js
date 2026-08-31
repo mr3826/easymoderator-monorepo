@@ -36,6 +36,8 @@ describe('commercial model migration', () => {
         expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS payment_id/);
         expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS metadata/);
         expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS partner_billing_adjustments/);
+        expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS topup_transactions/);
+        expect(sql).toMatch(/idx_topup_shop_status/);
         expect(sql).toMatch(/idx_topup_bkash_payment/);
         expect(sql).toMatch(/idx_topup_bkash_trx/);
         expect(sql).toMatch(/idx_topup_shop_idempotency/);
@@ -44,8 +46,16 @@ describe('commercial model migration', () => {
 
         const growthUpdate = queries.findIndex((query) => query.includes('SET conversations_limit = 500'));
         const cancelledUpdate = queries.findIndex((query) => query.includes("'cancelled', 'inactive'"));
+        const topupTable = queries.findIndex((query) => query.includes('CREATE TABLE IF NOT EXISTS topup_transactions'));
+        const firstSubscriptionUpdate = queries.findIndex((query) => query.includes('UPDATE subscriptions'));
+        const topupPaymentIndex = queries.findIndex((query) => query.includes('idx_topup_bkash_payment'));
+        const topupIdempotencyColumn = queries.findIndex((query) => query.includes('ADD COLUMN IF NOT EXISTS idempotency_key'));
         expect(growthUpdate).toBeGreaterThan(-1);
         expect(cancelledUpdate).toBeGreaterThan(growthUpdate);
+        expect(topupTable).toBeGreaterThan(-1);
+        expect(topupTable).toBeLessThan(firstSubscriptionUpdate);
+        expect(topupIdempotencyColumn).toBeGreaterThan(topupTable);
+        expect(topupIdempotencyColumn).toBeLessThan(topupPaymentIndex);
     });
 
     it('can be safely re-applied and has a forward-only data rollback', async () => {
