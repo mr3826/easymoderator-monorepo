@@ -156,12 +156,19 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
                 )
             ]);
 
-            // First should succeed
-            expect(results[0].isRetry).toBe(false);
-            
-            // Rest should be retries
-            expect(results[1].isRetry).toBe(true);
-            expect(results[2].isRetry).toBe(true);
+            // Exactly one of the three concurrent callers wins the insert.
+            // The unique index on usage_events.request_id is the arbiter, so
+            // WHICH slot wins is Postgres's decision, not the array's — see the
+            // SequelizeUniqueConstraintError branch in subscription.service.js,
+            // which turns every loser into a retry. Asserting results[0] was the
+            // winner encoded an ordering trackUsage has never promised, and
+            // failed roughly one run in five.
+            expect(results.filter((r) => r.isRetry === false)).toHaveLength(1);
+            expect(results.filter((r) => r.isRetry === true)).toHaveLength(2);
+
+            // All three must resolve to the SAME usage event — the property that
+            // actually matters, and one the positional form never checked.
+            expect(new Set(results.map((r) => r.usageEvent.id)).size).toBe(1);
 
             // Verify only ONE increment happened
             const events = await UsageEvent.findAll({
