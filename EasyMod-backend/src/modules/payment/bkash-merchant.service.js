@@ -293,7 +293,7 @@ class BkashMerchantService extends BaseMerchantService {
             payment_status: updateData.status,
             paid_at: updateData.paidAt,
             payment_method: updateData.paymentMethod,
-            payment_method_id: updateData.transactionId
+            payment_method_id: updateData.paymentMethodId || null
         }, {
             where: { order_number: orderNumber }
         });
