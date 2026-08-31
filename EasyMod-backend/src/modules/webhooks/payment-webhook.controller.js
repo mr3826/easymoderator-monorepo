@@ -64,6 +64,25 @@ class PaymentWebhookController {
                 if (!claimableStatuses.includes(paymentTransaction.status)) {
                     return res.status(409).json({ error: 'Invalid payment state transition' });
                 }
+                if (!paymentTransaction.order_id || !paymentTransaction.shop_id) {
+                    return res.status(409).json({ error: 'Payment tenant binding is incomplete' });
+                }
+
+                const paymentOrder = await Order.findOne({
+                    where: {
+                        id: paymentTransaction.order_id,
+                        ...(paymentTransaction.shop_id ? { shop_id: paymentTransaction.shop_id } : {}),
+                    },
+                });
+                if (!paymentOrder) {
+                    return res.status(409).json({ error: 'Payment order could not be verified' });
+                }
+                if (!merchantInvoiceNumber || String(merchantInvoiceNumber) !== String(paymentOrder.order_number)) {
+                    return res.status(400).json({ error: 'Payment invoice mismatch' });
+                }
+                if (!trxID) {
+                    return res.status(400).json({ error: 'Payment transaction ID is required' });
+                }
 
                 const expectedAmount = normalizeAmountToMinorUnits(paymentTransaction.amount);
                 const providerAmount = normalizeAmountToMinorUnits(amount);
@@ -92,11 +111,24 @@ class PaymentWebhookController {
                     return res.status(202).json({ success: true, pending: true });
                 }
 
-                await this.processSuccessfulPayment(paymentTransaction, {
-                    gateway: 'bkash',
-                    transactionId: trxID,
-                    amount
-                });
+                try {
+                    await this.processSuccessfulPayment(paymentTransaction, {
+                        gateway: 'bkash',
+                        transactionId: trxID,
+                        amount,
+                        order: paymentOrder,
+                    });
+                } catch (processingError) {
+                    // A claimed callback must remain retryable if fulfillment
+                    // fails. Order and courier paths are independently idempotent.
+                    await PaymentTransaction.update({
+                        status: 'pending',
+                        gateway_response: req.body,
+                    }, {
+                        where: { id: paymentTransaction.id, status: 'processing' },
+                    });
+                    throw processingError;
+                }
 
                 await paymentTransaction.update({
                     status: 'paid',
@@ -107,6 +139,19 @@ class PaymentWebhookController {
                 // A late failure callback must never downgrade a completed payment.
                 if (['paid', 'verified', 'processing'].includes(paymentTransaction.status)) {
                     return res.status(200).json({ success: true, duplicate: true });
+                }
+
+                if (['pending', 'initiated', 'failed'].includes(paymentTransaction.status)) {
+                    if (!paymentTransaction.order_id || !paymentTransaction.shop_id) {
+                        return res.status(409).json({ error: 'Payment tenant binding is incomplete' });
+                    }
+                    const paymentOrder = await Order.findOne({
+                        where: { id: paymentTransaction.order_id, shop_id: paymentTransaction.shop_id },
+                    });
+                    if (!paymentOrder) return res.status(409).json({ error: 'Payment order could not be verified' });
+                    if (!merchantInvoiceNumber || String(merchantInvoiceNumber) !== String(paymentOrder.order_number)) {
+                        return res.status(400).json({ error: 'Payment invoice mismatch' });
+                    }
                 }
 
                 await PaymentTransaction.update({
@@ -134,28 +179,36 @@ class PaymentWebhookController {
      */
     async processSuccessfulPayment(paymentTransaction, paymentInfo) {
         try {
-            let order;
+            let order = paymentInfo.order || null;
 
-            if (paymentTransaction) {
+            if (!order && paymentTransaction) {
                 // Find order by payment transaction
                 order = await Order.findOne({
-                    where: { id: paymentTransaction.order_id }
+                    where: {
+                        id: paymentTransaction.order_id,
+                        ...(paymentTransaction.shop_id ? { shop_id: paymentTransaction.shop_id } : {}),
+                    }
                 });
-            } else if (paymentInfo.order) {
-                // Order already provided (AamarPay/SSLCommerz)
-                order = paymentInfo.order;
             }
 
             if (!order) {
                 this.logger.error('Order not found for successful payment');
-                return;
+                throw new Error('Order not found for successful payment');
+            }
+            if (paymentTransaction?.shop_id
+                && String(paymentTransaction.shop_id) !== String(order.shop_id)) {
+                throw new AppError('Payment and order belong to different shops', 403, 'TENANT_MISMATCH');
             }
 
             // Update order payment status
             await order.update({
                 payment_status: 'paid',
                 paid_at: new Date(),
-                payment_method_id: paymentInfo.transactionId,
+                // `payment_method_id` is a local payment_configs FK, not the
+                // gateway transaction identifier. bKash callbacks carry the
+                // latter, so preserve an existing local method unless the
+                // caller explicitly supplies a config ID.
+                payment_method_id: paymentInfo.paymentConfigId || order.payment_method_id || null,
                 order_status: 'confirmed'
             });
 
@@ -225,6 +278,7 @@ class PaymentWebhookController {
 
         } catch (error) {
             this.logger.error('Failed to process successful payment', { error: error.message });
+            throw error;
         }
     }
 
