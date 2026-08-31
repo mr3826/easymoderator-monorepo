@@ -1594,6 +1594,24 @@ paths:
         '200': { description: Invoice completed or duplicate }
         '403': { description: Payment ID is not bound to the invoice }
 
+  /subscription/invoices/pay/cancel:
+    post:
+      tags: [Subscription]
+      summary: Release a cancelled bound invoice checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invoice_id, payment_id]
+              properties:
+                invoice_id: { type: string, format: uuid }
+                payment_id: { type: string }
+      responses:
+        '200': { description: Invoice checkout released or already settled }
+        '403': { description: Payment ID is not bound to the invoice }
+
   /subscription/invoices/{invoiceId}/pay:
     post:
       tags: [Subscription]

@@ -397,8 +397,64 @@ const completeInvoicePayment = async (shopId, invoiceId, bkashPaymentId) => {
     };
 };
 
+/**
+ * Release a browser checkout that the customer cancelled before verification.
+ * The payment ID must match the tenant-scoped invoice binding so a stale or
+ * forged callback cannot clear another checkout.
+ */
+const cancelInvoicePayment = async (shopId, invoiceId, bkashPaymentId) => {
+    if (!bkashPaymentId) throw new AppError('payment_id is required', 400);
+
+    const invoice = await Invoice.findOne({ where: { id: invoiceId, shop_id: shopId } });
+    if (!invoice) throw new AppError('Invoice not found', 404);
+    if (invoice.status === 'paid') {
+        return { success: true, already_paid: true, invoice_id: invoice.id, status: 'paid' };
+    }
+    if (!PAYABLE_STATUSES.includes(invoice.status)) {
+        throw new AppError(`Invoice cannot be cancelled (status: ${invoice.status})`, 400);
+    }
+    if (!invoice.payment_id) {
+        return { success: true, already_released: true, invoice_id: invoice.id, status: invoice.status };
+    }
+    if (invoice.payment_id !== bkashPaymentId) {
+        throw new AppError('Payment is not bound to this invoice', 403);
+    }
+
+    const [updated] = await Invoice.update(
+        {
+            payment_id: null,
+            bkash_url: null,
+            checkout_lease_id: null,
+            checkout_lease_expires_at: null,
+        },
+        {
+            where: {
+                id: invoiceId,
+                shop_id: shopId,
+                status: { [Op.in]: PAYABLE_STATUSES },
+                payment_id: bkashPaymentId,
+            },
+        },
+    );
+
+    if (Number(updated) !== 1) {
+        const current = await Invoice.findOne({ where: { id: invoiceId, shop_id: shopId } });
+        if (current?.status === 'paid') {
+            return { success: true, already_paid: true, invoice_id: current.id, status: 'paid' };
+        }
+        if (current && !current.payment_id) {
+            return { success: true, already_released: true, invoice_id: current.id, status: current.status };
+        }
+        throw new AppError('Invoice payment cancellation is already being handled', 409, 'PAYMENT_SETTLEMENT_RACE');
+    }
+
+    logger.info('Invoice payment checkout released', { shopId, invoiceId });
+    return { success: true, invoice_id: invoice.id, status: invoice.status, payment_id: null };
+};
+
 module.exports = {
     initiateInvoicePayment,
     initiateRenewalPayment,
-    completeInvoicePayment
+    completeInvoicePayment,
+    cancelInvoicePayment,
 };

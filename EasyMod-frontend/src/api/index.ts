@@ -209,6 +209,7 @@ export const apiClient = {
   payInvoice: subscriptionDomain.payInvoice,
   renewSubscription: subscriptionDomain.renewSubscription,
   completeInvoicePayment: subscriptionDomain.completeInvoicePayment,
+  cancelInvoicePayment: subscriptionDomain.cancelInvoicePayment,
   getTopupPacks: subscriptionDomain.getTopupPacks,
   initiateTopup: subscriptionDomain.initiateTopup,
   completeTopup: subscriptionDomain.completeTopup,

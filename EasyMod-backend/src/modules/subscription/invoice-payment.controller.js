@@ -64,4 +64,17 @@ const completePayment = async (req, res, next) => {
     } catch (err) { next(err); }
 };
 
-module.exports = { payInvoice, renew, completePayment };
+const cancelPayment = async (req, res, next) => {
+    try {
+        const { shopId } = req.user;
+        if (!shopId) throw new AppError('No shop selected. Please login again.', 400);
+
+        const { invoice_id, payment_id } = req.body || {};
+        if (!invoice_id || !payment_id) throw new AppError('invoice_id and payment_id are required', 400);
+
+        const result = await invoicePaymentService.cancelInvoicePayment(shopId, invoice_id, payment_id);
+        res.json({ success: true, data: result });
+    } catch (err) { next(err); }
+};
+
+module.exports = { payInvoice, renew, completePayment, cancelPayment };

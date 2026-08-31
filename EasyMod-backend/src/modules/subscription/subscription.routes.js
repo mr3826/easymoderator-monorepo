@@ -36,6 +36,8 @@ router.get('/invoices/:invoiceId/pdf', subscriptionController.getInvoicePdf);
 router.post('/renew', invoicePaymentController.renew);
 // POST /subscription/invoices/pay/complete    — verify bKash payment & settle invoice
 router.post('/invoices/pay/complete', invoicePaymentController.completePayment);
+// POST /subscription/invoices/pay/cancel      — release a cancelled browser checkout
+router.post('/invoices/pay/cancel', invoicePaymentController.cancelPayment);
 // POST /subscription/invoices/:invoiceId/pay  — start bKash checkout for a specific invoice
 router.post('/invoices/:invoiceId/pay', invoicePaymentController.payInvoice);
 

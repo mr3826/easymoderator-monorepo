@@ -218,15 +218,28 @@ export default function Subscription() {
     const contextRaw = sessionStorage.getItem("easymod_pay_ctx");
     if (!paymentId || !contextRaw) return;
 
+    let context: { kind: "invoice" | "topup"; ref: string };
+    try {
+      context = JSON.parse(contextRaw) as { kind: "invoice" | "topup"; ref: string };
+    } catch {
+      sessionStorage.removeItem("easymod_pay_ctx");
+      setError(t("subscription.paymentVerifyFailed"));
+      return;
+    }
+
     sessionStorage.removeItem("easymod_pay_ctx");
     window.history.replaceState({}, "", window.location.pathname);
     if (params.get("status") && params.get("status") !== "success") {
+      if (context.kind === "invoice") {
+        await apiClient.cancelInvoicePayment(context.ref, paymentId).catch((cancelError) => {
+          console.error("Failed to release cancelled invoice checkout:", cancelError);
+        });
+      }
       setError(t("subscription.paymentCancelled"));
       return;
     }
 
     try {
-      const context = JSON.parse(contextRaw) as { kind: "invoice" | "topup"; ref: string };
       if (context.kind === "topup") {
         const result = await apiClient.completeTopup(context.ref, paymentId);
         setSuccess(t("subscription.topupPaymentSuccess", { count: result.conversations_added ?? 0 }));

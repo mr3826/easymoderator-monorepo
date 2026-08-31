@@ -507,7 +507,10 @@ const trackUsage = async (shopId, usageType, amount = 1, requestId = null, metad
                 current_period_start: nextPeriodStart,
                 current_period_end: nextPeriodEnd,
                 next_billing_date: nextPeriodEnd,
-                usage_reset_at: currentPeriodEnd,
+                // Keep the prior period start as the renewal handoff marker. The
+                // invoice job uses a marker strictly before the new period start
+                // to bill the period that this inline reset just closed.
+                usage_reset_at: subscription.current_period_start || currentPeriodEnd,
             };
         }
 

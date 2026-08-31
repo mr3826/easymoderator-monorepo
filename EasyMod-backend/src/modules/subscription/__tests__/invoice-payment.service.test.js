@@ -210,3 +210,27 @@ describe('initiateInvoicePayment', () => {
         expect(bd.initializeBkashPayment).not.toHaveBeenCalled();
     });
 });
+
+describe('cancelInvoicePayment', () => {
+    it('releases the matching checkout binding so the invoice can be retried', async () => {
+        const invoice = makeInvoice({ payment_id: 'PAY-CANCEL', bkash_url: 'https://bkash.example/PAY-CANCEL' });
+        Invoice.findOne.mockResolvedValueOnce(invoice);
+        Invoice.update.mockResolvedValueOnce([1]);
+
+        const result = await invoicePaymentService.cancelInvoicePayment('shop-1', 'inv-1', 'PAY-CANCEL');
+
+        expect(result).toEqual(expect.objectContaining({ success: true, invoice_id: 'inv-1', payment_id: null }));
+        expect(Invoice.update).toHaveBeenCalledWith(
+            expect.objectContaining({ payment_id: null, bkash_url: null }),
+            expect.objectContaining({ where: expect.objectContaining({ payment_id: 'PAY-CANCEL' }) }),
+        );
+    });
+
+    it('does not release a checkout bound to a different payment ID', async () => {
+        Invoice.findOne.mockResolvedValueOnce(makeInvoice({ payment_id: 'PAY-REAL' }));
+
+        await expect(invoicePaymentService.cancelInvoicePayment('shop-1', 'inv-1', 'PAY-FORGED'))
+            .rejects.toMatchObject({ status: 403 });
+        expect(Invoice.update).not.toHaveBeenCalled();
+    });
+});

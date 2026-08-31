@@ -31,7 +31,7 @@ const isTrialing = (sub) => !!sub && String(sub.status || '').toLowerCase() === 
 /**
  * Effective conversation allowance for the current period.
  * Missing subscriptions fail open as unlimited, matching isAiActive().
- * @param {{conversations_limit?: number, topup_balance?: number}|null|undefined} sub
+ * @param {{conversations_limit?: number, topup_balance?: number, conversations_used?: number}|null|undefined} sub
  * @returns {number} -1 means unlimited
  */
 const effectiveConversationLimit = (sub) => {
@@ -41,7 +41,12 @@ const effectiveConversationLimit = (sub) => {
     if (!Number.isFinite(baseLimit) || baseLimit < 0) return -1;
 
     const topupBalance = Math.max(0, Number(sub.topup_balance) || 0);
-    return baseLimit + topupBalance;
+    // conversations_used includes credits drawn from topup_balance. Add those
+    // already-consumed credits back so the allowance remains the original
+    // included limit plus the purchased/bonus amount.
+    const used = Math.max(0, Number(sub.conversations_used) || 0);
+    const consumedTopup = Math.max(0, used - baseLimit);
+    return baseLimit + topupBalance + consumedTopup;
 };
 
 /**

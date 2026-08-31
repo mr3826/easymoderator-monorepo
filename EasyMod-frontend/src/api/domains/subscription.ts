@@ -279,6 +279,18 @@ export async function completeInvoicePayment(
   return response.data.data;
 }
 
+/** Release a bound invoice checkout after a cancelled or failed browser return. */
+export async function cancelInvoicePayment(
+  invoiceId: string,
+  paymentId: string,
+): Promise<{ success: boolean; invoice_id: string; status: string; already_paid?: boolean; already_released?: boolean }> {
+  const response: AxiosResponse<ApiResponse<any>> = await httpClient.post(
+    '/api/subscription/invoices/pay/cancel',
+    { invoice_id: invoiceId, payment_id: paymentId },
+  );
+  return response.data.data;
+}
+
 // ── Conversation top-up (integrated bKash) ──────────────────────────────────
 
 export interface TopupPack {

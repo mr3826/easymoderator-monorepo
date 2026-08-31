@@ -61,4 +61,11 @@ describe('subscription.access · conversation quota', () => {
         expect(isConversationQuotaExhausted(null)).toBe(false);
         expect(effectiveConversationLimit(undefined)).toBe(-1);
     });
+
+    it('preserves the original allowance after partially consuming top-up credits', () => {
+        const partiallyConsumed = { conversations_limit: 500, conversations_used: 550, topup_balance: 50 };
+        expect(effectiveConversationLimit(partiallyConsumed)).toBe(600);
+        expect(isConversationQuotaExhausted(partiallyConsumed)).toBe(false);
+        expect(isConversationQuotaExhausted({ conversations_limit: 500, conversations_used: 600, topup_balance: 0 })).toBe(true);
+    });
 });

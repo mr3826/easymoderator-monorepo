@@ -261,7 +261,10 @@ class ConversationService {
                     conversationId: conversation.id,
                     severity: usageError.code === 'USAGE_LIMIT_EXCEEDED' ? 'critical' : 'error'
                 });
-                throw usageError;
+                // The conversation transaction is already committed. Keep the
+                // successful resource visible; the worker can use the persisted
+                // allowance decision or retry metering without creating a
+                // duplicate conversation on the client's retry.
             }
 
             return conversation;

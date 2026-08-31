@@ -685,6 +685,29 @@ describe('Usage Tracking - Atomic Transactions & Idempotency', () => {
 
             await subscription.update({ conversations_limit: 100, conversations_used: 0, topup_balance: 0 });
         });
+
+        test('inline period rollover preserves the prior period for renewal invoicing', async () => {
+            const previousStart = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+            const expiredEnd = new Date(Date.now() - 60 * 60 * 1000);
+            await subscription.update({
+                current_period_start: previousStart,
+                current_period_end: expiredEnd,
+                next_billing_date: expiredEnd,
+                usage_reset_at: null,
+                conversations_used: 0,
+            });
+
+            await subscriptionService.trackUsage(
+                shop.id, 'conversations', 1, uuidv4(), { resourceId: uuidv4() },
+            );
+            await subscription.reload();
+
+            expect(subscription.current_period_start.getTime()).toBe(expiredEnd.getTime());
+            expect(subscription.usage_reset_at.getTime()).toBe(previousStart.getTime());
+
+            const InvoiceGenerator = require('../../../jobs/invoice-generator');
+            expect(new InvoiceGenerator().periodWasJustReset(subscription, new Date())).toBe(true);
+        });
     });
 });
 
