@@ -24,3 +24,7 @@ export async function publicApiRequest<T>(path: string, options: RequestInit = {
 export function publicApiPost<T>(path: string, body: unknown): Promise<T> {
   return publicApiRequest<T>(path, { method: "POST", body: JSON.stringify(body) });
 }
+
+export function publicApiGet<T>(path: string): Promise<T> {
+  return publicApiRequest<T>(path, { method: "GET" });
+}

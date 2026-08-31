@@ -35,8 +35,10 @@ const makeInvoice = (overrides = {}) => {
         invoice_number: overrides.invoice_number || 'INV-1',
         shop_id: shopId,
         amount: overrides.amount ?? 999,
+        status: overrides.status || 'pending',
         due_date: overrides.due_date || daysAgo(2),
         invoice_type: overrides.invoice_type || 'monthly_subscription',
+        update: jest.fn().mockResolvedValue(undefined),
         subscription: {
             id: 'sub-1',
             shop_id: shopId,
@@ -61,6 +63,7 @@ describe('FailedPaymentReconciler.run', () => {
         expect(inv.subscription.update).toHaveBeenCalledWith(
             expect.objectContaining({ status: 'suspended' })
         );
+        expect(inv.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'overdue' }));
         expect(res.subscriptionsSuspended).toBe(1);
         expect(res.invoicesOverdue).toBe(1);
         expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
@@ -86,6 +89,62 @@ describe('FailedPaymentReconciler.run', () => {
             expect.objectContaining({ status: 'suspended' })
         );
         expect(res.subscriptionsSuspended).toBe(1);
+    });
+
+    it('does not suspend or notify a free Shuru subscription for a legacy invoice', async () => {
+        const inv = makeInvoice({
+            subscription: {
+                id: 'sub-shuru',
+                shop_id: 'shop-1',
+                plan_code: 'SHURU',
+                plan_price: 0,
+                billing_model: 'flat_monthly',
+                status: 'active',
+                update: jest.fn().mockResolvedValue(undefined),
+            },
+        });
+        Invoice.findAll.mockResolvedValueOnce([inv]);
+
+        const res = await new FailedPaymentReconciler().run({ dryRun: false, runDate: new Date() });
+
+        expect(inv.subscription.update).not.toHaveBeenCalled();
+        expect(res.subscriptionsSuspended).toBe(0);
+        expect(res.remindersSent).toBe(0);
+        expect(res.details[0].action).toBe('ignored_free_plan');
+    });
+
+    it('does not suspend or notify when invoice and subscription tenants disagree', async () => {
+        const inv = makeInvoice({
+            subscription: {
+                id: 'sub-foreign',
+                shop_id: 'shop-foreign',
+                plan_code: 'GROWTH',
+                plan_price: 999,
+                billing_model: 'flat_monthly',
+                status: 'active',
+                update: jest.fn().mockResolvedValue(undefined),
+            },
+        });
+        Invoice.findAll.mockResolvedValueOnce([inv]);
+
+        const res = await new FailedPaymentReconciler().run({ dryRun: false, runDate: new Date() });
+
+        expect(inv.subscription.update).not.toHaveBeenCalled();
+        expect(emailService.sendEmail).not.toHaveBeenCalled();
+        expect(res.details[0].action).toBe('ignored_tenant_mismatch');
+    });
+
+    it('cancels zero-value invoices instead of dunning a Partner shop', async () => {
+        const inv = makeInvoice({ amount: 0, invoice_type: 'partner_per_order' });
+        expect(inv.amount).toBe(0);
+        Invoice.findAll.mockResolvedValueOnce([inv]);
+
+        const res = await new FailedPaymentReconciler().run({ dryRun: false, runDate: new Date() });
+
+        expect(inv.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'cancelled' }));
+        expect(inv.subscription.update).not.toHaveBeenCalled();
+        expect(emailService.sendEmail).not.toHaveBeenCalled();
+        expect(res.details[0].action).toBe('ignored_zero_balance');
     });
 
     it('only reminds (never suspends) for a one-off / discretionary invoice', async () => {
@@ -115,7 +174,7 @@ describe('FailedPaymentReconciler.run', () => {
     // can only happen after the entitlement has expired, since the generator
     // writes no invoice before then — it suspends like any other renewal.
     it('suspends for a yearly renewal that is genuinely past due', async () => {
-        const inv = makeInvoice({ invoice_type: 'yearly_subscription', amount: 11988 });
+        const inv = makeInvoice({ invoice_type: 'yearly_subscription', amount: 9990 });
         Invoice.findAll.mockResolvedValueOnce([inv]);
 
         const job = new FailedPaymentReconciler();

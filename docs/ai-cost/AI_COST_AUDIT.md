@@ -20,6 +20,11 @@ Companion files: [`AI_CALL_GRAPH.md`](AI_CALL_GRAPH.md) · [`AI_COST_ASSUMPTIONS
 > **are** current; the prose in §1–§10 is retained as the measurement record of the
 > pre-change system, because the token measurements it rests on are still valid inputs.
 >
+> **Commercial-model revision (2026-08-28):** plan and pack economics below are
+> historical where they mention the retired 300 + 50 allowance or `TOPUP_*`
+> catalog. Current commercial values are listed in §0.1 and supersede those
+> old billing references.
+>
 > New companions: [`AI_ARCHITECTURE_VALIDATION.md`](AI_ARCHITECTURE_VALIDATION.md) ·
 > [`RETRIEVAL_QUALITY_EVALUATION.md`](RETRIEVAL_QUALITY_EVALUATION.md) ·
 > [`GEMINI_FREE_TIER_CAPACITY.md`](GEMINI_FREE_TIER_CAPACITY.md) ·
@@ -38,6 +43,29 @@ Companion files: [`AI_CALL_GRAPH.md`](AI_CALL_GRAPH.md) · [`AI_COST_ASSUMPTIONS
 3. **Product search metadata is derived from text**, not from a vision response, so the
    `ai_*` ranking columns are populated for every product instead of none.
 4. **`model_preset: 'advanced'` is gated** on a plan entitlement no plan grants.
+
+## 0.1 Current commercial economics (2026-08-28)
+
+| Plan | Price | Included conversations | Top-ups | Billing rule |
+|---|---:|---:|---|---|
+| Shuru | ৳0 | 100/month | No | Free forever; AI pauses after allowance |
+| Growth | ৳999/month | 500/month | `PACK_100` ৳250, `PACK_300` ৳500, `PACK_700` ৳1,000 | Flat monthly |
+| Partner | ৳0 upfront | Unlimited | No | 300–999 delivered ৳15/order; 1,000–2,999 ৳12/order; 3,000+ ৳10/order |
+
+Using the current paid expected-profile model of about **$0.00618 / ৳0.7625
+per conversation including marginal infrastructure**, the Growth ceiling costs
+about **$3.09 / ৳381** at 500 conversations, leaving roughly 61.8% gross margin
+against ৳999 before fixed infrastructure. The new packs
+sell at ৳2.50, ৳1.67, and ৳1.43 per conversation respectively; each remains
+positive against the expected and heavy measured profiles. Shuru is an
+acquisition entitlement, not a revenue-margin claim. Partner has unlimited AI
+conversations and therefore remains an exposure-controlled partnership path;
+the delivered-order qualification and flat bands are the commercial guard.
+
+New usage never creates a per-conversation overage charge. It consumes the
+included allowance, then Growth `topup_balance`, and pauses only automated
+replies when both are exhausted. `extra_conversations`, `extra_charge`, and the
+retired threshold buffer remain schema-compatible historical fields only.
 
 ### Revised headline costs
 
@@ -62,41 +90,35 @@ escalation — the two things that were removed.
 | 50 | $0.3187 | $0.3197 | ৳39.45 | ৳0.789 |
 | 100 | $0.6374 | $0.6394 | ৳78.90 | ৳0.789 |
 | 300 | $1.9121 | $1.9181 | ৳236.69 | ৳0.789 |
-| **350** (plan + grace) | $2.2308 | **$2.2378** | **৳276.14** | ৳0.789 |
+| **350** (historical 300 + grace comparator) | $2.2308 | **$2.2378** | **৳276.14** | ৳0.789 |
 | 500 | $3.1868 | $3.1968 | ৳394.49 | ৳0.789 |
 | 1000 | $6.3736 | $6.3936 | ৳788.98 | ৳0.789 |
 
-### Revised gross margin at the 350-conversation ceiling
+### Revised gross margin at the 500-conversation Growth ceiling
 
 Revenue ৳999 = $8.0956. Before fixed infra, then after a $1.92 attributable infra share:
 
 | Profile | 5% fallback | 10% | 25% | after infra (5%) |
 |---|---|---|---|---|
-| Efficient | **82.6%** | 82.0% | 78.6% | 58.8% |
-| **Expected** | **72.4%** | 71.4% | 68.4% | **48.6%** |
-| Heavy | **67.4%** | 66.4% | 63.4% | 43.7% |
+| Efficient | **76.6%** | 75.8% | 72.5% | 52.9% |
+| **Expected** | **60.6%** | 59.7% | 56.5% | **36.9%** |
+| Heavy | **54.9%** | 53.9% | 50.7% | 31.2% |
 
-Break-even conversations per month: expected @5% **1,266** · heavy @5% **1,073** ·
-after fixed infra **965** · after PSP fees and VAT **773**. All are ≥ 2.2× the plan cap of
-350, so the plan has substantial headroom in every profile.
+Break-even conversations per month remains above the 500-conversation Growth
+ceiling in the measured profiles. Shuru has no paid revenue and is therefore an
+acquisition allowance rather than a margin commitment.
 
-### Top-up packs: the previous audit's #1 risk is resolved
-
-Every pack is now margin-positive for every profile, **without changing a single price**:
+### Top-up packs: current catalog
 
 | Pack | ৳/conv | Efficient GM | Expected GM | Heavy GM | Heavy @25% fallback |
 |---|---|---|---|---|---|
-| `TOPUP_100` | ৳1.50 | 67.0% | 47.6% | **38.1%** | 30.5% |
-| `TOPUP_250` | ৳1.40 | 64.6% | 43.8% | **33.7%** | 25.6% |
-| `TOPUP_500` | ৳1.30 | 61.9% | 39.5% | **28.6%** | 19.9% |
-| `TOPUP_1000` | ৳1.20 | 58.7% | 34.5% | **22.7%** | 13.2% |
+| `PACK_100` | ৳2.50 | 81.1% | 69.7% | **64.0%** | positive |
+| `PACK_300` | ৳1.67 | 77.3% | 54.5% | **46.0%** | positive |
+| `PACK_700` | ৳1.43 | 73.5% | 47.0% | **37.0%** | positive |
 
-The previous audit found `TOPUP_1000` at **−63.4%** gross margin for a heavy merchant,
-because a heavy conversation then cost ৳1.93 against a ৳1.20 sale price. A heavy
-conversation now costs **৳0.90**, so the worst pack for the worst profile still clears
-**+22.7%**. The earlier recommendation to price no pack below ৳2.20/conversation is
-**withdrawn** — it was correct for the architecture it was measured on and is not correct
-for this one. **No pricing change is recommended.**
+The new catalog is priced above the expected and heavy measured conversation
+costs. These figures are planning estimates; enable the usage ledger before
+using them as a revenue report.
 
 `TOPUP_1000` at heavy usage *and* a 25% fallback rate is the thinnest cell at 13.2%. That is
 positive but not comfortable, and it is the cell to watch if the fallback rate rises —
@@ -169,17 +191,17 @@ this scale is the droplet, not the model.
 
 ## 1. Executive summary
 
-AI is **not** the risk to EasyModerator's unit economics. At the expected usage profile a merchant
-consumes **৳1.02 of AI per conversation** against a plan that charges **৳2.85–3.33**, giving a
-**63% gross margin at the 350-conversation grace ceiling** and a break-even at ~950 conversations —
-nearly 3× the plan cap. The GROWTH plan at ৳999/month is **comfortably sustainable**.
+AI is **not** the risk to EasyModerator's unit economics. At the current paid
+expected profile a Growth merchant consumes about **৳0.758 per conversation**
+against a ৳999 plan with 500 included conversations, leaving roughly 61% gross
+margin before fixed infrastructure. Shuru is free forever; Partner is
+qualification-controlled delivered-order billing.
 
 Four things are worth acting on, in this order:
 
-1. **Top-up packs are loss-making for exactly the merchants who buy them.** `TOPUP_1000` sells
-   conversations at ৳1.20 while a heavy merchant consumes ৳1.93 of AI — a **−63% gross margin**.
-   Every pack inverts for heavy users. A merchant only buys a top-up after exhausting 350
-   conversations, which self-selects for the heavy profile.
+1. **Top-up packs are now priced above measured heavy usage.** The current
+   `PACK_*` catalog sells at ৳2.50, ৳1.67, and ৳1.43 per conversation. The
+   allowance hard-stop means a merchant cannot silently create unpriced usage.
 2. **The `gemini-pro` middle tier is the most expensive thing in the system, and it is also the
    *first* place a failure lands.** One escalated turn costs **8.2× a normal one** ($0.005383 vs
    $0.000770). Escalating to `gpt-4.1-mini` instead costs **1.4×** cold — and **0.6×** once OpenAI's
@@ -281,9 +303,10 @@ That is exactly the shape prompt caching exists for, and exactly what is broken 
 
 ## 4. Cost-relevant findings
 
-### F-1 · Top-up packs invert margin for heavy merchants — **HIGH**
+### F-1 · Historical top-up prices — superseded by the 2026-08-28 catalog
 
-`subscription.plans.js:34-39` sells top-ups below the base plan's ৳3.33/conversation:
+The following table records the pre-commercial-model audit only. It is retained
+for traceability and is not the live catalog:
 
 | Pack | ৳/conv | Efficient GM | Expected GM | **Heavy GM** | Heavy @25% fallback |
 |---|---|---|---|---|---|
@@ -292,12 +315,8 @@ That is exactly the shape prompt caching exists for, and exactly what is broken 
 | `TOPUP_500` | 1.30 | 41.8% | 19.4% | **−50.8%** | −59.6% |
 | `TOPUP_1000` | 1.20 | 36.9% | 12.7% | **−63.4%** | −72.9% |
 
-The selection effect is the problem: a merchant only reaches the top-up screen after burning 300 + 50
-conversations, which is precisely the population most likely to be image-heavy and long-form. The
-base plan absorbs heavy usage (31% GM); the top-ups do not.
-
-Recommended threshold, not a price change: **a top-up should not price a conversation below
-৳2.20** (heavy cost ৳1.93 + 15% headroom). `TOPUP_100` at ৳1.50 is the only pack within sight of that.
+The live `PACK_*` values and current economics are defined in §0.1. The
+previous 300 + 50 soft allowance and `TOPUP_*` sale prices are retired.
 
 ### F-2 · Embeddings are running on a non-semantic hash — **HIGH (quality), NIL (cost)**
 
@@ -525,7 +544,7 @@ infrastructure. Excludes fixed infrastructure (allocated separately in §8).
 | 50 | $0.4247 | $0.4257 | ৳52.53 | ৳1.05 |
 | 100 | $0.8494 | $0.8514 | ৳105.06 | ৳1.05 |
 | 300 | $2.5482 | $2.5542 | ৳315.18 | ৳1.05 |
-| **350 (plan + grace)** | **$2.9729** | **$2.9799** | **৳367.72** | **৳1.05** |
+| **350 (historical 300 + grace comparator)** | **$2.9729** | **$2.9799** | **৳367.72** | **৳1.05** |
 | 500 | $4.2470 | $4.2569 | ৳525.31 | ৳1.05 |
 | 1 000 | $8.4939 | $8.5139 | ৳1 050.62 | ৳1.05 |
 
@@ -540,7 +559,7 @@ infrastructure. Excludes fixed infrastructure (allocated separately in §8).
 | 500 | $3.08 / ৳380 | $4.26 / ৳525 | $8.07 / ৳996 |
 | 1 000 | $6.15 / ৳759 | $8.51 / ৳1 051 | $16.14 / ৳1 992 |
 
-### Split by cost line (expected, 350 conversations, 5% fallback)
+### Split by cost line (historical 350-conversation comparator, 5% fallback)
 
 | Line | Calls/conv | USD | Share |
 |---|---|---|---|
@@ -557,17 +576,17 @@ infrastructure. Excludes fixed infrastructure (allocated separately in §8).
 | **Total** | **20** | **$2.9799** | **100%** |
 
 Across all Gemini calls that is **9 447 550 input tokens** ($2.3619) and **353 500 output tokens**
-($0.5303) per merchant-month at 350 conversations.
+($0.5303) per merchant-month at the historical 350-conversation comparator.
 
 ---
 
 ## 8. Plan sustainability
 
-**GROWTH:** ৳999/month = **$8.10** for 300 conversations + a 50-conversation grace buffer
-(`subscription.plans.js:98-119`, `THRESHOLD_BUFFER = 50`). Headline **৳3.33/conversation**;
-**৳2.85** if the grace buffer is fully consumed.
+**GROWTH:** ৳999/month = **$8.10** for 500 included conversations
+(`subscription.plans.js`, `conversationsLimit: 500`). Headline price is
+approximately **৳2.00/conversation** at the included ceiling.
 
-### Gross margin at the 350-conversation ceiling
+### Gross margin at the 500-conversation ceiling
 
 | Profile | Fallback | Variable cost | GM before fixed infra | GM after $1.92 infra share |
 |---|---|---|---|---|
@@ -599,31 +618,34 @@ picture tight.
 | Expected, after fixed-infra allocation | 725 |
 | Expected, after 2.5% PSP fee + 15% VAT + infra | 580 |
 
-Every break-even sits above the 350-conversation ceiling. Even a heavy, image-heavy merchant at 25%
-fallback needs **480** conversations to erase the margin — 37% above the grace cap. The plan cap is
-doing its job.
+Every measured break-even sits above the 500-conversation ceiling. The hard
+allowance and paid Growth top-ups prevent an uncommunicated overage liability.
 
-### Merchants using the full grace allowance
+### Merchants using the full Growth allowance
 
-The 50-conversation buffer costs **$0.41** (expected) to **$0.78** (heavy) — ৳51 to ৳97 against ৳999
-of revenue. Cheap insurance; no reason to reduce it.
+The 500-conversation Growth allowance costs about **$3.09 / ৳381** on the
+expected paid profile including marginal infrastructure, against ৳999 of
+revenue.
 
 ### Merchants exceeding the allowance
 
-This is the one place the pricing is wrong. See **F-1**. Top-ups sell below the base rate to the
-merchants most likely to be heavy, and go negative at the heavy profile.
+Growth merchants must purchase a `PACK_*` top-up after the allowance. The
+worker pauses automated replies when the included allowance and top-up balance
+are exhausted; no per-conversation overage is recorded or invoiced.
 
 ### Verdict
 
-- Base GROWTH plan at 300 + 50 conversations: **comfortably sustainable** (63% expected, 31% worst
-  realistic profile).
+- Base GROWTH plan at 500 conversations: **sustainable** on the current expected paid profile
+  (about 61% gross margin before fixed infrastructure).
 - `model_preset: 'advanced'` merchants: **loss-making** — ৳1,386/month of AI against ৳999 (F-4).
-- Top-up packs for heavy merchants: **loss-making** — −31% to −63% (F-1).
-- PARTNER plan (0 upfront, ৳10–15/delivered order, unlimited conversations): **unbounded exposure.**
+- Current top-up packs are priced at ৳2.50, ৳1.67, and ৳1.43 per conversation and remain positive
+  against the measured expected/heavy profiles.
+- PARTNER plan (0 upfront, flat ৳15/৳12/৳10 delivered-order bands, unlimited conversations): **requires
+  operational qualification and monitoring.**
   A PARTNER shop with high chat volume and low conversion pays nothing while consuming AI. At the
-  heavy profile, 1 000 conversations costs ৳1,992 and would need ~160 delivered orders at the ৳12
-  tier to break even. No conversation cap exists on this plan (`conversationsLimit: UNLIMITED`).
-  Flagged as evidence, not a pricing recommendation.
+  heavy profile, 1 000 conversations costs about ৳1,992; the 300-delivery qualification is also the
+  first billable band, so operations must monitor conversion and delivered-order volume. No
+  conversation cap exists on this plan (`conversationsLimit: UNLIMITED`).
 
 ---
 

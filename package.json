@@ -13,6 +13,7 @@
     "test:backend": "npm test --workspace=easymod-backend",
     "test:backend:integration": "npm run test:integration --workspace=easymod-backend",
     "test:backend:integration:docker": "node scripts/run-backend-integration.js",
+    "test:backend:meta:e2e:docker": "node scripts/run-backend-meta-e2e.js",
     "test:frontend": "npm run test:unit --workspace=easymod-frontend",
     "test:growthos": "npm run test --workspace=easymod-growth",
     "test:growthos:e2e": "node scripts/run-growth-e2e.js",

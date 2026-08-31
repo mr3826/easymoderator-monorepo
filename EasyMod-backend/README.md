@@ -194,12 +194,13 @@ Source of truth: `src/modules/subscription/subscription.plans.js`.
 
 | Plan | Price | Limit | Notes |
 |---|---|---|---|
-| **Growth** | ৳999 / month (৳9,990 / year) | 300 customer conversations/mo + 50 grace buffer | Every feature included. Fronted by a **card-less 14-day trial** (a `trialing` status, not a separate plan). |
-| **Partner** | ৳0 upfront | Unlimited conversations | Billed per **delivered order**, tiered: ≤500 → ৳15, ≤1,000 → ৳12, 1,000+ → ৳10. Apply → admin approves. |
+| **Shuru** | ৳0 forever | 100 customer conversations/mo | Same core features; AI pauses at the allowance, manual inbox remains available. |
+| **Growth** | ৳999 / month (৳9,990 / year for existing annual rows) | 500 customer conversations/mo | Same core features; `PACK_100`, `PACK_300`, and `PACK_700` top-ups. |
+| **Partner** | ৳0 upfront | Unlimited conversations | Billed per **delivered order**, flat bands: 300–999 → ৳15, 1,000–2,999 → ৳12, 3,000+ → ৳10. Apply → admin approves. |
 
-**Top-up packs** (bKash): `TOPUP_100` ৳150, `TOPUP_250` ৳350, `TOPUP_500` ৳650, `TOPUP_1000` ৳1,200.
+**Top-up packs** (bKash): `PACK_100` 100/৳250, `PACK_300` 300/৳500, `PACK_700` 700/৳1,000. Historical `TOPUP_*` rows remain readable at their original sold values.
 
-Conversation-limit billing is tracked at the webhook chokepoint in `meta-webhook-events.handler.js`, which calls `subscriptionService.trackUsage(shopId, 'conversations', 1, 'conv:<id>')` exactly once per new conversation. When the AI gate is off (inactive/expired subscription) auto-reply pauses but the inbox stays usable.
+Conversation-limit billing is tracked at the webhook chokepoint in `meta-webhook-events.handler.js`, which calls `subscriptionService.trackUsage(shopId, 'conversations', 1, conversationId)` idempotently for each conversation. Included allowance is consumed before `topup_balance`; when both are exhausted, only the automated reply pauses and the inbox stays usable. No overage charge is generated.
 
 **Payments: bKash only.** No other gateway is wired. Adding one requires implementing its full tokenized-checkout + webhook-verification path.
 
@@ -248,16 +249,31 @@ Operational requirements:
 | `message-worker.js` | Worker | Process inbound messages through the AI pipeline |
 | `burst-coalescer.js` | Helper | Debounce rapid message bursts into one reply |
 | `meta-token-refresh.job.js` | Cron | Re-auth Meta tokens nearing expiry |
-| `trial-expiry.job.js` | Cron | End trials + send ending nudges |
-| `monthly-usage-reset.js` | Cron | Reset conversation counters on the 1st |
-| `daily-overage-calculator.js` | Cron | Compute Partner-plan per-order charges |
-| `invoice-generator.js` | Cron | Generate subscription/partner invoices (PDF) |
+| `monthly-usage-reset.js` | Cron | Reset counters and advance expired periods daily |
+| `invoice-generator.js` | Cron | Generate paid renewal/Partner invoices from period and delivery data |
 | `failed-payment-reconciler.js` | Cron | Retry/flag failed bKash payments |
 | `customer-waiting-notifier.js` | BullMQ cron | Alert when a HITL customer waits too long |
 | `daily-sales-summary-notifier.js` | BullMQ cron | Send previous-24h merchant sales summary |
 | `courier-reconciliation.job.js` | Cron | Reconcile courier delivery statuses |
 | `pipeline-canary.job.js` | Cron | Synthetic auto-reply canary + DLQ watchdog → ops alert |
 | `knowledge/auto-index.job.js` | Cron | Re-index product/knowledge embeddings |
+
+---
+
+## Subscription model
+
+The public catalog is server-authoritative: Shuru is free forever with 100
+conversations/month, Growth is ৳999/month with 500 conversations/month and
+`PACK_100`/`PACK_300`/`PACK_700` top-ups, and Partner has no monthly fee with
+flat delivered-order bands (৳15 for 300–999, ৳12 for 1,000–2,999, ৳10 for
+3,000+). All plans share core features. Conversation metering consumes
+`topup_balance` after the included allowance and pauses only the automated
+reply when exhausted; no overage charge is generated.
+
+`GET /api/subscription/plans` is public. The payment completion endpoints bind
+the gateway payment ID to the server-created transaction/invoice, compare the
+gateway amount in minor units, and use a conditional database claim to make
+replays idempotent.
 
 ---
 

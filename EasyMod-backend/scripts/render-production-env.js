@@ -153,6 +153,7 @@ function buildRenderedEnv(source = process.env) {
         META_APP_ID: required('META_APP_ID'),
         META_APP_SECRET: required('META_APP_SECRET'),
         META_WEBHOOK_VERIFY_TOKEN: required('META_WEBHOOK_VERIFY_TOKEN'),
+        META_USER_PROFILE_ENABLED: source.META_USER_PROFILE_ENABLED || 'false',
         ...bkashSection,
         ...telegramSection,
         OPENAI_API_KEY: source.OPENAI_API_KEY || '',

@@ -8,7 +8,7 @@ import type { AxiosResponse } from 'axios';
 import type { ApiResponse } from '../types/common';
 
 export type AdminDashboard = {
-  shops: { total: number; active: number; trial: number; suspended: number };
+  shops: { total: number; active: number; shuru: number; suspended: number };
   today: {
     messages: number; aiAutoReplies: number; orders: number;
     failedAiReplies: number | null; courierFailures: number | null;
@@ -20,7 +20,7 @@ export type AdminDashboard = {
 export type AdminShopRow = {
   id: string; shopName: string;
   owner: { name: string | null; email: string | null; phone: string | null } | null;
-  plan: string | null; status: string | null; trialEndsAt: string | null;
+  plan: string | null; status: string | null;
   channelCount: number; conversationsUsed: number | null; conversationsLimit: number | null;
   createdAt: string;
 };
@@ -56,8 +56,6 @@ export const adminApi = {
     patch<any>(`/api/admin/shops/${id}/billing`, body),
   addCredits: (id: string, amount: number, reason?: string) =>
     post<any>(`/api/admin/shops/${id}/add-credits`, { amount, reason }),
-  extendTrial: (id: string, days: number) =>
-    post<any>(`/api/admin/shops/${id}/extend-trial`, { days }),
   markReconnect: (id: string, channelId: string) =>
     patch<any>(`/api/admin/shops/${id}/channels/${channelId}/reconnect`, {}),
   emergencyAiOff: (id: string) =>

@@ -17,6 +17,7 @@ const STATUS_CLASSES: Record<string, string> = {
   confirmed: "bg-blue-100 text-blue-700",
   processing: "bg-yellow-100 text-yellow-700",
   completed: "bg-green-100 text-green-700",
+  delivered: "bg-green-100 text-green-700",
   cancelled: "bg-destructive/10 text-destructive",
 };
 
@@ -43,7 +44,7 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
           <p className="text-base font-bold text-card-foreground font-bn">
             {order.customerName}
           </p>
-          <p className="text-xs text-muted-foreground">#{order.id}</p>
+          <p className="text-xs text-muted-foreground">#{order.orderNumber || order.id}</p>
         </div>
         <span
           className={`rounded-full px-3 py-1 text-xs font-bold ${
@@ -62,6 +63,7 @@ export function OrderRow({ order, formatCurrency, formatDate, onViewDetail, onDi
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded-md bg-muted px-2 py-1">📍 {order.channel}</span>
+        {order.payment_method && <span className="rounded-md bg-muted px-2 py-1">{order.payment_method}</span>}
         <span className="rounded-md bg-muted px-2 py-1">🕐 {formatDate(order.createdAt)}</span>
         {order.rto_risk === "high" && (
           <span className="inline-flex items-center gap-1 rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700 font-bn">

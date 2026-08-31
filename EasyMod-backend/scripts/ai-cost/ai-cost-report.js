@@ -37,9 +37,9 @@ const EMBED_MODEL = process.argv.find((a) => a.startsWith('--embeddings='))?.spl
 const PLAN = {
     code: 'GROWTH',
     priceBdtMonthly: 999,
-    conversationsLimit: 300,
-    thresholdBuffer: 50,
-    topups: { TOPUP_100: [100, 150], TOPUP_250: [250, 350], TOPUP_500: [500, 650], TOPUP_1000: [1000, 1200] },
+    priceBdtYearly: 9990,
+    conversationsLimit: 500,
+    topups: { PACK_100: [100, 250], PACK_300: [300, 500], PACK_700: [700, 1000] },
 };
 
 // ── Assumptions that are NOT measurable from the repo ───────────────────────
@@ -50,7 +50,7 @@ const ASSUMPTIONS = {
     fixedInfraUsdPerMonth: 48,
     merchantsSharingInfra: 25,
     paymentFeePct: 0.025,
-    vatPct: 0.15,
+    vatPct: 0,
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -435,7 +435,7 @@ function build() {
     const prodAddIntended = costed.products.PROD_upload_5img_intended.totals.costUsd;
     const prodEdit = costed.products.PROD_edit_text_only.totals.costUsd;
 
-    const VOLUMES = [50, 100, 300, 350, 500, 1000];
+    const VOLUMES = [50, 100, 300, 500, 1000];
     const FALLBACK_RATES = [0.05, 0.10, 0.25];
 
     const monthly = {};
@@ -466,7 +466,7 @@ function build() {
 
     // ── Plan economics ──────────────────────────────────────────────────────
     const revenueUsdMonthly = PLAN.priceBdtMonthly / FX;
-    const includedConversations = PLAN.conversationsLimit + PLAN.thresholdBuffer;
+    const includedConversations = PLAN.conversationsLimit;
 
     // A fallback turn escalates gemini-lite → gemini-pro for ONE turn in the
     // conversation. Uplift is measured, not assumed.
@@ -511,17 +511,11 @@ function build() {
         revenueUsdMonthly,
         includedConversations,
         planHeadlineBdtPerConversation: PLAN.priceBdtMonthly / PLAN.conversationsLimit,
-        graceInclusiveBdtPerConversation: PLAN.priceBdtMonthly / includedConversations,
         fallbackUpliftPerConversationUsd: fallbackUpliftPerConv,
         atPlanLimit: {
             efficient: byFallback(convA, PLAN.conversationsLimit),
             expected: byFallback(convB, PLAN.conversationsLimit),
             heavy: byFallback(convC, PLAN.conversationsLimit),
-        },
-        atGraceLimit: {
-            efficient: byFallback(convA, includedConversations),
-            expected: byFallback(convB, includedConversations),
-            heavy: byFallback(convC, includedConversations),
         },
         breakEvenConversations: {
             efficient_5pct: breakEven(convA, 0.05),
@@ -677,12 +671,12 @@ function main() {
         console.log(`  ${String(r.conversations).padStart(5)} conv  AI $${r.aiVariableUsd.toFixed(4)}  total $${r.totalVariableUsd.toFixed(4)}  = ৳${r.totalVariableBdt.toFixed(2)}  (৳${r.costPerConversationBdt.toFixed(4)}/conv)`);
     }
     const pe = json.planEconomics;
-    console.log(`\nGROWTH plan: ৳${pe.plan.priceBdtMonthly}/mo = $${pe.revenueUsdMonthly.toFixed(2)} for ${pe.includedConversations} conversations (300 + 50 grace)`);
-    console.log(`  Headline ৳${pe.planHeadlineBdtPerConversation.toFixed(2)}/conv · with grace ৳${pe.graceInclusiveBdtPerConversation.toFixed(2)}/conv`);
+    console.log(`\nGROWTH plan: ৳${pe.plan.priceBdtMonthly}/mo = $${pe.revenueUsdMonthly.toFixed(2)} for ${pe.includedConversations} conversations`);
+    console.log(`  Headline ৳${pe.planHeadlineBdtPerConversation.toFixed(2)}/conv at the included allowance`);
     for (const tier of ['efficient', 'expected', 'heavy']) {
-        const r = pe.atGraceLimit[tier].fallback_5pct;
-        const r25 = pe.atGraceLimit[tier].fallback_25pct;
-        console.log(`  350 conv ${tier.padEnd(9)} @5% fallback: $${r.variableCostUsd.toFixed(4)} → GM ${r.grossMarginPct.toFixed(1)}% (after infra ${r.grossMarginAfterInfraPct.toFixed(1)}%) | @25%: GM ${r25.grossMarginPct.toFixed(1)}%`);
+        const r = pe.atPlanLimit[tier].fallback_5pct;
+        const r25 = pe.atPlanLimit[tier].fallback_25pct;
+        console.log(`  ${pe.plan.conversationsLimit} conv ${tier.padEnd(9)} @5% fallback: $${r.variableCostUsd.toFixed(4)} → GM ${r.grossMarginPct.toFixed(1)}% (after infra ${r.grossMarginAfterInfraPct.toFixed(1)}%) | @25%: GM ${r25.grossMarginPct.toFixed(1)}%`);
     }
     console.log('  Break-even conversations/month:');
     for (const [k, v] of Object.entries(pe.breakEvenConversations)) console.log(`    ${k.padEnd(30)} ${v}`);

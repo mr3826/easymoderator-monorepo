@@ -45,14 +45,14 @@ describe('topupController.initiateTopup', () => {
             name: 'Founder Shop',
             settings: { businessInfo: { phone: '01722222222', shopName: 'Business Shop' } }
         });
-        const req = makeReq({ pack_code: 'TOPUP_100', callback_url: 'https://attacker.example/steal' });
+        const req = makeReq({ pack_code: 'PACK_100', callback_url: 'https://attacker.example/steal' });
         const res = makeRes();
         const next = jest.fn();
 
         await topupController.initiateTopup(req, res, next);
 
         expect(next).not.toHaveBeenCalled();
-        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_100', {
+        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'PACK_100', {
             phone: '01711111111',
             name: 'Founder Owner',
             callbackUrl: 'https://app.easymod.tech/subscription'
@@ -68,13 +68,13 @@ describe('topupController.initiateTopup', () => {
             name: 'Fallback Shop',
             settings: { businessInfo: { phone: '01733333333', shopName: 'Saved Business Name' } }
         });
-        const req = makeReq({ pack_code: 'TOPUP_250' });
+        const req = makeReq({ pack_code: 'PACK_300' });
         const res = makeRes();
         const next = jest.fn();
 
         await topupController.initiateTopup(req, res, next);
 
-        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_250', {
+        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'PACK_300', {
             phone: '01733333333',
             name: 'Saved Business Name',
             callbackUrl: 'https://app.easymod.tech/subscription'
@@ -85,7 +85,7 @@ describe('topupController.initiateTopup', () => {
         User.findByPk.mockResolvedValueOnce({ full_name: 'Founder Owner', phone: '01711111111' });
         Shop.findByPk.mockResolvedValueOnce({ shop_name: 'Founder Shop', name: 'Founder Shop', settings: {} });
         const req = makeReq({
-            pack_code: 'TOPUP_500',
+            pack_code: 'PACK_700',
             callback_url: 'https://attacker.example/steal',
             phone: '01799999999',
             name: 'Billing Contact'
@@ -95,7 +95,7 @@ describe('topupController.initiateTopup', () => {
 
         await topupController.initiateTopup(req, res, next);
 
-        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'TOPUP_500', {
+        expect(topupService.initiateTopup).toHaveBeenCalledWith('shop-1', 'PACK_700', {
             phone: '01799999999',
             name: 'Billing Contact',
             callbackUrl: 'https://app.easymod.tech/subscription'

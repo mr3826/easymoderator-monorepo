@@ -204,12 +204,12 @@ export const apiClient = {
 
   // Subscription invoice alias
   getSubscriptionInvoices: subscriptionDomain.getInvoices,
-  purchaseConversationPack: subscriptionDomain.purchaseConversationPack,
 
   // bKash invoice payment + integrated top-up
   payInvoice: subscriptionDomain.payInvoice,
   renewSubscription: subscriptionDomain.renewSubscription,
   completeInvoicePayment: subscriptionDomain.completeInvoicePayment,
+  cancelInvoicePayment: subscriptionDomain.cancelInvoicePayment,
   getTopupPacks: subscriptionDomain.getTopupPacks,
   initiateTopup: subscriptionDomain.initiateTopup,
   completeTopup: subscriptionDomain.completeTopup,

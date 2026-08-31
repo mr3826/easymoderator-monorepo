@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
 import { subscriptionPlans } from "@/app/lib/subscriptionPlans";
+import { getSubscriptionPlans } from "@/api/domains/subscription";
 import { trackFunnelEvent } from "@/app/lib/funnel";
 import { buildApiUrl, buildAppUrl } from "@/app/lib/config";
 import Seo from "./Seo";
@@ -19,7 +20,7 @@ const LANDING_SCHEMA = {
 };
 
 const gradientText: React.CSSProperties = {
-  background: "linear-gradient(135deg, #34D399 0%, #00A651 100%)",
+  background: "linear-gradient(135deg, #34D399 0%, var(--brand) 100%)",
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
   backgroundClip: "text",
@@ -62,7 +63,8 @@ function StatCounter({ raw }: { raw: string }) {
 }
 
 export default function LandingPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const formatNumber = (value: number) => value.toLocaleString(i18n.language === "bn" ? "bn-BD" : "en-US");
   const { scrollY } = useScroll();
   const [scrolled, setScrolled] = useState(false);
 
@@ -81,12 +83,22 @@ export default function LandingPage() {
   const [liveStats, setLiveStats] = useState<{
     messages_handled: number; orders_captured: number; fake_orders_blocked: number;
   } | null>(null);
+  const [plans, setPlans] = useState(subscriptionPlans);
   useEffect(() => {
     trackFunnelEvent("landing_view", { surface: "landing" });
     fetch(buildApiUrl("/api/public/live-stats"), { credentials: "omit" })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j?.success && j?.data) setLiveStats(j.data); })
       .catch(() => {});
+  }, []);
+  useEffect(() => {
+    let mounted = true;
+    getSubscriptionPlans()
+      .then((serverPlans) => {
+        if (mounted && serverPlans.length > 0) setPlans(serverPlans);
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
   }, []);
   // Only surface the live strip once the numbers are meaningful.
   const showLiveProof = !!liveStats && liveStats.messages_handled >= 100;
@@ -150,7 +162,7 @@ export default function LandingPage() {
               <button
                 key={item.id}
                 onClick={() => scrollTo(item.id)}
-                className="text-sm font-medium text-gray-600 hover:text-[#00A651] transition-colors"
+                className="text-sm font-medium text-gray-600 transition-colors hover:text-brand"
               >
                 {item.label}
               </button>
@@ -159,7 +171,7 @@ export default function LandingPage() {
           </div>
           <a
             href={buildAppUrl("/signup")}
-            className="rounded-lg bg-[#00A651] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#008040] transition-colors shadow-sm"
+            className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-hover"
           >
             {t("landing.nav.getStarted")}
           </a>
@@ -216,7 +228,7 @@ export default function LandingPage() {
           <motion.div variants={heroItem} className="flex flex-col items-center justify-center gap-4 sm:flex-row">
             <a
               href={buildAppUrl("/signup")}
-              className="rounded-xl bg-[#00A651] px-9 py-4 text-base font-semibold text-white shadow-lg shadow-[#00A651]/30 hover:bg-[#008040] hover:shadow-[#008040]/40 hover:scale-105 transition-all duration-200"
+              className="rounded-xl bg-brand px-9 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-900/30 transition-all duration-200 hover:scale-105 hover:bg-brand-hover"
             >
               {t("landing.hero.ctaStart")}
             </a>
@@ -258,7 +270,7 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
               {t("landing.trust.label")}
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.trust.heading")}</h2>
@@ -318,7 +330,7 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
               {t("landing.features.label")}
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.features.heading")}</h2>
@@ -335,7 +347,7 @@ export default function LandingPage() {
                 transition={{ duration: 0.5, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}
                 whileHover={{
                   y: -8,
-                  borderColor: "#00A651",
+                  borderColor: "var(--brand)",
                   boxShadow: "0 12px 32px rgba(0,166,81,0.15)",
                   transition: { duration: 0.2 },
                 }}
@@ -361,7 +373,7 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
               {t("landing.roi.label")}
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.roi.heading")}</h2>
@@ -374,7 +386,7 @@ export default function LandingPage() {
                 <label htmlFor="roi-orders" className="text-sm font-semibold text-gray-700">
                   {t("landing.roi.ordersLabel")}
                 </label>
-                <span className="text-2xl font-bold text-[#00A651]">{bn(roiOrders)}</span>
+                <span className="text-2xl font-bold text-brand">{bn(roiOrders)}</span>
               </div>
               <input
                 id="roi-orders"
@@ -384,7 +396,7 @@ export default function LandingPage() {
                 step={10}
                 value={roiOrders}
                 onChange={(e) => setRoiOrders(Number(e.target.value))}
-                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-emerald-100 accent-[#00A651]"
+                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-emerald-100 accent-brand"
               />
             </div>
 
@@ -406,7 +418,7 @@ export default function LandingPage() {
             <div className="mt-7 text-center">
               <a
                 href={buildAppUrl("/signup")}
-                className="inline-block rounded-xl bg-[#00A651] px-9 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#00A651]/25 transition-all hover:bg-[#008040]"
+                className="inline-block rounded-xl bg-brand px-9 py-3.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/25 transition-all hover:bg-brand-hover"
               >
                 {t("landing.roi.cta")}
               </a>
@@ -425,7 +437,7 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
               {t("landing.pricing.label")}
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.pricing.heading")}</h2>
@@ -435,21 +447,27 @@ export default function LandingPage() {
               <span className="rounded-full border border-emerald-200 bg-white px-4 py-2">{t("landing.pricing.badge2")}</span>
               <Link
                 to="/pricing"
-                className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-[#00A651] transition-colors hover:border-[#00A651] hover:bg-emerald-50"
+                className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-brand transition-colors hover:border-brand hover:bg-emerald-50"
               >
                 {t("landing.pricing.details")}
               </Link>
             </div>
           </motion.div>
 
-          <div ref={pricingRef} className="flex flex-col items-center justify-center gap-6 md:flex-row md:items-stretch">
-            {subscriptionPlans.map((plan, i) => (
+          <div ref={pricingRef} className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-3">
+            {plans.map((plan, i) => {
+              const planKey = plan.id.toLowerCase();
+              const translatedHighlights = t(`landing.pricing.plans.${planKey}.highlights`, { returnObjects: true });
+              const highlights = Array.isArray(translatedHighlights) ? translatedHighlights as string[] : plan.highlights;
+              const isPartner = plan.code === "PARTNER";
+              const isShuru = plan.code === "SHURU";
+              return (
               <motion.div
                 key={plan.id}
-                className={`relative flex w-full max-w-sm flex-col rounded-2xl p-6 ${
+                className={`relative flex min-w-0 w-full flex-col rounded-2xl p-6 ${
                   plan.popular
-                    ? "border-2 border-[#00A651] bg-white shadow-2xl shadow-[#00A651]/15"
-                    : plan.id === "partner"
+                    ? "border-2 border-brand bg-white shadow-2xl shadow-emerald-900/15"
+                    : isPartner
                     ? "border border-slate-200 bg-white shadow-sm"
                     : "border border-gray-200 bg-white shadow-sm"
                 }`}
@@ -460,7 +478,7 @@ export default function LandingPage() {
               >
                 {plan.popular && (
                   <div className="absolute -top-4 left-0 right-0 flex justify-center">
-                    <span className="rounded-full bg-[#00A651] px-4 py-1.5 text-xs font-semibold text-white shadow-md">
+                    <span className="rounded-full bg-brand px-4 py-1.5 text-xs font-semibold text-white shadow-md">
                       {t("landing.pricing.mostPopular")}
                     </span>
                   </div>
@@ -475,54 +493,76 @@ export default function LandingPage() {
 
                 <div className="mb-5 pt-1">
                   <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                  <div className="mt-2 flex items-end gap-1">
-                    {plan.id === "partner" ? (
+                    <div className="mt-2 flex items-end gap-1">
+                    {isPartner ? (
                       <>
-                        <span className="text-4xl font-bold text-gray-900">{t("landing.pricing.partnerPrice")}</span>
+                        <span className="text-4xl font-bold text-gray-900">৳0</span>
                         <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.partnerPriceUnit")}</span>
                       </>
                     ) : (
                       <>
                         <span className="text-4xl font-bold text-gray-900">
-                          ৳{plan.monthlyPrice.toLocaleString()}
+                          ৳{formatNumber(plan.monthlyPrice)}
                         </span>
-                        <span className="mb-1 text-sm text-gray-400">{t("landing.pricing.perMonth")}</span>
+                        <span className="mb-1 text-sm text-gray-400">{isShuru ? t("landing.pricing.freeForever") : t("landing.pricing.perMonth")}</span>
                       </>
                     )}
                   </div>
-                  <p className={`mt-2 text-xs font-semibold ${plan.id === "partner" ? "text-slate-700" : "text-[#00A651]"}`}>{plan.description}</p>
+                  <p className={`mt-2 text-xs font-semibold ${isPartner ? "text-slate-700" : "text-brand"}`}>
+                    {t(`landing.pricing.plans.${planKey}.description`, plan.description)}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-gray-700">
+                    {plan.limits.conversations < 0
+                      ? t("landing.pricing.unlimitedConversations")
+                       : t("landing.pricing.conversationsPerMonth", { count: plan.limits.conversations })}
+                  </p>
+                  {isPartner && plan.partnerOrderTiers && (
+                    <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-gray-600">
+                      <p className="mb-1 font-semibold text-gray-800">{t("landing.pricing.partnerRateBands")}</p>
+                      {plan.partnerOrderTiers.map((tier) => (
+                        <p key={`${tier.minOrders}-${tier.maxOrders}`}>
+                          {t("landing.pricing.partnerRateBand", {
+                            min: formatNumber(tier.minOrders),
+                            max: tier.maxOrders ? formatNumber(tier.maxOrders) : "+",
+                            rate: formatNumber(tier.rateBdt),
+                          })}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <ul className="mb-6 flex-1 space-y-2.5">
-                  {plan.highlights.map((feat) => (
+                  {highlights.map((feat) => (
                     <li key={feat} className="flex items-start gap-2 text-sm text-gray-600">
-                      <span className="mt-0.5 shrink-0 text-green-500">✓</span>
+                      <span className="mt-0.5 shrink-0 text-brand">✓</span>
                       <span>{feat}</span>
                     </li>
                   ))}
                 </ul>
 
-                {plan.id === "partner" ? (
+                {isPartner ? (
                   <Link
                     to="/pricing"
                     className="block rounded-xl bg-slate-900 py-3 text-center text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition-all hover:bg-slate-800"
                   >
-                    {t("landing.pricing.becomePartner")}
+                      {t(`landing.pricing.plans.${planKey}.cta`)}
                   </Link>
                 ) : (
                   <a
                     href={buildAppUrl("/signup")}
-                    className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
-                      plan.popular
-                        ? "bg-[#00A651] text-white shadow-lg shadow-[#00A651]/25 hover:bg-[#008040]"
-                        : "border border-gray-200 text-gray-700 hover:border-[#00A651] hover:text-[#00A651]"
-                    }`}
-                  >
-                    {t("landing.pricing.getStarted")}
-                  </a>
-                )}
-              </motion.div>
-            ))}
+                      className={`block rounded-xl py-3 text-center text-sm font-semibold transition-all ${
+                        plan.popular
+                          ? "bg-brand text-white shadow-lg shadow-emerald-900/25 hover:bg-brand-hover"
+                          : "border border-gray-200 text-gray-700 hover:border-brand hover:text-brand"
+                      }`}
+                    >
+                      {t(`landing.pricing.plans.${planKey}.cta`)}
+                    </a>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -537,7 +577,7 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-60px" }}
             transition={{ duration: 0.5 }}
           >
-            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-[#00A651]">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
               {t("landing.testimonials.label")}
             </p>
             <h2 className="text-3xl font-bold text-gray-900 md:text-4xl">{t("landing.testimonials.heading")}</h2>
@@ -606,7 +646,7 @@ export default function LandingPage() {
           >
             <a
               href={buildAppUrl("/signup")}
-              className="inline-block rounded-xl bg-[#00A651] px-12 py-4 text-lg font-semibold text-white shadow-xl shadow-[#00A651]/30 hover:bg-[#008040] transition-all hover:shadow-[#008040]/40"
+              className="inline-block rounded-xl bg-brand px-12 py-4 text-lg font-semibold text-white shadow-xl shadow-emerald-900/30 transition-all hover:bg-brand-hover"
             >
               {t("landing.cta.button")}
             </a>

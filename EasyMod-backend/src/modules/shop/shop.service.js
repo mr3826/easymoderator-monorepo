@@ -86,6 +86,9 @@ const createShop = async (userId, shopData) => {
             is_active: true
         }, { transaction });
 
+        const { createDefaultSubscription } = require('../subscription/subscription.service');
+        await createDefaultSubscription(shop.id, { transaction, emitEvent: false });
+
         await transaction.commit();
 
         return {

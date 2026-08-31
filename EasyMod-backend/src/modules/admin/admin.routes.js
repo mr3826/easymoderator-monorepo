@@ -29,7 +29,6 @@ router.post('/ops/test-alert', superOnly, ctrl.sendTestAlert);
 router.patch('/shops/:shopId/status', superOnly, ctrl.setShopStatus);
 router.patch('/shops/:shopId/billing', superOnly, ctrl.changePlan);
 router.post('/shops/:shopId/add-credits', superOnly, ctrl.addCredits);
-router.post('/shops/:shopId/extend-trial', superOnly, ctrl.extendTrial);
 router.patch('/shops/:shopId/channels/:channelId/reconnect', superOnly, ctrl.markChannelReconnect);
 router.post('/shops/:shopId/ai/emergency-off', superOnly, ctrl.emergencyDisableAi);
 

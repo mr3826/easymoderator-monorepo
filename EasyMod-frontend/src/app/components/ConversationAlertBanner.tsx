@@ -1,102 +1,85 @@
-import { useState, useEffect } from 'react';
-import { AlertTriangle, X, ArrowUpRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { apiClient } from '@/api';
+import { AlertTriangle, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { apiClient } from "@/api";
+import { authService } from "@/app/lib/auth";
+import { usagePercentage } from "@/app/lib/usageThresholds";
 
-interface ConvLimitState {
-  pct: number;
+type BannerState = {
   used: number;
   limit: number;
-  topup_balance: number;
-  threshold_active: boolean;
-}
+  percentage: number;
+  quotaExhausted: boolean;
+  periodStart: string;
+  shopId: string;
+};
 
-interface SubscriptionUsagePayload {
-  subscription?: {
-    conversations_limit: number;
-    topup_balance?: number;
-    threshold_conversations?: number;
-    conversations_used: number;
-  };
-  data?: {
-    subscription?: SubscriptionUsagePayload['subscription'];
-  };
-}
-
-const SESSION_DISMISSED_KEY = 'conv_alert_dismissed_pct';
-
-export default function ConversationAlertBanner() {
-  const [state, setState] = useState<ConvLimitState | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const navigate = useNavigate();
+export function ConversationAlertBanner() {
+  const { t } = useTranslation();
+  const shopId = authService.getCurrentShopId() || "unknown";
+  const [state, setState] = useState<BannerState | null>(null);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   useEffect(() => {
-    apiClient.get<SubscriptionUsagePayload>('/subscription')
-      .then(res => {
-        const sub = res.data.subscription || res.data.data?.subscription;
-        if (!sub || sub.conversations_limit < 0) return; // unlimited plan
-
-        const effective = sub.conversations_limit + (sub.topup_balance || 0) + (sub.threshold_conversations || 0);
-        if (effective <= 0) return;
-
-        const pct = Math.round((sub.conversations_used / effective) * 100);
-        if (pct < 75) return;
-
-        // Check if user already dismissed this pct tier this session
-        const dismissedPct = Number(sessionStorage.getItem(SESSION_DISMISSED_KEY) || 0);
-        if (dismissedPct >= pct) {
-          setDismissed(true);
-          return;
-        }
-
+    let mounted = true;
+    setState(null);
+    apiClient.getSubscription()
+      .then((data) => {
+        if (!mounted || !data?.subscription) return;
+        const metric = data.usage?.conversations;
+        const periodStart = data.period?.start || data.subscription.current_period_start || "unknown";
+        const limit = Number(data.effective_conversation_limit ?? metric?.limit ?? data.subscription.conversations_limit);
+        const used = Number(metric?.used ?? data.subscription.conversations_used ?? 0);
         setState({
-          pct,
-          used: sub.conversations_used,
-          limit: sub.conversations_limit,
-          topup_balance: sub.topup_balance || 0,
-          threshold_active: (sub.threshold_conversations || 0) > 0
+          used,
+          limit,
+          percentage: limit < 0 ? 0 : usagePercentage(used, limit),
+          quotaExhausted: data.conversation_quota_exhausted === true,
+          periodStart,
+          shopId,
         });
       })
       .catch(() => {});
-  }, []);
+    return () => { mounted = false; };
+  }, [shopId]);
 
-  const handleDismiss = () => {
-    if (state) {
-      sessionStorage.setItem(SESSION_DISMISSED_KEY, String(state.pct));
-    }
-    setDismissed(true);
+  if (!state || state.limit < 0) return null;
+
+  const threshold = state.quotaExhausted || state.percentage >= 100
+    ? 100
+    : state.percentage >= 90
+      ? 90
+      : state.percentage >= 70
+        ? 70
+        : null;
+  const key = threshold === null
+    ? null
+    : `conversation-alert:${state.shopId}:${state.periodStart}:${threshold}`;
+  if (threshold === null || dismissedKey === key || (key && sessionStorage.getItem(key) === "dismissed")) return null;
+
+  const dismiss = () => {
+    if (!key) return;
+    sessionStorage.setItem(key, "dismissed");
+    setDismissedKey(key);
   };
 
-  if (!state || dismissed) return null;
-
-  const { pct, threshold_active } = state;
-
-  const config = pct >= 100
-    ? { bg: 'bg-red-600', border: 'border-red-700', icon: 'text-red-100', text: 'text-white', label: threshold_active ? '⚡ Emergency buffer active — top up or upgrade now!' : '🚫 Conversation limit reached!' }
-    : pct >= 90
-    ? { bg: 'bg-orange-500', border: 'border-orange-600', icon: 'text-orange-100', text: 'text-white', label: `⚠️ ${pct}% of conversation limit used — almost full!` }
-    : { bg: 'bg-amber-400', border: 'border-amber-500', icon: 'text-amber-900', text: 'text-amber-900', label: `⚠️ ${pct}% of conversation limit used` };
-
+  const urgent = threshold >= 90;
   return (
-    <div className={`w-full ${config.bg} ${config.border} border-b px-4 py-2.5 flex items-center justify-between gap-3`}>
-      <div className={`flex items-center gap-2 ${config.text}`}>
-        <AlertTriangle className={`w-4 h-4 shrink-0 ${config.icon}`} />
-        <span className="text-sm font-semibold">{config.label}</span>
+    <div className={`mx-4 mt-3 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${urgent ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">{t(`conversationAlert.threshold${threshold}.title`)}</p>
+        <p className="mt-0.5">{t(`conversationAlert.threshold${threshold}.message`, { used: state.used, limit: state.limit })}</p>
+        <Link to="/subscription" className="mt-1 inline-block font-semibold underline">
+          {t("conversationAlert.manage")}
+        </Link>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => navigate('/subscription')}
-          className={`flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30 ${config.text} transition-colors`}
-        >
-          Top Up <ArrowUpRight className="w-3 h-3" />
-        </button>
-        <button
-          onClick={handleDismiss}
-          className={`p-1 rounded-full hover:bg-white hover:bg-opacity-20 transition-colors ${config.text}`}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      <button type="button" onClick={dismiss} className="rounded p-1 hover:bg-black/5" aria-label={t("conversationAlert.dismiss")}>
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }
+
+export default ConversationAlertBanner;

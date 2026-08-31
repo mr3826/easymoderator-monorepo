@@ -86,6 +86,22 @@ const Invoice = sequelize.define('Invoice', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    payment_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    bkash_url: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    checkout_lease_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    checkout_lease_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     transaction_id: {
         type: DataTypes.STRING,
         allowNull: true
@@ -93,6 +109,11 @@ const Invoice = sequelize.define('Invoice', {
     notes: {
         type: DataTypes.TEXT,
         allowNull: true
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: {}
     },
     created_at: {
         type: DataTypes.DATE,

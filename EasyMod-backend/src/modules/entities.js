@@ -11,6 +11,7 @@ const ProductVariant = require('./product/product-variant.entity');
 const Customer = require('./customer/customer.entity');
 const Order = require('./order/order.entity');
 const OrderReturn = require('./order/order-return.entity');
+const PartnerBillingAdjustment = require('./subscription/partner-billing-adjustment.entity');
 const OrderItem = require('./order/order-item.entity');
 const { Conversation, Message } = require('./conversation/conversation.entity');
 const ConversationTurn = require('./conversation/conversation-turn.entity');
@@ -547,6 +548,7 @@ module.exports = {
     Customer,
     Order,
     OrderReturn,
+    PartnerBillingAdjustment,
     OrderItem,
     Conversation,
     Message,

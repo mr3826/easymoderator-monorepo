@@ -279,6 +279,14 @@ describe('image-understanding switches are settable in production', () => {
     });
 });
 
+describe('Meta profile enrichment switch', () => {
+    test('defaults off and can be enabled deliberately', () => {
+        expect(buildRenderedEnv(validSource()).META_USER_PROFILE_ENABLED).toBe('false');
+        expect(buildRenderedEnv(validSource({ META_USER_PROFILE_ENABLED: 'true' })).META_USER_PROFILE_ENABLED)
+            .toBe('true');
+    });
+});
+
 describe('Qdrant embedding dimension is rendered from the repository contract', () => {
     test('defaults to the Gemini-compatible 384 dimensions', () => {
         expect(buildRenderedEnv(validSource()).QDRANT_VECTOR_SIZE).toBe('384');

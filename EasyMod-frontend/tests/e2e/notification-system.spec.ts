@@ -53,7 +53,7 @@ async function injectBrowserMocks(page: any) {
 
 async function setupRoutes(page: any) {
     let authenticated = false;
-    await page.route('**/api/**', async (route: any) => {
+    await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route: any) => {
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
@@ -74,7 +74,7 @@ async function setupRoutes(page: any) {
     });
 }
 
-async function loginAndGo(page: any, path = '/settings/notifications') {
+async function loginAndGo(page: any, path = '/manage-shop/notifications') {
     await page.goto('/signin');
     await page.fill('input[type="email"]', 'owner@shop.bd');
     await page.fill('input[type="password"]', 'password123');

@@ -188,17 +188,54 @@
     "pricing": {
       "label": "প্রাইসিং",
       "heading": "মসৃণ ও সৎ মূল্য নির্ধারণ",
-      "subheading": "একটি Growth plan, একটি Partner path, আর কোনো hidden fee নেই।",
-      "badge1": "১৪ দিনের ফ্রি ট্রায়াল",
-      "badge2": "সবকিছু included",
+      "subheading": "Shuru দিয়ে ফ্রি শুরু করুন, Growth-এ বাড়ুন, অথবা Partner path বেছে নিন।",
+      "badge1": "চিরদিন ফ্রি",
+      "badge2": "কোনো hidden fee নেই",
       "details": "Pricing details দেখুন",
       "perMonth": "/মাস",
       "mostPopular": "সবচেয়ে জনপ্রিয়",
-      "getStarted": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন",
-      "partnerBadge": "৩০০+ অর্ডার/মাস",
-      "partnerPrice": "৳10–15",
-      "partnerPriceUnit": "/ডেলিভার্ড অর্ডার",
-      "becomePartner": "পার্টনার হোন →"
+      "getStarted": "Shuru দিয়ে ফ্রি শুরু করুন",
+      "partnerBadge": "৩০০+ ডেলিভার্ড অর্ডার",
+      "partnerPrice": "৳০",
+      "partnerPriceUnit": "upfront",
+      "becomePartner": "Partner-এর জন্য আবেদন →",
+      "freeForever": "চিরদিন ফ্রি",
+      "unlimitedConversations": "আনলিমিটেড কনভারসেশন",
+      "conversationsPerMonth": "প্রতি মাসে {{count}}টি কাস্টমার কনভারসেশন",
+      "partnerRateBands": "Delivered-order band",
+      "partnerRateBand": "{{min}}–{{max}}: প্রতি delivered order-এ ৳{{rate}}",
+      "plans": {
+        "shuru": {
+          "description": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।",
+          "cta": "ফ্রি অ্যাকাউন্ট তৈরি করুন",
+          "highlights": [
+            "প্রতি মাসে ১০০টি কাস্টমার কনভারসেশন",
+            "Facebook Messenger ইনবক্স",
+            "অর্ডার ক্যাপচার ও COD risk checks",
+            "ম্যানুয়াল রিপ্লাই সবসময় চালু"
+          ]
+        },
+        "growth": {
+          "description": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।",
+          "cta": "Growth দিয়ে শুরু করুন",
+          "highlights": [
+            "প্রতি মাসে ৫০০টি কাস্টমার কনভারসেশন",
+            "Facebook Messenger ইনবক্স",
+            "অর্ডার ক্যাপচার ও COD risk checks",
+            "প্রয়োজনে Growth top-up"
+          ]
+        },
+        "partner": {
+          "description": "কোনো upfront fee নেই; সফল ডেলিভার্ড অর্ডারে পেমেন্ট।",
+          "cta": "Partner-এর জন্য আবেদন",
+          "highlights": [
+            "৩০ দিনে ৩০০+ ডেলিভার্ড অর্ডার প্রয়োজন",
+            "কোনো মাসিক ফি নেই",
+            "আনলিমিটেড কাস্টমার কনভারসেশন",
+            "ডেলিভার্ড অর্ডার ব্যান্ড অনুযায়ী flat rate"
+          ]
+        }
+      }
     },
     "testimonials": {
       "label": "Pilot scorecard",
@@ -291,27 +328,19 @@
       "badge": "🇧🇩 Private BD seller pilot",
       "heading": "শুরু করুন আজই",
       "subheading": "প্রায় ৫ মিনিটে দ্রুত রিপ্লাই ও অর্ডার ক্যাপচার শুরু করুন।",
-      "choosePlan": "১৪ দিনের Growth trial",
-      "annualSavings": "কার্ড লাগবে না। যেকোনো সময় আপগ্রেড করুন।",
-      "trialEyebrow": "১৪ দিনের ফ্রি ট্রায়াল",
-      "trialTitle": "Growth trial included",
-      "trialSubtitle": "প্রতিটি নতুন শপ Growth plan trial দিয়ে শুরু করে। অ্যাকাউন্ট তৈরি করুন, Business Setup শেষ করুন, তারপর reply ও order capture চালু রাখতে প্রস্তুত হলে upgrade করুন।",
-      "trialBenefits": [
+      "choosePlan": "Shuru চিরদিন ফ্রি",
+      "shuruEyebrow": "Shuru · চিরদিন ফ্রি",
+      "shuruTitle": "Shuru দিয়ে বিক্রি শুরু করুন",
+      "shuruSubtitle": "শপ তৈরি করুন, Messenger কানেক্ট করুন, এবং প্রতি মাসে ১০০টি কাস্টমার কনভারসেশন দিয়ে শুরু করুন। ভলিউম বাড়লে আপগ্রেড করুন।",
+      "shuruBenefits": [
         "কার্ড লাগবে না",
-        "যেকোনো সময় আপগ্রেড",
-        "এরপর Business Setup খুলবে"
+        "প্রতি মাসে ১০০টি কনভারসেশন",
+        "যেকোনো সময় আপগ্রেড"
       ],
       "monthly": "মাসিক",
-      "annual": "বার্ষিক",
-      "twoMonthsFree": "২ মাস ফ্রি",
-      "perMonth": "/মাস",
-      "annualBilling": "বার্ষিক বিল",
-      "monthlyBilling": "মাসিক বিল",
-      "popular": "জনপ্রিয়",
       "free": "বিনামূল্যে",
-      "selectedPlan": "✓ নির্বাচিত প্ল্যান",
       "createAccountHeading": "অ্যাকাউন্ট তৈরি করুন",
-      "activatePlan": "trial account setup-এর পরে শুরু হবে।",
+      "activateFreePlan": "অ্যাকাউন্ট সেটআপের পর চিরদিন ফ্রি।",
       "fullName": "পূর্ণ নাম",
       "fullNamePlaceholder": "আপনার নাম লিখুন",
       "email": "ইমেইল ঠিকানা",
@@ -329,9 +358,8 @@
       "plan": "প্ল্যান",
       "billing": "বিলিং",
       "payToday": "আজ পেমেন্ট",
-      "devModeAmount": "৳০ (Dev Mode)",
-      "freeAmount": "৳০ — ১৪ দিনের trial",
-      "noCardFree": "কার্ড লাগবে না — ১৪ দিনের ফ্রি trial",
+      "freeAmount": "৳০",
+      "freeForever": "আজ কোনো পেমেন্ট নেই — Shuru চিরদিন ফ্রি",
       "upgradeAnytime": "Signup শেষ হলে Business Setup খুলবে।",
       "startFreeButton": "Account তৈরি করে setup শুরু করুন →",
       "creating": "অ্যাকাউন্ট তৈরি হচ্ছে...",
@@ -359,7 +387,6 @@
         "acceptTerms": "চালিয়ে যেতে শর্তাবলীতে সম্মত হন।",
         "unableToCreate": "অ্যাকাউন্ট তৈরি করা যায়নি।"
       },
-      "toggleAnnualBilling": "বার্ষিক বিলিং চালু/বন্ধ করুন",
       "subscriptionPaymentMethod": "সাবস্ক্রিপশন পেমেন্ট পদ্ধতি"
     },
     "forgotPassword": {
@@ -573,7 +600,7 @@
     }
   },
   "inbox": {
-    "title": "ইনবক্স",
+    "title": "শেয়ার্ড ইনবক্স",
     "active": "{{count}} টি চালু",
     "searchPlaceholder": "কাস্টমার খুঁজুন...",
     "tabAll": "সব",
@@ -1079,9 +1106,11 @@
     "emptyState": "কোনো অর্ডার পাওয়া যায়নি।",
     "status": {
       "draft": "খসড়া",
+      "pending": "অপেক্ষমাণ",
       "confirmed": "নিশ্চিত",
       "processing": "প্রক্রিয়াধীন",
       "completed": "সম্পন্ন",
+      "delivered": "ডেলিভারি সম্পন্ন",
       "cancelled": "বাতিল"
     },
     "row": {
@@ -1292,6 +1321,7 @@
       "addAnother": "আরেকটি Facebook Page যোগ করুন",
       "loginPopup": "পপ-আপে Meta-তে লগইন করুন...",
       "selectPagesHint": "যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন (এক বা একাধিক)",
+      "pageTaskRequired": "এই Page-এ Messaging access প্রয়োজন",
       "connectCount": "সংযুক্ত করুন ({{count}})"
     },
     "test": {
@@ -1814,7 +1844,7 @@
   },
   "subscription": {
     "title": "প্ল্যান ও বিলিং",
-    "subtitle": "Messenger replies, order capture ও billing চালু রাখুন",
+    "subtitle": "প্ল্যান বেছে নিন, allowance দেখুন, এবং শপের নিয়ন্ত্রণ নিজের হাতে রাখুন",
     "loading": "সাবস্ক্রিপশনের বিবরণ লোড হচ্ছে...",
     "entitlementsUnavailable": "ফিচারের তথ্য এখন পাওয়া যাচ্ছে না।",
     "loadingFeatures": "ফিচারের উপলভ্যতা যাচাই হচ্ছে...",
@@ -1826,14 +1856,11 @@
     "price": "৳{{price}} BDT / {{cycle}}",
     "nextBilling": "পরবর্তী বিলিং: {{date}}",
     "addConversations": "Customer Conversations যোগ করুন",
-    "upgradePlan": "Replies running রাখুন",
+    "upgradePlan": "Growth-এ যান",
+    "renew": "সাবস্ক্রিপশন renew করুন",
     "plansTitle": "প্ল্যানসমূহ",
-    "plansSubtitle": "Growth plan-এর billing option review করুন।",
+    "plansSubtitle": "সব শপের জন্য একই core feature, সহজ scale-based প্ল্যান।",
     "monthly": "মাসিক",
-    "annual": "বার্ষিক",
-    "twoMonthsFree": "২ মাস বিনামূল্যে",
-    "billedAnnually": "বার্ষিক বিল",
-    "billedMonthly": "মাসিক বিল",
     "conversationsLimit": "কথোপকথন:",
     "ordersLimit": "অর্ডার:",
     "productsLimit": "পণ্য:",
@@ -1843,15 +1870,30 @@
     "usagePerMonth": "{{used}} / {{limit}} প্রতি মাস",
     "statusSafe": "নিরাপদ",
     "statusAlmostUsed": "প্রায় শেষ",
-    "statusExtra": "অতিরিক্ত ব্যবহার চলছে",
-    "extraUsageNote": "অতিরিক্ত ব্যবহার পরবর্তী বিলে যোগ হবে",
+    "statusExhausted": "Allowance শেষ",
     "ordersCreated": "তৈরি অর্ডার",
     "productsUsed": "ব্যবহৃত পণ্য",
-    "extraAlert": "Replies এখনো চলছে",
-    "extraAlertMsg": "আপনি {{count}}টি অতিরিক্ত customer conversation ব্যবহার করেছেন। Replies ও order capture বন্ধ হয়নি।",
-    "extraCount": "অতিরিক্ত ব্যবহার সংখ্যা:",
-    "extraCharge": "আনুমানিক অতিরিক্ত চার্জ:",
-    "nextInvoiceNote": "এই পরিমাণ পরবর্তী ইনভয়েসে যোগ হবে।",
+    "usageTitle": "এই period-এর ব্যবহার",
+    "usageSubtitle": "Included allowance এবং top-up balance শেষ হলেই শুধু AI pause হবে।",
+    "conversationsUsed": "কাস্টমার কনভারসেশন",
+    "conversationsPerMonth": "প্রতি মাসে {{count}}টি কনভারসেশন",
+    "includedConversations": "Included allowance: {{count}}",
+    "topupBalance": "Top-up balance: {{count}}",
+    "aiPausedForUsage": "এই allowance শেষ হওয়ায় AI reply pause আছে; manual reply চালু আছে।",
+    "statusNeedsAttention": "মনোযোগ প্রয়োজন",
+    "period": "বর্তমান period",
+    "perMonth": "/ মাস",
+    "perYear": "/ বছর",
+    "partnerUpfront": "upfront",
+    "flatBillingSummary": "স্পষ্ট conversation allowance সহ flat monthly plan।",
+    "partnerBillingSummary": "কোনো মাসিক ফি নেই; delivered-order band অনুযায়ী বিল।",
+    "partnerRateBands": "Delivered-order rate",
+    "perDeliveredOrder": "প্রতি delivered order",
+    "partnerEligibility": "গত ৩০ দিনে delivered order: {{count}} / প্রয়োজন {{minimum}}।",
+    "partnerNoTopups": "Partner-এ unlimited conversation আছে; top-up প্রযোজ্য নয়।",
+    "growthTopupsOnly": "Conversation top-up শুধু Growth-এ পাওয়া যায়।",
+    "viewPartnerApplication": "Pricing page-এ আবেদন",
+    "subscriptionInvoice": "Subscription",
     "addConversationsTitle": "Customer Conversations যোগ করুন",
     "addedToCurrentPlan": "আপনার বর্তমান প্ল্যানে যোগ হবে",
     "requestInvoice": "ইনভয়েস অনুরোধ করুন",
@@ -1866,8 +1908,6 @@
     ],
     "billingTitle": "বিলিং সারসংক্ষেপ",
     "basePlan": "বেস প্ল্যানের মূল্য",
-    "extraUsageCharge": "অতিরিক্ত ব্যবহারের চার্জ",
-    "addedConversations": "যোগ করা কথোপকথন",
     "estimatedInvoice": "আনুমানিক পরবর্তী ইনভয়েস",
     "invoiceDisclaimer": "বিলিং তারিখের আগে চূড়ান্ত ইনভয়েস জারি করা হবে।",
     "invoicesTitle": "ইনভয়েস",
@@ -1881,8 +1921,7 @@
     },
     "paid": "পরিশোধিত",
     "pending": "অপেক্ষমান",
-    "toastThreshold": "আপনি মাসিক conversation limit-এর {{threshold}}% ব্যবহার করেছেন ({{used}}/{{limit}})।",
-    "toastUpgradeHint": "Upgrade করুন বা extra pack কিনুন।",
+    "toastThreshold": "আপনি conversation allowance-এর {{threshold}}% ব্যবহার করেছেন ({{used}}/{{limit}})।",
     "paymentCancelled": "Payment বাতিল হয়েছে বা সম্পন্ন হয়নি। আবার চেষ্টা করুন।",
     "topupPaymentSuccess": "Payment সফল হয়েছে! আপনার balance-এ {{count}} conversation যোগ হয়েছে।",
     "invoicePaymentSuccessActive": "Payment successful. আপনার replies ও order automation active থাকবে।",
@@ -1893,16 +1932,7 @@
     "planUpdateSuccess": "Subscription plan সফলভাবে আপডেট হয়েছে",
     "planUpdateFailed": "Plan আপডেট করা যায়নি",
     "bkashStartFailed": "bKash payment শুরু করা যায়নি",
-    "trialEndsUrgent": "⚠️ Trial আর {{count}} দিনে শেষ হবে!",
-    "trialEndsUrgent_other": "⚠️ Trial আর {{count}} দিনে শেষ হবে!",
-    "trialRemaining": "Trial: আর {{count}} দিন বাকি",
-    "trialRemaining_other": "Trial: আর {{count}} দিন বাকি",
-    "trialUrgentMsg": "Messenger replies ও order capture চালু রাখতে upgrade করুন।",
-    "trialMsg": "Trial শেষের পর customer reply miss করবেন না। শেষ হওয়ার আগে plan বেছে নিন।",
-    "viewPlans": "Plan দেখুন",
-    "statusTrial": "Trial",
     "statusPaymentDue": "Payment বাকি",
-    "statusTrialEnded": "Trial শেষ",
     "statusAiPaused": "Automatic replies paused",
     "statusCancelled": "বাতিল",
     "invoiceDueWarning": "আপনার monthly invoice due আছে। ৩ দিনের মধ্যে pay না করলে automatic replies pause হতে পারে।",
@@ -1911,50 +1941,28 @@
     "popular": "জনপ্রিয়",
     "perMonthShort": "/মাস",
     "unlimited": "আনলিমিটেড",
-    "bkashUnavailable": "বিকাশ পেমেন্ট এখনও চালু হয়নি। ট্রায়াল চলাকালীন আপনি সব ফিচার ব্যবহার করতে পারবেন।",
+    "unlimitedConversations": "আনলিমিটেড কনভারসেশন",
+    "bkashUnavailable": "bKash payment এখন available নয়।",
     "perMonthCount": "{{count}}/মাস",
     "applyNow": "আবেদন করুন →",
     "slashUnlimited": "/ আনলিমিটেড",
     "slashPerMonth": "/ {{limit}}/মাস",
-    "percentUsed": "{{percent}}% ব্যবহার হয়েছে",
-    "forecastReached": "আপনি limit এ পৌঁছে গেছেন!",
     "forecastDays": "এই হারে চললে {{count}} দিনের মধ্যে limit শেষ হবে।",
     "forecastDays_other": "এই হারে চললে {{count}} দিনের মধ্যে limit শেষ হবে।",
-    "buyExtraPack": "Extra pack কিনুন",
     "conversationsCount": "{{count}} conversations",
     "plusConversations": "+{{count}} conversations",
-    "addedToMonthlyLimit": "মাসিক limit-এ যোগ হবে",
+    "addedToBalance": "Top-up balance-এ যোগ হবে",
     "imageUnderstandingTitle": "Understands Product Photos",
     "imageUnderstandingDesc": "Product photo ব্যবহার করে customer question আরও accurately answer করে",
     "advancedAiTitle": "Better Reply Accuracy",
     "advancedAiDesc": "Product, delivery, payment ও order question-এর জন্য আরও accurate replies",
-    "toggleAnnualBilling": "বার্ষিক billing চালু/বন্ধ করুন",
     "payInvoiceTitle": "bKash দিয়ে এই invoice pay করুন",
     "viewInvoiceTitle": "Invoice দেখুন / প্রিন্ট করুন",
     "downloadInvoiceTitle": "Invoice ডাউনলোড করুন (PDF হিসেবে প্রিন্ট)",
     "payWithBkash": "bKash দিয়ে Pay করুন",
     "topupBkashNote": "Payment সফল হলে conversations সাথে সাথে balance-এ যোগ হবে।",
-    "percentUsedShort": "{{percent}}% ব্যবহার হয়েছে",
-    "limitExceeded": "সীমা পেরিয়েছে",
-    "warning": "সতর্কতা",
-    "toastLimitFull": "Conversation limit পূর্ণ হয়েছে ({{used}}/{{limit}})। Upgrade করুন।",
-    "toastLimit80": "Conversation limit-এর ৮০% ব্যবহার হয়েছে ({{used}}/{{limit}})।",
-    "usageTitle": "এই মাসের ব্যবহার",
-    "conversations": "Conversations",
-    "orders": "Orders",
-    "products": "Products",
-    "buyConvPack": "Conversation Pack কিনুন",
-    "convPackHint": "Extra conversation এর জন্য pack কিনুন। Invoice তৈরি হবে, payment দিলে activate হবে।",
-    "conversationsLabel": "conversations",
-    "testMode": "Test mode",
-    "testModeNote": "Test mode: কোনো real payment হবে না।",
-    "invoiceCreateFailed": "Invoice তৈরি করা যায়নি",
-    "invoiceCreatedMsg": "Invoice তৈরি হয়েছে ({{number}})। অনুগ্রহ করে bKash দিয়ে {{price}} BDT pay করুন এবং pack activate করতে support@easymod.tech-এ যোগাযোগ করুন।",
-    "yearly": "বার্ষিক",
     "free": "ফ্রি",
     "perOrder": "/অর্ডার",
-    "perMonth": "/মাস",
-    "perMonthBilledYearly": "/মাস (বার্ষিক বিল)",
     "confirmPlan": "Plan পরিবর্তন করুন",
     "upgradeToUnlock": "দ্রুত reply করতে upgrade করুন",
     "featureAvailablePrefix": "ফিচারটি পাওয়া যাবে",
@@ -1965,30 +1973,34 @@
     "upgradeNow": "এখনই upgrade করুন",
     "upgradeUnlockTitle": "{{feature}} available রাখতে {{plan}}-এ upgrade করুন",
     "upgradeToPlan": "{{plan}}-এ upgrade করুন",
+    "noInvoices": "এখনো কোনো invoice নেই।",
+    "usageExhaustedAction": "Conversation allowance শেষ হওয়ায় AI reply pause আছে। Growth-এ যান বা পরের period পর্যন্ত অপেক্ষা করুন; manual reply চালু আছে।",
+    "planDescriptions": {
+      "shuru": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।",
+      "growth": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।",
+      "partner": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।"
+    },
     "plans": {
-      "growth": {
-        "name": "Growth",
-        "description": "Messenger sales ও order automation — একটাই সহজ দাম। ১৪ দিন free trial, card লাগবে না।",
-        "highlights": {
-          "0": "Messenger-এ selling শুরু করার জন্য দরকারি সবকিছু",
-          "1": "Facebook sales inbox",
-          "2": "COD risk checks ও performance reports",
-          "3": "Campaigns plus voice ও product photo support",
-          "4": "১৪ দিন ফ্রি ট্রায়াল — কার্ড ছাড়াই"
-        }
-      },
-      "partner": {
-        "name": "Partner",
-        "description": "মাসে ৩০০+ অর্ডার আছে? আমাদের পার্টনার হোন।",
-        "highlights": {
-          "0": "মাত্র ৳10–15/ডেলিভার্ড অর্ডার",
-          "1": "কোনো মাসিক ফি নেই",
-          "2": "Unlimited কথোপকথন",
-          "3": "Facebook Messenger focused",
-          "4": "ডেডিকেটেড সাপোর্ট ম্যানেজার"
-        }
-      }
+      "shuru": { "name": "Shuru", "description": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।" },
+      "growth": { "name": "Growth", "description": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।" },
+      "partner": { "name": "Partner", "description": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।" }
     }
+  },
+  "conversationAlert": {
+    "threshold70": {
+      "title": "Conversation usage বাড়ছে",
+      "message": "এই period-এ {{limit}}টির মধ্যে {{used}}টি conversation ব্যবহার হয়েছে।"
+    },
+    "threshold90": {
+      "title": "Conversation allowance প্রায় শেষ",
+      "message": "{{limit}}টির মধ্যে {{used}}টি conversation ব্যবহার হয়েছে। AI pause হওয়ার আগে plan দেখুন।"
+    },
+    "threshold100": {
+      "title": "AI reply pause আছে",
+      "message": "{{limit}} conversation allowance শেষ। Manual reply চালু আছে।"
+    },
+    "manage": "Plan দেখুন",
+    "dismiss": "Conversation usage alert বন্ধ করুন"
   },
   "bd_lite": {
     "todayQueue": "আজকের কাজ",
@@ -2084,14 +2096,17 @@
     "label": "প্রাইসিং",
     "mostPopular": "সবচেয়ে জনপ্রিয়",
     "perMonth": "/মাস",
-    "yearlyNote": "বা ৳{{price}}/বছর · ২ মাস সাশ্রয়",
-    "partnerApplyNote": "আবেদন করুন · যোগ্যতা যাচাই পর সক্রিয় হবে",
-    "partnerEligibleBadge": "৩০০+ অর্ডার/মাস যোগ্য",
+    "partnerApplyNote": "৩০ দিনে ৩০০+ delivered order হলে আবেদন করুন",
+    "partnerPriceUnit": "upfront",
+    "partnerEligibleBadge": "৩০০+ delivered order",
+    "partnerRateBandsTitle": "প্রতি delivered order-এ পেমেন্ট",
+    "partnerRateBand": "{{min}}–{{max}} order: প্রতিটিতে ৳{{rate}}",
     "applyNow": "আবেদন করুন",
-    "startFreeTrial": "১৪ দিন ফ্রি ট্রায়াল শুরু করুন",
     "limits": {
       "unlimitedConversations": "আনলিমিটেড কথোপকথন",
-      "conversationsFairUse": "Customer conversations — fair use",
+      "conversationsPerMonth": "প্রতি মাসে {{count}}টি customer conversation",
+      "deliveredOrders": "যোগ্য হতে ৩০ দিনে ৩০০+ delivered order",
+      "manualInbox": "Manual reply সবসময় চালু",
       "unlimitedOrders": "আনলিমিটেড অর্ডার",
       "ordersPerMonth": "{{count}}টি অর্ডার/মাস",
       "unlimitedProducts": "আনলিমিটেড প্রোডাক্ট",
@@ -2102,45 +2117,84 @@
       "advancedAi": "Better reply accuracy",
       "prioritySupport": "Priority Support",
       "customBranding": "Custom Branding (White-label)",
-      "facebookInbox": "Facebook sales inbox",
-      "extraConversationPack": "Extra conversation pack — যখন দরকার, টপ-আপ করুন"
+      "facebookInbox": "Facebook sales inbox"
+    },
+    "planFeatures": {
+      "shuru": [
+        "প্রতি মাসে ১০০টি customer conversation",
+        "Facebook Messenger ইনবক্স",
+        "অর্ডার ক্যাপচার ও COD risk checks",
+        "Manual reply সবসময় চালু"
+      ],
+      "growth": [
+        "প্রতি মাসে ৫০০টি customer conversation",
+        "Facebook Messenger ইনবক্স",
+        "অর্ডার ক্যাপচার ও COD risk checks",
+        "প্রয়োজনে top-up"
+      ],
+      "partner": [
+        "যোগ্য হতে ৩০ দিনে ৩০০+ delivered order",
+        "কোনো মাসিক ফি নেই",
+        "আনলিমিটেড customer conversation",
+        "Delivered-order band অনুযায়ী flat rate"
+      ]
+    },
+    "plans": {
+      "shuru": {
+        "name": "Shuru",
+        "description": "Messenger sales শুরু করার জন্য চিরদিন ফ্রি।",
+        "priceNote": "চিরদিন ফ্রি",
+        "cta": "ফ্রি অ্যাকাউন্ট তৈরি করুন"
+      },
+      "growth": {
+        "name": "Growth",
+        "description": "বাড়তে থাকা শপের জন্য সম্পূর্ণ Messenger sales assistant।",
+        "priceNote": "সহজ মাসিক বিল",
+        "cta": "Growth দিয়ে শুরু করুন"
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "কোনো upfront fee নেই; সফল delivered order-এ পেমেন্ট।",
+        "priceNote": "Delivered-order band অনুযায়ী flat rate",
+        "cta": "Partner-এর জন্য আবেদন"
+      }
     },
     "hero": {
       "heading": "মসৃণ ও সৎ মূল্য নির্ধারণ",
-      "subheading": "একটি Growth plan, একটি Partner path, আর কোনো hidden fee নেই।",
+      "subheading": "Shuru দিয়ে ফ্রি শুরু করুন, Growth-এ বাড়ুন, অথবা Partner path বেছে নিন।",
       "badge1": "Messenger-only launch scope",
-      "badge2": "১৪ দিনের ফ্রি ট্রায়াল",
+      "badge2": "চিরদিন ফ্রি",
       "badge3": "কোনো hidden fee নেই"
     },
     "partnerTeaser": {
-      "question": "মাসে ৩০০+ অর্ডার আছে?",
+      "question": "৩০ দিনে ৩০০+ delivered order আছে?",
       "link": "Partner Plan সম্পর্কে জানুন →"
     },
     "included": {
-      "heading": "Growth-এ সবকিছু আছে",
-      "subheading": "কোনো ফিচার লক নেই — একটাই দাম, ৳৯৯৯/মাস।"
+      "heading": "সব শপের জন্য একই core feature",
+      "subheading": "Feature lock নয়, আপনার scale অনুযায়ী plan বেছে নিন। Growth ৳{{price}}/মাস।"
     },
     "faq": {
       "heading": "সাধারণ জিজ্ঞাসা",
-      "q1": "কি বিনামূল্যে ট্রায়াল আছে?",
-      "a1": "হ্যাঁ — নতুন শপ ১৪ দিনের ফ্রি ট্রায়াল পায়, কোনো কার্ড লাগে না। ট্রায়াল চলাকালীন Growth-এর সব ফিচার চালু থাকে।",
-      "q2": "ট্রায়াল শেষ হলে কী হবে?",
-      "a2": "Trial শেষে ৳৯৯৯/মাস-এ upgrade করলে automatic replies ও order capture চালু থাকবে। না করলে automatic replies pause হবে, তবে inbox থেকে নিজে reply দিতে পারবেন — কোনো data হারাবে না।",
+      "q1": "Shuru কি সত্যিই ফ্রি?",
+      "a1": "হ্যাঁ — Shuru চিরদিন ফ্রি, প্রতি মাসে ১০০টি customer conversation সহ। কোনো কার্ড লাগবে না।",
+      "q2": "Growth কী?",
+      "a2": "Growth হলো ৳{{price}}/মাস, প্রতি মাসে ৫০০টি customer conversation সহ। প্রয়োজনে Growth top-up করা যায়।",
       "q3": "মাসে কতগুলো customer conversation পাব?",
-      "a3": "একটি সাধারণ ক্রমবর্ধমান শপের জন্য যথেষ্ট পরিমাণ (fair-use)। বেশি দরকার হলে Subscription পেজ থেকে যেকোনো সময় conversation top-up কিনে নিতে পারবেন।",
+      "a3": "Shuru-তে প্রতি মাসে ১০০টি এবং Growth-এ ৫০০টি conversation আছে। Growth shop প্রয়োজনে top-up কিনতে পারে।",
       "q4": "Conversation limit শেষ হলে কী হবে?",
-      "a4": "একটি free buffer দেওয়া হয়; এরপর automatic replies pause হবে। Subscription page থেকে top-up pack কিনে সাথে সাথে resume করতে পারবেন।",
+      "a4": "Included allowance ও Growth top-up balance শেষ হলে AI reply pause হবে। Manual reply চালু থাকবে।",
       "q5": "Partner প্লানে কীভাবে আবেদন করব?",
-      "a5": "Pricing পেজের নিচে 'Partner Plan সম্পর্কে জানুন'-এ আবেদন করুন। আমরা ৩০০+ অর্ডার/মাস যাচাই করে অ্যাক্টিভ করি — প্রতি ডেলিভার্ড অর্ডারে চার্জ, কোনো মাসিক ফি নেই।"
+      "a5": "৩০ দিনে ৩০০+ delivered order হলে Pricing page থেকে আবেদন করুন। Partner-এ মাসিক ফি নেই; delivered-order band অনুযায়ী ৳১৫, ৳১২ বা ৳১০।"
     },
     "cta": {
       "heading": "আরও message-কে order বানাতে ready?",
-      "subheading": "আজই Growth trial শুরু করুন। কোনো hidden fee নেই।",
+      "subheading": "Shuru দিয়ে ফ্রি শুরু করুন। Messenger volume বাড়লে upgrade করুন।",
       "button": "এখনই শুরু করুন"
     },
     "partnerModal": {
       "title": "Partner হতে আবেদন করুন",
-      "subtitle": "মাসে ৩০০+ অর্ডার আছে? প্রতি ডেলিভার্ড অর্ডারে চার্জ — কোনো মাসিক ফি নেই।",
+      "subtitle": "৩০ দিনে ৩০০+ delivered order আছে? কোনো মাসিক ফি নেই; delivered-order band অনুযায়ী flat rate।",
       "businessNameLabel": "Business Name",
       "businessNamePlaceholder": "আপনার শপের নাম",
       "phoneLabel": "Phone Number",
@@ -2177,7 +2231,7 @@
         "owner": "মালিক",
         "plan": "প্ল্যান",
         "status": "স্ট্যাটাস",
-        "trialEnds": "ট্রায়াল শেষ",
+        "periodEnd": "Period শেষ",
         "conversations": "কথোপকথন",
         "onboarding": "অনবোর্ডিং",
         "complete": "সম্পন্ন",
@@ -2206,12 +2260,10 @@
         "conversations": "কথোপকথন",
         "topupBalance": "টপ-আপ ব্যালেন্স",
         "nextBilling": "পরবর্তী বিলিং",
-        "trialEnds": "ট্রায়াল শেষ",
-        "accruedOverage": "জমা হওয়া অতিরিক্ত ব্যবহার",
-        "overageValue": "{{count}} কথোপকথন · ৳{{charge}}",
+        "effectiveLimit": "Effective conversation allowance",
+        "partnerEligibility": "Partner eligibility",
         "outstanding": "বকেয়া",
         "superAdminNote": "বিলিং অ্যাকশনের জন্য SUPER_ADMIN প্রয়োজন।",
-        "extendTrial": "ট্রায়াল ৭ দিন বাড়ান",
         "addCredits": "৫০ ক্রেডিট যোগ করুন",
         "reactivate": "পুনরায় সক্রিয় করুন",
         "reactivateAiOn": "পুনরায় সক্রিয় করুন (AI চালু)",

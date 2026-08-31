@@ -5,7 +5,6 @@
  * Import and export all job classes for easy access.
  */
 
-const DailyOverageCalculator = require('./daily-overage-calculator');
 const MonthlyUsageReset = require('./monthly-usage-reset');
 const InvoiceGenerator = require('./invoice-generator');
 const FailedPaymentReconciler = require('./failed-payment-reconciler');
@@ -16,13 +15,10 @@ const MetaTokenRefreshJob = require('./meta-token-refresh.job');
 const CourierReconciliationJob = require('./courier-reconciliation.job');
 // Reliability — synthetic auto-reply pipeline canary + DLQ/backlog watchdog
 const PipelineCanaryJob = require('./pipeline-canary.job');
-// Pricing — expire 14-day GROWTH trials + send trial-ending nudges
-const TrialExpiryJob = require('./trial-expiry.job');
 // Reliability — replay inbound Meta events held as durable webhook receipts
 const WebhookReceiptReconcilerJob = require('./webhook-receipt-reconciler.job');
 
 module.exports = {
-    DailyOverageCalculator,
     MonthlyUsageReset,
     InvoiceGenerator,
     FailedPaymentReconciler,
@@ -31,6 +27,5 @@ module.exports = {
     MetaTokenRefreshJob,
     CourierReconciliationJob,
     PipelineCanaryJob,
-    TrialExpiryJob,
     WebhookReceiptReconcilerJob,
 };

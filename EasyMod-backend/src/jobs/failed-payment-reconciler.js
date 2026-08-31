@@ -81,18 +81,41 @@ class FailedPaymentReconciler extends BaseJob {
                 // subscription (isAiActive → false). Paying the invoice reactivates it.
                 // One-off / discretionary invoices (add-on packs, proration) never gate AI —
                 // they only get a payment reminder.
-                if (isRecurring) {
-                    if (!dryRun) {
-                        await this.suspendSubscription(invoice.subscription);
+                if (Number(invoice.amount || 0) <= 0) {
+                    if (!dryRun && typeof invoice.update === 'function') {
+                        await invoice.update({
+                            status: 'cancelled',
+                            payment_id: null,
+                            bkash_url: null,
+                            updated_at: new Date(),
+                        });
                     }
-                    action.action = 'suspended';
-                    results.subscriptionsSuspended++;
+                    action.action = 'ignored_zero_balance';
+                } else if (invoice.subscription?.shop_id
+                    && String(invoice.subscription.shop_id) !== String(invoice.shop_id)) {
+                    action.action = 'ignored_tenant_mismatch';
+                } else if (!dryRun && invoice.status === 'pending' && typeof invoice.update === 'function') {
+                    await invoice.update({ status: 'overdue', updated_at: new Date() });
+                }
+                if (['ignored_tenant_mismatch', 'ignored_zero_balance'].includes(action.action)) {
+                    // Never suspend or notify from an invoice whose ownership
+                    // edges disagree; operators must repair the data first.
+                } else if (isRecurring) {
+                    if (this.isFreePlan(invoice.subscription)) {
+                        action.action = 'ignored_free_plan';
+                    } else {
+                        if (!dryRun) {
+                            await this.suspendSubscription(invoice.subscription);
+                        }
+                        action.action = 'suspended';
+                        results.subscriptionsSuspended++;
+                    }
                 } else {
                     action.action = 'reminder';
                 }
 
                 // Send the dunning / reminder email (Nodemailer via email.service.js)
-                if (!dryRun) {
+                if (!dryRun && !['ignored_free_plan', 'ignored_tenant_mismatch', 'ignored_zero_balance'].includes(action.action)) {
                     await this.sendReminderNotification(invoice, action.action);
                     await this.sendMerchantPaymentAlert(invoice, action.action, runDate);
                     results.remindersSent++;
@@ -164,6 +187,7 @@ class FailedPaymentReconciler extends BaseJob {
      * @param {Object} subscription 
      */
     async suspendSubscription(subscription) {
+        if (this.isFreePlan(subscription)) return; // Legacy invoices never suspend Shuru.
         if (subscription.status === 'suspended') {
             return; // Already suspended
         }
@@ -182,6 +206,15 @@ class FailedPaymentReconciler extends BaseJob {
             subscriptionId: subscription.id,
             shopId: subscription.shop_id
         });
+    }
+
+    isFreePlan(subscription) {
+        const planCode = String(subscription?.plan_code || '').toUpperCase();
+        if (planCode === 'SHURU') return true;
+        return Boolean(planCode)
+            && planCode !== 'PARTNER'
+            && parseFloat(subscription?.plan_price || 0) <= 0
+            && subscription?.billing_model !== 'per_order';
     }
 
     /**

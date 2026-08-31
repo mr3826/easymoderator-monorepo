@@ -109,10 +109,9 @@ async function main() {
                 plan_price: 999,
                 billing_cycle: 'monthly',
                 status: 'active',
-                conversations_limit: 300,
+                conversations_limit: 500,
                 conversations_used: 0,
                 topup_balance: 0,
-                threshold_conversations: 0,
                 threshold_debt: 0,
                 features: {
                     ai_replies: true,

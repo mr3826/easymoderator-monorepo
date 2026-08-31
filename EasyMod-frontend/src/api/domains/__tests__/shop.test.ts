@@ -104,7 +104,7 @@ describe('Shop Domain API', () => {
 
   describe('getShop', () => {
     it('should return shop with success flag', async () => {
-      const mockResponse = { success: true, data: { id: 'shop1', shop_name: 'My Shop', plan_code: 'PACKAGE_1' } };
+      const mockResponse = { success: true, data: { id: 'shop1', shop_name: 'My Shop', plan_code: 'SHURU' } };
       (httpClient.get as any).mockResolvedValue({ data: mockResponse });
 
       const result = await shop.getShop();

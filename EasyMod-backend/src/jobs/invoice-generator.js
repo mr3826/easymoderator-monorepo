@@ -1,15 +1,20 @@
 const BaseJob = require('./base-job');
-const { Subscription, Invoice, Shop } = require('../modules/entities');
+const { Subscription, Invoice, Shop, PartnerBillingAdjustment } = require('../modules/entities');
 const { sequelize } = require('../utils/database/database-setup');
 const { Op } = require('sequelize');
 const crypto = require('crypto');
-const { recurringInvoiceTypeFor } = require('../modules/subscription/subscription.plans');
+const {
+    recurringInvoiceTypeFor,
+    getPartnerOrderTier
+} = require('../modules/subscription/subscription.plans');
 
 /**
  * Invoice Generator Job
  * 
- * Generates monthly invoices for all active subscriptions.
- * Runs on the 1st day of each month at 01:00 UTC (after usage reset).
+ * Generates renewal invoices for active paid subscriptions and month-end
+ * Partner invoices. Shuru is free forever and is never invoiced.
+ * Runs daily at 01:00 UTC; expired period markers and calendar Partner windows
+ * make the run idempotent.
  * 
  * IDEMPOTENT: Running multiple times for same month won't create duplicate invoices
  * RE-RUNNABLE: Can be re-run for specific months to regenerate invoices
@@ -25,12 +30,13 @@ class InvoiceGenerator extends BaseJob {
     }
 
     /**
-     * Generate execution ID based on month
+     * Generate execution ID based on run date. The job runs daily because plan
+     * periods are anchored to signup/payment boundaries rather than the month.
      * @param {Date} runDate 
      */
     generateExecutionId(runDate) {
-        const yearMonth = runDate.toISOString().substring(0, 7); // YYYY-MM
-        return `${this.jobName}-${yearMonth}`;
+        const day = runDate.toISOString().substring(0, 10); // YYYY-MM-DD
+        return `${this.jobName}-${day}`;
     }
 
     /**
@@ -68,8 +74,10 @@ class InvoiceGenerator extends BaseJob {
 
             for (const subscription of subscriptions) {
                 try {
-                    // FREE tier has no recurring charge — never generate an invoice for it.
-                    if (String(subscription.plan_code || '').toUpperCase() === 'FREE') {
+                    // Shuru has no recurring charge — never generate an invoice for it.
+                    if (String(subscription.plan_code || '').toUpperCase() === 'SHURU'
+                        || (parseFloat(subscription.plan_price || 0) <= 0
+                            && subscription.billing_model !== 'per_order')) {
                         results.invoicesSkipped++;
                         continue;
                     }
@@ -90,8 +98,9 @@ class InvoiceGenerator extends BaseJob {
                     // the job for the same boundary finds the same invoice. (The old
                     // check was keyed to the calendar month, which let a yearly
                     // subscriber be re-invoiced every time the year rolled over.)
+                    const invoiceType = recurringInvoiceTypeFor(invoiceData.billingCycle);
                     const existingInvoice = await this.checkExistingInvoice(
-                        subscription, invoiceData.billingPeriodStart,
+                        subscription, invoiceData.billingPeriodStart, invoiceType,
                     );
                     if (existingInvoice) {
                         this.logger.info(`Invoice already exists for this period`, {
@@ -113,6 +122,10 @@ class InvoiceGenerator extends BaseJob {
 
                     if (!dryRun) {
                         const invoice = await this.createInvoice(subscription, invoiceData, runDate);
+                        if (invoice?.__alreadyExisting) {
+                            results.invoicesSkipped++;
+                            continue;
+                        }
                         invoiceData.invoiceId = invoice.id;
                         invoiceData.invoiceNumber = invoice.invoice_number;
                     }
@@ -144,9 +157,20 @@ class InvoiceGenerator extends BaseJob {
      * failing closed here would silently stop invoicing a real customer.
      */
     isRenewalDue(subscription, runDate) {
+        if (this.periodWasJustReset(subscription, runDate)) return true;
         const dueAt = subscription.next_billing_date || subscription.current_period_end;
         if (!dueAt) return true;
         return new Date(dueAt).getTime() <= runDate.getTime();
+    }
+
+    periodWasJustReset(subscription, runDate) {
+        if (!subscription?.usage_reset_at || !subscription?.current_period_start) return false;
+        const currentPeriodEnd = subscription.current_period_end
+            ? new Date(subscription.current_period_end).getTime()
+            : Number.POSITIVE_INFINITY;
+        return new Date(subscription.usage_reset_at).getTime()
+            < new Date(subscription.current_period_start).getTime()
+            && currentPeriodEnd > runDate.getTime();
     }
 
     /**
@@ -156,11 +180,12 @@ class InvoiceGenerator extends BaseJob {
      * deterministically from the subscription, so re-running the job for the same
      * boundary matches the same row and cannot double-bill.
      */
-    async checkExistingInvoice(subscription, billingPeriodStart) {
+    async checkExistingInvoice(subscription, billingPeriodStart, invoiceType = null) {
         return Invoice.findOne({
             where: {
                 subscription_id: subscription.id,
-                billing_period_start: billingPeriodStart
+                billing_period_start: billingPeriodStart,
+                ...(invoiceType ? { invoice_type: invoiceType } : {}),
             }
         });
     }
@@ -179,14 +204,16 @@ class InvoiceGenerator extends BaseJob {
         // The invoice covers the entitlement that just ended, which for a yearly
         // subscription is a year — not the previous calendar month. Per-order
         // Partner plans keep the monthly window they are actually metered over.
-        const hasRecordedPeriod = subscription.billing_model !== 'per_order'
-            && subscription.current_period_start
+        const hasRecordedPeriod = subscription.current_period_start
             && subscription.current_period_end;
+        const periodWasJustReset = this.periodWasJustReset(subscription, runDate);
 
         const billingPeriodStart = hasRecordedPeriod
-            ? new Date(subscription.current_period_start) : startOfMonth;
+            ? (periodWasJustReset ? new Date(subscription.usage_reset_at) : new Date(subscription.current_period_start))
+            : startOfMonth;
         const billingPeriodEnd = hasRecordedPeriod
-            ? new Date(subscription.current_period_end) : endOfMonth;
+            ? (periodWasJustReset ? new Date(subscription.current_period_start) : new Date(subscription.current_period_end))
+            : endOfMonth;
 
         const invoiceData = {
             shopId: subscription.shop_id,
@@ -199,15 +226,20 @@ class InvoiceGenerator extends BaseJob {
             // Base subscription amount (0 for per-order Partner plans)
             baseAmount: parseFloat(subscription.plan_price),
 
-            // Usage charges (entity column is `extra_charge`, singular)
+            // Overage billing is retired. Legacy counters are captured for
+            // diagnostics only and are never added to a new invoice.
             conversationsUsed: subscription.conversations_used,
             ordersUsed: subscription.orders_used,
             productsUsed: subscription.products_used,
-            extraCharges: parseFloat(subscription.extra_charge || 0),
+            extraCharges: 0,
 
             // Partner (per-order) charge — populated below for per_order plans
             deliveredOrders: 0,
             partnerCharge: 0,
+            partnerGrossCharge: 0,
+            partnerAdjustmentCredit: 0,
+            partnerRateBand: null,
+            partnerRateBdt: 0,
 
             // Totals
             subtotal: 0,
@@ -215,22 +247,58 @@ class InvoiceGenerator extends BaseJob {
             totalAmount: 0
         };
 
-        // Partner (per-order) billing: charge delivered orders in the billing
-        // period at the tiered PARTNER_ORDER_TIERS rates. Computed from the Order
-        // table (not a per-order accrual counter) so it is race-free and
-        // re-runnable. Delivery time is approximated by the order's last update.
+        // Partner (per-order) billing: recompute delivered orders at month-end
+        // from the immutable delivery stamp. This is race-free and re-runnable.
         if (subscription.billing_model === 'per_order') {
             const { Order } = require('../modules/entities');
             const { calculatePartnerCharge } = require('../modules/subscription/subscription.plans');
-            const deliveredOrders = await Order.count({
+            const periodEndExclusive = billingPeriodEnd;
+            const countedDeliveredOrders = await Order.count({
                 where: {
                     shop_id: subscription.shop_id,
                     order_status: 'delivered',
-                    updated_at: { [Op.gte]: startOfMonth, [Op.lte]: endOfMonth }
+                    delivered_at: { [Op.gte]: billingPeriodStart, [Op.lt]: periodEndExclusive }
                 }
             });
+            let deliveredOrders = countedDeliveredOrders;
+            if (typeof Order.findAll === 'function') {
+                const deliveredRows = await Order.findAll({
+                    where: {
+                        shop_id: subscription.shop_id,
+                        order_status: 'delivered',
+                        delivered_at: { [Op.gte]: billingPeriodStart, [Op.lt]: periodEndExclusive }
+                    },
+                    attributes: ['id', 'metadata']
+                });
+                deliveredOrders = deliveredRows.filter((order) => {
+                    const metadata = order.metadata || {};
+                    return !['approved', 'refunded'].includes(metadata.returnStatus);
+                }).length;
+            }
             invoiceData.deliveredOrders = deliveredOrders;
-            invoiceData.partnerCharge = calculatePartnerCharge(deliveredOrders);
+            invoiceData.partnerGrossCharge = calculatePartnerCharge(deliveredOrders);
+            invoiceData.partnerCharge = invoiceData.partnerGrossCharge;
+            const rateTier = getPartnerOrderTier(deliveredOrders);
+            invoiceData.partnerRateBand = rateTier
+                ? `${rateTier.minOrders}-${rateTier.maxOrders === null ? '+' : rateTier.maxOrders}`
+                : null;
+            invoiceData.partnerRateBdt = rateTier?.rateBdt || 0;
+
+            if (PartnerBillingAdjustment && typeof PartnerBillingAdjustment.findAll === 'function') {
+                const adjustments = await PartnerBillingAdjustment.findAll({
+                    where: { shop_id: subscription.shop_id, status: 'pending' },
+                    order: [['created_at', 'ASC']]
+                });
+                invoiceData.partnerAdjustmentCredit = adjustments.reduce(
+                    (total, adjustment) => total + Math.max(0, Number(adjustment.amount_bdt) || 0),
+                    0,
+                );
+                invoiceData.partnerCharge = Math.max(
+                    0,
+                    invoiceData.partnerGrossCharge - invoiceData.partnerAdjustmentCredit,
+                );
+                invoiceData.partnerAdjustments = adjustments;
+            }
         }
 
         // Calculate subtotal
@@ -256,17 +324,15 @@ class InvoiceGenerator extends BaseJob {
      * @param {Date} runDate 
      */
     async createInvoice(subscription, invoiceData, runDate) {
-        // Generate invoice number
         const invoiceNumber = await this.generateInvoiceNumber(subscription, runDate);
-
-        const invoice = await Invoice.create({
+        const values = {
             subscription_id: subscription.id,
             shop_id: subscription.shop_id,
             invoice_number: invoiceNumber,
             invoice_type: recurringInvoiceTypeFor(invoiceData.billingCycle),
             amount: invoiceData.totalAmount,
             base_amount: invoiceData.baseAmount,
-            // Partner per-order charge + any conversation extras are usage-based.
+            // Partner per-order charge is usage-based; conversation overage is retired.
             extra_usage_amount: invoiceData.extraCharges + invoiceData.partnerCharge,
             billing_period: invoiceData.billingPeriodStart.toISOString().substring(0, 7),
             status: 'pending',
@@ -274,14 +340,21 @@ class InvoiceGenerator extends BaseJob {
             billing_period_end: invoiceData.billingPeriodEnd,
             // 3-day due threshold (founder spec): once this window lapses unpaid, the
             // failed-payment reconciler suspends the subscription and the AI stops.
-            due_date: new Date(runDate.getTime() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
+            due_date: new Date(runDate.getTime() + 3 * 24 * 60 * 60 * 1000),
             metadata: {
+                plan_code: subscription.plan_code,
                 planName: invoiceData.planName,
                 billingCycle: invoiceData.billingCycle,
                 baseAmount: invoiceData.baseAmount,
                 extraCharges: invoiceData.extraCharges,
                 deliveredOrders: invoiceData.deliveredOrders,
                 partnerCharge: invoiceData.partnerCharge,
+                gross_partner_charge: invoiceData.partnerGrossCharge,
+                adjustment_credit: invoiceData.partnerAdjustmentCredit,
+                delivered_orders: invoiceData.deliveredOrders,
+                rate_band: invoiceData.partnerRateBand,
+                rate_bdt: invoiceData.partnerRateBdt,
+                computed_total: invoiceData.partnerCharge,
                 conversationsUsed: invoiceData.conversationsUsed,
                 ordersUsed: invoiceData.ordersUsed,
                 productsUsed: invoiceData.productsUsed,
@@ -289,23 +362,43 @@ class InvoiceGenerator extends BaseJob {
                 tax: invoiceData.tax,
                 vatRate: invoiceData.vatRate
             }
-        });
+        };
+
+        try {
+            const invoice = await sequelize.transaction(async (transaction) => {
+                const created = await Invoice.create(values, { transaction });
+                if (Array.isArray(invoiceData.partnerAdjustments)) {
+                    for (const adjustment of invoiceData.partnerAdjustments) {
+                        await adjustment.update({
+                            status: 'applied',
+                            invoice_id: created.id,
+                            applied_at: new Date()
+                        }, { transaction });
+                    }
+                }
+                return created;
+            });
+            return invoice;
+        } catch (error) {
+            if (error?.name === 'SequelizeUniqueConstraintError') {
+                const existing = await this.checkExistingInvoice(
+                    subscription,
+                    invoiceData.billingPeriodStart,
+                    recurringInvoiceTypeFor(invoiceData.billingCycle),
+                );
+                if (existing) {
+                    existing.__alreadyExisting = true;
+                    return existing;
+                }
+            }
+            throw error;
+        }
 
         this.logger.info(`Generated invoice for shop ${subscription.shop_id}`, {
             shopId: subscription.shop_id,
             invoiceId: invoice.id,
             invoiceNumber: invoice.invoice_number,
             amount: invoice.amount
-        });
-
-        // Reset overage counters — they've been captured in this invoice.
-        // The monthly usage reset does NOT reset these (it only resets *_used counters)
-        // so they accumulate accurately until invoiced, then clear here.
-        // (Entity column is `extra_charge`, singular — the previous `extra_charges`
-        // key was a no-op write that never cleared the accrued amount.)
-        await subscription.update({
-            extra_charge: 0,
-            extra_conversations: 0
         });
 
         return invoice;

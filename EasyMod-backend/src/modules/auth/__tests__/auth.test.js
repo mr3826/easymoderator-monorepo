@@ -161,7 +161,8 @@ jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
 }));
 
-const { User } = require('src/modules/entities');
+const { User, Shop, Tenant, UserShop, Subscription } = require('src/modules/entities');
+const authService = require('src/modules/auth/auth.service');
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
@@ -191,6 +192,45 @@ describe('Auth API', () => {
     // ── Signup ──────────────────────────────────────────────────────────
 
     describe('POST /api/auth/signup', () => {
+        it('creates the free Shuru subscription in the signup transaction', async () => {
+            const user = {
+                ...mockUser,
+                id: 'signup-user',
+                email: 'signup@example.com',
+                update: jest.fn(() => Promise.resolve()),
+            };
+            const shop = {
+                id: 'signup-shop',
+                unique_code: 'SIGN1',
+                shop_name: 'Signup Shop',
+                name: 'Signup Shop',
+            };
+            User.findOne.mockResolvedValueOnce(null);
+            User.create.mockResolvedValueOnce(user);
+            Tenant.create.mockResolvedValueOnce({ id: 'signup-tenant' });
+            Shop.findOne.mockResolvedValue(null);
+            Shop.create.mockResolvedValueOnce(shop);
+            UserShop.create.mockResolvedValueOnce({});
+            Subscription.create.mockResolvedValueOnce({ id: 'signup-subscription' });
+
+            await authService.createUserWithShop({
+                email: user.email,
+                password: 'correct-password',
+                full_name: 'Signup User',
+                phone: '01700000000',
+                shop_name: shop.name,
+            });
+
+            expect(Subscription.create).toHaveBeenCalledWith(expect.objectContaining({
+                shop_id: shop.id,
+                plan_code: 'SHURU',
+                plan_name: 'Shuru',
+                plan_price: 0,
+                conversations_limit: 100,
+                status: 'active',
+            }), expect.objectContaining({ transaction: expect.any(Object) }));
+        });
+
         it('should return 400 when email is missing', async () => {
             const res = await request(app)
                 .post('/api/auth/signup')

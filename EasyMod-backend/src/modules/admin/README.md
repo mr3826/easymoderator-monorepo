@@ -45,7 +45,6 @@ Mutations (`SUPER_ADMIN` only — each writes an audit row):
 - `PATCH /api/admin/shops/:shopId/status` `{ status: 'suspended' | 'active' }`
 - `PATCH /api/admin/shops/:shopId/billing` `{ plan_code | plan_name }`
 - `POST  /api/admin/shops/:shopId/add-credits` `{ amount, reason }`
-- `POST  /api/admin/shops/:shopId/extend-trial` `{ days }`
 - `PATCH /api/admin/shops/:shopId/channels/:channelId/reconnect`
 - `POST  /api/admin/shops/:shopId/ai/emergency-off`
 
@@ -55,7 +54,6 @@ Mutations (`SUPER_ADMIN` only — each writes an audit row):
   `subscription:status` cache. Suspended shops have automated AI paused by the
   worker, but the manual inbox remains accessible so merchants can keep handling
   customers while resolving billing.
-- **Extend trial** — advances `trial_ends_at` (1..90 days) and keeps status `trialing`.
 - **Add credits** — calls `subscription.service.grantBonusConversations` (adds to `topup_balance`).
 - **Change plan** — reuses `subscription.service.updatePlan` (no duplicated billing logic).
 - **Mark reconnect** — sets a channel to `TOKEN_EXPIRED`; the merchant must re-OAuth.

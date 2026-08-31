@@ -78,6 +78,10 @@ describe('delivery tracking tenant and replay safeguards', () => {
                 expect.objectContaining({ status: 'delivered', location: 'Dhaka' }),
             ],
         }));
+        expect(tracking.order.update).toHaveBeenCalledWith(expect.objectContaining({
+            order_status: 'delivered',
+            delivered_at: expect.any(Date),
+        }));
     });
 
     test('order tracking lookup binds the tenant through the real Order foreign key', async () => {

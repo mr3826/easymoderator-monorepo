@@ -303,9 +303,9 @@ PrivateEmail and Resend rows that carry password-reset mail — is recorded in
 - Meta App Dashboard ownership is required for callback/OAuth/reviewer URL updates.
 - The real Facebook Page owner/tester must approve OAuth and generate Messenger proof.
 - The standalone frontend workflow state must be verified as disabled.
-- A confirmed bKash settlement-binding/race flaw discovered during security review is
-  independent of domain routing but blocks enabling live payments and a broad public
-  launch. Keep `BKASH_ENABLED=false` until it has its own reviewed fix and tests.
+- The bKash settlement-binding/race flaw is fixed by server-side payment-ID binding,
+  minor-unit amount checks, and conditional settlement claims in the current tree.
+  Keep `BKASH_ENABLED=false` until the reviewed staging and real-money checks are complete.
 
 Until these actions and live checks are complete, the architecture implementation
 may be code-ready but production cutover remains a NO-GO.

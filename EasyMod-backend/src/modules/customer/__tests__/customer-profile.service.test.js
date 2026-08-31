@@ -16,6 +16,7 @@ const axios = require('axios');
 const MetaChannel = require('../../channel-providers/meta-channel.entity');
 const Customer = require('../customer.entity');
 const { enrichCustomerNameFromMeta, isPlaceholderName } = require('../customer-profile.service');
+const originalProfileFlag = process.env.META_USER_PROFILE_ENABLED;
 
 const makeCustomer = (overrides = {}) => ({
     id: 'cust-1',
@@ -27,7 +28,13 @@ const makeCustomer = (overrides = {}) => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    process.env.META_USER_PROFILE_ENABLED = 'true';
     MetaChannel.findByPk.mockResolvedValue({ page_access_token_ct: 'page-token' });
+});
+
+afterAll(() => {
+    if (originalProfileFlag === undefined) delete process.env.META_USER_PROFILE_ENABLED;
+    else process.env.META_USER_PROFILE_ENABLED = originalProfileFlag;
 });
 
 describe('isPlaceholderName', () => {
@@ -40,6 +47,19 @@ describe('isPlaceholderName', () => {
 });
 
 describe('enrichCustomerNameFromMeta', () => {
+    test('does not call Meta when profile enrichment is disabled', async () => {
+        delete process.env.META_USER_PROFILE_ENABLED;
+        Customer.findByPk.mockResolvedValue(makeCustomer());
+
+        const updated = await enrichCustomerNameFromMeta({
+            customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'fb-psid-9',
+        });
+
+        expect(updated).toBe(false);
+        expect(Customer.findByPk).not.toHaveBeenCalled();
+        expect(axios.get).not.toHaveBeenCalled();
+    });
+
     test('replaces the placeholder with first+last name and stores profile pic', async () => {
         const customer = makeCustomer();
         Customer.findByPk.mockResolvedValue(customer);

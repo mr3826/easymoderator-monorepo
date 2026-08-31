@@ -15,6 +15,16 @@ const ALLOWED_FUNNEL_EVENTS = new Set([
     'first_ai_reply_sent',
     'first_order_captured',
     'first_rto_flag',
+    'plan_assigned_shuru',
+    'usage_threshold_70',
+    'usage_threshold_90',
+    'usage_threshold_100',
+    'plan_upgraded',
+    'topup_purchased',
+    'renewal_succeeded',
+    'renewal_failed',
+    'partner_applied',
+    'partner_approved',
 ]);
 
 function scrubMetadata(metadata) {

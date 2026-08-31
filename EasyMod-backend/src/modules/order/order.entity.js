@@ -120,6 +120,10 @@ const Order = sequelize.define('Order', {
         type: DataTypes.DATE,
         allowNull: true
     },
+    delivered_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     total: {
         type: DataTypes.DECIMAL(10, 2),
         defaultValue: 0
@@ -161,6 +165,11 @@ const Order = sequelize.define('Order', {
     usage_transaction_id: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    metadata: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: {}
     }
 }, {
     tableName: 'orders',

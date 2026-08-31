@@ -86,7 +86,9 @@ jest.mock('../../entities', () => ({
         create: jest.fn(),
         findAll: jest.fn()
     },
-    Invoice: { create: jest.fn() }
+    Invoice: { create: jest.fn(), findOne: jest.fn() },
+    Subscription: { findOne: jest.fn() },
+    PartnerBillingAdjustment: { create: jest.fn(), findOne: jest.fn() }
 }));
 
 // AppError is NOT mocked. The stub this replaced set `statusCode`, while the
@@ -123,7 +125,7 @@ jest.mock('../../../jobs/queue-manager', () => ({
 const orderService = require('../order.service');
 const returnService = require('../return.service');
 const {
-    Order, OrderItem, Product, UserShop, OrderReturn
+    Order, OrderItem, Product, UserShop, OrderReturn, Invoice, Subscription, PartnerBillingAdjustment
 } = require('../../entities');
 const { AppError } = require('../../../utils/AppError');
 const stockGuard = require('../../product/stock-status-guard.service');
@@ -136,6 +138,7 @@ describe('Order Cancel → Inventory Sync', () => {
         order = makeOrder();
         Order.findOne.mockResolvedValue(order);
         UserShop.findOne.mockResolvedValue({ id: 'us-1', is_active: true });
+        PartnerBillingAdjustment.findOne.mockResolvedValue(null);
         OrderItem.findAll.mockResolvedValue(mockOrderItems);
         // The restore path looks products up shop-scoped —
         // Product.findOne({ where: { id, shop_id } }) — not by primary key.
@@ -276,5 +279,90 @@ describe('Return Approval → Inventory Sync', () => {
         // prod-2 has track_quantity: false and must be skipped.
         await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
         expect(mockProduct.increment).toHaveBeenCalledTimes(1);
+    });
+
+    it('records a Partner billing credit instead of rewriting a settled invoice', async () => {
+        order = makeOrder({
+            order_status: 'delivered',
+            delivered_at: new Date('2026-08-12T10:00:00.000Z'),
+            metadata: { returnRequested: true, returnRef: 'RET-001' },
+        });
+        Order.findOne.mockResolvedValue(order);
+        Invoice.findOne.mockResolvedValue({
+            id: 'invoice-1',
+            invoice_type: 'partner_per_order',
+            status: 'paid',
+            metadata: { delivered_orders: 600, rate_bdt: 15 },
+        });
+        Subscription.findOne.mockResolvedValue({ billing_model: 'per_order' });
+        PartnerBillingAdjustment.create.mockResolvedValue({ id: 'adjustment-1' });
+
+        await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
+
+        expect(PartnerBillingAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
+            shop_id: 'shop-1',
+            order_id: 'order-1',
+            amount_bdt: 15,
+            reason: 'return_reversal',
+        }), expect.objectContaining({ transaction: mockTransaction }));
+        expect(order.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                metadata: expect.objectContaining({ partnerBillingAdjustmentId: 'adjustment-1' }),
+            }),
+            expect.anything(),
+        );
+    });
+
+    it('uses the historical aggregate rate for a legacy progressive Partner invoice', async () => {
+        order = makeOrder({
+            order_status: 'delivered',
+            delivered_at: new Date('2026-08-12T10:00:00.000Z'),
+            metadata: { returnRequested: true, returnRef: 'RET-002' },
+        });
+        Order.findOne.mockResolvedValue(order);
+        Invoice.findOne.mockResolvedValue({
+            id: 'invoice-legacy',
+            invoice_type: 'partner_per_order',
+            status: 'paid',
+            amount: 8700,
+            metadata: { delivered_orders: 600, partnerCharge: 8700 },
+        });
+        PartnerBillingAdjustment.create.mockResolvedValue({ id: 'adjustment-legacy' });
+
+        await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
+
+        expect(PartnerBillingAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
+            amount_bdt: 14.5,
+        }), expect.anything());
+    });
+
+    it('cancels a pending Partner invoice when a return reduces it to zero', async () => {
+        order = makeOrder({
+            order_status: 'delivered',
+            delivered_at: new Date('2026-08-12T10:00:00.000Z'),
+            metadata: { returnRequested: true, returnRef: 'RET-003' },
+        });
+        Order.findOne.mockResolvedValue(order);
+        const invoice = {
+            id: 'invoice-zero',
+            invoice_type: 'partner_per_order',
+            status: 'pending',
+            amount: 15,
+            extra_usage_amount: 15,
+            metadata: { delivered_orders: 300, rate_bdt: 15 },
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        Invoice.findOne.mockResolvedValue(invoice);
+        PartnerBillingAdjustment.create.mockResolvedValue({
+            id: 'adjustment-zero', update: jest.fn().mockResolvedValue(undefined),
+        });
+
+        await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
+
+        expect(invoice.update).toHaveBeenCalledWith(expect.objectContaining({
+            amount: 0,
+            status: 'cancelled',
+            payment_id: null,
+        }), expect.anything());
     });
 });

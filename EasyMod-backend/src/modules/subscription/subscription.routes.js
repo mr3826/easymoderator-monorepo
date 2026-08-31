@@ -4,8 +4,7 @@ const topupController = require('./topup.controller');
 const invoicePaymentController = require('./invoice-payment.controller');
 const { authenticate } = require('../../middleware/auth.middleware');
 const {
-    updatePlanValidator,
-    requestConversationPackValidator
+    updatePlanValidator
 } = require('./subscription.validator');
 
 const router = express.Router();
@@ -23,9 +22,6 @@ router.post('/rate-limit/increment', subscriptionController.incrementRateLimit);
 // PUT /subscription/plan - Update subscription plan
 router.put('/plan', updatePlanValidator, subscriptionController.updatePlan);
 
-// POST /subscription/conversation-pack - Request conversation pack
-router.post('/conversation-pack', requestConversationPackValidator, subscriptionController.requestConversationPack);
-
 // GET /subscription/invoices - Get all invoices
 router.get('/invoices', subscriptionController.getInvoices);
 
@@ -40,6 +36,8 @@ router.get('/invoices/:invoiceId/pdf', subscriptionController.getInvoicePdf);
 router.post('/renew', invoicePaymentController.renew);
 // POST /subscription/invoices/pay/complete    — verify bKash payment & settle invoice
 router.post('/invoices/pay/complete', invoicePaymentController.completePayment);
+// POST /subscription/invoices/pay/cancel      — release a cancelled browser checkout
+router.post('/invoices/pay/cancel', invoicePaymentController.cancelPayment);
 // POST /subscription/invoices/:invoiceId/pay  — start bKash checkout for a specific invoice
 router.post('/invoices/:invoiceId/pay', invoicePaymentController.payInvoice);
 

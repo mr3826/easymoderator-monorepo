@@ -2,7 +2,12 @@
  * subscription.access — AI-gate predicate tests (pure, no DB).
  */
 
-const { isAiActive, isTrialing } = require('../subscription.access');
+const {
+    isAiActive,
+    isTrialing,
+    effectiveConversationLimit,
+    isConversationQuotaExhausted
+} = require('../subscription.access');
 
 describe('subscription.access · isAiActive', () => {
     it('allows AI for active and trialing shops', () => {
@@ -35,5 +40,32 @@ describe('subscription.access · isTrialing', () => {
         expect(isTrialing({ status: 'trialing' })).toBe(true);
         expect(isTrialing({ status: 'active' })).toBe(false);
         expect(isTrialing(null)).toBe(false);
+    });
+});
+
+describe('subscription.access · conversation quota', () => {
+    it('includes top-up balance without allowing negative credits', () => {
+        expect(effectiveConversationLimit({ conversations_limit: 100, topup_balance: 25 })).toBe(125);
+        expect(effectiveConversationLimit({ conversations_limit: 100, topup_balance: -5 })).toBe(100);
+    });
+
+    it('marks the 100th conversation as the boundary and the next as exhausted', () => {
+        expect(isConversationQuotaExhausted({ conversations_limit: 100, conversations_used: 99 })).toBe(false);
+        expect(isConversationQuotaExhausted({ conversations_limit: 100, conversations_used: 100 })).toBe(true);
+        expect(isConversationQuotaExhausted({ conversations_limit: 100, conversations_used: 101 })).toBe(true);
+    });
+
+    it('honors top-ups, unlimited plans, and missing rows', () => {
+        expect(isConversationQuotaExhausted({ conversations_limit: 100, topup_balance: 1, conversations_used: 100 })).toBe(false);
+        expect(isConversationQuotaExhausted({ conversations_limit: -1, conversations_used: 100000 })).toBe(false);
+        expect(isConversationQuotaExhausted(null)).toBe(false);
+        expect(effectiveConversationLimit(undefined)).toBe(-1);
+    });
+
+    it('preserves the original allowance after partially consuming top-up credits', () => {
+        const partiallyConsumed = { conversations_limit: 500, conversations_used: 550, topup_balance: 50 };
+        expect(effectiveConversationLimit(partiallyConsumed)).toBe(600);
+        expect(isConversationQuotaExhausted(partiallyConsumed)).toBe(false);
+        expect(isConversationQuotaExhausted({ conversations_limit: 500, conversations_used: 600, topup_balance: 0 })).toBe(true);
     });
 });

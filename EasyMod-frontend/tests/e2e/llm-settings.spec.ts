@@ -95,7 +95,7 @@ async function setupRoutes(page: Page) {
             return route.fulfill(jsonResponse([]));
         }
         if (path.startsWith('/api/subscription')) {
-            return route.fulfill(jsonResponse({ plan_code: 'FREE', plan_name: 'Free', features: {} }));
+            return route.fulfill(jsonResponse({ plan_code: 'SHURU', plan_name: 'Shuru', features: {} }));
         }
 
         return route.fulfill(jsonResponse({}));

@@ -56,6 +56,7 @@ jest.mock('../../entities', () => ({
     DeliveryIntegration: {
         findAll: jest.fn(),
     },
+    Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
 }));
 

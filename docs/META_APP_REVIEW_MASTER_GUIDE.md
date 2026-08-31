@@ -136,7 +136,7 @@ incognito window with no prior state.
 - [ ] **Two-factor auth OFF** on that account. Sign-in routes to `/2fa-verify`
       when 2FA is enabled ([SignIn.tsx:56-61](../EasyMod-frontend/src/app/components/SignIn.tsx#L56-L61))
       and the reviewer cannot receive your code. This alone fails a submission.
-- [ ] Subscription active (trial or Growth). A `suspended` / `trial_expired` /
+- [ ] Subscription active (Shuru, Growth, or Partner). A `suspended` / `trial_expired` /
       `past_due` state paints a billing banner on the Subscription page
       ([Subscription.tsx:542](../EasyMod-frontend/src/app/components/Subscription.tsx#L542)).
 - [ ] Conversation usage **below 75%** — at or above that the app shows an

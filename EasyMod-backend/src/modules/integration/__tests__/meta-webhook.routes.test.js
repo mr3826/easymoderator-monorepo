@@ -13,6 +13,7 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret-32chars!!';
 process.env.META_APP_SECRET = 'test-app-secret';
 process.env.META_WEBHOOK_VERIFY_TOKEN = 'global-verify-token';
+process.env.META_USER_PROFILE_ENABLED = 'true';
 // Durable webhook receipts encrypt their replay body with this key.
 process.env.CHANNEL_ENCRYPTION_KEY = 'b'.repeat(64);
 // ── Mocks (before any require) ─────────────────────────────────────────────────
@@ -196,6 +197,7 @@ describe('storeIncomingMessage', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        process.env.META_USER_PROFILE_ENABLED = 'true';
         global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
 
         mockCustomer.findOrCreate.mockResolvedValue([customer, true]);
@@ -282,6 +284,31 @@ describe('storeIncomingMessage', () => {
         await storeIncomingMessage(baseEvent);
         await flushPromises();
 
+        expect(existingGenericCustomer.update).toHaveBeenCalledWith({
+            name: 'Facebook User',
+            metadata: expect.objectContaining({
+                source: 'webhook',
+                platform: 'facebook',
+                external_id: 'sender-fb-123',
+                channel: 'Facebook',
+            }),
+        });
+    });
+
+    it('uses the safe fallback without invoking enrichment when the feature is disabled', async () => {
+        process.env.META_USER_PROFILE_ENABLED = 'false';
+        const existingGenericCustomer = {
+            id: CUSTOMER_ID,
+            name: 'facebook user',
+            metadata: { source: 'webhook', platform: 'facebook' },
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        mockCustomer.findOrCreate.mockResolvedValue([existingGenericCustomer, false]);
+
+        await storeIncomingMessage(baseEvent);
+        await flushPromises();
+
+        expect(mockCustomerProfileService.enrichCustomerNameFromMeta).not.toHaveBeenCalled();
         expect(existingGenericCustomer.update).toHaveBeenCalledWith({
             name: 'Facebook User',
             metadata: expect.objectContaining({

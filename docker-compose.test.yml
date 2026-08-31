@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: e2e
-      POSTGRES_PASSWORD: e2e
-      POSTGRES_DB: easymod_e2e
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-e2e}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-e2e}
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-easymod_integration_test}
     ports:
-      - "127.0.0.1:${TEST_POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-55432}:5432"
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U e2e -d easymod_e2e"]
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-e2e} -d ${TEST_POSTGRES_DB:-easymod_integration_test}"]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -19,7 +19,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
-      - "127.0.0.1:${TEST_REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${TEST_REDIS_PORT:-56379}:6379"
     tmpfs:
       - /data
     healthcheck:

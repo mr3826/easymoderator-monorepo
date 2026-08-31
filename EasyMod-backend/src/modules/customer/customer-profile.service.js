@@ -19,6 +19,9 @@
  *
  * Always fire-and-forget from the hot ingest path: this MUST never throw and
  * MUST never block message processing.
+ *
+ * Business Asset User Profile Access is outside the current Meta review scope,
+ * so this integration remains opt-in via META_USER_PROFILE_ENABLED.
  */
 
 const axios = require('axios');
@@ -79,6 +82,7 @@ async function resolveChannel({ metaChannelId, shopId, platform }) {
  */
 async function enrichCustomerNameFromMeta({ customerId, metaChannelId, shopId, platform, psid }) {
     try {
+        if (process.env.META_USER_PROFILE_ENABLED !== 'true') return false;
         if (!customerId || !psid) return false;
 
         const customer = await Customer.findByPk(customerId);

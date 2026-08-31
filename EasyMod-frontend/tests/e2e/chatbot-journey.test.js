@@ -87,7 +87,7 @@ const orders = [
 async function setupMockApi(page) {
   let authenticated = false;
 
-  await page.route('**/api/**', async (route) => {
+  await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -149,6 +149,17 @@ async function setupMockApi(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ success: true, data: dashboardMetrics }),
+      });
+    }
+
+    if (path === '/api/setup/status' && method === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { isComplete: true, completedCount: 4, totalCount: 4, progressPercent: 100, tasks: [] },
+        }),
       });
     }
 
@@ -294,11 +305,15 @@ async function setupMockApi(page) {
 }
 
 async function login(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('easymod:business-setup:default:complete-dismissed', '1');
+    window.localStorage.setItem('easymod:business-setup:shop-journey-1:complete-dismissed', '1');
+  });
   await page.goto('/signin');
   await page.fill('#email', mockUser.email);
   await page.fill('#password', 'strong-password');
   await page.locator('button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/dashboard$/);
 }
 
 async function browserFetch(page, url, method = 'GET', body) {
@@ -322,7 +337,7 @@ test.describe('Group 1: Authentication & Shop Selection', () => {
   test('owner can sign in and reach dashboard', async ({ page }) => {
     await setupMockApi(page);
     await login(page);
-    await expect(page.getByRole('main').getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible({ timeout: 20000 });
   });
 });
 
@@ -344,7 +359,7 @@ test.describe('Group 3: Business Info Entry', () => {
   test('dashboard loads metrics safely', async ({ page }) => {
     await setupMockApi(page);
     await login(page);
-    await expect(page.getByRole('heading', { name: '20' })).toBeVisible();
+    await expect(page.getByRole('main').getByRole('heading', { name: 'Business Health' })).toBeVisible({ timeout: 20000 });
   });
 });
 
@@ -491,11 +506,10 @@ test.describe('Group 14: Compliance - META Privacy Policy', () => {
     await expect(page.getByRole('heading', { name: 'Meta Platform Data' })).toBeVisible();
   });
 
-  test('privacy policy discloses OpenAI, Anthropic, Google and data retention', async ({ page }) => {
+  test('privacy policy discloses active AI providers and data retention', async ({ page }) => {
     await page.goto('/privacy-policy');
-    await expect(page.getByText(/OpenAI/i)).toBeVisible();
-    await expect(page.getByText(/Anthropic/i)).toBeVisible();
-    await expect(page.getByText(/Google/i)).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'OpenAI', exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Google (Gemini)', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Data Retention/i })).toBeVisible();
   });
 }

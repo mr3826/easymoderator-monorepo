@@ -10,21 +10,21 @@ const mockShop = { id: 'shop-1', unique_code: 'SHOP1', shop_name: 'My BD Shop', 
 
 const mockConversations = [
     {
-        id: 'conv-1', channel_type: 'messenger',
-        customer: { id: 'cust-1', display_name: 'Ahmed Hassan', channel_user_id: 'psid-1' },
-        last_message: 'What is the price?', unread_count: 2, status: 'open',
+        id: 'conv-1', channel: 'messenger',
+        customer: { id: 'cust-1', name: 'Ahmed Hassan', channel_user_id: 'psid-1' },
+        lastMessage: 'What is the price?', unreadCount: 2, status: 'active',
         updated_at: new Date().toISOString()
     },
     {
-        id: 'conv-2', channel_type: 'instagram',
-        customer: { id: 'cust-2', display_name: 'Fatima Begum', channel_user_id: 'igid-2' },
-        last_message: 'Is it available?', unread_count: 0, status: 'open',
+        id: 'conv-2', channel: 'messenger',
+        customer: { id: 'cust-2', name: 'Fatima Begum', channel_user_id: 'igid-2' },
+        lastMessage: 'Is it available?', unreadCount: 0, status: 'active',
         updated_at: new Date().toISOString()
     },
     {
-        id: 'conv-3', channel_type: 'messenger',
-        customer: { id: 'cust-3', display_name: 'Karim Uddin', channel_user_id: 'psid-3' },
-        last_message: 'Order received, thanks!', unread_count: 0, status: 'resolved',
+        id: 'conv-3', channel: 'messenger',
+        customer: { id: 'cust-3', name: 'Karim Uddin', channel_user_id: 'psid-3' },
+        lastMessage: 'Order received, thanks!', unreadCount: 0, status: 'closed',
         updated_at: new Date().toISOString()
     }
 ];
@@ -36,7 +36,7 @@ const mockMessages = [
 
 async function setupRoutes(page: any) {
     let authenticated = false;
-    await page.route('**/api/**', async (route: any) => {
+    await page.route((url) => new URL(url).pathname.startsWith('/api/'), async (route: any) => {
         const url = new URL(route.request().url());
         const path = url.pathname;
         const method = route.request().method();
@@ -50,9 +50,9 @@ async function setupRoutes(page: any) {
             if (!authenticated) return route.fulfill({ status: 401, body: '{"success":false}', contentType: 'application/json' });
             return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { user: mockUser, currentShop: mockShop, allShops: [mockShop] } }) });
         }
-        if (path === '/api/conversations' && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { rows: mockConversations, count: 3 } }) });
-        if (path.match(/\/api\/conversations\/[\w-]+\/messages/)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockMessages }) });
-        if (path.match(/\/api\/messages/) && method === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 'msg-new', content: 'New reply', direction: 'outgoing', created_at: new Date().toISOString() } }) });
+        if (path === '/api/conversation' && method === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { conversations: mockConversations, pagination: { total: 3, page: 1, pageSize: 50 } } }) });
+        if (path.match(/\/api\/conversation\/[\w-]+\/messages/)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { messages: mockMessages, pagination: { page: 1, totalPages: 1 } } }) });
+        if (path.match(/\/api\/conversation\/[\w-]+\/message/) && method === 'POST') return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: true, data: { id: 'msg-new', content: 'New reply', direction: 'outgoing', created_at: new Date().toISOString() } }) });
 
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"success":true,"data":[]}' });
     });
@@ -79,12 +79,12 @@ test('inbox page title shows "Shared Inbox" not "Unified Inbox"', async ({ page 
 test('conversation list appears in left panel', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('Ahmed Hassan').or(page.getByText('conv'))).toBeVisible();
+    await expect(page.getByText('Ahmed Hassan', { exact: true }).first()).toBeVisible();
 });
 
 test('shows empty state when no conversations', async ({ page }) => {
     await setupRoutes(page);
-    await page.route('**/api/conversations**', (route) =>
+    await page.route((url) => new URL(url).pathname.startsWith('/api/conversation'), (route) =>
         route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { rows: [], count: 0 } }) })
     );
     await loginAndGo(page);
@@ -116,32 +116,33 @@ test('message input visible after selecting conversation', async ({ page }) => {
 test('customer name shown in conversation list', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('Ahmed Hassan')).toBeVisible();
-    await expect(page.getByText('Fatima Begum')).toBeVisible();
+    await expect(page.getByText('Ahmed Hassan', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Fatima Begum', { exact: true }).first()).toBeVisible();
 });
 
 test('unread badge visible for conversations with unread messages', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
     // conv-1 has unread_count: 2
-    await expect(page.getByText('2').or(page.locator('[data-testid="unread-badge"]'))).toBeVisible();
+    await expect(page.getByTestId('unread-badge')).toHaveText('2');
 });
 
 test('last message preview shown in conversation item', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('What is the price?').or(page.getByText('Is it available?'))).toBeVisible();
+    await expect(page.getByText('What is the price?', { exact: true }).first()).toBeVisible();
 });
 
 test('resolved conversations visible in list', async ({ page }) => {
     await setupRoutes(page);
     await loginAndGo(page);
-    await expect(page.getByText('Karim Uddin')).toBeVisible();
+    await page.getByRole('button', { name: /Done/ }).click();
+    await expect(page.getByText('Karim Uddin', { exact: true }).first()).toBeVisible();
 });
 
 test('filter conversations by open status', async ({ page }) => {
     await setupRoutes(page);
-    await page.route('**/api/conversations*', async (route) => {
+    await page.route((url) => new URL(url).pathname.startsWith('/api/conversation'), async (route) => {
         const url = new URL(route.request().url());
         const status = url.searchParams.get('status') || 'open';
         const filtered = mockConversations.filter(c => c.status === status);

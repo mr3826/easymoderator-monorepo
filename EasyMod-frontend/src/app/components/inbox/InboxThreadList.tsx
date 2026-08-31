@@ -208,10 +208,18 @@ export function InboxThreadList({
                       {t("inbox.needsReplyBadge")}
                     </Badge>
                   )}
+                  {(conversation.unreadCount || 0) > 0 && (
+                    <span data-testid="unread-badge" className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {conversation.unreadCount}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-gray-600 truncate">
                   {conversation.title || t("inbox.noTitle")}
                 </p>
+                {conversation.lastMessage && (
+                  <p className="text-xs text-gray-500 truncate mt-0.5">{conversation.lastMessage}</p>
+                )}
                 {/* AI-handled: muted + relative timestamp */}
                 {isAIHandled && lastAIReply ? (
                   <p className="text-xs text-muted-foreground mt-1">

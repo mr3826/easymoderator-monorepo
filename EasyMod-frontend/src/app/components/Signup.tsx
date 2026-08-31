@@ -9,7 +9,6 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
 import { useAuth } from "../../features/auth/AuthProvider";
-import { apiClient } from "@/api";
 import { subscriptionPlans } from "../lib/subscriptionPlans";
 import LanguageToggle from "./LanguageToggle";
 import BrandLogo from "./BrandLogo";
@@ -69,25 +68,10 @@ export default function Signup() {
   }, []);
 
   const selectedPlan = useMemo(
-    () => subscriptionPlans.find((plan) => plan.id === "growth") ?? subscriptionPlans[0],
-    []
+    () => subscriptionPlans.find((plan) => plan.id === "shuru") ?? subscriptionPlans[0],
+    [],
   );
-  const translatedGrowthHighlights = t('subscription.plans.growth.highlights', { returnObjects: true });
-  const trialBenefits = stringList(t('auth.signup.trialBenefits', { returnObjects: true }), [
-    "No credit card required",
-    "Upgrade anytime",
-    "Business Setup after signup",
-  ]);
-  const growthHighlights = stringList(
-    translatedGrowthHighlights && typeof translatedGrowthHighlights === 'object' && !Array.isArray(translatedGrowthHighlights)
-      ? Object.values(translatedGrowthHighlights as Record<string, unknown>)
-      : selectedPlan.highlights,
-    selectedPlan.highlights,
-  );
-
-  // Signup is always card-free now: every new shop gets a 14-day GROWTH trial
-  // with no payment upfront. Keep the no-payment signup UX.
-  const isFreePlan = true;
+  const shuruBenefits = stringList(t('auth.signup.shuruBenefits', { returnObjects: true }), selectedPlan.highlights);
 
   const onSubmit = async (data: SignupFormData) => {
     try {
@@ -97,19 +81,7 @@ export default function Signup() {
         full_name: data.fullName,
         phone: data.phone.trim(),
       });
-      trackFunnelEvent("signup_completed", { selected_plan: selectedPlan.id }, { onceKey: "signup_completed" });
-
-      // Materialize the card-less 14-day GROWTH trial (the backend creates it on
-      // first read). Do NOT convert to a paid plan here — that would end the trial.
-      await apiClient.getSubscription().catch(() => {});
-
-      sessionStorage.setItem(
-        "easymod_selected_plan",
-        JSON.stringify({
-          planId: selectedPlan.id,
-          billing: "monthly",
-        })
-      );
+       trackFunnelEvent("signup_completed", { selected_plan: "SHURU" }, { onceKey: "signup_completed" });
 
       navigate("/dashboard");
     } catch (err: any) {
@@ -126,7 +98,7 @@ export default function Signup() {
   ];
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F9FAF8' }}>
+    <div className="min-h-screen bg-[#F9FAF8] font-bn">
       {/* Top bar */}
       <motion.header
         className="bg-white border-b border-gray-100 px-6 py-4"
@@ -143,7 +115,7 @@ export default function Signup() {
                   further in Bengali). Drop the sentence on narrow screens and
                   keep the link, which is the part that has to stay reachable. */}
               <span className="hidden sm:inline">{t('auth.signup.alreadyHaveAccount')}</span>
-              <Link to="/signin" className="font-semibold transition-colors" style={{ color: '#00A651' }}>
+               <Link to="/signin" className="font-semibold text-brand transition-colors">
                 {t('auth.signup.signIn')}
               </Link>
             </div>
@@ -173,17 +145,17 @@ export default function Signup() {
         </motion.div>
 
         <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* Left — trial value */}
+           {/* Left — Shuru value */}
           <div className="order-2 flex-1 min-w-0 lg:order-1">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                 <p className="text-sm font-bold uppercase tracking-normal text-emerald-700">
-                  {t('auth.signup.trialEyebrow')}
+                   {t('auth.signup.shuruEyebrow')}
                 </p>
-                <h2 className="mt-2 text-3xl font-black text-gray-900">{t('auth.signup.trialTitle')}</h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-gray-600">{t('auth.signup.trialSubtitle')}</p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  {trialBenefits.map((benefit) => (
+                 <h2 className="mt-2 text-3xl font-black text-gray-900">{t('auth.signup.shuruTitle')}</h2>
+                 <p className="mt-2 max-w-xl text-sm leading-6 text-gray-600">{t('auth.signup.shuruSubtitle')}</p>
+                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                   {shuruBenefits.slice(0, 3).map((benefit) => (
                     <div key={benefit} className="flex items-start gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-gray-700 shadow-sm">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                       <span>{benefit}</span>
@@ -193,7 +165,7 @@ export default function Signup() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                {growthHighlights.map((feature, i) => (
+                 {selectedPlan.highlights.map((feature, i) => (
                   <motion.div
                     key={feature}
                     className="flex min-h-[88px] items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4"
@@ -241,8 +213,8 @@ export default function Signup() {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-1">{t('auth.signup.createAccountHeading')}</h2>
               <p className="text-sm text-gray-500 mb-5">
-                <span className="font-medium" style={{ color: '#00A651' }}>{selectedPlan.name}</span>{' '}
-                {t('auth.signup.activatePlan')}
+                 <span className="font-medium text-brand">{selectedPlan.name}</span>{' '}
+                 {t('auth.signup.activateFreePlan')}
               </p>
 
               <AnimatePresence>
@@ -330,25 +302,13 @@ export default function Signup() {
                   <PasswordStrengthMeter password={passwordValue || ''} />
                 </div>
 
-                {/* BD Payment section — only for paid plans. FREE stays card-free. */}
-                {isFreePlan ? (
-                  <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 p-4 flex items-start gap-2.5">
-                    <span className="text-lg">✅</span>
-                    <div>
-                      <p className="text-xs font-semibold text-emerald-800">{t('auth.signup.noCardFree')}</p>
-                      <p className="text-xs text-emerald-600 mt-0.5">{t('auth.signup.upgradeAnytime')}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-pink-200 bg-pink-50 p-4">
-                    <p className="text-xs font-semibold text-gray-700 mb-2">{t('auth.signup.subscriptionPaymentMethod')}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border bg-pink-100 text-pink-700 border-pink-200">
-                        bKash
-                      </span>
-                    </div>
-                  </div>
-                )}
+                 <div className="flex items-start gap-2.5 rounded-xl border border-dashed border-emerald-200 bg-emerald-50 p-4">
+                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+                   <div>
+                     <p className="text-xs font-semibold text-emerald-800">{t('auth.signup.freeForever')}</p>
+                     <p className="mt-0.5 text-xs text-emerald-600">{t('auth.signup.upgradeAnytime')}</p>
+                   </div>
+                 </div>
 
                 {/* Terms */}
                 <div className="flex items-start gap-2.5">
@@ -367,11 +327,11 @@ export default function Signup() {
                   />
                   <label htmlFor="terms" className="text-xs text-gray-600 leading-relaxed">
                     {t('auth.signup.agreePrefix')}{' '}
-                    <a href={buildMarketingUrl("/privacy-policy")} target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
+                    <a href={buildMarketingUrl("/privacy-policy")} target="_blank" rel="noopener noreferrer" className="font-medium text-brand underline">
                       {t('auth.signup.privacyPolicy')}
                     </a>{' '}
                     {t('auth.signup.agreeSuffix')}{' '}
-                    <a href={buildMarketingUrl("/terms")} target="_blank" rel="noopener noreferrer" className="font-medium underline" style={{ color: '#00A651' }}>
+                    <a href={buildMarketingUrl("/terms")} target="_blank" rel="noopener noreferrer" className="font-medium text-brand underline">
                       Terms of Service
                     </a>
                   </label>
@@ -393,7 +353,7 @@ export default function Signup() {
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="text-gray-700 font-medium">{t('auth.signup.payToday')}</span>
                     <span className="font-bold text-emerald-600">
-                      {isFreePlan ? t('auth.signup.freeAmount') : t('auth.signup.devModeAmount')}
+                       {t('auth.signup.freeAmount')}
                     </span>
                   </div>
                 </div>
@@ -401,8 +361,7 @@ export default function Signup() {
                 <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.1 }}>
                   <Button
                     type="submit"
-                    className="w-full h-12 rounded-xl text-white font-bold text-base shadow-md transition-all hover:shadow-lg hover:opacity-90 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg, #008040 0%, #00A651 100%)' }}
+                    className="h-12 w-full rounded-xl bg-brand text-base font-bold text-white shadow-md transition-all hover:bg-brand-hover hover:shadow-lg disabled:opacity-60"
                     disabled={isSubmitting}
                   >
                     {isSubmitting ? (
@@ -414,7 +373,7 @@ export default function Signup() {
                         {t('auth.signup.creating')}
                       </span>
                     ) : (
-                      isFreePlan ? t('auth.signup.startFreeButton') : t('auth.signup.createButton')
+                       t('auth.signup.startFreeButton')
                     )}
                   </Button>
                 </motion.div>

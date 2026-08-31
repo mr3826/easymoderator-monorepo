@@ -57,19 +57,6 @@ exports.setShopStatus = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
-exports.extendTrial = async (req, res, next) => {
-  try {
-    const { shopId } = req.params;
-    const { before, after } = await adminService.extendTrial(shopId, req.body.days);
-    await AuditService.logOperation({
-      userId: req.user.userId, shopId, action: 'admin:extend_trial',
-      resourceType: 'SUBSCRIPTION', resourceId: shopId,
-      oldValues: before, newValues: after, ...auditCtx(req),
-    });
-    ok(res, after);
-  } catch (e) { next(e); }
-};
-
 exports.addCredits = async (req, res, next) => {
   try {
     const { shopId } = req.params;

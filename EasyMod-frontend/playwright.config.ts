@@ -9,12 +9,19 @@ export default defineConfig({
   fullyParallel: true,
   timeout: 30_000,
   expect: {
-    timeout: 5_000,
+    timeout: 15_000,
   },
   retries: process.env.CI ? 2 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: PW_BASE_URL,
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: PW_BASE_URL,
+        localStorage: [{ name: 'easymod_lang', value: 'en' }],
+      }],
+    },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

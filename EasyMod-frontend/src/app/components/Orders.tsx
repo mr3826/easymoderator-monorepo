@@ -16,9 +16,11 @@ import { fadeUp, staggerChildren } from "@/lib/motion";
 
 const statusColors = {
   draft: 'bg-gray-100 text-gray-700',
+  pending: 'bg-orange-100 text-orange-700',
   confirmed: 'bg-blue-100 text-blue-700',
   processing: 'bg-yellow-100 text-yellow-700',
   completed: 'bg-green-100 text-green-700',
+  delivered: 'bg-green-100 text-green-700',
   cancelled: 'bg-red-100 text-red-700',
 };
 

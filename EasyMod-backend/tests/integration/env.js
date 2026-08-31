@@ -22,9 +22,15 @@ process.env.NODE_ENV = 'test';
 
 // ── Infrastructure ───────────────────────────────────────────────────────────
 // A DEDICATED database name, so the suite can never truncate a dev catalog.
-def('DATABASE_URL', 'postgres://e2e:e2e@127.0.0.1:5432/easymod_e2e');
+def('DATABASE_URL', 'postgres://e2e:e2e@127.0.0.1:55432/easymod_integration_test');
 def('DB_SSL', 'false');
-def('REDIS_URL', 'redis://127.0.0.1:6379');
+def('REDIS_URL', 'redis://127.0.0.1:56379');
+def('REDIS_SESSION_DB', '10');
+def('REDIS_CACHE_DB', '11');
+def('REDIS_RATELIMIT_DB', '12');
+def('REDIS_QUEUE_DB', '13');
+def('REDIS_LEGACY_DB', '14');
+def('REDIS_SSE_DB', '15');
 def('GROWTH_OS_ENABLED', 'true');
 
 // ── Crypto / auth ────────────────────────────────────────────────────────────

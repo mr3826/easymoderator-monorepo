@@ -1,8 +1,8 @@
 # BD Launch Execution TODOs
 
-Last updated: 2026-07-01
+Last updated: 2026-08-28
 
-Scope: private/founder-led Bangladesh launch for EasyModerator as a Facebook Messenger DM-only product. Payment work is intentionally deferred and tracked below as TODOs.
+Scope: private/founder-led Bangladesh launch for EasyModerator as a Facebook Messenger DM-only product. The commercial model is implemented; live bKash enablement remains gated by the payment checklist below.
 
 ## Meta App Review Workstream
 
@@ -108,24 +108,37 @@ The funnel event endpoint should track:
 - `first_ai_reply_sent`
 - `first_order_captured`
 - `first_rto_flag`
-- `trial_day_7_active`
+- `plan_assigned_shuru`
+- `usage_threshold_70`
+- `usage_threshold_90`
+- `usage_threshold_100`
+- `plan_upgraded`
+- `topup_purchased`
+- `renewal_succeeded`
+- `renewal_failed`
+- `partner_applied`
+- `partner_approved`
 
 Before paid growth, confirm these events are visible in production audit/analytics exports and mapped to CRM activation stages.
 
-## Payment TODOs
+## Commercial And Payment TODOs
 
-Payment work is not active scope for this execution plan.
+Shuru is free forever with 100 conversations/month. Growth is ৳999/month with
+500 conversations/month and `PACK_100`, `PACK_300`, and `PACK_700` top-ups.
+Partner has no monthly fee and uses flat delivered-order bands. Conversation
+exhaustion pauses only AI replies; it never creates an overage charge.
 
 - TODO: Mount and verify bKash order webhook route.
-- TODO: Run live bKash production money test.
-- TODO: Verify subscription renewal, top-up, failed payment, refund/no-refund paths.
-- TODO: Reconcile payment webhook docs and production env variables.
+- TODO: Keep bKash disabled until payment-ID binding, minor-unit amount checks, and replay tests pass in staging.
+- TODO: Run one live bKash production money test for a Growth top-up and a recurring invoice.
+- TODO: Verify renewal, `PACK_*` top-up, failed payment, duplicate callback, amount mismatch, and refund/no-refund paths.
+- TODO: Reconcile payment webhook docs and production env variables; set `VITE_BKASH_ENABLED` only after backend verification.
 
 ## Manual Launch QA
 
 Run this with a real Facebook Page tester before private launch:
 
-1. Confirm a first-time shop starts in Draft mode.
+1. Confirm a first-time shop starts on active Shuru with 100 conversations/month.
 2. Connect a Facebook Page through Meta OAuth.
 3. Send an inbound Messenger DM.
 4. Confirm AI suggestion appears as a draft.
