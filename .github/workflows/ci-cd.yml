@@ -366,6 +366,7 @@ jobs:
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           BKASH_ENABLED: ${{ vars.BKASH_ENABLED || 'false' }}
           BKASH_BASE_URL: ${{ secrets.BKASH_BASE_URL }}
           BKASH_USERNAME: ${{ secrets.BKASH_USERNAME }}
@@ -739,6 +740,7 @@ jobs:
           META_APP_ID: ${{ secrets.VITE_META_APP_ID }}
           META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
           META_WEBHOOK_VERIFY_TOKEN: ${{ secrets.META_WEBHOOK_VERIFY_TOKEN }}
+          META_USER_PROFILE_ENABLED: ${{ vars.META_USER_PROFILE_ENABLED || 'false' }}
           # bKash is a LIVE-money gateway. It stays OFF for the controlled pilot
           # (finding F-14/§6). Flip the `BKASH_ENABLED` Actions *variable* to
           # "true" only once every BKASH_* secret is set AND a real-money test
