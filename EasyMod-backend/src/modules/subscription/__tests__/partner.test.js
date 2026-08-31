@@ -7,10 +7,22 @@
 jest.mock('../../entities', () => ({
     PartnerApplication: { findOne: jest.fn(), create: jest.fn(), findAll: jest.fn() },
     Subscription: { findOne: jest.fn(), create: jest.fn() },
+    Invoice: { update: jest.fn() },
     Order: { count: jest.fn() },
 }));
 
-const { PartnerApplication, Subscription, Order } = require('../../entities');
+jest.mock('../../../utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(async () => ({
+            LOCK: { UPDATE: 'UPDATE' },
+            commit: jest.fn(),
+            rollback: jest.fn(),
+        })),
+    },
+}));
+jest.mock('../../../utils/cache.service', () => ({ clearForShop: jest.fn().mockResolvedValue(undefined) }));
+
+const { PartnerApplication, Subscription, Invoice, Order } = require('../../entities');
 const { calculatePartnerCharge, PARTNER_ORDER_TIERS } = require('../subscription.plans');
 const partnerService = require('../partner.service');
 
@@ -66,7 +78,7 @@ describe('partner.service.approvePartner', () => {
             update: jest.fn().mockResolvedValue(undefined),
         };
         const sub = {
-            shop_id: 'shop-1', plan_code: 'GROWTH',
+            id: 'sub-1', shop_id: 'shop-1', plan_code: 'GROWTH',
             update: jest.fn().mockResolvedValue(undefined),
         };
         PartnerApplication.findOne.mockResolvedValue(app);
@@ -76,10 +88,14 @@ describe('partner.service.approvePartner', () => {
 
         expect(sub.update).toHaveBeenCalledWith(expect.objectContaining({
             plan_code: 'PARTNER', billing_model: 'per_order', status: 'active', conversations_limit: -1,
-        }));
+        }), expect.anything());
+        expect(Invoice.update).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'cancelled' }),
+            expect.objectContaining({ where: expect.objectContaining({ subscription_id: 'sub-1' }) }),
+        );
         expect(app.update).toHaveBeenCalledWith(expect.objectContaining({
             status: 'approved', shop_id: 'shop-1', reviewed_by: 'cli',
-        }));
+        }), expect.anything());
         expect(result.subscription).toBe(sub);
     });
 
@@ -94,7 +110,7 @@ describe('partner.service.approvePartner', () => {
 
         await partnerService.approvePartner('app-2', { shopId: 'shop-9' });
 
-        expect(app.update).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-9' }));
+        expect(app.update).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-9' }), expect.anything());
     });
 
     it('throws when no shop is linked and none provided', async () => {

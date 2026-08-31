@@ -94,6 +94,14 @@ const Invoice = sequelize.define('Invoice', {
         type: DataTypes.STRING,
         allowNull: true
     },
+    checkout_lease_id: {
+        type: DataTypes.STRING,
+        allowNull: true
+    },
+    checkout_lease_expires_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
     transaction_id: {
         type: DataTypes.STRING,
         allowNull: true

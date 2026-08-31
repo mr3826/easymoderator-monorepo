@@ -101,6 +101,23 @@ describe('top-up catalog and plan guard', () => {
         expect(bd.initializeBkashPayment).not.toHaveBeenCalled();
     });
 
+    it('blocks a concurrent request while an idempotency checkout lease is active', async () => {
+        Subscription.findOne.mockResolvedValueOnce({ plan_code: 'GROWTH' });
+        sequelize.query.mockResolvedValueOnce([{
+            id: 'topup-1',
+            pack_code: 'PACK_100',
+            invoice_number: 'TU-202608-ABC123',
+            status: 'pending',
+            checkout_lease_id: 'lease-1',
+            checkout_lease_expires_at: new Date(Date.now() + 60_000),
+        }]);
+
+        await expect(topupService.initiateTopup('shop-1', 'PACK_100', {
+            phone: '01711111111', name: 'Owner', callbackUrl: 'https://app.example/subscription', idempotencyKey: 'key-1',
+        })).rejects.toMatchObject({ status: 409, code: 'PAYMENT_IN_PROGRESS' });
+        expect(bd.initializeBkashPayment).not.toHaveBeenCalled();
+    });
+
     it('reserves the idempotency key before calling bKash', async () => {
         Subscription.findOne.mockResolvedValueOnce({ plan_code: 'GROWTH' });
         sequelize.query
@@ -117,6 +134,7 @@ describe('top-up catalog and plan guard', () => {
 
         expect(result.payment_id).toBe('PAY-NEW');
         expect(sequelize.query.mock.calls[1][0]).toMatch(/idempotency_key/);
+        expect(bd.initializeBkashPayment.mock.calls[0][0].order_id).toMatch(/^TU-/);
         expect(bd.initializeBkashPayment).toHaveBeenCalledTimes(1);
     });
 });

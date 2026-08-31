@@ -28,7 +28,7 @@ const { Order, PartnerBillingAdjustment } = require('../../modules/entities');
 const InvoiceGenerator = require('../invoice-generator');
 
 const MONTHLY_PRICE = 999;
-const YEARLY_PRICE = 11988;
+const YEARLY_PRICE = 9990;
 
 const addMonths = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
 const addYears = (d, n) => { const x = new Date(d); x.setFullYear(x.getFullYear() + n); return x; };

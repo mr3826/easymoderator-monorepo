@@ -312,4 +312,57 @@ describe('Return Approval → Inventory Sync', () => {
             expect.anything(),
         );
     });
+
+    it('uses the historical aggregate rate for a legacy progressive Partner invoice', async () => {
+        order = makeOrder({
+            order_status: 'delivered',
+            delivered_at: new Date('2026-08-12T10:00:00.000Z'),
+            metadata: { returnRequested: true, returnRef: 'RET-002' },
+        });
+        Order.findOne.mockResolvedValue(order);
+        Invoice.findOne.mockResolvedValue({
+            id: 'invoice-legacy',
+            invoice_type: 'partner_per_order',
+            status: 'paid',
+            amount: 8700,
+            metadata: { delivered_orders: 600, partnerCharge: 8700 },
+        });
+        PartnerBillingAdjustment.create.mockResolvedValue({ id: 'adjustment-legacy' });
+
+        await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
+
+        expect(PartnerBillingAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
+            amount_bdt: 14.5,
+        }), expect.anything());
+    });
+
+    it('cancels a pending Partner invoice when a return reduces it to zero', async () => {
+        order = makeOrder({
+            order_status: 'delivered',
+            delivered_at: new Date('2026-08-12T10:00:00.000Z'),
+            metadata: { returnRequested: true, returnRef: 'RET-003' },
+        });
+        Order.findOne.mockResolvedValue(order);
+        const invoice = {
+            id: 'invoice-zero',
+            invoice_type: 'partner_per_order',
+            status: 'pending',
+            amount: 15,
+            extra_usage_amount: 15,
+            metadata: { delivered_orders: 300, rate_bdt: 15 },
+            update: jest.fn().mockResolvedValue(undefined),
+        };
+        Invoice.findOne.mockResolvedValue(invoice);
+        PartnerBillingAdjustment.create.mockResolvedValue({
+            id: 'adjustment-zero', update: jest.fn().mockResolvedValue(undefined),
+        });
+
+        await returnService.updateReturnStatus('shop-1', 'order-1', 'approved');
+
+        expect(invoice.update).toHaveBeenCalledWith(expect.objectContaining({
+            amount: 0,
+            status: 'cancelled',
+            payment_id: null,
+        }), expect.anything());
+    });
 });

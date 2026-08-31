@@ -77,6 +77,22 @@ const verifyShopAccess = async (userId, shopId) => {
     return userShop;
 };
 
+const cancelOpenRecurringInvoices = async (subscriptionId, transaction = null) => {
+    if (typeof Invoice?.update !== 'function') return;
+    const options = {
+        where: {
+            subscription_id: subscriptionId,
+            invoice_type: { [Op.in]: RECURRING_INVOICE_TYPES },
+            status: { [Op.in]: ['pending', 'overdue'] },
+        },
+    };
+    if (transaction) options.transaction = transaction;
+    await Invoice.update(
+        { status: 'cancelled', notes: 'Cancelled because the subscription plan changed' },
+        options,
+    );
+};
+
 /**
  * Get subscription details for a shop
  */
@@ -294,53 +310,64 @@ const updatePlan = async (shopId, userId, planData) => {
     const daysRemaining = Math.max(0, Math.ceil((periodEnd - now) / msPerDay));
     const totalDays = Math.max(1, Math.ceil((periodEnd - periodStart) / msPerDay));
 
-    if (isUpgrade && daysRemaining > 0 && oldPrice > 0) {
-        const fraction = daysRemaining / totalDays;
-        const proratedCharge = Math.round((newPrice - oldPrice) * fraction * 100) / 100;
+    const transaction = await sequelize.transaction();
+    try {
+        // An open renewal belongs to the old plan snapshot. Cancel it in the
+        // same transaction as the plan change so dunning cannot suspend the new plan.
+        await cancelOpenRecurringInvoices(subscription.id, transaction);
 
-        if (proratedCharge >= 1) {
-            const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
-            const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
-            const invoiceNumber = `INV-${yearMonth}-${suffix}`;
-            const dueDate = new Date(now.getTime() + 7 * msPerDay);
+        if (isUpgrade && daysRemaining > 0 && oldPrice > 0) {
+            const fraction = daysRemaining / totalDays;
+            const proratedCharge = Math.round((newPrice - oldPrice) * fraction * 100) / 100;
 
-            await Invoice.create({
-                subscription_id: subscription.id,
-                shop_id: shopId,
-                invoice_number: invoiceNumber,
-                billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
-                billing_period_start: now,
-                billing_period_end: periodEnd,
-                invoice_type: `Proration (upgrade to ${newPlanName})`,
-                amount: proratedCharge,
-                base_amount: proratedCharge,
-                extra_usage_amount: 0,
-                addon_amount: 0,
-                status: 'pending',
-                due_date: dueDate,
-                notes: `Prorated charge for ${daysRemaining} remaining days (${Math.round(fraction * 100)}% of billing period)`
-            });
+            if (proratedCharge >= 1) {
+                const yearMonth = now.toISOString().substring(0, 7).replace('-', '');
+                const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+                const invoiceNumber = `INV-${yearMonth}-${suffix}`;
+                const dueDate = new Date(now.getTime() + 7 * msPerDay);
+
+                await Invoice.create({
+                    subscription_id: subscription.id,
+                    shop_id: shopId,
+                    invoice_number: invoiceNumber,
+                    billing_period: now.toLocaleString('default', { month: 'long', year: 'numeric' }),
+                    billing_period_start: now,
+                    billing_period_end: periodEnd,
+                    invoice_type: `Proration (upgrade to ${newPlanName})`,
+                    amount: proratedCharge,
+                    base_amount: proratedCharge,
+                    extra_usage_amount: 0,
+                    addon_amount: 0,
+                    status: 'pending',
+                    due_date: dueDate,
+                    notes: `Prorated charge for ${daysRemaining} remaining days (${Math.round(fraction * 100)}% of billing period)`
+                }, { transaction });
+            }
         }
-    }
 
-    await subscription.update({
-        plan_code: selectedTier.code,
-        plan_name: newPlanName,
-        plan_price: calculatedPlanPrice,
-        billing_cycle: billingCycle,
-        billing_model: selectedTier.billingModel,
-        per_order_charge_bdt: selectedTier.perOrderChargeBdt,
-        conversations_limit: selectedTier.conversationsLimit,
-        orders_limit: selectedTier.ordersLimit,
-        products_limit: selectedTier.productsLimit,
-        features: selectedTier.features,
-        status: 'active',
-        trial_ends_at: null,
-        usage_reset_at: null,
-        current_period_start: now,
-        current_period_end: nextPeriod,
-        next_billing_date: nextPeriod
-    });
+        await subscription.update({
+            plan_code: selectedTier.code,
+            plan_name: newPlanName,
+            plan_price: calculatedPlanPrice,
+            billing_cycle: billingCycle,
+            billing_model: selectedTier.billingModel,
+            per_order_charge_bdt: selectedTier.perOrderChargeBdt,
+            conversations_limit: selectedTier.conversationsLimit,
+            orders_limit: selectedTier.ordersLimit,
+            products_limit: selectedTier.productsLimit,
+            features: selectedTier.features,
+            status: 'active',
+            trial_ends_at: null,
+            usage_reset_at: null,
+            current_period_start: now,
+            current_period_end: nextPeriod,
+            next_billing_date: nextPeriod
+        }, { transaction });
+        await transaction.commit();
+    } catch (error) {
+        await Promise.resolve(transaction.rollback()).catch(() => {});
+        throw error;
+    }
 
     // Invalidate cached subscription/limits so the next request reflects the new plan
     await cacheService.clearForShop(shopId);
@@ -1112,6 +1139,7 @@ const ensureRenewalInvoice = async (shopId, userId, targetPlanCode = null) => {
         billing_period_end: periodEnd,
         status: 'pending',
         metadata: {
+            plan_code: currentPlanCode,
             target_plan_code: requestedPlanCode,
             target_billing_cycle: targetBillingCycle,
         },
@@ -1152,5 +1180,6 @@ module.exports = {
     incrementRateLimit,
     grantBonusConversations,
     activateFromPaidInvoice,
-    ensureRenewalInvoice
+    ensureRenewalInvoice,
+    cancelOpenRecurringInvoices
 };

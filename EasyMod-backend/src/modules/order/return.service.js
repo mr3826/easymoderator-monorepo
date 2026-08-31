@@ -53,6 +53,15 @@ const getInvoicePeriod = (invoice) => {
             start = new Date(Date.UTC(year, month, 1));
         }
     }
+    if (!start || Number.isNaN(start.getTime())) {
+        const createdAt = invoice.created_at || invoice.paid_at;
+        if (createdAt) {
+            const anchor = new Date(createdAt);
+            if (!Number.isNaN(anchor.getTime())) {
+                start = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+            }
+        }
+    }
     if (start && (!end || Number.isNaN(end.getTime()))) {
         end = new Date(start);
         end.setUTCMonth(end.getUTCMonth() + 1);
@@ -66,6 +75,21 @@ const isPartnerInvoice = (invoice) => {
     return [metadata.plan_code, metadata.planCode, metadata.plan_name, metadata.planName, metadata.billing_model]
         .some(value => String(value || '').toUpperCase().includes('PARTNER')
             || String(value || '').toLowerCase() === 'per_order');
+};
+
+const calculateLegacyPartnerCharge = (deliveredOrders) => {
+    let remaining = Math.max(0, Number(deliveredOrders) || 0);
+    let total = 0;
+    let previousMax = 0;
+    for (const tier of [{ upTo: 500, rateBdt: 15 }, { upTo: 1000, rateBdt: 12 }, { upTo: null, rateBdt: 10 }]) {
+        if (remaining <= 0) break;
+        const bracketSize = tier.upTo === null ? remaining : tier.upTo - previousMax;
+        const ordersInBracket = Math.min(remaining, bracketSize);
+        total += ordersInBracket * tier.rateBdt;
+        remaining -= ordersInBracket;
+        if (tier.upTo !== null) previousMax = tier.upTo;
+    }
+    return total;
 };
 
 const findPartnerInvoiceForOrder = async (shopId, order, transaction) => {
@@ -115,7 +139,6 @@ const getPartnerRate = async (invoice, shopId, transaction) => {
         ?? metadata.partner_rate_bdt
         ?? metadata.partnerRateBdt,
     ) || 0;
-    if (explicitRate > 0) return explicitRate;
 
     let deliveredOrders = Number(
         metadata.delivered_orders
@@ -135,6 +158,25 @@ const getPartnerRate = async (invoice, shopId, transaction) => {
             },
             transaction,
         });
+    }
+    if (explicitRate > 0) return explicitRate;
+
+    const historicalAggregate = Number(
+        metadata.gross_partner_charge
+        ?? metadata.grossPartnerCharge
+        ?? metadata.partner_charge
+        ?? metadata.partnerCharge
+        ?? metadata.total_charge
+        ?? metadata.charge_bdt
+        ?? (invoice.invoice_type === 'partner_per_order' ? invoice.amount : 0),
+    ) || 0;
+    if (historicalAggregate > 0 && deliveredOrders > 0) {
+        // Preserve the effective rate actually charged by legacy progressive
+        // invoices instead of applying today's flat band to an old return.
+        return historicalAggregate / deliveredOrders;
+    }
+    if (deliveredOrders > 0) {
+        return calculateLegacyPartnerCharge(deliveredOrders) / deliveredOrders;
     }
     return getPartnerOrderTier(deliveredOrders)?.rateBdt || 0;
 };
@@ -267,10 +309,17 @@ const updateReturnStatus = async (shopId, orderId, status) => {
                             adjustment_credit: (Number(metadata.adjustment_credit) || 0) + rateBdt,
                             computed_total: Math.max(0, Number(settledInvoice.amount) - rateBdt),
                         };
+                        const nextAmount = Math.max(0, Number(settledInvoice.amount) - rateBdt);
                         await settledInvoice.update({
-                            amount: Math.max(0, Number(settledInvoice.amount) - rateBdt),
+                            amount: nextAmount,
                             extra_usage_amount: Math.max(0, Number(settledInvoice.extra_usage_amount || 0) - rateBdt),
                             metadata: updatedInvoiceMetadata,
+                            ...(nextAmount === 0 ? {
+                                status: 'cancelled',
+                                payment_id: null,
+                                bkash_url: null,
+                                notes: 'Cancelled after Partner return reversal reduced the balance to zero',
+                            } : {}),
                         }, { transaction });
                         await adjustment.update({
                             status: 'applied',

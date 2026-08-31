@@ -1,8 +1,9 @@
 require('module-alias/register');
 const config = require('../../config/config');
 
-const { sequelize } = require('./database-setup');
+    const { sequelize } = require('./database-setup');
 require('../../modules/entities');
+const missingProductionTablesMigration = require('../../database/migrations/20260816_001_create_missing_production_tables');
 const schemaDriftMigration = require('../../database/migrations/20260611_003_schema_drift_sweep');
 const courierClaimMigration = require('../../database/migrations/20260828_003_courier_dispatch_claim_owner');
 const commercialMigration = require('../../database/migrations/20260828_004_commercial_model');
@@ -17,6 +18,7 @@ const syncDatabase = async () => {
         // omits. Apply the migration-only schemas required by the current
         // runtime explicitly before the WIPE workflow primes migration history.
         await sequelize.sync();
+        await missingProductionTablesMigration.up(sequelize);
         await schemaDriftMigration.up(sequelize);
         await courierClaimMigration.up(sequelize);
         await commercialMigration.up(sequelize);

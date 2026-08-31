@@ -45,12 +45,13 @@ async function ensurePaidSubscription(shopId) {
     const now = new Date();
     const periodEnd = addMonths(now, PAID_MONTHS);
     const growth = PRICING_TIERS[PlanCode.GROWTH];
+    const annual = PAID_MONTHS === 12;
 
     const payload = {
         plan_code: growth.code,
         plan_name: growth.name,
-        plan_price: growth.priceBdtMonthly * PAID_MONTHS,
-        billing_cycle: PAID_MONTHS >= 12 ? 'yearly' : 'monthly',
+        plan_price: annual ? growth.priceBdtYearly : growth.priceBdtMonthly * PAID_MONTHS,
+        billing_cycle: annual ? 'yearly' : 'monthly',
         billing_model: growth.billingModel,
         per_order_charge_bdt: growth.perOrderChargeBdt,
         status: 'active',

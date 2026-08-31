@@ -136,6 +136,8 @@ module.exports = {
             await sequelize.query("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_id VARCHAR(255)");
             await sequelize.query("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
             await sequelize.query('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bkash_url VARCHAR(1024)');
+            await sequelize.query('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS checkout_lease_id VARCHAR(255)');
+            await sequelize.query('ALTER TABLE invoices ADD COLUMN IF NOT EXISTS checkout_lease_expires_at TIMESTAMPTZ');
             await sequelize.query(`
                 CREATE TABLE IF NOT EXISTS partner_billing_adjustments (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -155,6 +157,8 @@ module.exports = {
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_bkash_trx ON topup_transactions (bkash_trx_id) WHERE bkash_trx_id IS NOT NULL');
             await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128)');
             await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS bkash_url VARCHAR(1024)');
+            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS checkout_lease_id VARCHAR(255)');
+            await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN IF NOT EXISTS checkout_lease_expires_at TIMESTAMPTZ');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_shop_idempotency ON topup_transactions (shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_payment_id ON invoices (payment_id) WHERE payment_id IS NOT NULL');
             await sequelize.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_recurring_period ON invoices (subscription_id, invoice_type, billing_period_start) WHERE invoice_type IN ('monthly_subscription', 'yearly_subscription', 'partner_per_order') AND billing_period_start IS NOT NULL");
@@ -178,6 +182,12 @@ module.exports = {
             if (!(await hasColumn(sequelize, 'invoices', 'bkash_url'))) {
                 await sequelize.query('ALTER TABLE invoices ADD COLUMN bkash_url VARCHAR(1024)');
             }
+            if (!(await hasColumn(sequelize, 'invoices', 'checkout_lease_id'))) {
+                await sequelize.query('ALTER TABLE invoices ADD COLUMN checkout_lease_id VARCHAR(255)');
+            }
+            if (!(await hasColumn(sequelize, 'invoices', 'checkout_lease_expires_at'))) {
+                await sequelize.query('ALTER TABLE invoices ADD COLUMN checkout_lease_expires_at DATETIME');
+            }
             await sequelize.query(`
                 CREATE TABLE IF NOT EXISTS partner_billing_adjustments (
                     id TEXT PRIMARY KEY,
@@ -200,6 +210,12 @@ module.exports = {
             }
             if (!(await hasColumn(sequelize, 'topup_transactions', 'bkash_url'))) {
                 await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN bkash_url VARCHAR(1024)');
+            }
+            if (!(await hasColumn(sequelize, 'topup_transactions', 'checkout_lease_id'))) {
+                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN checkout_lease_id VARCHAR(255)');
+            }
+            if (!(await hasColumn(sequelize, 'topup_transactions', 'checkout_lease_expires_at'))) {
+                await sequelize.query('ALTER TABLE topup_transactions ADD COLUMN checkout_lease_expires_at DATETIME');
             }
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_topup_shop_idempotency ON topup_transactions (shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL');
             await sequelize.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_payment_id ON invoices (payment_id) WHERE payment_id IS NOT NULL');
@@ -239,11 +255,15 @@ module.exports = {
             await optionalQuery(sequelize, 'ALTER TABLE orders DROP COLUMN IF EXISTS delivered_at');
             await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN IF EXISTS payment_id');
             await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN IF EXISTS bkash_url');
+            await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN IF EXISTS checkout_lease_id');
+            await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN IF EXISTS checkout_lease_expires_at');
             await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN IF EXISTS metadata');
             await optionalQuery(sequelize, 'DROP TABLE IF EXISTS partner_billing_adjustments');
             await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_shop_idempotency');
             await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN IF EXISTS idempotency_key');
             await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN IF EXISTS bkash_url');
+            await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN IF EXISTS checkout_lease_id');
+            await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN IF EXISTS checkout_lease_expires_at');
             await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_bkash_payment');
             await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_bkash_trx');
             await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_invoices_payment_id');
@@ -257,11 +277,15 @@ module.exports = {
         await optionalQuery(sequelize, 'ALTER TABLE orders DROP COLUMN delivered_at');
         await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN payment_id');
         await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN bkash_url');
+        await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN checkout_lease_id');
+        await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN checkout_lease_expires_at');
         await optionalQuery(sequelize, 'ALTER TABLE invoices DROP COLUMN metadata');
         await optionalQuery(sequelize, 'DROP TABLE IF EXISTS partner_billing_adjustments');
         await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_shop_idempotency');
         await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN idempotency_key');
         await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN bkash_url');
+        await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN checkout_lease_id');
+        await optionalQuery(sequelize, 'ALTER TABLE topup_transactions DROP COLUMN checkout_lease_expires_at');
         await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_bkash_payment');
         await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_topup_bkash_trx');
         await optionalQuery(sequelize, 'DROP INDEX IF EXISTS idx_invoices_payment_id');

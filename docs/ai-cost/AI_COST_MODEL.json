@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-28T16:49:30.625Z",
+  "generatedAt": "2026-08-31T11:12:03.082Z",
   "pricingVersion": "2026-07-28.1",
   "pricingRetrievedAt": "2026-07-28",
   "fx": {
@@ -16,7 +16,7 @@
     "fixedInfraUsdPerMonth": 48,
     "merchantsSharingInfra": 25,
     "paymentFeePct": 0.025,
-    "vatPct": 0.15,
+    "vatPct": 0,
     "infraPerConversationUsd": 0.00002
   },
   "scenarios": {
@@ -2426,19 +2426,6 @@
           "costPerConversationBdt": 0.49769071000000004
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "conversationsUsd": 1.3238750000000004,
-          "fallbackUpliftUsd": 0.08072749999999998,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 1.4046025000000004,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 1.4116025000000003,
-          "totalVariableBdt": 174.19174850000005,
-          "costPerConversationUsd": 0.004033150000000001,
-          "costPerConversationBdt": 0.49769071000000015
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.05,
           "conversationsUsd": 1.8912500000000003,
@@ -2506,19 +2493,6 @@
           "costPerConversationBdt": 0.5261529200000001
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "conversationsUsd": 1.3238750000000004,
-          "fallbackUpliftUsd": 0.16145499999999996,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 1.4853300000000003,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 1.4923300000000002,
-          "totalVariableBdt": 184.15352200000004,
-          "costPerConversationUsd": 0.004263800000000001,
-          "costPerConversationBdt": 0.5261529200000001
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.1,
           "conversationsUsd": 1.8912500000000003,
@@ -2582,19 +2556,6 @@
           "infraAttributableUsd": 0.006,
           "totalVariableUsd": 1.486725,
           "totalVariableBdt": 183.46186500000002,
-          "costPerConversationUsd": 0.00495575,
-          "costPerConversationBdt": 0.61153955
-        },
-        {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "conversationsUsd": 1.3238750000000004,
-          "fallbackUpliftUsd": 0.4036374999999999,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 1.7275125000000002,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 1.7345125000000001,
-          "totalVariableBdt": 214.03884250000002,
           "costPerConversationUsd": 0.00495575,
           "costPerConversationBdt": 0.61153955
         },
@@ -2668,19 +2629,6 @@
           "costPerConversationBdt": 0.7889764100000001
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "conversationsUsd": 2.15005,
-          "fallbackUpliftUsd": 0.08072749999999997,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.2307775,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.2377775,
-          "totalVariableBdt": 276.1417435,
-          "costPerConversationUsd": 0.00639365,
-          "costPerConversationBdt": 0.7889764100000001
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.05,
           "conversationsUsd": 3.0715,
@@ -2748,19 +2696,6 @@
           "costPerConversationBdt": 0.81743862
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "conversationsUsd": 2.15005,
-          "fallbackUpliftUsd": 0.16145499999999993,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.311505,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.318505,
-          "totalVariableBdt": 286.103517,
-          "costPerConversationUsd": 0.0066243000000000005,
-          "costPerConversationBdt": 0.8174386200000001
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.1,
           "conversationsUsd": 3.0715,
@@ -2824,19 +2759,6 @@
           "infraAttributableUsd": 0.006,
           "totalVariableUsd": 2.1948749999999997,
           "totalVariableBdt": 270.84757499999995,
-          "costPerConversationUsd": 0.007316249999999999,
-          "costPerConversationBdt": 0.9028252499999999
-        },
-        {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "conversationsUsd": 2.15005,
-          "fallbackUpliftUsd": 0.4036374999999998,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.5536874999999997,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.5606875,
-          "totalVariableBdt": 315.9888375,
           "costPerConversationUsd": 0.007316249999999999,
           "costPerConversationBdt": 0.9028252499999999
         },
@@ -2910,19 +2832,6 @@
           "costPerConversationBdt": 0.9304791900000001
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "conversationsUsd": 2.5513950000000003,
-          "fallbackUpliftUsd": 0.08072749999999997,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.6321225000000004,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.6391225000000005,
-          "totalVariableBdt": 325.6677165000001,
-          "costPerConversationUsd": 0.007540350000000001,
-          "costPerConversationBdt": 0.9304791900000002
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.05,
           "conversationsUsd": 3.6448500000000004,
@@ -2990,19 +2899,6 @@
           "costPerConversationBdt": 0.9589413999999999
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "conversationsUsd": 2.5513950000000003,
-          "fallbackUpliftUsd": 0.16145499999999993,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.7128500000000004,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.7198500000000005,
-          "totalVariableBdt": 335.6294900000001,
-          "costPerConversationUsd": 0.007771000000000002,
-          "costPerConversationBdt": 0.9589414000000003
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.1,
           "conversationsUsd": 3.6448500000000004,
@@ -3068,19 +2964,6 @@
           "totalVariableBdt": 313.298409,
           "costPerConversationUsd": 0.008462949999999999,
           "costPerConversationBdt": 1.04432803
-        },
-        {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "conversationsUsd": 2.5513950000000003,
-          "fallbackUpliftUsd": 0.4036374999999998,
-          "productIngestionUsd": 0,
-          "aiVariableUsd": 2.9550325,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.9620325000000003,
-          "totalVariableBdt": 365.51481050000007,
-          "costPerConversationUsd": 0.00846295,
-          "costPerConversationBdt": 1.0443280300000002
         },
         {
           "conversations": 500,
@@ -3152,19 +3035,6 @@
           "costPerConversationBdt": 0.9673868959999999
         },
         {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "conversationsUsd": 2.5513950000000003,
-          "fallbackUpliftUsd": 0.16145499999999993,
-          "productIngestionUsd": 0.020532,
-          "aiVariableUsd": 2.7333820000000006,
-          "infraAttributableUsd": 0.007,
-          "totalVariableUsd": 2.7403820000000008,
-          "totalVariableBdt": 338.1631388000001,
-          "costPerConversationUsd": 0.00782966285714286,
-          "costPerConversationBdt": 0.966180396571429
-        },
-        {
           "conversations": 500,
           "fallbackRate": 0.1,
           "conversationsUsd": 3.6448500000000004,
@@ -3197,24 +3067,20 @@
     "plan": {
       "code": "GROWTH",
       "priceBdtMonthly": 999,
-      "conversationsLimit": 300,
-      "thresholdBuffer": 50,
+      "priceBdtYearly": 9990,
+      "conversationsLimit": 500,
       "topups": {
-        "TOPUP_100": [
+        "PACK_100": [
           100,
-          150
+          250
         ],
-        "TOPUP_250": [
-          250,
-          350
+        "PACK_300": [
+          300,
+          500
         ],
-        "TOPUP_500": [
-          500,
-          650
-        ],
-        "TOPUP_1000": [
-          1000,
-          1200
+        "PACK_700": [
+          700,
+          1000
         ]
       }
     },
@@ -3224,382 +3090,193 @@
       "source": "Bangladesh Bank / TradingEconomics spot USD-BDT, 2026-07-22 close (123.425); rounded to 123.40"
     },
     "revenueUsdMonthly": 8.095623987034035,
-    "includedConversations": 350,
-    "planHeadlineBdtPerConversation": 3.33,
-    "graceInclusiveBdtPerConversation": 2.854285714285714,
+    "includedConversations": 500,
+    "planHeadlineBdtPerConversation": 1.998,
     "fallbackUpliftPerConversationUsd": 0.004612999999999999,
     "atPlanLimit": {
       "efficient": {
         "fallback_0pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0,
           "effectiveCostPerConversationUsd": 0.0037825000000000007,
           "effectiveCostPerConversationBdt": 0.46676050000000013,
-          "variableCostUsd": 1.1407500000000002,
-          "variableCostBdt": 140.76855000000003,
+          "variableCostUsd": 1.9012500000000003,
+          "variableCostBdt": 234.61425000000006,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.954873987034034,
-          "grossMarginPct": 85.90905405405405,
-          "grossMarginAfterInfraUsd": 5.034873987034034,
-          "grossMarginAfterInfraPct": 62.19253753753753,
+          "grossMarginUsd": 6.194373987034035,
+          "grossMarginPct": 76.51509009009008,
+          "grossMarginAfterInfraUsd": 4.274373987034035,
+          "grossMarginAfterInfraPct": 52.79857357357357,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_5pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.05,
           "effectiveCostPerConversationUsd": 0.004013150000000001,
           "effectiveCostPerConversationBdt": 0.4952227100000001,
-          "variableCostUsd": 1.2099450000000003,
-          "variableCostBdt": 149.30721300000005,
+          "variableCostUsd": 2.0165750000000005,
+          "variableCostBdt": 248.84535500000007,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.8856789870340345,
-          "grossMarginPct": 85.05433303303303,
-          "grossMarginAfterInfraUsd": 4.9656789870340345,
-          "grossMarginAfterInfraPct": 61.33781651651651,
+          "grossMarginUsd": 6.079048987034034,
+          "grossMarginPct": 75.09055505505503,
+          "grossMarginAfterInfraUsd": 4.159048987034034,
+          "grossMarginAfterInfraPct": 51.37403853853853,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_10pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.1,
           "effectiveCostPerConversationUsd": 0.004243800000000001,
           "effectiveCostPerConversationBdt": 0.5236849200000001,
-          "variableCostUsd": 1.2791400000000002,
-          "variableCostBdt": 157.84587600000003,
+          "variableCostUsd": 2.1319000000000004,
+          "variableCostBdt": 263.07646000000005,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.816483987034035,
-          "grossMarginPct": 84.19961201201201,
-          "grossMarginAfterInfraUsd": 4.896483987034035,
-          "grossMarginAfterInfraPct": 60.4830954954955,
+          "grossMarginUsd": 5.963723987034035,
+          "grossMarginPct": 73.66602002002001,
+          "grossMarginAfterInfraUsd": 4.043723987034035,
+          "grossMarginAfterInfraPct": 49.9495035035035,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_25pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.25,
           "effectiveCostPerConversationUsd": 0.004935750000000001,
           "effectiveCostPerConversationBdt": 0.6090715500000001,
-          "variableCostUsd": 1.4867250000000003,
-          "variableCostBdt": 183.46186500000005,
+          "variableCostUsd": 2.477875,
+          "variableCostBdt": 305.76977500000004,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.608898987034035,
-          "grossMarginPct": 81.63544894894895,
-          "grossMarginAfterInfraUsd": 4.688898987034035,
-          "grossMarginAfterInfraPct": 57.918932432432435,
+          "grossMarginUsd": 5.617748987034035,
+          "grossMarginPct": 69.39241491491491,
+          "grossMarginAfterInfraUsd": 3.6977489870340348,
+          "grossMarginAfterInfraPct": 45.67589839839839,
           "fixedInfraShareUsd": 1.92
         }
       },
       "expected": {
         "fallback_0pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0,
           "effectiveCostPerConversationUsd": 0.006143,
           "effectiveCostPerConversationBdt": 0.7580462,
-          "variableCostUsd": 1.8489,
-          "variableCostBdt": 228.15426000000002,
+          "variableCostUsd": 3.0814999999999997,
+          "variableCostBdt": 380.2571,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.246723987034034,
-          "grossMarginPct": 77.16173573573573,
-          "grossMarginAfterInfraUsd": 4.326723987034034,
-          "grossMarginAfterInfraPct": 53.44521921921921,
+          "grossMarginUsd": 5.014123987034035,
+          "grossMarginPct": 61.93622622622622,
+          "grossMarginAfterInfraUsd": 3.0941239870340347,
+          "grossMarginAfterInfraPct": 38.219709709709704,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_5pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.05,
           "effectiveCostPerConversationUsd": 0.00637365,
           "effectiveCostPerConversationBdt": 0.78650841,
-          "variableCostUsd": 1.9180949999999999,
-          "variableCostBdt": 236.692923,
+          "variableCostUsd": 3.1968249999999996,
+          "variableCostBdt": 394.488205,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.177528987034035,
-          "grossMarginPct": 76.30701471471471,
-          "grossMarginAfterInfraUsd": 4.257528987034035,
-          "grossMarginAfterInfraPct": 52.59049819819819,
+          "grossMarginUsd": 4.898798987034035,
+          "grossMarginPct": 60.5116911911912,
+          "grossMarginAfterInfraUsd": 2.9787989870340352,
+          "grossMarginAfterInfraPct": 36.795174674674676,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_10pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.1,
           "effectiveCostPerConversationUsd": 0.0066043,
           "effectiveCostPerConversationBdt": 0.81497062,
-          "variableCostUsd": 1.9872899999999998,
-          "variableCostBdt": 245.231586,
+          "variableCostUsd": 3.3121499999999995,
+          "variableCostBdt": 408.71930999999995,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.108333987034035,
-          "grossMarginPct": 75.45229369369369,
-          "grossMarginAfterInfraUsd": 4.188333987034035,
-          "grossMarginAfterInfraPct": 51.73577717717718,
+          "grossMarginUsd": 4.783473987034036,
+          "grossMarginPct": 59.08715615615616,
+          "grossMarginAfterInfraUsd": 2.8634739870340358,
+          "grossMarginAfterInfraPct": 35.37063963963965,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_25pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.25,
           "effectiveCostPerConversationUsd": 0.00729625,
           "effectiveCostPerConversationBdt": 0.90035725,
-          "variableCostUsd": 2.1948749999999997,
-          "variableCostBdt": 270.84757499999995,
+          "variableCostUsd": 3.6581249999999996,
+          "variableCostBdt": 451.412625,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.900748987034035,
-          "grossMarginPct": 72.88813063063063,
-          "grossMarginAfterInfraUsd": 3.980748987034035,
-          "grossMarginAfterInfraPct": 49.171614114114114,
+          "grossMarginUsd": 4.437498987034035,
+          "grossMarginPct": 54.81355105105104,
+          "grossMarginAfterInfraUsd": 2.5174989870340347,
+          "grossMarginAfterInfraPct": 31.09703453453453,
           "fixedInfraShareUsd": 1.92
         }
       },
       "heavy": {
         "fallback_0pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0,
           "effectiveCostPerConversationUsd": 0.0072897000000000005,
           "effectiveCostPerConversationBdt": 0.89954898,
-          "variableCostUsd": 2.19291,
-          "variableCostBdt": 270.605094,
+          "variableCostUsd": 3.65485,
+          "variableCostBdt": 451.00849000000005,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.902713987034035,
-          "grossMarginPct": 72.912403003003,
-          "grossMarginAfterInfraUsd": 3.9827139870340353,
-          "grossMarginAfterInfraPct": 49.195886486486486,
+          "grossMarginUsd": 4.440773987034035,
+          "grossMarginPct": 54.854005005005,
+          "grossMarginAfterInfraUsd": 2.520773987034035,
+          "grossMarginAfterInfraPct": 31.137488488488486,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_5pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.05,
           "effectiveCostPerConversationUsd": 0.00752035,
           "effectiveCostPerConversationBdt": 0.9280111900000001,
-          "variableCostUsd": 2.262105,
-          "variableCostBdt": 279.143757,
+          "variableCostUsd": 3.770175,
+          "variableCostBdt": 465.239595,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.833518987034035,
-          "grossMarginPct": 72.05768198198199,
-          "grossMarginAfterInfraUsd": 3.913518987034035,
-          "grossMarginAfterInfraPct": 48.34116546546546,
+          "grossMarginUsd": 4.325448987034035,
+          "grossMarginPct": 53.429469969969965,
+          "grossMarginAfterInfraUsd": 2.4054489870340348,
+          "grossMarginAfterInfraPct": 29.712953453453444,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_10pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.1,
           "effectiveCostPerConversationUsd": 0.007751,
           "effectiveCostPerConversationBdt": 0.9564734,
-          "variableCostUsd": 2.3312999999999997,
-          "variableCostBdt": 287.68242,
+          "variableCostUsd": 3.8855,
+          "variableCostBdt": 479.4707,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.764323987034035,
-          "grossMarginPct": 71.20296096096097,
-          "grossMarginAfterInfraUsd": 3.844323987034035,
-          "grossMarginAfterInfraPct": 47.486444444444444,
+          "grossMarginUsd": 4.210123987034034,
+          "grossMarginPct": 52.00493493493492,
+          "grossMarginAfterInfraUsd": 2.2901239870340344,
+          "grossMarginAfterInfraPct": 28.288418418418402,
           "fixedInfraShareUsd": 1.92
         },
         "fallback_25pct": {
-          "conversations": 300,
+          "conversations": 500,
           "fallbackRate": 0.25,
           "effectiveCostPerConversationUsd": 0.008442950000000001,
           "effectiveCostPerConversationBdt": 1.0418600300000003,
-          "variableCostUsd": 2.538885,
-          "variableCostBdt": 313.29840900000005,
+          "variableCostUsd": 4.2314750000000005,
+          "variableCostBdt": 522.1640150000001,
           "revenueUsdMonthly": 8.095623987034035,
           "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.556738987034034,
-          "grossMarginPct": 68.63879789789789,
-          "grossMarginAfterInfraUsd": 3.6367389870340343,
-          "grossMarginAfterInfraPct": 44.92228138138137,
-          "fixedInfraShareUsd": 1.92
-        }
-      }
-    },
-    "atGraceLimit": {
-      "efficient": {
-        "fallback_0pct": {
-          "conversations": 350,
-          "fallbackRate": 0,
-          "effectiveCostPerConversationUsd": 0.0037825000000000007,
-          "effectiveCostPerConversationBdt": 0.46676050000000013,
-          "variableCostUsd": 1.3308750000000003,
-          "variableCostBdt": 164.22997500000005,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.764748987034034,
-          "grossMarginPct": 83.56056306306306,
-          "grossMarginAfterInfraUsd": 4.844748987034034,
-          "grossMarginAfterInfraPct": 59.84404654654654,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_5pct": {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "effectiveCostPerConversationUsd": 0.004013150000000001,
-          "effectiveCostPerConversationBdt": 0.4952227100000001,
-          "variableCostUsd": 1.4116025000000003,
-          "variableCostBdt": 174.19174850000005,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.684021487034034,
-          "grossMarginPct": 82.56338853853853,
-          "grossMarginAfterInfraUsd": 4.764021487034034,
-          "grossMarginAfterInfraPct": 58.84687202202201,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_10pct": {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "effectiveCostPerConversationUsd": 0.004243800000000001,
-          "effectiveCostPerConversationBdt": 0.5236849200000001,
-          "variableCostUsd": 1.4923300000000002,
-          "variableCostBdt": 184.15352200000004,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.603293987034035,
-          "grossMarginPct": 81.56621401401402,
-          "grossMarginAfterInfraUsd": 4.683293987034035,
-          "grossMarginAfterInfraPct": 57.8496974974975,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_25pct": {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "effectiveCostPerConversationUsd": 0.004935750000000001,
-          "effectiveCostPerConversationBdt": 0.6090715500000001,
-          "variableCostUsd": 1.7345125000000001,
-          "variableCostBdt": 214.03884250000002,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 6.361111487034035,
-          "grossMarginPct": 78.57469044044043,
-          "grossMarginAfterInfraUsd": 4.441111487034035,
-          "grossMarginAfterInfraPct": 54.858173923923914,
-          "fixedInfraShareUsd": 1.92
-        }
-      },
-      "expected": {
-        "fallback_0pct": {
-          "conversations": 350,
-          "fallbackRate": 0,
-          "effectiveCostPerConversationUsd": 0.006143,
-          "effectiveCostPerConversationBdt": 0.7580462,
-          "variableCostUsd": 2.15705,
-          "variableCostBdt": 266.17997,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.938573987034035,
-          "grossMarginPct": 73.35535835835836,
-          "grossMarginAfterInfraUsd": 4.018573987034035,
-          "grossMarginAfterInfraPct": 49.63884184184184,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_5pct": {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "effectiveCostPerConversationUsd": 0.00637365,
-          "effectiveCostPerConversationBdt": 0.78650841,
-          "variableCostUsd": 2.2377775,
-          "variableCostBdt": 276.1417435,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.857846487034035,
-          "grossMarginPct": 72.35818383383383,
-          "grossMarginAfterInfraUsd": 3.937846487034035,
-          "grossMarginAfterInfraPct": 48.641667317317314,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_10pct": {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "effectiveCostPerConversationUsd": 0.0066043,
-          "effectiveCostPerConversationBdt": 0.81497062,
-          "variableCostUsd": 2.318505,
-          "variableCostBdt": 286.103517,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.777118987034035,
-          "grossMarginPct": 71.36100930930931,
-          "grossMarginAfterInfraUsd": 3.8571189870340348,
-          "grossMarginAfterInfraPct": 47.64449279279279,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_25pct": {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "effectiveCostPerConversationUsd": 0.00729625,
-          "effectiveCostPerConversationBdt": 0.90035725,
-          "variableCostUsd": 2.5606875000000002,
-          "variableCostBdt": 315.98883750000005,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.5349364870340345,
-          "grossMarginPct": 68.36948573573572,
-          "grossMarginAfterInfraUsd": 3.6149364870340346,
-          "grossMarginAfterInfraPct": 44.652969219219216,
-          "fixedInfraShareUsd": 1.92
-        }
-      },
-      "heavy": {
-        "fallback_0pct": {
-          "conversations": 350,
-          "fallbackRate": 0,
-          "effectiveCostPerConversationUsd": 0.0072897000000000005,
-          "effectiveCostPerConversationBdt": 0.89954898,
-          "variableCostUsd": 2.5583950000000004,
-          "variableCostBdt": 315.70594300000005,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.537228987034034,
-          "grossMarginPct": 68.39780350350348,
-          "grossMarginAfterInfraUsd": 3.617228987034034,
-          "grossMarginAfterInfraPct": 44.681286986986976,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_5pct": {
-          "conversations": 350,
-          "fallbackRate": 0.05,
-          "effectiveCostPerConversationUsd": 0.00752035,
-          "effectiveCostPerConversationBdt": 0.9280111900000001,
-          "variableCostUsd": 2.6391225,
-          "variableCostBdt": 325.66771650000004,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.456501487034035,
-          "grossMarginPct": 67.40062897897897,
-          "grossMarginAfterInfraUsd": 3.5365014870340348,
-          "grossMarginAfterInfraPct": 43.68411246246245,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_10pct": {
-          "conversations": 350,
-          "fallbackRate": 0.1,
-          "effectiveCostPerConversationUsd": 0.007751,
-          "effectiveCostPerConversationBdt": 0.9564734,
-          "variableCostUsd": 2.71985,
-          "variableCostBdt": 335.62949000000003,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.375773987034035,
-          "grossMarginPct": 66.40345445445445,
-          "grossMarginAfterInfraUsd": 3.4557739870340347,
-          "grossMarginAfterInfraPct": 42.68693793793793,
-          "fixedInfraShareUsd": 1.92
-        },
-        "fallback_25pct": {
-          "conversations": 350,
-          "fallbackRate": 0.25,
-          "effectiveCostPerConversationUsd": 0.008442950000000001,
-          "effectiveCostPerConversationBdt": 1.0418600300000003,
-          "variableCostUsd": 2.9620325000000007,
-          "variableCostBdt": 365.5148105000001,
-          "revenueUsdMonthly": 8.095623987034035,
-          "revenueBdtMonthly": 999,
-          "grossMarginUsd": 5.133591487034034,
-          "grossMarginPct": 63.41193088088086,
-          "grossMarginAfterInfraUsd": 3.2135914870340336,
-          "grossMarginAfterInfraPct": 39.695414364364346,
+          "grossMarginUsd": 3.864148987034034,
+          "grossMarginPct": 47.73132982982982,
+          "grossMarginAfterInfraUsd": 1.9441489870340343,
+          "grossMarginAfterInfraPct": 24.014813313313297,
           "fixedInfraShareUsd": 1.92
         }
       }
@@ -3614,115 +3291,88 @@
       "heavy_25pct": 956,
       "imageHeavy_10pct": 1041,
       "expected_after_fixed_infra": 965,
-      "expected_after_psp_and_vat": 773
+      "expected_after_psp_and_vat": 934
     },
     "topupEconomics": {
-      "TOPUP_100": {
+      "PACK_100": {
         "conversations": 100,
-        "priceBdt": 150,
-        "revenueUsd": 1.2155591572123177,
-        "effectiveBdtPerConversation": 1.5,
-        "vsBasePlanBdtPerConversation": 3.33,
+        "priceBdt": 250,
+        "revenueUsd": 2.025931928687196,
+        "effectiveBdtPerConversation": 2.5,
+        "vsBasePlanBdtPerConversation": 1.998,
         "efficient": {
           "costUsd": 0.4013150000000001,
           "costBdt": 49.52227100000001,
-          "grossMarginPct": 66.98515266666666
+          "grossMarginPct": 80.1910916
         },
         "expected": {
           "costUsd": 0.637365,
           "costBdt": 78.650841,
-          "grossMarginPct": 47.566106000000005
+          "grossMarginPct": 68.5396636
         },
         "heavy": {
           "costUsd": 0.752035,
           "costBdt": 92.801119,
-          "grossMarginPct": 38.13258733333333
+          "grossMarginPct": 62.879552399999994
         },
         "heavy_25pct_fallback": {
           "costUsd": 0.8442950000000001,
           "costBdt": 104.18600300000001,
-          "grossMarginPct": 30.542664666666656
+          "grossMarginPct": 58.32559879999999
         }
       },
-      "TOPUP_250": {
-        "conversations": 250,
-        "priceBdt": 350,
-        "revenueUsd": 2.8363047001620743,
-        "effectiveBdtPerConversation": 1.4,
-        "vsBasePlanBdtPerConversation": 3.33,
+      "PACK_300": {
+        "conversations": 300,
+        "priceBdt": 500,
+        "revenueUsd": 4.051863857374392,
+        "effectiveBdtPerConversation": 1.6666666666666667,
+        "vsBasePlanBdtPerConversation": 1.998,
         "efficient": {
-          "costUsd": 1.0032875000000003,
-          "costBdt": 123.80567750000004,
-          "grossMarginPct": 64.62694928571428
+          "costUsd": 1.2039450000000003,
+          "costBdt": 148.56681300000005,
+          "grossMarginPct": 70.28663739999999
         },
         "expected": {
-          "costUsd": 1.5934125,
-          "costBdt": 196.6271025,
-          "grossMarginPct": 43.82082785714285
+          "costUsd": 1.9120949999999999,
+          "costBdt": 235.95252299999999,
+          "grossMarginPct": 52.809495399999996
         },
         "heavy": {
-          "costUsd": 1.8800875000000001,
-          "costBdt": 232.0027975,
-          "grossMarginPct": 33.713486428571414
+          "costUsd": 2.2561050000000002,
+          "costBdt": 278.403357,
+          "grossMarginPct": 44.31932859999999
         },
         "heavy_25pct_fallback": {
-          "costUsd": 2.1107375000000004,
-          "costBdt": 260.46500750000007,
-          "grossMarginPct": 25.581426428571408
+          "costUsd": 2.5328850000000003,
+          "costBdt": 312.558009,
+          "grossMarginPct": 37.48839819999999
         }
       },
-      "TOPUP_500": {
-        "conversations": 500,
-        "priceBdt": 650,
-        "revenueUsd": 5.26742301458671,
-        "effectiveBdtPerConversation": 1.3,
-        "vsBasePlanBdtPerConversation": 3.33,
+      "PACK_700": {
+        "conversations": 700,
+        "priceBdt": 1000,
+        "revenueUsd": 8.103727714748784,
+        "effectiveBdtPerConversation": 1.4285714285714286,
+        "vsBasePlanBdtPerConversation": 1.998,
         "efficient": {
-          "costUsd": 2.0065750000000007,
-          "costBdt": 247.6113550000001,
-          "grossMarginPct": 61.90594538461537
+          "costUsd": 2.809205000000001,
+          "costBdt": 346.6558970000001,
+          "grossMarginPct": 65.33441029999999
         },
         "expected": {
-          "costUsd": 3.186825,
-          "costBdt": 393.254205,
-          "grossMarginPct": 39.49935307692308
+          "costUsd": 4.461555,
+          "costBdt": 550.555887,
+          "grossMarginPct": 44.9444113
         },
         "heavy": {
-          "costUsd": 3.7601750000000003,
-          "costBdt": 464.005595,
-          "grossMarginPct": 28.614523846153837
+          "costUsd": 5.264245,
+          "costBdt": 649.607833,
+          "grossMarginPct": 35.0392167
         },
         "heavy_25pct_fallback": {
-          "costUsd": 4.221475000000001,
-          "costBdt": 520.9300150000001,
-          "grossMarginPct": 19.85692076923075
-        }
-      },
-      "TOPUP_1000": {
-        "conversations": 1000,
-        "priceBdt": 1200,
-        "revenueUsd": 9.724473257698541,
-        "effectiveBdtPerConversation": 1.2,
-        "vsBasePlanBdtPerConversation": 3.33,
-        "efficient": {
-          "costUsd": 4.013150000000001,
-          "costBdt": 495.2227100000002,
-          "grossMarginPct": 58.731440833333316
-        },
-        "expected": {
-          "costUsd": 6.37365,
-          "costBdt": 786.50841,
-          "grossMarginPct": 34.4576325
-        },
-        "heavy": {
-          "costUsd": 7.5203500000000005,
-          "costBdt": 928.01119,
-          "grossMarginPct": 22.665734166666663
-        },
-        "heavy_25pct_fallback": {
-          "costUsd": 8.442950000000002,
-          "costBdt": 1041.8600300000003,
-          "grossMarginPct": 13.178330833333318
+          "costUsd": 5.910065000000001,
+          "costBdt": 729.3020210000002,
+          "grossMarginPct": 27.06979789999998
         }
       }
     }

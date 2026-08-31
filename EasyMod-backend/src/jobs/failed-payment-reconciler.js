@@ -81,13 +81,23 @@ class FailedPaymentReconciler extends BaseJob {
                 // subscription (isAiActive → false). Paying the invoice reactivates it.
                 // One-off / discretionary invoices (add-on packs, proration) never gate AI —
                 // they only get a payment reminder.
-                if (invoice.subscription?.shop_id
+                if (Number(invoice.amount || 0) <= 0) {
+                    if (!dryRun && typeof invoice.update === 'function') {
+                        await invoice.update({
+                            status: 'cancelled',
+                            payment_id: null,
+                            bkash_url: null,
+                            updated_at: new Date(),
+                        });
+                    }
+                    action.action = 'ignored_zero_balance';
+                } else if (invoice.subscription?.shop_id
                     && String(invoice.subscription.shop_id) !== String(invoice.shop_id)) {
                     action.action = 'ignored_tenant_mismatch';
                 } else if (!dryRun && invoice.status === 'pending' && typeof invoice.update === 'function') {
                     await invoice.update({ status: 'overdue', updated_at: new Date() });
                 }
-                if (action.action === 'ignored_tenant_mismatch') {
+                if (['ignored_tenant_mismatch', 'ignored_zero_balance'].includes(action.action)) {
                     // Never suspend or notify from an invoice whose ownership
                     // edges disagree; operators must repair the data first.
                 } else if (isRecurring) {
@@ -105,7 +115,7 @@ class FailedPaymentReconciler extends BaseJob {
                 }
 
                 // Send the dunning / reminder email (Nodemailer via email.service.js)
-                if (!dryRun && !['ignored_free_plan', 'ignored_tenant_mismatch'].includes(action.action)) {
+                if (!dryRun && !['ignored_free_plan', 'ignored_tenant_mismatch', 'ignored_zero_balance'].includes(action.action)) {
                     await this.sendReminderNotification(invoice, action.action);
                     await this.sendMerchantPaymentAlert(invoice, action.action, runDate);
                     results.remindersSent++;

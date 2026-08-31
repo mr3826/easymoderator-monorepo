@@ -30,7 +30,7 @@ jest.mock('../../../utils/structured-logger', () => ({
     createLogger: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
 }));
 
-const { Subscription, Invoice } = require('../../entities');
+const { Subscription, Invoice, Shop } = require('../../entities');
 const BangladeshPaymentService = require('../../payment/bangladesh-payment.service');
 const { sequelize } = require('../../../utils/database/database-setup');
 const subscriptionService = require('../subscription.service');
@@ -128,6 +128,7 @@ describe('completeInvoicePayment', () => {
             .mockResolvedValueOnce(invoice)
             .mockResolvedValueOnce(invoice)
             .mockResolvedValueOnce({ ...invoice, status: 'paid' });
+        Subscription.findOne.mockResolvedValueOnce({ id: 'sub-1', status: 'active', plan_code: 'GROWTH' });
         bd.verifyBkashPayment.mockResolvedValueOnce({ success: true, status: 'completed', transaction_id: 'TRX9', amount: '1149', currency: 'BDT', merchant_invoice: 'INV-1' });
         sequelize.query.mockResolvedValueOnce([[], { rowCount: 0 }]);
 
@@ -155,9 +156,48 @@ describe('completeInvoicePayment', () => {
             .rejects.toMatchObject({ status: 409, code: 'INVOICE_AMOUNT_CHANGED' });
         expect(subscriptionService.activateFromPaidInvoice).not.toHaveBeenCalled();
     });
+
+    it('rejects a recurring invoice whose plan snapshot is stale', async () => {
+        const invoice = makeInvoice({ metadata: { plan_code: 'GROWTH' } });
+        Invoice.findOne
+            .mockResolvedValueOnce(invoice)
+            .mockResolvedValueOnce(invoice);
+        Subscription.findOne.mockResolvedValueOnce({ id: 'sub-1', plan_code: 'PARTNER', status: 'active' });
+        bd.verifyBkashPayment.mockResolvedValueOnce({
+            success: true,
+            status: 'completed',
+            transaction_id: 'TRX9',
+            amount: '1149.00',
+            currency: 'BDT',
+            merchant_invoice: 'INV-1',
+        });
+
+        await expect(invoicePaymentService.completeInvoicePayment('shop-1', 'inv-1', 'PAY123'))
+            .rejects.toMatchObject({ status: 409, code: 'STALE_PLAN_INVOICE' });
+        expect(sequelize.query).not.toHaveBeenCalled();
+    });
 });
 
 describe('initiateInvoicePayment', () => {
+    it('leases an invoice before creating a gateway payment', async () => {
+        const invoice = { ...makeInvoice(), payment_id: null, bkash_url: null };
+        Invoice.findOne.mockResolvedValueOnce(invoice);
+        Shop.findByPk.mockResolvedValueOnce({ name: 'Shop Owner', phone: '01711111111' });
+        bd.initializeBkashPayment.mockResolvedValueOnce({
+            success: true,
+            payment_id: 'PAY456',
+            bkash_url: 'https://bkash.example/PAY456',
+        });
+
+        const result = await invoicePaymentService.initiateInvoicePayment('shop-1', 'inv-1', {
+            callbackUrl: 'https://app.example/subscription',
+        });
+
+        expect(result.payment_id).toBe('PAY456');
+        expect(sequelize.query.mock.calls[0][0]).toMatch(/checkout_lease_id/);
+        expect(sequelize.query.mock.calls[1][0]).toMatch(/checkout_lease_id=NULL/);
+    });
+
     it('returns the persisted checkout instead of creating a second gateway payment', async () => {
         const invoice = makeInvoice({ bkash_url: 'https://bkash.example/PAY123' });
         Invoice.findOne.mockResolvedValueOnce(invoice);

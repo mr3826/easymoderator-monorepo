@@ -342,6 +342,7 @@ class InvoiceGenerator extends BaseJob {
             // failed-payment reconciler suspends the subscription and the AI stops.
             due_date: new Date(runDate.getTime() + 3 * 24 * 60 * 60 * 1000),
             metadata: {
+                plan_code: subscription.plan_code,
                 planName: invoiceData.planName,
                 billingCycle: invoiceData.billingCycle,
                 baseAmount: invoiceData.baseAmount,

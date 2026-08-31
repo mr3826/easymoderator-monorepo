@@ -134,6 +134,19 @@ describe('FailedPaymentReconciler.run', () => {
         expect(res.details[0].action).toBe('ignored_tenant_mismatch');
     });
 
+    it('cancels zero-value invoices instead of dunning a Partner shop', async () => {
+        const inv = makeInvoice({ amount: 0, invoice_type: 'partner_per_order' });
+        expect(inv.amount).toBe(0);
+        Invoice.findAll.mockResolvedValueOnce([inv]);
+
+        const res = await new FailedPaymentReconciler().run({ dryRun: false, runDate: new Date() });
+
+        expect(inv.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'cancelled' }));
+        expect(inv.subscription.update).not.toHaveBeenCalled();
+        expect(emailService.sendEmail).not.toHaveBeenCalled();
+        expect(res.details[0].action).toBe('ignored_zero_balance');
+    });
+
     it('only reminds (never suspends) for a one-off / discretionary invoice', async () => {
         const inv = makeInvoice({ invoice_type: 'Proration (upgrade to Growth)' });
         Invoice.findAll.mockResolvedValueOnce([inv]);
@@ -161,7 +174,7 @@ describe('FailedPaymentReconciler.run', () => {
     // can only happen after the entitlement has expired, since the generator
     // writes no invoice before then — it suspends like any other renewal.
     it('suspends for a yearly renewal that is genuinely past due', async () => {
-        const inv = makeInvoice({ invoice_type: 'yearly_subscription', amount: 11988 });
+        const inv = makeInvoice({ invoice_type: 'yearly_subscription', amount: 9990 });
         Invoice.findAll.mockResolvedValueOnce([inv]);
 
         const job = new FailedPaymentReconciler();

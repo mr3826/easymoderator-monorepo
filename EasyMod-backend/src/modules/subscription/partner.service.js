@@ -15,6 +15,8 @@
 
 const { PartnerApplication, Subscription, Order } = require('../entities');
 const { Op } = require('sequelize');
+const { sequelize } = require('../../utils/database/database-setup');
+const subscriptionService = require('./subscription.service');
 const { PlanCode, PRICING_TIERS, UNLIMITED } = require('./subscription.plans');
 const emailService = require('../../utils/email.service');
 const { AppError } = require('../../utils/AppError');
@@ -116,67 +118,86 @@ const applyForPartner = async ({ businessName, phone, pageLink, shopId = null })
  * @returns {Promise<{ application: PartnerApplication, subscription: Subscription }>}
  */
 const approvePartner = async (applicationId, { reviewerId = 'admin', shopId = null } = {}) => {
-    const application = await PartnerApplication.findOne({ where: { id: applicationId } });
-    if (!application) throw new AppError(`Partner application ${applicationId} not found`, 404);
-    if (application.status === 'approved') {
-        throw new AppError('Partner application is already approved', 409);
-    }
-
-    const targetShopId = shopId || application.shop_id;
-    if (!targetShopId) {
-        throw new AppError('No shop linked to this application — pass a shopId to bind it', 400);
-    }
-
-    const partnerTier = PRICING_TIERS[PlanCode.PARTNER];
-    const now = new Date();
-    const nextPeriod = new Date(now);
-    nextPeriod.setMonth(nextPeriod.getMonth() + 1);
-
-    let subscription = await Subscription.findOne({ where: { shop_id: targetShopId } });
-    const partnerFields = {
-        plan_code: PlanCode.PARTNER,
-        plan_name: partnerTier.name,
-        plan_price: 0,
-        billing_cycle: 'per_order',
-        billing_model: 'per_order',
-        per_order_charge_bdt: null, // flat band — see PARTNER_ORDER_TIERS
-        status: 'active',
-        conversations_limit: UNLIMITED,
-        orders_limit: UNLIMITED,
-        products_limit: UNLIMITED,
-        trial_ends_at: null,
-        usage_reset_at: null,
-        current_period_start: now,
-        current_period_end: nextPeriod,
-        next_billing_date: nextPeriod,
-        features: partnerTier.features
-    };
-
-    if (subscription) {
-        await subscription.update(partnerFields);
-    } else {
-        subscription = await Subscription.create({
-            shop_id: targetShopId,
-            ...partnerFields,
-            current_period_start: now,
-            features: partnerTier.features
+    const transaction = await sequelize.transaction();
+    try {
+        const application = await PartnerApplication.findOne({
+            where: { id: applicationId },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
         });
+        if (!application) throw new AppError(`Partner application ${applicationId} not found`, 404);
+        if (application.status === 'approved') {
+            throw new AppError('Partner application is already approved', 409);
+        }
+
+        const targetShopId = shopId || application.shop_id;
+        if (!targetShopId) {
+            throw new AppError('No shop linked to this application — pass a shopId to bind it', 400);
+        }
+
+        const partnerTier = PRICING_TIERS[PlanCode.PARTNER];
+        const now = new Date();
+        const nextPeriod = new Date(now);
+        nextPeriod.setMonth(nextPeriod.getMonth() + 1);
+
+        let subscription = await Subscription.findOne({
+            where: { shop_id: targetShopId },
+            transaction,
+            lock: transaction.LOCK?.UPDATE,
+        });
+        if (subscription?.id) {
+            await subscriptionService.cancelOpenRecurringInvoices(subscription.id, transaction);
+        }
+        const partnerFields = {
+            plan_code: PlanCode.PARTNER,
+            plan_name: partnerTier.name,
+            plan_price: 0,
+            billing_cycle: 'per_order',
+            billing_model: 'per_order',
+            per_order_charge_bdt: null, // flat band — see PARTNER_ORDER_TIERS
+            status: 'active',
+            conversations_limit: UNLIMITED,
+            orders_limit: UNLIMITED,
+            products_limit: UNLIMITED,
+            trial_ends_at: null,
+            usage_reset_at: null,
+            current_period_start: now,
+            current_period_end: nextPeriod,
+            next_billing_date: nextPeriod,
+            features: partnerTier.features
+        };
+
+        if (subscription) {
+            await subscription.update(partnerFields, { transaction });
+        } else {
+            subscription = await Subscription.create({
+                shop_id: targetShopId,
+                ...partnerFields,
+                current_period_start: now,
+                features: partnerTier.features
+            }, { transaction });
+        }
+
+        await application.update({
+            status: 'approved',
+            shop_id: targetShopId,
+            reviewed_by: reviewerId,
+            reviewed_at: new Date()
+        }, { transaction });
+        await transaction.commit();
+        await require('../../utils/cache.service').clearForShop(targetShopId).catch(() => {});
+
+        logger.info('Partner application approved', { applicationId, shopId: targetShopId, reviewerId });
+        recordFunnelEventSafe('partner_approved', {
+            shopId: targetShopId,
+            metadata: { application_id: applicationId },
+            onceKey: `partner_approved:${applicationId}`,
+        });
+        return { application, subscription };
+    } catch (error) {
+        await Promise.resolve(transaction.rollback()).catch(() => {});
+        throw error;
     }
-
-    await application.update({
-        status: 'approved',
-        shop_id: targetShopId,
-        reviewed_by: reviewerId,
-        reviewed_at: new Date()
-    });
-
-    logger.info('Partner application approved', { applicationId, shopId: targetShopId, reviewerId });
-    recordFunnelEventSafe('partner_approved', {
-        shopId: targetShopId,
-        metadata: { application_id: applicationId },
-        onceKey: `partner_approved:${applicationId}`,
-    });
-    return { application, subscription };
 };
 
 /**

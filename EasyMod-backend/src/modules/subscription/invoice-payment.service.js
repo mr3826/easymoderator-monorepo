@@ -18,6 +18,7 @@
  */
 
 const { Subscription, Invoice, Shop } = require('../entities');
+const crypto = require('crypto');
 const { sequelize } = require('../../utils/database/database-setup');
 const BangladeshPaymentService = require('../payment/bangladesh-payment.service');
 const subscriptionService = require('./subscription.service');
@@ -30,6 +31,7 @@ const bdPayment = new BangladeshPaymentService();
 
 // Invoice.status ENUM is ('pending','paid','cancelled','overdue') — these two are payable.
 const PAYABLE_STATUSES = ['pending', 'overdue'];
+const CHECKOUT_LEASE_MS = 10 * 60 * 1000;
 const { RECURRING_INVOICE_TYPES } = require('./subscription.plans');
 
 const timestampSql = () => (sequelize.getDialect?.() === 'sqlite' ? 'CURRENT_TIMESTAMP' : 'NOW()');
@@ -40,6 +42,15 @@ const normalizeAmountToMinorUnits = (value) => {
     if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
     const [whole, fraction = ''] = text.split('.');
     return BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
+};
+
+const releaseInvoiceCheckoutLease = async (invoiceId, shopId, leaseId) => {
+    await sequelize.query(
+        `UPDATE invoices
+            SET checkout_lease_id=NULL, checkout_lease_expires_at=NULL
+          WHERE id=:invoiceId AND shop_id=:shopId AND checkout_lease_id=:leaseId`,
+        { replacements: { invoiceId, shopId, leaseId } },
+    ).catch(() => {});
 };
 
 const affectedRows = (result) => {
@@ -99,59 +110,91 @@ const initiateInvoicePayment = async (shopId, invoiceId, { phone, name, callback
     const amount = parseFloat(invoice.amount);
     if (!(amount > 0)) throw new AppError('Invoice amount is not payable', 400);
 
-    const shop = await Shop.findByPk(shopId);
-
-    const bkashResult = await bdPayment.initializeBkashPayment({
-        order_id: invoice.invoice_number,
-        amount,
-        customer_name: name || shop?.name || 'Shop Owner',
-        customer_phone: phone || shop?.phone || '01000000000',
-        callback_url: callbackUrl,
-        shop_id: shopId
-    });
-
-    if (!bkashResult.success) {
-        throw new AppError('bKash payment initiation failed', 502);
+    const leaseId = crypto.randomUUID();
+    const leaseNow = new Date();
+    const leaseExpiresAt = new Date(leaseNow.getTime() + CHECKOUT_LEASE_MS);
+    const leaseResult = await sequelize.query(
+        `UPDATE invoices
+            SET checkout_lease_id=:leaseId, checkout_lease_expires_at=:leaseExpiresAt
+          WHERE id=:invoiceId AND shop_id=:shopId
+            AND status IN ('pending', 'overdue') AND payment_id IS NULL
+            AND (checkout_lease_id IS NULL OR checkout_lease_expires_at < :leaseNow)`,
+        { replacements: { leaseId, leaseExpiresAt, leaseNow, invoiceId, shopId } },
+    );
+    if (affectedRows(leaseResult) !== 1) {
+        const current = await Invoice.findOne({ where: { id: invoiceId, shop_id: shopId } });
+        if (current?.payment_id && current.bkash_url) {
+            return {
+                invoice_id: current.id,
+                invoice_number: current.invoice_number,
+                amount: parseFloat(current.amount),
+                bkash_url: current.bkash_url,
+                payment_id: current.payment_id,
+            };
+        }
+        throw new AppError('A bKash checkout is already in progress for this invoice', 409, 'PAYMENT_IN_PROGRESS');
     }
-    if (!bkashResult.payment_id || !bkashResult.bkash_url) {
-        throw new AppError('bKash payment initiation returned an incomplete checkout', 502);
-    }
 
-    // Bind the gateway payment ID to this exact invoice. Completion must not
-    // trust an arbitrary payment ID supplied by the browser, and concurrent
-    // checkout requests cannot overwrite one another's binding.
-    let bindResult;
     try {
-        bindResult = await sequelize.query(
+        const shop = await Shop.findByPk(shopId);
+        const bkashResult = await bdPayment.initializeBkashPayment({
+            order_id: invoice.invoice_number,
+            amount,
+            customer_name: name || shop?.name || 'Shop Owner',
+            customer_phone: phone || shop?.phone || '01000000000',
+            callback_url: callbackUrl,
+            shop_id: shopId
+        });
+
+        if (!bkashResult.success) {
+            throw new AppError('bKash payment initiation failed', 502);
+        }
+        if (!bkashResult.payment_id || !bkashResult.bkash_url) {
+            throw new AppError('bKash payment initiation returned an incomplete checkout', 502);
+        }
+
+        // Bind the gateway payment ID to this exact invoice. Completion must not
+        // trust an arbitrary payment ID supplied by the browser, and the lease
+        // prevents concurrent requests from creating multiple gateway payments.
+        const bindResult = await sequelize.query(
             `UPDATE invoices
-                SET payment_id=:paymentId, bkash_url=:bkashUrl
+                SET payment_id=:paymentId, bkash_url=:bkashUrl,
+                    checkout_lease_id=NULL, checkout_lease_expires_at=NULL
               WHERE id=:invoiceId AND shop_id=:shopId
-                AND status IN ('pending', 'overdue') AND payment_id IS NULL`,
+                AND status IN ('pending', 'overdue') AND payment_id IS NULL
+                AND checkout_lease_id=:leaseId`,
             {
-                replacements: { paymentId: bkashResult.payment_id, bkashUrl: bkashResult.bkash_url, invoiceId, shopId },
+                replacements: {
+                    paymentId: bkashResult.payment_id,
+                    bkashUrl: bkashResult.bkash_url,
+                    invoiceId,
+                    shopId,
+                    leaseId,
+                },
             },
         );
+        if (affectedRows(bindResult) !== 1) {
+            throw new AppError('A bKash checkout is already in progress for this invoice', 409, 'PAYMENT_IN_PROGRESS');
+        }
+
+        logger.info('Invoice payment initiated', {
+            shopId, invoiceId, invoiceNumber: invoice.invoice_number, bkashPaymentId: bkashResult.payment_id
+        });
+
+        return {
+            invoice_id: invoice.id,
+            invoice_number: invoice.invoice_number,
+            amount,
+            bkash_url: bkashResult.bkash_url,
+            payment_id: bkashResult.payment_id
+        };
     } catch (error) {
+        await releaseInvoiceCheckoutLease(invoiceId, shopId, leaseId);
         if (error?.name === 'SequelizeUniqueConstraintError') {
             throw new AppError('This bKash payment is already bound to another invoice', 409, 'PAYMENT_ID_REUSED');
         }
         throw error;
     }
-    if (affectedRows(bindResult) !== 1) {
-        throw new AppError('A bKash checkout is already in progress for this invoice', 409, 'PAYMENT_IN_PROGRESS');
-    }
-
-    logger.info('Invoice payment initiated', {
-        shopId, invoiceId, invoiceNumber: invoice.invoice_number, bkashPaymentId: bkashResult.payment_id
-    });
-
-    return {
-        invoice_id: invoice.id,
-        invoice_number: invoice.invoice_number,
-        amount,
-        bkash_url: bkashResult.bkash_url,
-        payment_id: bkashResult.payment_id
-    };
 };
 
 /**
@@ -262,10 +305,31 @@ const completeInvoicePayment = async (shopId, invoiceId, bkashPaymentId) => {
             throw new AppError('Invoice amount changed; restart payment', 409, 'INVOICE_AMOUNT_CHANGED');
         }
 
+        let activationSubscription = null;
+        let activationMetadata = {};
+        if (RECURRING_INVOICE_TYPES.includes(settlementInvoice.invoice_type)) {
+            activationSubscription = await Subscription.findOne({
+                where: { id: settlementInvoice.subscription_id, shop_id: shopId },
+                transaction,
+                lock: transaction.LOCK?.UPDATE,
+            });
+            if (!activationSubscription) throw new AppError('Subscription not found for invoice', 409, 'SUBSCRIPTION_INVOICE_MISMATCH');
+            activationMetadata = settlementInvoice.metadata || {};
+            if (typeof activationMetadata === 'string') {
+                try { activationMetadata = JSON.parse(activationMetadata); } catch (_) { activationMetadata = {}; }
+            }
+            const invoicePlanCode = activationMetadata.plan_code || activationMetadata.planCode;
+            if (invoicePlanCode
+                && String(invoicePlanCode).toUpperCase() !== String(activationSubscription.plan_code || '').toUpperCase()) {
+                throw new AppError('Invoice no longer matches the current subscription plan', 409, 'STALE_PLAN_INVOICE');
+            }
+        }
+
         const claimResult = await sequelize.query(
             `UPDATE invoices
                 SET status='paid', paid_at=${timestampSql()}, payment_method='bkash',
-                    transaction_id=:transactionId
+                    transaction_id=:transactionId,
+                    checkout_lease_id=NULL, checkout_lease_expires_at=NULL
               WHERE id=:invoiceId AND shop_id=:shopId
                 AND status IN ('pending', 'overdue') AND payment_id=:paymentId`,
             {
@@ -293,28 +357,18 @@ const completeInvoicePayment = async (shopId, invoiceId, bkashPaymentId) => {
 
         // Recurring (monthly / partner) invoice → (re)activate the AI. One-off invoices
         // (proration, add-ons) just settle; they never gate AI.
-        if (RECURRING_INVOICE_TYPES.includes(settlementInvoice.invoice_type)) {
-            const subscription = await Subscription.findOne({
-                where: { id: settlementInvoice.subscription_id, shop_id: shopId },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!subscription) throw new AppError('Subscription not found for invoice', 409, 'SUBSCRIPTION_INVOICE_MISMATCH');
-            let metadata = settlementInvoice.metadata || {};
-            if (typeof metadata === 'string') {
-                try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
-            }
+        if (activationSubscription) {
             const preservesPartnerPeriod = settlementInvoice.invoice_type === 'partner_per_order'
-                || String(subscription.plan_code || '').toUpperCase() === 'PARTNER'
-                || String(metadata.billing_model || '').toLowerCase() === 'per_order';
-            await subscriptionService.activateFromPaidInvoice(subscription, {
-                targetPlanCode: metadata.target_plan_code || null,
-                targetBillingCycle: metadata.target_billing_cycle || null,
+                || String(activationSubscription.plan_code || '').toUpperCase() === 'PARTNER'
+                || String(activationMetadata.billing_model || '').toLowerCase() === 'per_order';
+            await subscriptionService.activateFromPaidInvoice(activationSubscription, {
+                targetPlanCode: activationMetadata.target_plan_code || null,
+                targetBillingCycle: activationMetadata.target_billing_cycle || null,
                 preservePeriod: preservesPartnerPeriod,
                 billingPeriodEnd: settlementInvoice.billing_period_end || null,
                 transaction,
             });
-            subscriptionStatus = subscription.status;
+            subscriptionStatus = activationSubscription.status;
         }
     });
 
