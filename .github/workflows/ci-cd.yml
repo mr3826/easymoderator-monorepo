@@ -63,7 +63,6 @@ concurrency:
 permissions:
   contents: read
   packages: write
-  actions: write
   # Required by the dorny/paths-filter step in the `changes` job: on
   # pull_request events it reads the PR's changed files via the GitHub API.
   # Without this the `changes` job fails and the whole PR gate skips.
@@ -1282,6 +1281,8 @@ jobs:
   deploy-flag-cleanup:
     name: Disable production deployment flag
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     needs: [deploy]
     if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     steps:
