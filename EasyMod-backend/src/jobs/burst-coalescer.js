@@ -44,8 +44,9 @@ const firstSeenKey = (conversationId) => `burst:firstseen:${conversationId}`;
 const KEY_TTL_SECONDS = Math.ceil((BURST_MAX_WAIT_MS + BURST_WINDOW_MS) / 1000) + 60;
 
 /**
- * Remove a queued (delayed/waiting) flush job. Safe to call when the job has
- * already started (active) or no longer exists — those are left untouched.
+ * Remove a queued flush job or a stale terminal failure. Safe to call when the
+ * job has already started (active), completed successfully, or no longer
+ * exists — those are left untouched.
  */
 async function removeQueuedJob(jobId, existingJob = null, { strict = false } = {}) {
     if (!jobId) return;
@@ -59,7 +60,7 @@ async function removeQueuedJob(jobId, existingJob = null, { strict = false } = {
             if (strict) throw err;
             return;
         }
-        if (state === 'delayed' || state === 'waiting' || state === 'prioritized') {
+        if (state === 'delayed' || state === 'waiting' || state === 'prioritized' || state === 'failed') {
             try {
                 await job.remove();
             } catch (err) {
@@ -159,6 +160,12 @@ async function scheduleBurstFlush(payload) {
         if (isSameMessageJob(existingJob, payload.messageId) && await isResidentJob(existingJob)) {
             return existingJob;
         }
+        // BullMQ deduplicates by jobId even when the retained job is failed.
+        // Remove that stale failure before add() so the retry creates work that
+        // can actually be consumed instead of settling the receipt on a dead job.
+        if (existingJob) {
+            await removeQueuedJob(flushJobId, existingJob, { strict: true });
+        }
     }
 
     await removeQueuedJob(prevJobId, previousJob);
@@ -168,6 +175,12 @@ async function scheduleBurstFlush(payload) {
         { ...payload, burstFlush: true },
         { jobId: flushJobId, delay, group: { id: shopId } },
     );
+    if (!(await isResidentJob(queueResult))) {
+        const error = new Error('Burst flush enqueue did not produce a runnable job');
+        error.code = 'QUEUE_JOB_NOT_RUNNABLE';
+        error.retryable = true;
+        throw error;
+    }
     try {
         await cacheRedis.set(pendingKey(conversationId), flushJobId, 'EX', KEY_TTL_SECONDS);
     } catch (_) { /* best-effort */ }

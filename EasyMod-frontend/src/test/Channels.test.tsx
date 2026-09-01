@@ -250,7 +250,7 @@ describe('ChatSettings (Channels)', () => {
         { id: 'blocked', name: 'Blocked Page', category: null, pictureUrl: null, tasks: ['MESSAGING'], connectable: false, reason: 'META_PAGE_TASKS_REQUIRED' },
       ],
       tempToken: 't'.repeat(64),
-    } as MetaOAuthCallbackResult)
+    })
 
     await act(async () => {
       render(
@@ -280,6 +280,48 @@ describe('ChatSettings (Channels)', () => {
     expect(eligibleCheckbox).not.toBeDisabled()
     fireEvent.click(eligibleCheckbox!)
     expect(screen.getByRole('button', { name: /Connect \(1\)/i })).toBeEnabled()
+  })
+
+  it('renders a target-ID hydrated Page like an /me/accounts Page without source leakage', async () => {
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: `https://facebook.com/dialog/oauth?state=${'s'.repeat(64)}`,
+    })
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [{
+        id: 'hydrated',
+        name: 'Business Portfolio Page',
+        category: null,
+        pictureUrl: null,
+        tasks: ['MESSAGING', 'CREATE_CONTENT'],
+        connectable: true,
+        reason: null,
+        source: 'GRANULAR_TARGET',
+      }],
+      tempToken: 't'.repeat(64),
+    })
+
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <ChatSettings />
+        </BrowserRouter>,
+      )
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'))
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: window as any,
+        data: { type: 'OAUTH_SUCCESS', code: 'abc', state: 's'.repeat(64) },
+      }),
+    )
+
+    expect(await screen.findByText('Business Portfolio Page')).toBeInTheDocument()
+    const checkbox = screen.getByText('Business Portfolio Page').closest('label')?.querySelector('input')
+    expect(checkbox).not.toBeDisabled()
+    expect(screen.queryByText('GRANULAR_TARGET')).not.toBeInTheDocument()
   })
 
   it('does not show success UI when the server rejects an ineligible Page', async () => {

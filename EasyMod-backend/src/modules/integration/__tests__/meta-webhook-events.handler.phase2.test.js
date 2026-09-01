@@ -252,6 +252,28 @@ describe('shared inbound consent and dispatch boundary', () => {
         );
     });
 
+    test('does not settle the receipt when the queue returns a non-runnable handoff', async () => {
+        const nonRunnableError = Object.assign(
+            new Error('Burst flush enqueue did not produce a runnable job'),
+            { code: 'QUEUE_JOB_NOT_RUNNABLE', retryable: true },
+        );
+        mockScheduleBurstFlush.mockRejectedValueOnce(nonRunnableError);
+
+        await expect(runProcess()).resolves.toBe('failed');
+
+        expect(mockReceiptService.markQueued).not.toHaveBeenCalled();
+        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+            receipt,
+            expect.objectContaining({
+                name: 'QUEUE_DISPATCH_FAILED',
+                code: 'QUEUE_DISPATCH_FAILED',
+                retryable: true,
+                cause: nonRunnableError,
+            }),
+            expect.objectContaining({ pageId: PAGE_ID }),
+        );
+    });
+
     test('does not report QUEUED when the receipt update did not take effect', async () => {
         mockReceiptService.markQueued.mockImplementationOnce(async () => {});
 

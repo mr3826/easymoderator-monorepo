@@ -286,6 +286,39 @@ describe('ChatSettings', () => {
     expect(screen.getByRole('button', { name: /Connect \(2\)/i })).toBeEnabled();
   });
 
+  it('renders a target-ID hydrated Page like any other Page without exposing its source', async () => {
+    mockListMetaChannels.mockResolvedValue([]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [{
+        id: 'hydrated',
+        name: 'Business Portfolio Page',
+        category: null,
+        pictureUrl: null,
+        tasks: ['MESSAGING', 'MANAGE'],
+        connectable: true,
+        reason: null,
+        source: 'GRANULAR_TARGET',
+      }],
+      tempToken: 'tmp-hydrated',
+    });
+
+    await renderComponent();
+    fireEvent.click(await screen.findByRole('button', { name: /Connect Facebook Page/i }));
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'));
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'code-hydrated', state: 'state-123' },
+      });
+      await flushPromises();
+    });
+
+    expect(await screen.findByText('Business Portfolio Page')).toBeInTheDocument();
+    const checkbox = screen.getByText('Business Portfolio Page').closest('label')?.querySelector('input');
+    expect(checkbox).not.toBeDisabled();
+    expect(screen.queryByText('GRANULAR_TARGET')).not.toBeInTheDocument();
+  });
+
   // ── Disconnect ──────────────────────────────────────────────────────────
 
   it('calls disconnectMetaChannel when disconnect is confirmed', async () => {

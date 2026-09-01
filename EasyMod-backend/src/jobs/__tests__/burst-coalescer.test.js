@@ -15,7 +15,16 @@ process.env.AI_BURST_MAX_WAIT_MS = '20000';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-const mockAdd = jest.fn().mockResolvedValue({ id: 'flush-x' });
+function makeQueueJob(id = 'flush-x', state = 'delayed', data = {}) {
+    return {
+        id,
+        data,
+        getState: jest.fn().mockResolvedValue(state),
+        remove: jest.fn().mockResolvedValue(undefined),
+    };
+}
+
+const mockAdd = jest.fn().mockImplementation(() => Promise.resolve(makeQueueJob()));
 const mockGetJob = jest.fn();
 jest.mock('bullmq', () => ({
     Queue: jest.fn().mockImplementation(() => ({
@@ -135,7 +144,7 @@ describe('burst-coalescer', () => {
         });
 
         it('returns the durable queue handoff result', async () => {
-            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toEqual({ id: 'flush-x' });
+            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toMatchObject({ id: 'flush-x' });
         });
 
         it('propagates a BullMQ enqueue rejection to the caller', async () => {
@@ -168,6 +177,47 @@ describe('burst-coalescer', () => {
             await expect(coalescer.scheduleBurstFlush(payload)).resolves.toBe(existing);
 
             expect(mockAdd).toHaveBeenCalledTimes(1);
+        });
+
+        it('removes an existing failed deterministic job before creating a runnable retry', async () => {
+            const failed = makeQueueJob(
+                'burstflush_conv-1_message-1',
+                'failed',
+                { ...payload, burstFlush: true },
+            );
+            const runnable = makeQueueJob(
+                'burstflush_conv-1_message-1',
+                'delayed',
+                { ...payload, burstFlush: true },
+            );
+            mockGetJob.mockResolvedValueOnce(failed);
+            mockAdd.mockResolvedValueOnce(runnable);
+
+            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toBe(runnable);
+
+            expect(failed.remove).toHaveBeenCalledTimes(1);
+            expect(runnable.getState).toHaveBeenCalledTimes(1);
+            expect(mockAdd).toHaveBeenCalledTimes(1);
+        });
+
+        it('rejects when add returns a non-resident job instead of settling a false handoff', async () => {
+            const failed = makeQueueJob(
+                'burstflush_conv-1_message-1',
+                'failed',
+                { ...payload, burstFlush: true },
+            );
+            const returnedFailed = makeQueueJob(
+                'burstflush_conv-1_message-1',
+                'failed',
+                { ...payload, burstFlush: true },
+            );
+            mockGetJob.mockResolvedValueOnce(failed);
+            mockAdd.mockResolvedValueOnce(returnedFailed);
+
+            await expect(coalescer.scheduleBurstFlush(payload)).rejects.toMatchObject({
+                code: 'QUEUE_JOB_NOT_RUNNABLE',
+                retryable: true,
+            });
         });
 
         it('cancels the previously-scheduled flush before scheduling a fresh one (debounce)', async () => {

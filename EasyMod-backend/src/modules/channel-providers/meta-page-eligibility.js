@@ -18,7 +18,9 @@ function normalizePageTasks(tasks) {
     const seen = new Set();
     for (const task of tasks) {
         const normalizedTask = normalizePageTask(task);
-        if (!normalizedTask) return null;
+        // Meta can add task values without notice. Ignore an invalid value, but
+        // keep evaluating the tasks that were returned and can be trusted.
+        if (!normalizedTask) continue;
         if (!seen.has(normalizedTask)) {
             seen.add(normalizedTask);
             normalized.push(normalizedTask);

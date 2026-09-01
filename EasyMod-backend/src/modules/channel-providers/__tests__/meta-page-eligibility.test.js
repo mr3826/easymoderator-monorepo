@@ -20,15 +20,20 @@ describe('Meta Page eligibility', () => {
         ['missing tasks', undefined],
         ['null tasks', null],
         ['non-array tasks', 'MESSAGING'],
-        ['non-string task entry', ['MESSAGING', 42]],
-        ['blank task entry', ['MESSAGING', '  ']],
-        ['malformed task entry', ['MESSAGING', 'MANAGE!']],
     ])('%s are ineligible with a stable reason', (_label, tasks) => {
         expect(evaluatePageEligibility(tasks)).toEqual({
             tasks: [],
             connectable: false,
             reason: META_PAGE_TASKS_REQUIRED,
         });
+    });
+
+    test.each([
+        ['non-string task entry', ['MESSAGING', 42], ['MESSAGING']],
+        ['blank task entry', ['MESSAGING', '  '], ['MESSAGING']],
+        ['malformed task entry', ['MESSAGING', 'MANAGE!'], ['MESSAGING']],
+    ])('skips a %s while preserving valid tasks', (_label, tasks, expected) => {
+        expect(normalizePageTasks(tasks)).toEqual(expected);
     });
 
     test.each(['CREATE_CONTENT', 'MANAGE', 'MODERATE'])(
