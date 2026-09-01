@@ -135,6 +135,54 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
         expect(queries.join('\n')).not.toMatch(/UPDATE subscriptions/);
     });
 
+    it('uses a bounded transaction-scoped lock and does not overwrite an existing target', async () => {
+        const queries = [];
+        const transaction = {};
+        const sequelize = {
+            getDialect: () => 'postgres',
+            transaction: jest.fn(async (callback) => callback(transaction)),
+            query: jest.fn(async (sql) => {
+                queries.push(sql);
+                if (sql.includes("column_name = 'threshold_conversations'")) {
+                    return [[{ '?column?': 1 }], { rowCount: 0 }];
+                }
+                if (sql.includes("column_name = 'threshold_debt'")) {
+                    return [[{ '?column?': 1 }], { rowCount: 0 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await entityDriftRepair.up(sequelize);
+
+        const sql = queries.join('\n');
+        expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
+        expect(sql).toContain("SET LOCAL statement_timeout = '60s'");
+        expect(sql).toContain('pg_advisory_xact_lock');
+        expect(sql).not.toMatch(/UPDATE public\.subscriptions/);
+    });
+
+    it('keeps the SQLite fallback free of PostgreSQL schema qualification', async () => {
+        const queries = [];
+        const sequelize = {
+            getDialect: () => 'sqlite',
+            query: jest.fn(async (sql) => {
+                queries.push(sql);
+                if (sql.includes('PRAGMA table_info(subscriptions)')) {
+                    return [[{ name: 'threshold_conversations' }], { rowCount: 0 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await entityDriftRepair.up(sequelize);
+
+        const sql = queries.join('\n');
+        expect(sql).toContain('UPDATE subscriptions');
+        expect(sql).not.toContain('UPDATE public.subscriptions');
+    });
+
     it('blocks destructive rollback', async () => {
         await expect(entityDriftRepair.down()).rejects.toThrow('Rollback blocked');
     });
