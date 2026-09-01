@@ -58,6 +58,21 @@ on:
         required: false
         default: ''
         type: string
+      existing_backend_digest:
+        description: 'Previously built backend sha256 digest to deploy after a separate recovery gate.'
+        required: false
+        default: ''
+        type: string
+      existing_candidate_sha:
+        description: 'Full main SHA that produced existing_backend_digest.'
+        required: false
+        default: ''
+        type: string
+      expect_schema_drift:
+        description: 'One-shot: require the 3 repair columns ABSENT before migrating. Type DRIFT to confirm.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -406,10 +421,15 @@ jobs:
           DO_SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DO_SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
           PROBE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'probe' }}
+          SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
         run: |
           set -euo pipefail
           mkdir -p _tmp
           trap 'rm -f _tmp/.env.prod.real' EXIT
+          schema_probe_mode='basic'
+          if [ "$SCHEMA_DRIFT_MODE" = "true" ]; then
+            schema_probe_mode='pre-migration'
+          fi
           test -n "$DEPLOY_HOST"
           test -n "$DO_SSH_PRIVATE_KEY"
           test -n "$DO_SSH_KNOWN_HOSTS"
@@ -470,7 +490,7 @@ jobs:
                  docker exec easymod-postgres-1 sh -c "PGPASSWORD=\"\$POSTGRES_PASSWORD\" psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"\\l\""
                fi'
             ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
-              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_id\" node /app/scripts/production-db-auth-probe.js"
+              "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_id=\$(docker inspect -f '{{.Image}}' easymod-backend-1); test -n \"\$image_id\"; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -e PROBE_SCHEMA_MODE=$schema_probe_mode -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_id\" node /app/scripts/production-db-auth-probe.js"
           fi
 
   # ── 2d. Non-publishing Docker build validation ────────────────────────────
@@ -633,9 +653,12 @@ jobs:
     outputs:
       backend_tag: ${{ steps.meta.outputs.backend_tag }}
       frontend_tag: ${{ steps.meta.outputs.frontend_tag }}
-      backend_digest: ${{ steps.backend_image.outputs.digest }}
+      backend_digest: ${{ steps.backend_image.outputs.digest || inputs.existing_backend_digest }}
       frontend_digest: ${{ steps.frontend_image.outputs.digest }}
       build_time: ${{ steps.meta.outputs.build_time }}
+    env:
+      EXISTING_BACKEND_DIGEST: ${{ inputs.existing_backend_digest }}
+      EXISTING_CANDIDATE_SHA: ${{ inputs.existing_candidate_sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
@@ -661,7 +684,13 @@ jobs:
           # A guard test pins this line — see workflow-deploy-guard.test.js.
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
           if [ "${{ needs.changes.outputs.backend }}" = "true" ]; then
-            echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHA}" >> $GITHUB_OUTPUT
+            if [ -n "$EXISTING_BACKEND_DIGEST" ]; then
+              test "$EXISTING_CANDIDATE_SHA" = "$SHA"
+              printf '%s\n' "$EXISTING_BACKEND_DIGEST" | grep -Eq '^sha256:[0-9a-fA-F]{64}$'
+              echo "backend_tag=${{ env.GHCR_BACKEND }}@${EXISTING_BACKEND_DIGEST}" >> $GITHUB_OUTPUT
+            else
+              echo "backend_tag=${{ env.GHCR_BACKEND }}:${SHA}" >> $GITHUB_OUTPUT
+            fi
           else
             echo "backend_tag=" >> $GITHUB_OUTPUT
           fi
@@ -673,7 +702,7 @@ jobs:
 
       - name: Build & push backend image
         id: backend_image
-        if: needs.changes.outputs.backend == 'true'
+        if: needs.changes.outputs.backend == 'true' && env.EXISTING_BACKEND_DIGEST == ''
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: ./EasyMod-backend
@@ -810,6 +839,7 @@ jobs:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BACKEND_DIGEST: ${{ needs.build.outputs.backend_digest }}
+          SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -817,6 +847,10 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$DO_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh-keygen -F "$DEPLOY_HOST" -f ~/.ssh/known_hosts >/dev/null
+          schema_probe_mode='basic'
+          if [ "$SCHEMA_DRIFT_MODE" = "true" ]; then
+            schema_probe_mode='pre-migration'
+          fi
           probe_env_path="/opt/easymod/.env.prod.candidate.${GITHUB_RUN_ID}"
           probe_script_path="/opt/easymod/production-db-auth-probe.${GITHUB_RUN_ID}.js"
           cleanup_probe() {
@@ -834,7 +868,7 @@ jobs:
             probe_image=''
           fi
           ssh -i ~/.ssh/deploy_key root@"$DEPLOY_HOST" \
-            "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_ref='$probe_image'; if [ -z \"\$image_ref\" ]; then image_ref=\$(docker inspect -f '{{.Config.Image}}' easymod-backend-1); fi; test -n \"\$image_ref\"; case \"\$image_ref\" in *@sha256:[0-9a-fA-F]{64}) ;; *) echo 'candidate probe image is not digest-pinned' >&2; exit 1 ;; esac; if [ -n '$probe_image' ]; then printf '%s' '$GH_TOKEN' | docker login ghcr.io -u '$GH_ACTOR' --password-stdin >/dev/null; docker pull \"\$image_ref\" >/dev/null; fi; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_ref\" node /app/scripts/production-db-auth-probe.js"
+            "set -e; chmod 600 '$probe_env_path'; chmod 644 '$probe_script_path'; image_ref='$probe_image'; if [ -z \"\$image_ref\" ]; then image_ref=\$(docker inspect -f '{{.Config.Image}}' easymod-backend-1); fi; test -n \"\$image_ref\"; case \"\$image_ref\" in *@sha256:[0-9a-fA-F]{64}) ;; *) echo 'candidate probe image is not digest-pinned' >&2; exit 1 ;; esac; if [ -n '$probe_image' ]; then printf '%s' '$GH_TOKEN' | docker login ghcr.io -u '$GH_ACTOR' --password-stdin >/dev/null; docker pull \"\$image_ref\" >/dev/null; fi; docker run --rm --network easymod_internal --env-file '$probe_env_path' -e EXPECTED_DB_NAME=easymod_prod -e PROBE_SCHEMA_MODE=$schema_probe_mode -v '$probe_script_path:/app/scripts/production-db-auth-probe.js:ro' \"\$image_ref\" node /app/scripts/production-db-auth-probe.js"
 
       - name: Copy .env.prod and deploy config to droplet
         env:
@@ -876,7 +910,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
           script: |
             set -e
 
@@ -1203,9 +1237,47 @@ jobs:
             # replacing the currently running API and worker. This prevents new
             # application code from starting against an old schema.
             if [ -n "$BACKEND_TAG" ] && [ "$WIPE_DB" != "WIPE" ]; then
+              threshold_snapshot_before=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*)::text || chr(58) || COALESCE(SUM(threshold_conversations), 0)::text || chr(58) || COALESCE(MIN(threshold_conversations), 0)::text || chr(58) || COALESCE(MAX(threshold_conversations), 0)::text FROM public.subscriptions"' \
+                | tr -d '\r\n')
+              test -n "$threshold_snapshot_before"
+              echo "THRESHOLD_CONVERSATIONS_SNAPSHOT_BEFORE=$threshold_snapshot_before"
+              migration_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              echo "MIGRATION_START=$migration_started_at"
               echo "Running database migrations before service replacement..."
               docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
                 -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
+              threshold_snapshot_after=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*)::text || chr(58) || COALESCE(SUM(threshold_conversations), 0)::text || chr(58) || COALESCE(MIN(threshold_conversations), 0)::text || chr(58) || COALESCE(MAX(threshold_conversations), 0)::text FROM public.subscriptions"' \
+                | tr -d '\r\n')
+              test "$threshold_snapshot_before" = "$threshold_snapshot_after"
+              echo "THRESHOLD_CONVERSATIONS_SNAPSHOT_AFTER=$threshold_snapshot_after"
+              echo 'THRESHOLD_CONVERSATIONS_PRESERVED=PASS'
+              # threshold_debt is a legacy field the retired grace-buffer flow no
+              # longer writes, but the migration deliberately does not reset an
+              # existing nonzero value on rerun (commercial-entity-drift.integration.test.js
+              # proves this). Asserting it is uniformly zero is only true for THIS
+              # one-shot repair, where the column is being added fresh — it must
+              # not run on every future deploy, or the day any row legitimately
+              # (or via a manual fix) carries nonzero debt, every subsequent
+              # deploy would hard-fail here.
+              if [ "$SCHEMA_DRIFT_MODE" = "true" ]; then
+                nonzero_debt_count=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                  sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM public.subscriptions WHERE threshold_debt <> 0"' \
+                  | tr -d '\r\n')
+                test "$nonzero_debt_count" = 0
+                echo 'THRESHOLD_DEBT_INITIALIZATION=CORRECT'
+              else
+                echo 'THRESHOLD_DEBT_INITIALIZATION=SKIPPED (not a one-shot drift-repair run)'
+              fi
+              repair_ledger_rows=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM public.migrations WHERE name LIKE '\''20260901_001_reconcile_commercial_entity_drift%'\''"' \
+                | tr -d '\r\n')
+              test "$repair_ledger_rows" = 1
+              echo 'REPAIR_LEDGER_ENTRY_COUNT=1'
+            else
+              migration_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              echo "MIGRATION_START=$migration_started_at"
             fi
 
             # Migration names are not schema proof. Audit the target database
@@ -1284,6 +1356,7 @@ jobs:
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
           SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
           ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
+          SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
 
   # PRODUCTION_DEPLOY_ENABLED is an operator-owned repository control. The
   # built-in GITHUB_TOKEN cannot mutate repository variables, so it must be
