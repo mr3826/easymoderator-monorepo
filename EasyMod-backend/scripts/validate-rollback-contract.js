@@ -25,7 +25,7 @@ const required = [
     ['previous frontend capture', 'previous_frontend_image=$(resolve_container_digest easymod-frontend-1'],
     ['RepoDigest capture', "{{index .RepoDigests 0}}"],
     ['running digest guard', 'running services are not backed by content-addressed images'],
-    ['candidate digest outputs', 'backend_digest: ${{ steps.backend_image.outputs.digest }}'],
+    ['candidate digest outputs', 'backend_digest: ${{ steps.backend_image.outputs.digest || inputs.existing_backend_digest }}'],
     ['candidate immutable assertion', 'assert_immutable_ref() {'],
     ['rendered compose image guard', 'config --images'],
     ['deployment metadata', 'deployment-metadata.json'],
