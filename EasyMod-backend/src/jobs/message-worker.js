@@ -30,16 +30,54 @@ const { getProvider } = require('../modules/channel-providers/provider.registry'
 const sseManager = require('../utils/sse-manager');
 const policyEngine = require('../modules/policy/policy.engine');
 const metaChannelService = require('../modules/channel-providers/meta-channel.service');
-const MetaChannel = require('../modules/channel-providers/meta-channel.entity');
 const Customer = require('../modules/customer/customer.entity');
 const grounding = require('../modules/ai/grounding');
 const { Op } = require('sequelize');
 
+const asRetryableDependencyError = (error, code) => {
+    const normalized = error instanceof Error
+        ? error
+        : new Error(error == null ? code : String(error));
+    if (!normalized.code) normalized.code = code;
+    normalized.retryable = true;
+    return normalized;
+};
+
+const providerSendSucceeded = (result) => Boolean(result)
+    && result.sent !== false
+    && result.success !== false
+    && result.ok !== false;
+
 // Lazy imports to avoid circular dependency issues at module load
 const getShopAISettings = async (shopId) => {
     const shopService = require('../modules/shop/shop.service');
-    return shopService.getShopAiSettings(shopId).catch(() => ({}));
+    try {
+        const settings = await shopService.getShopAiSettings(shopId);
+        if (!settings
+            || typeof settings !== 'object'
+            || Array.isArray(settings)
+            || typeof settings.automation_mode !== 'string'
+            || settings.automation_mode.trim() === '') {
+            const error = new Error(`Shop AI settings are unavailable for shop ${shopId}`);
+            error.code = 'SHOP_SETTINGS_UNAVAILABLE';
+            error.retryable = true;
+            throw error;
+        }
+        return settings;
+    } catch (error) {
+        throw asRetryableDependencyError(error, 'SHOP_SETTINGS_UNAVAILABLE');
+    }
 };
+
+const matchesChannelScope = (channel, shopId, platform, metaAssetId = null) => (
+    Boolean(channel)
+    && channel.status === 'CONNECTED'
+    && channel.shop_id != null
+    && String(channel.shop_id) === String(shopId)
+    && channel.platform === platform
+    && (!metaAssetId
+        || (channel.meta_asset_id != null && String(channel.meta_asset_id) === String(metaAssetId)))
+);
 
 function captureKnowledgeGap(params) {
     return Promise.resolve()
@@ -104,29 +142,59 @@ async function notifyExecutedMutationWithoutOutbound({ shopId, conversationId, o
 /**
  * Resolve the MetaChannel row for this job. Prefers `metaChannelId` from the
  * job payload (set by the webhook dispatcher, unambiguous when a shop owns
- * multiple Pages/IG accounts of the same platform). Falls back to the
- * shop+platform lookup for legacy jobs that pre-date the FK threading.
+ * multiple Pages of the same platform). A supplied Page asset is also an
+ * exact routing constraint. Only jobs with neither exact value may use the
+ * unique connected shop+platform fallback.
  */
-const resolveChannelForJob = async (shopId, platform, metaChannelId) => {
-    try {
-        if (metaChannelId) {
-            const ch = await MetaChannel.findByPk(metaChannelId);
-            if (ch && ch.shop_id === shopId) return ch;
-        }
-        const pf = platform === 'messenger' ? 'facebook' : platform;
-        return await metaChannelService.findByShopAndPlatform(shopId, pf);
-    } catch {
+const resolveChannelForJob = async (shopId, platform, metaChannelId, metaAssetId) => {
+    const expectedPlatform = platform === 'facebook' || platform === 'messenger'
+        ? 'facebook'
+        : null;
+    if (!expectedPlatform) return null;
+    if (metaChannelId) {
+        const channel = await metaChannelService.findConnectedById(metaChannelId, {
+            shopId,
+            platform: expectedPlatform,
+            metaAssetId,
+        });
+        return matchesChannelScope(channel, shopId, expectedPlatform, metaAssetId) ? channel : null;
+    }
+
+    if (metaAssetId) {
+        const channel = await metaChannelService.findByMetaAssetId(metaAssetId);
+        return matchesChannelScope(channel, shopId, expectedPlatform, metaAssetId) ? channel : null;
+    }
+
+    const channel = await metaChannelService.findUniqueConnectedByShopAndPlatform(shopId, expectedPlatform);
+    if (!matchesChannelScope(channel, shopId, expectedPlatform)) {
         return null;
     }
+    return channel;
 };
 
 const getChannelAISettings = async (channel) => {
-    if (!channel) return {};
+    if (!channel) {
+        const error = new Error('Meta channel settings require a resolved channel');
+        error.code = 'META_CHANNEL_UNAVAILABLE';
+        error.retryable = true;
+        throw error;
+    }
     try {
         const settings = await metaChannelService.getSettings(channel.id);
-        return settings?.toJSON?.() || settings || {};
-    } catch {
-        return {};
+        const normalized = typeof settings?.toJSON === 'function' ? settings.toJSON() : settings;
+        if (!normalized
+            || typeof normalized !== 'object'
+            || Array.isArray(normalized)
+            || typeof normalized.automation_mode !== 'string'
+            || normalized.automation_mode.trim() === '') {
+            const error = new Error(`Channel AI settings are unavailable for channel ${channel.id}`);
+            error.code = 'CHANNEL_SETTINGS_UNAVAILABLE';
+            error.retryable = true;
+            throw error;
+        }
+        return normalized;
+    } catch (error) {
+        throw asRetryableDependencyError(error, 'CHANNEL_SETTINGS_UNAVAILABLE');
     }
 };
 
@@ -288,6 +356,18 @@ function createRecoveryControl({
             return null;
         }
         await policySettingsReady;
+        if (!policySettings
+            || typeof policySettings !== 'object'
+            || Array.isArray(policySettings)
+            || typeof policySettings.automation_mode !== 'string'
+            || policySettings.automation_mode.trim() === '') {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'BLOCKED',
+            });
+            return null;
+        }
         if (closed || (hardTimeout
             ? recovery.isHardTimeoutSuppressed(currentState)
             : recovery.isHoldingSuppressed(currentState))) return null;
@@ -299,7 +379,18 @@ function createRecoveryControl({
                     channel_type: providerName === 'facebook' ? 'messenger' : providerName,
                     channel_user_id: String(recipientId),
                 },
-            }).catch(() => null);
+            });
+            const expectedCustomerChannel = providerName === 'facebook' ? 'messenger' : providerName;
+            if (!customer
+                || String(customer.shop_id) !== String(shopId)
+                || customer.channel_type !== expectedCustomerChannel) {
+                await transitionTo('RETRY_PENDING', {
+                    retryState: 'HOLDING_SEND_FAILED',
+                    recoveryKind,
+                    outboundStatus: 'BLOCKED',
+                });
+                return null;
+            }
             decision = await policyEngine.evaluateOutbound(normalizedMessage, {
                 shopId,
                 channelId: channel.id,
@@ -307,10 +398,10 @@ function createRecoveryControl({
                 recipientId: String(recipientId),
                 channel,
                 customer,
-                settings: policySettings || {},
+                settings: policySettings,
                 platform: providerName,
             });
-            if (!decision?.allow) {
+            if (decision?.allow !== true) {
                 await transitionTo('RETRY_PENDING', {
                     retryState: 'HOLDING_SEND_FAILED',
                     recoveryKind,
@@ -370,6 +461,11 @@ function createRecoveryControl({
                 normalizedMessage: decision.transform || normalizedMessage,
                 decision,
             });
+            if (!providerSendSucceeded(sendResult)) {
+                const error = new Error('Provider did not confirm the holding message send');
+                error.code = 'PROVIDER_NO_SEND';
+                throw error;
+            }
             providerAccepted = true;
             if (holdingMessage?.update) {
                 await holdingMessage.update({
@@ -443,17 +539,19 @@ function createRecoveryControl({
             closed = true;
             clearTimeout(fiveSecondTimer);
             clearTimeout(eightSecondTimer);
-            resolvePolicySettings(policySettings || {});
+            resolvePolicySettings(policySettings);
             await transitionTo(state, metadata);
         },
         setPolicySettings: (settings) => {
-            policySettings = settings || {};
+            policySettings = settings && typeof settings === 'object' && !Array.isArray(settings)
+                ? settings
+                : null;
             resolvePolicySettings(policySettings);
         },
         flush: () => inFlight || Promise.resolve(),
         close: () => {
             closed = true;
-            resolvePolicySettings(policySettings || {});
+            resolvePolicySettings(policySettings);
             clearTimeout(fiveSecondTimer);
             clearTimeout(eightSecondTimer);
             return Promise.all([inFlight, hardTimeoutTransition].filter(Boolean));
@@ -746,7 +844,7 @@ function resolveAllowanceDecision({ jobDecision, conversationMetadata, subscript
  *
  * Expected job.data shape:
  *   shopId, conversationId, messageId, externalId, message,
- *   platform, recipientId, senderInfo
+ *   platform, recipientId, senderInfo, metaChannelId, metaAssetId
  */
 async function processMessageJob(job) {
     // ── Canary short-circuit ────────────────────────────────────────────────
@@ -770,6 +868,7 @@ async function processMessageJob(job) {
         recipientId,
         senderInfo = {},
         metaChannelId = null,
+        metaAssetId = null,
         traceId: jobTraceId = null,
         idempotencyKey: jobIdempotencyKey = null,
         turnId: requestedTurnId = null,
@@ -800,10 +899,16 @@ async function processMessageJob(job) {
     }
 
     // Resolve the channel once and pass it to every step that needs it. With
-    // multi-page shops (one shop owns N FB Pages and/or IG accounts), routing
+    // multi-page shops (one shop owns N FB Pages), routing
     // every send back through the same channel the message arrived on is the
     // only correct behavior — see Phase 1-2 of the multi-channel rework.
-    const jobChannel = await resolveChannelForJob(shopId, platform, metaChannelId);
+    const jobChannel = await resolveChannelForJob(shopId, platform, metaChannelId, metaAssetId);
+    if (!jobChannel) {
+        const error = new Error(`Meta channel is unavailable for shop ${shopId} and platform ${platform}`);
+        error.code = 'META_CHANNEL_UNAVAILABLE';
+        error.retryable = true;
+        throw error;
+    }
 
     // ── Guard 1: Redis idempotency ──────────────────────────────────────────
     const dedupKey = effExternalId ? `msg:dedup:${shopId}:${effExternalId}` : null;
@@ -1159,13 +1264,25 @@ async function processMessageJob(job) {
     // The last point at which merchant facts can still be withdrawn. Runs on
     // every reply regardless of which provider (or cache tier) produced it, so
     // a provider swap or a fallback cannot route around it.
-    let groundingVerdict = grounding.evaluateCandidate({
-        candidate: rawResponse,
-        evidence: groundingEvidence,
-        language: detectedLanguage,
-        attachments: proposedAttachments,
-        modelGenerated: !orderFlow.handled && grounding.isModelGenerated(replySource),
-    });
+    let groundingVerdict;
+    try {
+        groundingVerdict = grounding.evaluateCandidate({
+            candidate: rawResponse,
+            evidence: groundingEvidence,
+            language: detectedLanguage,
+            attachments: proposedAttachments,
+            modelGenerated: !orderFlow.handled && grounding.isModelGenerated(replySource),
+        });
+    } catch (groundingErr) {
+        if (!committedOrder) throw groundingErr;
+        groundingVerdict = {
+            decision: grounding.GroundingDecision.SUPPRESS,
+            reasonCode: grounding.ReasonCode.RETRIEVAL_FAILED,
+            text: null,
+            attachments: [],
+            violations: ['grounding_dependency_error'],
+        };
+    }
     grounding.logGroundingDecision({
         shopId,
         conversationId,
@@ -1206,57 +1323,40 @@ async function processMessageJob(job) {
         confidence = 1.0;
         proposedAttachments = [];
         groundingEvidence = grounding.withSourceText(grounding.emptyEvidence(shopId), rawResponse);
-        groundingVerdict = grounding.evaluateCandidate({
-            candidate: rawResponse,
-            evidence: groundingEvidence,
-            language: detectedLanguage,
+        groundingVerdict = {
+            decision: grounding.GroundingDecision.SEND,
+            reasonCode: grounding.ReasonCode.GROUNDED,
+            text: rawResponse,
             attachments: [],
-            modelGenerated: false,
-        });
+            violations: [],
+        };
         outboundAttachments = [];
 
-        const aiMessage = (await storeAiResponse(rawResponse, false)).message;
+        let persistenceError = null;
         try {
-            const sendPlatform = platform === 'messenger' ? 'facebook' : platform;
-            if (!jobChannel) {
-                throw new Error(`No MetaChannel found for committed order in shop ${shopId}`);
-            }
-            const provider = getProvider(sendPlatform);
-            const sendResult = await provider.sendMessage({
-                channel: jobChannel,
-                recipientId: String(recipientId),
-                normalizedMessage: {
-                    text: rawResponse,
-                    attachments: [],
-                    platform: sendPlatform,
-                    direction: 'outbound',
-                    senderRole: 'ai',
-                },
-                decision: {
-                    allow: true,
-                    decisionId: `post_mutation:${orderFlow.meta.order.id || conversationId}`,
-                    reason: 'POST_MUTATION_INVARIANT',
-                },
-            });
-            await finalizeAiMessage(aiMessage, shopId, conversationId, {
-                delivered: true,
-                heldReason: null,
-                providerMessageId: sendResult?.providerMessageId || null,
-            });
-            return { sent: true, reason };
-        } catch (err) {
+            const aiMessage = (await storeAiResponse(rawResponse, false)).message;
             await finalizeAiMessage(aiMessage, shopId, conversationId, {
                 delivered: false,
                 heldReason: 'executed_mutation_without_outbound_send',
             });
-            await opsAlert('executed_mutation_without_outbound_send', {
-                detail: `shop=${shopId} conv=${conversationId} order=${orderFlow.meta.order.order_number || 'unknown'}\nerror: ${err.message}`,
-                level: 'error',
-                context: { shopId, conversationId, orderId: orderFlow.meta.order.id || null, reason, error: err.message },
-            }).catch(() => {});
-            await notifyExecutedMutationWithoutOutbound({ shopId, conversationId, orderFlow, reason });
-            return { sent: false, reason, error: err.message };
+        } catch (error) {
+            persistenceError = error;
         }
+        await opsAlert('executed_mutation_without_outbound_send', {
+            detail: `shop=${shopId} conv=${conversationId} order=${orderFlow.meta.order.order_number || 'unknown'}\nreason: ${reason}`
+                + (persistenceError ? `\nerror: ${persistenceError.message}` : ''),
+            level: 'error',
+            context: {
+                shopId,
+                conversationId,
+                orderId: orderFlow.meta.order.id || null,
+                reason,
+                error: persistenceError?.message || null,
+            },
+        }).catch(() => {});
+        await notifyExecutedMutationWithoutOutbound({ shopId, conversationId, orderFlow, reason });
+        if (persistenceError) throw persistenceError;
+        return { sent: false, reason, held: true };
     };
 
     if (groundingVerdict.decision === grounding.GroundingDecision.SUPPRESS) {
@@ -1381,26 +1481,59 @@ async function processMessageJob(job) {
     // Replaces the ad-hoc DRAFT/MANUAL/opt-out checks scattered through the
     // old guard list. Every send (including non-AI) flows through this gate.
     const policyChannelType = platform === 'messenger' ? 'facebook' : platform;
-    // channel_type must be included — the same channel_user_id can exist on both
-    // 'messenger' and 'instagram' rows (two-row-per-channel design, locked
-    // 2026-05-22). Without it findOne returns an arbitrary row and the 24h
-    // window / opt-out checks read consent for the wrong platform.
+    // channel_type must be included because the same channel_user_id can exist
+    // on legacy rows for different platforms. The tenant/platform predicate
+    // keeps consent and window checks on the Messenger customer row.
     // Customers are stored with channel_type='messenger' for Facebook (mirrors
     // the webhook handler mapping: facebook→messenger). The job platform is
     // already normalised to 'facebook', so we reverse the mapping here.
     const customerChannelType = platform === 'facebook' ? 'messenger' : platform;
-    const customer = await Customer.findOne({
-        where: { shop_id: shopId, channel_type: customerChannelType, channel_user_id: String(recipientId) },
-    }).catch(() => null);
+    let customer;
+    try {
+        customer = await Customer.findOne({
+            where: { shop_id: shopId, channel_type: customerChannelType, channel_user_id: String(recipientId) },
+        });
+    } catch (customerErr) {
+        if (committedOrder) {
+            await recoveryControl?.close();
+            await sendPostMutationTemplate('customer_context_error');
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'post_mutation_template',
+            };
+        }
+        throw customerErr;
+    }
+    const customerContextAvailable = Boolean(customer)
+        && String(customer.shop_id) === String(shopId)
+        && customer.channel_type === customerChannelType
+        && String(customer.channel_user_id) === String(recipientId);
     const channel = jobChannel;
     let channelSettings = aiSettings;
     let latestChannelAISettings = channelAISettings;
     if (channel) {
+        let latestSettings;
         try {
-            const s = await metaChannelService.getSettings(channel.id);
-            latestChannelAISettings = { ...channelAISettings, ...(s?.toJSON?.() || s || {}) };
-            channelSettings = resolveEffectiveAiSettings(shopAISettings, latestChannelAISettings);
-        } catch { /* fall back to aiSettings */ }
+            latestSettings = await getChannelAISettings(channel);
+        } catch (settingsErr) {
+            if (committedOrder) {
+                await recoveryControl?.close();
+                await sendPostMutationTemplate('channel_settings_error');
+                return {
+                    success: true,
+                    conversationId,
+                    confidence,
+                    sent: false,
+                    reason: 'post_mutation_template',
+                };
+            }
+            throw settingsErr;
+        }
+        latestChannelAISettings = { ...channelAISettings, ...latestSettings };
+        channelSettings = resolveEffectiveAiSettings(shopAISettings, latestChannelAISettings);
     }
 
     // The setting can change while the LLM is running. Re-check the latest
@@ -1408,6 +1541,17 @@ async function processMessageJob(job) {
     // receive a response generated before the change. Keep the candidate
     // visible to the merchant as a held suggestion instead of dropping it.
     if (isChannelAutoReplyDisabled(latestChannelAISettings)) {
+        if (committedOrder) {
+            await recoveryControl?.close();
+            await sendPostMutationTemplate('channel_ai_disabled');
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'post_mutation_template',
+            };
+        }
         const heldMessage = (await storeAiResponse(rawResponse, false)).message;
         await finalizeAiMessage(heldMessage, shopId, conversationId, {
             delivered: false,
@@ -1429,19 +1573,40 @@ async function processMessageJob(job) {
         direction: 'outbound',
     };
 
-    const decision = await policyEngine.evaluateOutbound(normalizedOutbound, {
-        shopId,
-        platform: policyChannelType,
-        customer,
-        channel,
-        settings: channelSettings,
-        conversationId,
-    });
-
-    if (!decision.allow) {
+    let decision;
+    try {
+        decision = await policyEngine.evaluateOutbound(normalizedOutbound, {
+            shopId,
+            platform: policyChannelType,
+            customer,
+            channel,
+            settings: channelSettings,
+            conversationId,
+        });
+    } catch (policyErr) {
         if (committedOrder) {
             await recoveryControl?.close();
-            const templateResult = await sendPostMutationTemplate(`policy_${decision.reason || 'denied'}`);
+            const templateResult = await sendPostMutationTemplate('policy_error');
+            if (templateResult.sent) await recoveryControl?.transitionTo('SENT', { outboundStatus: 'SENT' });
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: 'post_mutation_template',
+            };
+        }
+        throw policyErr;
+    }
+
+    const policyAllows = decision?.allow === true && customerContextAvailable;
+    if (!policyAllows) {
+        const denialReason = customerContextAvailable
+            ? (decision?.reason || 'POLICY_DENIED')
+            : 'CUSTOMER_CONTEXT_UNAVAILABLE';
+        if (committedOrder) {
+            await recoveryControl?.close();
+            const templateResult = await sendPostMutationTemplate(`policy_${denialReason}`);
             if (templateResult.sent) await recoveryControl?.transitionTo('SENT', { outboundStatus: 'SENT' });
             return {
                 success: true,
@@ -1449,11 +1614,11 @@ async function processMessageJob(job) {
                 confidence,
                 sent: templateResult.sent,
                 reason: 'post_mutation_template',
-                decisionId: decision.decisionId,
+                decisionId: decision?.decisionId,
             };
         }
         // RATE_LIMIT: defer the job until the bucket clears.
-        if (decision.reason === 'RATE_LIMIT' && decision.retryAfterMs) {
+        if (decision?.reason === 'RATE_LIMIT' && decision.retryAfterMs) {
             await job.moveToDelayed(Date.now() + decision.retryAfterMs, job.token);
             return { delayed: true, reason: 'policy_rate_limit', retryAfterMs: decision.retryAfterMs };
         }
@@ -1464,7 +1629,7 @@ async function processMessageJob(job) {
         await finalizeAiMessage(aiMessage, shopId, conversationId, { delivered: false, heldReason: 'draft_mode' });
         return {
             success: true, conversationId, confidence,
-            sent: false, reason: decision.reason, decisionId: decision.decisionId,
+            sent: false, reason: denialReason, decisionId: decision?.decisionId,
         };
     }
 
@@ -1498,6 +1663,11 @@ async function processMessageJob(job) {
             },
             decision,
         });
+        if (!providerSendSucceeded(sendResult)) {
+            const error = new Error('Provider did not confirm the outbound send');
+            error.code = 'PROVIDER_NO_SEND';
+            throw error;
+        }
     } catch (err) {
         // Check for rate limit signal from the provider
         if (err.retryAfterMs) {
@@ -1636,6 +1806,7 @@ module.exports = {
         signalBillingPause,
         signalUsageExhausted,
         resolveAllowanceDecision,
+        resolveChannelForJob,
         createRecoveryControl,
         resolveStaticConfigAvailability,
     },

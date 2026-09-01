@@ -1,5 +1,29 @@
 # Execution History
-**Last Updated:** 2026-05-22 (8 Deferred Breaking Schema-Drift Items — migrations 008-011)
+**Last Updated:** 2026-09-01 (Phase 1 exact Page and tenant routing)
+
+## 2026-09-01 - Meta remediation Phase 1: exact Page and tenant routing
+
+**Task:** Replace arbitrary Meta channel selection with exact or unique-only
+routing across webhook, worker, conversation, profile, and transactional send
+paths. Preserve the nullable Conversation FK and fail closed on ambiguous or
+cross-tenant channel state.
+
+**Outcome:** Complete in `fix/meta-p1-remediation`. Connected channel lookup is
+unique-or-null; duplicate connected Page claims are unresolved; explicit channel
+lookups validate tenant, platform, status, and Page asset; webhook jobs retain
+`metaAssetId`; and known-Page ingestion never adopts an unpinned legacy thread.
+
+**Tests:** Phase 1 focused Jest set passed (11 suites, 151 tests). Broad relevant
+Jest set passed (22 suites, 289 tests). Backend build and touched-source syntax
+checks passed. The standalone customer service suite remains blocked by the
+host Node 25 / sqlite3 native binding mismatch; disposable PostgreSQL/Redis
+integration is blocked because the Docker Linux engine is unavailable.
+
+**Schema:** No migration was added and the existing Conversation foreign key was
+preserved. Only the existing migration's stale routing comment was updated.
+
+**Meta Risk:** Exact Page and tenant boundaries now fail closed. New routing
+logs contain no PSIDs, message bodies, access tokens, or other secrets.
 
 ## 2026-05-22 — Full Entity-vs-Squash Schema Drift Audit (migrations 003-007)
 

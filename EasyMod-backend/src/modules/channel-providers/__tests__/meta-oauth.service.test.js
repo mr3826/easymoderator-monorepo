@@ -104,7 +104,13 @@ describe('OAuth callback null-state guards', () => {
     });
 
     test('handleCallback returns an opaque callback token and stores the Meta user token server-side', async () => {
-        const pages = [{ id: 'PAGE_42', name: 'My Page' }];
+        const pages = [{
+            id: 'PAGE_42',
+            name: 'My Page',
+            tasks: ['MESSAGING', 'MANAGE'],
+            connectable: true,
+            reason: null,
+        }];
         mockListManagedAssets.mockResolvedValueOnce(pages);
 
         const result = await oauthService.handleCallback('auth-code', 'state-ok', 'user-xyz', 'shop-abc');
@@ -155,7 +161,13 @@ describe('connectPage() webhook verify wiring', () => {
         stateStore.get.mockResolvedValue({
             userToken: 'stored-user-token',
             platform: 'facebook',
-            pages: [{ id: ASSET_ID, name: 'Stored Page Name' }],
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: ['MESSAGING', 'MANAGE'],
+                connectable: true,
+                reason: null,
+            }],
             metaIdentity: {
                 appScopedUserId: 'app-user-1',
                 pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
@@ -163,6 +175,66 @@ describe('connectPage() webhook verify wiring', () => {
             userId: USER_ID,
             shopId: SHOP_ID,
         });
+    });
+
+    test.each([
+        ['missing', undefined],
+        ['non-array', 'MESSAGING'],
+        ['non-string entry', ['MESSAGING', 7]],
+        ['malformed entry', ['MESSAGING', 'MANAGE!']],
+        ['missing subscription task', ['MESSAGING']],
+    ])('rejects a %s Page before Meta token exchange or channel upsert', async (_label, tasks) => {
+        const page = { id: ASSET_ID, name: 'Stored Page Name', tasks };
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [page],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+        });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({
+            status: 403,
+            code: 'META_PAGE_TASKS_REQUIRED',
+        });
+
+        expect(mockGetAssetAccessToken).not.toHaveBeenCalled();
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
+    test('re-derives eligibility from normalized tasks held in the callback payload', async () => {
+        stateStore.get.mockResolvedValueOnce({
+            userToken: 'stored-user-token',
+            platform: 'facebook',
+            pages: [{
+                id: ASSET_ID,
+                name: 'Stored Page Name',
+                tasks: [' messaging ', ' create   content '],
+                connectable: false,
+                reason: 'tampered-client-value',
+            }],
+            metaIdentity: {
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: ASSET_ID, pageScopedUserId: 'psid-1' }],
+            },
+            userId: USER_ID,
+            shopId: SHOP_ID,
+        });
+        mockVerifyWebhookSubscription.mockResolvedValue({ ok: true, fields: ['messages'] });
+
+        await oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook');
+
+        expect(mockGetAssetAccessToken).toHaveBeenCalledWith({
+            assetId: ASSET_ID,
+            userToken: 'stored-user-token',
+        });
+        expect(mockUpsertFromOAuth).toHaveBeenCalled();
     });
 
     test('calls updateStatus(ERROR, webhook_subscription_unverified) when verify returns ok:false', async () => {

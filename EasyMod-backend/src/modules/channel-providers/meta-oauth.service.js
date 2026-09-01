@@ -22,6 +22,11 @@ const { createLogger } = require('../../utils/structured-logger');
 const { serializeChannel } = require('./meta-channel.serializer');
 const stateStore = require('./oauth-state.store');
 const config = require('../../config/config');
+const { AppError } = require('../../utils/AppError');
+const {
+    META_PAGE_TASKS_REQUIRED,
+    evaluatePageEligibility,
+} = require('./meta-page-eligibility');
 
 const logger = createLogger('MetaOAuthService');
 
@@ -144,6 +149,15 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
     const authorizedPage = findAuthorizedPage(callbackPayload.pages, assetId);
     if (!authorizedPage) {
         throw Object.assign(new Error('This Facebook Page was not selected in the Meta authorization step. Please reconnect and select it in Facebook first.'), { status: 403 });
+    }
+
+    const eligibility = evaluatePageEligibility(authorizedPage.tasks);
+    if (!eligibility.connectable) {
+        throw new AppError(
+            'This Facebook Page does not have the required Messenger and Page management tasks.',
+            403,
+            META_PAGE_TASKS_REQUIRED,
+        );
     }
 
     const provider = getProvider('facebook');

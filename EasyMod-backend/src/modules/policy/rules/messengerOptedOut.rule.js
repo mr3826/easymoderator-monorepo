@@ -10,22 +10,36 @@
 
 'use strict';
 
+const META_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
+
 module.exports = {
     name: 'messengerOptedOut',
 
-    async evaluate(_message, ctx) {
+    async evaluate(_message, ctx = {}) {
         const { customer, platform } = ctx;
-        if (!customer) return { allow: true, reason: 'NO_CUSTOMER_CONTEXT' };
-
-        // Check per-channel consent (Phase 5 single source of truth)
         const pf = platform || _message?.platform;
-        if (pf) {
-            const consent = customer.messaging_consent?.[pf];
-            if (consent?.opted_out_at) {
-                return { allow: false, reason: 'OPTED_OUT' };
-            }
+        const isMeta = META_PLATFORMS.has(pf);
+
+        if (!pf) {
+            return { allow: false, reason: 'CONSENT_CONTEXT_UNAVAILABLE', retryable: true };
         }
 
+        if (!customer) {
+            return isMeta
+                ? { allow: false, reason: 'CUSTOMER_CONTEXT_UNAVAILABLE', retryable: true }
+                : { allow: true, reason: 'NO_CUSTOMER_CONTEXT' };
+        }
+
+        // Check per-channel consent (Phase 5 single source of truth).
+        if (!isMeta) return { allow: true, reason: 'OK' };
+
+        const consentPlatform = pf === 'messenger' ? 'facebook' : pf;
+        const consent = customer.messaging_consent?.[consentPlatform];
+        if (!consent || typeof consent !== 'object' || Array.isArray(consent)) {
+            return { allow: false, reason: 'CONSENT_STATE_UNAVAILABLE', retryable: true };
+        }
+        if (consent.opted_out_at) return { allow: false, reason: 'OPTED_OUT' };
+        if (consent.opted_in !== true) return { allow: false, reason: 'NO_CONSENT' };
         return { allow: true, reason: 'OK' };
     },
 };

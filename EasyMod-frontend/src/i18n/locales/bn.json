@@ -1321,7 +1321,7 @@
       "addAnother": "আরেকটি Facebook Page যোগ করুন",
       "loginPopup": "পপ-আপে Meta-তে লগইন করুন...",
       "selectPagesHint": "যে Page-গুলো সংযুক্ত করতে চান, সেগুলো নির্বাচন করুন (এক বা একাধিক)",
-      "pageTaskRequired": "এই Page-এ Messaging access প্রয়োজন",
+      "pageTaskRequired": "এই Page-এ Messaging ও Page management access প্রয়োজন",
       "connectCount": "সংযুক্ত করুন ({{count}})"
     },
     "test": {
@@ -2291,6 +2291,7 @@
       "accessRevoked": "পেজ অ্যাক্সেস বাতিল হয়েছে। পুনরায় সংযুক্ত করুন।",
       "channelDisconnected": "চ্যানেল বিচ্ছিন্ন হয়েছে। Reconnect বাটন ব্যবহার করুন।",
       "webhookFailed": "Webhook যাচাই ব্যর্থ হয়েছে। Meta App Dashboard-এ সেটিংস চেক করুন।",
+      "pageTasksRequired": "এই Page Messenger-এর জন্য eligible নয়। Messaging ও Page management access দিয়ে আবার অনুমোদন করুন।",
       "fallback": "কিছু একটা ভুল হয়েছে। পুনরায় সংযুক্ত করুন অথবা Support-এ যোগাযোগ করুন।"
     }
   },

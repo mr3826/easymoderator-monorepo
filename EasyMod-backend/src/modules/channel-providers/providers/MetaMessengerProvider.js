@@ -23,6 +23,7 @@ const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
 const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
+const { evaluatePageEligibility } = require('../meta-page-eligibility');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -39,10 +40,13 @@ const WEBHOOK_FIELDS = [
     'messages'
 ];
 
-const GRANULAR_PAGE_SCOPES = [
-    'pages_messaging',
-    'pages_manage_metadata',
-];
+const PAGE_FIELDS =
+    'id,name,category,access_token,' +
+    'picture{data{url}},' +
+    'tasks';
+const PAGE_HYDRATION_FIELDS =
+    'id,name,category,picture{data{url}},tasks,access_token';
+const PAGE_HYDRATION_CONCURRENCY = 5;
 
 // Meta accepts appsecret_proof on every Graph call and *requires* it once
 // "Require App Secret Proof for Server API calls" is switched on in the App
@@ -56,15 +60,45 @@ function appsecretProof(token) {
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
+function requestSecrets(err) {
+    const secretParamNames = new Set([
+        'access_token',
+        'input_token',
+        'appsecret_proof',
+        'client_secret',
+        'fb_exchange_token',
+    ]);
+    const secrets = Object.entries(err?.config?.params || {})
+        .filter(([name, value]) => secretParamNames.has(name) && typeof value === 'string' && value.length > 0)
+        .map(([, value]) => value);
+    try {
+        const url = new URL(err?.config?.url || '');
+        for (const name of secretParamNames) {
+            const value = url.searchParams.get(name);
+            if (value) secrets.push(value);
+        }
+    } catch (_) { /* URL is optional on mocked/non-Axios errors. */ }
+    return [...new Set(secrets.flatMap((secret) => [secret, encodeURIComponent(secret)]))];
+}
+
+function redactRequestSecrets(value, err) {
+    let safe = String(value || 'Unknown Meta API error');
+    for (const secret of requestSecrets(err)) {
+        safe = safe.split(secret).join('[REDACTED]');
+    }
+    return safe;
+}
+
 function metaError(err, context) {
     const msg = err.response?.data?.error?.message || err.message;
     const meta = err.response?.data?.error || {};
+    const safeMsg = redactRequestSecrets(msg, err);
     logger.error(`${context} failed`, {
         metaCode: meta.code,
         metaSubcode: meta.error_subcode,
-        metaMsg: msg,
+        metaMsg: safeMsg,
     });
-    const appError = new AppError(`${context}: ${msg}`, err.response?.status || 500);
+    const appError = new AppError(`${context}: ${safeMsg}`, err.response?.status || 500);
     appError.code = 'META_API_ERROR';
     appError.details = {
         metaCode: meta.code || null,
@@ -74,24 +108,101 @@ function metaError(err, context) {
     return appError;
 }
 
-function intersectSets(sets) {
-    if (!sets.length) return null;
-    const [first, ...rest] = sets;
-    return new Set([...first].filter((id) => rest.every((set) => set.has(id))));
-}
-
 function selectedPageIdsFromDebugToken(debugData) {
     const granularScopes = Array.isArray(debugData?.granular_scopes)
         ? debugData.granular_scopes
         : [];
-    const targetedScopeSets = GRANULAR_PAGE_SCOPES
-        .map((scope) => granularScopes.find((entry) => entry?.scope === scope))
-        .map((entry) => Array.isArray(entry?.target_ids)
-            ? new Set(entry.target_ids.map(String))
-            : null)
-        .filter(Boolean);
+    const messagingScope = granularScopes.find((entry) => entry?.scope === 'pages_messaging');
+    if (!Array.isArray(messagingScope?.target_ids)) return new Set();
 
-    return intersectSets(targetedScopeSets);
+    return new Set(
+        messagingScope.target_ids
+            .filter((id) => id !== null && id !== undefined && String(id).trim())
+            .map(String),
+    );
+}
+
+function hasNonEmptyAccessToken(page) {
+    return typeof page?.access_token === 'string' && page.access_token.trim().length > 0;
+}
+
+/**
+ * Follow Graph cursors without reusing Meta's `paging.next` URL. Meta embeds
+ * the user token in that URL, and using it would also drop the signed params
+ * required when App Secret Proof is enabled.
+ */
+async function paginateGraphCollection(url, params) {
+    const items = [];
+    let after = params?.after ?? null;
+    const seenCursors = new Set();
+
+    while (true) {
+        const response = await axios.get(url, {
+            params: after !== null && after !== undefined && String(after).length > 0
+                ? { ...params, after }
+                : { ...params },
+        });
+        const batch = Array.isArray(response.data?.data) ? response.data.data : [];
+        items.push(...batch);
+
+        const nextAfter = response.data?.paging?.cursors?.after;
+        if (nextAfter === null || nextAfter === undefined || String(nextAfter).length === 0) break;
+
+        const cursor = String(nextAfter);
+        if (cursor === String(after) || seenCursors.has(cursor)) break;
+        seenCursors.add(cursor);
+        after = nextAfter;
+    }
+
+    return items;
+}
+
+async function mapWithConcurrency(values, concurrency, mapper) {
+    const results = new Array(values.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(concurrency, values.length);
+
+    const worker = async () => {
+        while (true) {
+            const index = nextIndex++;
+            if (index >= values.length) return;
+            results[index] = await mapper(values[index], index);
+        }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+}
+
+async function hydratePageById(pageId, userToken) {
+    try {
+        const response = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(pageId)}`, {
+            params: {
+                fields: PAGE_HYDRATION_FIELDS,
+                access_token: userToken,
+                appsecret_proof: appsecretProof(userToken),
+            },
+        });
+        const page = response.data;
+        if (String(page?.id) !== String(pageId)) {
+            logger.warn('metaPageHydrationRejected', { pageId, reason: 'ID_MISMATCH' });
+            return { page: null, status: 'rejected' };
+        }
+        if (!hasNonEmptyAccessToken(page)) {
+            logger.warn('metaPageHydrationRejected', { pageId, reason: 'ACCESS_TOKEN_MISSING' });
+            return { page: null, status: 'rejected' };
+        }
+        return { page, status: 'succeeded' };
+    } catch (err) {
+        // Never serialize the Graph error or request config: either can contain
+        // the user token or its appsecret_proof.
+        logger.warn('metaPageHydrationFailed', {
+            pageId,
+            metaCode: err.response?.data?.error?.code || null,
+            metaSubcode: err.response?.data?.error?.error_subcode || null,
+        });
+        return { page: null, status: 'failed' };
+    }
 }
 
 class MetaMessengerProvider extends ChannelProvider {
@@ -99,7 +210,10 @@ class MetaMessengerProvider extends ChannelProvider {
     get platform() { return 'facebook'; }
 
     async buildAuthUrl({ state, scopes, redirectUri }) {
-        const finalScopes = (scopes && scopes.length ? scopes : DEFAULT_SCOPES).join(',');
+        // OAuth scope selection is provider-owned for the Messenger-only launch.
+        // Keep the base provider contract's `scopes` argument, but never let a
+        // caller broaden or narrow this exact consent request.
+        const finalScopes = DEFAULT_SCOPES.join(',');
         const params = new URLSearchParams({
             client_id: config.metaAppId,
             redirect_uri: redirectUri || config.metaOAuthRedirectUri,
@@ -152,12 +266,12 @@ class MetaMessengerProvider extends ChannelProvider {
                 params: {
                     input_token: userToken,
                     access_token: appAccessToken,
+                    appsecret_proof: appsecretProof(appAccessToken),
                 },
             });
             const selectedPageIds = selectedPageIdsFromDebugToken(resp.data?.data || {});
-            if (!selectedPageIds) {
+            if (!selectedPageIds.size) {
                 logger.warn('debugTokenGranularScopes missing Page target IDs; returning no connectable Pages');
-                return new Set();
             }
             return selectedPageIds;
         } catch (err) {
@@ -166,48 +280,86 @@ class MetaMessengerProvider extends ChannelProvider {
     }
 
     async listManagedAssets({ userToken }) {
-        const PAGE_FIELDS =
-            'id,name,category,access_token,' +
-            'picture{data{url}},' +
-            'tasks';
+        // The pages granted for Messenger are the authorization boundary. This
+        // must run even when /me/accounts is empty so a Business Portfolio Page
+        // can be recovered through its exact granted target ID.
+        const selectedPageIds = await this.getSelectedPageIds({ userToken });
 
         // /me/accounts is the only discovery edge used in the Messenger-only
         // launch. Do not query Business Portfolio edges here: that requires the
         // removed business_management permission and expands App Review scope.
         const meAccountsRaw = [];
         try {
-            let url = `${GRAPH_BASE}/me/accounts`;
-            let params = {
+            meAccountsRaw.push(...await paginateGraphCollection(`${GRAPH_BASE}/me/accounts`, {
                 fields: PAGE_FIELDS,
                 limit: 100,
                 access_token: userToken,
                 appsecret_proof: appsecretProof(userToken),
-            };
-            while (url) {
-                const resp = await axios.get(url, { params });
-                const batch = resp.data?.data || [];
-                meAccountsRaw.push(...batch);
-                const next = resp.data?.paging?.next;
-                if (next && batch.length > 0) { url = next; params = {}; }
-                else { url = null; }
-            }
+            }));
         } catch (err) {
             throw metaError(err, 'listManagedAssets:me/accounts');
         }
 
-        const selectedPageIds = meAccountsRaw.length
-            ? await this.getSelectedPageIds({ userToken })
-            : null;
-        const visiblePages = selectedPageIds
-            ? meAccountsRaw.filter((p) => selectedPageIds.has(String(p.id)))
-            : meAccountsRaw;
+        const meAccountsById = new Map();
+        for (const page of meAccountsRaw) {
+            const pageId = page?.id === null || page?.id === undefined ? '' : String(page.id);
+            if (!pageId) continue;
+            const current = meAccountsById.get(pageId);
+            // Prefer a duplicate row that actually contains a Page token.
+            if (!current || (!hasNonEmptyAccessToken(current) && hasNonEmptyAccessToken(page))) {
+                meAccountsById.set(pageId, page);
+            }
+        }
 
-        const result = visiblePages.map(p => ({
-            id: p.id,
-            name: p.name,
-            category: p.category || null,
-            pictureUrl: p.picture?.data?.url || p.picture?.url || null,
-        }));
+        const pagesById = new Map();
+        const targetsNeedingHydration = [...selectedPageIds]
+            .filter((pageId) => !hasNonEmptyAccessToken(meAccountsById.get(pageId)));
+        for (const [pageId, page] of meAccountsById) {
+            if (selectedPageIds.has(pageId) && hasNonEmptyAccessToken(page)) {
+                pagesById.set(pageId, { ...page, source: 'ME_ACCOUNTS' });
+            }
+        }
+
+        const hydrationResults = await mapWithConcurrency(
+            targetsNeedingHydration,
+            PAGE_HYDRATION_CONCURRENCY,
+            (pageId) => hydratePageById(pageId, userToken),
+        );
+        const hydrationStats = {
+            attempted: targetsNeedingHydration.length,
+            succeeded: 0,
+            failed: 0,
+            rejected: 0,
+        };
+        hydrationResults.forEach((hydration, index) => {
+            if (hydration.status === 'succeeded') {
+                hydrationStats.succeeded += 1;
+                pagesById.set(targetsNeedingHydration[index], {
+                    ...hydration.page,
+                    source: 'GRANULAR_TARGET',
+                });
+            } else if (hydration.status === 'failed') {
+                hydrationStats.failed += 1;
+            } else {
+                hydrationStats.rejected += 1;
+            }
+        });
+
+        const visiblePages = [...pagesById.values()]
+            .filter((page) => selectedPageIds.has(String(page.id)) && hasNonEmptyAccessToken(page));
+
+        const result = visiblePages.map((p) => {
+            const eligibility = evaluatePageEligibility(p.tasks);
+            return {
+                id: String(p.id),
+                name: p.name,
+                category: p.category || null,
+                pictureUrl: p.picture?.data?.url || p.picture?.url || null,
+                tasks: eligibility.tasks,
+                connectable: eligibility.connectable,
+                reason: eligibility.reason,
+            };
+        });
 
         logger.info('metaAssetsListed', {
             source_me_accounts: meAccountsRaw.length,
@@ -215,8 +367,13 @@ class MetaMessengerProvider extends ChannelProvider {
             source_client_pages: 0,
             portfolioAttempted: false,
             portfolioError: null,
-            selected_target_ids: selectedPageIds ? selectedPageIds.size : null,
-            filtered_unselected_pages: selectedPageIds ? meAccountsRaw.length - visiblePages.length : 0,
+            source_granular_target: hydrationStats.succeeded,
+            selected_target_ids: selectedPageIds.size,
+            filtered_unselected_pages: meAccountsRaw.filter((page) => !selectedPageIds.has(String(page?.id))).length,
+            hydration_attempted: hydrationStats.attempted,
+            hydration_succeeded: hydrationStats.succeeded,
+            hydration_failed: hydrationStats.failed,
+            hydration_rejected: hydrationStats.rejected,
             deduped: result.length,
         });
 
@@ -248,31 +405,19 @@ class MetaMessengerProvider extends ChannelProvider {
 
         const pageScopedIdentities = [];
         try {
-            let url = `${GRAPH_BASE}/${appScopedUserId}/ids_for_pages`;
-            let params = {
+            const identities = await paginateGraphCollection(`${GRAPH_BASE}/${appScopedUserId}/ids_for_pages`, {
                 fields: 'id,page',
                 limit: 100,
                 access_token: userToken,
                 appsecret_proof: appsecretProof(userToken),
-            };
-            while (url) {
-                const response = await axios.get(url, { params });
-                const batch = Array.isArray(response.data?.data) ? response.data.data : [];
-                for (const item of batch) {
-                    const pageId = item?.page?.id || item?.page_id || item?.page?.data?.id;
-                    if (pageId && item?.id) {
-                        pageScopedIdentities.push({
-                            pageId: String(pageId),
-                            pageScopedUserId: String(item.id),
-                        });
-                    }
-                }
-                const next = response.data?.paging?.next;
-                if (next && batch.length > 0) {
-                    url = next;
-                    params = {};
-                } else {
-                    url = null;
+            });
+            for (const item of identities) {
+                const pageId = item?.page?.id || item?.page_id || item?.page?.data?.id;
+                if (pageId && item?.id) {
+                    pageScopedIdentities.push({
+                        pageId: String(pageId),
+                        pageScopedUserId: String(item.id),
+                    });
                 }
             }
         } catch (err) {
@@ -289,7 +434,7 @@ class MetaMessengerProvider extends ChannelProvider {
 
     async getAssetAccessToken({ assetId, userToken }) {
         try {
-            const resp = await axios.get(`${GRAPH_BASE}/${assetId}`, {
+            const resp = await axios.get(`${GRAPH_BASE}/${encodeURIComponent(assetId)}`, {
                 params: {
                     fields: 'access_token',
                     access_token: userToken,
@@ -367,7 +512,11 @@ class MetaMessengerProvider extends ChannelProvider {
             );
             return { ok: true };
         } catch (err) {
-            logger.warn('unsubscribeWebhook failed', { error: err.message, channelId: channel.id });
+            logger.warn('unsubscribeWebhook failed', {
+                channelId: channel.id,
+                metaCode: err.response?.data?.error?.code || null,
+                metaSubcode: err.response?.data?.error?.error_subcode || null,
+            });
             return { ok: false, error: metaError(err, 'unsubscribeWebhook') };
         }
     }
@@ -388,7 +537,12 @@ class MetaMessengerProvider extends ChannelProvider {
                 fields
             };
         } catch (err) {
-            logger.warn('verifyWebhookSubscription failed', { error: err.message, channelId: channel.id, targetId });
+            logger.warn('verifyWebhookSubscription failed', {
+                channelId: channel.id,
+                targetId,
+                metaCode: err.response?.data?.error?.code || null,
+                metaSubcode: err.response?.data?.error?.error_subcode || null,
+            });
             return { ok: false, fields: [] };
         }
     }
@@ -551,8 +705,8 @@ class MetaMessengerProvider extends ChannelProvider {
         if (!token) return { ok: false, latencyMs: 0 };
         const start = Date.now();
         try {
-            await axios.get(`${GRAPH_BASE}/${channel.meta_asset_id}`, {
-                params: { fields: 'id', access_token: token }
+            await axios.get(`${GRAPH_BASE}/${encodeURIComponent(channel.meta_asset_id)}`, {
+                params: { fields: 'id', access_token: token, appsecret_proof: appsecretProof(token) }
             });
             return { ok: true, latencyMs: Date.now() - start };
         } catch (err) {

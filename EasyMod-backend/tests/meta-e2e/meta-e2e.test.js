@@ -59,21 +59,21 @@ describe('the webhook boundary itself', () => {
         const response = await harness.postWebhook(payload, { signature: 'sha256=deadbeef' });
 
         expect(response.status).toBe(403);
-        // Give the dispatcher the same grace the signed case gets, so "nothing
-        // was enqueued" cannot pass merely by being checked too early.
+        // The invalid signature is rejected before the awaited queue handoff, so
+        // no durable job may exist after the response.
         expect(await harness.waitForJobs(1, { timeoutMs: 1000 })).toHaveLength(0);
         expect(transport.capturedSends()).toHaveLength(0);
     });
 
-    test('a signed payload enqueues a real BullMQ job carrying the routed channel', async () => {
+    test('a signed payload awaits a real BullMQ handoff with exact receipt and Page binding', async () => {
         transport.setCandidate('EM E2E Black Panjabi — ৳1847.');
         const payload = harness.messagePayload({
             pageId: IDS.pageA, psid: CUSTOMER_PSID, text: 'black panjabi ache?',
         });
 
         const response = await harness.postWebhook(payload);
-        // Meta is acknowledged before the job is dispatched, on purpose: the ack
-        // must not wait on Redis. The job lands a tick later.
+        // The route response is returned only after Queue.add resolves and the
+        // durable receipt records ownership by the queue.
         const jobs = await harness.waitForJobs(1);
 
         expect(response.status).toBe(200);
@@ -81,13 +81,22 @@ describe('the webhook boundary itself', () => {
         expect(jobs[0].data).toMatchObject({
             shopId: IDS.shopA,
             metaChannelId: IDS.channelA,
+            metaAssetId: IDS.pageA,
             platform: 'facebook',
             recipientId: CUSTOMER_PSID,
+        });
+        const receipt = await harness.receiptForEvent(payload.entry[0].messaging[0].message.mid);
+        expect(receipt).toMatchObject({
+            page_id: IDS.pageA,
+            meta_channel_id: IDS.channelA,
+            status: 'QUEUED',
+            payload_encrypted: null,
         });
 
         // And the worker really consumes it.
         const [result] = await harness.drainQueue();
         expect(result.sent).toBe(true);
+        expect(await harness.receiptsWithStatus('DEAD_LETTERED')).toHaveLength(0);
     });
 
     test('a redelivered message id is deduplicated, not answered twice', async () => {
@@ -100,6 +109,9 @@ describe('the webhook boundary itself', () => {
 
         expect(first.sends.length).toBeGreaterThan(0);
         expect(second.sends).toHaveLength(0);
+        expect(second.jobResults).toHaveLength(0);
+        expect(second.receipt.id).toBe(first.receipt.id);
+        expect(await harness.receiptsWithStatus('QUEUED')).toHaveLength(1);
     });
 });
 

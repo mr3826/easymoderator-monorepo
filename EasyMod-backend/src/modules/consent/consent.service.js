@@ -47,6 +47,29 @@ const STOP_KEYWORDS = [
     'স্টপ',          // BN transliteration
 ];
 
+const META_CONSENT_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
+const CONSENT_ERROR_CODES = Object.freeze({
+    CONTEXT_UNAVAILABLE: 'CONSENT_CONTEXT_UNAVAILABLE',
+    CUSTOMER_CONTEXT_UNAVAILABLE: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+    STATE_UNAVAILABLE: 'CONSENT_STATE_UNAVAILABLE',
+});
+
+function normalizePlatform(platform) {
+    return platform === 'messenger' ? 'facebook' : platform;
+}
+
+function makeConsentError(code, message) {
+    const error = new Error(message);
+    error.name = 'ConsentStateError';
+    error.code = code;
+    error.retryable = true;
+    return error;
+}
+
+function hasRequiredContextValue(value) {
+    return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
 function isStopKeyword(text) {
     if (!text || typeof text !== 'string') return false;
     const normalized = text.trim().toLowerCase();
@@ -79,14 +102,61 @@ class ConsentService {
      */
     hasConsent({ customer, platform }) {
         if (!customer) return false;
-        const channelConsent = customer.messaging_consent?.[platform];
-        if (channelConsent?.opted_out_at) return false;
-        return true;
+        const pf = normalizePlatform(platform);
+
+        // Consent is required for Meta customer messaging. Legacy non-Meta
+        // callers retain their previous behavior because they do not use the
+        // Meta consent JSON shape.
+        if (!META_CONSENT_PLATFORMS.has(pf)) return true;
+
+        const channelConsent = customer.messaging_consent?.[pf];
+        return channelConsent?.opted_in === true && !channelConsent?.opted_out_at;
     }
 
     getLastInboundAt({ customer, platform }) {
-        const v = customer?.messaging_consent?.[platform]?.last_inbound_at;
+        const pf = normalizePlatform(platform);
+        const v = customer?.messaging_consent?.[pf]?.last_inbound_at;
         return v ? new Date(v) : null;
+    }
+
+    async _findRequiredCustomer({ shopId, channelId, customerId, platform }) {
+        if (![shopId, channelId, customerId, platform].every(hasRequiredContextValue)) {
+            throw makeConsentError(
+                CONSENT_ERROR_CODES.CONTEXT_UNAVAILABLE,
+                'Consent bookkeeping context is required',
+            );
+        }
+
+        let customer;
+        try {
+            customer = await Customer.findByPk(customerId);
+        } catch (_) {
+            throw makeConsentError(
+                CONSENT_ERROR_CODES.STATE_UNAVAILABLE,
+                'Consent state is temporarily unavailable',
+            );
+        }
+
+        if (!customer) {
+            logger.warn('ConsentService: customer not found', { customerId, platform });
+            throw makeConsentError(
+                CONSENT_ERROR_CODES.CUSTOMER_CONTEXT_UNAVAILABLE,
+                'Consent customer context is unavailable',
+            );
+        }
+
+        return customer;
+    }
+
+    async _saveCustomer(customer) {
+        try {
+            await customer.save();
+        } catch (_) {
+            throw makeConsentError(
+                CONSENT_ERROR_CODES.STATE_UNAVAILABLE,
+                'Consent state could not be persisted',
+            );
+        }
     }
 
     async _writeAuditEvent({
@@ -130,29 +200,24 @@ class ConsentService {
      * the admin must perform if needed.
      */
     async recordOptIn({ shopId, channelId, customerId, platform, source = 'webhook_messaging_optins', metadata = null }) {
-        if (!customerId || !platform) return null;
+        const pf = normalizePlatform(platform);
+        const customer = await this._findRequiredCustomer({ shopId, channelId, customerId, platform: pf });
 
-        const customer = await Customer.findByPk(customerId);
-        if (!customer) {
-            logger.warn('ConsentService.recordOptIn: customer not found', { customerId, platform });
-            return null;
-        }
-
-        const next = ensurePlatformShape(customer.messaging_consent, platform, {
+        const next = ensurePlatformShape(customer.messaging_consent, pf, {
             opted_in: true,
             // re-opt-in implies the prior opt-out is lifted only when source = admin
-            opted_out_at: source === 'admin' ? null : (customer.messaging_consent?.[platform]?.opted_out_at ?? null),
+            opted_out_at: source === 'admin' ? null : (customer.messaging_consent?.[pf]?.opted_out_at ?? null),
         });
         customer.messaging_consent = next;
         customer.changed('messaging_consent', true);
-        await customer.save();
+        await this._saveCustomer(customer);
 
         const eventName = source === 'webhook_messaging_optins' ? 'OPT_IN_EXPLICIT' : 'OPT_IN_IMPLICIT';
         await this._writeAuditEvent({
             shopId, channelId, customerId, event: eventName, source, metadata,
         });
 
-        logger.info('ConsentService.recordOptIn', { shopId, customerId, platform, source });
+        logger.info('ConsentService.recordOptIn', { shopId, customerId, platform: pf, source });
         return customer;
     }
 
@@ -161,28 +226,23 @@ class ConsentService {
      * first opt-out timestamp is preserved.
      */
     async recordOptOut({ shopId, channelId, customerId, platform, source = 'keyword_stop', metadata = null }) {
-        if (!customerId || !platform) return null;
+        const pf = normalizePlatform(platform);
+        const customer = await this._findRequiredCustomer({ shopId, channelId, customerId, platform: pf });
 
-        const customer = await Customer.findByPk(customerId);
-        if (!customer) {
-            logger.warn('ConsentService.recordOptOut: customer not found', { customerId, platform });
-            return null;
-        }
-
-        const prev = customer.messaging_consent?.[platform] || {};
-        const next = ensurePlatformShape(customer.messaging_consent, platform, {
+        const prev = customer.messaging_consent?.[pf] || {};
+        const next = ensurePlatformShape(customer.messaging_consent, pf, {
             opted_in: false,
             opted_out_at: prev.opted_out_at || new Date().toISOString(),
         });
         customer.messaging_consent = next;
         customer.changed('messaging_consent', true);
-        await customer.save();
+        await this._saveCustomer(customer);
 
         await this._writeAuditEvent({
             shopId, channelId, customerId, event: 'OPT_OUT', source, metadata,
         });
 
-        logger.info('ConsentService.recordOptOut', { shopId, customerId, platform, source });
+        logger.info('ConsentService.recordOptOut', { shopId, customerId, platform: pf, source });
         return customer;
     }
 
@@ -191,13 +251,11 @@ class ConsentService {
      * Called from the inbound message webhook on EVERY message — fast path.
      */
     async recordInbound({ shopId, channelId, customerId, platform, metadata = null }) {
-        if (!customerId || !platform) return null;
+        const pf = normalizePlatform(platform);
+        const customer = await this._findRequiredCustomer({ shopId, channelId, customerId, platform: pf });
 
-        const customer = await Customer.findByPk(customerId);
-        if (!customer) return null;
-
-        const prev = customer.messaging_consent?.[platform] || {};
-        const next = ensurePlatformShape(customer.messaging_consent, platform, {
+        const prev = customer.messaging_consent?.[pf] || {};
+        const next = ensurePlatformShape(customer.messaging_consent, pf, {
             // An inbound message after an opt-out does NOT re-grant consent —
             // the customer must explicitly opt back in.
             opted_in: prev.opted_in === true || !prev.opted_out_at,
@@ -205,7 +263,7 @@ class ConsentService {
         });
         customer.messaging_consent = next;
         customer.changed('messaging_consent', true);
-        await customer.save();
+        await this._saveCustomer(customer);
 
         // No audit row for every inbound (would balloon the table); only
         // emit one when this is the first-ever opt-in.
@@ -220,7 +278,7 @@ class ConsentService {
                         event: 'first_inbound_message',
                         shopId,
                         onceKey: shopId,
-                        metadata: { channel_id: channelId, customer_id: customerId, platform },
+                        metadata: { channel_id: channelId, customer_id: customerId, platform: pf },
                     })
                     .catch(() => {});
             } catch (_) { /* funnel logging must never block inbound */ }
@@ -300,3 +358,4 @@ class ConsentService {
 module.exports = new ConsentService();
 module.exports.STOP_KEYWORDS = STOP_KEYWORDS;
 module.exports.isStopKeyword = isStopKeyword;
+module.exports.CONSENT_ERROR_CODES = CONSENT_ERROR_CODES;

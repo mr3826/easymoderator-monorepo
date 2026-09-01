@@ -65,12 +65,13 @@ jest.mock('src/utils/database/database-setup', () => ({
     },
 }));
 
-jest.mock('src/modules/consent/consent.service', () => ({
+const mockConsentService = {
     isStopKeyword: jest.fn(() => false),
-    recordInbound: jest.fn().mockResolvedValue(undefined),
-    recordOptOut: jest.fn().mockResolvedValue(undefined),
-    recordOptIn: jest.fn().mockResolvedValue(undefined),
-}));
+    recordInbound: jest.fn().mockResolvedValue({ id: 'cust-1' }),
+    recordOptOut: jest.fn().mockResolvedValue({ id: 'cust-1' }),
+    recordOptIn: jest.fn().mockResolvedValue({ id: 'cust-1' }),
+};
+jest.mock('src/modules/consent/consent.service', () => mockConsentService);
 jest.mock('src/modules/customer/customer-profile.service', () => ({
     enrichCustomerNameFromMeta: jest.fn().mockResolvedValue(true),
     isPlaceholderName: jest.fn(() => false),
@@ -203,6 +204,13 @@ const post = (payload) => {
         .send(body);
 };
 
+const postRaw = (body, signature = 'sha256=' + crypto.createHmac('sha256', APP_SECRET).update(body).digest('hex')) =>
+    request(app)
+        .post('/webhooks/meta')
+        .set('Content-Type', 'application/octet-stream')
+        .set('x-hub-signature-256', signature)
+        .send(body);
+
 const connectedChannel = () => ({
     id: 'mc-durability-1',
     shop_id: SHOP_ID,
@@ -222,6 +230,10 @@ beforeEach(() => {
     failCreate = null;
 
     mockMetaChannelService.findByMetaAssetId.mockResolvedValue(connectedChannel());
+    mockConsentService.isStopKeyword.mockReturnValue(false);
+    mockConsentService.recordInbound.mockResolvedValue({ id: 'cust-1' });
+    mockConsentService.recordOptOut.mockResolvedValue({ id: 'cust-1' });
+    mockConsentService.recordOptIn.mockResolvedValue({ id: 'cust-1' });
     mockCustomer.findOrCreate.mockResolvedValue([{ id: 'cust-1', name: 'Facebook User', metadata: {} }, true]);
     mockConversation.findOne.mockResolvedValue(null);
     mockConversation.create.mockResolvedValue({ id: 'conv-1', update: jest.fn() });
@@ -232,7 +244,7 @@ beforeEach(() => {
 // ── 1. Receipt written before acknowledgement ────────────────────────────────
 
 describe('durable receipt precedes acknowledgement', () => {
-    test('a valid webhook creates a receipt and settles it PROCESSED', async () => {
+    test('a valid webhook creates a receipt and settles it QUEUED after handoff', async () => {
         await post(buildPayload()).expect(200);
 
         expect(receipts()).toHaveLength(1);
@@ -240,8 +252,179 @@ describe('durable receipt precedes acknowledgement', () => {
         expect(r.page_id).toBe(PAGE_ID);
         expect(r.event_id).toBe('mid.DURABILITY.1');
         expect(r.event_type).toBe('message');
-        expect(r.status).toBe('PROCESSED');
+        expect(r.status).toBe('QUEUED');
         expect(r.shop_id).toBe(SHOP_ID);
+    });
+
+    test('recovers a duplicate message before QUEUED without losing customer context', async () => {
+        mockMessage.findOne.mockResolvedValue({
+            id: 'message-existing',
+            conversation_id: 'conv-1',
+            external_id: 'mid.DURABILITY.1',
+        });
+        mockConversation.findOne.mockResolvedValue({
+            id: 'conv-1',
+            shop_id: SHOP_ID,
+            customer_id: 'cust-1',
+            channel: 'messenger',
+            meta_channel_id: 'mc-durability-1',
+            metadata: { within_allowance: true },
+        });
+
+        await post(buildPayload()).expect(200);
+
+        expect(mockConsentService.recordInbound).toHaveBeenCalledWith(expect.objectContaining({
+            customerId: 'cust-1',
+            channelId: 'mc-durability-1',
+        }));
+        expect(mockScheduleBurstFlush).toHaveBeenCalled();
+        expect(receipts()[0].status).toBe('QUEUED');
+    });
+
+    test('marks a channel resolution failure retryable after the receipt is created', async () => {
+        mockMetaChannelService.findByMetaAssetId.mockRejectedValueOnce(new Error('channel store unavailable'));
+
+        await post(buildPayload()).expect(200);
+
+        expect(receipts()[0]).toMatchObject({
+            status: 'RETRY_PENDING',
+            last_error_code: 'CHANNEL_RESOLUTION_FAILED',
+        });
+        expect(mockMessage.create).not.toHaveBeenCalled();
+    });
+
+    test('returns 503 when a created receipt cannot persist its retry state', async () => {
+        mockMetaChannelService.findByMetaAssetId.mockResolvedValueOnce(null);
+        MockReceipt.create.mockImplementationOnce(async (fields) => {
+            const row = makeRow(fields);
+            row.update = jest.fn(async () => { throw new Error('receipt status store unavailable'); });
+            store.set(row.id, row);
+            return row;
+        });
+
+        await post(buildPayload()).expect(503);
+
+        expect(mockMessage.create).not.toHaveBeenCalled();
+        expect(receipts()[0].status).toBe('RECEIVED');
+    });
+
+    test('marks a successful queue handoff as terminal and clears replay state', async () => {
+        const receipt = makeRow({
+            status: 'PROCESSING',
+            payload_encrypted: 'v1:encrypted-replay-body',
+            processing_token: 'processing-fence',
+            last_error_code: 'QUEUE_DISPATCH_FAILED',
+            next_retry_at: new Date(Date.now() + 60_000),
+        });
+        const before = Date.now();
+
+        await receiptService.markQueued(receipt, {
+            shopId: SHOP_ID,
+            metaChannelId: 'mc-durability-1',
+        });
+
+        expect(receipt.status).toBe('QUEUED');
+        expect(receipt.shop_id).toBe(SHOP_ID);
+        expect(receipt.meta_channel_id).toBe('mc-durability-1');
+        expect(receipt.processing_token).toBeNull();
+        expect(receipt.payload_encrypted).toBeNull();
+        expect(receipt.last_error_code).toBeNull();
+        expect(receipt.next_retry_at).toBeNull();
+        expect(receipt.processed_at).toBeInstanceOf(Date);
+        expect(receipt.processed_at.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    test('treats QUEUED as terminal while preserving PROCESSED for non-queue events', async () => {
+        expect(receiptService.TERMINAL_STATUSES).toEqual(
+            expect.arrayContaining(['QUEUED', 'PROCESSED', 'SKIPPED', 'DEAD_LETTERED']),
+        );
+
+        const receipt = makeRow({ status: 'PROCESSING' });
+        await receiptService.markProcessed(receipt, { shopId: SHOP_ID, metaChannelId: 'mc-durability-1' });
+        expect(receipt.status).toBe('PROCESSED');
+    });
+
+    test('includes QUEUED in terminal receipt retention', async () => {
+        const now = new Date('2026-09-01T12:00:00.000Z');
+        await receiptService.purgeExpiredReceipts(now);
+
+        const where = MockReceipt.destroy.mock.calls[0][0].where;
+        const orKey = Reflect.ownKeys(where).find((key) => String(key).includes('or'));
+        const terminalClause = where[orKey].find((clause) => clause.created_at);
+        const inKey = Reflect.ownKeys(terminalClause.status)[0];
+
+        expect(terminalClause.status[inKey]).toEqual(
+            expect.arrayContaining(['PROCESSED', 'SKIPPED', 'QUEUED']),
+        );
+    });
+
+    test('carries the webhook Page asset through the normalized burst job payload', async () => {
+        await post(buildPayload()).expect(200);
+
+        expect(mockScheduleBurstFlush).toHaveBeenCalledWith(expect.objectContaining({
+            metaChannelId: 'mc-durability-1',
+            metaAssetId: PAGE_ID,
+        }));
+    });
+
+    test('keeps a queue handoff failure retryable with its encrypted replay payload', async () => {
+        mockScheduleBurstFlush.mockRejectedValueOnce(new Error('queue unavailable'));
+
+        await post(buildPayload()).expect(200);
+
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
+        expect(receipts()[0].last_error_code).toBe('QUEUE_DISPATCH_FAILED');
+        expect(receipts()[0].next_retry_at).toBeInstanceOf(Date);
+        expect(receipts()[0].status).not.toBe('QUEUED');
+        expect(receipts()[0].status).not.toBe('PROCESSED');
+    });
+
+    test('keeps a consent failure retryable without scheduling an AI reply', async () => {
+        mockConsentService.recordInbound.mockRejectedValueOnce(new Error('consent state unavailable'));
+
+        await post(buildPayload()).expect(200);
+
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
+        expect(receipts()[0].last_error_code).toBe('CONSENT_STATE_UNAVAILABLE');
+        expect(mockScheduleBurstFlush).not.toHaveBeenCalled();
+    });
+
+    test('reconciles a queue failure into exactly one QUEUED terminal handoff', async () => {
+        mockScheduleBurstFlush.mockRejectedValueOnce(new Error('queue unavailable'));
+
+        await post(buildPayload()).expect(200);
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+
+        receipts()[0].next_retry_at = new Date(Date.now() - 1000);
+        const result = await new WebhookReceiptReconcilerJob().execute();
+
+        expect(result.processed).toBe(1);
+        expect(receipts()[0].status).toBe('QUEUED');
+        expect(receipts()[0].payload_encrypted).toBeNull();
+        expect(receipts()[0].last_error_code).toBeNull();
+        expect(mockScheduleBurstFlush).toHaveBeenCalledTimes(2);
+    });
+
+    test('keeps the receipt retryable when the queue update fails after enqueue', async () => {
+        MockReceipt.create.mockImplementationOnce(async (fields) => {
+            const row = makeRow(fields);
+            const update = row.update;
+            row.update = jest.fn(async (patch) => {
+                if (patch.status === 'QUEUED') throw new Error('receipt update failed');
+                return update(patch);
+            });
+            store.set(row.id, row);
+            return row;
+        });
+
+        await post(buildPayload()).expect(200);
+
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].last_error_code).toBe('QUEUE_RECEIPT_UPDATE_FAILED');
+        expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
+        expect(receipts()[0].status).not.toBe('QUEUED');
     });
 
     test('the receipt is written before channel resolution is attempted', async () => {
@@ -388,7 +571,7 @@ describe('unknown or non-connected Page', () => {
 
         expect(result.processed).toBe(1);
         expect(mockMessage.create).toHaveBeenCalledTimes(1);
-        expect(receipts()[0].status).toBe('PROCESSED');
+        expect(receipts()[0].status).toBe('QUEUED');
         expect(receipts()[0].shop_id).toBe(SHOP_ID);
     });
 
@@ -454,7 +637,7 @@ describe('message storage failure', () => {
         receipts()[0].next_retry_at = new Date(Date.now() - 1000);
         const first = await new WebhookReceiptReconcilerJob().execute();
         expect(first.processed).toBe(1);
-        expect(receipts()[0].status).toBe('PROCESSED');
+        expect(receipts()[0].status).toBe('QUEUED');
 
         // A second sweep must not replay a settled receipt.
         const second = await new WebhookReceiptReconcilerJob().execute();
@@ -523,6 +706,32 @@ describe('operational logging', () => {
         expect(blob).toMatch(/^v1:/);
         expect(blob).not.toContain(MESSAGE_TEXT);
         expect(blob).not.toContain(SENDER_PSID);
+    });
+});
+
+describe('malformed webhook boundary', () => {
+    test('rejects malformed bytes with an invalid signature before receipt or business work', async () => {
+        const rawBody = Buffer.from('{"object":');
+
+        await postRaw(rawBody, 'sha256=invalidsignature').expect(403);
+
+        expect(MockReceipt.create).not.toHaveBeenCalled();
+        expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
+    });
+
+    test('acks authenticated malformed bytes without persisting the raw body', async () => {
+        const rawBody = Buffer.from('{"object":');
+
+        await postRaw(rawBody).expect(200);
+
+        expect(MockReceipt.create).not.toHaveBeenCalled();
+        expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
+
+        const serializedLogs = JSON.stringify(logCalls);
+        expect(serializedLogs).not.toContain(rawBody.toString());
+        expect(serializedLogs).toContain('INVALID_JSON');
     });
 });
 

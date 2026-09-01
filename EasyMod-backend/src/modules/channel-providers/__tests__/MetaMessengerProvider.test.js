@@ -38,17 +38,76 @@ describe('MetaMessengerProvider', () => {
         expect(provider.platform).toBe('facebook');
     });
 
-    function debugTokenResponse(targetIds) {
+    function debugTokenResponse(targetIds, manageTargetIds = targetIds, showListTargetIds = targetIds) {
         return {
             data: {
                 data: {
                     granular_scopes: [
                         { scope: 'pages_messaging', target_ids: targetIds },
-                        { scope: 'pages_manage_metadata', target_ids: targetIds },
+                        { scope: 'pages_manage_metadata', target_ids: manageTargetIds },
+                        { scope: 'pages_show_list', target_ids: showListTargetIds },
                     ],
                 },
             },
         };
+    }
+
+    function page(id, overrides = {}) {
+        return {
+            id,
+            name: `Page ${id}`,
+            category: null,
+            picture: null,
+            tasks: ['MESSAGING', 'MANAGE'],
+            access_token: `page-token-${id}`,
+            ...overrides,
+        };
+    }
+
+    /**
+     * Configure all Graph responses by URL rather than by call order. This
+     * keeps the tests honest when discovery adds hydration or pagination calls.
+     */
+    function configureGraph({ accountPages = [{ data: [], paging: {} }], targetIds = [], debug, hydration = {} }) {
+        const normalizedAccountPages = accountPages.map((response) => ({
+            ...response,
+            data: {
+                ...(response.data || {}),
+                data: Array.isArray(response.data?.data)
+                    ? response.data.data.map((asset) => asset && asset.id !== undefined
+                        && !Object.prototype.hasOwnProperty.call(asset, 'access_token')
+                        ? { ...asset, access_token: `page-token-${asset.id}` }
+                        : asset)
+                    : response.data?.data,
+            },
+        }));
+        const pageByCursor = new Map();
+        normalizedAccountPages.forEach((response, index) => {
+            if (index === 0) return;
+            const cursor = normalizedAccountPages[index - 1].data?.paging?.cursors?.after;
+            if (cursor !== undefined && cursor !== null && String(cursor).length > 0) {
+                pageByCursor.set(String(cursor), response);
+            }
+        });
+
+        axios.get.mockImplementation((url, request = {}) => {
+            const requestUrl = String(url);
+            if (requestUrl.includes('/debug_token')) {
+                return Promise.resolve(debug || debugTokenResponse(targetIds));
+            }
+            if (requestUrl.includes('/me/accounts')) {
+                const after = request.params?.after;
+                return Promise.resolve(
+                    after === undefined || after === null
+                        ? normalizedAccountPages[0]
+                        : pageByCursor.get(String(after)) || { data: { data: [], paging: {} } },
+                );
+            }
+            const pageId = decodeURIComponent(requestUrl.slice(requestUrl.lastIndexOf('/') + 1));
+            const hydrationResult = hydration[pageId];
+            if (hydrationResult?.error) return Promise.reject(hydrationResult.error);
+            return Promise.resolve({ data: hydrationResult || page(pageId) });
+        });
     }
 
     describe('buildAuthUrl() default scopes (App Review surface)', () => {
@@ -67,6 +126,27 @@ describe('MetaMessengerProvider', () => {
             const scope = new URL(url).searchParams.get('scope') || '';
             expect(scope).not.toMatch(/instagram_/);
             expect(scope).not.toContain('business_management');
+        });
+
+        test('ignores forbidden caller-supplied scopes and preserves the exact allowlist', async () => {
+            const url = await provider.buildAuthUrl({
+                state: 'facebook:s:u:n',
+                scopes: [
+                    'business_management',
+                    'instagram_basic',
+                    'instagram_manage_messages',
+                    'pages_read_engagement',
+                ],
+            });
+            const scope = new URL(url).searchParams.get('scope') || '';
+
+            expect(scope.split(',').sort()).toEqual([
+                'pages_manage_metadata',
+                'pages_messaging',
+                'pages_show_list',
+            ]);
+            expect(scope).not.toContain('business_management');
+            expect(scope).not.toMatch(/instagram_/);
         });
     });
 
@@ -494,7 +574,7 @@ describe('MetaMessengerProvider', () => {
         });
     });
 
-    describe('listManagedAssets() pagination', () => {
+    describe('listManagedAssets() discovery and pagination', () => {
         beforeEach(() => {
             process.env.META_APP_SECRET = 'test-secret';
             process.env.META_APP_ID = 'test-app-id';
@@ -504,28 +584,26 @@ describe('MetaMessengerProvider', () => {
             jest.resetAllMocks();
         });
 
-        test('returns all pages from a single-page response (no next cursor)', async () => {
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [
-                        { id: 'P1', name: 'Page 1', category: 'Shopping', picture: { data: { url: 'http://img/1' } }, instagram_business_account: null },
-                        { id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: { id: 'IG2', name: 'Shop IG', username: 'shopig' } },
-                    ],
-                    paging: { cursors: { before: 'abc', after: 'def' } }
-                }
-            }).mockResolvedValueOnce(debugTokenResponse(['P1', 'P2']));
-            // NO /me/businesses mock — default flow must not call it.
-
+        test('returns all granted Pages from /me/accounts and omits legacy Instagram data', async () => {
+            configureGraph({
+                accountPages: [{
+                    data: {
+                        data: [
+                            page('P1', { name: 'Page 1', category: 'Shopping', picture: { data: { url: 'http://img/1' } } }),
+                            page('P2', { name: 'Page 2', instagram_business_account: { id: 'IG2' } }),
+                        ],
+                        paging: {},
+                    },
+                }],
+                targetIds: ['P1', 'P2'],
+            });
             const result = await provider.listManagedAssets({ userToken: 'tok_abc' });
 
             expect(result).toHaveLength(2);
-            // Facebook-only launch: the provider no longer exposes a linked IG
-            // account, even when /me/accounts includes instagram_business_account.
             expect(result[0]).toMatchObject({ id: 'P1', name: 'Page 1', pictureUrl: 'http://img/1' });
             expect(result[0]).not.toHaveProperty('instagramAccount');
             expect(result[1]).toMatchObject({ id: 'P2', name: 'Page 2' });
             expect(result[1]).not.toHaveProperty('instagramAccount');
-            // Only /me/accounts is hit by default now.
             expect(axios.get).toHaveBeenCalledTimes(2);
             expect(axios.get).toHaveBeenCalledWith(
                 expect.stringContaining('/me/accounts'),
@@ -535,71 +613,234 @@ describe('MetaMessengerProvider', () => {
                 expect.stringContaining('/debug_token'),
                 expect.objectContaining({ params: expect.objectContaining({ input_token: 'tok_abc' }) })
             );
+            const debugCall = axios.get.mock.calls.find(([url]) => String(url).includes('/debug_token'));
+            expect(debugCall[1].params.appsecret_proof).toBe(
+                crypto.createHmac('sha256', 'test-secret').update('test-app-id|test-secret').digest('hex'),
+            );
         });
 
-        test('follows pagination cursor when next page exists', async () => {
-            // 1. /me/accounts page 1 — signals more pages via `next`
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [{ id: 'P1', name: 'Page 1', category: null, picture: null, instagram_business_account: null }],
-                    paging: { next: 'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR' }
-                }
+        test('recovers a granted Business Portfolio Page omitted by /me/accounts', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1')], paging: {} } }],
+                targetIds: ['P1', 'P_PORTFOLIO'],
+                hydration: {
+                    P_PORTFOLIO: page('P_PORTFOLIO', {
+                        name: 'Business Portfolio Page',
+                        access_token: 'hydrated-page-token',
+                    }),
+                },
             });
-            // 2. /me/accounts page 2 — no `next`, pagination ends
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [{ id: 'P2', name: 'Page 2', category: null, picture: null, instagram_business_account: null }],
-                    paging: { cursors: { before: 'x', after: 'y' } }
-                }
-            }).mockResolvedValueOnce(debugTokenResponse(['P1', 'P2']));
-            // No /me/businesses mock — default flow does not call it
 
             const result = await provider.listManagedAssets({ userToken: 'tok_xyz' });
 
-            expect(result).toHaveLength(2);
-            expect(result.map(p => p.id)).toEqual(['P1', 'P2']);
-            // 2 pages of me/accounts plus token introspection (no businesses call)
-            expect(axios.get).toHaveBeenCalledTimes(3);
-            // Second call (cursor follow) uses the `next` URL directly (no extra params)
-            expect(axios.get).toHaveBeenNthCalledWith(
-                2,
-                'https://graph.facebook.com/v22.0/me/accounts?after=CURSOR',
-                { params: {} }
-            );
-            expect(axios.get).toHaveBeenNthCalledWith(
-                3,
-                expect.stringContaining('/debug_token'),
-                expect.objectContaining({ params: expect.objectContaining({ input_token: 'tok_xyz' }) })
-            );
+            expect(result.map((asset) => asset.id)).toEqual(['P1', 'P_PORTFOLIO']);
+            expect(result.find((asset) => asset.id === 'P_PORTFOLIO')).toMatchObject({
+                name: 'Business Portfolio Page',
+                connectable: true,
+            });
+            expect(result.find((asset) => asset.id === 'P_PORTFOLIO')).not.toHaveProperty('source');
+            const hydrationCall = axios.get.mock.calls.find(([url]) => String(url).endsWith('/P_PORTFOLIO'));
+            expect(hydrationCall).toBeDefined();
+            expect(hydrationCall[1].params).toEqual(expect.objectContaining({
+                fields: 'id,name,category,picture{data{url}},tasks,access_token',
+                access_token: 'tok_xyz',
+                appsecret_proof: expect.any(String),
+            }));
         });
 
-        test('filters out pages not selected in Meta granular permissions', async () => {
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [
-                        { id: 'P1', name: 'Selected Page', category: null, picture: null },
-                        { id: 'P2', name: 'Unselected Page', category: null, picture: null },
-                    ],
-                    paging: {},
-                },
-            }).mockResolvedValueOnce(debugTokenResponse(['P1']));
+        test('recovers a granted Page when /me/accounts is empty', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [], paging: {} } }],
+                targetIds: ['P_EMPTY'],
+                hydration: { P_EMPTY: page('P_EMPTY', { name: 'Empty Edge Page' }) },
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_empty' });
+
+            expect(result.map((asset) => asset.id)).toEqual(['P_EMPTY']);
+            expect(result[0]).toMatchObject({ name: 'Empty Edge Page', connectable: true });
+        });
+
+        test.each([
+            ['missing', undefined],
+            ['null', null],
+            ['blank', '  '],
+        ])('hydrates a /me/accounts row with %s access_token before offering it', async (_label, accessToken) => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P_TOKEN', { access_token: accessToken })], paging: {} } }],
+                targetIds: ['P_TOKEN'],
+                hydration: { P_TOKEN: page('P_TOKEN', { access_token: 'hydrated-token' }) },
+            });
+
+            const result = await provider.listManagedAssets({ userToken: `tok_${_label}` });
+
+            expect(result).toHaveLength(1);
+            expect(result[0].id).toBe('P_TOKEN');
+            expect(axios.get.mock.calls.filter(([url]) => String(url).endsWith('/P_TOKEN'))).toHaveLength(1);
+        });
+
+        test('excludes a matching hydration response without a Page token and counts it', async () => {
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                configureGraph({
+                    accountPages: [{ data: { data: [], paging: {} } }],
+                    targetIds: ['P_NO_TOKEN'],
+                    hydration: { P_NO_TOKEN: page('P_NO_TOKEN', { access_token: null }) },
+                });
+
+                await expect(provider.listManagedAssets({ userToken: 'tok_no_page_token' })).resolves.toEqual([]);
+
+                const parsed = consoleSpy.mock.calls
+                    .map(args => { try { return JSON.parse(args[0]); } catch { return null; } })
+                    .filter(Boolean);
+                const entry = parsed.find((candidate) => candidate.message === 'metaAssetsListed');
+                expect(entry).toMatchObject({
+                    hydration_attempted: 1,
+                    hydration_succeeded: 0,
+                    hydration_failed: 0,
+                    hydration_rejected: 1,
+                    deduped: 0,
+                });
+            } finally {
+                consoleSpy.mockRestore();
+            }
+        });
+
+        test('excludes an unauthorized hydration target without aborting the rest of the listing', async () => {
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                configureGraph({
+                    accountPages: [{ data: { data: [page('P_OK')], paging: {} } }],
+                    targetIds: ['P_OK', 'P_DENIED'],
+                    hydration: {
+                        P_DENIED: {
+                            error: {
+                                response: {
+                                    status: 403,
+                                    data: { error: { code: 10, error_subcode: 200, message: 'Permission denied' } },
+                                },
+                            },
+                        },
+                    },
+                });
+
+                const result = await provider.listManagedAssets({ userToken: 'tok_denied' });
+
+                expect(result.map((asset) => asset.id)).toEqual(['P_OK']);
+                const output = consoleSpy.mock.calls.flat().join(' ');
+                const proof = crypto.createHmac('sha256', 'test-secret').update('tok_denied').digest('hex');
+                expect(output).not.toContain('tok_denied');
+                expect(output).not.toContain(proof);
+                expect(output).toContain('"hydration_failed":1');
+            } finally {
+                consoleSpy.mockRestore();
+            }
+        });
+
+        test('merges selected Pages from both sources exactly once', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P_A')], paging: {} } }],
+                targetIds: ['P_A', 'P_B'],
+                hydration: { P_B: page('P_B', { name: 'Page B from target ID' }) },
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_union' });
+
+            expect(result.map((asset) => asset.id)).toEqual(['P_A', 'P_B']);
+            expect(new Set(result.map((asset) => asset.id)).size).toBe(2);
+        });
+
+        test('never shows an unselected Page present in /me/accounts', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P_SELECTED'), page('P_UNSELECTED')], paging: {} } }],
+                targetIds: ['P_SELECTED'],
+            });
 
             const result = await provider.listManagedAssets({ userToken: 'tok_selected' });
 
-            expect(result.map((page) => page.id)).toEqual(['P1']);
+            expect(result.map((asset) => asset.id)).toEqual(['P_SELECTED']);
         });
 
-        test('returns no connectable pages when granular target ids are missing', async () => {
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [
-                        { id: 'P1', name: 'Page 1', category: null, picture: null },
-                        { id: 'P2', name: 'Page 2', category: null, picture: null },
-                    ],
-                    paging: {},
-                },
-            }).mockResolvedValueOnce({
-                data: { data: { granular_scopes: [{ scope: 'pages_messaging' }] } },
+        test('uses pages_messaging as the grant boundary and keeps valid tasks around invalid values', async () => {
+            configureGraph({
+                accountPages: [{
+                    data: {
+                        data: [
+                            page('P_SCOPE', { tasks: ['MESSAGING'] }),
+                            page('P_TASKS', { tasks: [' messaging ', 'MANAGE', 'MANAGE!'] }),
+                            page('P_INELIGIBLE', { tasks: ['CREATE_CONTENT'] }),
+                        ],
+                        paging: {},
+                    },
+                }],
+                targetIds: ['P_SCOPE', 'P_TASKS', 'P_INELIGIBLE'],
+                debug: debugTokenResponse(['P_SCOPE', 'P_TASKS', 'P_INELIGIBLE'], []),
+            });
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_tasks' });
+
+            expect(result).toHaveLength(3);
+            expect(result.find((asset) => asset.id === 'P_SCOPE')).toMatchObject({
+                tasks: ['MESSAGING'],
+                connectable: false,
+                reason: 'META_PAGE_TASKS_REQUIRED',
+            });
+            expect(result.find((asset) => asset.id === 'P_TASKS')).toMatchObject({
+                tasks: ['MESSAGING', 'MANAGE'],
+                connectable: true,
+            });
+            expect(result.find((asset) => asset.id === 'P_INELIGIBLE')).toMatchObject({
+                tasks: ['CREATE_CONTENT'],
+                connectable: false,
+                reason: 'META_PAGE_TASKS_REQUIRED',
+            });
+        });
+
+        test('preserves appsecret_proof and follows cursors even across an empty batch', async () => {
+            const userToken = 'tok_cursor';
+            configureGraph({
+                accountPages: [
+                    {
+                        data: { data: [page('P1')], paging: {
+                            next: 'https://graph.facebook.com/v22.0/me/accounts?access_token=tok_cursor&after=CURSOR',
+                            cursors: { after: 'CURSOR' },
+                        } },
+                    },
+                    {
+                        data: { data: [], paging: {
+                            next: 'https://graph.facebook.com/v22.0/me/accounts?access_token=tok_cursor&after=FINAL',
+                            cursors: { after: 'FINAL' },
+                        } },
+                    },
+                    { data: { data: [page('P2')], paging: {} } },
+                ],
+                targetIds: ['P1', 'P2'],
+            });
+
+            const result = await provider.listManagedAssets({ userToken });
+
+            expect(result.map((asset) => asset.id)).toEqual(['P1', 'P2']);
+            const accountCalls = axios.get.mock.calls.filter(([url]) => String(url).includes('/me/accounts'));
+            expect(accountCalls).toHaveLength(3);
+            expect(accountCalls[1][0]).toBe('https://graph.facebook.com/v22.0/me/accounts');
+            expect(accountCalls[1][1].params).toEqual(expect.objectContaining({
+                fields: 'id,name,category,access_token,picture{data{url}},tasks',
+                access_token: userToken,
+                appsecret_proof: expect.any(String),
+                after: 'CURSOR',
+            }));
+            expect(accountCalls[2][1].params.after).toBe('FINAL');
+            const proof = crypto.createHmac('sha256', 'test-secret').update(userToken).digest('hex');
+            for (const [url, request] of accountCalls) {
+                expect(String(url)).not.toContain(userToken);
+                expect(request.params.appsecret_proof).toBe(proof);
+            }
+        });
+
+        test('returns no Pages when Meta provides no pages_messaging target IDs', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1'), page('P2')], paging: {} } }],
+                debug: { data: { data: { granular_scopes: [{ scope: 'pages_messaging' }] } } },
             });
 
             const result = await provider.listManagedAssets({ userToken: 'tok_no_targets' });
@@ -607,16 +848,99 @@ describe('MetaMessengerProvider', () => {
             expect(result).toEqual([]);
         });
 
-        test('returns empty array when me/accounts returns no pages and no businesses', async () => {
-            // 1. /me/accounts — empty
-            axios.get.mockResolvedValueOnce({
-                data: { data: [], paging: {} }
+        test('does not expose Page access tokens or source metadata in the response', async () => {
+            configureGraph({
+                accountPages: [{ data: { data: [page('P_SECRET', { access_token: 'page-secret-must-not-leak' })], paging: {} } }],
+                targetIds: ['P_SECRET'],
             });
-            // No /me/businesses mock — default flow does not call it
-            const result = await provider.listManagedAssets({ userToken: 'tok_empty' });
-            expect(result).toEqual([]);
-            // Only 1 call: /me/accounts
-            expect(axios.get).toHaveBeenCalledTimes(1);
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_secret' });
+
+            expect(result[0]).not.toHaveProperty('access_token');
+            expect(result[0]).not.toHaveProperty('source');
+            expect(JSON.stringify(result)).not.toContain('page-secret-must-not-leak');
+        });
+
+        test('redacts user tokens and proofs from Graph error logs', async () => {
+            const userToken = 'tok_error_log';
+            const proof = crypto.createHmac('sha256', 'test-secret').update(userToken).digest('hex');
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                axios.get.mockImplementation((url) => {
+                    if (String(url).includes('/debug_token')) {
+                        return Promise.resolve(debugTokenResponse(['P_ERROR']));
+                    }
+                    return Promise.reject({
+                        message: `request failed ${userToken} ${proof}`,
+                        config: { params: { access_token: userToken, appsecret_proof: proof } },
+                    });
+                });
+
+                await expect(provider.listManagedAssets({ userToken })).rejects.toMatchObject({
+                    code: 'META_API_ERROR',
+                });
+
+                const output = consoleSpy.mock.calls.flat().join(' ');
+                expect(output).not.toContain(userToken);
+                expect(output).not.toContain(proof);
+            } finally {
+                consoleSpy.mockRestore();
+            }
+        });
+    });
+
+    describe('getOAuthIdentity() pagination', () => {
+        beforeEach(() => {
+            process.env.META_APP_SECRET = 'test-secret';
+        });
+
+        afterEach(() => {
+            jest.resetAllMocks();
+        });
+
+        test('follows ids_for_pages cursors after an empty batch and signs every request', async () => {
+            const userToken = 'tok_identity';
+            const idsUrl = 'https://graph.facebook.com/v22.0/app-user-1/ids_for_pages';
+            axios.get.mockImplementation((url, request = {}) => {
+                if (String(url).endsWith('/me')) return Promise.resolve({ data: { id: 'app-user-1' } });
+                if (String(url) === idsUrl && request.params?.after === 'CURSOR') {
+                    return Promise.resolve({
+                        data: {
+                            data: [{ id: 'psid-1', page: { id: 'P1' } }],
+                            paging: {},
+                        },
+                    });
+                }
+                if (String(url) === idsUrl) {
+                    return Promise.resolve({
+                        data: {
+                            data: [],
+                            paging: {
+                                next: `${idsUrl}?access_token=${userToken}&after=CURSOR`,
+                                cursors: { after: 'CURSOR' },
+                            },
+                        },
+                    });
+                }
+                throw new Error(`unexpected Graph URL: ${url}`);
+            });
+
+            await expect(provider.getOAuthIdentity({ userToken })).resolves.toEqual({
+                appScopedUserId: 'app-user-1',
+                pageScopedIdentities: [{ pageId: 'P1', pageScopedUserId: 'psid-1' }],
+            });
+
+            const idsCalls = axios.get.mock.calls.filter(([url]) => String(url).includes('/ids_for_pages'));
+            expect(idsCalls).toHaveLength(2);
+            expect(idsCalls[1][0]).toBe(idsUrl);
+            expect(idsCalls[1][1].params).toEqual(expect.objectContaining({
+                fields: 'id,page',
+                limit: 100,
+                access_token: userToken,
+                appsecret_proof: expect.any(String),
+                after: 'CURSOR',
+            }));
+            expect(String(idsCalls[1][0])).not.toContain(userToken);
         });
     });
 
@@ -693,12 +1017,10 @@ describe('MetaMessengerProvider', () => {
         });
 
         test('ignores the legacy includeBusinessPortfolio flag and never queries /me/businesses', async () => {
-            axios.get.mockResolvedValueOnce({
-                data: {
-                    data: [{ id: 'P1', name: 'Page 1', category: null, picture: null }],
-                    paging: {},
-                },
-            }).mockResolvedValueOnce(debugTokenResponse(['P1']));
+            configureGraph({
+                accountPages: [{ data: { data: [page('P1', { name: 'Page 1' })], paging: {} } }],
+                targetIds: ['P1'],
+            });
 
             const result = await provider.listManagedAssets({
                 userToken: 'tok_default',
@@ -719,31 +1041,38 @@ describe('MetaMessengerProvider', () => {
 
         test('diagnostic log reports Messenger-only discovery counts', async () => {
             const consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            try {
+                configureGraph({
+                    accountPages: [{ data: { data: [page('PA', { name: 'A' })], paging: {} } }],
+                    targetIds: ['PA'],
+                });
 
-            axios.get.mockResolvedValueOnce({
-                data: { data: [{ id: 'PA', name: 'A', category: null, picture: null }], paging: {} },
-            }).mockResolvedValueOnce(debugTokenResponse(['PA']));
+                await provider.listManagedAssets({ userToken: 'tok_log' });
 
-            await provider.listManagedAssets({ userToken: 'tok_log' });
-
-            const parsed = consoleSpy.mock.calls
-                .map(args => { try { return JSON.parse(args[0]); } catch { return null; } })
-                .filter(Boolean);
-            const entry = parsed.find(e => e.message === 'metaAssetsListed');
-            expect(entry).toBeDefined();
-            expect(entry).toMatchObject({
-                source_me_accounts: 1,
-                source_owned_pages: 0,
-                source_client_pages: 0,
-                portfolioAttempted: false,
-                portfolioError: null,
-                selected_target_ids: 1,
-                filtered_unselected_pages: 0,
-                deduped: 1,
-            });
-            expect(entry).not.toHaveProperty('withIG');
-
-            consoleSpy.mockRestore();
+                const parsed = consoleSpy.mock.calls
+                    .map(args => { try { return JSON.parse(args[0]); } catch { return null; } })
+                    .filter(Boolean);
+                const entry = parsed.find(e => e.message === 'metaAssetsListed');
+                expect(entry).toBeDefined();
+                expect(entry).toMatchObject({
+                    source_me_accounts: 1,
+                    source_owned_pages: 0,
+                    source_client_pages: 0,
+                    portfolioAttempted: false,
+                    portfolioError: null,
+                    source_granular_target: 0,
+                    selected_target_ids: 1,
+                    filtered_unselected_pages: 0,
+                    hydration_attempted: 0,
+                    hydration_succeeded: 0,
+                    hydration_failed: 0,
+                    hydration_rejected: 0,
+                    deduped: 1,
+                });
+                expect(entry).not.toHaveProperty('withIG');
+            } finally {
+                consoleSpy.mockRestore();
+            }
         });
     });
 });

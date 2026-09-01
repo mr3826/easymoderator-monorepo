@@ -62,9 +62,19 @@ describe('hasConsent', () => {
         });
         expect(consentService.hasConsent({ customer, platform: 'facebook' })).toBe(false);
     });
-    test('true by default (no record, no global flag)', () => {
+    test('false when per-channel consent is absent (unknown is not opted in)', () => {
         const customer = makeCustomer();
-        expect(consentService.hasConsent({ customer, platform: 'facebook' })).toBe(true);
+        expect(consentService.hasConsent({ customer, platform: 'facebook' })).toBe(false);
+    });
+    test('false when per-channel consent is explicitly not opted in', () => {
+        const customer = makeCustomer({
+            messaging_consent: { facebook: { opted_in: false, opted_out_at: null } },
+        });
+        expect(consentService.hasConsent({ customer, platform: 'facebook' })).toBe(false);
+    });
+    test('preserves the legacy permissive default for non-Meta customer channels', () => {
+        const customer = makeCustomer();
+        expect(consentService.hasConsent({ customer, platform: 'webchat' })).toBe(true);
     });
     test('false when customer is missing', () => {
         expect(consentService.hasConsent({ customer: null, platform: 'facebook' })).toBe(false);
@@ -116,13 +126,26 @@ describe('recordOptOut', () => {
         expect(customer.messaging_consent.facebook.opted_out_at).toBe(earlier);
     });
 
-    test('no-op when customer missing', async () => {
+    test('rejects with retryable customer context failure when customer is missing', async () => {
         Customer.findByPk.mockResolvedValue(null);
-        const result = await consentService.recordOptOut({
-            shopId: 'shop-1', customerId: 'cust-1', platform: 'facebook',
+        await expect(consentService.recordOptOut({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+            retryable: true,
         });
-        expect(result).toBeNull();
         expect(MetaChannelConsentEvent.create).not.toHaveBeenCalled();
+    });
+
+    test('rejects when the customer lookup dependency fails', async () => {
+        Customer.findByPk.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(consentService.recordOptOut({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
     });
 });
 
@@ -149,13 +172,35 @@ describe('recordInbound', () => {
         Customer.findByPk.mockResolvedValue(customer);
 
         await consentService.recordInbound({
-            shopId: 'shop-1', customerId: 'cust-1', platform: 'facebook',
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
         });
 
         expect(customer.messaging_consent.facebook.opted_in).toBe(false);
         expect(customer.messaging_consent.facebook.opted_out_at).toBe('2026-05-19T10:00:00Z');
         // No audit row on subsequent inbounds.
         expect(MetaChannelConsentEvent.create).not.toHaveBeenCalled();
+    });
+
+    test('rejects with retryable customer context failure when customer is missing', async () => {
+        Customer.findByPk.mockResolvedValue(null);
+
+        await expect(consentService.recordInbound({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+
+    test('rejects when the customer lookup dependency fails', async () => {
+        Customer.findByPk.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(consentService.recordInbound({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
     });
 });
 
@@ -182,10 +227,49 @@ describe('recordOptIn', () => {
         Customer.findByPk.mockResolvedValue(customer);
 
         await consentService.recordOptIn({
-            shopId: 'shop-1', customerId: 'cust-1', platform: 'facebook', source: 'admin',
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook', source: 'admin',
         });
 
         expect(customer.messaging_consent.facebook.opted_in).toBe(true);
         expect(customer.messaging_consent.facebook.opted_out_at).toBeNull();
     });
+
+    test('rejects with retryable customer context failure when customer is missing', async () => {
+        Customer.findByPk.mockResolvedValue(null);
+
+        await expect(consentService.recordOptIn({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+
+    test('rejects when the customer lookup dependency fails', async () => {
+        Customer.findByPk.mockRejectedValue(new Error('database unavailable'));
+
+        await expect(consentService.recordOptIn({
+            shopId: 'shop-1', channelId: 'ch-1', customerId: 'cust-1', platform: 'facebook',
+        })).rejects.toMatchObject({
+            code: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+
+    test.each(['recordOptIn', 'recordOptOut', 'recordInbound'])(
+        'rejects %s when the required Meta channel context is missing',
+        async (method) => {
+            Customer.findByPk.mockResolvedValue(makeCustomer());
+
+            await expect(consentService[method]({
+                shopId: 'shop-1', customerId: 'cust-1', platform: 'facebook',
+            })).rejects.toMatchObject({
+                code: 'CONSENT_CONTEXT_UNAVAILABLE',
+                retryable: true,
+            });
+
+            expect(Customer.findByPk).not.toHaveBeenCalled();
+            expect(MetaChannelConsentEvent.create).not.toHaveBeenCalled();
+        },
+    );
 });

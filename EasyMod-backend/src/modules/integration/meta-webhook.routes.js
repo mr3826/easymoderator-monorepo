@@ -23,6 +23,7 @@ const config = require('../../config/config');
 const { createLogger } = require('../../utils/structured-logger');
 const { handlePageWebhook, storeIncomingMessage } = require('./meta-webhook-events.handler');
 const { resolveConnectedChannel } = require('./meta-channel-resolver');
+const { recordMalformedWebhook, MALFORMED_WEBHOOK_CODES } = require('./meta-webhook-metrics');
 const gdprRouter = require('./meta-webhook-gdpr.handler');
 
 const logger = createLogger('MetaWebhook');
@@ -54,13 +55,66 @@ router.use(webhookLimiter);
 // ─── Signature verification helper ───────────────────────────────────────────
 
 const isValidSignature = (rawBody, signature, secret) => {
-    if (!signature || !secret) return false;
+    if (typeof signature !== 'string' || !signature.startsWith('sha256=') || !secret) return false;
     const expected = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
     try {
         return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
     } catch {
         return false;
     }
+};
+
+const malformedEnvelopeCode = (payload) => {
+    const isRecord = (value) => Boolean(value)
+        && typeof value === 'object'
+        && !Array.isArray(value);
+    const messagingEventFields = [
+        'message',
+        'optin',
+        'delivery',
+        'read',
+        'postback',
+        'reaction',
+        'referral',
+        'account_linking',
+    ];
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+    }
+    if (typeof payload.object !== 'string' || !Array.isArray(payload.entry)) {
+        return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+    }
+
+    for (const entry of payload.entry) {
+        if (!isRecord(entry)) {
+            return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        }
+        if (payload.object !== 'page') continue;
+        if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+            return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        }
+        const hasEventCollection = ['messaging', 'changes', 'standby']
+            .some((field) => Array.isArray(entry[field]));
+        if (!hasEventCollection) return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        if (entry.messaging !== undefined && (!Array.isArray(entry.messaging)
+            || entry.messaging.some((event) => !isRecord(event)
+                || !messagingEventFields.some((field) => (
+                    Object.prototype.hasOwnProperty.call(event, field)
+                    && isRecord(event[field])
+                ))))) {
+            return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        }
+        if (entry.changes !== undefined && (!Array.isArray(entry.changes)
+            || entry.changes.some((change) => !isRecord(change)))) {
+            return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        }
+        if (entry.standby !== undefined && (!Array.isArray(entry.standby)
+            || entry.standby.some((event) => !isRecord(event)))) {
+            return MALFORMED_WEBHOOK_CODES.INVALID_ENVELOPE;
+        }
+    }
+    return null;
 };
 
 // ─── GET / — webhook verification challenge ──────────────────────────────────
@@ -107,33 +161,43 @@ router.get('/', async (req, res) => {
 
 // ─── POST / — webhook receiver + dispatcher ───────────────────────────────────
 
-router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
+router.post('/', express.raw({ type: '*/*', limit: config.bodySizeLimit }), async (req, res) => {
     try {
+        const rawBody = req.body instanceof Buffer
+            ? req.body
+            : Buffer.from(req.body == null ? '' : String(req.body));
         const signature = req.headers['x-hub-signature-256'];
+        const appSecret = config.metaAppSecret || config.metaWebhookAppSecret;
+        const signatureValid = Boolean(appSecret && isValidSignature(rawBody, signature, appSecret));
+
+        // Authenticate the exact bytes before attempting to parse attacker input.
+        if (!signatureValid) {
+            return res.sendStatus(403);
+        }
 
         let payload;
         try {
-            const rawBody = req.body instanceof Buffer ? req.body.toString('utf8') : String(req.body || '');
-            payload = rawBody ? JSON.parse(rawBody) : {};
-        } catch (parseErr) {
-            logger.error('Payload JSON parse error', { error: parseErr.message });
+            payload = JSON.parse(rawBody.toString('utf8'));
+        } catch (_) {
+            recordMalformedWebhook({
+                rawBody,
+                signatureValid: true,
+                code: MALFORMED_WEBHOOK_CODES.INVALID_JSON,
+            });
+            return res.sendStatus(200);
+        }
+
+        const envelopeErrorCode = malformedEnvelopeCode(payload);
+        if (envelopeErrorCode) {
+            recordMalformedWebhook({
+                rawBody,
+                signatureValid: true,
+                code: envelopeErrorCode,
+            });
             return res.sendStatus(200);
         }
 
         const firstAssetId = payload.entry?.[0]?.id;
-
-        const appSecret = config.metaAppSecret || config.metaWebhookAppSecret;
-        if (appSecret) {
-            const rawBodyBuf = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body || ''));
-            const isValid = isValidSignature(rawBodyBuf, signature, appSecret);
-            if (!isValid) {
-                logger.error(`Invalid signature for asset ${firstAssetId} — check META_APP_SECRET matches your Meta App Secret exactly`);
-                return res.sendStatus(403);
-            }
-        } else {
-            logger.error('META_APP_SECRET not configured — rejecting webhook to prevent unauthenticated payload injection');
-            return res.sendStatus(403);
-        }
 
         logger.info(`Received ${payload.object} event for asset ${firstAssetId}`);
 

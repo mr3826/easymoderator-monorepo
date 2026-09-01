@@ -115,6 +115,21 @@ class AIChatbotController {
                 });
             }
 
+            const normalizedPlatform = platform === 'messenger' ? 'facebook' : platform;
+            let exactMetaChannel = null;
+            if (meta_channel_id) {
+                exactMetaChannel = await metaChannelService.findConnectedById(meta_channel_id, {
+                    shopId: shop_id,
+                    platform: normalizedPlatform,
+                });
+                if (!exactMetaChannel) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Meta channel is not connected for this shop and platform',
+                    });
+                }
+            }
+
             // Step 1: Ingest message and get conversation state
             const ingestionResult = await ConversationStateService.ingestMessage({
                 shop_id,
@@ -122,6 +137,7 @@ class AIChatbotController {
                 platform,
                 message,
                 sender_type: 'customer',
+                meta_channel_id,
                 metadata: {
                     message_id,
                     sender_info
@@ -140,19 +156,15 @@ class AIChatbotController {
             const [shopAISettings, channelAISettings] = await Promise.all([
                 getShopAISettings(shop_id),
                 (async () => {
-                    // Prefer explicit meta_channel_id (unambiguous when a shop owns
-                    // multiple Pages); fall back to shop+platform lookup for legacy
-                    // callers that don't know which channel the message belongs to.
                     try {
-                        let ch = null;
+                        let ch;
                         if (meta_channel_id) {
-                            const MetaChannel = require('../channel-providers/meta-channel.entity');
-                            const row = await MetaChannel.findByPk(meta_channel_id);
-                            if (row && row.shop_id === shop_id) ch = row;
-                        }
-                        if (!ch) {
-                            const pf = platform === 'messenger' ? 'facebook' : platform;
-                            ch = await metaChannelService.findByShopAndPlatform(shop_id, pf);
+                            ch = exactMetaChannel;
+                        } else {
+                            ch = await metaChannelService.findUniqueConnectedByShopAndPlatform(
+                                shop_id,
+                                normalizedPlatform,
+                            );
                         }
                         if (!ch) return {};
                         const s = await metaChannelService.getSettings(ch.id);

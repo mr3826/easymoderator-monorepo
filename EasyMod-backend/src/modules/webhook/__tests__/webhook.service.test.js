@@ -3,13 +3,13 @@
 /**
  * Tests for src/modules/webhook/webhook.service.js
  *
- * Phase 5 rewrite: shim delegates to providerRegistry + MetaChannel lookup.
+ * Routing-boundary rewrite: shim delegates to providerRegistry + MetaChannel lookup.
  * All DB and provider calls are mocked — no real HTTP calls.
  *
  * Test cases preserved from the pre-Phase-5 suite:
  *   1. delegates to provider.sendMessage with correct args
  *   2. maps facebook channel type to facebook platform (provider key)
- *   3. maps legacy instagram channel type to facebook (FB-only launch)
+ *   3. rejects unsupported channel types instead of reinterpreting them
  *   4. does nothing if channel is missing
  *   5. does nothing if recipientId is missing
  *   6. does nothing if message is missing
@@ -22,17 +22,32 @@ const mockMetaChannel = {
     id: 'mc-1',
     shop_id: 'shop-uuid-1234',
     platform: 'facebook',
+    meta_asset_id: 'page-1',
     status: 'CONNECTED',
 };
 
-jest.mock('../../channel-providers/meta-channel.entity', () => ({
-    findOne: jest.fn().mockResolvedValue(mockMetaChannel),
-    findByPk: jest.fn().mockResolvedValue(mockMetaChannel),
-}));
+const mockMetaChannelService = {
+    findConnectedById: jest.fn().mockResolvedValue(mockMetaChannel),
+    findByMetaAssetId: jest.fn().mockResolvedValue(null),
+    findUniqueConnectedByShopAndPlatform: jest.fn().mockResolvedValue(mockMetaChannel),
+    getSettings: jest.fn().mockResolvedValue({ channel_id: 'mc-1', automation_mode: 'DRAFT', ai_auto_reply: true }),
+};
+jest.mock('../../channel-providers/meta-channel.service', () => mockMetaChannelService);
+
+const mockConversation = {
+    findAll: jest.fn().mockResolvedValue([]),
+};
+jest.mock('../../conversation/conversation.entity', () => ({ Conversation: mockConversation }));
 
 // Customer is now looked up in the shim so the policy engine has opt-out context.
+const mockCustomerRecord = {
+    id: 'cust-uuid-1',
+    shop_id: 'shop-uuid-1234',
+    channel_type: 'messenger',
+    channel_user_id: 'psid-123',
+};
 jest.mock('../../customer/customer.entity', () => ({
-    findOne: jest.fn().mockResolvedValue(null),
+    findOne: jest.fn().mockResolvedValue(mockCustomerRecord),
 }));
 
 // ── Mock provider registry ───────────────────────────────────────────────────
@@ -53,7 +68,8 @@ jest.mock('../../policy/policy.engine', () => ({
     }),
 }));
 
-const MetaChannel = require('../../channel-providers/meta-channel.entity');
+const metaChannelService = require('../../channel-providers/meta-channel.service');
+const { Conversation } = require('../../conversation/conversation.entity');
 const Customer = require('../../customer/customer.entity');
 const { getProvider } = require('../../channel-providers/provider.registry');
 const policyEngine = require('../../policy/policy.engine');
@@ -67,9 +83,18 @@ const buildChannel = (overrides = {}) => ({
     ...overrides,
 });
 
-afterEach(() => jest.clearAllMocks());
+beforeEach(() => {
+    jest.clearAllMocks();
+    Conversation.findAll.mockResolvedValue([]);
+    metaChannelService.findConnectedById.mockResolvedValue(mockMetaChannel);
+    metaChannelService.findByMetaAssetId.mockResolvedValue(null);
+    metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValue(mockMetaChannel);
+    metaChannelService.getSettings.mockResolvedValue({ channel_id: 'mc-1', automation_mode: 'DRAFT', ai_auto_reply: true });
+    Customer.findOne.mockResolvedValue(mockCustomerRecord);
+    mockSendMessage.mockResolvedValue({ providerMessageId: 'mid-1' });
+});
 
-describe('sendMessage (webhook shim — Phase 5)', () => {
+describe('sendMessage (webhook shim — exact routing)', () => {
 
     test('delegates to provider.sendMessage with correct args', async () => {
         mockSendMessage.mockResolvedValueOnce({});
@@ -77,9 +102,9 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
         const channel = buildChannel();
         await sendMessage(channel, 'psid-123', 'Hello customer');
 
-        expect(MetaChannel.findOne).toHaveBeenCalledTimes(1);
-        expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { shop_id: 'shop-uuid-1234', platform: 'facebook' } })
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).toHaveBeenCalledWith(
+            'shop-uuid-1234',
+            'facebook',
         );
         expect(mockSendMessage).toHaveBeenCalledTimes(1);
         expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -93,8 +118,9 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
         mockSendMessage.mockResolvedValueOnce({});
         await sendMessage(buildChannel({ type: 'facebook' }), 'psid', 'msg');
 
-        expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).toHaveBeenCalledWith(
+            'shop-uuid-1234',
+            'facebook',
         );
         expect(mockSendMessage).toHaveBeenCalled();
     });
@@ -103,27 +129,30 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
         mockSendMessage.mockResolvedValueOnce({});
         await sendMessage(buildChannel({ type: 'messenger' }), 'psid', 'msg');
 
-        expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).toHaveBeenCalledWith(
+            'shop-uuid-1234',
+            'facebook',
         );
         expect(mockSendMessage).toHaveBeenCalled();
     });
 
-    test('maps a legacy instagram channel type to facebook (FB-only launch)', async () => {
-        mockSendMessage.mockResolvedValueOnce({});
-
+    test('does not reinterpret an Instagram channel as Facebook', async () => {
         await sendMessage(buildChannel({ type: 'instagram' }), 'legacy-id', 'msg');
 
-        // Instagram is removed: normalizePlatform collapses any channel type to
-        // 'facebook', so the lookup and send go through the Facebook provider.
-        expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
-        );
-        expect(mockSendMessage).toHaveBeenCalled();
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
     test('does not call provider.sendMessage if channel is missing', async () => {
         await sendMessage(null, 'psid', 'msg');
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not resolve a channel when the tenant scope is missing', async () => {
+        await sendMessage({ type: 'facebook' }, 'psid', 'msg');
+
+        expect(metaChannelService.findConnectedById).not.toHaveBeenCalled();
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
         expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
@@ -151,31 +180,273 @@ describe('sendMessage (webhook shim — Phase 5)', () => {
     });
 
     test('drops send silently when no MetaChannel found for shop+platform', async () => {
-        // No meta_channel_id on the channel → goes straight to findOne fallback.
-        MetaChannel.findOne.mockResolvedValueOnce(null);
-        await sendMessage(buildChannel(), 'psid', 'msg');
+        metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValueOnce(null);
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toMatchObject({
+            sent: false,
+            reason: 'no_channel',
+        });
         expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
-    // Phase 2 — explicit meta_channel_id routing
+    test('does not send when the customer lookup dependency fails', async () => {
+        Customer.findOne.mockRejectedValueOnce(new Error('customer store unavailable'));
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'customer_lookup_error',
+        });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the customer context is unknown', async () => {
+        Customer.findOne.mockResolvedValueOnce(null);
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'customer_context_unavailable',
+        });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when channel settings are missing', async () => {
+        metaChannelService.getSettings.mockResolvedValueOnce(null);
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'settings_unavailable',
+        });
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when channel settings lookup fails', async () => {
+        metaChannelService.getSettings.mockRejectedValueOnce(new Error('settings store unavailable'));
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'settings_lookup_error',
+        });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when channel settings are an empty object', async () => {
+        metaChannelService.getSettings.mockResolvedValueOnce({});
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'settings_unavailable',
+        });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the customer channel type is unknown', async () => {
+        Customer.findOne.mockResolvedValueOnce({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_user_id: 'psid',
+        });
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'platform_mismatch',
+        });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when policy allow is not the boolean true', async () => {
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: 'true', reason: 'malformed' });
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual(expect.objectContaining({
+            sent: false,
+            reason: 'policy_denied',
+        }));
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not report sent when the provider completes without a send result', async () => {
+        mockSendMessage.mockResolvedValueOnce(undefined);
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual({
+            sent: false,
+            reason: 'provider_no_send',
+        });
+    });
+
+    // Exact channel routing
     test('uses findByPk when channel.meta_channel_id is provided', async () => {
         mockSendMessage.mockResolvedValueOnce({});
         await sendMessage(buildChannel({ meta_channel_id: 'mc-explicit' }), 'psid', 'msg');
 
-        expect(MetaChannel.findByPk).toHaveBeenCalledWith('mc-explicit');
-        expect(MetaChannel.findOne).not.toHaveBeenCalled();
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('mc-explicit', {
+            shopId: 'shop-uuid-1234',
+            platform: 'facebook',
+        });
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
         expect(mockSendMessage).toHaveBeenCalled();
     });
 
-    test('falls back to findOne when findByPk returns null for stale meta_channel_id', async () => {
-        MetaChannel.findByPk.mockResolvedValueOnce(null);
+    test('does not fall back when an explicit meta_channel_id is stale', async () => {
+        metaChannelService.findConnectedById.mockResolvedValueOnce(null);
+
+        await expect(sendMessage(buildChannel({ meta_channel_id: 'mc-deleted' }), 'psid', 'msg'))
+            .resolves.toMatchObject({ sent: false, reason: 'no_channel' });
+
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('mc-deleted', expect.any(Object));
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('uses an explicit Page asset without falling back to shop-wide lookup', async () => {
+        metaChannelService.findByMetaAssetId.mockResolvedValueOnce(mockMetaChannel);
         mockSendMessage.mockResolvedValueOnce({});
 
-        await sendMessage(buildChannel({ meta_channel_id: 'mc-deleted' }), 'psid', 'msg');
+        await sendMessage(buildChannel({ meta_asset_id: 'page-1' }), 'psid', 'msg');
 
-        expect(MetaChannel.findByPk).toHaveBeenCalledWith('mc-deleted');
-        expect(MetaChannel.findOne).toHaveBeenCalledTimes(1);
+        expect(metaChannelService.findByMetaAssetId).toHaveBeenCalledWith('page-1');
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
         expect(mockSendMessage).toHaveBeenCalled();
+    });
+
+    test.each(['wrong shop', 'disconnected', 'platform mismatch', 'asset mismatch'])(
+        'does not send or fall back when the explicit channel has a %s',
+        async () => {
+            metaChannelService.findConnectedById.mockResolvedValueOnce(null);
+
+            await expect(sendMessage(buildChannel({
+                meta_channel_id: 'mc-explicit',
+                meta_asset_id: 'page-expected',
+            }), 'psid', 'msg')).resolves.toMatchObject({ sent: false, reason: 'no_channel' });
+
+            expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+            expect(mockSendMessage).not.toHaveBeenCalled();
+        },
+    );
+
+    test('sendToCustomer uses the one distinct Messenger conversation channel', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+        });
+        Conversation.findAll.mockResolvedValue([
+            { meta_channel_id: 'mc-1' },
+            { meta_channel_id: 'mc-1' },
+        ]);
+        mockSendMessage.mockResolvedValueOnce({});
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(Conversation.findAll).toHaveBeenCalledWith(expect.objectContaining({
+            where: { shop_id: 'shop-uuid-1234', customer_id: 'cust-uuid-1', channel: 'messenger' },
+            attributes: ['meta_channel_id'],
+        }));
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('mc-1', expect.any(Object));
+        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({
+            recipientId: 'psid-cust-9',
+        }));
+        expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
+    });
+
+    test('sendToCustomer returns ambiguous_channel and does not send for multiple distinct channels', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+        });
+        Conversation.findAll.mockResolvedValue([
+            { meta_channel_id: 'mc-1' },
+            { meta_channel_id: 'mc-2' },
+        ]);
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(result).toEqual({ sent: false, reason: 'ambiguous_channel' });
+        expect(metaChannelService.findConnectedById).not.toHaveBeenCalled();
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('sendToCustomer honors an explicit channel without querying conversation candidates', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+        });
+        mockSendMessage.mockResolvedValueOnce({});
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+            metaChannelId: 'mc-explicit',
+        });
+
+        expect(Conversation.findAll).not.toHaveBeenCalled();
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('mc-explicit', expect.any(Object));
+        expect(result).toEqual(expect.objectContaining({ sent: true }));
+    });
+
+    test('sendToCustomer does not reinterpret a non-Messenger customer as Messenger', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'instagram',
+            channel_user_id: 'legacy-7',
+        });
+
+        const result = await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
+
+        expect(result).toEqual({ sent: false, reason: 'platform_mismatch' });
+        expect(Conversation.findAll).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('sendToCustomer fails closed when conversation channel context is unavailable', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+        });
+        Conversation.findAll.mockResolvedValueOnce(null);
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(result).toEqual({ sent: false, reason: 'lookup_error' });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('sendToCustomer rejects a customer record from another tenant', async () => {
+        Customer.findOne.mockResolvedValueOnce({
+            id: 'cust-uuid-1',
+            shop_id: 'other-shop',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+        });
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(result).toEqual({ sent: false, reason: 'customer_context_unavailable' });
+        expect(mockSendMessage).not.toHaveBeenCalled();
     });
 });
 
@@ -211,18 +482,27 @@ describe('sendToCustomer (resolve PSID from a customer record)', () => {
         expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
     });
 
-    test('maps a legacy instagram customer to a facebook send (FB-only launch)', async () => {
+    test('rejects a legacy Instagram customer instead of sending through Messenger', async () => {
         Customer.findOne.mockResolvedValue(buildCustomer({ channel_type: 'instagram', channel_user_id: 'legacy-7' }));
-        mockSendMessage.mockResolvedValueOnce({});
 
-        await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
+        const result = await sendToCustomer({ shopId: 'shop-uuid-1234', customerId: 'cust-uuid-1', message: 'hi' });
 
-        // Instagram removed: the send resolves to the Facebook provider regardless
-        // of the customer's legacy channel_type, using their stored channel_user_id.
-        expect(MetaChannel.findOne).toHaveBeenCalledWith(
-            expect.objectContaining({ where: expect.objectContaining({ platform: 'facebook' }) })
-        );
-        expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({ recipientId: 'legacy-7' }));
+        expect(result).toEqual({ sent: false, reason: 'platform_mismatch' });
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not report a transactional send when policy denies the outbound message', async () => {
+        const policyEngine = require('../../policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'NO_CONSENT' });
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(result).toEqual({ sent: false, reason: 'policy_denied' });
+        expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
     test('returns no_customer when the customer is not found', async () => {

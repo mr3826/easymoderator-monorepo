@@ -17,6 +17,7 @@ const mockDrainChannelJobs = jest.fn();
 const mockMetaChannel = {
     findAll: jest.fn(),
     findOne: jest.fn(),
+    findByPk: jest.fn(),
     create: jest.fn(),
 };
 
@@ -63,6 +64,7 @@ function makeCreatedChannel(overrides = {}) {
         shop_id: 'new-shop',
         platform: 'facebook',
         meta_asset_id: 'PAGE_1',
+        status: 'CONNECTED',
         ...overrides,
     };
 }
@@ -90,6 +92,7 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
         sequelize.transaction.mockResolvedValue(mockTransaction);
         mockMetaChannel.findAll.mockResolvedValue([]);
         mockMetaChannel.findOne.mockResolvedValue(null);
+        mockMetaChannel.findByPk.mockResolvedValue(null);
         mockMetaChannel.create.mockResolvedValue(makeCreatedChannel());
         mockMetaChannelSettings.findOrCreate.mockResolvedValue([{}, true]);
         mockDrainChannelJobs.mockResolvedValue({ removed: 0 });
@@ -157,15 +160,98 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
         );
     });
 
-    test('findByMetaAssetId only resolves the currently connected channel for webhook routing', async () => {
+    test('findUniqueConnectedByShopAndPlatform resolves the only connected Facebook channel', async () => {
+        const connected = makeCreatedChannel({ shop_id: 'shop-1' });
+        mockMetaChannel.findAll.mockResolvedValue([connected]);
+
+        await expect(metaChannelService.findUniqueConnectedByShopAndPlatform('shop-1', 'facebook'))
+            .resolves.toBe(connected);
+
+        expect(mockMetaChannel.findAll).toHaveBeenCalledWith({
+            where: { shop_id: 'shop-1', platform: 'facebook', status: 'CONNECTED' },
+        });
+    });
+
+    test('findConnectedById resolves only a connected channel in the requested tenant, platform, and Page', async () => {
+        const connected = makeCreatedChannel({ shop_id: 'shop-1', meta_asset_id: 'PAGE_1' });
+        mockMetaChannel.findByPk.mockResolvedValue(connected);
+
+        await expect(metaChannelService.findConnectedById('new-channel', {
+            shopId: 'shop-1',
+            platform: 'facebook',
+            metaAssetId: 'PAGE_1',
+        })).resolves.toBe(connected);
+    });
+
+    test('findConnectedById fails closed without tenant and platform scope', async () => {
+        await expect(metaChannelService.findConnectedById('new-channel')).resolves.toBeNull();
+        expect(mockMetaChannel.findByPk).not.toHaveBeenCalled();
+    });
+
+    test.each([
+        ['wrong shop', { shop_id: 'other-shop' }],
+        ['disconnected', { status: 'DISCONNECTED' }],
+        ['platform mismatch', { platform: 'instagram' }],
+        ['asset mismatch', { meta_asset_id: 'PAGE_2' }],
+    ])('findConnectedById returns null for an explicit %s row', async (_reason, overrides) => {
+        mockMetaChannel.findByPk.mockResolvedValue(makeCreatedChannel(overrides));
+
+        await expect(metaChannelService.findConnectedById('new-channel', {
+            shopId: 'shop-1',
+            platform: 'facebook',
+            metaAssetId: 'PAGE_1',
+        })).resolves.toBeNull();
+    });
+
+    test('findUniqueConnectedByShopAndPlatform returns null and warns when no channel is connected', async () => {
+        mockMetaChannel.findAll.mockResolvedValue([]);
+
+        await expect(metaChannelService.findUniqueConnectedByShopAndPlatform('shop-1', 'facebook'))
+            .resolves.toBeNull();
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('unique connected channel'),
+            expect.objectContaining({ shopId: 'shop-1', platform: 'facebook', connectedCount: 0 }),
+        );
+    });
+
+    test('findUniqueConnectedByShopAndPlatform returns null and warns when multiple channels are connected', async () => {
+        mockMetaChannel.findAll.mockResolvedValue([
+            makeCreatedChannel({ id: 'channel-1', shop_id: 'shop-1' }),
+            makeCreatedChannel({ id: 'channel-2', shop_id: 'shop-1', meta_asset_id: 'PAGE_2' }),
+        ]);
+
+        await expect(metaChannelService.findUniqueConnectedByShopAndPlatform('shop-1', 'facebook'))
+            .resolves.toBeNull();
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('unique connected channel'),
+            expect.objectContaining({ shopId: 'shop-1', platform: 'facebook', connectedCount: 2 }),
+        );
+        expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain('page-token');
+    });
+
+    test('findByMetaAssetId resolves the only connected claim for webhook routing', async () => {
         const connected = makeCreatedChannel();
-        mockMetaChannel.findOne.mockResolvedValue(connected);
+        mockMetaChannel.findAll.mockResolvedValue([connected]);
 
         await expect(metaChannelService.findByMetaAssetId('PAGE_1')).resolves.toBe(connected);
 
-        expect(mockMetaChannel.findOne).toHaveBeenCalledWith({
+        expect(mockMetaChannel.findAll).toHaveBeenCalledWith({
             where: { meta_asset_id: 'PAGE_1', status: 'CONNECTED' },
-            order: [['updated_at', 'DESC'], ['created_at', 'DESC']],
         });
+    });
+
+    test('findByMetaAssetId returns null when multiple connected rows claim the same Page', async () => {
+        mockMetaChannel.findAll.mockResolvedValue([
+            makeCreatedChannel({ id: 'channel-1' }),
+            makeCreatedChannel({ id: 'channel-2' }),
+        ]);
+
+        await expect(metaChannelService.findByMetaAssetId('PAGE_1')).resolves.toBeNull();
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+            expect.stringContaining('multiple connected channels'),
+            expect.objectContaining({ metaAssetId: 'PAGE_1', connectedCount: 2 }),
+        );
     });
 });

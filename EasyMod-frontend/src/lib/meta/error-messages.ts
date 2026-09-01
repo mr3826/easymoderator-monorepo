@@ -34,12 +34,13 @@ const META_ERROR_MAPPINGS: MetaErrorMapping[] = [
   { match: "revoked", key: "errors.meta.accessRevoked" },
   { match: "disconnected", key: "errors.meta.channelDisconnected" },
   { match: "webhook", key: "errors.meta.webhookFailed" },
+  { match: "META_PAGE_TASKS_REQUIRED", key: "errors.meta.pageTasksRequired" },
 ];
 
 /** Normalised error extracted from an Axios error, regardless of backend shape. */
 export interface ExtractedApiError {
-  /** Numeric Meta error code, if the message carried one (e.g. "(#190) …"). */
-  code: number | null;
+  /** Numeric Meta error code or stable backend code, when present. */
+  code: number | string | null;
   /** Raw backend/Meta error message — the actual reason a request failed. */
   message: string | null;
 }
@@ -59,7 +60,7 @@ export function extractMetaApiError(err: unknown): ExtractedApiError {
   // NormalizedApiError, so `.response` is gone and `details` is hoisted to the
   // top level. Read that shape first; the `.response` branch below still covers
   // errors raised before the interceptor (or by a bare axios call).
-  const normalized = err as { details?: unknown } | undefined;
+  const normalized = err as { details?: unknown; code?: unknown; message?: unknown } | undefined;
   const data = ((err as { response?: { data?: unknown } })?.response?.data ??
     (normalized?.details !== undefined ? { error: { details: normalized.details } } : undefined)) as
     | Record<string, unknown>
@@ -69,7 +70,7 @@ export function extractMetaApiError(err: unknown): ExtractedApiError {
 
   if (data && typeof data === "object") {
     const nested = data.error as
-      | { message?: unknown; details?: Array<{ message?: unknown }> }
+      | { message?: unknown; code?: unknown; details?: Array<{ message?: unknown }> }
       | undefined;
 
     if (nested && typeof nested === "object") {
@@ -94,10 +95,20 @@ export function extractMetaApiError(err: unknown): ExtractedApiError {
 
   // Meta embeds its numeric code in the text as "(#100) …" — recover it so the
   // code-based mappings below can match.
-  let code: number | null = null;
+  const rawCode =
+    (data?.error as { code?: unknown } | undefined)?.code
+    ?? data?.code
+    ?? normalized?.code;
+  let code: number | string | null = null;
+  if (typeof rawCode === "number" && Number.isFinite(rawCode)) {
+    code = rawCode;
+  } else if (typeof rawCode === "string" && rawCode.trim()) {
+    const trimmedCode = rawCode.trim();
+    code = /^\d+$/.test(trimmedCode) ? Number(trimmedCode) : trimmedCode;
+  }
   if (message) {
     const m = message.match(/\(#(\d+)\)/);
-    if (m) code = Number(m[1]);
+    if (m && code == null) code = Number(m[1]);
   }
 
   return { code, message };
@@ -105,21 +116,27 @@ export function extractMetaApiError(err: unknown): ExtractedApiError {
 
 /**
  * Returns a merchant-friendly error message for a Meta API error.
- * @param code - Numeric Meta error code (optional)
+ * @param code - Numeric Meta error code or stable backend code (optional)
  * @param rawMessage - Raw error string from API (optional)
  * @param lang - 'bn' (default) or 'en'
  */
 export function getMetaErrorMessage(
-  code?: number | null,
+  code?: number | string | null,
   rawMessage?: string | null,
   lang: "bn" | "en" = "bn"
 ): string {
   // Try numeric code match first
   if (code != null) {
+    const numericCode = typeof code === "string" && /^\d+$/.test(code) ? Number(code) : code;
     const byCode = META_ERROR_MAPPINGS.find(
-      (m) => typeof m.match === "number" && m.match === code
+      (m) => typeof m.match === "number" && m.match === numericCode
     );
     if (byCode) return i18n.t(byCode.key, { lng: lang });
+
+    const byStableCode = META_ERROR_MAPPINGS.find(
+      (m) => typeof m.match === "string" && m.match.toUpperCase() === String(code).toUpperCase(),
+    );
+    if (byStableCode) return i18n.t(byStableCode.key, { lng: lang });
   }
 
   // Try string pattern match against raw message

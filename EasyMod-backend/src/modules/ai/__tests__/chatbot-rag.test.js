@@ -279,6 +279,13 @@ jest.mock('src/modules/conversation/conversation-state-standalone.service', () =
     extractEntities: jest.fn(() => ({})),
 }));
 
+const mockMetaChannelService = {
+    findConnectedById: jest.fn(() => Promise.resolve(null)),
+    findUniqueConnectedByShopAndPlatform: jest.fn(() => Promise.resolve(null)),
+    getSettings: jest.fn(() => Promise.resolve({})),
+};
+jest.mock('src/modules/channel-providers/meta-channel.service', () => mockMetaChannelService);
+
 // ── Mock OrderSessionService ──────────────────────────────────────────────────
 jest.mock('src/modules/order/order-session-standalone.service', () => ({
     processStep: jest.fn(() => Promise.resolve({
@@ -553,6 +560,36 @@ describe('Input validation', () => {
     test('empty message with no attachments returns 400', async () => {
         const res = await chatbotPost({ shop_id: SHOP_ID, customer_channel_id: CUSTOMER_ID, platform: 'messenger' });
         expect(res.status).toBe(400);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Exact Meta channel routing', () => {
+    test('passes the supplied channel id into ingestion and does not use shop-wide fallback', async () => {
+        const ConversationStateService = require('src/modules/conversation/conversation-state-standalone.service');
+        const channelId = '11111111-1111-4111-8111-111111111111';
+        mockMetaChannelService.findConnectedById.mockResolvedValueOnce({
+            id: channelId,
+            shop_id: SHOP_ID,
+            platform: 'facebook',
+            status: 'CONNECTED',
+        });
+
+        const res = await chatbotPost({
+            ...baseBody('where is my order?'),
+            platform: 'facebook',
+            meta_channel_id: channelId,
+        });
+
+        expect(res.status).toBe(200);
+        expect(ConversationStateService.ingestMessage).toHaveBeenCalledWith(expect.objectContaining({
+            meta_channel_id: channelId,
+        }));
+        expect(mockMetaChannelService.findConnectedById).toHaveBeenCalledWith(channelId, {
+            shopId: SHOP_ID,
+            platform: 'facebook',
+        });
+        expect(mockMetaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
     });
 });
 

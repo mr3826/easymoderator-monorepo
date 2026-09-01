@@ -8,7 +8,6 @@ const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
 const { Conversation: ConvModel, Customer: CustomerModel, Message: MessageModel } = require('../entities');
 const metaChannelService = require('../channel-providers/meta-channel.service');
-const MetaChannel = require('../channel-providers/meta-channel.entity');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 const { resolvePublicAssetOrigin } = require('../../config/origins');
@@ -220,8 +219,8 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
 
 /**
  * Deliver an outbound message to the customer's Meta channel.
- * Phase 5: resolves MetaChannel (single source of truth), evaluates policy,
- * and delegates to the provider registry for transport.
+ * Resolves the exact MetaChannel (or a unique connected legacy fallback),
+ * evaluates policy, and delegates to the provider registry for transport.
  * Best-effort: never throws. Emits SSE `delivery_failed` on failure.
  */
 async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessage, senderRole = 'agent') {
@@ -249,16 +248,17 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
             return;
         }
 
-        // Prefer the channel the conversation was pinned to (Phase 2 FK), so
-        // multi-Page shops reply from the same Page the customer wrote to. Fall
-        // back to shop+platform for pre-Phase-2 conversations without the FK.
+        // Prefer the exact channel pinned to the conversation. Legacy unpinned
+        // conversations may use the unique connected channel only when the shop
+        // has no routing ambiguity.
         let metaChannel = null;
         if (conversation.meta_channel_id) {
-            metaChannel = await MetaChannel.findByPk(conversation.meta_channel_id);
-            if (metaChannel && metaChannel.shop_id !== shopId) metaChannel = null;
-        }
-        if (!metaChannel) {
-            metaChannel = await metaChannelService.findByShopAndPlatform(shopId, platform);
+            metaChannel = await metaChannelService.findConnectedById(conversation.meta_channel_id, {
+                shopId,
+                platform,
+            });
+        } else {
+            metaChannel = await metaChannelService.findUniqueConnectedByShopAndPlatform(shopId, platform);
         }
         if (!metaChannel) {
             failureReason = `No active ${platform} channel — connect your page in Settings → Channels`;
@@ -299,7 +299,7 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
             normalizedMessage: decision.transform || normalizedMessage,
             decision,
         });
-        console.log(`[inbox] Message delivered via ${platform} to ${recipientId} (conv: ${conversationId})`);
+        console.log(`[inbox] Message delivered via ${platform} (conv: ${conversationId})`);
     } catch (err) {
         failureReason = err.message;
         console.error(`[inbox] Meta delivery failed for conversation ${conversationId}: ${err.message}`);

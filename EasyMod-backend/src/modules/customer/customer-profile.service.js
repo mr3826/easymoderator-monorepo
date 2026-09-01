@@ -29,7 +29,7 @@ const crypto = require('crypto');
 const config = require('../../config/config');
 const { createLogger } = require('../../utils/structured-logger');
 const Customer = require('./customer.entity');
-const MetaChannel = require('../channel-providers/meta-channel.entity');
+const metaChannelService = require('../channel-providers/meta-channel.service');
 
 const logger = createLogger('CustomerProfile');
 
@@ -55,16 +55,17 @@ const isPlaceholderName = (name) => {
 const hasMissingProfileFields = (metadata = {}) =>
     !metadata.first_name || !metadata.last_name || !metadata.profile_pic;
 
-// Resolve the channel (and thus the page/IG token) for this customer's platform.
+// Resolve the exact Page channel, and therefore the token, for this customer.
 async function resolveChannel({ metaChannelId, shopId, platform }) {
+    const normalized = platform === 'messenger' ? 'facebook' : platform;
     if (metaChannelId) {
-        const ch = await MetaChannel.findByPk(metaChannelId);
-        if (ch) return ch;
+        return metaChannelService.findConnectedById(metaChannelId, {
+            shopId,
+            platform: normalized,
+        });
     }
-    if (shopId && platform) {
-        // Channels are stored under platform 'facebook' / 'instagram'.
-        const normalized = platform === 'messenger' ? 'facebook' : platform;
-        return MetaChannel.findOne({ where: { shop_id: shopId, platform: normalized } });
+    if (shopId && normalized) {
+        return metaChannelService.findUniqueConnectedByShopAndPlatform(shopId, normalized);
     }
     return null;
 }
@@ -75,8 +76,8 @@ async function resolveChannel({ metaChannelId, shopId, platform }) {
  * @param {object}  args
  * @param {string}  args.customerId    - Customer row id (already created)
  * @param {string}  [args.metaChannelId]
- * @param {string}  [args.shopId]
- * @param {string}  [args.platform]    - 'messenger' | 'facebook' | 'instagram'
+ * @param {string}  [args.shopId]      - required when metaChannelId is supplied
+ * @param {string}  [args.platform]    - 'messenger' | 'facebook'; required with metaChannelId
  * @param {string}  args.psid          - platform user id (PSID / IGSID)
  * @returns {Promise<boolean>} true if the name was updated
  */

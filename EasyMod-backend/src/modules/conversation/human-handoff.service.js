@@ -23,6 +23,19 @@ const { Customer, MetaChannelSettings } = require('../entities');
 const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
+const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
+
+function hasRequiredContextValue(value) {
+    return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function isContextRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeHandoffPlatform(platform) {
+    return platform === 'messenger' ? 'facebook' : platform;
+}
 
 async function getHandoffCooldownMinutes(shopId) {
     try {
@@ -60,11 +73,16 @@ async function escalateToHuman({
     reason,
 } = {}) {
     const convId = conversationId || conversation?.id;
+    let hitlReady = conversation?.hitl === true;
 
     // 1. Pause AI + notify agent tabs (idempotent — don't re-flip if already HITL)
     try {
-        if (conversation && conversation.hitl !== true) {
+        if (!conversation) {
+            throw new Error('Conversation context is unavailable');
+        }
+        if (conversation.hitl !== true) {
             await conversation.update({ hitl: true });
+            hitlReady = true;
             try {
                 const merchantNotificationService = require('../notification/merchant-notification.service');
                 const { NOTIFICATION_EVENTS } = require('../notification/notification-events');
@@ -86,6 +104,8 @@ async function escalateToHuman({
                     notificationOptions
                 )).catch(() => {});
             } catch (_) { /* alert failure must never block HITL */ }
+        } else {
+            hitlReady = true;
         }
         sseManager.emit(shopId, 'hitl_changed', { conversation_id: convId, hitl: true });
     } catch (err) {
@@ -99,8 +119,17 @@ async function escalateToHuman({
     sseManager.emit(shopId, 'new_message', { conversation_id: convId, message: holdingMsg });
 
     // 3. Deliver it on the same channel the inbound arrived on
-    if (channel) {
-        const pf = platform === 'messenger' ? 'facebook' : platform;
+    if (channel && hitlReady) {
+        const pf = normalizeHandoffPlatform(platform);
+        if (!hasRequiredContextValue(convId)
+            || !hasRequiredContextValue(shopId)
+            || !SUPPORTED_HANDOFF_PLATFORMS.has(platform)
+            || !hasRequiredContextValue(recipientId)
+            || !hasRequiredContextValue(channel.id)) {
+            console.warn(`[handoff] Holding message not sent for conv ${convId}: delivery context unavailable`);
+            return holdingMsg;
+        }
+
         try {
             const customerChannelType = pf === 'facebook' ? 'messenger' : pf;
             const [customer, settings] = await Promise.all([
@@ -110,9 +139,19 @@ async function escalateToHuman({
                         channel_type: customerChannelType,
                         channel_user_id: String(recipientId),
                     },
-                }).catch(() => null),
-                MetaChannelSettings.findOne({ where: { channel_id: channel.id } }).catch(() => null),
+                }),
+                MetaChannelSettings.findOne({ where: { channel_id: channel.id } }),
             ]);
+
+            const customerKnown = isContextRecord(customer) && hasRequiredContextValue(customer.id);
+            const settingsKnown = isContextRecord(settings)
+                && hasRequiredContextValue(settings.channel_id)
+                && String(settings.channel_id) === String(channel.id);
+            if (!customerKnown || !settingsKnown) {
+                const missing = !customerKnown ? 'customer context' : 'channel settings';
+                console.warn(`[handoff] Holding message not sent for conv ${convId}: ${missing} unavailable`);
+                return holdingMsg;
+            }
 
             const normalizedMessage = {
                 text: holdingMsg.content,

@@ -12,6 +12,9 @@
 
 process.env.NODE_ENV = 'test';
 
+const fs = require('fs');
+const path = require('path');
+
 jest.mock('bullmq', () => ({
     Worker: jest.fn(),
     Queue: jest.fn(() => ({ add: jest.fn() })),
@@ -31,10 +34,14 @@ jest.mock('src/modules/conversation/conversation.entity', () => ({
     Conversation: { findOne: jest.fn(), findByPk: jest.fn() },
     Message: { findAll: jest.fn(async () => []), count: jest.fn(async () => 1) },
 }));
+const mockStoredAiMessageUpdate = jest.fn();
+const mockStoreAIResponse = jest.fn(async (_conversationId, content) => ({
+    message: { id: 'ai-1', content, metadata: {}, update: mockStoredAiMessageUpdate },
+}));
 jest.mock('src/modules/conversation/conversation-state-standalone.service', () => ({
     detectLanguage: jest.fn(() => 'mixed'),
     extractEntities: jest.fn(() => ({})),
-    storeAIResponse: jest.fn(async (_c, content) => ({ message: { id: 'ai-1', content, metadata: {}, update: jest.fn() } })),
+    storeAIResponse: mockStoreAIResponse,
 }));
 jest.mock('src/modules/channel-providers/provider.registry', () => ({ getProvider: jest.fn() }));
 jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
@@ -42,14 +49,25 @@ jest.mock('src/modules/policy/policy.engine', () => ({
     evaluateOutbound: jest.fn(async () => ({ allow: true, decisionId: 'dec-1' })),
 }));
 jest.mock('src/modules/channel-providers/meta-channel.service', () => ({
-    findByShopAndPlatform: jest.fn(async () => ({ id: 'ch-1', shop_id: 'shop-a' })),
-    getSettings: jest.fn(async () => ({})),
+    findConnectedById: jest.fn(async () => ({
+        id: 'ch-1', shop_id: 'shop-a', platform: 'facebook', status: 'CONNECTED', meta_asset_id: 'page-1',
+    })),
+    findByMetaAssetId: jest.fn(async () => null),
+    findUniqueConnectedByShopAndPlatform: jest.fn(async () => ({
+        id: 'ch-1', shop_id: 'shop-a', platform: 'facebook', status: 'CONNECTED', meta_asset_id: 'page-1',
+    })),
+    getSettings: jest.fn(async () => ({ automation_mode: 'DRAFT', ai_auto_reply: true })),
 }));
 jest.mock('src/modules/channel-providers/meta-channel.entity', () => ({ findByPk: jest.fn(async () => null) }));
-jest.mock('src/modules/customer/customer.entity', () => ({ findOne: jest.fn(async () => ({ id: 'cust-1' })) }));
-jest.mock('src/modules/shop/shop.service', () => ({
-    getShopAiSettings: jest.fn(async () => ({ automation_mode: 'AI_ACTIVE', confidence_threshold: 75 })),
+const mockCustomerFindOne = jest.fn(async () => ({
+    id: 'cust-1',
+    shop_id: 'shop-a',
+    channel_type: 'messenger',
+    channel_user_id: '12345',
 }));
+jest.mock('src/modules/customer/customer.entity', () => ({ findOne: mockCustomerFindOne }));
+const mockGetShopAiSettings = jest.fn(async () => ({ automation_mode: 'AI_ACTIVE', confidence_threshold: 75 }));
+jest.mock('src/modules/shop/shop.service', () => ({ getShopAiSettings: mockGetShopAiSettings }));
 jest.mock('src/modules/entities', () => ({ Subscription: { findOne: jest.fn(async () => ({ status: 'active' })) } }));
 jest.mock('src/modules/subscription/subscription.access', () => ({ isAiActive: jest.fn(() => true) }));
 jest.mock('src/modules/ai/sentiment.service', () => ({
@@ -74,14 +92,16 @@ jest.mock('src/modules/analytics/funnel-events.service', () => ({ recordFunnelEv
 jest.mock('src/modules/shop/ai-messaging', () => ({ buildGreeting: jest.fn(() => '') }));
 jest.mock('src/modules/shop/shop.entity', () => ({ findByPk: jest.fn(async () => ({ name: 'Demo', settings: {} })) }));
 
-const { processMessageJob } = require('src/jobs/message-worker');
+const { processMessageJob, _private } = require('src/jobs/message-worker');
 const { Conversation } = require('src/modules/conversation/conversation.entity');
 const { getProvider } = require('src/modules/channel-providers/provider.registry');
+const metaChannelService = require('src/modules/channel-providers/meta-channel.service');
 const AIChatbotController = require('src/modules/conversation/ai-chatbot.controller');
 const { escalateToHuman } = require('src/modules/conversation/human-handoff.service');
 const grounding = require('src/modules/ai/grounding');
 const { handleOrderFlow } = require('src/modules/conversation/order-flow.service');
 const { opsAlert } = require('src/utils/ops-alert');
+const merchantNotificationService = require('src/modules/notification/merchant-notification.service');
 
 const SHOP = 'shop-a';
 const PHOTO_URL = 'https://cdn.easymod.tech/products/black-saree.jpg';
@@ -130,6 +150,14 @@ const sentPayload = () => sendMessage.mock.calls[0][0].normalizedMessage;
 beforeEach(() => {
     jest.clearAllMocks();
     Conversation.findOne.mockResolvedValue({ id: 'conv-1', hitl: false, status: 'open' });
+    mockCustomerFindOne.mockResolvedValue({
+        id: 'cust-1',
+        shop_id: 'shop-a',
+        channel_type: 'messenger',
+        channel_user_id: '12345',
+    });
+    mockGetShopAiSettings.mockResolvedValue({ automation_mode: 'AI_ACTIVE', confidence_threshold: 75 });
+    metaChannelService.getSettings.mockResolvedValue({ automation_mode: 'DRAFT', ai_auto_reply: true });
     getProvider.mockReturnValue({ sendMessage });
 });
 
@@ -179,6 +207,85 @@ describe('grounded replies reach Meta intact', () => {
         await processMessageJob(job());
 
         expect(sentPayload().attachments).toEqual([]);
+    });
+});
+
+describe('message-worker channel routing', () => {
+    test('resolves an explicit channel only when shop, platform, status, and Page match', async () => {
+        const channel = {
+            id: 'ch-1',
+            shop_id: SHOP,
+            platform: 'facebook',
+            status: 'CONNECTED',
+            meta_asset_id: 'page-1',
+        };
+        metaChannelService.findConnectedById.mockResolvedValueOnce(channel);
+
+        await expect(_private.resolveChannelForJob(SHOP, 'messenger', 'ch-1', 'page-1'))
+            .resolves.toBe(channel);
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('ch-1', {
+            shopId: SHOP,
+            platform: 'facebook',
+            metaAssetId: 'page-1',
+        });
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+    });
+
+    test('never falls back to a shop-wide channel when the explicit channel is invalid', async () => {
+        metaChannelService.findConnectedById.mockResolvedValueOnce(null);
+
+        await expect(_private.resolveChannelForJob(SHOP, 'facebook', 'stale-channel', 'page-1'))
+            .resolves.toBeNull();
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+    });
+
+    test('propagates an explicit channel lookup failure instead of converting it to no channel', async () => {
+        const lookupError = new Error('channel store unavailable');
+        metaChannelService.findConnectedById.mockRejectedValueOnce(lookupError);
+
+        await expect(_private.resolveChannelForJob(SHOP, 'facebook', 'channel-1', 'page-1'))
+            .rejects.toBe(lookupError);
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+    });
+
+    test('retries a job with no resolved channel without entering the AI or send path', async () => {
+        metaChannelService.findConnectedById.mockResolvedValueOnce(null);
+
+        await expect(processMessageJob(job({ metaChannelId: 'stale-channel' }))).rejects.toMatchObject({
+            code: 'META_CHANNEL_UNAVAILABLE',
+            retryable: true,
+        });
+        expect(AIChatbotController.processNewIntent).not.toHaveBeenCalled();
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('rejects an explicit channel returned with a different Page asset', async () => {
+        metaChannelService.findConnectedById.mockResolvedValueOnce({
+            id: 'ch-1',
+            shop_id: SHOP,
+            platform: 'facebook',
+            status: 'CONNECTED',
+            meta_asset_id: 'page-2',
+        });
+
+        await expect(_private.resolveChannelForJob(SHOP, 'facebook', 'ch-1', 'page-1'))
+            .resolves.toBeNull();
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+    });
+
+    test('resolves a supplied Page asset without falling back to an arbitrary shop channel', async () => {
+        const channel = {
+            id: 'ch-1',
+            shop_id: SHOP,
+            platform: 'facebook',
+            status: 'CONNECTED',
+            meta_asset_id: 'page-1',
+        };
+        metaChannelService.findByMetaAssetId.mockResolvedValueOnce(channel);
+
+        await expect(_private.resolveChannelForJob(SHOP, 'facebook', null, 'page-1'))
+            .resolves.toBe(channel);
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
     });
 });
 
@@ -323,7 +430,7 @@ describe('existing behaviour is preserved', () => {
         expect(sendMessage).not.toHaveBeenCalled();
     });
 
-    test('a policy denial after order mutation sends the deterministic post-mutation template', async () => {
+    test('a policy denial after order mutation holds the deterministic template without sending', async () => {
         handleOrderFlow.mockResolvedValueOnce({
             handled: true,
             response: 'generated order success with unsupported claims',
@@ -338,13 +445,38 @@ describe('existing behaviour is preserved', () => {
 
         const result = await processMessageJob(job({ message: 'yes' }));
 
-        expect(result.sent).toBe(true);
-        expect(sendMessage).toHaveBeenCalledTimes(1);
-        expect(sentPayload().text).toBe('অর্ডার #ORD-1 | স্ট্যাটাস: confirmed');
-        expect(sentPayload().text).not.toContain('generated order success');
+        expect(result).toEqual(expect.objectContaining({
+            sent: false,
+            reason: 'post_mutation_template',
+        }));
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(mockStoreAIResponse).toHaveBeenCalledWith(
+            'conv-1',
+            expect.stringContaining('ORD-1'),
+            expect.objectContaining({ order_flow: expect.any(Object) }),
+        );
+        expect(mockStoredAiMessageUpdate).toHaveBeenCalledWith({
+            metadata: expect.objectContaining({
+                delivered: false,
+                held_reason: 'executed_mutation_without_outbound_send',
+            }),
+        });
+        expect(opsAlert).toHaveBeenCalledWith(
+            'executed_mutation_without_outbound_send',
+            expect.objectContaining({ level: 'error' }),
+        );
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({
+                reason: 'executed_mutation_without_outbound_send',
+                orderNumber: 'ORD-1',
+            }),
+            expect.any(Object),
+        );
     });
 
-    test('a failed post-mutation template send alerts operations and the merchant', async () => {
+    test('a grounding denial after order mutation also holds and alerts without sending', async () => {
         handleOrderFlow.mockResolvedValueOnce({
             handled: true,
             response: 'generated order success',
@@ -356,11 +488,11 @@ describe('existing behaviour is preserved', () => {
         });
         const policyEngine = require('src/modules/policy/policy.engine');
         policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'OUTSIDE_24H', decisionId: 'deny-2' });
-        sendMessage.mockRejectedValueOnce(new Error('Meta send failed'));
 
         const result = await processMessageJob(job({ message: 'yes' }));
 
         expect(result.sent).toBe(false);
+        expect(sendMessage).not.toHaveBeenCalled();
         expect(opsAlert).toHaveBeenCalledWith(
             'executed_mutation_without_outbound_send',
             expect.objectContaining({ level: 'error' })
@@ -370,7 +502,323 @@ describe('existing behaviour is preserved', () => {
                 SHOP,
                 'ai_hitl',
                 expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
-                expect.any(Object)
+                 expect.any(Object)
+             );
+    });
+
+    test('grounding suppression after order mutation holds the deterministic response without a synthetic allow', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-grounding', order_number: 'ORD-G', order_status: 'confirmed' },
+            },
+        });
+        const evaluateCandidate = jest.spyOn(grounding, 'evaluateCandidate').mockReturnValue({
+            decision: grounding.GroundingDecision.SUPPRESS,
+            reasonCode: grounding.ReasonCode.MODEL_OUTPUT_INVALID,
+            text: null,
+            attachments: [],
+            violations: ['forced_test_suppression'],
+        });
+
+        try {
+            const result = await processMessageJob(job({ message: 'yes' }));
+
+            expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+            expect(sendMessage).not.toHaveBeenCalled();
+            expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+                SHOP,
+                'ai_hitl',
+                expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+                expect.any(Object),
             );
+        } finally {
+            evaluateCandidate.mockRestore();
+        }
+    });
+
+    test('grounding dependency failure after order mutation holds and alerts without sending', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-grounding-error', order_number: 'ORD-GE', order_status: 'confirmed' },
+            },
+        });
+        const evaluateCandidate = jest.spyOn(grounding, 'evaluateCandidate')
+            .mockImplementationOnce(() => { throw new Error('grounding dependency unavailable'); });
+
+        try {
+            const result = await processMessageJob(job({ message: 'yes' }));
+
+            expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+            expect(sendMessage).not.toHaveBeenCalled();
+            expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+                SHOP,
+                'ai_hitl',
+                expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+                expect.any(Object),
+            );
+        } finally {
+            evaluateCandidate.mockRestore();
+        }
+    });
+
+    test('post-mutation draft persistence failure still alerts and never reports a send', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-store-error', order_number: 'ORD-SE', order_status: 'confirmed' },
+            },
+        });
+        mockStoreAIResponse.mockRejectedValueOnce(new Error('AI response store unavailable'));
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason: 'NO_CONSENT', decisionId: 'deny-store' });
+
+        await expect(processMessageJob(job({ message: 'yes' }))).rejects.toThrow('AI response store unavailable');
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+            expect.any(Object),
+        );
+    });
+
+    test('customer context dependency failure after order mutation holds and alerts without sending', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-customer-error', order_number: 'ORD-CE', order_status: 'confirmed' },
+            },
+        });
+        mockCustomerFindOne.mockRejectedValueOnce(new Error('customer store unavailable'));
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+            expect.any(Object),
+        );
+    });
+
+    test('latest channel settings failure after order mutation holds and alerts without sending', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-settings-error', order_number: 'ORD-SE2', order_status: 'confirmed' },
+            },
+        });
+        metaChannelService.getSettings
+            .mockResolvedValueOnce({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true })
+            .mockRejectedValueOnce(new Error('latest channel settings unavailable'));
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+            expect.any(Object),
+        );
+    });
+
+    test('channel auto-reply disablement after order mutation holds and alerts without sending', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-disabled', order_number: 'ORD-D', order_status: 'confirmed' },
+            },
+        });
+        metaChannelService.getSettings
+            .mockResolvedValueOnce({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true })
+            .mockResolvedValueOnce({ automation_mode: 'AI_ACTIVE', ai_auto_reply: false });
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+            expect.any(Object),
+        );
+    });
+
+    test('policy dependency failure after order mutation holds and alerts without sending', async () => {
+        handleOrderFlow.mockResolvedValueOnce({
+            handled: true,
+            response: 'generated order success',
+            confidence: 1,
+            meta: {
+                completed: true,
+                order: { id: 'ord-policy-error', order_number: 'ORD-PE', order_status: 'confirmed' },
+            },
+        });
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockRejectedValueOnce(new Error('policy dependency unavailable'));
+
+        const result = await processMessageJob(job({ message: 'yes' }));
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'post_mutation_template' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+        expect(merchantNotificationService.notifyShop).toHaveBeenCalledWith(
+            SHOP,
+            'ai_hitl',
+            expect.objectContaining({ reason: 'executed_mutation_without_outbound_send' }),
+            expect.any(Object),
+        );
+    });
+
+    test.each([
+        ['DRAFT', 'DRAFT_MODE'],
+        ['MANUAL', 'MANUAL'],
+        ['HUMAN_ACTIVE', 'HUMAN_ACTIVE'],
+        ['opt-out', 'OPTED_OUT'],
+        ['no consent', 'NO_CONSENT'],
+        ['window', 'OUTSIDE_24H_TEMPLATES_DISABLED'],
+    ])('holds a %s policy denial as a visible draft and never sends', async (_label, reason) => {
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: false, reason, decisionId: `deny-${reason}` });
+        AIChatbotController.processNewIntent.mockResolvedValue({
+            response: 'candidate response',
+            confidence: 0.9,
+            source: 'llm',
+            grounding: grounding.emptyEvidence(SHOP),
+            attachments: [],
+        });
+
+        const result = await processMessageJob(job());
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send or report success when the final customer context lookup fails', async () => {
+        mockCustomerFindOne.mockRejectedValueOnce(new Error('customer store unavailable'));
+
+        await expect(processMessageJob(job())).rejects.toThrow('customer store unavailable');
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the final customer context is unknown even if a dependency reports allow', async () => {
+        mockCustomerFindOne.mockResolvedValueOnce(null);
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: true, decisionId: 'unsafe-test-allow' });
+
+        const result = await processMessageJob(job());
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'CUSTOMER_CONTEXT_UNAVAILABLE' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the final customer context is incomplete', async () => {
+        mockCustomerFindOne.mockResolvedValueOnce({ id: 'cust-1' });
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: true, decisionId: 'incomplete-context-allow' });
+
+        const result = await processMessageJob(job());
+
+        expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'CUSTOMER_CONTEXT_UNAVAILABLE' }));
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('retries instead of using permissive empty shop settings when the settings dependency fails', async () => {
+        mockGetShopAiSettings.mockRejectedValueOnce(new Error('shop settings unavailable'));
+
+        await expect(processMessageJob(job())).rejects.toThrow('shop settings unavailable');
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('retries instead of using permissive empty channel settings when the settings dependency fails', async () => {
+        metaChannelService.getSettings.mockRejectedValueOnce(new Error('channel settings unavailable'));
+
+        await expect(processMessageJob(job())).rejects.toThrow('channel settings unavailable');
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('denies instead of using an empty channel settings object', async () => {
+        metaChannelService.getSettings.mockResolvedValueOnce({});
+
+        await expect(processMessageJob(job())).rejects.toMatchObject({
+            code: 'CHANNEL_SETTINGS_UNAVAILABLE',
+            retryable: true,
+        });
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('denies instead of using an empty shop settings object', async () => {
+        mockGetShopAiSettings.mockResolvedValueOnce({});
+
+        await expect(processMessageJob(job())).rejects.toMatchObject({
+            code: 'SHOP_SETTINGS_UNAVAILABLE',
+            retryable: true,
+        });
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('holds a policy result unless allow is exactly true', async () => {
+        const policyEngine = require('src/modules/policy/policy.engine');
+        policyEngine.evaluateOutbound.mockResolvedValueOnce({ allow: 'true', reason: 'malformed' });
+
+        const result = await processMessageJob(job());
+
+        expect(result.sent).toBe(false);
+        expect(sendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not report a final send when the provider returns no result', async () => {
+        AIChatbotController.processNewIntent.mockResolvedValueOnce({
+            response: 'A grounded reply',
+            confidence: 0.9,
+            source: 'llm',
+            grounding: grounding.emptyEvidence(SHOP),
+            attachments: [],
+        });
+        sendMessage.mockResolvedValueOnce(undefined);
+
+        await expect(processMessageJob(job())).rejects.toMatchObject({ code: 'PROVIDER_NO_SEND' });
+        expect(sendMessage).toHaveBeenCalledTimes(1);
+        expect(mockStoredAiMessageUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+            metadata: expect.objectContaining({ delivered: true }),
+        }));
+    });
+});
+
+describe('message-worker source safety boundary', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../message-worker.js'), 'utf8');
+
+    test('has no synthetic post-mutation allow or direct provider send path', () => {
+        const postMutationStart = source.indexOf('const sendPostMutationTemplate');
+        const postMutationEnd = source.indexOf("if (groundingVerdict.decision", postMutationStart);
+        const postMutationSource = source.slice(postMutationStart, postMutationEnd);
+
+        expect(postMutationSource).not.toContain('allow: true');
+        expect(postMutationSource).not.toContain('provider.sendMessage');
+        expect(postMutationSource).toContain('notifyExecutedMutationWithoutOutbound');
     });
 });

@@ -8,7 +8,7 @@
  * owner-notification.service) require this path to send outbound
  * Messenger messages via a channel record.
  *
- * Phase 5 cutover: the legacy meta-send.service import is removed.
+ * Routing-boundary cutover: the legacy meta-send.service import is removed.
  * Outbound transport lives exclusively in the provider registry.
  *
  * Call-site signature (unchanged):
@@ -17,21 +17,20 @@
  * Where `channel` carries:
  *   channel.shop_id          — tenant scoping
  *   channel.type             — 'facebook' | 'messenger'
- *   channel.meta_channel_id  — (Phase 2, optional) specific MetaChannel UUID;
- *                              when present the shim uses it directly instead
- *                              of resolving by (shop_id, platform). Callers
- *                              that know which page a conversation belongs to
- *                              SHOULD pass this so outbound sends use the
- *                              correct page's access token.
+ *   channel.meta_channel_id  — optional exact MetaChannel UUID. When present,
+ *                              it is validated against the tenant/platform and
+ *                              never replaced by a shop-wide lookup.
+ *   channel.meta_asset_id    — optional exact Page asset when no channel UUID
+ *                              is available.
  *
- * The shim resolves the MetaChannel for (shopId, platform), builds a
- * minimal NormalizedMessage, runs policy pre-flight, and delegates to
- * providerRegistry.get(platform).sendMessage(). Policy engine evaluation
- * inside the provider is defense-in-depth from Phase 3.
+ * The shim resolves an exact MetaChannel, or the only connected channel for
+ * the shop/platform when no exact ID is available. It then builds a minimal
+ * NormalizedMessage, runs policy pre-flight, and delegates to the provider.
  */
 
-const MetaChannel = require('../channel-providers/meta-channel.entity');
 const Customer = require('../customer/customer.entity');
+const { Conversation } = require('../conversation/conversation.entity');
+const metaChannelService = require('../channel-providers/meta-channel.service');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
 const { createLogger } = require('../../utils/structured-logger');
@@ -39,51 +38,82 @@ const { createLogger } = require('../../utils/structured-logger');
 const logger = createLogger('WebhookService');
 
 /**
- * Normalize the legacy channel.type string to the platform key expected
- * by the provider registry. Facebook-only launch → always 'facebook'.
+ * Normalize a supported legacy channel.type string to the provider key.
  *
  * @param {string} channelType
- * @returns {'facebook'}
+ * @returns {'facebook'|null}
  */
 function normalizePlatform(channelType) {
-    return 'facebook';
+    if (channelType === 'facebook' || channelType === 'messenger') return 'facebook';
+    return null;
 }
+
+const matchesMetaChannel = (channel, { shopId, platform, metaAssetId = null } = {}) => (
+    Boolean(channel)
+    && channel.status === 'CONNECTED'
+    && String(channel.shop_id) === String(shopId)
+    && channel.platform === platform
+    && (!metaAssetId || String(channel.meta_asset_id) === String(metaAssetId))
+);
+
+const normalizeSettings = (settings) => {
+    const value = typeof settings?.toJSON === 'function' ? settings.toJSON() : settings;
+    return value
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && typeof value.automation_mode === 'string'
+        && value.automation_mode.trim() !== ''
+        ? value
+        : null;
+};
 
 /**
  * Send a text message to a customer via the shop's active Meta channel.
  *
- * @param {object} channel       - Channel-like object (shop_id, type)
+ * @param {object} channel       - Channel-like object (shop_id, type, optional exact IDs)
  * @param {string|number} recipientId   - Customer PSID
  * @param {string} messageText   - Plain-text message content
- * @returns {Promise<void>}
+ * @returns {Promise<{sent: boolean, reason?: string, providerMessageId?: string}>}
  */
 async function sendMessage(channel, recipientId, messageText) {
-    if (!channel || !recipientId || !messageText) {
+    if (!channel || !channel.shop_id || !recipientId || !messageText) {
         logger.warn('sendMessage called with missing required args', {
             hasChannel: Boolean(channel),
+            hasShop: Boolean(channel?.shop_id),
             hasRecipient: Boolean(recipientId),
             hasMessage: Boolean(messageText)
         });
-        return;
+        return { sent: false, reason: 'missing_args' };
     }
 
     const platform = normalizePlatform(channel.type);
+    if (!platform) {
+        logger.warn('sendMessage called with unsupported platform', { hasChannel: true });
+        return { sent: false, reason: 'platform_mismatch' };
+    }
     const recipientIdStr = String(recipientId);
 
-    // Phase 2: prefer the explicit meta_channel_id when the caller knows which
-    // page the conversation belongs to. Fallback path looks up by
-    // (shop_id, platform) for callers that haven't been plumbed yet — note this
-    // returns an arbitrary channel when the shop has multiple pages of the same
-    // platform, so callers SHOULD pass meta_channel_id once Phase 3 ships.
     let metaChannel = null;
     if (channel.meta_channel_id) {
-        metaChannel = await MetaChannel.findByPk(channel.meta_channel_id);
-    }
-    if (!metaChannel) {
-        metaChannel = await MetaChannel.findOne({
-            where: { shop_id: channel.shop_id, platform },
-            order: [['created_at', 'ASC']]
-        });
+        const exactScope = {
+            shopId: channel.shop_id,
+            platform,
+        };
+        if (channel.meta_asset_id) exactScope.metaAssetId = channel.meta_asset_id;
+        const exactChannel = await metaChannelService.findConnectedById(channel.meta_channel_id, exactScope);
+        metaChannel = matchesMetaChannel(exactChannel, exactScope) ? exactChannel : null;
+    } else if (channel.meta_asset_id) {
+        const assetChannel = await metaChannelService.findByMetaAssetId(channel.meta_asset_id);
+        metaChannel = matchesMetaChannel(assetChannel, {
+            shopId: channel.shop_id,
+            platform,
+            metaAssetId: channel.meta_asset_id,
+        }) ? assetChannel : null;
+    } else {
+        const uniqueChannel = await metaChannelService.findUniqueConnectedByShopAndPlatform(channel.shop_id, platform);
+        metaChannel = matchesMetaChannel(uniqueChannel, { shopId: channel.shop_id, platform })
+            ? uniqueChannel
+            : null;
     }
 
     if (!metaChannel) {
@@ -92,7 +122,29 @@ async function sendMessage(channel, recipientId, messageText) {
             platform,
             metaChannelId: channel.meta_channel_id || null
         });
-        return;
+        return { sent: false, reason: 'no_channel' };
+    }
+
+    let settings;
+    try {
+        if (typeof metaChannelService.getSettings !== 'function') {
+            return { sent: false, reason: 'settings_unavailable' };
+        }
+        settings = normalizeSettings(await metaChannelService.getSettings(metaChannel.id));
+    } catch (settingsErr) {
+        logger.warn('Channel settings lookup failed in webhook shim — blocking send', {
+            shopId: channel.shop_id,
+            platform,
+            error: settingsErr.message,
+        });
+        return { sent: false, reason: 'settings_lookup_error' };
+    }
+    if (!settings) {
+        logger.warn('Channel settings unavailable in webhook shim — blocking send', {
+            shopId: channel.shop_id,
+            platform,
+        });
+        return { sent: false, reason: 'settings_unavailable' };
     }
 
     // Build a minimal NormalizedMessage for the policy engine
@@ -120,11 +172,33 @@ async function sendMessage(channel, recipientId, messageText) {
             },
         });
     } catch (lookupErr) {
-        logger.warn('Customer lookup failed in webhook shim — proceeding without customer context', {
+        logger.warn('Customer lookup failed in webhook shim — blocking send', {
             shopId: channel.shop_id,
             platform,
             error: lookupErr.message,
         });
+        return { sent: false, reason: 'customer_lookup_error' };
+    }
+    if (!customer) {
+        logger.warn('Customer context unavailable in webhook shim — blocking send', {
+            shopId: channel.shop_id,
+            platform,
+        });
+        return { sent: false, reason: 'customer_context_unavailable' };
+    }
+    if (String(customer.shop_id) !== String(channel.shop_id)) {
+        logger.warn('Customer tenant mismatch in webhook shim — blocking send', {
+            shopId: channel.shop_id,
+            platform,
+        });
+        return { sent: false, reason: 'customer_context_unavailable' };
+    }
+    if (!['messenger', 'facebook'].includes(customer.channel_type)) {
+        logger.warn('Customer routing context is incomplete in webhook shim — blocking send', {
+            shopId: channel.shop_id,
+            platform,
+        });
+        return { sent: false, reason: 'platform_mismatch' };
     }
 
     // Policy pre-flight (defense-in-depth — provider also evaluates internally)
@@ -134,6 +208,7 @@ async function sendMessage(channel, recipientId, messageText) {
         recipientId: recipientIdStr,
         channel: metaChannel,
         customer,
+        settings,
         platform,
     };
 
@@ -144,41 +219,56 @@ async function sendMessage(channel, recipientId, messageText) {
         logger.error('Policy engine error in webhook shim — blocking send', {
             shopId: channel.shop_id,
             platform,
-            recipientId: recipientIdStr,
             error: policyErr.message
         });
-        return;
+        return { sent: false, reason: 'policy_error' };
     }
 
-    if (!decision.allow) {
+    if (decision?.allow !== true) {
         logger.info('Policy denied outbound send in webhook shim', {
             shopId: channel.shop_id,
             platform,
-            recipientId: recipientIdStr,
-            reason: decision.reason
+            reason: decision?.reason || 'POLICY_DENIED',
         });
-        return;
+        return {
+            sent: false,
+            reason: 'policy_denied',
+            policyReason: decision?.reason || 'POLICY_DENIED',
+        };
     }
 
     try {
         const provider = getProvider(platform);
-        await provider.sendMessage({
+        if (!provider || typeof provider.sendMessage !== 'function') {
+            return { sent: false, reason: 'provider_unavailable' };
+        }
+        const providerResult = await provider.sendMessage({
             channel: metaChannel,
             recipientId: recipientIdStr,
             normalizedMessage: decision.transform || normalizedMessage,
             decision,
         });
 
+        if (!providerResult
+            || providerResult.sent === false
+            || providerResult.success === false
+            || providerResult.ok === false) {
+            logger.warn('Provider returned no successful send result in webhook shim', {
+                shopId: channel.shop_id,
+                platform,
+            });
+            return { sent: false, reason: 'provider_no_send' };
+        }
+
         logger.info('Message sent via webhook service shim', {
             shopId: channel.shop_id,
             platform,
-            recipientId: recipientIdStr
         });
+        return { sent: true, providerMessageId: providerResult.providerMessageId || null };
     } catch (err) {
         logger.error('sendMessage failed', {
             shopId: channel.shop_id,
             platform,
-            recipientId: recipientIdStr,
             error: err.message
         });
         throw err;
@@ -199,9 +289,17 @@ async function sendMessage(channel, recipientId, messageText) {
  * @param {string} params.shopId
  * @param {string} params.customerId  - Customer table primary key
  * @param {string} params.message     - plain-text message
+ * @param {string} [params.metaChannelId] - Exact MetaChannel UUID to use
+ * @param {string} [params.meta_channel_id] - Snake-case alias for API callers
  * @returns {Promise<{sent: boolean, reason?: string, recipientId?: string, channelType?: string}>}
  */
-async function sendToCustomer({ shopId, customerId, message } = {}) {
+async function sendToCustomer({
+    shopId,
+    customerId,
+    message,
+    metaChannelId = null,
+    meta_channel_id: metaChannelIdSnake = null,
+} = {}) {
     if (!shopId || !customerId || !message) {
         return { sent: false, reason: 'missing_args' };
     }
@@ -219,12 +317,83 @@ async function sendToCustomer({ shopId, customerId, message } = {}) {
         // with only a phone) — nothing to deliver to over Messenger.
         return { sent: false, reason: 'no_customer_psid' };
     }
+    if (String(customer.shop_id) !== String(shopId)) {
+        return { sent: false, reason: 'customer_context_unavailable' };
+    }
 
     // channel_type stores 'messenger' for Facebook.
     const channelType = 'messenger';
+    if (!['messenger', 'facebook'].includes(customer.channel_type)) {
+        return { sent: false, reason: 'platform_mismatch' };
+    }
+
+    if (metaChannelId && metaChannelIdSnake && String(metaChannelId) !== String(metaChannelIdSnake)) {
+        return { sent: false, reason: 'ambiguous_channel' };
+    }
+
+    let resolvedChannelId = metaChannelId || metaChannelIdSnake;
+    if (!resolvedChannelId) {
+        let conversations;
+        try {
+            conversations = await Conversation.findAll({
+                where: { shop_id: shopId, customer_id: customer.id, channel: channelType },
+                attributes: ['meta_channel_id'],
+            });
+        } catch (err) {
+            logger.warn('sendToCustomer: conversation channel lookup failed', {
+                shopId,
+                customerId,
+                error: err.message,
+            });
+            return { sent: false, reason: 'lookup_error' };
+        }
+
+        if (!Array.isArray(conversations)) {
+            return { sent: false, reason: 'lookup_error' };
+        }
+
+        const channelIds = [...new Set(conversations
+            .map((conversation) => conversation?.meta_channel_id)
+            .filter(Boolean)
+            .map(String))];
+        if (channelIds.length > 1) {
+            logger.warn('sendToCustomer: multiple Messenger channels found', {
+                shopId,
+                customerId,
+                channelCount: channelIds.length,
+            });
+            return { sent: false, reason: 'ambiguous_channel' };
+        }
+
+        resolvedChannelId = channelIds[0] || null;
+        if (!resolvedChannelId) {
+            try {
+                const uniqueChannel = await metaChannelService.findUniqueConnectedByShopAndPlatform(shopId, 'facebook');
+                resolvedChannelId = uniqueChannel?.id || null;
+            } catch (err) {
+                logger.warn('sendToCustomer: channel fallback lookup failed', {
+                    shopId,
+                    customerId,
+                    error: err.message,
+                });
+                return { sent: false, reason: 'lookup_error' };
+            }
+        }
+    }
+
+    if (!resolvedChannelId) {
+        return { sent: false, reason: 'no_channel' };
+    }
 
     try {
-        await sendMessage({ shop_id: shopId, type: channelType }, customer.channel_user_id, message);
+        const result = await sendMessage({
+            shop_id: shopId,
+            type: channelType,
+            meta_channel_id: resolvedChannelId,
+        }, customer.channel_user_id, message);
+        if (!result?.sent) {
+            return { sent: false, reason: result?.reason || 'no_channel' };
+        }
         return { sent: true, recipientId: customer.channel_user_id, channelType };
     } catch (err) {
         logger.warn('sendToCustomer: send failed', { shopId, customerId, error: err.message });

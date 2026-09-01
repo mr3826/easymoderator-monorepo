@@ -1321,7 +1321,7 @@
       "addAnother": "Add another Facebook Page",
       "loginPopup": "Log in to Meta in the pop-up...",
       "selectPagesHint": "Select the Pages you want to connect (one or more)",
-      "pageTaskRequired": "You need Messaging access on this Page",
+      "pageTaskRequired": "Messaging and Page management access are required on this Page",
       "connectCount": "Connect ({{count}})"
     },
     "test": {
@@ -2290,6 +2290,7 @@
       "accessRevoked": "Page access revoked. Please reconnect.",
       "channelDisconnected": "Channel disconnected. Use the Reconnect button to restore.",
       "webhookFailed": "Webhook verification failed. Check your app settings in Meta App Dashboard.",
+      "pageTasksRequired": "This Page is not eligible for Messenger. Re-authorize it with Messaging and Page management access.",
       "fallback": "Something went wrong. Try reconnecting, or contact support."
     }
   },

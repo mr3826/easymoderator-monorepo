@@ -8,24 +8,41 @@
  * delivery updates, and invoice notifications all funnel through the policy engine
  * now, so they cannot send to opted-out users.
  *
- * Allows when:
- *   - customer is missing (system message with no customer context — caller's responsibility)
- *   - per-channel consent shows opted_in true (or absent + no opt-out)
+ * Missing customer context is only compatible with non-Meta callers. Meta
+ * customer sends require a resolved customer and explicit per-channel opt-in.
  */
 
 'use strict';
 
 const consentService = require('../../consent/consent.service');
+const META_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
 
 module.exports = {
     name: 'consentRequired',
 
-    async evaluate(_message, ctx) {
+    async evaluate(_message, ctx = {}) {
         const { customer, platform } = ctx;
-        if (!customer) return { allow: true, reason: 'NO_CUSTOMER_CONTEXT' };
-        if (consentService.hasConsent({ customer, platform })) {
-            return { allow: true, reason: 'OK' };
+        const pf = platform || _message?.platform;
+        const isMeta = META_PLATFORMS.has(pf);
+
+        if (!pf) {
+            return { allow: false, reason: 'CONSENT_CONTEXT_UNAVAILABLE', retryable: true };
         }
+
+        if (!customer) {
+            return isMeta
+                ? { allow: false, reason: 'CUSTOMER_CONTEXT_UNAVAILABLE', retryable: true }
+                : { allow: true, reason: 'NO_CUSTOMER_CONTEXT' };
+        }
+
+        try {
+            if (await consentService.hasConsent({ customer, platform: pf }) === true) {
+                return { allow: true, reason: 'OK' };
+            }
+        } catch (_) {
+            return { allow: false, reason: 'CONSENT_STATE_UNAVAILABLE', retryable: true };
+        }
+
         return { allow: false, reason: 'NO_CONSENT' };
     },
 };

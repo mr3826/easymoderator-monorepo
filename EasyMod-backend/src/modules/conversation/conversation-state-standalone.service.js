@@ -10,7 +10,8 @@ const OrderSessionService = require('../order/order-session-standalone.service')
 
 class ConversationStateService {
     /**
-     * Ingest incoming message and update conversation state
+     * Ingest incoming message and update conversation state. When
+     * meta_channel_id is supplied, only that exact channel may reuse a thread.
      */
     static async ingestMessage(data) {
         const {
@@ -64,9 +65,9 @@ class ConversationStateService {
                 } catch (_) { /* never block ingestion */ }
             }
 
-            // Find or create conversation (24-hour window).
-            // Phase 2: scope by meta_channel_id when caller provided one so two
-            // pages of the same shop+platform don't share a conversation row.
+            // Find or create conversation (24-hour window). When the caller
+            // knows the Page, an exact channel match is required; an unpinned
+            // legacy row must not be adopted by that Page.
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
             const convoWhere = {
                 shop_id,
@@ -75,16 +76,18 @@ class ConversationStateService {
                 updated_at: { [Op.gte]: oneDayAgo }
             };
             if (meta_channel_id) {
-                convoWhere.meta_channel_id = { [Op.or]: [meta_channel_id, null] };
+                convoWhere.meta_channel_id = meta_channel_id;
             }
             let conversation = await Conversation.findOne({
                 where: convoWhere,
                 order: [['updated_at', 'DESC']]
             });
 
-            // Lazy backfill: if we matched an older row without meta_channel_id, set it.
-            if (conversation && meta_channel_id && !conversation.meta_channel_id) {
-                await conversation.update({ meta_channel_id });
+            // Defend against a data layer that returns a row outside the exact
+            // predicate. Never mutate an unpinned legacy conversation here.
+            if (conversation && meta_channel_id
+                && String(conversation.meta_channel_id) !== String(meta_channel_id)) {
+                conversation = null;
             }
 
             const messageTime = new Date();

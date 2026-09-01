@@ -95,7 +95,7 @@ export function normalizeApiError(error: any): NormalizedApiError {
     statusCode: status,
     message,
     details,
-    code: data?.error?.code,
+    code: data?.error?.code ?? data?.code,
     timestamp,
   };
 }
