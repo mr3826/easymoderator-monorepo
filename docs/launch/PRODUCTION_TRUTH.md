@@ -14,22 +14,22 @@ Update the "Current production state" table on every production deploy.
 
 | Field | Value | Verified |
 |---|---|---|
-| Production commit SHA | `3f878e3862f425a974c1851d0354da6bfd20a096` — PR #73 merge on `main`; deployment workflow completed successfully. Live container/image identity was not separately probed during the Phase 1 branch work. | 2026-07-23 GitHub Actions run `29971092335` |
-| Latest migration on `main` | `20260704_001_telegram_notification_bindings` | 2026-07-23 (`git ls-tree origin/main`) |
-| Backend / worker version | image tag of `ghcr.io/mr3826/easymod-backend` currently on droplet | run command below |
-| Frontend build version | image tag of `ghcr.io/mr3826/easymod-frontend` currently on droplet | run command below |
-| Deployment workflow | PR #73 merge deployment succeeded at `2026-07-23T01:15:14Z` | [Actions run 29971092335](https://github.com/mr3826/easymod-backend/actions/runs/29971092335) |
+| Production commit SHA | `6b556eb332d64f5ded0926e7e957c17dd5abad7f` — live `/version` and `/health` report this commit. | 2026-09-01 live probe; GitHub Actions run `33442831720` |
+| Latest migration on `main` | `20260828_004_commercial_model` (`45` migration entries reported by live `/version`). | 2026-09-01 live `/version` and `migrations` query |
+| Backend / worker version | `ghcr.io/mr3826/easymoderator-backend@sha256:444b68e0cad9aca348dc5df44eb10d9c54f980d7dcab11d899482cb6fa423597` | 2026-09-01 live Docker inspect |
+| Frontend build version | `ghcr.io/mr3826/easymoderator-frontend@sha256:6a4c7d5bc821427d5c880e58d4d65b9ef46e1e1cff1d4b8c801378c595f299a0` | 2026-09-01 live Docker inspect |
+| Deployment workflow | Main deployment succeeded at `2026-08-31T22:24:52Z`; candidate migration completed before service replacement. | [Actions run 33442831720](https://github.com/mr3826/easymoderator-monorepo/actions/runs/33442831720) |
 | Phase 1 security branch | `codex/phase1-security-compliance` is review-only: not merged and not deployed | 2026-07-23 |
 
 ## Commercial model rollout status
 
-The Shuru/Growth/Partner commercial model is implemented in the current working
-tree but is **not deployed**. The release must apply
-`20260828_004_commercial_model` after the existing same-day courier migration
-`20260828_003_courier_dispatch_claim_owner`; the sequence is intentionally
-non-colliding. Production verification must confirm the three public plan rows,
-Growth top-up amounts, quota pause metadata, Partner `delivered_at` billing, and
-payment-ID/amount replay protection before bKash is enabled.
+The Shuru/Growth/Partner commercial model is deployed by main commit
+`6b556eb332d64f5ded0926e7e957c17dd5abad7f`. The public plan endpoint returns the
+three expected plans, but the live entity/schema audit on 2026-09-01 found
+three latent missing columns: `orders.metadata`,
+`subscriptions.threshold_debt`, and `subscriptions.usage_reset_at`. The
+commercial release is therefore not incident-clear until the forward repair
+migration and post-migration schema audit pass in production.
 
 ## Post-deploy verification (run on the droplet after each deploy)
 
@@ -37,12 +37,15 @@ payment-ID/amount replay protection before bKash is enabled.
 # What is actually running, and since when
 docker ps --format '{{.Names}}\t{{.Image}}\t{{.CreatedAt}}'
 
-# Cross-check against origin/main — the short SHA in the image tags must be an ancestor of origin/main
-git ls-remote https://github.com/mr3826/easymod-backend.git refs/heads/main
+# Cross-check against the canonical monorepo main ref
+git ls-remote https://github.com/mr3826/easymoderator-monorepo.git refs/heads/main
 
-# Migration state (runner is idempotent: npm run migrate)
-docker exec easymod-backend-1 npm run migrate -- --status 2>/dev/null || \
-  docker exec easymod-backend-1 ls /app/src/database/migrations | tail -3
+# Application-reported release and migration ledger summary. This is not schema proof.
+curl --fail --silent --show-error https://api.easymod.tech/version
+
+# Entity-backed schema contract (read-only; must return no drift)
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+  -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run schema:audit
 ```
 
 ## Launch-freeze exception log

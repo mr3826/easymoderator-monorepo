@@ -49,6 +49,7 @@ class DatabaseBackup {
     
     try {
       const backupFile = path.join(this.backupDir, `backup-${this.timestamp}.dump`);
+      const partialFile = `${backupFile}.partial`;
       
       // Extract database connection info
       const dbUrl = process.env.DATABASE_URL;
@@ -61,7 +62,7 @@ class DatabaseBackup {
       if (!password) throw new Error('DB_PASSWORD environment variable not set');
 
       console.log('📦 Executing backup command...');
-      const output = fs.openSync(backupFile, 'w');
+       const output = fs.openSync(partialFile, 'w');
       try {
         const result = spawnSync('pg_dump', [
           '-h', connection.host,
@@ -80,12 +81,23 @@ class DatabaseBackup {
         });
         if (result.error) throw result.error;
         if (result.status !== 0) throw new Error(`pg_dump exited with status ${result.status}`);
-      } finally {
-        fs.closeSync(output);
-      }
-      
-      // Verify backup was created
-      const stats = fs.statSync(backupFile);
+       } finally {
+         fs.closeSync(output);
+       }
+
+       // Validate the custom archive before it becomes the newest recovery
+       // candidate. A failed stream must never publish a partial dump.
+       const partialStats = fs.statSync(partialFile);
+       if (partialStats.size === 0) throw new Error('pg_dump produced an empty archive');
+       const listed = spawnSync('pg_restore', ['--list', '--exit-on-error', partialFile], {
+         stdio: ['ignore', 'ignore', 'inherit'],
+         windowsHide: true,
+       });
+       if (listed.error) throw listed.error;
+       if (listed.status !== 0) throw new Error(`pg_restore validation exited with status ${listed.status}`);
+       fs.renameSync(partialFile, backupFile);
+
+       const stats = fs.statSync(backupFile);
       const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
       
       console.log('✅ Backup completed successfully!');
@@ -94,7 +106,9 @@ class DatabaseBackup {
       console.log(`📍 Location: ${backupFile}`);
 
       // Create backup metadata
-      await this.createBackupMetadata(backupFile, stats.size);
+      const checksum = this.sha256(backupFile);
+      fs.writeFileSync(`${backupFile}.sha256`, `${checksum}  ${path.basename(backupFile)}\n`);
+      await this.createBackupMetadata(backupFile, stats.size, checksum);
       
       // Cleanup old backups (keep last 7 days)
       await this.cleanupOldBackups();
@@ -116,11 +130,16 @@ class DatabaseBackup {
     }
   }
 
-  async createBackupMetadata(backupFile, size) {
+  sha256(file) {
+    return require('crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  }
+
+  async createBackupMetadata(backupFile, size, checksum) {
     const metadata = {
       timestamp: this.timestamp,
       filename: path.basename(backupFile),
       size: size,
+      sha256: checksum,
       environment: process.env.NODE_ENV || 'development',
       database: this.extractDatabaseName(),
       created: new Date().toISOString()

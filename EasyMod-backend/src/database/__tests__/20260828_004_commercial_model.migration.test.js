@@ -1,6 +1,7 @@
 'use strict';
 
 const migration = require('../migrations/20260828_004_commercial_model');
+const entityDriftRepair = require('../migrations/20260901_001_reconcile_commercial_entity_drift');
 
 const makeSequelize = () => {
     const queries = [];
@@ -79,5 +80,147 @@ describe('commercial model migration', () => {
         expect(sql).toMatch(/DROP COLUMN IF EXISTS bkash_url/);
         expect(sql).toMatch(/DROP INDEX IF EXISTS idx_invoices_payment_id/);
         expect(sql).toMatch(/DROP INDEX IF EXISTS idx_invoices_recurring_period/);
+    });
+});
+
+describe('20260901_001_reconcile_commercial_entity_drift', () => {
+    const makeRepairSequelize = ({ legacyThreshold = false } = {}) => {
+        const queries = [];
+        return {
+            sequelize: {
+                getDialect: () => 'postgres',
+                query: jest.fn(async (sql) => {
+                    queries.push(sql);
+                    if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                        return [[
+                            { table_name: 'orders', column_name: 'metadata', data_type: 'jsonb', is_nullable: 'YES', column_default: "'{}'::jsonb" },
+                            { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                            { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                        ], { rowCount: 3 }];
+                    }
+                    if (sql.includes("column_name = 'threshold_conversations'")) {
+                        return [legacyThreshold ? [{ '?column?': 1 }] : [], { rowCount: 0 }];
+                    }
+                    return [[], { rowCount: 0 }];
+                }),
+            },
+            queries,
+        };
+    };
+
+    it('exports the runner contract and adds all three missing fields', async () => {
+        const { sequelize, queries } = makeRepairSequelize();
+
+        expect(entityDriftRepair.name).toBe('20260901_001_reconcile_commercial_entity_drift');
+        expect(typeof entityDriftRepair.up).toBe('function');
+        expect(typeof entityDriftRepair.down).toBe('function');
+
+        await entityDriftRepair.up(sequelize);
+
+        const sql = queries.join('\n');
+        expect(sql).toMatch(/ALTER TABLE public\.orders ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '\{\}'::jsonb/);
+        expect(sql).toMatch(/ALTER TABLE public\.subscriptions ADD COLUMN IF NOT EXISTS threshold_debt INTEGER NOT NULL DEFAULT 0/);
+        expect(sql).toMatch(/ALTER TABLE public\.subscriptions ADD COLUMN IF NOT EXISTS usage_reset_at TIMESTAMPTZ/);
+        expect(sql).not.toMatch(/DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM/);
+    });
+
+    it('does not translate the legacy grace buffer into cumulative debt', async () => {
+        const { sequelize, queries } = makeRepairSequelize({ legacyThreshold: true });
+
+        await entityDriftRepair.up(sequelize);
+
+        expect(queries.join('\n')).not.toMatch(/SET threshold_debt = threshold_conversations/);
+    });
+
+    it('does not backfill a source column absent from a fresh current-entity schema', async () => {
+        const { sequelize, queries } = makeRepairSequelize();
+
+        await entityDriftRepair.up(sequelize);
+
+        expect(queries.join('\n')).not.toMatch(/UPDATE subscriptions/);
+    });
+
+    it('uses a bounded transaction-scoped lock and does not overwrite an existing target', async () => {
+        const queries = [];
+        const transaction = {};
+        const sequelize = {
+            getDialect: () => 'postgres',
+            transaction: jest.fn(async (callback) => callback(transaction)),
+            query: jest.fn(async (sql, options) => {
+                queries.push({ sql, options });
+                if (sql.includes("column_name = 'threshold_conversations'")) {
+                    return [[{ '?column?': 1 }], { rowCount: 0 }];
+                }
+                if (sql.includes("column_name = 'threshold_debt'")) {
+                    return [[{ '?column?': 1 }], { rowCount: 0 }];
+                }
+                if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                    return [[
+                        { table_name: 'orders', column_name: 'metadata', data_type: 'jsonb', is_nullable: 'YES', column_default: "'{}'::jsonb" },
+                        { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                        { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                    ], { rowCount: 3 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await entityDriftRepair.up(sequelize);
+
+        const sql = queries.map(({ sql: query }) => query).join('\n');
+        expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(queries.every(({ options }) => options?.transaction === transaction)).toBe(true);
+        expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
+        expect(sql).toContain("SET LOCAL statement_timeout = '60s'");
+        expect(sql).toContain('pg_advisory_xact_lock');
+        expect(sql).not.toMatch(/UPDATE public\.subscriptions/);
+    });
+
+    it('rejects a failed postcondition before the migration can be recorded', async () => {
+        const transaction = {};
+        const queries = [];
+        const sequelize = {
+            getDialect: () => 'postgres',
+            transaction: jest.fn(async (callback) => callback(transaction)),
+            query: jest.fn(async (sql, options) => {
+                queries.push({ sql, options });
+                if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                    return [[
+                        { table_name: 'orders', column_name: 'metadata', data_type: 'text', is_nullable: 'YES', column_default: null },
+                        { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                        { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                    ], { rowCount: 3 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await expect(entityDriftRepair.up(sequelize)).rejects.toThrow('postcondition failed');
+        expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(queries.every(({ options }) => options?.transaction === transaction)).toBe(true);
+    });
+
+    it('keeps the SQLite fallback free of PostgreSQL schema qualification', async () => {
+        const queries = [];
+        const sequelize = {
+            getDialect: () => 'sqlite',
+            query: jest.fn(async (sql) => {
+                queries.push(sql);
+                if (sql.includes('PRAGMA table_info(subscriptions)')) {
+                    return [[{ name: 'threshold_conversations' }], { rowCount: 0 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await entityDriftRepair.up(sequelize);
+
+        const sql = queries.join('\n');
+        expect(sql).not.toContain('UPDATE subscriptions');
+        expect(sql).not.toContain('UPDATE public.subscriptions');
+    });
+
+    it('blocks destructive rollback', async () => {
+        await expect(entityDriftRepair.down()).rejects.toThrow('Rollback blocked');
     });
 });

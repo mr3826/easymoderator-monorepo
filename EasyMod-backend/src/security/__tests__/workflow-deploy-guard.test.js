@@ -80,13 +80,32 @@ describe('production workflow branch safety', () => {
         const candidateMigration =
             'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate';
         const migrationIndex = deployBlock.indexOf(candidateMigration);
+        const schemaAuditIndex = deployBlock.indexOf('npm run schema:audit');
         const replacementIndex = deployBlock.indexOf(
             'up -d --no-build --remove-orphans',
         );
 
         expect(migrationIndex).toBeGreaterThan(-1);
+        expect(schemaAuditIndex).toBeGreaterThan(migrationIndex);
         expect(replacementIndex).toBeGreaterThan(-1);
-        expect(migrationIndex).toBeLessThan(replacementIndex);
+        expect(schemaAuditIndex).toBeLessThan(replacementIndex);
+    });
+
+    test('rejects the destructive production wipe path', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('WIPE_DB=WIPE is disabled for production cutover');
+        expect(deployBlock.indexOf('WIPE_DB=WIPE is disabled')).toBeLessThan(
+            deployBlock.indexOf('if [ "$WIPE_DB" = "WIPE" ]; then', deployBlock.indexOf('WIPE_DB=WIPE is disabled') + 1),
+        );
+    });
+
+    test('requires an immutable image for restore-drill forward migration', () => {
+        const backupWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+            'utf8',
+        );
+        expect(backupWorkflow).toContain('forward migration image must be an immutable digest reference');
     });
 
     test('rollback verifies restored images and health before returning', () => {
