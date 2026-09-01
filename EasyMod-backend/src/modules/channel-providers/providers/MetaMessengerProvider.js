@@ -23,6 +23,7 @@ const config = require('../../../config/config');
 const { AppError } = require('../../../utils/AppError');
 const { createLogger } = require('../../../utils/structured-logger');
 const { reserveSendSlot, releaseSendSlot } = require('../../policy/rules/rateLimit.rule');
+const { evaluatePageEligibility } = require('../meta-page-eligibility');
 
 const logger = createLogger('MetaMessengerProvider');
 
@@ -99,7 +100,10 @@ class MetaMessengerProvider extends ChannelProvider {
     get platform() { return 'facebook'; }
 
     async buildAuthUrl({ state, scopes, redirectUri }) {
-        const finalScopes = (scopes && scopes.length ? scopes : DEFAULT_SCOPES).join(',');
+        // OAuth scope selection is provider-owned for the Messenger-only launch.
+        // Keep the base provider contract's `scopes` argument, but never let a
+        // caller broaden or narrow this exact consent request.
+        const finalScopes = DEFAULT_SCOPES.join(',');
         const params = new URLSearchParams({
             client_id: config.metaAppId,
             redirect_uri: redirectUri || config.metaOAuthRedirectUri,
@@ -202,12 +206,18 @@ class MetaMessengerProvider extends ChannelProvider {
             ? meAccountsRaw.filter((p) => selectedPageIds.has(String(p.id)))
             : meAccountsRaw;
 
-        const result = visiblePages.map(p => ({
-            id: p.id,
-            name: p.name,
-            category: p.category || null,
-            pictureUrl: p.picture?.data?.url || p.picture?.url || null,
-        }));
+        const result = visiblePages.map((p) => {
+            const eligibility = evaluatePageEligibility(p.tasks);
+            return {
+                id: p.id,
+                name: p.name,
+                category: p.category || null,
+                pictureUrl: p.picture?.data?.url || p.picture?.url || null,
+                tasks: eligibility.tasks,
+                connectable: eligibility.connectable,
+                reason: eligibility.reason,
+            };
+        });
 
         logger.info('metaAssetsListed', {
             source_me_accounts: meAccountsRaw.length,

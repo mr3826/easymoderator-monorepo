@@ -450,7 +450,7 @@ TelegramNotificationBinding.belongsTo(Shop, { foreignKey: 'shop_id', as: 'telegr
 Shop.hasOne(TelegramNotificationBinding, { foreignKey: 'shop_id', as: 'telegram_notification_binding' });
 
 // ── Phase 1: MetaChannel associations ──────────────────────────────────────
-// Shop <-> MetaChannel (one shop, many channels — one per platform)
+// Shop <-> MetaChannel (one shop, many authorized Pages)
 Shop.hasMany(MetaChannel, {
     foreignKey: 'shop_id',
     as: 'metaChannels',
@@ -461,9 +461,8 @@ MetaChannel.belongsTo(Shop, {
     as: 'shop'
 });
 
-// Conversation <-> MetaChannel (Phase 2 FK). Each conversation can be pinned
-// to a specific Meta page / IG account; null for legacy rows. Surfaced in the
-// inbox so the operator sees which channel a thread arrived on.
+// Conversation <-> MetaChannel FK. Each conversation can be pinned to a
+// specific Meta Page; null is retained only for legacy rows.
 MetaChannel.hasMany(Conversation, {
     foreignKey: 'meta_channel_id',
     as: 'conversations',

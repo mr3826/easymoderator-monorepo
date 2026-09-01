@@ -38,14 +38,55 @@ describe('consentRequired.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('NO_CONSENT');
     });
-    test('allows when no customer context', async () => {
+    test('denies missing Facebook customer context with a stable reason', async () => {
         const r = await rule.evaluate({}, { platform: 'facebook' });
-        expect(r.allow).toBe(true);
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+        });
+    });
+    test('denies missing Messenger customer context when platform comes from the message', async () => {
+        const r = await rule.evaluate({ platform: 'messenger' }, {});
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+        });
+    });
+    test('denies missing customer context when the policy context is absent', async () => {
+        const r = await rule.evaluate({ platform: 'facebook' });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+        });
+    });
+    test('keeps no-customer compatibility for a non-Meta caller', async () => {
+        const r = await rule.evaluate({}, { platform: 'webchat' });
+        expect(r).toEqual({ allow: true, reason: 'NO_CUSTOMER_CONTEXT' });
     });
     test('allows when consent present', async () => {
         consentService.hasConsent.mockReturnValue(true);
         const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
         expect(r.allow).toBe(true);
+    });
+    test('denies and marks the decision retryable when consent state cannot be read', async () => {
+        consentService.hasConsent.mockImplementation(() => {
+            throw new Error('consent dependency unavailable');
+        });
+        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+    test('denies unknown platform context instead of treating it as a non-Meta send', async () => {
+        consentService.hasConsent.mockReturnValue(true);
+        const r = await rule.evaluate({}, { customer: { id: 'c1' } });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CONSENT_CONTEXT_UNAVAILABLE',
+            retryable: true,
+        });
     });
 });
 
@@ -62,9 +103,39 @@ describe('messengerOptedOut.rule', () => {
         const r = await rule.evaluate({ platform: 'facebook' }, { customer, platform: 'facebook' });
         expect(r.allow).toBe(true);
     });
-    test('allows when no customer context', async () => {
+    test('denies missing Facebook customer context with a stable reason', async () => {
         const r = await rule.evaluate({}, { customer: null, platform: 'facebook' });
-        expect(r.allow).toBe(true);
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+        });
+    });
+    test('denies unknown Facebook consent state', async () => {
+        const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+    test('denies missing customer context when the policy context is absent', async () => {
+        const r = await rule.evaluate({ platform: 'messenger' });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CUSTOMER_CONTEXT_UNAVAILABLE',
+        });
+    });
+    test('keeps no-customer compatibility for a non-Meta caller', async () => {
+        const r = await rule.evaluate({}, { customer: null, platform: 'webchat' });
+        expect(r).toEqual({ allow: true, reason: 'NO_CUSTOMER_CONTEXT' });
+    });
+    test('denies unknown platform context instead of treating it as a non-Meta send', async () => {
+        const r = await rule.evaluate({}, { customer: { id: 'c1' } });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CONSENT_CONTEXT_UNAVAILABLE',
+            retryable: true,
+        });
     });
 });
 

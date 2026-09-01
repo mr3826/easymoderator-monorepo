@@ -28,17 +28,33 @@ jest.mock('src/modules/conversation/conversation-state-standalone.service', () =
     updateConversationState: mockUpdateConversationState,
     storeAIResponse: jest.fn(async (_c, content) => ({ message: { id: 'ai-1', content, metadata: {}, update: jest.fn() } })),
 }));
+jest.mock('src/modules/order/order-session-standalone.service', () => ({
+    getActiveSession: jest.fn(async () => null),
+}));
 const mockGetProvider = jest.fn(() => ({ sendMessage: jest.fn(async () => ({ providerMessageId: 'out-1' })) }));
 jest.mock('src/modules/channel-providers/provider.registry', () => ({ getProvider: mockGetProvider }));
 jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
 const mockEvaluateOutbound = jest.fn(async () => ({ allow: false, reason: 'DRAFT', decisionId: 'd-1' }));
 jest.mock('src/modules/policy/policy.engine', () => ({ evaluateOutbound: mockEvaluateOutbound }));
 jest.mock('src/modules/channel-providers/meta-channel.service', () => ({
-    findByShopAndPlatform: jest.fn(async () => ({ id: 'ch-1', shop_id: 'shop-a' })),
-    getSettings: jest.fn(async () => ({})),
+    findConnectedById: jest.fn(async () => ({
+        id: 'ch-1', shop_id: 'shop-a', platform: 'facebook', status: 'CONNECTED', meta_asset_id: 'page-1',
+    })),
+    findByMetaAssetId: jest.fn(async () => null),
+    findUniqueConnectedByShopAndPlatform: jest.fn(async () => ({
+        id: 'ch-1', shop_id: 'shop-a', platform: 'facebook', status: 'CONNECTED', meta_asset_id: 'page-1',
+    })),
+    getSettings: jest.fn(async () => ({ automation_mode: 'DRAFT', ai_auto_reply: true })),
 }));
 jest.mock('src/modules/channel-providers/meta-channel.entity', () => ({ findByPk: jest.fn(async () => null) }));
-jest.mock('src/modules/customer/customer.entity', () => ({ findOne: jest.fn(async () => ({ id: 'cust-1' })) }));
+jest.mock('src/modules/customer/customer.entity', () => ({
+    findOne: jest.fn(async () => ({
+        id: 'cust-1',
+        shop_id: 'shop-a',
+        channel_type: 'messenger',
+        channel_user_id: 'recipient-1',
+    })),
+}));
 jest.mock('src/modules/shop/shop.service', () => ({ getShopAiSettings: jest.fn(async () => ({ automation_mode: 'DRAFT', confidence_threshold: 75 })) }));
 jest.mock('src/modules/entities', () => ({ Subscription: { findOne: jest.fn(async () => ({ status: 'active' })) } }));
 jest.mock('src/modules/subscription/subscription.access', () => ({ isAiActive: jest.fn(() => true) }));

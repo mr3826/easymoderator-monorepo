@@ -18,15 +18,28 @@
 process.env.NODE_ENV = 'test';
 
 const conversation = { id: 'conv-1', shop_id: 'shop-1', channel: 'facebook', meta_channel_id: null, customer: { channel_user_id: 'psid-1' } };
-const metaChannel = { id: 'channel-1', shop_id: 'shop-1', status: 'CONNECTED' };
+const metaChannel = { id: 'channel-1', shop_id: 'shop-1', platform: 'facebook', status: 'CONNECTED' };
 
 jest.mock('../../entities', () => ({
     Conversation: { findOne: jest.fn() },
     Customer: {},
     Message: {},
 }));
+jest.mock('../../subscription/subscription.service', () => ({ trackUsage: jest.fn() }));
+jest.mock('../../../utils/database/database-setup', () => ({
+    sequelize: {
+        transaction: jest.fn(),
+        define: jest.fn(() => ({
+            findOne: jest.fn(),
+            findAll: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+        })),
+    },
+}));
 jest.mock('../../channel-providers/meta-channel.service', () => ({
-    findByShopAndPlatform: jest.fn(),
+    findConnectedById: jest.fn(),
+    findUniqueConnectedByShopAndPlatform: jest.fn(),
 }));
 jest.mock('../../channel-providers/meta-channel.entity', () => ({ findByPk: jest.fn() }));
 jest.mock('../../channel-providers/provider.registry', () => ({ getProvider: jest.fn() }));
@@ -44,7 +57,7 @@ describe('deliverViaMetaIfApplicable — senderRole threading', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         Conversation.findOne.mockResolvedValue(conversation);
-        metaChannelService.findByShopAndPlatform.mockResolvedValue(metaChannel);
+        metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValue(metaChannel);
         policyEngine.evaluateOutbound.mockResolvedValue({ allow: true, transform: null });
         getProvider.mockReturnValue({ sendMessage: jest.fn().mockResolvedValue({ providerMessageId: 'mid_1' }) });
     });
@@ -84,5 +97,34 @@ describe('deliverViaMetaIfApplicable — senderRole threading', () => {
         await controller._deliverViaMetaIfApplicable('conv-1', 'shop-1', 'holding message', 'ai');
 
         expect(provider.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    test('uses an explicit conversation channel without falling back to the shop platform', async () => {
+        Conversation.findOne.mockResolvedValue({
+            ...conversation,
+            meta_channel_id: 'channel-1',
+        });
+        metaChannelService.findConnectedById.mockResolvedValue(metaChannel);
+
+        await controller._deliverViaMetaIfApplicable('conv-1', 'shop-1', { content: 'hello', id: 'm1' });
+
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('channel-1', {
+            shopId: 'shop-1',
+            platform: 'facebook',
+        });
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+    });
+
+    test('does not send when an explicit conversation channel cannot be resolved', async () => {
+        Conversation.findOne.mockResolvedValue({
+            ...conversation,
+            meta_channel_id: 'stale-channel',
+        });
+        metaChannelService.findConnectedById.mockResolvedValue(null);
+
+        await controller._deliverViaMetaIfApplicable('conv-1', 'shop-1', { content: 'hello', id: 'm1' });
+
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+        expect(getProvider().sendMessage).not.toHaveBeenCalled();
     });
 });

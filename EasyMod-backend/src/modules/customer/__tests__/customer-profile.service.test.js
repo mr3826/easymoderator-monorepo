@@ -9,11 +9,15 @@
 
 jest.mock('axios');
 jest.mock('../../../config/config', () => ({ metaAppSecret: 'app-secret' }));
-jest.mock('../../channel-providers/meta-channel.entity', () => ({ findByPk: jest.fn(), findOne: jest.fn() }));
+const mockMetaChannelService = {
+    findConnectedById: jest.fn(),
+    findUniqueConnectedByShopAndPlatform: jest.fn(),
+};
+jest.mock('../../channel-providers/meta-channel.service', () => mockMetaChannelService);
 jest.mock('../customer.entity', () => ({ findByPk: jest.fn() }));
 
 const axios = require('axios');
-const MetaChannel = require('../../channel-providers/meta-channel.entity');
+const metaChannelService = require('../../channel-providers/meta-channel.service');
 const Customer = require('../customer.entity');
 const { enrichCustomerNameFromMeta, isPlaceholderName } = require('../customer-profile.service');
 const originalProfileFlag = process.env.META_USER_PROFILE_ENABLED;
@@ -29,7 +33,20 @@ const makeCustomer = (overrides = {}) => ({
 beforeEach(() => {
     jest.clearAllMocks();
     process.env.META_USER_PROFILE_ENABLED = 'true';
-    MetaChannel.findByPk.mockResolvedValue({ page_access_token_ct: 'page-token' });
+    metaChannelService.findConnectedById.mockResolvedValue({
+        id: 'mc-1',
+        shop_id: 'shop-1',
+        platform: 'facebook',
+        status: 'CONNECTED',
+        page_access_token_ct: 'page-token',
+    });
+    metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValue({
+        id: 'mc-1',
+        shop_id: 'shop-1',
+        platform: 'facebook',
+        status: 'CONNECTED',
+        page_access_token_ct: 'page-token',
+    });
 });
 
 afterAll(() => {
@@ -52,7 +69,7 @@ describe('enrichCustomerNameFromMeta', () => {
         Customer.findByPk.mockResolvedValue(makeCustomer());
 
         const updated = await enrichCustomerNameFromMeta({
-            customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'fb-psid-9',
+            customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'fb-psid-9',
         });
 
         expect(updated).toBe(false);
@@ -66,7 +83,7 @@ describe('enrichCustomerNameFromMeta', () => {
         axios.get.mockResolvedValue({ data: { first_name: 'Evan', last_name: 'Ahmed', profile_pic: 'https://pic/x.jpg' } });
 
         const updated = await enrichCustomerNameFromMeta({
-            customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'fb-psid-9',
+            customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'fb-psid-9',
         });
 
         expect(updated).toBe(true);
@@ -85,7 +102,7 @@ describe('enrichCustomerNameFromMeta', () => {
         Customer.findByPk.mockResolvedValue(customer);
         axios.get.mockResolvedValue({ data: { name: 'Rahim Uddin', username: 'rahim' } });
 
-        await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'ig-1' });
+        await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'ig-1' });
 
         expect(customer.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'Rahim Uddin' }));
     });
@@ -97,7 +114,7 @@ describe('enrichCustomerNameFromMeta', () => {
         });
         Customer.findByPk.mockResolvedValue(customer);
 
-        const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'p' });
+        const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'p' });
 
         expect(updated).toBe(false);
         expect(axios.get).not.toHaveBeenCalled();
@@ -109,7 +126,7 @@ describe('enrichCustomerNameFromMeta', () => {
         Customer.findByPk.mockResolvedValue(customer);
         axios.get.mockResolvedValue({ data: { first_name: 'Meta', last_name: 'Person', profile_pic: 'https://pic/meta.jpg' } });
 
-        const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'p' });
+        const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'p' });
 
         expect(updated).toBe(true);
         expect(customer.update).toHaveBeenCalledWith({
@@ -128,19 +145,59 @@ describe('enrichCustomerNameFromMeta', () => {
         axios.get.mockRejectedValue({ response: { data: { error: { message: 'permission' } } } });
 
         await expect(
-            enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', psid: 'p' })
+            enrichCustomerNameFromMeta({ customerId: 'cust-1', metaChannelId: 'mc-1', shopId: 'shop-1', platform: 'messenger', psid: 'p' })
         ).resolves.toBe(false);
         expect(customer.update).not.toHaveBeenCalled();
     });
 
     test('skips when no channel/token can be resolved', async () => {
         Customer.findByPk.mockResolvedValue(makeCustomer());
-        MetaChannel.findByPk.mockResolvedValue(null);
-        MetaChannel.findOne.mockResolvedValue(null);
+        metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValue(null);
 
         const updated = await enrichCustomerNameFromMeta({ customerId: 'cust-1', psid: 'p', shopId: 's', platform: 'messenger' });
 
         expect(updated).toBe(false);
+        expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    test('uses the unique connected Facebook channel when no exact channel id is supplied', async () => {
+        const customer = makeCustomer();
+        Customer.findByPk.mockResolvedValue(customer);
+        axios.get.mockResolvedValue({ data: { name: 'Unique Page User' } });
+
+        const updated = await enrichCustomerNameFromMeta({
+            customerId: 'cust-1',
+            shopId: 'shop-1',
+            platform: 'messenger',
+            psid: 'p',
+        });
+
+        expect(updated).toBe(true);
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).toHaveBeenCalledWith(
+            'shop-1',
+            'facebook',
+        );
+    });
+
+    test('does not fall back when an explicit channel belongs to another shop or is not routable', async () => {
+        const customer = makeCustomer();
+        Customer.findByPk.mockResolvedValue(customer);
+        metaChannelService.findConnectedById.mockResolvedValue(null);
+
+        const updated = await enrichCustomerNameFromMeta({
+            customerId: 'cust-1',
+            metaChannelId: 'foreign-channel',
+            shopId: 'shop-1',
+            platform: 'messenger',
+            psid: 'p',
+        });
+
+        expect(updated).toBe(false);
+        expect(metaChannelService.findConnectedById).toHaveBeenCalledWith('foreign-channel', {
+            shopId: 'shop-1',
+            platform: 'facebook',
+        });
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
         expect(axios.get).not.toHaveBeenCalled();
     });
 });

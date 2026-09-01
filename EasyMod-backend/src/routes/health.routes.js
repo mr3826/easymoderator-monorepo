@@ -10,6 +10,7 @@ const router = express.Router();
 const { sequelize } = require('../utils/database/database-setup');
 const { checkRedisAvailability } = require('../config/redis');
 const { authenticate } = require('../middleware/auth.middleware');
+const { getMalformedWebhookMetrics } = require('../modules/integration/meta-webhook-metrics');
 
 /**
  * Liveness probe - Is the service responding?
@@ -111,7 +112,8 @@ router.get('/detailed', authenticate, async (req, res) => {
         vectorDb: 'unknown',
         vectorProvider: 'qdrant',
         autoReplyDlq: null,
-        queues: null
+        queues: null,
+        webhookMalformed: { count: null, lastAt: null },
     };
 
     try {
@@ -205,6 +207,16 @@ router.get('/detailed', authenticate, async (req, res) => {
         };
     } catch (_) {
         checks.webhookReceipts = { deadLettered: null, held: null };
+    }
+
+    try {
+        const malformed = getMalformedWebhookMetrics();
+        checks.webhookMalformed = {
+            count: Number.isSafeInteger(malformed?.count) && malformed.count >= 0 ? malformed.count : null,
+            lastAt: typeof malformed?.lastAt === 'string' ? malformed.lastAt : null,
+        };
+    } catch (_) {
+        checks.webhookMalformed = { count: null, lastAt: null };
     }
 
     // Auto-reply canary freshness — proves the message-processing worker is alive

@@ -67,7 +67,7 @@ module.exports = {
         `);
         if (ambiguous.length > 0) {
             console.warn(
-                `[migration 013] ${ambiguous.length} (shop, platform) groups have multiple channels — those conversations will be left meta_channel_id=NULL and filled lazily by app code.`,
+                `[migration 013] ${ambiguous.length} (shop, platform) groups have multiple channels — those conversations remain meta_channel_id=NULL until an exact Page is known.`,
                 ambiguous.slice(0, 10)
             );
         }

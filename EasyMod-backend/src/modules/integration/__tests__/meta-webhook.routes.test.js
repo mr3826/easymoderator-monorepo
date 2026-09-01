@@ -25,8 +25,14 @@ jest.mock('src/config/redis', () => ({
 
 jest.mock('rate-limit-redis', () => ({ RedisStore: jest.fn() }));
 
+const mockRouteLogCalls = [];
 jest.mock('src/utils/structured-logger', () => ({
-    createLogger: jest.fn(() => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }))
+    createLogger: jest.fn(() => ({
+        info: (...args) => mockRouteLogCalls.push({ level: 'info', args }),
+        warn: (...args) => mockRouteLogCalls.push({ level: 'warn', args }),
+        error: (...args) => mockRouteLogCalls.push({ level: 'error', args }),
+        debug: (...args) => mockRouteLogCalls.push({ level: 'debug', args }),
+    }))
 }));
 
 // Mock config — metaReadFromNew / metaWriteLegacy removed in Phase 5
@@ -85,9 +91,9 @@ jest.mock('src/utils/database/database-setup', () => ({
 // Consent service — fire-and-forget, always resolves
 jest.mock('src/modules/consent/consent.service', () => ({
     isStopKeyword: jest.fn(() => false),
-    recordInbound: jest.fn().mockResolvedValue(undefined),
-    recordOptOut: jest.fn().mockResolvedValue(undefined),
-    recordOptIn: jest.fn().mockResolvedValue(undefined),
+    recordInbound: jest.fn().mockResolvedValue({ id: 'cust-uuid-1' }),
+    recordOptOut: jest.fn().mockResolvedValue({ id: 'cust-uuid-1' }),
+    recordOptIn: jest.fn().mockResolvedValue({ id: 'cust-uuid-1' }),
 }));
 
 const mockCustomerProfileService = {
@@ -189,7 +195,7 @@ describe('storeIncomingMessage', () => {
     const customer = {
         id: CUSTOMER_ID,
         name: 'Facebook User',
-        metadata: { source: 'webhook', platform: 'facebook', external_id: 'sender-fb-123', channel: 'Facebook' },
+        metadata: { source: 'webhook', platform: 'facebook', channel: 'Facebook' },
         update: jest.fn().mockResolvedValue(undefined),
     };
     const conversation = buildConversation();
@@ -236,12 +242,14 @@ describe('storeIncomingMessage', () => {
                     channel_user_id: 'sender-fb-123',
                     metadata: expect.objectContaining({
                         platform: 'facebook',
-                        external_id: 'sender-fb-123',
                         channel: 'Facebook',
                     }),
                 }),
             })
         );
+        const defaults = mockCustomer.findOrCreate.mock.calls[0][0].defaults;
+        expect(defaults.metadata).not.toHaveProperty('external_id');
+        expect(JSON.stringify(defaults.metadata)).not.toContain('sender-fb-123');
         expect(mockCustomerProfileService.enrichCustomerNameFromMeta).toHaveBeenCalledWith({
             customerId: CUSTOMER_ID,
             metaChannelId: 'mc-1',
@@ -274,8 +282,8 @@ describe('storeIncomingMessage', () => {
     it('keeps a safe fallback customer when enrichment fails', async () => {
         const existingGenericCustomer = {
             id: CUSTOMER_ID,
-            name: 'facebook user',
-            metadata: { source: 'webhook', platform: 'facebook' },
+            name: 'Facebook User',
+            metadata: { source: 'webhook', platform: 'facebook', external_id: 'sender-fb-123' },
             update: jest.fn().mockResolvedValue(undefined),
         };
         mockCustomer.findOrCreate.mockResolvedValue([existingGenericCustomer, false]);
@@ -289,10 +297,11 @@ describe('storeIncomingMessage', () => {
             metadata: expect.objectContaining({
                 source: 'webhook',
                 platform: 'facebook',
-                external_id: 'sender-fb-123',
                 channel: 'Facebook',
             }),
         });
+        expect(existingGenericCustomer.update.mock.calls[0][0].metadata).not.toHaveProperty('external_id');
+        expect(JSON.stringify(existingGenericCustomer.update.mock.calls[0][0].metadata)).not.toContain('sender-fb-123');
     });
 
     it('uses the safe fallback without invoking enrichment when the feature is disabled', async () => {
@@ -314,10 +323,11 @@ describe('storeIncomingMessage', () => {
             metadata: expect.objectContaining({
                 source: 'webhook',
                 platform: 'facebook',
-                external_id: 'sender-fb-123',
                 channel: 'Facebook',
             }),
         });
+        expect(existingGenericCustomer.update.mock.calls[0][0].metadata).not.toHaveProperty('external_id');
+        expect(JSON.stringify(existingGenericCustomer.update.mock.calls[0][0].metadata)).not.toContain('sender-fb-123');
     });
 
     it('maps facebook platform to messenger channel_type', async () => {
@@ -331,7 +341,7 @@ describe('storeIncomingMessage', () => {
     });
 
     it('reuses the existing active conversation within 24h window', async () => {
-        mockConversation.findOne.mockResolvedValue(conversation);
+        mockConversation.findOne.mockResolvedValue({ ...conversation, meta_channel_id: 'mc-1' });
 
         await storeIncomingMessage(baseEvent);
 
@@ -339,6 +349,22 @@ describe('storeIncomingMessage', () => {
         expect(mockMessage.create).toHaveBeenCalledWith(
             expect.objectContaining({ conversation_id: CONV_ID }),
             expect.anything()
+        );
+    });
+
+    it('does not reuse or pin an unpinned legacy conversation when the Page is known', async () => {
+        const legacyConversation = buildConversation({ meta_channel_id: null });
+        mockConversation.findOne.mockResolvedValue(legacyConversation);
+
+        await storeIncomingMessage(baseEvent);
+
+        expect(mockConversation.findOne).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ meta_channel_id: 'mc-1' }),
+        }));
+        expect(legacyConversation.update).not.toHaveBeenCalled();
+        expect(mockConversation.create).toHaveBeenCalledWith(
+            expect.objectContaining({ meta_channel_id: 'mc-1' }),
+            expect.objectContaining({ transaction: mockTransaction }),
         );
     });
 
@@ -356,11 +382,13 @@ describe('storeIncomingMessage', () => {
     it('skips duplicate message by external_id (idempotency)', async () => {
         const existingMsg = buildMessage({ id: 'existing-msg', conversation_id: CONV_ID });
         mockMessage.findOne.mockResolvedValue(existingMsg);
+        mockConversation.findOne.mockResolvedValue({ ...conversation, meta_channel_id: 'mc-1' });
 
         const result = await storeIncomingMessage(baseEvent);
 
         expect(mockCustomer.findOrCreate).not.toHaveBeenCalled();
         expect(result.message_id).toBe('existing-msg');
+        expect(result.customer_id).toBe(CUSTOMER_ID);
     });
 
     it('proceeds without idempotency check when raw_event has no message ID', async () => {
@@ -462,6 +490,7 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        mockRouteLogCalls.length = 0;
         global.fetch.mockResolvedValue({ ok: true });
 
         // Set app secret so the router processes the payload instead of rejecting.
@@ -506,6 +535,15 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
     it('routes page events and stores the incoming message', async () => {
         await sendWebhookWithSig(buildPagePayload()).expect(200);
         expect(mockMessage.create).toHaveBeenCalled();
+    });
+
+    it('does not route when the resolved channel asset does not match the webhook Page', async () => {
+        mockMetaChannelService.findByMetaAssetId.mockResolvedValue(
+            buildMetaChannel({ meta_asset_id: 'different-page' }),
+        );
+
+        await sendWebhookWithSig(buildPagePayload()).expect(200);
+        expect(mockMessage.create).not.toHaveBeenCalled();
     });
 
     it('skips echo events (page own outbound messages)', async () => {
@@ -592,5 +630,95 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
 
     it('accepts webhook with valid HMAC-SHA256 signature', async () => {
         await sendWebhookWithSig(buildPagePayload()).expect(200);
+    });
+
+    it.each([
+        ['missing signature', undefined],
+        ['invalid signature', 'sha256=invalidsignature'],
+    ])('rejects %s malformed bytes before parsing or business work', async (_label, signature) => {
+        const rawBody = Buffer.from('{"object":');
+        const parseSpy = jest.spyOn(JSON, 'parse');
+
+        try {
+            const requestBuilder = request(app)
+                .post('/webhooks/meta')
+                .set('Content-Type', 'application/octet-stream');
+            if (signature !== undefined) requestBuilder.set('x-hub-signature-256', signature);
+
+            await requestBuilder.send(rawBody).expect(403);
+
+            expect(parseSpy).not.toHaveBeenCalled();
+            expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+            expect(mockMessage.create).not.toHaveBeenCalled();
+        } finally {
+            parseSpy.mockRestore();
+        }
+    });
+
+    it('acks authenticated malformed JSON without receipt or business work and logs only safe diagnostics', async () => {
+        const rawBody = Buffer.from('{"object":');
+        const signature = 'sha256=' + crypto.createHmac('sha256', POST_APP_SECRET).update(rawBody).digest('hex');
+
+        await request(app)
+            .post('/webhooks/meta')
+            .set('Content-Type', 'application/octet-stream')
+            .set('x-hub-signature-256', signature)
+            .send(rawBody)
+            .expect(200);
+
+        const malformedLog = mockRouteLogCalls.find(({ level, args }) =>
+            level === 'warn' && args[0] === 'Malformed Meta webhook payload');
+        expect(malformedLog).toBeDefined();
+        expect(malformedLog.args[1]).toEqual({
+            bodySize: rawBody.length,
+            bodyHash: crypto.createHash('sha256').update(rawBody).digest('hex'),
+            signatureValid: true,
+            code: 'INVALID_JSON',
+        });
+        expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
+        expect(JSON.stringify(mockRouteLogCalls)).not.toContain(rawBody.toString());
+    });
+
+    it('acks an authenticated malformed envelope without receipt or channel resolution', async () => {
+        const payload = { object: 'page', entry: [{ id: PAGE_ID }] };
+        const rawBody = Buffer.from(JSON.stringify(payload));
+        const signature = 'sha256=' + crypto.createHmac('sha256', POST_APP_SECRET).update(rawBody).digest('hex');
+
+        await request(app)
+            .post('/webhooks/meta')
+            .set('Content-Type', 'application/octet-stream')
+            .set('x-hub-signature-256', signature)
+            .send(rawBody)
+            .expect(200);
+
+        const malformedLog = mockRouteLogCalls.find(({ level, args }) =>
+            level === 'warn' && args[0] === 'Malformed Meta webhook payload');
+        expect(malformedLog?.args[1]).toEqual(expect.objectContaining({
+            bodySize: rawBody.length,
+            bodyHash: crypto.createHash('sha256').update(rawBody).digest('hex'),
+            signatureValid: true,
+            code: 'INVALID_ENVELOPE',
+        }));
+        expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
+        expect(JSON.stringify(mockRouteLogCalls)).not.toContain(rawBody.toString());
+    });
+
+    it('acks an authenticated malformed messaging item without receipt or business work', async () => {
+        const payload = buildPagePayload({
+            entry: [{ id: PAGE_ID, messaging: [{}] }],
+        });
+
+        await sendWebhookWithSig(payload).expect(200);
+
+        const malformedLog = mockRouteLogCalls.find(({ level, args }) =>
+            level === 'warn' && args[0] === 'Malformed Meta webhook payload');
+        expect(malformedLog?.args[1]).toEqual(expect.objectContaining({
+            signatureValid: true,
+            code: 'INVALID_ENVELOPE',
+        }));
+        expect(mockMetaChannelService.findByMetaAssetId).not.toHaveBeenCalled();
+        expect(mockMessage.create).not.toHaveBeenCalled();
     });
 });

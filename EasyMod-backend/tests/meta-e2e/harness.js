@@ -17,10 +17,11 @@
  *                     →  MetaMessengerProvider.sendMessage (real)
  *                     →  Graph transport CAPTURE          ← the only Meta stub
  *
- * Queue boundary: the worker is invoked by draining the jobs the webhook really
- * enqueued in Redis, rather than by racing a live BullMQ Worker process. The
- * job payload, the queue round-trip and the worker handler are all real; what
- * this does not cover is BullMQ's own scheduler timing, which
+ * Queue boundary: the webhook awaits the BullMQ enqueue and settles its receipt
+ * as QUEUED before returning. The worker is then invoked by draining the jobs
+ * the webhook really enqueued in Redis, rather than by racing a live BullMQ
+ * Worker process. The job payload, queue round-trip and worker handler are all
+ * real; what this does not cover is BullMQ's own scheduler timing, which
  * pipeline-canary.job.js already probes in production.
  * ponytail: drain-and-invoke, swap for a live Worker if scheduler regressions
  * ever become the failure mode.
@@ -105,13 +106,26 @@ const pendingJobs = async () => {
     return messageQueue.getJobs(QUEUE_STATES, 0, -1);
 };
 
+/** The durable receipt for one Meta message id. */
+const receiptForEvent = async (eventId) => {
+    const MetaWebhookReceipt = require('../../src/modules/integration/meta-webhook-receipt.entity');
+    return MetaWebhookReceipt.findOne({ where: { event_id: eventId } });
+};
+
+/** All durable receipts in a state, for DLQ and dedup assertions. */
+const receiptsWithStatus = async (status) => {
+    const MetaWebhookReceipt = require('../../src/modules/integration/meta-webhook-receipt.entity');
+    return MetaWebhookReceipt.findAll({ where: { status }, order: [['created_at', 'ASC']] });
+};
+
 /**
  * Wait for the queue to reach `count` jobs.
  *
- * The webhook handler dispatches without awaiting — acknowledging Meta must not
- * wait on Redis — so "the job is enqueued" is observable a tick later, not on
- * the HTTP response. Returns whatever is queued when the deadline passes so the
- * caller's own assertion produces the failure message.
+ * The webhook handler awaits Queue.add before acknowledging Meta and marking
+ * the receipt QUEUED. This helper remains useful for direct route assertions and
+ * gives BullMQ a bounded visibility check without depending on scheduler timing.
+ * Returns whatever is queued when the deadline passes so the caller's own
+ * assertion produces the failure message.
  */
 const waitForJobs = async (count = 1, { timeoutMs = 8000 } = {}) => {
     const deadline = Date.now() + timeoutMs;
@@ -123,9 +137,9 @@ const waitForJobs = async (count = 1, { timeoutMs = 8000 } = {}) => {
 };
 
 /**
- * Run every queued job through the real worker handler, oldest first.
- * The webhook dispatches its job without awaiting, so this polls briefly for
- * the first job to appear rather than assuming it is already there.
+ * Run every queued job through the real worker handler, oldest first. The queue
+ * handoff is complete before the webhook response, so this loop is only a drain
+ * helper and does not stand in for durable dispatch.
  */
 const drainQueue = async ({ timeoutMs = 8000 } = {}) => {
     const { processMessageJob } = require('../../src/jobs/message-worker');
@@ -229,8 +243,8 @@ const injectAssistantMessage = async (conversationId, content, sourceReferences 
  * @param {string} [params.pageId]     - defaults to the Shop A tester Page
  * @param {string} [params.psid]       - defaults to the E2E customer PSID
  * @param {string} [params.mid]        - Meta message id, for redelivery tests
- * @returns {Promise<{status:number, jobResults:object[], sends:object[],
- *                    decision:object|null}>}
+ * @returns {Promise<{status:number, eventId:string, receipt:object|null,
+ *                    jobResults:object[], sends:object[], decision:object|null}>}
  */
 const deliver = async ({
     text,
@@ -245,7 +259,9 @@ const deliver = async ({
     const sendsBefore = transport.capturedSends().length;
     const decisionsBefore = groundingDecisions.length;
 
-    const response = await postWebhook(messagePayload({ pageId, psid, text, mid, attachments }));
+    const payload = messagePayload({ pageId, psid, text, mid, attachments });
+    const eventId = payload.entry[0].messaging[0].message.mid;
+    const response = await postWebhook(payload);
     const jobResults = await drainQueue();
 
     // Scoped to THIS delivery: a turn that produced no grounding decision must
@@ -254,6 +270,8 @@ const deliver = async ({
 
     return {
         status: response.status,
+        eventId,
+        receipt: await receiptForEvent(eventId),
         jobResults,
         sends: transport.capturedSends().slice(sendsBefore),
         decision: turnDecisions[turnDecisions.length - 1] || null,
@@ -294,20 +312,43 @@ const setupSuite = async () => {
     await fixtures.syncSchema();
 };
 
-/** Wipe every store the pipeline touches so each scenario starts from zero. */
+const deleteMatchingKeys = async (redis, patterns) => {
+    if (!redis || typeof redis.scan !== 'function') return;
+
+    for (const pattern of patterns) {
+        let cursor = '0';
+        do {
+            const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+            if (keys.length > 0) await redis.del(...keys);
+            cursor = nextCursor;
+        } while (cursor !== '0');
+    }
+};
+
+const removeQueuedTestJobs = async (messageQueue) => {
+    const states = ['waiting', 'delayed', 'prioritized', 'paused', 'completed', 'failed'];
+    const jobs = await messageQueue.getJobs(states, 0, -1);
+    await Promise.all(jobs.map((job) => job.remove().catch(() => {})));
+};
+
+/** Clear only test-owned key/job families; never flush a Redis database. */
 const resetRun = async () => {
     const { cacheRedis, rateLimitRedis } = require('../../src/config/redis');
     const { messageQueue } = require('../../src/jobs/message-queue');
 
+    await removeQueuedTestJobs(messageQueue);
+    await deleteMatchingKeys(cacheRedis, [
+        'burst:*',
+        'msg:dedup:*',
+        'ai:pause:*',
+        'holding:*',
+        'cb:*',
+        'canary:*',
+    ]);
+    await deleteMatchingKeys(rateLimitRedis, ['rl:webhook:*']);
+
     await fixtures.truncateAll();
     await fixtures.seed();
-
-    // Dedup keys, burst bookkeeping, AI pause flags and the LLM circuit-breaker
-    // state all live in Redis and would otherwise leak between scenarios. The
-    // webhook rate-limit bucket is cleared too so a long suite cannot 429 itself.
-    await cacheRedis.flushdb();
-    await rateLimitRedis.flushdb().catch(() => { /* memory fallback */ });
-    await messageQueue.obliterate({ force: true }).catch(() => { /* empty queue */ });
 
     transport.resetTransports();
     groundingDecisions = [];
@@ -336,6 +377,8 @@ module.exports = {
     drainQueue,
     pendingJobs,
     waitForJobs,
+    receiptForEvent,
+    receiptsWithStatus,
     // evidence
     decisions,
     lastDecision,

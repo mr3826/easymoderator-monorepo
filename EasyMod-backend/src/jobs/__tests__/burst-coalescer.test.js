@@ -48,8 +48,8 @@ jest.mock('src/config/config', () => ({
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
-function makeDelayedJob(id) {
-    return { id, getState: jest.fn().mockResolvedValue('delayed'), remove: jest.fn().mockResolvedValue(undefined) };
+function makeDelayedJob(id, data = {}) {
+    return { id, data, getState: jest.fn().mockResolvedValue('delayed'), remove: jest.fn().mockResolvedValue(undefined) };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -103,7 +103,15 @@ describe('burst-coalescer', () => {
     });
 
     describe('scheduleBurstFlush', () => {
-        const payload = { conversationId: 'conv-1', shopId: 'shop-1', platform: 'facebook', recipientId: 'psid-9', metaChannelId: 'ch-1' };
+        const payload = {
+            conversationId: 'conv-1',
+            shopId: 'shop-1',
+            platform: 'facebook',
+            recipientId: 'psid-9',
+            metaChannelId: 'ch-1',
+            metaAssetId: 'page-1',
+            messageId: 'message-1',
+        };
 
         it('schedules a delayed burst-flush job for the full window on the first message', async () => {
             await coalescer.scheduleBurstFlush(payload);
@@ -111,7 +119,14 @@ describe('burst-coalescer', () => {
             expect(mockAdd).toHaveBeenCalledTimes(1);
             const [name, jobData, opts] = mockAdd.mock.calls[0];
             expect(name).toBe('burst-flush');
-            expect(jobData).toMatchObject({ burstFlush: true, conversationId: 'conv-1', shopId: 'shop-1' });
+            expect(jobData).toMatchObject({
+                burstFlush: true,
+                conversationId: 'conv-1',
+                shopId: 'shop-1',
+                metaChannelId: 'ch-1',
+                metaAssetId: 'page-1',
+                messageId: 'message-1',
+            });
             expect(opts.delay).toBe(8000);
             expect(opts.group).toEqual({ id: 'shop-1' });
             expect(typeof opts.jobId).toBe('string');
@@ -119,16 +134,53 @@ describe('burst-coalescer', () => {
             expect(mockStore.get('burst:pending:conv-1')).toBe(opts.jobId);
         });
 
+        it('returns the durable queue handoff result', async () => {
+            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toEqual({ id: 'flush-x' });
+        });
+
+        it('propagates a BullMQ enqueue rejection to the caller', async () => {
+            const queueError = new Error('Redis write rejected');
+            mockAdd.mockRejectedValueOnce(queueError);
+
+            await expect(coalescer.scheduleBurstFlush(payload)).rejects.toBe(queueError);
+        });
+
+        it('reuses a pending job for the same message after the receipt update window', async () => {
+            await coalescer.scheduleBurstFlush(payload);
+            const firstJobId = mockStore.get('burst:pending:conv-1');
+            const existing = makeDelayedJob(firstJobId, { ...payload, burstFlush: true });
+            mockGetJob.mockResolvedValueOnce(existing);
+
+            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toBe(existing);
+
+            expect(mockAdd).toHaveBeenCalledTimes(1);
+            expect(existing.remove).not.toHaveBeenCalled();
+            expect(mockStore.get('burst:pending:conv-1')).toBe(firstJobId);
+        });
+
+        it('finds the same deterministic job when the Redis pending key was not written', async () => {
+            await coalescer.scheduleBurstFlush(payload);
+            mockStore.delete('burst:pending:conv-1');
+            const firstJobId = mockAdd.mock.calls[0][2].jobId;
+            const existing = makeDelayedJob(firstJobId, { ...payload, burstFlush: true });
+            mockGetJob.mockResolvedValueOnce(existing);
+
+            await expect(coalescer.scheduleBurstFlush(payload)).resolves.toBe(existing);
+
+            expect(mockAdd).toHaveBeenCalledTimes(1);
+        });
+
         it('cancels the previously-scheduled flush before scheduling a fresh one (debounce)', async () => {
             // First message schedules a flush
             await coalescer.scheduleBurstFlush(payload);
             const firstJobId = mockStore.get('burst:pending:conv-1');
+            const nextPayload = { ...payload, messageId: 'message-2' };
 
             // Second message within the window must remove the first delayed job, then re-add
             const prev = makeDelayedJob(firstJobId);
             mockGetJob.mockResolvedValueOnce(prev);
 
-            await coalescer.scheduleBurstFlush(payload);
+            await coalescer.scheduleBurstFlush(nextPayload);
 
             expect(prev.remove).toHaveBeenCalledTimes(1);
             expect(mockAdd).toHaveBeenCalledTimes(2);
@@ -175,6 +227,21 @@ describe('burst-coalescer', () => {
 
         it('is a no-op when nothing is pending', async () => {
             await expect(coalescer.cancelBurstFlush('conv-none')).resolves.toBeUndefined();
+        });
+
+        it('surfaces strict cancellation failures to the STOP receipt path', async () => {
+            mockStore.set('burst:pending:conv-1', 'flush-failed');
+            const previous = makeDelayedJob('flush-failed');
+            previous.remove.mockRejectedValueOnce(new Error('queue removal rejected'));
+            mockGetJob.mockResolvedValueOnce(previous);
+
+            await expect(coalescer.cancelBurstFlush('conv-1', { strict: true })).rejects.toMatchObject({
+                name: 'BurstCancellationError',
+                code: 'BURST_CANCELLATION_FAILED',
+                retryable: true,
+                cause: expect.objectContaining({ message: 'queue removal rejected' }),
+            });
+            expect(mockStore.has('burst:pending:conv-1')).toBe(true);
         });
     });
 

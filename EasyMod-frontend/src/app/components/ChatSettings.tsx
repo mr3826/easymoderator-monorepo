@@ -254,6 +254,9 @@ export default function ChatSettings() {
   };
 
   const togglePageSelection = (pageId: string) => {
+    const page = availablePages.find((candidate) => candidate.id === pageId);
+    if (page?.connectable !== true) return;
+
     setSelectedPageIds((prev) => {
       const next = new Set(prev);
       if (next.has(pageId)) next.delete(pageId);
@@ -263,11 +266,14 @@ export default function ChatSettings() {
   };
 
   const handleConnectPages = async () => {
-    if (!activeOAuth || selectedPageIds.size === 0) return;
+    const pagesToConnect = availablePages.filter(
+      (page) => selectedPageIds.has(page.id) && page.connectable === true,
+    );
+    if (!activeOAuth || pagesToConnect.length === 0) return;
     setIsConnectingPage(true);
     try {
       let webhookWarning: string | null = null;
-      for (const page of availablePages.filter((p) => selectedPageIds.has(p.id))) {
+      for (const page of pagesToConnect) {
         const result = await connectMetaAsset({
           assetId: page.id,
           displayName: page.name,
@@ -278,7 +284,7 @@ export default function ChatSettings() {
       }
       await fetchChannels();
       trackFunnelEvent("facebook_connect_succeeded", {
-        pages_connected: selectedPageIds.size,
+        pages_connected: pagesToConnect.length,
       }, { onceKey: "facebook_connect_succeeded" });
       setActiveOAuth(null);
       setAvailablePages([]);
@@ -436,6 +442,11 @@ export default function ChatSettings() {
 
   // Asset IDs already connected — used to disable those rows in the page picker.
   const alreadyConnectedAssetIds = new Set(channels.map((c) => c.metaAssetId));
+  const selectedPageCount = availablePages.filter(
+    (page) => page.connectable === true
+      && selectedPageIds.has(page.id)
+      && !alreadyConnectedAssetIds.has(page.id),
+  ).length;
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -511,11 +522,13 @@ export default function ChatSettings() {
                 <div className="space-y-2 max-h-72 overflow-y-auto">
                   {availablePages.map((page) => {
                     const isAlreadyConnected = alreadyConnectedAssetIds.has(page.id);
+                    const isConnectable = page.connectable === true;
+                    const isDisabled = isAlreadyConnected || !isConnectable;
                     return (
                       <label
                         key={page.id}
                         className={`flex items-center gap-3 p-2.5 rounded-lg border-2 transition-colors ${
-                          isAlreadyConnected
+                          isDisabled
                             ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-70"
                             : selectedPageIds.has(page.id)
                             ? "border-blue-500 bg-white cursor-pointer"
@@ -526,7 +539,8 @@ export default function ChatSettings() {
                           type="checkbox"
                           className="w-4 h-4 accent-blue-600"
                           checked={selectedPageIds.has(page.id)}
-                          disabled={isAlreadyConnected}
+                          disabled={isDisabled}
+                          aria-describedby={!isConnectable ? `page-task-reason-${page.id}` : undefined}
                           onChange={() => togglePageSelection(page.id)}
                         />
                         {page.pictureUrl ? (
@@ -543,6 +557,11 @@ export default function ChatSettings() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 text-sm truncate">{page.name}</p>
                           <p className="text-[10px] uppercase tracking-wide text-gray-500">Facebook Page</p>
+                          {!isConnectable && (
+                            <p id={`page-task-reason-${page.id}`} className="text-[10px] text-amber-700">
+                              {t("channels.connectCard.pageTaskRequired")}
+                            </p>
+                          )}
                         </div>
                         {isAlreadyConnected && (
                           <span className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full flex-shrink-0">
@@ -564,11 +583,11 @@ export default function ChatSettings() {
                 </button>
                 <button
                   onClick={handleConnectPages}
-                  disabled={selectedPageIds.size === 0 || isConnectingPage}
+                  disabled={selectedPageCount === 0 || isConnectingPage}
                   className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   {isConnectingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {t("channels.connectCard.connectCount", { count: selectedPageIds.size })}
+                  {t("channels.connectCard.connectCount", { count: selectedPageCount })}
                 </button>
               </div>
             </div>

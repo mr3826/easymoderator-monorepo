@@ -56,6 +56,12 @@ export interface MetaOAuthAsset {
   name: string;
   category: string | null;
   pictureUrl: string | null;
+  /** Normalized non-secret Page tasks returned by Meta. */
+  tasks: string[];
+  /** Server-derived eligibility for Messenger connection. */
+  connectable: boolean;
+  /** Stable reason code when this asset is not connectable. */
+  reason: string | null;
 }
 
 export interface MetaOAuthCallbackResult {

@@ -31,6 +31,11 @@ function sameId(a, b) {
     return a && b && String(a) === String(b);
 }
 
+function normalizePlatform(platform) {
+    if (platform === 'facebook' || platform === 'messenger') return 'facebook';
+    return null;
+}
+
 function canReleaseCrossShopClaim(channel, userId) {
     if (!channel) return false;
     if (RELEASABLE_CROSS_SHOP_STATUSES.has(channel.status)) return true;
@@ -242,24 +247,61 @@ class MetaChannelService {
     }
 
     /**
-     * Find the channel for a given shop + platform combination.
-     * Returns null if not found.
+     * Resolve a connected channel by its exact primary key and verify every
+     * routing fact supplied by the caller. A failed exact lookup is terminal for
+     * that routing attempt; callers must not substitute a shop-wide channel.
      *
-     * @deprecated Phase 1 allows multiple channels per (shop, platform). This
-     * method returns an arbitrary row (the first match) when more than one
-     * exists. Migrate callers to {@link findByShopAndAsset} (by meta_asset_id)
-     * or {@link listByShopAndPlatform} (full list) in Phase 2.
-     *
-     * @param {string} shopId
-     * @param {'facebook'} platform
+     * @param {string} channelId
+     * @param {object} [scope]
+     * @param {string} scope.shopId
+     * @param {string} scope.platform - 'facebook' or legacy 'messenger'
+     * @param {string} [scope.metaAssetId] - Expected Facebook Page ID
      * @returns {Promise<MetaChannel|null>}
      */
-    async findByShopAndPlatform(shopId, platform) {
-        if (!shopId || !platform) return null;
-        return MetaChannel.findOne({
-            where: { shop_id: shopId, platform },
-            order: [['created_at', 'ASC']]
+    async findConnectedById(channelId, { shopId = null, platform = null, metaAssetId = null } = {}) {
+        if (!channelId || !shopId || !platform) return null;
+
+        const channel = await MetaChannel.findByPk(channelId);
+        if (!channel || channel.status !== 'CONNECTED') return null;
+        if (!sameId(channel.shop_id, shopId)) return null;
+
+        const expectedPlatform = normalizePlatform(platform);
+        if (!expectedPlatform || channel.platform !== expectedPlatform) return null;
+        if (metaAssetId && !sameId(channel.meta_asset_id, metaAssetId)) return null;
+
+        return channel;
+    }
+
+    /**
+     * Resolve the only connected channel for a shop and platform.
+     *
+     * A shop may own multiple Facebook Pages. This method is deliberately
+     * unique-or-null so a legacy caller can continue only when the routing
+     * target is unambiguous.
+     *
+     * @param {string} shopId
+     * @param {'facebook'|'messenger'} platform
+     * @returns {Promise<MetaChannel|null>}
+     */
+    async findUniqueConnectedByShopAndPlatform(shopId, platform) {
+        const normalizedPlatform = normalizePlatform(platform);
+        if (!shopId || !normalizedPlatform) return null;
+
+        const channels = await MetaChannel.findAll({
+            where: { shop_id: shopId, platform: normalizedPlatform, status: 'CONNECTED' },
         });
+        const connectedChannels = (Array.isArray(channels) ? channels : [])
+            .filter((channel) => (
+                channel?.status === 'CONNECTED' && channel.platform === normalizedPlatform
+            ));
+        if (connectedChannels.length === 1) return connectedChannels[0];
+
+        logger.warn('MetaChannelService: unique connected channel resolution failed', {
+            shopId,
+            platform: normalizedPlatform,
+            connectedCount: connectedChannels.length,
+        });
+        return null;
     }
 
     /**
@@ -302,10 +344,19 @@ class MetaChannelService {
      */
     async findByMetaAssetId(metaAssetId) {
         if (!metaAssetId) return null;
-        return MetaChannel.findOne({
+        const channels = await MetaChannel.findAll({
             where: { meta_asset_id: metaAssetId, status: 'CONNECTED' },
-            order: [['updated_at', 'DESC'], ['created_at', 'DESC']],
         });
+        const connectedChannels = (Array.isArray(channels) ? channels : [])
+            .filter((channel) => channel?.status === 'CONNECTED');
+        if (connectedChannels.length === 1) return connectedChannels[0];
+        if (connectedChannels.length > 1) {
+            logger.warn('MetaChannelService: multiple connected channels claim the same Meta asset', {
+                metaAssetId,
+                connectedCount: connectedChannels.length,
+            });
+        }
+        return null;
     }
 
     /**

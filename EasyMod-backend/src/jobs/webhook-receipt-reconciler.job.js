@@ -8,10 +8,11 @@
  *   - RETRY_PENDING / MESSAGE_STORE_FAILED — the message INSERT failed
  *
  * Each due receipt is claimed with a fencing token, replayed through the SAME
- * ingestion path the live webhook uses, and settled: PROCESSED on success, back
- * to a longer backoff on a repeat failure, DEAD_LETTERED once the ladder is
- * exhausted. Exhaustion always alerts — a dead-lettered receipt means a real
- * customer message was never ingested.
+ * ingestion path the live webhook uses, and settled: QUEUED after a message is
+ * durably handed to BullMQ, PROCESSED for non-queue events, back to a longer
+ * backoff on a repeat failure, or DEAD_LETTERED once the ladder is exhausted.
+ * Exhaustion always alerts — a dead-lettered receipt means a real customer
+ * message was never ingested.
  *
  * Also runs the retention sweep so receipts stay operational evidence with an
  * expiry rather than an archive of customer message bodies.
@@ -82,6 +83,7 @@ class WebhookReceiptReconcilerJob {
                 channel,
                 receipt,
                 pageId,
+                metaAssetId: pageId,
             });
             if (outcome === 'processed') results.processed += 1;
             else if (outcome === 'skipped') results.skipped += 1;

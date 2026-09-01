@@ -129,6 +129,132 @@ describe('escalateToHuman', () => {
         expect(send).not.toHaveBeenCalled();
     });
 
+    test('retains the holding message and HITL visibility without sending when customer context is missing', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        const holdingMessage = { id: 'm1', content: 'hold on' };
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue(holdingMessage);
+        Customer.findOne.mockResolvedValue(null);
+
+        const result = await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(result).toBe(holdingMessage);
+        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'new_message', {
+            conversation_id: 'c1', message: holdingMessage,
+        });
+        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
+            conversation_id: 'c1', hitl: true,
+        });
+        expect(mockNotifyShop).toHaveBeenCalledWith(
+            's1', 'ai_hitl', expect.objectContaining({ conversationId: 'c1' }), expect.any(Object),
+        );
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('retains HITL visibility and explicitly does not send when customer lookup fails', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+        Customer.findOne.mockRejectedValue(new Error('customer store unavailable'));
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('retains HITL visibility and explicitly does not send when channel settings are missing', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+        MetaChannelSettings.findOne.mockResolvedValue(null);
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('retains HITL visibility and explicitly does not send when channel settings lookup fails', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+        MetaChannelSettings.findOne.mockRejectedValue(new Error('settings store unavailable'));
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the conversation cannot be marked HITL', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockRejectedValue(new Error('conversation store unavailable')) };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('retains the holding message and HITL visibility but does not send without platform context', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+
+        const result = await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(result).toEqual(expect.objectContaining({ id: 'm1' }));
+        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
+            conversation_id: 'c1', hitl: true,
+        });
+        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'new_message', expect.any(Object));
+        expect(mockNotifyShop).toHaveBeenCalled();
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    test('does not send when the resolved customer context is malformed', async () => {
+        const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
+        const send = jest.fn().mockResolvedValue();
+        getProvider.mockReturnValue({ sendMessage: send });
+        sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });
+        Customer.findOne.mockResolvedValue({});
+
+        await escalateToHuman({
+            conversation, shopId: 's1', conversationId: 'c1',
+            platform: 'messenger', recipientId: 123, channel: { id: 'ch1' },
+        });
+
+        expect(policyEngine.evaluateOutbound).not.toHaveBeenCalled();
+        expect(send).not.toHaveBeenCalled();
+    });
+
     test('skips provider delivery when no channel could be resolved', async () => {
         const conversation = { id: 'c1', hitl: false, update: jest.fn().mockResolvedValue() };
         sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on' });

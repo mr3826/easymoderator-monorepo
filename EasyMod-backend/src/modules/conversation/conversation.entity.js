@@ -24,10 +24,9 @@ const Conversation = sequelize.define('Conversation', {
         type: DataTypes.STRING(20),
         allowNull: false
     },
-    // Phase 2: explicit FK to the specific Meta page/IG account this conversation
-    // belongs to. Nullable for backward-compat with rows created before Phase 2
-    // (those get backfilled by migration 013 when unambiguous, else lazily filled
-    // by app code on next inbound message).
+    // Explicit FK to the specific Meta Page this conversation belongs to.
+    // Nullable for legacy rows; an inbound event with a known Page must never
+    // adopt an unpinned row.
     meta_channel_id: {
         type: DataTypes.UUID,
         allowNull: true,

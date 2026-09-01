@@ -211,8 +211,8 @@ describe('ChatSettings', () => {
     mockListMetaChannels.mockResolvedValue([]);
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [
-        { id: 'p1', name: 'Page One', category: null, pictureUrl: null },
-        { id: 'p2', name: 'Page Two', category: null, pictureUrl: null },
+        { id: 'p1', name: 'Page One', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MANAGE'], connectable: true, reason: null },
+        { id: 'p2', name: 'Page Two', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MODERATE'], connectable: true, reason: null },
       ],
       tempToken: 'tmp-xyz',
     });
@@ -249,6 +249,41 @@ describe('ChatSettings', () => {
     await waitFor(() => expect(mockConnectMetaAsset).toHaveBeenCalledTimes(2));
     expect(mockConnectMetaAsset).toHaveBeenCalledWith(expect.objectContaining({ assetId: 'p1', platform: 'facebook' }));
     expect(mockConnectMetaAsset).toHaveBeenCalledWith(expect.objectContaining({ assetId: 'p2', platform: 'facebook' }));
+  });
+
+  it('disables ineligible Pages with an explanation and counts only eligible selections', async () => {
+    mockListMetaChannels.mockResolvedValue([]);
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [
+        { id: 'eligible', name: 'Eligible Page', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MANAGE'], connectable: true, reason: null },
+        { id: 'ineligible', name: 'Ineligible Page', category: null, pictureUrl: null, tasks: ['MESSAGING'], connectable: false, reason: 'META_PAGE_TASKS_REQUIRED' },
+        { id: 'moderated', name: 'Moderated Page', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MODERATE'], connectable: true, reason: null },
+      ],
+      tempToken: 'tmp-mixed',
+    });
+
+    await renderComponent();
+    fireEvent.click(await screen.findByRole('button', { name: /Connect Facebook Page/i }));
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'));
+
+    await act(async () => {
+      lastBroadcastChannel?.onmessage?.({
+        data: { type: 'OAUTH_SUCCESS', code: 'code-mixed', state: 'state-123' },
+      });
+      await flushPromises();
+    });
+
+    expect(await screen.findByText('Ineligible Page')).toBeInTheDocument();
+    const ineligibleCheckbox = screen.getByText('Ineligible Page').closest('label')?.querySelector('input');
+    expect(ineligibleCheckbox).toBeDisabled();
+    expect(screen.getByText(/Messaging.*Page management access/i)).toBeInTheDocument();
+
+    const eligibleCheckboxes = screen.getAllByRole('checkbox').filter((checkbox) => !checkbox.hasAttribute('disabled'));
+    expect(eligibleCheckboxes).toHaveLength(2);
+    fireEvent.click(eligibleCheckboxes[0]);
+    fireEvent.click(eligibleCheckboxes[1]);
+
+    expect(screen.getByRole('button', { name: /Connect \(2\)/i })).toBeEnabled();
   });
 
   // ── Disconnect ──────────────────────────────────────────────────────────

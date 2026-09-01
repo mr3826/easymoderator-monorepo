@@ -22,8 +22,9 @@
  * Robustness: the message-processing worker runs with group concurrency 1 per
  * shop, so flushes for the same shop are serialized. If a reschedule race leaves
  * two flushes queued, the second finds nothing pending (the first already
- * replied) and no-ops. The flush job id is unique per burst, so completed jobs
- * lingering under removeOnComplete never block a later burst.
+ * replied) and no-ops. The flush job id is deterministic for a message identity,
+ * so an enqueue/update retry cannot create a second logical job; distinct
+ * messages still receive distinct burst IDs.
  */
 
 const { messageQueue } = require('./message-queue');
@@ -46,17 +47,57 @@ const KEY_TTL_SECONDS = Math.ceil((BURST_MAX_WAIT_MS + BURST_WINDOW_MS) / 1000) 
  * Remove a queued (delayed/waiting) flush job. Safe to call when the job has
  * already started (active) or no longer exists — those are left untouched.
  */
-async function removeQueuedJob(jobId, existingJob = null) {
+async function removeQueuedJob(jobId, existingJob = null, { strict = false } = {}) {
     if (!jobId) return;
     try {
         const job = existingJob || await messageQueue.getJob(jobId);
         if (!job) return;
-        const state = await job.getState().catch(() => null);
-        if (state === 'delayed' || state === 'waiting' || state === 'prioritized') {
-            await job.remove().catch(() => {});
+        let state;
+        try {
+            state = await job.getState();
+        } catch (err) {
+            if (strict) throw err;
+            return;
         }
-    } catch (_) { /* best-effort — never block the inbound path */ }
+        if (state === 'delayed' || state === 'waiting' || state === 'prioritized') {
+            try {
+                await job.remove();
+            } catch (err) {
+                if (strict) throw err;
+            }
+        }
+    } catch (err) {
+        if (strict) throw err;
+        /* best-effort — never block the inbound path */
+    }
 }
+
+const RESIDENT_JOB_STATES = new Set(['waiting', 'delayed', 'prioritized', 'paused', 'active', 'completed']);
+
+const isSameMessageJob = (job, messageId) => Boolean(
+    job && messageId && job.data?.messageId != null
+    && String(job.data.messageId) === String(messageId),
+);
+
+const isResidentJob = async (job) => {
+    if (!job || typeof job.getState !== 'function') return false;
+    try {
+        return RESIDENT_JOB_STATES.has(await job.getState());
+    } catch (_) {
+        return false;
+    }
+};
+
+const jobIdPart = (value) => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
+
+const buildFlushJobId = (payload) => {
+    if (payload.messageId) {
+        return `burstflush_${jobIdPart(payload.conversationId)}_${jobIdPart(payload.messageId)}`;
+    }
+    // Legacy callers without a message identity retain one job per scheduling
+    // attempt; the webhook path always supplies messageId.
+    return `burstflush_${payload.conversationId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+};
 
 /**
  * (Re)schedule the single burst-flush job for a conversation.
@@ -64,14 +105,18 @@ async function removeQueuedJob(jobId, existingJob = null) {
  * @param {object} payload
  * @param {string} payload.conversationId
  * @param {string} payload.shopId
- * @param {string} payload.platform        - 'facebook' | 'instagram'
- * @param {string} payload.recipientId     - customer PSID / IGSID to reply to
+ * @param {string} payload.platform        - 'facebook'
+ * @param {string} payload.recipientId     - customer PSID to reply to
  * @param {string|null} [payload.metaChannelId]
+ * @param {string|null} [payload.metaAssetId] - exact Facebook Page ID
+ * @param {string|null} [payload.messageId] - internal message identity for retry idempotency
  * @param {object} [payload.senderInfo]
  */
 async function scheduleBurstFlush(payload) {
     const { conversationId, shopId } = payload;
     if (!conversationId || !shopId) return;
+
+    const flushJobId = buildFlushJobId(payload);
 
     // ── Compute the delay, clamped by how long this burst has been open ──────
     let delay = BURST_WINDOW_MS;
@@ -87,22 +132,38 @@ async function scheduleBurstFlush(payload) {
     } catch (_) { /* fall back to the full window */ }
 
     // ── Cancel the previously-scheduled flush, then schedule a fresh one ─────
+    let prevJobId = null;
+    let previousJob = null;
     try {
-        const prevJobId = await cacheRedis.get(pendingKey(conversationId));
-        const previousJob = prevJobId
+        prevJobId = await cacheRedis.get(pendingKey(conversationId));
+        previousJob = prevJobId && typeof messageQueue.getJob === 'function'
             ? await Promise.resolve(messageQueue.getJob(prevJobId)).catch(() => null)
             : null;
         if (payload.within_allowance === undefined && previousJob?.data?.within_allowance !== undefined) {
             payload.within_allowance = previousJob.data.within_allowance;
         }
-        await removeQueuedJob(prevJobId, previousJob);
     } catch (_) { /* best-effort */ }
 
-    // Unique per burst — Date.now() alone collides when two messages land in the
-    // same millisecond, so add a short random suffix. (No ':' — BullMQ forbids it
-    // in custom job ids.)
-    const flushJobId = `burstflush_${conversationId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    await messageQueue.add(
+    // A redelivery can arrive after BullMQ accepted the job but before the
+    // receipt was updated. Reuse the existing message-identified job instead of
+    // creating a second logical enqueue.
+    if (isSameMessageJob(previousJob, payload.messageId) && await isResidentJob(previousJob)) {
+        return previousJob;
+    }
+
+    let existingJob = null;
+    if (payload.messageId && typeof messageQueue.getJob === 'function') {
+        try {
+            existingJob = await messageQueue.getJob(flushJobId);
+        } catch (_) { /* enqueue below remains the source of truth */ }
+        if (isSameMessageJob(existingJob, payload.messageId) && await isResidentJob(existingJob)) {
+            return existingJob;
+        }
+    }
+
+    await removeQueuedJob(prevJobId, previousJob);
+
+    const queueResult = await messageQueue.add(
         'burst-flush',
         { ...payload, burstFlush: true },
         { jobId: flushJobId, delay, group: { id: shopId } },
@@ -110,20 +171,29 @@ async function scheduleBurstFlush(payload) {
     try {
         await cacheRedis.set(pendingKey(conversationId), flushJobId, 'EX', KEY_TTL_SECONDS);
     } catch (_) { /* best-effort */ }
+    return queueResult;
 }
 
 /**
  * Cancel a pending flush and clear the debounce bookkeeping (e.g. on a STOP
  * keyword, when no reply should be sent).
  */
-async function cancelBurstFlush(conversationId) {
+async function cancelBurstFlush(conversationId, { strict = false } = {}) {
     if (!conversationId) return;
     try {
         const prevJobId = await cacheRedis.get(pendingKey(conversationId));
-        await removeQueuedJob(prevJobId);
+        await removeQueuedJob(prevJobId, null, { strict });
         await cacheRedis.del(pendingKey(conversationId), firstSeenKey(conversationId));
     } catch (err) {
         logger.warn('cancelBurstFlush failed (non-fatal)', { conversationId, error: err.message });
+        if (strict) {
+            const failure = new Error('Burst cancellation failed');
+            failure.name = 'BurstCancellationError';
+            failure.code = 'BURST_CANCELLATION_FAILED';
+            failure.retryable = true;
+            failure.cause = err;
+            throw failure;
+        }
     }
 }
 

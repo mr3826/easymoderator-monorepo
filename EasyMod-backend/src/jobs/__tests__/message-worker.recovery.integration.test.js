@@ -133,3 +133,43 @@ test('HUMAN_REQUIRED and hitl are committed together and a missing conversation 
     })).rejects.toThrow(/Conversation not found/);
     expect(await ConversationTurn.findOne({ where: { turn_id: 'missing-human-turn' } })).toBeNull();
 });
+
+test('recovery holding delivery does not send when the customer context is missing', async () => {
+    const control = workerPrivate.createRecoveryControl({
+        turnId: 'missing-customer-turn',
+        shopId: IDS.shopA,
+        conversationId: CONVERSATION_ID,
+        platform: 'facebook',
+        recipientId: 'psid-that-is-not-in-the-customer-table',
+        channel: { id: 'channel-recovery' },
+        language: 'en',
+    });
+    control.setPolicySettings({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true });
+
+    await jest.advanceTimersByTimeAsync(8000);
+    await control.flush();
+    await control.close();
+
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(await Message.count({ where: { conversation_id: CONVERSATION_ID } })).toBe(0);
+});
+
+test('recovery holding delivery does not send with an empty settings context', async () => {
+    const control = workerPrivate.createRecoveryControl({
+        turnId: 'missing-settings-turn',
+        shopId: IDS.shopA,
+        conversationId: CONVERSATION_ID,
+        platform: 'facebook',
+        recipientId: '7000000000000002',
+        channel: { id: 'channel-recovery' },
+        language: 'en',
+    });
+    control.setPolicySettings({});
+
+    await jest.advanceTimersByTimeAsync(8000);
+    await control.flush();
+    await control.close();
+
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(await Message.count({ where: { conversation_id: CONVERSATION_ID } })).toBe(0);
+});

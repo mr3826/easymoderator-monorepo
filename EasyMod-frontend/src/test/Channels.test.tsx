@@ -15,11 +15,13 @@ import type { MetaChannel, MetaOAuthCallbackResult } from '@/api/domains/meta-ch
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string, _options?: any) => {
       const map: Record<string, string> = {
         'channels.errors.oauthStateMismatch': 'OAuth validation failed — please try again',
         'channels.errors.connectionFailed': 'Connection failed — please try again',
         'channels.errors.oauthInitFailed': 'Could not start connection',
+        'channels.connectCard.pageTaskRequired': 'Messaging and Page management access are required on this Page',
         'channels.connectCard.connectCount': 'Connect ({{count}})',
       }
       let s = map[key] ?? key
@@ -193,8 +195,8 @@ describe('ChatSettings (Channels)', () => {
     })
     mockHandleMetaOAuthCallback.mockResolvedValue({
       pages: [
-        { id: 'page-1', name: 'Page One', category: null, pictureUrl: null },
-        { id: 'page-2', name: 'Page Two', category: null, pictureUrl: null },
+        { id: 'page-1', name: 'Page One', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MANAGE'], connectable: true, reason: null },
+        { id: 'page-2', name: 'Page Two', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MODERATE'], connectable: true, reason: null },
       ],
       tempToken: 't'.repeat(64),
     } as MetaOAuthCallbackResult)
@@ -236,5 +238,89 @@ describe('ChatSettings (Channels)', () => {
     fireEvent.click(checkbox)
 
     expect(screen.getByRole('button', { name: /Connect \(1\)/i })).not.toBeDisabled()
+  })
+
+  it('shows mixed eligible and ineligible Pages without corrupting the selected count', async () => {
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: `https://facebook.com/dialog/oauth?state=${'s'.repeat(64)}`,
+    })
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [
+        { id: 'eligible', name: 'Eligible Page', category: null, pictureUrl: null, tasks: ['MESSAGING', 'CREATE_CONTENT'], connectable: true, reason: null },
+        { id: 'blocked', name: 'Blocked Page', category: null, pictureUrl: null, tasks: ['MESSAGING'], connectable: false, reason: 'META_PAGE_TASKS_REQUIRED' },
+      ],
+      tempToken: 't'.repeat(64),
+    } as MetaOAuthCallbackResult)
+
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <ChatSettings />
+        </BrowserRouter>,
+      )
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'))
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: window as any,
+        data: { type: 'OAUTH_SUCCESS', code: 'abc', state: 's'.repeat(64) },
+      }),
+    )
+
+    await waitFor(() => expect(screen.getByText('Blocked Page')).toBeInTheDocument())
+    const blockedCheckbox = screen.getByText('Blocked Page').closest('label')?.querySelector('input')
+    expect(blockedCheckbox).toBeDisabled()
+    expect(screen.getByText('Messaging and Page management access are required on this Page')).toBeInTheDocument()
+
+    const eligibleCheckbox = screen.getByText('Eligible Page').closest('label')?.querySelector('input')
+    expect(eligibleCheckbox).not.toBeDisabled()
+    fireEvent.click(eligibleCheckbox!)
+    expect(screen.getByRole('button', { name: /Connect \(1\)/i })).toBeEnabled()
+  })
+
+  it('does not show success UI when the server rejects an ineligible Page', async () => {
+    mockInitiateMetaOAuth.mockResolvedValue({
+      redirectUrl: `https://facebook.com/dialog/oauth?state=${'s'.repeat(64)}`,
+    })
+    mockHandleMetaOAuthCallback.mockResolvedValue({
+      pages: [{ id: 'page-1', name: 'Page One', category: null, pictureUrl: null, tasks: ['MESSAGING', 'MANAGE'], connectable: true, reason: null }],
+      tempToken: 't'.repeat(64),
+    } as MetaOAuthCallbackResult)
+    mockConnectMetaAsset.mockRejectedValueOnce({
+      statusCode: 403,
+      code: 'META_PAGE_TASKS_REQUIRED',
+      message: 'Page tasks are no longer sufficient',
+    })
+
+    await act(async () => {
+      render(
+        <BrowserRouter>
+          <ChatSettings />
+        </BrowserRouter>,
+      )
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: CONNECT_BTN }))
+    await waitFor(() => expect(mockInitiateMetaOAuth).toHaveBeenCalledWith('facebook'))
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: window.location.origin,
+        source: window as any,
+        data: { type: 'OAUTH_SUCCESS', code: 'abc', state: 's'.repeat(64) },
+      }),
+    )
+
+    const checkbox = await screen.findByRole('checkbox')
+    fireEvent.click(checkbox)
+    fireEvent.click(screen.getByRole('button', { name: /Connect \(1\)/i }))
+
+    await waitFor(() => expect(mockConnectMetaAsset).toHaveBeenCalledTimes(1))
+    expect(toast.error).toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(screen.getByText('Page One')).toBeInTheDocument()
   })
 })

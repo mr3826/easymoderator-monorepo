@@ -68,6 +68,27 @@ describe('MetaMessengerProvider', () => {
             expect(scope).not.toMatch(/instagram_/);
             expect(scope).not.toContain('business_management');
         });
+
+        test('ignores forbidden caller-supplied scopes and preserves the exact allowlist', async () => {
+            const url = await provider.buildAuthUrl({
+                state: 'facebook:s:u:n',
+                scopes: [
+                    'business_management',
+                    'instagram_basic',
+                    'instagram_manage_messages',
+                    'pages_read_engagement',
+                ],
+            });
+            const scope = new URL(url).searchParams.get('scope') || '';
+
+            expect(scope.split(',').sort()).toEqual([
+                'pages_manage_metadata',
+                'pages_messaging',
+                'pages_show_list',
+            ]);
+            expect(scope).not.toContain('business_management');
+            expect(scope).not.toMatch(/instagram_/);
+        });
     });
 
     describe('webhookFields()', () => {
@@ -617,6 +638,55 @@ describe('MetaMessengerProvider', () => {
             expect(result).toEqual([]);
             // Only 1 call: /me/accounts
             expect(axios.get).toHaveBeenCalledTimes(1);
+        });
+
+        test('preserves normalized non-secret Page tasks and exposes eligibility metadata', async () => {
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{
+                        id: 'P_TASKS',
+                        name: 'Task Page',
+                        category: 'Shopping',
+                        access_token: 'page-secret-must-not-leak',
+                        picture: null,
+                        tasks: [' messaging ', 'CREATE   CONTENT', 'MANAGE'],
+                    }],
+                    paging: {},
+                },
+            }).mockResolvedValueOnce(debugTokenResponse(['P_TASKS']));
+
+            const result = await provider.listManagedAssets({ userToken: 'tok_tasks' });
+
+            expect(result).toEqual([expect.objectContaining({
+                id: 'P_TASKS',
+                tasks: ['MESSAGING', 'CREATE_CONTENT', 'MANAGE'],
+                connectable: true,
+                reason: null,
+            })]);
+            expect(result[0]).not.toHaveProperty('access_token');
+        });
+
+        test.each([
+            ['missing', undefined, []],
+            ['non-array', 'MESSAGING', []],
+            ['non-string entry', ['MESSAGING', 42], []],
+            ['malformed entry', ['MESSAGING', 'MANAGE!'], []],
+            ['missing subscription task', ['MESSAGING'], ['MESSAGING']],
+        ])('marks %s Page tasks as ineligible', async (_label, tasks, expectedTasks) => {
+            axios.get.mockResolvedValueOnce({
+                data: {
+                    data: [{ id: 'P_INELIGIBLE', name: 'Needs Access', category: null, picture: null, tasks }],
+                    paging: {},
+                },
+            }).mockResolvedValueOnce(debugTokenResponse(['P_INELIGIBLE']));
+
+            const result = await provider.listManagedAssets({ userToken: `tok_${_label.replace(/\s+/g, '_')}` });
+
+            expect(result[0]).toMatchObject({
+                tasks: expectedTasks,
+                connectable: false,
+                reason: 'META_PAGE_TASKS_REQUIRED',
+            });
         });
     });
 

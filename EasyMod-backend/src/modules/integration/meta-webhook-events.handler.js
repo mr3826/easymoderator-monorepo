@@ -38,24 +38,27 @@ const displayChannelForPlatform = (platform) => {
 
 const fallbackCustomerName = (platform) => `${displayChannelForPlatform(platform)} User`;
 
-const fallbackCustomerMetadata = ({ platform, sender, source = 'webhook' }) => ({
+const fallbackCustomerMetadata = ({ platform, source = 'webhook' }) => ({
     source,
     platform: platform === 'messenger' ? 'facebook' : platform,
-    external_id: sender ? String(sender) : null,
     channel: displayChannelForPlatform(platform),
 });
 
-async function applyFallbackCustomerProfile({ customer, platform, sender, isPlaceholderName }) {
+async function applyFallbackCustomerProfile({ customer, platform, isPlaceholderName }) {
     if (!customer || typeof customer.update !== 'function' || !isPlaceholderName(customer.name)) return;
 
     const fallbackName = fallbackCustomerName(platform);
+    const safeMetadata = Object.fromEntries(
+        Object.entries(customer.metadata || {}).filter(([key]) => key !== 'external_id'),
+    );
+    const hasLegacyExternalId = Object.prototype.hasOwnProperty.call(customer.metadata || {}, 'external_id');
     const fallbackMeta = {
-        ...(customer.metadata || {}),
-        ...fallbackCustomerMetadata({ platform, sender }),
+        ...safeMetadata,
+        ...fallbackCustomerMetadata({ platform }),
     };
-    const currentMeta = customer.metadata || {};
-    const alreadySafe = customer.name === fallbackName
-        && currentMeta.external_id === String(sender || '')
+    const currentMeta = safeMetadata;
+    const alreadySafe = !hasLegacyExternalId
+        && customer.name === fallbackName
         && currentMeta.channel === displayChannelForPlatform(platform)
         && currentMeta.platform === fallbackMeta.platform;
 
@@ -92,7 +95,7 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
         // The fallback is intentional while the profile feature is disabled;
         // do not report that expected path as an enrichment failure.
         if (process.env.META_USER_PROFILE_ENABLED !== 'true') {
-            void applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+            void applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
             return;
         }
 
@@ -108,11 +111,11 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
                     logger.info('Shared inbox customer profile enriched from Meta', logContext);
                     return;
                 }
-                await applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+                await applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
                 logger.warn('Shared inbox customer profile enrichment did not update customer; using fallback', logContext);
             })
             .catch(async (err) => {
-                await applyFallbackCustomerProfile({ customer, platform, sender: psid, isPlaceholderName });
+                await applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
                 logger.warn('Shared inbox customer profile enrichment failed; using fallback', {
                     ...logContext,
                     error: err.message,
@@ -133,6 +136,54 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
 // ─── BullMQ dispatch ──────────────────────────────────────────────────────────
 
 let _messageQueue = null;
+
+class QueueDispatchError extends Error {
+    constructor(message, cause = null, code = 'QUEUE_DISPATCH_FAILED') {
+        super(message);
+        this.name = 'QueueDispatchError';
+        this.code = code;
+        this.retryable = true;
+        this.cause = cause;
+    }
+}
+
+// The receipt service stores error.name as last_error_code. Keep its existing
+// contract while preserving the original failure for diagnostics and tests.
+function toReceiptFailure(error, fallbackCode) {
+    const code = error?.code || fallbackCode;
+    const failure = new Error(error?.message || code);
+    failure.name = code;
+    failure.code = code;
+    failure.retryable = true;
+    failure.cause = error?.cause || error || null;
+    return failure;
+}
+
+async function markQueuedReceipt(receipt, channel) {
+    try {
+        await receiptService.markQueued(receipt, {
+            shopId: channel.shop_id,
+            metaChannelId: channel.id,
+        });
+    } catch (err) {
+        const error = new Error('Queued receipt update did not take effect');
+        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
+        error.retryable = true;
+        error.cause = err;
+        throw error;
+    }
+
+    // Verify the in-memory/Sequelize instance as well, so an enqueue followed by
+    // a weakly consistent update remains retryable instead of being reported as
+    // a terminal handoff.
+    if (receipt?.status && receipt.status !== 'QUEUED') {
+        const error = new Error('Queued receipt update did not take effect');
+        error.code = 'QUEUE_RECEIPT_UPDATE_FAILED';
+        error.retryable = true;
+        throw error;
+    }
+}
+
 function getMessageQueue() {
     if (!_messageQueue) {
         try {
@@ -149,12 +200,12 @@ function getMessageQueue() {
  *
  * Rather than enqueue one reply job per message, we (re)schedule a single
  * debounced "burst-flush" per conversation: rapid-fire messages collapse into
- * ONE AI turn and ONE reply (see burst-coalescer.js). Non-blocking — errors are
- * logged but never propagate back to the webhook handler.
+ * ONE AI turn and ONE reply (see burst-coalescer.js). The exact Page asset is
+ * retained in the job payload so the worker cannot substitute another Page.
  */
 async function dispatchMessageJob(storeResult, event) {
     const queue = getMessageQueue();
-    if (!queue) {
+    if (!queue || typeof queue.add !== 'function') {
         // No Error object here (queue is simply null), so pass null as the 2nd
         // arg and put context in meta — otherwise the logger reads .message off
         // this object (undefined) and the shop/platform context is dropped.
@@ -170,10 +221,16 @@ async function dispatchMessageJob(storeResult, event) {
             level: 'error',
             context: { shopId: event.shop_id, platform: event.platform },
         }).catch(() => {});
-        return;
+        throw new QueueDispatchError('Message queue is unavailable', null, 'MESSAGE_QUEUE_UNAVAILABLE');
     }
 
-    const { shop_id, sender, platform, meta_channel_id = null } = event;
+    const {
+        shop_id,
+        sender,
+        platform,
+        meta_channel_id = null,
+        metaAssetId = null,
+    } = event;
     const { conversation_id, customer_id } = storeResult;
 
     try {
@@ -184,13 +241,15 @@ async function dispatchMessageJob(storeResult, event) {
             platform,
             recipientId: sender,
             metaChannelId: meta_channel_id,
+            metaAssetId,
             senderInfo: { customer_id },
             messageId: storeResult.message_id || storeResult.id,
         };
         if (storeResult.within_allowance !== undefined) {
             burstPayload.within_allowance = storeResult.within_allowance;
         }
-        await scheduleBurstFlush(burstPayload);
+        const queueResult = await scheduleBurstFlush(burstPayload);
+        return queueResult;
     } catch (err) {
         logger.error('Failed to schedule burst flush — message stored but auto-reply skipped', err, {
             shop_id,
@@ -204,26 +263,46 @@ async function dispatchMessageJob(storeResult, event) {
             level: 'error',
             context: { shop_id, conversationId: conversation_id, platform, error: err.message },
         }).catch(() => {});
+        if (err instanceof QueueDispatchError) throw err;
+        throw new QueueDispatchError('Failed to enqueue message for AI processing', err);
     }
 }
 
 /**
  * Cancel any pending burst-flush for a conversation (e.g. on a STOP keyword,
- * where no reply should be sent). Best-effort; never throws into the handler.
+ * where no reply should be sent). The STOP path uses strict cancellation so a
+ * queue/bookkeeping failure cannot be reported as a successful opt-out.
  */
 async function cancelPendingDispatch(conversationId) {
     try {
         const { cancelBurstFlush } = require('../../jobs/burst-coalescer');
-        await cancelBurstFlush(conversationId);
-    } catch (_) { /* best-effort */ }
+        await cancelBurstFlush(conversationId, { strict: true });
+    } catch (error) {
+        if (error?.code === 'BURST_CANCELLATION_FAILED') throw error;
+        const failure = new Error('Burst cancellation failed');
+        failure.name = 'BurstCancellationError';
+        failure.code = 'BURST_CANCELLATION_FAILED';
+        failure.retryable = true;
+        failure.cause = error;
+        throw failure;
+    }
 }
 
 // ─── Consent processing ────────────────────────────────────────────────────────
 
+function requireConsentState(result, operation) {
+    if (result && typeof result === 'object' && result.id) return result;
+    const error = new Error(`${operation} did not return consent state`);
+    error.code = 'CONSENT_STATE_UNAVAILABLE';
+    error.retryable = true;
+    throw error;
+}
+
 /**
  * After storing an inbound message: update per-channel consent and detect STOP keywords.
  * Returns whether the AI dispatch should proceed.
- * Errors are swallowed — consent bookkeeping must never break inbound delivery.
+ * A consent failure is an explicit no-dispatch outcome. It must never be
+ * interpreted as permission to send an automated reply.
  */
 async function processInboundConsent({ storeResult, normalizedEvent, channel }) {
     try {
@@ -231,7 +310,7 @@ async function processInboundConsent({ storeResult, normalizedEvent, channel }) 
         const messageText = normalizedEvent.message || '';
 
         if (consentService.isStopKeyword(messageText)) {
-            await consentService.recordOptOut({
+            const consentState = await consentService.recordOptOut({
                 shopId: storeResult.shop_id,
                 channelId: channel?.id || null,
                 customerId: storeResult.customer_id,
@@ -239,23 +318,27 @@ async function processInboundConsent({ storeResult, normalizedEvent, channel }) 
                 source: 'keyword_stop',
                 metadata: { message_id: storeResult.message_id, keyword: messageText.trim() },
             });
+            requireConsentState(consentState, 'recordOptOut');
             logger.info('Inbound STOP keyword — suppressing AI dispatch', {
                 shopId: storeResult.shop_id, customerId: storeResult.customer_id, platform,
             });
             return { shouldDispatch: false };
         }
 
-        await consentService.recordInbound({
+        const consentState = await consentService.recordInbound({
             shopId: storeResult.shop_id,
             channelId: channel?.id || null,
             customerId: storeResult.customer_id,
             platform,
             metadata: { message_id: storeResult.message_id },
         });
+        requireConsentState(consentState, 'recordInbound');
         return { shouldDispatch: true };
     } catch (err) {
-        logger.error('processInboundConsent failed (continuing)', { error: err.message });
-        return { shouldDispatch: true };
+        logger.error('processInboundConsent failed — suppressing AI dispatch', { error: err.message });
+        if (!err.code) err.code = 'CONSENT_STATE_UNAVAILABLE';
+        err.retryable = true;
+        throw err;
     }
 }
 
@@ -273,13 +356,13 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
                 channel_user_id: String(senderId),
                 metadata: fallbackCustomerMetadata({
                     platform: channel.platform,
-                    sender: senderId,
                     source: 'messaging_optins',
                 }),
             },
         });
+        requireConsentState(customer, 'findOrCreate customer');
 
-        await consentService.recordOptIn({
+        const consentState = await consentService.recordOptIn({
             shopId: channel.shop_id,
             channelId: channel.id || null,
             customerId: customer.id,
@@ -287,9 +370,11 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
             source: 'webhook_messaging_optins',
             metadata: { ref: optin?.ref || null, user_ref: optin?.user_ref || null },
         });
+        requireConsentState(consentState, 'recordOptIn');
         logger.info('messaging_optins recorded', { shopId: channel.shop_id, customerId: customer.id });
     } catch (err) {
         logger.error('handleMessagingOptin failed', { error: err.message });
+        throw err;
     }
 }
 
@@ -312,27 +397,46 @@ async function storeIncomingMessage(event) {
             const existing = await Message.findOne({ where: { external_id: externalId } });
             if (existing) {
                 logger.debug(`Duplicate webhook event skipped (external_id=${externalId})`);
-                let withinAllowance = false;
-                if (typeof Conversation.findByPk === 'function') {
-                    const existingConversation = await Conversation.findByPk(existing.conversation_id, {
-                        attributes: ['metadata'],
-                    }).catch(() => null);
-                    let metadata = existingConversation?.metadata;
-                    if (typeof metadata === 'string') {
-                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
-                    }
-                    if (typeof metadata?.within_allowance === 'boolean') {
-                        withinAllowance = metadata.within_allowance;
-                    }
+                const duplicateConversationWhere = {
+                    id: existing.conversation_id,
+                    shop_id,
+                    channel: channelType,
+                };
+                if (meta_channel_id) duplicateConversationWhere.meta_channel_id = meta_channel_id;
+
+                const existingConversation = await Conversation.findOne({
+                    where: duplicateConversationWhere,
+                    attributes: ['id', 'shop_id', 'customer_id', 'channel', 'meta_channel_id', 'metadata'],
+                });
+                const duplicateContextMatches = existingConversation
+                    && String(existingConversation.shop_id) === String(shop_id)
+                    && existingConversation.channel === channelType
+                    && (!meta_channel_id
+                        || String(existingConversation.meta_channel_id) === String(meta_channel_id))
+                    && existingConversation.customer_id;
+                if (!duplicateContextMatches) {
+                    const error = new Error('Duplicate message conversation context is unavailable');
+                    error.code = 'DUPLICATE_MESSAGE_CONTEXT_UNAVAILABLE';
+                    error.retryable = true;
+                    throw error;
                 }
+
+                let conversationMetadata = existingConversation.metadata || {};
+                if (typeof conversationMetadata === 'string') {
+                    try { conversationMetadata = JSON.parse(conversationMetadata); } catch (_) { conversationMetadata = {}; }
+                }
+                const withinAllowance = typeof conversationMetadata?.within_allowance === 'boolean'
+                    ? conversationMetadata.within_allowance
+                    : false;
                 return {
-                    customer_id: existing.customer_id,
+                    customer_id: existingConversation.customer_id,
                     customer_name: null,
                     conversation_id: existing.conversation_id,
                     message_id: existing.id,
                     message: existing,
                     shop_id: event.shop_id,
                     within_allowance: withinAllowance,
+                    conversation_metadata: conversationMetadata,
                     duplicate: true
                 };
             }
@@ -346,15 +450,15 @@ async function storeIncomingMessage(event) {
                     name: fallbackCustomerName(platform),
                     channel_type: channelType,
                     channel_user_id: sender,
-                    metadata: fallbackCustomerMetadata({ platform, sender })
+                    metadata: fallbackCustomerMetadata({ platform })
                 },
                 transaction: t
             });
             customerForEnrichment = customer;
 
-            // Phase 2: scope the 24h rolling-window lookup by meta_channel_id when
-            // we know which page the message arrived on. Older rows without
-            // meta_channel_id still match (they predate this column).
+            // Once the webhook identifies a Page, only its exact channel may
+            // match. Legacy unpinned rows remain historical data, not a target
+            // for a newly identified Page.
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
             const convoWhere = {
                 shop_id,
@@ -363,7 +467,7 @@ async function storeIncomingMessage(event) {
                 updated_at: { [Op.gte]: oneDayAgo }
             };
             if (meta_channel_id) {
-                convoWhere.meta_channel_id = { [Op.or]: [meta_channel_id, null] };
+                convoWhere.meta_channel_id = meta_channel_id;
             }
             let conversation = await Conversation.findOne({
                 where: convoWhere,
@@ -372,9 +476,11 @@ async function storeIncomingMessage(event) {
                 transaction: t
             });
 
-            // Lazy backfill: if we matched an old row that pre-dates the FK, set it now.
-            if (conversation && meta_channel_id && !conversation.meta_channel_id) {
-                await conversation.update({ meta_channel_id }, { transaction: t });
+            // A defensive check keeps mocked/weakly consistent stores from
+            // reusing a row that does not satisfy the exact Page predicate.
+            if (conversation && meta_channel_id
+                && String(conversation.meta_channel_id) !== String(meta_channel_id)) {
+                conversation = null;
             }
 
             if (!conversation) {
@@ -507,7 +613,7 @@ async function storeIncomingMessage(event) {
         return storedMessage;
     } catch (error) {
         logger.error('Failed to store incoming message', {
-            error: error.message, platform: event?.platform, shop_id: event?.shop_id, sender: event?.sender, stack: error.stack
+            error: error.message, platform: event?.platform, shop_id: event?.shop_id, stack: error.stack
         });
         throw error;
     }
@@ -522,10 +628,12 @@ async function storeIncomingMessage(event) {
 async function notifyPageDisconnected(pageId) {
     try {
         const MetaChannel = require('../channel-providers/meta-channel.entity');
-        const prev = await MetaChannel.findOne({
+        const candidates = await MetaChannel.findAll({
             where: { meta_asset_id: pageId },
             attributes: ['shop_id', 'display_name', 'status']
         });
+        if (!Array.isArray(candidates) || candidates.length !== 1) return;
+        const [prev] = candidates;
         if (prev) {
             sseManager.emit(prev.shop_id, 'channel_error', {
                 type: 'page_disconnected',
@@ -547,16 +655,43 @@ async function notifyPageDisconnected(pageId) {
  *
  * @returns {Promise<'processed'|'skipped'|'failed'>}
  */
-async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
+async function processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId = pageId }) {
     const senderId = messaging.sender?.id;
 
+    const channelAssetId = channel?.meta_asset_id || channel?.asset_id;
+    if (!channel
+        || channel.status !== 'CONNECTED'
+        || channel.platform !== 'facebook'
+        || !metaAssetId
+        || !channelAssetId
+        || String(channelAssetId) !== String(metaAssetId)) {
+        await receiptService.markIdentityNotResolved(receipt, {
+            pageId: metaAssetId || pageId,
+            alert: true,
+        });
+        return 'failed';
+    }
+
     if (messaging.optin) {
-        await handleMessagingOptin({ channel, senderId, optin: messaging.optin });
-        await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
-        return 'processed';
+        try {
+            await handleMessagingOptin({ channel, senderId, optin: messaging.optin });
+            await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
+            return 'processed';
+        } catch (err) {
+            logger.error('Failed to process Facebook messaging opt-in', {
+                pageId: metaAssetId || pageId,
+                error: err.message,
+            });
+            await receiptService.markStoreFailure(
+                receipt,
+                toReceiptFailure(err, 'CONSENT_STATE_UNAVAILABLE'),
+                { pageId: metaAssetId || pageId },
+            );
+            return 'failed';
+        }
     }
     if (messaging.message?.is_echo) {
-        logger.debug(`Skipped echo event from ${senderId}`);
+        logger.debug('Skipped echo event', { pageId: metaAssetId });
         await receiptService.markSkipped(receipt, 'ECHO');
         return 'skipped';
     }
@@ -564,7 +699,7 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
     const messageText = messaging.message?.text || null;
     const attachments = messaging.message?.attachments || [];
     if (!messageText && attachments.length === 0) {
-        logger.debug(`Skipped non-message event from ${senderId}`, { keys: Object.keys(messaging) });
+        logger.debug('Skipped non-message event', { pageId: metaAssetId, keys: Object.keys(messaging) });
         await receiptService.markSkipped(receipt, 'NON_MESSAGE_EVENT');
         return 'skipped';
     }
@@ -573,6 +708,7 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
         platform: 'facebook',
         shop_id: channel.shop_id,
         meta_channel_id: channel.id,
+        metaAssetId,
         sender: senderId,
         message: messageText || '',
         attachments,
@@ -581,7 +717,13 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
     };
 
     try {
-        logger.info(`Processing message from ${senderId} to shop ${channel.shop_id}`);
+        logger.info('Processing inbound Facebook message', {
+            shopId: channel.shop_id,
+            metaChannelId: channel.id,
+            metaAssetId,
+            hasText: Boolean(messageText),
+            attachmentCount: attachments.length,
+        });
         await receiptService.markProcessing(receipt);
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
@@ -591,19 +733,28 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId }) {
                 message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
             });
         }
-        const { shouldDispatch } = await processInboundConsent({ storeResult, normalizedEvent, channel });
-        if (shouldDispatch) dispatchMessageJob(storeResult, normalizedEvent);
-        else cancelPendingDispatch(storeResult.conversation_id);
+        const consentResult = await processInboundConsent({ storeResult, normalizedEvent, channel });
+        if (consentResult?.shouldDispatch === true) {
+            await dispatchMessageJob(storeResult, normalizedEvent);
+            await markQueuedReceipt(receipt, channel);
+        } else {
+            await cancelPendingDispatch(storeResult.conversation_id);
+            await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
+        }
 
-        await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
         return 'processed';
     } catch (err) {
-        logger.error(`Failed to store message from ${senderId} (page ${pageId})`, {
-            error: err.message, stack: err.stack
+        logger.error('Failed to process inbound Facebook message', {
+            pageId: metaAssetId || pageId,
+            error: err.message,
         });
         // Durable, retryable, and alerted. Previously this branch swallowed the
         // failure and the message was gone.
-        await receiptService.markStoreFailure(receipt, err, { pageId });
+        await receiptService.markStoreFailure(
+            receipt,
+            toReceiptFailure(err, 'MESSAGE_STORE_FAILED'),
+            { pageId: metaAssetId || pageId },
+        );
         return 'failed';
     }
 }
@@ -629,13 +780,43 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             recorded.push({ messaging, receipt, duplicate });
         }
 
-        const channel = await resolveConnectedChannel(pageId, 'facebook');
+        let channel;
+        try {
+            channel = await resolveConnectedChannel(pageId, 'facebook');
+        } catch (err) {
+            // The receipt already exists, so acknowledge only after leaving a
+            // replayable message in the reconciler's retry set. Non-business
+            // events do not carry a replay body and can be settled as skipped.
+            logger.error('Meta channel resolution failed after receipt creation', {
+                pageId,
+                eventCount: recorded.length,
+                errorCode: err?.code || err?.name || 'CHANNEL_RESOLUTION_FAILED',
+            });
+            const resolutionFailure = new Error('Meta channel resolution failed');
+            resolutionFailure.name = 'CHANNEL_RESOLUTION_FAILED';
+            resolutionFailure.code = 'CHANNEL_RESOLUTION_FAILED';
+            resolutionFailure.retryable = true;
+            resolutionFailure.cause = err;
+            for (const { receipt } of recorded) {
+                if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
+                if (['message', 'optin'].includes(receipt?.event_type)) {
+                    await receiptService.markStoreFailure(receipt, resolutionFailure, { pageId });
+                } else {
+                    await receiptService.markSkipped(receipt, 'CHANNEL_RESOLUTION_FAILED');
+                }
+            }
+            continue;
+        }
 
         if (!channel) {
             logger.error(`No CONNECTED facebook channel for page_id=${pageId} — inbound messages held for retry`);
             let alerted = false;
             for (const { receipt } of recorded) {
                 if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
+                if (!['message', 'optin'].includes(receipt?.event_type)) {
+                    await receiptService.markSkipped(receipt, 'PAGE_NOT_CONNECTED');
+                    continue;
+                }
                 await receiptService.markIdentityNotResolved(receipt, { pageId, alert: !alerted });
                 alerted = true;
             }
@@ -649,9 +830,14 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
                 logger.debug(`Duplicate webhook event skipped (receipt ${receipt.id} is ${receipt.status})`);
                 continue;
             }
-            await processMessagingEvent({ messaging, channel, receipt, pageId });
+            await processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId: pageId });
         }
     }
 }
 
-module.exports = { handlePageWebhook, processMessagingEvent, storeIncomingMessage };
+module.exports = {
+    handlePageWebhook,
+    processMessagingEvent,
+    storeIncomingMessage,
+    _private: { dispatchMessageJob, processInboundConsent, QueueDispatchError },
+};

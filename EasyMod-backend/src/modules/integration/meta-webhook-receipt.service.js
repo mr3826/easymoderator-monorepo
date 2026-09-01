@@ -38,13 +38,15 @@ const TERMINAL_RETENTION_DAYS = 7;
 const DEAD_LETTER_RETENTION_DAYS = 30;
 
 const RETRYABLE_STATUSES = ['RETRY_PENDING', 'MESSAGE_STORE_FAILED', 'IDENTITY_NOT_RESOLVED'];
-const TERMINAL_STATUSES = ['PROCESSED', 'SKIPPED', 'DEAD_LETTERED'];
+const TERMINAL_STATUSES = ['PROCESSED', 'QUEUED', 'SKIPPED', 'DEAD_LETTERED'];
 
 /** Thrown when the durable receipt itself cannot be written. */
 class WebhookReceiptPersistenceError extends Error {
     constructor(cause) {
         super('Failed to persist inbound Meta webhook receipt');
         this.name = 'WebhookReceiptPersistenceError';
+        this.code = 'WEBHOOK_RECEIPT_PERSISTENCE_FAILED';
+        this.retryable = true;
         this.cause = cause;
     }
 }
@@ -145,20 +147,30 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
 }
 
 async function safeUpdate(receipt, fields) {
-    if (!receipt || typeof receipt.update !== 'function') return;
+    if (!receipt || typeof receipt.update !== 'function') return false;
     try {
         await receipt.update(fields);
+        return true;
     } catch (err) {
         logger.error('Failed to update webhook receipt status', {
             receiptId: receipt.id,
             errorCode: err?.name || 'UnknownError',
         });
+        return false;
     }
+}
+
+async function updateOrThrow(receipt, fields) {
+    // A missing receipt can only occur in a mocked/incomplete caller; the
+    // create path already throws when persistence returns no row.
+    if (!receipt) return;
+    if (await safeUpdate(receipt, fields)) return;
+    throw new WebhookReceiptPersistenceError(new Error('Failed to update inbound Meta webhook receipt status'));
 }
 
 /** Event carries no business action (echo, delivery, read, unrecognised). */
 async function markSkipped(receipt, reasonCode) {
-    await safeUpdate(receipt, {
+    await updateOrThrow(receipt, {
         status: 'SKIPPED',
         last_error_code: reasonCode || null,
         payload_encrypted: null,
@@ -168,15 +180,33 @@ async function markSkipped(receipt, reasonCode) {
 }
 
 async function markProcessing(receipt) {
-    await safeUpdate(receipt, { status: 'PROCESSING' });
+    await updateOrThrow(receipt, { status: 'PROCESSING' });
 }
 
 async function markProcessed(receipt, { shopId = null, metaChannelId = null } = {}) {
-    await safeUpdate(receipt, {
+    await updateOrThrow(receipt, {
         status: 'PROCESSED',
         shop_id: shopId,
         meta_channel_id: metaChannelId,
         payload_encrypted: null,
+        processing_token: null,
+        last_error_code: null,
+        next_retry_at: null,
+        processed_at: new Date(),
+    });
+}
+
+/**
+ * Durable queue handoff completed. `processed_at` is the existing terminal
+ * timestamp column and records when the event became durably owned by BullMQ.
+ */
+async function markQueued(receipt, { shopId = null, metaChannelId = null } = {}) {
+    await updateOrThrow(receipt, {
+        status: 'QUEUED',
+        shop_id: shopId,
+        meta_channel_id: metaChannelId,
+        payload_encrypted: null,
+        processing_token: null,
         last_error_code: null,
         next_retry_at: null,
         processed_at: new Date(),
@@ -204,7 +234,7 @@ async function markIdentityNotResolved(receipt, { pageId, alert = true, incremen
         return;
     }
 
-    await safeUpdate(receipt, {
+    await updateOrThrow(receipt, {
         status: 'IDENTITY_NOT_RESOLVED',
         retry_count: retryCount,
         last_error_code: 'PAGE_NOT_CONNECTED',
@@ -237,7 +267,7 @@ async function markStoreFailure(receipt, err, { pageId } = {}) {
         return;
     }
 
-    await safeUpdate(receipt, {
+    await updateOrThrow(receipt, {
         status: 'RETRY_PENDING',
         retry_count: retryCount,
         last_error_code: errorCode,
@@ -255,10 +285,11 @@ async function markStoreFailure(receipt, err, { pageId } = {}) {
 
 /** Terminal failure sink — queryable DLQ surfaced by /health/detailed. */
 async function deadLetter(receipt, errorCode) {
-    await safeUpdate(receipt, {
+    await updateOrThrow(receipt, {
         status: 'DEAD_LETTERED',
         last_error_code: String(errorCode || 'UNKNOWN').slice(0, 64),
         next_retry_at: null,
+        processing_token: null,
         processed_at: new Date(),
     });
 
@@ -348,7 +379,7 @@ async function purgeExpiredReceipts(now = new Date()) {
     const removed = await MetaWebhookReceipt.destroy({
         where: {
             [Op.or]: [
-                { status: { [Op.in]: ['PROCESSED', 'SKIPPED'] }, created_at: { [Op.lt]: terminalCutoff } },
+                { status: { [Op.in]: ['PROCESSED', 'QUEUED', 'SKIPPED'] }, created_at: { [Op.lt]: terminalCutoff } },
                 { status: 'DEAD_LETTERED', created_at: { [Op.lt]: deadCutoff } },
             ],
         },
@@ -363,6 +394,7 @@ module.exports = {
     markSkipped,
     markProcessing,
     markProcessed,
+    markQueued,
     markIdentityNotResolved,
     markStoreFailure,
     deadLetter,
