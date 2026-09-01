@@ -60,12 +60,13 @@ jobs:
           SPACES_ENDPOINT: ${{ secrets.SPACES_ENDPOINT }}
           BACKUP_BUCKET: ${{ secrets.BACKUP_BUCKET }}
           OFFSITE_RETENTION_DAYS: ${{ vars.OFFSITE_RETENTION_DAYS || '30' }}
+          BACKUP_RUN_ID: ${{ github.run_id }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 300s
-          envs: DO_TOKEN,BACKUP_ENCRYPTION_KEY,SPACES_ACCESS_KEY_ID,SPACES_SECRET_ACCESS_KEY,SPACES_ENDPOINT,BACKUP_BUCKET,OFFSITE_RETENTION_DAYS
+          envs: DO_TOKEN,BACKUP_ENCRYPTION_KEY,SPACES_ACCESS_KEY_ID,SPACES_SECRET_ACCESS_KEY,SPACES_ENDPOINT,BACKUP_BUCKET,OFFSITE_RETENTION_DAYS,BACKUP_RUN_ID
           script: |
             set -euo pipefail
 
@@ -120,7 +121,8 @@ jobs:
             echo "Immutable compose image contract verified for running release"
 
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}.dump"
+            test -n "${BACKUP_RUN_ID:-}"
+            BACKUP_FILE="$BACKUP_DIR/easymod-${TIMESTAMP}-${BACKUP_RUN_ID}.dump"
             BACKUP_TMP_FILE="$BACKUP_FILE.partial"
             UPLOADS_BACKUP_FILE="easymod-uploads-${TIMESTAMP}.tar.gz"
             trap 'rm -f "$BACKUP_TMP_FILE"' EXIT
@@ -148,7 +150,7 @@ jobs:
             docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
               sh -c 'cat > /tmp/backup-verify.dump' < "$BACKUP_TMP_FILE"
             TABLE_COUNT=$(docker compose --env-file /opt/easymod/.env.prod -f /opt/easymod/docker-compose.prod.yml exec -T postgres \
-              sh -c 'pg_restore -l /tmp/backup-verify.dump | grep -c "TABLE "; rm -f /tmp/backup-verify.dump' || true)
+              sh -c 'pg_restore --list --exit-on-error /tmp/backup-verify.dump | grep -c "TABLE "; rm -f /tmp/backup-verify.dump')
             echo "Dump: ${BACKUP_BYTES} bytes custom format, ${TABLE_COUNT} table entries"
             if [ "$BACKUP_BYTES" -lt 10000 ] || [ "$TABLE_COUNT" -lt 5 ]; then
               echo "ERROR: dump looks empty (${BACKUP_BYTES} bytes, ${TABLE_COUNT} tables) — treating as failed"
@@ -159,6 +161,8 @@ jobs:
             # checks pass. A failed stream must never become the newest file
             # selected by the always-run isolated restore drill.
             mv "$BACKUP_TMP_FILE" "$BACKUP_FILE"
+            sha256sum "$BACKUP_FILE" > "$BACKUP_FILE.sha256"
+            printf '%s\n' "$BACKUP_FILE" > "$BACKUP_DIR/backup-${BACKUP_RUN_ID}.receipt"
             echo "Backup complete: $(du -sh "$BACKUP_FILE" | cut -f1)"
 
             echo "Starting uploads volume backup: $BACKUP_DIR/$UPLOADS_BACKUP_FILE"
@@ -219,7 +223,34 @@ jobs:
                   "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" \
                   --endpoint-url "$SPACES_ENDPOINT"
 
-                echo "Off-site upload OK: $DEST_PREFIX/$(basename "$ENC")"
+                 if [ "$DEST_PREFIX" = db ]; then
+                   READBACK="$BACKUP_DIR/${BASE}.readback.enc"
+                   READBACK_SHA="$BACKUP_DIR/${BASE}.readback.sha256"
+                   DECRYPTED="$BACKUP_DIR/${BASE}.readback.dump"
+                   docker run --rm \
+                     -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
+                     -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
+                     -v "$BACKUP_DIR":/backup \
+                     amazon/aws-cli s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC")" "/backup/$(basename "$READBACK")" \
+                     --endpoint-url "$SPACES_ENDPOINT"
+                   docker run --rm \
+                     -e AWS_ACCESS_KEY_ID="$SPACES_ACCESS_KEY_ID" \
+                     -e AWS_SECRET_ACCESS_KEY="$SPACES_SECRET_ACCESS_KEY" \
+                     -v "$BACKUP_DIR":/backup \
+                     amazon/aws-cli s3 cp "s3://$BACKUP_BUCKET/$DEST_PREFIX/$(basename "$ENC").sha256" "/backup/$(basename "$READBACK_SHA")" \
+                     --endpoint-url "$SPACES_ENDPOINT"
+                   expected_checksum=$(awk '{print $1}' "$READBACK_SHA")
+                   actual_checksum=$(sha256sum "$READBACK" | awk '{print $1}')
+                   test -n "$expected_checksum" && test "$actual_checksum" = "$expected_checksum"
+                   openssl enc -d -aes-256-cbc -pbkdf2 -in "$READBACK" -out "$DECRYPTED" \
+                     -pass env:BACKUP_ENCRYPTION_KEY
+                   docker run --rm -v "$BACKUP_DIR":/backup postgres:16-alpine \
+                     pg_restore --list --exit-on-error "/backup/$(basename "$DECRYPTED")"
+                   rm -f "$READBACK" "$READBACK_SHA" "$DECRYPTED"
+                   echo 'REMOTE_READBACK=PASS'
+                 fi
+
+                 echo "Off-site upload OK: $DEST_PREFIX/$(basename "$ENC")"
                 rm -f "$ENC" "$ENC.sha256"
               }
 
@@ -287,10 +318,9 @@ jobs:
             set -euo pipefail
             umask 077
 
-            BACKUP_FILE=${BACKUP_FILE:-}
-            if [ -z "$BACKUP_FILE" ]; then
-              BACKUP_FILE=$(find /opt/easymod/backups -maxdepth 1 -type f -name 'easymod-*.dump' -printf '%T@ %p\n' | sort -nr | sed -n '1s/^[^ ]* //p')
-            fi
+            RECEIPT="/opt/easymod/backups/backup-${RESTORE_DRILL_RUN_ID}.receipt"
+            test -s "$RECEIPT"
+            BACKUP_FILE=$(cat "$RECEIPT")
             test -n "$BACKUP_FILE"
             printf 'RESTORE_BACKUP_FILE=%s\n' "$BACKUP_FILE"
             RESTORE_CONTAINER="easymod-restore-drill-${RESTORE_DRILL_RUN_ID}"
@@ -309,6 +339,8 @@ jobs:
             test "$RESTORE_CONTAINER" != 'easymod-postgres-1'
             test "$RESTORE_NETWORK" != 'easymod_internal'
             test -f "$BACKUP_FILE"
+            test -f "$BACKUP_FILE.sha256"
+            sha256sum --check "$BACKUP_FILE.sha256"
             test -n "$RESTORE_DRILL_RUN_ID"
 
             if docker ps -a --format '{{.Names}}' | grep -Fxq "$RESTORE_CONTAINER"; then
@@ -395,6 +427,10 @@ jobs:
               MIGRATION_IMAGE=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1)
             fi
             test -n "$MIGRATION_IMAGE"
+            if ! printf '%s' "$MIGRATION_IMAGE" | grep -Eq '@sha256:[0-9a-fA-F]{64}$'; then
+              echo 'ERROR: forward migration image must be an immutable digest reference'
+              exit 1
+            fi
             echo "FORWARD_MIGRATION_IMAGE=$MIGRATION_IMAGE"
 
             migration_count() {
@@ -420,14 +456,8 @@ jobs:
             echo "RESTORED_FORWARD_MIGRATIONS_APPLIED=$((RESTORED_LEDGER_AFTER - RESTORED_LEDGER_BEFORE))"
             echo 'RESTORED_FORWARD_MIGRATION=PASS'
 
-            # Reported, not gating: the audit also surfaces entity drift that
-            # predates this gate, so a finding here is evidence to triage rather
-            # than a reason to fail the drill.
-            if docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" "$MIGRATION_IMAGE" node scripts/schema-drift-audit.js; then
-              echo 'RESTORED_SCHEMA_DRIFT_AUDIT=CLEAN'
-            else
-              echo 'RESTORED_SCHEMA_DRIFT_AUDIT=FINDINGS'
-            fi
+            docker run --rm --network "$RESTORE_NETWORK" --env-file /opt/easymod/.env.prod -e DB_SSL=false -e DATABASE_URL="$DRILL_DATABASE_URL" "$MIGRATION_IMAGE" node scripts/schema-drift-audit.js
+            echo 'RESTORED_SCHEMA_DRIFT_AUDIT=CLEAN'
 
             # None of the above may have touched production: same postgres
             # process, same migration ledger.

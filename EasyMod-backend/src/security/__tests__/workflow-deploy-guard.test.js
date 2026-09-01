@@ -91,6 +91,23 @@ describe('production workflow branch safety', () => {
         expect(schemaAuditIndex).toBeLessThan(replacementIndex);
     });
 
+    test('rejects the destructive production wipe path', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).toContain('WIPE_DB=WIPE is disabled for production cutover');
+        expect(deployBlock.indexOf('WIPE_DB=WIPE is disabled')).toBeLessThan(
+            deployBlock.indexOf('if [ "$WIPE_DB" = "WIPE" ]; then', deployBlock.indexOf('WIPE_DB=WIPE is disabled') + 1),
+        );
+    });
+
+    test('requires an immutable image for restore-drill forward migration', () => {
+        const backupWorkflow = fs.readFileSync(
+            path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
+            'utf8',
+        );
+        expect(backupWorkflow).toContain('forward migration image must be an immutable digest reference');
+    });
+
     test('rollback verifies restored images and health before returning', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 

@@ -9,9 +9,9 @@
  * cannot be edited to repair those columns; this migration is the forward-only
  * repair.
  *
- * The legacy threshold column is retained when present. Its non-zero values are
- * copied once into threshold_debt so the attribute rename does not discard the
- * historical grace-buffer balance. No existing column or row is deleted.
+ * The legacy threshold column is retained when present. It is an active grace
+ * buffer, not cumulative debt, so this repair deliberately initializes the new
+ * debt column to zero and never translates the legacy value.
  */
 
 const hasColumn = async (sequelize, dialect, table, column, queryOptions) => {
@@ -31,13 +31,39 @@ const hasColumn = async (sequelize, dialect, table, column, queryOptions) => {
     return rows.some((row) => row.name === column);
 };
 
+const assertPostgresPostconditions = async (sequelize, transaction) => {
+    const [rows] = await sequelize.query(`
+        SELECT table_name, column_name, data_type, udt_name, is_nullable, column_default
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND ((table_name = 'orders' AND column_name = 'metadata')
+             OR (table_name = 'subscriptions' AND column_name IN ('threshold_debt', 'usage_reset_at')))
+         ORDER BY table_name, column_name
+    `, { transaction });
+
+    const columns = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, row]));
+    const metadata = columns.get('orders.metadata');
+    const debt = columns.get('subscriptions.threshold_debt');
+    const reset = columns.get('subscriptions.usage_reset_at');
+    if (!metadata || metadata.data_type !== 'jsonb' || metadata.is_nullable !== 'YES'
+        || !String(metadata.column_default || '').toLowerCase().includes("'{}'::jsonb")) {
+        throw new Error('20260901_001 postcondition failed for orders.metadata');
+    }
+    if (!debt || debt.data_type !== 'integer' || debt.is_nullable !== 'NO'
+        || !/\b0\b/.test(String(debt.column_default || ''))) {
+        throw new Error('20260901_001 postcondition failed for subscriptions.threshold_debt');
+    }
+    if (!reset || reset.data_type !== 'timestamp with time zone' || reset.is_nullable !== 'YES') {
+        throw new Error('20260901_001 postcondition failed for subscriptions.usage_reset_at');
+    }
+};
+
 const applyRepair = async (sequelize, dialect, transaction) => {
     const postgres = dialect === 'postgres';
     const queryOptions = transaction ? { transaction } : undefined;
     const query = (sql) => sequelize.query(sql, queryOptions);
     const metadataType = postgres ? "JSONB DEFAULT '{}'::jsonb" : "TEXT DEFAULT '{}'";
     const usageResetType = postgres ? 'TIMESTAMPTZ' : 'DATETIME';
-    const subscriptionsTable = postgres ? 'public.subscriptions' : 'subscriptions';
 
     if (postgres && transaction) {
         // The repair is small and should fail closed instead of waiting behind
@@ -65,6 +91,18 @@ const applyRepair = async (sequelize, dialect, transaction) => {
         queryOptions,
     );
 
+    // Record the legacy grace-buffer shape for the migration receipt without
+    // treating it as cumulative debt. This is intentionally read-only.
+    if (hasLegacyThreshold) {
+        await query(`
+            SELECT COUNT(*) AS count,
+                   COALESCE(SUM(threshold_conversations), 0) AS sum,
+                   MIN(threshold_conversations) AS min,
+                   MAX(threshold_conversations) AS max
+              FROM ${postgres ? 'public.' : ''}subscriptions
+        `);
+    }
+
     if (postgres) {
         await query(
             `ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS metadata ${metadataType}`,
@@ -91,16 +129,8 @@ const applyRepair = async (sequelize, dialect, transaction) => {
         }
     }
 
-    if (hasLegacyThreshold && !hadThresholdDebt) {
-        // Only fill the newly-added/defaulted target. Re-applying the
-        // migration must not overwrite a later operator/application value.
-        await query(`
-            UPDATE ${subscriptionsTable}
-               SET threshold_debt = threshold_conversations
-             WHERE threshold_debt = 0
-               AND threshold_conversations IS NOT NULL
-               AND threshold_conversations <> 0
-        `);
+    if (postgres && transaction) {
+        await assertPostgresPostconditions(sequelize, transaction);
     }
 };
 

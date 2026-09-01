@@ -91,7 +91,14 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
                 getDialect: () => 'postgres',
                 query: jest.fn(async (sql) => {
                     queries.push(sql);
-                    if (sql.includes('threshold_conversations')) {
+                    if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                        return [[
+                            { table_name: 'orders', column_name: 'metadata', data_type: 'jsonb', is_nullable: 'YES', column_default: "'{}'::jsonb" },
+                            { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                            { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                        ], { rowCount: 3 }];
+                    }
+                    if (sql.includes("column_name = 'threshold_conversations'")) {
                         return [legacyThreshold ? [{ '?column?': 1 }] : [], { rowCount: 0 }];
                     }
                     return [[], { rowCount: 0 }];
@@ -117,14 +124,12 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
         expect(sql).not.toMatch(/DROP TABLE|DROP COLUMN|TRUNCATE|DELETE FROM/);
     });
 
-    it('preserves non-zero legacy threshold balances when the source column exists', async () => {
+    it('does not translate the legacy grace buffer into cumulative debt', async () => {
         const { sequelize, queries } = makeRepairSequelize({ legacyThreshold: true });
 
         await entityDriftRepair.up(sequelize);
 
-        expect(queries.join('\n')).toMatch(
-            /UPDATE public\.subscriptions[\s\S]*SET threshold_debt = threshold_conversations[\s\S]*threshold_debt = 0/,
-        );
+        expect(queries.join('\n')).not.toMatch(/SET threshold_debt = threshold_conversations/);
     });
 
     it('does not backfill a source column absent from a fresh current-entity schema', async () => {
@@ -141,13 +146,20 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
         const sequelize = {
             getDialect: () => 'postgres',
             transaction: jest.fn(async (callback) => callback(transaction)),
-            query: jest.fn(async (sql) => {
-                queries.push(sql);
+            query: jest.fn(async (sql, options) => {
+                queries.push({ sql, options });
                 if (sql.includes("column_name = 'threshold_conversations'")) {
                     return [[{ '?column?': 1 }], { rowCount: 0 }];
                 }
                 if (sql.includes("column_name = 'threshold_debt'")) {
                     return [[{ '?column?': 1 }], { rowCount: 0 }];
+                }
+                if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                    return [[
+                        { table_name: 'orders', column_name: 'metadata', data_type: 'jsonb', is_nullable: 'YES', column_default: "'{}'::jsonb" },
+                        { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                        { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                    ], { rowCount: 3 }];
                 }
                 return [[], { rowCount: 0 }];
             }),
@@ -155,12 +167,37 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
 
         await entityDriftRepair.up(sequelize);
 
-        const sql = queries.join('\n');
+        const sql = queries.map(({ sql: query }) => query).join('\n');
         expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(queries.every(({ options }) => options?.transaction === transaction)).toBe(true);
         expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
         expect(sql).toContain("SET LOCAL statement_timeout = '60s'");
         expect(sql).toContain('pg_advisory_xact_lock');
         expect(sql).not.toMatch(/UPDATE public\.subscriptions/);
+    });
+
+    it('rejects a failed postcondition before the migration can be recorded', async () => {
+        const transaction = {};
+        const queries = [];
+        const sequelize = {
+            getDialect: () => 'postgres',
+            transaction: jest.fn(async (callback) => callback(transaction)),
+            query: jest.fn(async (sql, options) => {
+                queries.push({ sql, options });
+                if (sql.includes('information_schema.columns') && sql.includes("table_name = 'orders'")) {
+                    return [[
+                        { table_name: 'orders', column_name: 'metadata', data_type: 'text', is_nullable: 'YES', column_default: null },
+                        { table_name: 'subscriptions', column_name: 'threshold_debt', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+                        { table_name: 'subscriptions', column_name: 'usage_reset_at', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+                    ], { rowCount: 3 }];
+                }
+                return [[], { rowCount: 0 }];
+            }),
+        };
+
+        await expect(entityDriftRepair.up(sequelize)).rejects.toThrow('postcondition failed');
+        expect(sequelize.transaction).toHaveBeenCalledTimes(1);
+        expect(queries.every(({ options }) => options?.transaction === transaction)).toBe(true);
     });
 
     it('keeps the SQLite fallback free of PostgreSQL schema qualification', async () => {
@@ -179,7 +216,7 @@ describe('20260901_001_reconcile_commercial_entity_drift', () => {
         await entityDriftRepair.up(sequelize);
 
         const sql = queries.join('\n');
-        expect(sql).toContain('UPDATE subscriptions');
+        expect(sql).not.toContain('UPDATE subscriptions');
         expect(sql).not.toContain('UPDATE public.subscriptions');
     });
 

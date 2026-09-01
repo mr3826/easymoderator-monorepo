@@ -6,32 +6,22 @@ const { spawn } = require('child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const composeFile = path.join(repoRoot, 'docker-compose.test.yml');
 const projectName = `easymod-backend-test-${process.pid}`;
-const postgresPort = process.env.TEST_POSTGRES_PORT || '55432';
-const redisPort = process.env.TEST_REDIS_PORT || '56379';
+const findFreePort = () => {
+    const net = require('net');
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const { port } = server.address();
+            server.close(() => resolve(String(port)));
+        });
+    });
+};
 const postgresUser = process.env.TEST_POSTGRES_USER || 'e2e';
 const postgresPassword = process.env.TEST_POSTGRES_PASSWORD || 'e2e';
 const postgresDatabase = process.env.TEST_POSTGRES_DB || `easymod_integration_${process.pid}_test`;
-const composeEnv = {
-    ...process.env,
-    TEST_POSTGRES_PORT: postgresPort,
-    TEST_REDIS_PORT: redisPort,
-    TEST_POSTGRES_USER: postgresUser,
-    TEST_POSTGRES_PASSWORD: postgresPassword,
-    TEST_POSTGRES_DB: postgresDatabase,
-};
-const testEnv = {
-    ...composeEnv,
-    NODE_ENV: 'test',
-    DB_SSL: 'false',
-    DATABASE_URL: `postgres://${postgresUser}:${postgresPassword}@127.0.0.1:${postgresPort}/${postgresDatabase}`,
-    REDIS_URL: `redis://127.0.0.1:${redisPort}`,
-    REDIS_SESSION_DB: '10',
-    REDIS_CACHE_DB: '11',
-    REDIS_RATELIMIT_DB: '12',
-    REDIS_QUEUE_DB: '13',
-    REDIS_LEGACY_DB: '14',
-    REDIS_SSE_DB: '15',
-};
+let composeEnv;
+let testEnv;
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let activeChild = null;
 let interruptRequested = false;
@@ -87,6 +77,30 @@ async function main() {
     let servicesStarted = false;
 
     try {
+        const postgresPort = process.env.TEST_POSTGRES_PORT || await findFreePort();
+        const redisPort = process.env.TEST_REDIS_PORT || await findFreePort();
+        composeEnv = {
+            ...process.env,
+            TEST_POSTGRES_PORT: postgresPort,
+            TEST_REDIS_PORT: redisPort,
+            TEST_POSTGRES_USER: postgresUser,
+            TEST_POSTGRES_PASSWORD: postgresPassword,
+            TEST_POSTGRES_DB: postgresDatabase,
+        };
+        testEnv = {
+            ...composeEnv,
+            NODE_ENV: 'test',
+            DB_SSL: 'false',
+            DATABASE_URL: `postgres://${postgresUser}:${postgresPassword}@127.0.0.1:${postgresPort}/${postgresDatabase}`,
+            REDIS_URL: `redis://127.0.0.1:${redisPort}`,
+            REDIS_SESSION_DB: '10',
+            REDIS_CACHE_DB: '11',
+            REDIS_RATELIMIT_DB: '12',
+            REDIS_QUEUE_DB: '13',
+            REDIS_LEGACY_DB: '14',
+            REDIS_SSE_DB: '15',
+        };
+
         const composeCheck = await run('docker', composeArgs('version'), composeEnv);
         if (composeCheck !== 0) {
             throw new Error('Docker Compose is required for the disposable integration test stack.');

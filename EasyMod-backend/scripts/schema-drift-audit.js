@@ -59,6 +59,32 @@ const TYPE_FAMILY = {
     VIRTUAL: null, // never persisted
 };
 
+const TARGETED_CONTRACTS = [
+    {
+        key: 'orders.metadata',
+        table: 'orders',
+        column: 'metadata',
+        type: 'jsonb',
+        nullable: 'YES',
+        defaultPattern: /'\{\}'::jsonb/i,
+    },
+    {
+        key: 'subscriptions.threshold_debt',
+        table: 'subscriptions',
+        column: 'threshold_debt',
+        type: 'integer',
+        nullable: 'NO',
+        defaultPattern: /\b0\b/,
+    },
+    {
+        key: 'subscriptions.usage_reset_at',
+        table: 'subscriptions',
+        column: 'usage_reset_at',
+        type: 'timestamp with time zone',
+        nullable: 'YES',
+    },
+];
+
 function walkEntities(dir, out = []) {
     for (const name of fs.readdirSync(dir)) {
         const full = path.join(dir, name);
@@ -101,7 +127,26 @@ async function main() {
 
     const findings = [];
     const warnings = [];
+    for (const error of loadErrors) {
+        findings.push({ kind: 'ENTITY_LOAD_ERROR', table: '(entity)', detail: error });
+    }
     const models = Object.values(sequelize.models);
+
+    for (const contract of TARGETED_CONTRACTS) {
+        const col = dbTables[contract.table] && dbTables[contract.table][contract.column];
+        if (!col) {
+            findings.push({ kind: 'P0_P1_RUNTIME_SCHEMA_DRIFT', table: contract.table, detail: `${contract.column} is missing` });
+            continue;
+        }
+        if (col.data_type !== contract.type || col.is_nullable !== contract.nullable
+            || (contract.defaultPattern && !contract.defaultPattern.test(String(col.column_default || '')))) {
+            findings.push({
+                kind: 'P0_P1_RUNTIME_SCHEMA_DRIFT',
+                table: contract.table,
+                detail: `${contract.column}: expected ${contract.type}, nullable=${contract.nullable}, default=${contract.defaultPattern ? contract.defaultPattern : 'none'}; got ${col.data_type}, nullable=${col.is_nullable}, default=${col.column_default}`,
+            });
+        }
+    }
 
     for (const model of models) {
         const tn = typeof model.getTableName() === 'string'
@@ -189,4 +234,8 @@ async function main() {
     process.exit(1);
 }
 
-main().catch((e) => { console.error('Audit crashed:', e); process.exit(2); });
+if (require.main === module) {
+    main().catch((e) => { console.error('Audit crashed:', e); process.exit(2); });
+}
+
+module.exports = { TARGETED_CONTRACTS, TYPE_FAMILY, walkEntities };
