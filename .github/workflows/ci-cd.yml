@@ -53,6 +53,11 @@ on:
         required: false
         default: ''
         type: string
+      deploy_confirmation:
+        description: 'One-shot production confirmation. Type DEPLOY-<full main SHA>.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -710,7 +715,11 @@ jobs:
     # default branch was populated. Enable this repository variable only after
     # deploy secrets, the production environment, and a rollback rehearsal are
     # explicitly verified.
-    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -1276,29 +1285,10 @@ jobs:
           SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
           ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
 
-  # A bounded production run must never leave the deployment switch enabled,
-  # including when deploy fails or is skipped after an earlier attempt.
-  deploy-flag-cleanup:
-    name: Disable production deployment flag
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    needs: [deploy]
-    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Disable and verify production deployment flag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          gh api --method PATCH \
-            -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPOSITORY}/actions/variables/PRODUCTION_DEPLOY_ENABLED" \
-            -f value=false >/dev/null
-          value=$(gh api "/repos/${REPOSITORY}/actions/variables/PRODUCTION_DEPLOY_ENABLED" --jq '.value')
-          test "$value" = false
-          echo 'PRODUCTION_DEPLOY_ENABLED=false'
+  # PRODUCTION_DEPLOY_ENABLED is an operator-owned repository control. The
+  # built-in GITHUB_TOKEN cannot mutate repository variables, so it must be
+  # disabled explicitly through the repository control plane after each bounded
+  # production run rather than pretending an in-workflow cleanup succeeded.
 
   # ── 4. Growth OS verification, driven from the PR gate ─────────────────────
   # growth-os.yml has no pull_request trigger: its workflow-level paths filter
