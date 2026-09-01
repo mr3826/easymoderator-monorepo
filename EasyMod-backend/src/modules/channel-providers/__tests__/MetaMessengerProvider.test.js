@@ -38,6 +38,31 @@ describe('MetaMessengerProvider', () => {
         expect(provider.platform).toBe('facebook');
     });
 
+    describe('getAssetAccessToken()', () => {
+        afterEach(() => jest.resetAllMocks());
+
+        test('rejects when Meta omits the Page access token', async () => {
+            axios.get.mockResolvedValueOnce({ data: {} });
+
+            await expect(provider.getAssetAccessToken({
+                assetId: 'PAGE_1',
+                userToken: 'user-token',
+            })).rejects.toMatchObject({
+                status: 502,
+                code: 'META_PAGE_ACCESS_TOKEN_MISSING',
+            });
+        });
+
+        test('returns a non-empty Page access token', async () => {
+            axios.get.mockResolvedValueOnce({ data: { access_token: 'page-token' } });
+
+            await expect(provider.getAssetAccessToken({
+                assetId: 'PAGE_1',
+                userToken: 'user-token',
+            })).resolves.toEqual({ token: 'page-token', expiresAt: null });
+        });
+    });
+
     function debugTokenResponse(targetIds, manageTargetIds = targetIds, showListTargetIds = targetIds) {
         return {
             data: {

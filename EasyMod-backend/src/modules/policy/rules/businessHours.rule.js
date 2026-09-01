@@ -45,6 +45,9 @@ module.exports = {
     name: 'businessHours',
 
     async evaluate(_message, ctx) {
+        if (ctx.messageType === 'transactional' || _message?.messageType === 'transactional') {
+            return { allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' };
+        }
         const settings = ctx.settings || {};
         const automationMode = settings.automation_mode || 'DRAFT';
         const businessHours = settings.business_hours;

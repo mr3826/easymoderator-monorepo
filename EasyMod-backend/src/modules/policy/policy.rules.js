@@ -2,7 +2,7 @@
  * Policy rule registry — ordered pipeline of outbound rules.
  *
  * Order matters:
- *   1. consentRequired      — hard-deny if no per-channel consent
+ *   1. consentRequired      — hard-deny if no per-channel consent (except legacy transactional sends)
  *   2. messengerOptedOut    — hard-deny if legacy global opt-out flag set
  *   3. twentyFourHourWindow — sets augment.within_window (informational)
  *   4. templateRequired     — hard-deny outside-window Messenger sends until approved template path exists

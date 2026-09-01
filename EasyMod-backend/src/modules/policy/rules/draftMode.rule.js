@@ -18,6 +18,9 @@ module.exports = {
     name: 'draftMode',
 
     async evaluate(_message, ctx) {
+        if (ctx.messageType === 'transactional' || _message?.messageType === 'transactional') {
+            return { allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' };
+        }
         // Absent settings mean "not configured yet" — hold the reply rather than
         // auto-sending it. Fail-safe, matching DEFAULT_AI_SETTINGS.
         const mode = ctx.settings?.automation_mode || 'DRAFT';
