@@ -132,7 +132,29 @@ describe('production workflow branch safety', () => {
         expect(workflow.match(/PROBE_SCHEMA_MODE=\$schema_probe_mode/g)).toHaveLength(2);
         expect(workflow.match(/schema_probe_mode='basic'/g)).toHaveLength(2);
         expect(workflow.match(/schema_probe_mode='pre-migration'/g)).toHaveLength(2);
-        expect(workflow.match(/SCHEMA_DRIFT_MODE: \$\{\{ inputs\.expect_schema_drift == 'DRIFT' \}\}/g)).toHaveLength(2);
+        // Once for each of: the dry-run probe, the candidate probe, and the
+        // deploy-via-SSH step that also gates the zero-debt assertion.
+        expect(workflow.match(/SCHEMA_DRIFT_MODE: \$\{\{ inputs\.expect_schema_drift == 'DRIFT' \}\}/g)).toHaveLength(3);
+    });
+
+    test('the zero-debt initialization assertion is scoped to the one-shot drift repair, not every deploy', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        // threshold_debt is a legacy field the migration deliberately preserves
+        // on rerun rather than resetting — so it is legitimately allowed to be
+        // nonzero outside the one-shot repair transition. Asserting it is zero
+        // unconditionally would hard-fail every future deploy the day any row
+        // carries a real value.
+        const gateIndex = deployBlock.indexOf('if [ "$SCHEMA_DRIFT_MODE" = "true" ]; then');
+        const debtCheckIndex = deployBlock.indexOf('SELECT COUNT(*) FROM public.subscriptions WHERE threshold_debt <> 0');
+        const skippedIndex = deployBlock.indexOf("THRESHOLD_DEBT_INITIALIZATION=SKIPPED");
+
+        expect(gateIndex).toBeGreaterThan(-1);
+        expect(debtCheckIndex).toBeGreaterThan(gateIndex);
+        expect(skippedIndex).toBeGreaterThan(-1);
+        expect(deployBlock).toContain(
+            'envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE',
+        );
     });
 
     test('rejects the destructive production wipe path', () => {

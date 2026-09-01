@@ -910,7 +910,7 @@ jobs:
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 600s
-          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR
+          envs: GHCR_BACKEND,GHCR_FRONTEND,GHCR_GROWTH,GROWTH_BOOTSTRAP_DIGEST,BACKEND_TAG,FRONTEND_TAG,BACKEND_DIGEST,FRONTEND_DIGEST,DEPLOYED_COMMIT,WORKFLOW_RUN_ID,DEPLOYED_AT,GH_ACTOR,GH_TOKEN,WIPE_DB,SEED_ADMIN,ROLLBACK_STATE_DIR,SCHEMA_DRIFT_MODE
           script: |
             set -e
 
@@ -1253,11 +1253,23 @@ jobs:
               test "$threshold_snapshot_before" = "$threshold_snapshot_after"
               echo "THRESHOLD_CONVERSATIONS_SNAPSHOT_AFTER=$threshold_snapshot_after"
               echo 'THRESHOLD_CONVERSATIONS_PRESERVED=PASS'
-              nonzero_debt_count=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
-                sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM public.subscriptions WHERE threshold_debt <> 0"' \
-                | tr -d '\r\n')
-              test "$nonzero_debt_count" = 0
-              echo 'THRESHOLD_DEBT_INITIALIZATION=CORRECT'
+              # threshold_debt is a legacy field the retired grace-buffer flow no
+              # longer writes, but the migration deliberately does not reset an
+              # existing nonzero value on rerun (commercial-entity-drift.integration.test.js
+              # proves this). Asserting it is uniformly zero is only true for THIS
+              # one-shot repair, where the column is being added fresh — it must
+              # not run on every future deploy, or the day any row legitimately
+              # (or via a manual fix) carries nonzero debt, every subsequent
+              # deploy would hard-fail here.
+              if [ "$SCHEMA_DRIFT_MODE" = "true" ]; then
+                nonzero_debt_count=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+                  sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM public.subscriptions WHERE threshold_debt <> 0"' \
+                  | tr -d '\r\n')
+                test "$nonzero_debt_count" = 0
+                echo 'THRESHOLD_DEBT_INITIALIZATION=CORRECT'
+              else
+                echo 'THRESHOLD_DEBT_INITIALIZATION=SKIPPED (not a one-shot drift-repair run)'
+              fi
               repair_ledger_rows=$(docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
                 sh -c 'psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) FROM public.migrations WHERE name LIKE '\''20260901_001_reconcile_commercial_entity_drift%'\''"' \
                 | tr -d '\r\n')
@@ -1344,6 +1356,7 @@ jobs:
           WIPE_DB: ${{ github.event.inputs.wipe_db_first }}
           SEED_ADMIN: ${{ github.event.inputs.seed_admin }}
           ROLLBACK_STATE_DIR: /opt/easymod/.cutover-rollback/${{ github.run_id }}
+          SCHEMA_DRIFT_MODE: ${{ inputs.expect_schema_drift == 'DRIFT' }}
 
   # PRODUCTION_DEPLOY_ENABLED is an operator-owned repository control. The
   # built-in GITHUB_TOKEN cannot mutate repository variables, so it must be
