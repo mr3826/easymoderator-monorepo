@@ -322,6 +322,16 @@ describe('businessHours.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('SUGGEST_ONLY');
     });
+    test('allows transactional notifications outside hours regardless of AI mode', async () => {
+        const r = await rule.evaluate({}, {
+            messageType: 'transactional',
+            settings: {
+                automation_mode: 'AI_ACTIVE',
+                business_hours: { sun: { open: '03:00', close: '03:01' } },
+            },
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' });
+    });
 });
 
 describe('rateLimit.rule', () => {
@@ -473,6 +483,13 @@ describe('draftMode.rule', () => {
     test('allows when AI_ACTIVE', async () => {
         const r = await rule.evaluate({}, { settings: { automation_mode: 'AI_ACTIVE' } });
         expect(r.allow).toBe(true);
+    });
+    test('allows transactional notifications in DRAFT mode', async () => {
+        const r = await rule.evaluate({ messageType: 'transactional' }, {
+            settings: { automation_mode: 'DRAFT' },
+            messageType: 'transactional',
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' });
     });
     test('holds when no settings (fail-safe default is DRAFT, not AI_ACTIVE)', async () => {
         const r = await rule.evaluate({}, {});
