@@ -100,6 +100,12 @@ describe('production workflow branch safety', () => {
         );
     });
 
+    test('keeps repository-variable mutation outside contributor-controlled jobs', () => {
+        expect(workflow).not.toContain('actions: write');
+        expect(workflow).toContain('operator-owned repository control');
+        expect(workflow).not.toContain('deploy-flag-cleanup:');
+    });
+
     test('requires an immutable image for restore-drill forward migration', () => {
         const backupWorkflow = fs.readFileSync(
             path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
