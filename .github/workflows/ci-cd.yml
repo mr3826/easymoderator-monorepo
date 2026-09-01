@@ -586,6 +586,15 @@ jobs:
           NODE_ENV: test
         run: npm run migrate
 
+      - name: Audit the migrated integration schema
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: ./EasyMod-backend
+        env:
+          DATABASE_URL: postgres://e2e:e2e@127.0.0.1:5432/easymod_integration_test
+          DB_SSL: 'false'
+          NODE_ENV: test
+        run: npm run schema:audit
+
       - name: Backend integration suite
         if: needs.changes.outputs.backend == 'true'
         working-directory: ./EasyMod-backend
@@ -1167,6 +1176,13 @@ jobs:
               docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
                 -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate
             fi
+
+            # Migration names are not schema proof. Audit the target database
+            # from the exact candidate image after migration and before any
+            # service replacement; a missing entity column must fail closed.
+            echo "Auditing production schema before service replacement..."
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run schema:audit
 
             # Restart services with immutable image references
             docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --no-build --remove-orphans

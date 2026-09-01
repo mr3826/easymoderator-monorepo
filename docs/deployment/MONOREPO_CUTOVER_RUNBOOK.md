@@ -66,6 +66,11 @@ does not start Qdrant; it verifies the documented safe-empty vector degradation.
 - The candidate backend image is config-validated before service replacement.
 - Only additive, backward-compatible migrations may run during cutover. Do not
   run `migrate:down` against production as a rollback mechanism.
+- After the candidate migration, the deploy job runs `npm run schema:audit`
+  against the target database before replacing any service. A migration ledger
+  row is not sufficient proof that the entity-backed schema is complete; any
+  missing table, column, incompatible type, required-column drift, or enum
+  value fails the rollout closed.
 - The deploy job must capture the currently running backend/frontend digests
   before replacement and keep the backup available until the health gate is
   complete.
