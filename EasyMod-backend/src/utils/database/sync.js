@@ -7,6 +7,7 @@ const missingProductionTablesMigration = require('../../database/migrations/2026
 const schemaDriftMigration = require('../../database/migrations/20260611_003_schema_drift_sweep');
 const courierClaimMigration = require('../../database/migrations/20260828_003_courier_dispatch_claim_owner');
 const commercialMigration = require('../../database/migrations/20260828_004_commercial_model');
+const commercialEntityDriftMigration = require('../../database/migrations/20260901_001_reconcile_commercial_entity_drift');
 const growthProspectMigration = require('../../database/migrations/20260820_002_growth_os_prospects');
 const growthProspectSourceReferenceMigration = require('../../database/migrations/20260820_003_growth_os_prospect_source_reference_idx');
 
@@ -22,6 +23,7 @@ const syncDatabase = async () => {
         await schemaDriftMigration.up(sequelize);
         await courierClaimMigration.up(sequelize);
         await commercialMigration.up(sequelize);
+        await commercialEntityDriftMigration.up(sequelize);
         await growthProspectMigration.up(sequelize);
         await growthProspectSourceReferenceMigration.up(sequelize);
         console.log('Database synchronized and migrations applied successfully.');
