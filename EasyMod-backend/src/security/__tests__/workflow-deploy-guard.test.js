@@ -157,6 +157,25 @@ describe('production workflow branch safety', () => {
         );
     });
 
+    test('the candidate-probe digest-pin check uses a real regex, not a shell glob', () => {
+        // `case … in *@sha256:[0-9a-fA-F]{64})` is a shell glob, where `{64}` has
+        // no repetition meaning (bash only expands `{a,b}`/`{x..y}`) — it can
+        // never match a real digest, so the probe fails closed on every run.
+        // This job's `if:` only runs on a real deploy_confirmation dispatch, so
+        // no prior green CI run ever exercised it. Must use grep -E (or an
+        // equivalent real-regex engine) like the other two digest-pin checks in
+        // this file do.
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+
+        expect(deployBlock).not.toMatch(/case\s+"\$image_ref"\s+in\s+\*@sha256:\[0-9a-fA-F\]\{64\}\)/);
+        expect(deployBlock).toContain("grep -Eq '@sha256:[0-9a-fA-F]{64}");
+        // Three real-regex digest-pin checks total: EXISTING_BACKEND_DIGEST
+        // format validation, this probe, and assert_immutable_ref(). Each is in
+        // a different quoting context (one needs \$ since it is nested inside a
+        // local double-quoted ssh argument), so match on the pattern core only.
+        expect(workflow.match(/grep -Eq '[^']*\\?\[0-9a-fA-F\]\\?\{64\\?\}[^']*'/g)).toHaveLength(3);
+    });
+
     test('rejects the destructive production wipe path', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 
