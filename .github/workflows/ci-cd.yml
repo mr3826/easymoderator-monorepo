@@ -53,6 +53,11 @@ on:
         required: false
         default: ''
         type: string
+      deploy_confirmation:
+        description: 'One-shot production confirmation. Type DEPLOY-<full main SHA>.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-cd-${{ github.ref }}
@@ -710,7 +715,11 @@ jobs:
     # default branch was populated. Enable this repository variable only after
     # deploy secrets, the production environment, and a rollback rehearsal are
     # explicitly verified.
-    if: github.ref == 'refs/heads/main' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

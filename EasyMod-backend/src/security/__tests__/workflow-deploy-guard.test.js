@@ -17,7 +17,8 @@ describe('production workflow branch safety', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 
         expect(buildBlock).toContain("github.ref == 'refs/heads/main'");
-        expect(deployBlock).toContain("if: github.ref == 'refs/heads/main'");
+        expect(deployBlock).toContain("github.event_name == 'workflow_dispatch'");
+        expect(deployBlock).toContain("github.ref == 'refs/heads/main'");
     });
 
     test('deploy passes the Action Gate secret to production rendering', () => {
@@ -103,7 +104,8 @@ describe('production workflow branch safety', () => {
     test('keeps repository-variable mutation outside contributor-controlled jobs', () => {
         expect(workflow).not.toContain('actions: write');
         expect(workflow).toContain('operator-owned repository control');
-        expect(workflow).not.toContain('deploy-flag-cleanup:');
+        expect(workflow).toContain("github.event.inputs.deploy_confirmation == format('DEPLOY-{0}', github.sha)");
+        expect(workflow).toContain("description: 'One-shot production confirmation. Type DEPLOY-<full main SHA>.'");
     });
 
     test('requires an immutable image for restore-drill forward migration', () => {
