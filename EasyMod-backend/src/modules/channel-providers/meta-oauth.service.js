@@ -167,6 +167,13 @@ async function connectPage(assetId, displayName, tempToken, userId, shopId, plat
         assetId,
         userToken: callbackPayload.userToken,
     });
+    if (typeof pageToken !== 'string' || pageToken.trim() === '') {
+        throw new AppError(
+            'Meta did not return a Page access token. Please reconnect Facebook.',
+            502,
+            'META_PAGE_ACCESS_TOKEN_MISSING',
+        );
+    }
 
     // Upsert into meta_channels. NOTE: the key is `userId` — upsertFromOAuth
     // destructures `userId` (not `connectedByUserId`); the old name left

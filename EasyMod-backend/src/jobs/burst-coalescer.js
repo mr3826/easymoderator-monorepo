@@ -115,7 +115,12 @@ const buildFlushJobId = (payload) => {
  */
 async function scheduleBurstFlush(payload) {
     const { conversationId, shopId } = payload;
-    if (!conversationId || !shopId) return;
+    if (!conversationId || !shopId) {
+        const error = new Error('Burst flush requires conversationId and shopId');
+        error.code = 'BURST_CONTEXT_MISSING';
+        error.retryable = true;
+        throw error;
+    }
 
     const flushJobId = buildFlushJobId(payload);
 

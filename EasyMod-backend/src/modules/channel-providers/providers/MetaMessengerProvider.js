@@ -441,8 +441,17 @@ class MetaMessengerProvider extends ChannelProvider {
                     appsecret_proof: appsecretProof(userToken)
                 }
             });
-            return { token: resp.data.access_token, expiresAt: null };  // Page tokens are non-expiring
+            const token = resp.data?.access_token;
+            if (!hasNonEmptyAccessToken({ access_token: token })) {
+                throw new AppError(
+                    'Meta did not return a Page access token',
+                    502,
+                    'META_PAGE_ACCESS_TOKEN_MISSING',
+                );
+            }
+            return { token, expiresAt: null };  // Page tokens are non-expiring
         } catch (err) {
+            if (err instanceof AppError) throw err;
             throw metaError(err, 'getAssetAccessToken');
         }
     }
