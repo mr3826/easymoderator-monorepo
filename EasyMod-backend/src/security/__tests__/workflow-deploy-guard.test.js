@@ -113,7 +113,8 @@ describe('production workflow branch safety', () => {
             path.resolve(__dirname, '../../../../.github/workflows/backup.yml'),
             'utf8',
         );
-        expect(backupWorkflow).toContain('forward migration image must be an immutable digest reference');
+        expect(backupWorkflow).toContain('forward migration image must be the immutable backend digest reference');
+        expect(backupWorkflow).toContain('docker pull "$MIGRATION_IMAGE"');
     });
 
     test('rollback verifies restored images and health before returning', () => {

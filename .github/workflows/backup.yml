@@ -44,6 +44,7 @@ on:
 # permissions does not silently widen if that default is ever changed.
 permissions:
   contents: read
+  packages: read
 
 jobs:
   backup:
@@ -308,12 +309,15 @@ jobs:
         env:
           RESTORE_DRILL_RUN_ID: ${{ github.run_id }}
           FORWARD_MIGRATION_IMAGE: ${{ inputs.forward_migration_image }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          GHCR_BACKEND: ghcr.io/${{ github.repository_owner }}/easymoderator-backend
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           timeout: 900s
-          envs: RESTORE_DRILL_RUN_ID,FORWARD_MIGRATION_IMAGE
+          envs: RESTORE_DRILL_RUN_ID,FORWARD_MIGRATION_IMAGE,GH_TOKEN,GH_ACTOR,GHCR_BACKEND
           script: |
             set -euo pipefail
             umask 077
@@ -427,11 +431,13 @@ jobs:
               MIGRATION_IMAGE=$(docker inspect -f '{{.Config.Image}}' easymod-backend-1)
             fi
             test -n "$MIGRATION_IMAGE"
-            if ! printf '%s' "$MIGRATION_IMAGE" | grep -Eq '@sha256:[0-9a-fA-F]{64}$'; then
-              echo 'ERROR: forward migration image must be an immutable digest reference'
+            if ! printf '%s' "$MIGRATION_IMAGE" | grep -Eq "^${GHCR_BACKEND}@sha256:[0-9a-fA-F]{64}$"; then
+              echo 'ERROR: forward migration image must be the immutable backend digest reference'
               exit 1
             fi
             echo "FORWARD_MIGRATION_IMAGE=$MIGRATION_IMAGE"
+            printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin >/dev/null
+            docker pull "$MIGRATION_IMAGE" >/dev/null
 
             migration_count() {
               docker exec "$1" psql -X -At -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT COUNT(*) FROM migrations;'
