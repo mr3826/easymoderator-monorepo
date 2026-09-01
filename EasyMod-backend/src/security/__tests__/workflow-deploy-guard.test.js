@@ -92,6 +92,49 @@ describe('production workflow branch safety', () => {
         expect(schemaAuditIndex).toBeLessThan(replacementIndex);
     });
 
+    test('stamps MIGRATION_START before the candidate migration runs, and proves exactly one repair ledger row before the schema audit', () => {
+        const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
+        const candidateMigration =
+            'run --rm --no-deps -T \\\n                -e RUN_MIGRATIONS_ON_STARTUP=false backend npm run migrate';
+
+        const migrationStartIndex = deployBlock.indexOf('echo "MIGRATION_START=$migration_started_at"');
+        const migrationIndex = deployBlock.indexOf(candidateMigration);
+        const ledgerCheckIndex = deployBlock.indexOf('REPAIR_LEDGER_ENTRY_COUNT=1');
+        const schemaAuditIndex = deployBlock.indexOf('npm run schema:audit');
+
+        expect(migrationStartIndex).toBeGreaterThan(-1);
+        expect(migrationIndex).toBeGreaterThan(-1);
+        expect(migrationStartIndex).toBeLessThan(migrationIndex);
+
+        expect(deployBlock).toContain(
+            "SELECT COUNT(*) FROM public.migrations WHERE name LIKE '\\''20260901_001_reconcile_commercial_entity_drift%'\\''",
+        );
+        expect(deployBlock).toContain('test "$repair_ledger_rows" = 1');
+        expect(ledgerCheckIndex).toBeGreaterThan(migrationIndex);
+        expect(ledgerCheckIndex).toBeLessThan(schemaAuditIndex);
+
+        // MIGRATION_START must be stamped even when the migration block is
+        // skipped (WIPE path), since Step 17's log bound cannot be conditional.
+        expect(deployBlock.match(/echo "MIGRATION_START=\$migration_started_at"/g)).toHaveLength(2);
+    });
+
+    test('the pre-migration schema-drift probe is opt-in per dispatch, not hardcoded', () => {
+        expect(workflow).toContain(
+            "description: 'One-shot: require the 3 repair columns ABSENT before migrating. Type DRIFT to confirm.'",
+        );
+        expect(workflow).toMatch(/expect_schema_drift:\n\s+description:/);
+
+        // The literal used to be baked into every dispatch, including ordinary
+        // future deploys where the repair columns are already present — that
+        // throws PRE_MIGRATION_SCHEMA=FAIL on every deploy after this repair
+        // ships. It must only ever be reached through the resolved shell var.
+        expect(workflow).not.toMatch(/PROBE_SCHEMA_MODE=pre-migration(?!['"])/);
+        expect(workflow.match(/PROBE_SCHEMA_MODE=\$schema_probe_mode/g)).toHaveLength(2);
+        expect(workflow.match(/schema_probe_mode='basic'/g)).toHaveLength(2);
+        expect(workflow.match(/schema_probe_mode='pre-migration'/g)).toHaveLength(2);
+        expect(workflow.match(/SCHEMA_DRIFT_MODE: \$\{\{ inputs\.expect_schema_drift == 'DRIFT' \}\}/g)).toHaveLength(2);
+    });
+
     test('rejects the destructive production wipe path', () => {
         const deployBlock = workflow.match(/\n  deploy:\n([\s\S]*)$/)?.[1];
 
