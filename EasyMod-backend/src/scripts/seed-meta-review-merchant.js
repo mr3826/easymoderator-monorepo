@@ -70,7 +70,7 @@ const PRODUCTS = Object.freeze([
         material: 'Cotton',
         description: 'Soft breathable cotton crew-neck T-shirt for everyday wear. Comfortable regular fit and suitable for casual use.',
         keywords: ['white t-shirt', 'cotton t-shirt', 'mens tshirt', 'সাদা টি-শার্ট', 'কটন টি-শার্ট'],
-        imageUrl: 'https://unsplash.com/photos/elbKS4DY21g/download?force=true&w=1600',
+        imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?fm=jpg&fit=crop&w=800&q=60',
         style: 'crew-neck regular-fit casual',
     }),
     Object.freeze({
@@ -84,7 +84,7 @@ const PRODUCTS = Object.freeze([
         material: 'Cotton',
         description: "Comfortable floral printed women's kurti suitable for casual, office and everyday wear.",
         keywords: ['pink kurti', 'floral kurti', 'women kurti', 'cotton kurti', 'গোলাপি কুর্তি', 'মহিলা কুর্তি'],
-        imageUrl: 'https://unsplash.com/photos/kN3tHdXDDrs/download?force=true&w=1600',
+        imageUrl: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?fm=jpg&fit=crop&w=800&q=60',
         style: 'floral printed casual office',
     }),
     Object.freeze({
@@ -98,7 +98,7 @@ const PRODUCTS = Object.freeze([
         material: 'Denim',
         description: 'Classic blue denim jeans with comfortable everyday fit and durable denim construction.',
         keywords: ['blue jeans', 'denim jeans', 'mens jeans', 'নীল জিন্স', 'ডেনিম জিন্স'],
-        imageUrl: 'https://unsplash.com/photos/xIYeHZKzMg0/download?force=true&w=1600',
+        imageUrl: 'https://images.unsplash.com/photo-1542272604-787c3835535d?fm=jpg&fit=crop&w=800&q=60',
         style: 'classic everyday fit',
     }),
     Object.freeze({
@@ -112,7 +112,7 @@ const PRODUCTS = Object.freeze([
         material: 'Cotton Blend',
         description: 'Clean and versatile casual shirt designed for everyday and smart-casual use.',
         keywords: ['white shirt', 'casual shirt', 'mens shirt', 'সাদা শার্ট', 'ক্যাজুয়াল শার্ট'],
-        imageUrl: 'https://unsplash.com/photos/VlgJiE4KQKg/download?force=true&w=1600',
+        imageUrl: 'https://images.unsplash.com/photo-1603252110481-7ba873bf42ab?fm=jpg&fit=crop&w=800&q=60',
         style: 'clean smart-casual',
     }),
     Object.freeze({
@@ -127,7 +127,7 @@ const PRODUCTS = Object.freeze([
         description: 'Comfortable pullover hoodie for casual everyday wear, with hood and relaxed styling.',
         keywords: ['hoodie', 'white hoodie', 'pullover hoodie', 'unisex hoodie', 'হুডি', 'সাদা হুডি'],
         searchAliases: ['হুডির'],
-        imageUrl: 'https://unsplash.com/photos/kJXGTOY1wLQ/download?force=true&w=1600',
+        imageUrl: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?fm=jpg&fit=crop&w=800&q=60',
         style: 'relaxed pullover',
     }),
 ]);
