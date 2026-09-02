@@ -12,6 +12,17 @@
 
 const META_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
 
+function consentPlatform(platform) {
+    return platform === 'messenger' ? 'facebook' : platform;
+}
+
+function hasMissingLegacyConsentRecord(customer, platform) {
+    const record = customer?.messaging_consent;
+    if (record === undefined) return true;
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+    return !Object.prototype.hasOwnProperty.call(record, consentPlatform(platform));
+}
+
 module.exports = {
     name: 'messengerOptedOut',
 
@@ -33,9 +44,11 @@ module.exports = {
         // Check per-channel consent (Phase 5 single source of truth).
         if (!isMeta) return { allow: true, reason: 'OK' };
 
-        const consentPlatform = pf === 'messenger' ? 'facebook' : pf;
-        const consent = customer.messaging_consent?.[consentPlatform];
+        const consent = customer.messaging_consent?.[consentPlatform(pf)];
         if (!consent || typeof consent !== 'object' || Array.isArray(consent)) {
+            if (ctx.messageType === 'transactional' && hasMissingLegacyConsentRecord(customer, pf)) {
+                return { allow: true, reason: 'TRANSACTIONAL_LEGACY_CONSENT' };
+            }
             return { allow: false, reason: 'CONSENT_STATE_UNAVAILABLE', retryable: true };
         }
         if (consent.opted_out_at) return { allow: false, reason: 'OPTED_OUT' };

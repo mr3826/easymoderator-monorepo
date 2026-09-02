@@ -74,9 +74,11 @@ const normalizeSettings = (settings) => {
  * @param {object} channel       - Channel-like object (shop_id, type, optional exact IDs)
  * @param {string|number} recipientId   - Customer PSID
  * @param {string} messageText   - Plain-text message content
+ * @param {object} [options]
+ * @param {'transactional'} [options.messageType] - Post-purchase notification marker
  * @returns {Promise<{sent: boolean, reason?: string, providerMessageId?: string}>}
  */
-async function sendMessage(channel, recipientId, messageText) {
+async function sendMessage(channel, recipientId, messageText, { messageType = null } = {}) {
     if (!channel || !channel.shop_id || !recipientId || !messageText) {
         logger.warn('sendMessage called with missing required args', {
             hasChannel: Boolean(channel),
@@ -161,6 +163,7 @@ async function sendMessage(channel, recipientId, messageText) {
         platform,
         direction: 'outbound',
         senderRole: 'system',
+        messageType,
     };
 
     // Resolve the customer so the policy engine can enforce opt-out / consent.
@@ -217,6 +220,7 @@ async function sendMessage(channel, recipientId, messageText) {
         customer,
         settings,
         platform,
+        messageType,
     };
 
     let decision;
@@ -397,7 +401,7 @@ async function sendToCustomer({
             shop_id: shopId,
             type: channelType,
             meta_channel_id: resolvedChannelId,
-        }, customer.channel_user_id, message);
+        }, customer.channel_user_id, message, { messageType: 'transactional' });
         if (!result?.sent) {
             return { sent: false, reason: result?.reason || 'no_channel' };
         }

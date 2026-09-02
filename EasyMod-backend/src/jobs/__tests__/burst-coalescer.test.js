@@ -122,6 +122,17 @@ describe('burst-coalescer', () => {
             messageId: 'message-1',
         };
 
+        it.each([
+            ['conversationId', { conversationId: null, shopId: 'shop-1' }],
+            ['shopId', { conversationId: 'conv-1', shopId: null }],
+        ])('rejects when %s is missing instead of acknowledging without a queue job', async (_field, overrides) => {
+            await expect(coalescer.scheduleBurstFlush({ ...payload, ...overrides })).rejects.toMatchObject({
+                code: 'BURST_CONTEXT_MISSING',
+                retryable: true,
+            });
+            expect(mockAdd).not.toHaveBeenCalled();
+        });
+
         it('schedules a delayed burst-flush job for the full window on the first message', async () => {
             await coalescer.scheduleBurstFlush(payload);
 

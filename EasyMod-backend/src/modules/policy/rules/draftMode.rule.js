@@ -28,6 +28,12 @@ module.exports = {
             return { allow: true, reason: 'HUMAN_AGENT_SEND' };
         }
 
+        // Transactional/system notifications (order confirmations, etc.) are not
+        // AI-drafted replies and are independent of the AI delivery mode.
+        if (ctx.messageType === 'transactional' || message?.messageType === 'transactional') {
+            return { allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' };
+        }
+
         // Absent settings mean "not configured yet" — hold the reply rather than
         // auto-sending it. Fail-safe for automatic callers.
         const mode = normalizeAiReplyMode(ctx.settings?.automation_mode || AI_REPLY_MODES.DRAFT);

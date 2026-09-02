@@ -502,6 +502,22 @@ describe('sendToCustomer (resolve PSID from a customer record)', () => {
         expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
     });
 
+    test('marks sendToCustomer as transactional for legacy consent compatibility', async () => {
+        Customer.findOne.mockResolvedValue(buildCustomer({ messaging_consent: {} }));
+        mockSendMessage.mockResolvedValueOnce({});
+
+        await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(policyEngine.evaluateOutbound).toHaveBeenCalledWith(
+            expect.objectContaining({ messageType: 'transactional' }),
+            expect.objectContaining({ messageType: 'transactional' }),
+        );
+    });
+
     test('rejects a legacy Instagram customer instead of sending through Messenger', async () => {
         Customer.findOne.mockResolvedValue(buildCustomer({ channel_type: 'instagram', channel_user_id: 'legacy-7' }));
 

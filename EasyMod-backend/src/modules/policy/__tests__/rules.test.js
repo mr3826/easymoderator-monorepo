@@ -68,6 +68,16 @@ describe('consentRequired.rule', () => {
         const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
         expect(r.allow).toBe(true);
     });
+    test('allows legacy transactional sends when the consent record is absent', async () => {
+        consentService.hasConsent.mockReturnValue(false);
+        const r = await rule.evaluate({}, {
+            customer: { id: 'c1', messaging_consent: {} },
+            platform: 'facebook',
+            messageType: 'transactional',
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_LEGACY_CONSENT' });
+        expect(consentService.hasConsent).not.toHaveBeenCalled();
+    });
     test('denies and marks the decision retryable when consent state cannot be read', async () => {
         consentService.hasConsent.mockImplementation(() => {
             throw new Error('consent dependency unavailable');
@@ -112,6 +122,34 @@ describe('messengerOptedOut.rule', () => {
     });
     test('denies unknown Facebook consent state', async () => {
         const r = await rule.evaluate({}, { customer: { id: 'c1' }, platform: 'facebook' });
+        expect(r).toMatchObject({
+            allow: false,
+            reason: 'CONSENT_STATE_UNAVAILABLE',
+            retryable: true,
+        });
+    });
+    test('allows legacy transactional sends when Facebook consent is absent', async () => {
+        const r = await rule.evaluate({}, {
+            customer: { id: 'c1', messaging_consent: {} },
+            platform: 'facebook',
+            messageType: 'transactional',
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_LEGACY_CONSENT' });
+    });
+    test('still blocks transactional sends after an explicit opt-out', async () => {
+        const r = await rule.evaluate({}, {
+            customer: { id: 'c1', messaging_consent: { facebook: { opted_out_at: '2026-01-01T00:00:00Z' } } },
+            platform: 'facebook',
+            messageType: 'transactional',
+        });
+        expect(r).toMatchObject({ allow: false, reason: 'OPTED_OUT' });
+    });
+    test('fails closed for malformed transactional consent state', async () => {
+        const r = await rule.evaluate({}, {
+            customer: { id: 'c1', messaging_consent: { facebook: null } },
+            platform: 'facebook',
+            messageType: 'transactional',
+        });
         expect(r).toMatchObject({
             allow: false,
             reason: 'CONSENT_STATE_UNAVAILABLE',
@@ -284,6 +322,16 @@ describe('businessHours.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('SUGGEST_ONLY');
     });
+    test('allows transactional notifications outside hours regardless of AI mode', async () => {
+        const r = await rule.evaluate({}, {
+            messageType: 'transactional',
+            settings: {
+                automation_mode: 'AI_ACTIVE',
+                business_hours: { sun: { open: '03:00', close: '03:01' } },
+            },
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' });
+    });
 });
 
 describe('rateLimit.rule', () => {
@@ -436,6 +484,13 @@ describe('draftMode.rule', () => {
         const r = await rule.evaluate({}, { settings: { automation_mode: mode } });
         expect(r.allow).toBe(true);
         expect(r.reason).toBe('AUTO');
+    });
+    test('allows transactional notifications in DRAFT mode', async () => {
+        const r = await rule.evaluate({ messageType: 'transactional' }, {
+            settings: { automation_mode: 'DRAFT' },
+            messageType: 'transactional',
+        });
+        expect(r).toEqual({ allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' });
     });
     test('holds when no settings (fail-safe default is DRAFT, not AI_ACTIVE)', async () => {
         const r = await rule.evaluate({}, {});

@@ -237,6 +237,19 @@ describe('connectPage() webhook verify wiring', () => {
         expect(mockUpsertFromOAuth).toHaveBeenCalled();
     });
 
+    test('rejects a tokenless provider result before persisting a connected channel', async () => {
+        mockGetAssetAccessToken.mockResolvedValueOnce({ token: null, expiresAt: null });
+
+        await expect(
+            oauthService.connectPage(ASSET_ID, 'My Page', 'user-tok', USER_ID, SHOP_ID, 'facebook'),
+        ).rejects.toMatchObject({
+            status: 502,
+            code: 'META_PAGE_ACCESS_TOKEN_MISSING',
+        });
+
+        expect(mockUpsertFromOAuth).not.toHaveBeenCalled();
+    });
+
     test('calls updateStatus(ERROR, webhook_subscription_unverified) when verify returns ok:false', async () => {
         mockVerifyWebhookSubscription.mockResolvedValue({ ok: false, fields: [] });
 
