@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AISettingsForm from './AISettingsForm';
 import type { ShopAISettings } from '@/api/types/dashboard';
+import { queryClient } from '@/app/lib/queryClient';
 
 // Resolve real English from en.json so assertions verify the actual (en-default)
 // UI copy after i18n-ization, with {{var}} interpolation support.
@@ -55,6 +56,10 @@ describe('AISettingsForm', () => {
     mockOnSave.mockClear();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders with default settings', () => {
     render(<AISettingsForm {...defaultProps} />);
     
@@ -65,29 +70,50 @@ describe('AISettingsForm', () => {
 
   it('renders automation mode options', () => {
     render(<AISettingsForm {...defaultProps} />);
-    
+
     expect(screen.getByText('AUTO')).toBeInTheDocument();
     expect(screen.getByText('DRAFT')).toBeInTheDocument();
     expect(screen.getByText('MANUAL')).toBeInTheDocument();
+    expect(screen.getByText('Manual replies only (Recommended)')).toBeInTheDocument();
+    expect(screen.getByText('Review first')).toBeInTheDocument();
+    expect(screen.queryByText('Review first (Recommended)')).not.toBeInTheDocument();
+    expect([...screen.getByTestId('ai-reply-mode').querySelectorAll('[role="radio"]')].map((radio) => radio.id)).toEqual([
+      'ai-reply-mode-manual',
+      'ai-reply-mode-draft',
+      'ai-reply-mode-auto',
+    ]);
   });
 
-  it('marks Draft as the default active automation mode', () => {
+  it('renders an accessible radio group with Manual selected by default', () => {
     render(<AISettingsForm {...defaultProps} />);
 
-    const draftButton = screen.getByText('Review first (Recommended)').closest('button');
-    expect(draftButton).not.toBeNull();
-    expect(draftButton!.className).toContain('border-green-500');
+    expect(screen.getByTestId('ai-reply-mode')).toHaveAttribute('role', 'radiogroup');
+    expect(screen.getByTestId('ai-reply-mode-manual')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('ai-reply-mode-draft')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('ai-reply-mode-auto')).toHaveAttribute('aria-checked', 'false');
   });
 
   it('selects automation mode on click', async () => {
     render(<AISettingsForm {...defaultProps} />);
-    
-    const autoButton = screen.getByText('Send automatically').closest('button');
-    expect(autoButton).not.toBeNull();
-    fireEvent.click(autoButton!);
-    
-    // Check that the button has the active styling class
-    expect(autoButton!.className).toContain('border-green-500');
+
+    const autoRadio = screen.getByTestId('ai-reply-mode-auto');
+    fireEvent.click(autoRadio);
+
+    expect(autoRadio).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('ai-reply-mode-manual')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('moves focus between modes with arrow keys', async () => {
+    const user = userEvent.setup();
+    render(<AISettingsForm {...defaultProps} />);
+
+    const manualRadio = screen.getByTestId('ai-reply-mode-manual');
+    const draftRadio = screen.getByTestId('ai-reply-mode-draft');
+    manualRadio.focus();
+
+    await user.keyboard('{ArrowRight}');
+
+    await waitFor(() => expect(draftRadio).toHaveFocus());
   });
 
   it('renders language options', () => {
@@ -228,9 +254,7 @@ describe('AISettingsForm', () => {
 
     render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
 
-    const autoButton = screen.getByText('Send automatically').closest('button');
-    expect(autoButton).not.toBeNull();
-    fireEvent.click(autoButton!);
+    fireEvent.click(screen.getByTestId('ai-reply-mode-auto'));
 
     const saveButton = screen.getByRole('button', { name: /Save Reply Settings/i });
     fireEvent.click(saveButton);
@@ -285,10 +309,10 @@ describe('AISettingsForm', () => {
   });
 
   it('merges initial data with defaults correctly', () => {
-    const partialData: Partial<ShopAISettings> = {
+    const partialData = {
       automation_mode: 'AI_ACTIVE',
       confidence_threshold: 80,
-    };
+    } as unknown as Partial<ShopAISettings>;
 
     render(<AISettingsForm {...defaultProps} initialData={partialData} />);
     
@@ -299,9 +323,35 @@ describe('AISettingsForm', () => {
     const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
     expect(maxOrderInput).toHaveValue(5000);
 
-    const autoButton = screen.getByText('Send automatically').closest('button');
-    expect(autoButton).not.toBeNull();
-    expect(autoButton!.className).toContain('border-green-500');
+    expect(screen.getByTestId('ai-reply-mode-auto')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('fails closed to Manual for unknown initial mode values', () => {
+    const partialData = {
+      automation_mode: 'GARBAGE',
+    } as unknown as Partial<ShopAISettings>;
+
+    render(<AISettingsForm {...defaultProps} initialData={partialData} />);
+
+    expect(screen.getByTestId('ai-reply-mode-manual')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('ai-reply-mode-draft')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('ai-reply-mode-auto')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('invalidates the inbox conversations after a successful save', async () => {
+    mockOnSave.mockResolvedValue({});
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+
+    render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
+
+    const maxOrderInput = screen.getByLabelText(/Maximum automatic order value/i);
+    await userEvent.clear(maxOrderInput);
+    await userEvent.type(maxOrderInput, '10000');
+    fireEvent.click(screen.getByRole('button', { name: /Save Reply Settings/i }));
+
+    await waitFor(() => {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['conversations'] });
+    });
   });
 
   it('deep merges required_fields correctly', async () => {

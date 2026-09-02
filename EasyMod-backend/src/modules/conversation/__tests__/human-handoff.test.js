@@ -57,6 +57,13 @@ describe('escalateToHuman', () => {
         const send = jest.fn().mockResolvedValue();
         getProvider.mockReturnValue({ sendMessage: send });
         sendEscalationAutoReply.mockResolvedValue({ id: 'm1', content: 'hold on', conversation_id: 'c1' });
+        MetaChannelSettings.findOne.mockResolvedValue({
+            channel_id: 'ch1',
+            ai_auto_reply: false,
+            automation_mode: 'AUTO',
+            business_hours: { mon: { open: '09:00', close: '18:00' } },
+            purpose_label: 'Sales',
+        });
 
         await escalateToHuman({
             conversation, shopId: 's1', conversationId: 'c1',
@@ -79,8 +86,14 @@ describe('escalateToHuman', () => {
                 conversationId: 'c1',
                 recipientId: '123',
                 platform: 'facebook',
+                settings: expect.objectContaining({
+                    automation_mode: 'MANUAL',
+                    business_hours: { mon: { open: '09:00', close: '18:00' } },
+                    purpose_label: 'Sales',
+                }),
             }),
         );
+        expect(policyEngine.evaluateOutbound.mock.calls[0][1].settings).not.toHaveProperty('ai_auto_reply');
         expect(arg.decision.reason).toBe('OK');
     });
 

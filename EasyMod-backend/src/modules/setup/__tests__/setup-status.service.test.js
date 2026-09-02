@@ -64,6 +64,31 @@ describe('setup-status.service', () => {
         });
     });
 
+    it('normalizes legacy reply modes before evaluating setup warnings', async () => {
+        shopService.getShopAiSettings.mockResolvedValue({
+            automation_mode: 'AI_ACTIVE',
+            confidence_threshold: 75,
+            payment_methods: ['COD'],
+        });
+        shopService.getShopById.mockResolvedValue({
+            id: 'shop-1',
+            shop_name: 'Starter Shop',
+            settings: { businessInfo: {} },
+        });
+        mockCounts();
+
+        const status = await setupStatusService.getSetupStatus({
+            shopId: 'shop-1',
+            userId: 'user-1',
+        });
+
+        expect(status.tasks.find((task) => task.key === 'ai_settings')).toMatchObject({
+            status: 'complete',
+            warnings: [expect.objectContaining({ code: 'AI_NOT_DRAFT' })],
+            meta: { automationMode: 'AUTO' },
+        });
+    });
+
     it('treats connected Facebook pages as complete even when webhook verification is stale', async () => {
         shopService.getShopById.mockResolvedValue({
             id: 'shop-1',

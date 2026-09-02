@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react'
 import UnifiedInbox from '@/app/components/UnifiedInbox'
 import { apiClient } from '@/api'
+import { useInboxSSE } from '@/app/lib/useInboxSSE'
 import { toast } from 'sonner'
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -68,6 +69,25 @@ const baseConversation = {
   status: 'active' as const,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
+}
+
+type InboxSSECallbacks = Parameters<typeof useInboxSSE>[0]
+
+const setInboxData = (mode: string, messages: any[] = [], conversation = baseConversation) => {
+  ;(apiClient.getConversations as any).mockResolvedValue({
+    data: [conversation],
+    ai_reply_mode: mode,
+    pagination: { page: 1, totalPages: 1 },
+  })
+  ;(apiClient.getMessages as any).mockResolvedValue({
+    messages,
+    pagination: { page: 1, totalPages: 1 },
+  })
+}
+
+const latestSSECallbacks = (): InboxSSECallbacks => {
+  const calls = vi.mocked(useInboxSSE).mock.calls
+  return calls[calls.length - 1]?.[0] as InboxSSECallbacks
 }
 
 describe('UnifiedInbox 24h window behavior', () => {
@@ -396,6 +416,173 @@ describe('UnifiedInbox 24h window behavior', () => {
           }),
         })
       )
+    })
+  })
+
+  it('shows the AUTO mode and automatic activity claim while AI is processing', async () => {
+    setInboxData('AUTO')
+
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('AI reply mode: Automatic replies')
+    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI is preparing a reply')
+  })
+
+  it('keeps the AUTO sent terminal state without showing the active claim', async () => {
+    const customerMessage = {
+      id: 'msg-customer-sent',
+      conversation_id: 'conv-1',
+      content: 'Thanks',
+      sender: 'customer' as const,
+      message_type: 'text' as const,
+      created_at: new Date(Date.now() - 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    }
+    const sentMessage = {
+      id: 'msg-ai-sent',
+      conversation_id: 'conv-1',
+      content: 'You are welcome.',
+      sender: 'ai' as const,
+      message_type: 'text' as const,
+      metadata: { delivered: true },
+      created_at: new Date(Date.now() - 30 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 30 * 1000).toISOString(),
+    }
+    setInboxData('AUTO', [customerMessage, sentMessage])
+
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-reply-status')).toHaveTextContent('AI reply sent')
+    expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+  })
+
+  const draftMessages = () => {
+    const customerMessage = {
+      id: 'msg-customer-draft',
+      conversation_id: 'conv-1',
+      content: 'Can you help?',
+      sender: 'customer' as const,
+      message_type: 'text' as const,
+      created_at: new Date(Date.now() - 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    }
+    const heldMessage = {
+      id: 'msg-ai-draft',
+      conversation_id: 'conv-1',
+      content: 'Here is a draft reply.',
+      ai_suggestion: 'Here is a draft reply.',
+      sender: 'ai' as const,
+      message_type: 'text' as const,
+      metadata: { delivered: false, held_reason: 'draft_mode' },
+      created_at: new Date(Date.now() - 30 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 30 * 1000).toISOString(),
+    }
+    return { customerMessage, heldMessage }
+  }
+
+  it('shows DRAFT readiness when an undelivered held AI message exists', async () => {
+    const { customerMessage, heldMessage } = draftMessages()
+    setInboxData('DRAFT', [customerMessage, heldMessage])
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByText('Draft ready for review')).toBeInTheDocument()
+    expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+  })
+
+  it('does not show DRAFT readiness when no undelivered held AI message exists', async () => {
+    setInboxData('DRAFT')
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('Drafts for review')
+    expect(screen.queryByText('Draft ready for review')).not.toBeInTheDocument()
+  })
+
+  it('clears DRAFT readiness after a newer human reply', async () => {
+    const { customerMessage, heldMessage } = draftMessages()
+    const agentMessage = {
+      id: 'msg-agent-draft',
+      conversation_id: 'conv-1',
+      content: 'A human reply.',
+      sender: 'agent' as const,
+      message_type: 'text' as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    setInboxData('DRAFT', [customerMessage, heldMessage, agentMessage])
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('Drafts for review')
+    expect(screen.queryByText('Draft ready for review')).not.toBeInTheDocument()
+  })
+
+  it('keeps the manual composer and HITL control without an automatic-reply claim', async () => {
+    setInboxData('MANUAL')
+
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('AI reply mode: Manual replies only')
+    expect(await screen.findByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Manual replies only/i })).toBeInTheDocument()
+    expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+    expect(screen.queryByText('AI is preparing a reply')).not.toBeInTheDocument()
+  })
+
+  it('clears the active claim after a mode change', async () => {
+    setInboxData('AUTO')
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    act(() => {
+      latestSSECallbacks().onAiReplyModeChanged?.({ mode: 'MANUAL' })
+    })
+    await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
+    expect(screen.getByTestId('inbox-ai-reply-mode')).toHaveTextContent('Manual replies only')
+  })
+
+  it('clears the active claim after a successful manual send', async () => {
+    setInboxData('AUTO')
+    render(<UnifiedInbox />)
+    const input = await screen.findByPlaceholderText(/Type your reply here/i)
+    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    fireEvent.change(input, { target: { value: 'A manual reply' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+    await waitFor(() => expect(apiClient.createMessage).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
+  })
+
+  it('clears the active claim after a failed manual send', async () => {
+    setInboxData('AUTO')
+    ;(apiClient.createMessage as any).mockRejectedValueOnce(new Error('delivery failed'))
+    render(<UnifiedInbox />)
+    const failedInput = await screen.findByPlaceholderText(/Type your reply here/i)
+    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    fireEvent.change(failedInput, { target: { value: 'This will fail' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+    await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
+  })
+
+  it('clears draft-ready state when the held suggestion is dismissed', async () => {
+    const { customerMessage, heldMessage } = draftMessages()
+    setInboxData('DRAFT', [customerMessage, heldMessage])
+    render(<UnifiedInbox />)
+    expect(await screen.findByText('Draft ready for review')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }))
+    await waitFor(() => expect(screen.queryByText('Draft ready for review')).not.toBeInTheDocument())
+  })
+
+  it('clears the active claim and exposes the failed terminal state on delivery failure', async () => {
+    setInboxData('AUTO')
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    act(() => {
+      latestSSECallbacks().onDeliveryFailed?.({ conversation_id: 'conv-1', reason: 'Meta rejected it' })
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+      expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI reply failed')
     })
   })
 })

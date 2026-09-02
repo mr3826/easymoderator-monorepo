@@ -4,6 +4,7 @@ const { Op } = require('sequelize');
 // Use the shared main entity models — avoids re-defining on the same Sequelize instance
 const Customer = require('../customer/customer.entity');
 const { Conversation, Message } = require('./conversation.entity');
+const { normalizeAiReplyMode } = require('../shop/ai-reply-mode');
 
 // Import OrderSessionService
 const OrderSessionService = require('../order/order-session-standalone.service');
@@ -259,12 +260,15 @@ class ConversationStateService {
                 shadowDivergence,
             } = stateUpdate;
             const currentMeta = conversation.metadata || {};
+            const normalizedAutomationMode = automation_mode === undefined
+                ? undefined
+                : normalizeAiReplyMode(automation_mode);
             const nextMetadata = {
                 ...currentMeta,
                 ...(intent !== undefined ? { last_intent: intent } : {}),
                 ...(language !== undefined ? { language_detected: language } : {}),
                 ...(confidence !== undefined ? { last_intent_confidence: intentConfidence ?? confidence } : {}),
-                ...(automation_mode !== undefined ? { automation_mode: automation_mode || currentMeta.automation_enabled } : {}),
+                ...(normalizedAutomationMode !== undefined ? { automation_mode: normalizedAutomationMode } : {}),
                 ...(intentRecord ? { last_intent_record: intentRecord } : {}),
                 ...(unsafeShadowActions ? {
                     unsafeShadowActions: (Number(currentMeta.unsafeShadowActions) || 0) + Number(unsafeShadowActions),
@@ -291,7 +295,7 @@ class ConversationStateService {
                     last_intent: intent,
                     language,
                     confidence,
-                    automation_mode
+                    automation_mode: normalizedAutomationMode
                 }
             };
 

@@ -643,7 +643,7 @@ describe('existing behaviour is preserved', () => {
         );
     });
 
-    test('channel auto-reply disablement after order mutation holds and alerts without sending', async () => {
+    test('channel disconnect after order mutation holds and alerts without sending', async () => {
         handleOrderFlow.mockResolvedValueOnce({
             handled: true,
             response: 'generated order success',
@@ -653,9 +653,20 @@ describe('existing behaviour is preserved', () => {
                 order: { id: 'ord-disabled', order_number: 'ORD-D', order_status: 'confirmed' },
             },
         });
+        const channel = {
+            id: 'ch-1',
+            shop_id: SHOP,
+            platform: 'facebook',
+            status: 'CONNECTED',
+            meta_asset_id: 'page-1',
+        };
+        metaChannelService.findUniqueConnectedByShopAndPlatform.mockResolvedValueOnce(channel);
         metaChannelService.getSettings
             .mockResolvedValueOnce({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true })
-            .mockResolvedValueOnce({ automation_mode: 'AI_ACTIVE', ai_auto_reply: false });
+            .mockImplementationOnce(async () => {
+                channel.status = 'DISCONNECTED';
+                return { automation_mode: 'AI_ACTIVE', ai_auto_reply: true };
+            });
 
         const result = await processMessageJob(job({ message: 'yes' }));
 

@@ -33,6 +33,12 @@ const metaChannelService = require('../modules/channel-providers/meta-channel.se
 const Customer = require('../modules/customer/customer.entity');
 const grounding = require('../modules/ai/grounding');
 const { Op } = require('sequelize');
+const {
+    AI_REPLY_MODES,
+    normalizeAiReplyMode,
+    getEffectiveAiReplyMode,
+    isAutoSendMode,
+} = require('../modules/shop/ai-reply-mode');
 
 const asRetryableDependencyError = (error, code) => {
     const normalized = error instanceof Error
@@ -56,8 +62,7 @@ const getShopAISettings = async (shopId) => {
         if (!settings
             || typeof settings !== 'object'
             || Array.isArray(settings)
-            || typeof settings.automation_mode !== 'string'
-            || settings.automation_mode.trim() === '') {
+            || Object.keys(settings).length === 0) {
             const error = new Error(`Shop AI settings are unavailable for shop ${shopId}`);
             error.code = 'SHOP_SETTINGS_UNAVAILABLE';
             error.retryable = true;
@@ -185,8 +190,7 @@ const getChannelAISettings = async (channel) => {
         if (!normalized
             || typeof normalized !== 'object'
             || Array.isArray(normalized)
-            || typeof normalized.automation_mode !== 'string'
-            || normalized.automation_mode.trim() === '') {
+            || Object.keys(normalized).length === 0) {
             const error = new Error(`Channel AI settings are unavailable for channel ${channel.id}`);
             error.code = 'CHANNEL_SETTINGS_UNAVAILABLE';
             error.retryable = true;
@@ -197,6 +201,16 @@ const getChannelAISettings = async (channel) => {
         throw asRetryableDependencyError(error, 'CHANNEL_SETTINGS_UNAVAILABLE');
     }
 };
+
+const buildWorkerAiSettings = (shopSettings = {}, channelSettings = {}, businessMode) => ({
+    business_hours: channelSettings.business_hours,
+    confidence_threshold_send: channelSettings.confidence_threshold_send,
+    confidence_threshold_suggest: channelSettings.confidence_threshold_suggest,
+    allow_order_creation: channelSettings.allow_order_creation,
+    purpose_label: channelSettings.purpose_label,
+    ...shopSettings,
+    automation_mode: businessMode,
+});
 
 /**
  * Load the last 10 messages prior to the current turn, as LLM conversation
@@ -262,10 +276,9 @@ async function hasPriorCustomerVisibleAiDisclosure(conversationId) {
     ));
 }
 
-async function shouldApplyAiDisclosureGreeting({ conversationId, currentTurnMessageIds, aiSettings } = {}) {
-    const mode = normalizeAutomationMode(aiSettings?.automation_mode || 'DRAFT');
-    if (mode !== 'AI_ACTIVE') return false;
-    if (isChannelAutoReplyDisabled(aiSettings)) return false;
+async function shouldApplyAiDisclosureGreeting({ conversationId, currentTurnMessageIds, aiSettings, channel } = {}) {
+    if (!isAutoSendMode(aiSettings?.automation_mode)) return false;
+    if (channel?.status !== 'CONNECTED') return false;
     if (!(await isFirstCustomerTurn(conversationId, currentTurnMessageIds))) return false;
     return !(await hasPriorCustomerVisibleAiDisclosure(conversationId));
 }
@@ -368,6 +381,21 @@ function createRecoveryControl({
             });
             return null;
         }
+        // Recovery timers can outlive the initial Guard 4 read. Do not let a
+        // holding message bypass a later AUTO -> MANUAL change.
+        const latestBusinessMode = await getEffectiveAiReplyMode(shopId);
+        if (!isAutoSendMode(latestBusinessMode)) {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'BLOCKED',
+            });
+            return null;
+        }
+        policySettings = {
+            ...policySettings,
+            automation_mode: latestBusinessMode,
+        };
         if (closed || (hardTimeout
             ? recovery.isHardTimeoutSuppressed(currentState)
             : recovery.isHoldingSuppressed(currentState))) return null;
@@ -593,44 +621,6 @@ async function requireHumanRecovery({ turnId, traceId, recoveryAvailable, conver
             });
     }
 }
-
-function normalizeAutomationMode(mode) {
-    return mode === 'AUTO' ? 'AI_ACTIVE' : mode;
-}
-
-function hasExplicitAutomationMode(settings = {}) {
-    return typeof settings?.automation_mode === 'string' && settings.automation_mode.trim() !== '';
-}
-
-/**
- * Business ("AI settings" under shop settings) is the source of truth. Channel
- * settings only fill in keys the business layer does not define — today that is
- * the disjoint per-Page set (business_hours, confidence_threshold_send/_suggest,
- * allow_order_creation, purpose_label). A per-Page value can never override a
- * business one.
- *
- * A channel still opts itself out through its own `ai_auto_reply: false` flag,
- * which the worker reads directly from channelAISettings (Guard 4b) — that is
- * how authorization recovery disables a disconnected Page.
- */
-function resolveEffectiveAiSettings(shopSettings = {}, channelSettings = {}) {
-    const merged = { ...channelSettings, ...shopSettings };
-    if (hasExplicitAutomationMode(shopSettings)) {
-        merged.automation_mode = normalizeAutomationMode(shopSettings.automation_mode);
-    } else if (hasExplicitAutomationMode(channelSettings)) {
-        merged.automation_mode = normalizeAutomationMode(channelSettings.automation_mode);
-    } else {
-        // Neither layer configured — hold, never auto-send.
-        merged.automation_mode = normalizeAutomationMode(merged.automation_mode || 'DRAFT');
-    }
-    return merged;
-}
-
-function isShopManualKillSwitch(settings = {}) {
-    return normalizeAutomationMode(settings?.automation_mode) === 'MANUAL';
-}
-
-const isChannelAutoReplyDisabled = (settings = {}) => settings?.ai_auto_reply === false;
 
 async function resolveStaticConfigAvailability(shopId, aiSettings = {}) {
     if (aiSettings.staticConfigAvailable !== undefined) return aiSettings.staticConfigAvailable;
@@ -965,26 +955,24 @@ async function processMessageJob(job) {
     if (paused) return { skipped: true, reason: 'ai_paused' };
 
     // ── Guard 4: Automation mode ────────────────────────────────────────────
-    // Business/shop reply mode is authoritative. Channel settings can opt a
-    // Page out, but cannot upgrade business Draft/Manual to auto-send.
+    // Only the business mode controls whether the AI pipeline runs. Page mode
+    // fields are legacy data and cannot upgrade a MANUAL business.
     const [shopAISettings, channelAISettings] = await Promise.all([
         getShopAISettings(shopId),
         getChannelAISettings(jobChannel),
     ]);
-    if (isShopManualKillSwitch(shopAISettings)) {
+    const businessMode = normalizeAiReplyMode(shopAISettings.automation_mode);
+    const aiSettings = buildWorkerAiSettings(shopAISettings, channelAISettings, businessMode);
+    recoveryControl?.setPolicySettings(aiSettings);
+    if (businessMode === AI_REPLY_MODES.MANUAL) {
         return { skipped: true, reason: 'manual_mode', scope: 'shop' };
     }
 
-    const aiSettings = resolveEffectiveAiSettings(shopAISettings, channelAISettings);
-    recoveryControl?.setPolicySettings(aiSettings);
-    if (aiSettings.automation_mode === 'MANUAL') {
-        return { skipped: true, reason: 'manual_mode', scope: 'effective' };
-    }
-
-    // ── Guard 4b: Per-channel ai_auto_reply flag ────────────────────────────
-    // Explicit false disables auto-reply for this channel regardless of mode.
-    if (isChannelAutoReplyDisabled(channelAISettings)) {
-        return { skipped: true, reason: 'channel_ai_disabled' };
+    // ── Guard 4b: Connected channel safety gate ─────────────────────────────
+    // A missing/revoked token is represented by the channel status, not by the
+    // deprecated Page AI settings fields.
+    if (jobChannel.status !== 'CONNECTED') {
+        return { skipped: true, reason: 'channel_disconnected' };
     }
 
     // ── Guard 4c: Subscription billing status ───────────────────────────────
@@ -1158,7 +1146,7 @@ async function processMessageJob(job) {
                 entities,
                 language: detectedLanguage,
                 imageUrls: effImageUrls,
-                mutationsAllowed: aiSettings.automation_mode === 'AI_ACTIVE'
+                mutationsAllowed: isAutoSendMode(businessMode)
                     && channelAISettings.allow_order_creation !== false,
                 conversationId,
                 traceId: job.id || effExternalId || conversationId,
@@ -1457,6 +1445,7 @@ async function processMessageJob(job) {
             conversationId,
             currentTurnMessageIds: historyExcludeIds,
             aiSettings,
+            channel: jobChannel,
         })) {
             const { buildGreeting } = require('../modules/shop/ai-messaging');
             const Shop = require('../modules/shop/shop.entity');
@@ -1533,17 +1522,15 @@ async function processMessageJob(job) {
             throw settingsErr;
         }
         latestChannelAISettings = { ...channelAISettings, ...latestSettings };
-        channelSettings = resolveEffectiveAiSettings(shopAISettings, latestChannelAISettings);
+        channelSettings = buildWorkerAiSettings(shopAISettings, latestChannelAISettings, businessMode);
     }
 
-    // The setting can change while the LLM is running. Re-check the latest
-    // channel opt-out immediately before policy/send so a disabled Page cannot
-    // receive a response generated before the change. Keep the candidate
-    // visible to the merchant as a held suggestion instead of dropping it.
-    if (isChannelAutoReplyDisabled(latestChannelAISettings)) {
+    // The channel can lose its token while the LLM is running. Keep the
+    // candidate visible to the merchant instead of attempting a send.
+    if (channel.status !== 'CONNECTED') {
         if (committedOrder) {
             await recoveryControl?.close();
-            await sendPostMutationTemplate('channel_ai_disabled');
+            await sendPostMutationTemplate('channel_disconnected');
             return {
                 success: true,
                 conversationId,
@@ -1555,14 +1542,14 @@ async function processMessageJob(job) {
         const heldMessage = (await storeAiResponse(rawResponse, false)).message;
         await finalizeAiMessage(heldMessage, shopId, conversationId, {
             delivered: false,
-            heldReason: 'channel_ai_disabled',
+            heldReason: 'channel_disconnected',
         });
         return {
             success: true,
             conversationId,
             confidence,
             sent: false,
-            reason: 'channel_ai_disabled',
+            reason: 'channel_disconnected',
         };
     }
 
@@ -1571,6 +1558,28 @@ async function processMessageJob(job) {
         platform: policyChannelType,
         senderRole: 'ai',
         direction: 'outbound',
+    };
+
+    // Re-read the business mode after generation. An AUTO job must not send
+    // after the merchant changes the business mode to a non-delivering mode.
+    const latestBusinessMode = await getEffectiveAiReplyMode(shopId);
+    if (isAutoSendMode(businessMode) && !isAutoSendMode(latestBusinessMode)) {
+        const heldMessage = (await storeAiResponse(rawResponse, false)).message;
+        await finalizeAiMessage(heldMessage, shopId, conversationId, {
+            delivered: false,
+            heldReason: 'mode_changed',
+        });
+        return {
+            success: true,
+            conversationId,
+            confidence,
+            sent: false,
+            reason: 'mode_changed',
+        };
+    }
+    channelSettings = {
+        ...channelSettings,
+        automation_mode: latestBusinessMode,
     };
 
     let decision;
@@ -1799,10 +1808,6 @@ module.exports = {
         hasAiDisclosure,
         wasAiMessageCustomerVisible,
         buildOrderFlowFailureResponse,
-        normalizeAutomationMode,
-        resolveEffectiveAiSettings,
-        isShopManualKillSwitch,
-        isChannelAutoReplyDisabled,
         signalBillingPause,
         signalUsageExhausted,
         resolveAllowanceDecision,

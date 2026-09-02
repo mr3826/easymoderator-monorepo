@@ -2,7 +2,7 @@
  * Shop AI Defaults
  *
  * Canonical default values for shop AI settings.
- * Uses 'DRAFT' for BD private launch so new sellers review AI suggestions before
+ * Uses 'MANUAL' so new sellers explicitly choose an AI delivery mode before
  * any customer-facing auto-send.
  *
  * tone_persona options:
@@ -11,11 +11,13 @@
  *   'shop_assistant'— Helpful but slightly formal, product-focused
  */
 
+const { DEFAULT_AI_REPLY_MODE } = require('./ai-reply-mode');
+
 const DEFAULT_AI_SETTINGS = {
     auto_send_enabled: false,
     auto_send_confidence_threshold: 75,
 
-    automation_mode: 'DRAFT',
+    automation_mode: DEFAULT_AI_REPLY_MODE,
     confidence_threshold: 75,
     model_preset: 'standard',           // 'standard' (cheap) | 'advanced' (powerful)
     auto_reply_enabled: false,

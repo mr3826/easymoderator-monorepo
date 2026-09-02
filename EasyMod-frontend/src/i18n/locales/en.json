@@ -609,6 +609,18 @@
     "noConversations": "No conversations yet",
     "agentHandling": "🙋 You're replying",
     "aiActive": "🤖 AI is replying",
+    "modeLabel": "AI reply mode",
+    "mode": {
+      "auto": "Automatic replies",
+      "draft": "Drafts for review",
+      "manual": "Manual replies only"
+    },
+    "status": {
+      "processing": "AI is preparing a reply",
+      "sent": "AI reply sent",
+      "failed": "AI reply failed",
+      "draftReady": "Draft ready for review"
+    },
     "upgradeForAI": "Upgrade for AI",
     "agentBanner": "You're replying yourself — AI is paused for this conversation.",
     "windowClosingSoon": "⚠ Time to reply directly to this customer is almost up — reply now.",
@@ -1372,16 +1384,6 @@
       "step4": "Remove EasyModerator from Business Integrations, then retry the connection.",
       "openSettings": "Open Meta Business Settings",
       "tryAgain": "Try again"
-    },
-    "autoReply": {
-      "enabledToast": "Page AI participation turned on",
-      "disabledToast": "Page AI participation turned off",
-      "saveFailed": "Could not save setting",
-      "loading": "Loading AI setting…",
-      "title": "Page AI participation",
-      "onDesc": "Uses the business reply mode for this Page",
-      "offDesc": "AI will not draft or send replies for this Page",
-      "toggleTitle": "Toggle whether this Page uses the business reply mode"
     }
   },
   "reports": {
@@ -1787,9 +1789,9 @@
       "mode": {
         "autoTitle": "Send automatically",
         "autoDesc": "EasyModerator sends confident replies on its own",
-        "draftTitle": "Review first (Recommended)",
+        "draftTitle": "Review first",
         "draftDesc": "EasyModerator writes a draft, but you approve before customers receive it",
-        "manualTitle": "Manual replies only",
+        "manualTitle": "Manual replies only (Recommended)",
         "manualDesc": "EasyModerator will not send or draft replies automatically"
       },
       "languageLabel": "How should replies sound?",
@@ -1860,6 +1862,7 @@
     "renew": "Renew subscription",
     "plansTitle": "Plans",
     "plansSubtitle": "Simple plans with the same core features for every shop.",
+    "monthly": "Monthly",
     "conversationsLimit": "Conversations:",
     "ordersLimit": "Orders:",
     "productsLimit": "Products:",

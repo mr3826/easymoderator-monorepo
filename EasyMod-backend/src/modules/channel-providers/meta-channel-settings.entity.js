@@ -27,9 +27,9 @@ const MetaChannelSettings = sequelize.define('MetaChannelSettings', {
     automation_mode: {
         type: DataTypes.ENUM('AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT'),
         allowNull: false,
-        // DRAFT, matching DEFAULT_AI_SETTINGS. A newly connected Page must never
-        // auto-send to customers before the owner opts in.
-        defaultValue: 'DRAFT',
+        // Legacy compatibility field. Business-level settings are authoritative;
+        // default conservatively to the same fail-closed value as the migration.
+        defaultValue: 'MANUAL',
     },
     confidence_threshold_send: {
         type: DataTypes.DECIMAL(3, 2),

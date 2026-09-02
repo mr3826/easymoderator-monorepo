@@ -2,11 +2,18 @@ import { useState, useRef } from "react";
 import { useTranslation } from 'react-i18next';
 import { Plus, X, ChevronDown, ChevronUp } from "lucide-react";
 import type { ShopAISettings } from "@/api/types/dashboard";
+import { DEFAULT_AI_REPLY_MODE, normalizeAiReplyMode, type AiReplyMode } from "@/api/types/conversation";
+import { queryClient } from "@/app/lib/queryClient";
 import type { TelegramNotificationStatus } from "@/api/types/notification";
 import { getErrorMessage } from "@shared/lib/http/errors";
+import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 
-const defaultAISettings: ShopAISettings = {
-  automation_mode: "DRAFT",
+type NormalizedShopAISettings = Omit<ShopAISettings, 'automation_mode'> & {
+  automation_mode: AiReplyMode;
+};
+
+const defaultAISettings: NormalizedShopAISettings = {
+  automation_mode: DEFAULT_AI_REPLY_MODE,
   confidence_threshold: 75,
   auto_reply_enabled: false,
   max_auto_order_value: 5000,
@@ -29,21 +36,14 @@ const defaultAISettings: ShopAISettings = {
   closing: { enabled: true, custom_text: "আমাদের সাথে কেনাকাটা করার জন্য ধন্যবাদ! 🛍️" },
 };
 
-type UIAutomationMode = 'AUTO' | 'DRAFT' | 'MANUAL';
 type HandoffNotificationChannel = 'in_app' | 'telegram';
 
-const normalizeAutomationMode = (mode?: string | null): UIAutomationMode => {
-  if (mode === 'AUTO' || mode === 'AI_ACTIVE') return 'AUTO';
-  if (mode === 'MANUAL' || mode === 'HUMAN_ACTIVE') return 'MANUAL';
-  return 'DRAFT';
-};
-
-const autoReplyForMode = (mode: string) => mode === 'AUTO' || mode === 'AI_ACTIVE';
+const autoReplyForMode = (mode: AiReplyMode) => mode === 'AUTO';
 
 const normalizeNotificationChannel = (channel?: string | null): HandoffNotificationChannel =>
   channel === 'telegram' ? 'telegram' : 'in_app';
 
-const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISettings => {
+const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): NormalizedShopAISettings => {
   const merged = {
     ...defaultAISettings,
     ...loaded,
@@ -52,7 +52,7 @@ const mergeAISettings = (loaded?: Partial<ShopAISettings> | null): ShopAISetting
     greeting: { ...defaultAISettings.greeting!, ...(loaded?.greeting || {}) },
     closing: { ...defaultAISettings.closing!, ...(loaded?.closing || {}) },
   };
-  const automationMode = normalizeAutomationMode(merged.automation_mode);
+  const automationMode = normalizeAiReplyMode(merged.automation_mode);
   return {
     ...merged,
     automation_mode: automationMode,
@@ -122,8 +122,8 @@ interface AISettingsFormProps {
 
 export default function AISettingsForm({ initialData, onSave, telegramStatus = null }: AISettingsFormProps) {
   const { t } = useTranslation();
-  const [aiSettings, setAISettings] = useState<ShopAISettings>(() => mergeAISettings(initialData));
-  const [savedAISettings, setSavedAISettings] = useState<ShopAISettings>(() => mergeAISettings(initialData));
+  const [aiSettings, setAISettings] = useState<NormalizedShopAISettings>(() => mergeAISettings(initialData));
+  const [savedAISettings, setSavedAISettings] = useState<NormalizedShopAISettings>(() => mergeAISettings(initialData));
   const [showHandoffSection, setShowHandoffSection] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -137,6 +137,14 @@ export default function AISettingsForm({ initialData, onSave, telegramStatus = n
 
   const isDirty = JSON.stringify(aiSettings) !== JSON.stringify(savedAISettings);
   const telegramConnected = Boolean(telegramStatus?.connected || telegramStatus?.status === 'connected');
+  const handleAutomationModeChange = (value: string) => {
+    const automationMode = normalizeAiReplyMode(value);
+    setAISettings((previous) => ({
+      ...previous,
+      automation_mode: automationMode,
+      auto_reply_enabled: autoReplyForMode(automationMode),
+    }));
+  };
 
   const handleSave = async () => {
     try {
@@ -146,6 +154,11 @@ export default function AISettingsForm({ initialData, onSave, telegramStatus = n
         auto_reply_enabled: autoReplyForMode(aiSettings.automation_mode),
       };
       await onSave(settingsForSave);
+      try {
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      } catch {
+        // A cache refresh failure must not turn a successful settings write into an error.
+      }
       setAISettings(settingsForSave);
       setSavedAISettings(settingsForSave);
       showNotice("success", t('manageShop.aiSettings.saveSuccess'));
@@ -172,46 +185,56 @@ export default function AISettingsForm({ initialData, onSave, telegramStatus = n
 
       <div className="space-y-6">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.automationModeLabel')}</label>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label id="ai-reply-mode-label" className="block text-sm font-medium text-gray-700 mb-2">{t('manageShop.aiSettings.automationModeLabel')}</label>
+          <RadioGroup
+            value={aiSettings.automation_mode}
+            onValueChange={handleAutomationModeChange}
+            aria-labelledby="ai-reply-mode-label"
+            data-testid="ai-reply-mode"
+            className="grid grid-cols-1 gap-3 md:grid-cols-3"
+          >
             {([
               {
-                mode: 'AUTO' as const,
-                title: t('manageShop.aiSettings.mode.autoTitle'),
-                desc: t('manageShop.aiSettings.mode.autoDesc'),
+                mode: 'MANUAL' as AiReplyMode,
+                title: t('manageShop.aiSettings.mode.manualTitle'),
+                desc: t('manageShop.aiSettings.mode.manualDesc'),
               },
               {
-                mode: 'DRAFT' as const,
+                mode: 'DRAFT' as AiReplyMode,
                 title: t('manageShop.aiSettings.mode.draftTitle'),
                 desc: t('manageShop.aiSettings.mode.draftDesc'),
               },
               {
-                mode: 'MANUAL' as const,
-                title: t('manageShop.aiSettings.mode.manualTitle'),
-                desc: t('manageShop.aiSettings.mode.manualDesc'),
+                mode: 'AUTO' as AiReplyMode,
+                title: t('manageShop.aiSettings.mode.autoTitle'),
+                desc: t('manageShop.aiSettings.mode.autoDesc'),
               },
             ]).map((option) => {
               const active = aiSettings.automation_mode === option.mode;
+              const optionId = `ai-reply-mode-${option.mode.toLowerCase()}`;
               return (
-                <button
+                <div
                   key={option.mode}
-                  type="button"
-                  onClick={() => setAISettings({
-                    ...aiSettings,
-                    automation_mode: option.mode,
-                    auto_reply_enabled: autoReplyForMode(option.mode),
-                  })}
-                  className={`min-h-24 rounded-xl border p-4 text-left transition-colors ${
+                  className={`relative min-h-24 rounded-xl border p-4 text-left transition-colors ${
                     active ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
-                  <p className="mb-0.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{option.mode}</p>
-                  <p className="mb-1 text-sm font-bold text-gray-900">{option.title}</p>
-                  <p className="text-xs text-gray-600">{option.desc}</p>
-                </button>
+                  <RadioGroupItem
+                    id={optionId}
+                    value={option.mode}
+                    data-testid={optionId}
+                    aria-label={option.title}
+                    className="absolute left-4 top-4"
+                  />
+                  <label htmlFor={optionId} className="block min-h-16 cursor-pointer pl-7">
+                    <p className="mb-0.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{option.mode}</p>
+                    <p className="mb-1 text-sm font-bold text-gray-900">{option.title}</p>
+                    <p className="text-xs text-gray-600">{option.desc}</p>
+                  </label>
+                </div>
               );
             })}
-          </div>
+          </RadioGroup>
         </div>
 
         <div>

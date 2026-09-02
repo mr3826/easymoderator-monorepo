@@ -11,7 +11,7 @@
  *
  * Column default only. Existing rows are NOT rewritten: a shop that deliberately
  * turned a Page on keeps its setting, and business-level automation_mode is
- * authoritative at read time anyway (message-worker.resolveEffectiveAiSettings).
+ * authoritative at read time anyway (the business-level reply-mode resolver).
  */
 
 module.exports = {

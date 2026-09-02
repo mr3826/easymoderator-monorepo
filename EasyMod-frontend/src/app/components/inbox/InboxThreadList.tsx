@@ -4,13 +4,14 @@
  */
 import { motion } from "motion/react";
 import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle } from "lucide-react";
-import type { Conversation } from "@/api/types/conversation";
+import type { AiReplyMode, Conversation } from "@/api/types/conversation";
 import { Badge } from "@/app/components/ui/badge";
 import { useTranslation } from "react-i18next";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
 interface InboxThreadListProps {
   conversations: Conversation[];
+  aiReplyMode: AiReplyMode;
   selectedConversationId: string | null;
   filteredConversations: Conversation[];
   loading: boolean;
@@ -52,6 +53,7 @@ const formatDate = (dateString: string, t: TFunc): string => {
 
 export function InboxThreadList({
   filteredConversations,
+  aiReplyMode,
   selectedConversationId,
   loading,
   searchQuery,
@@ -143,7 +145,7 @@ export function InboxThreadList({
         >
           {filteredConversations.map((conversation) => {
             const isHITL = conversation.hitl === true;
-            const isAIHandled = !isHITL && conversation.status === "active";
+            const isAIHandled = aiReplyMode === "AUTO" && !isHITL && conversation.status === "active";
             const lastAIReply = isAIHandled ? formatDate(conversation.updated_at, t) : null;
 
             return (

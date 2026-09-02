@@ -6,7 +6,6 @@ import {
   ChevronUp,
   Loader2,
   Shield,
-  Cpu,
   FlaskConical,
   Unplug,
   RefreshCw,
@@ -27,13 +26,10 @@ import {
   reconnectMetaChannel,
   getMetaChannelConsentSummary,
   updateMetaChannelPurposeLabel,
-  getMetaChannelSettings,
-  updateMetaChannelSettings,
   type MetaChannel,
   type MetaOAuthAsset,
   type MetaChannelConsentSummary,
   type MetaConsentEventType,
-  type MetaChannelSettings,
 } from "@/api/domains/meta-channels";
 import { getMetaErrorMessage, extractMetaApiError } from "@/lib/meta/error-messages";
 import { trackFunnelEvent } from "@/app/lib/funnel";
@@ -761,8 +757,6 @@ export default function ChatSettings() {
                       />
                     </div>
 
-                    <ChannelAutoReplyToggle channelId={channel.id} />
-
                     <div className="mb-3 grid grid-cols-2 gap-1.5 text-[11px]">
                       <HealthRow
                         label={t("channels.health.connection", "Connection")}
@@ -1053,88 +1047,6 @@ function HealthRow({
     <div className="flex items-center justify-between rounded bg-gray-50 px-2 py-1">
       <span className="text-gray-500">{label}</span>
       <span className={`font-medium ${tone}`}>{ok ? okText : badText}</span>
-    </div>
-  );
-}
-
-/**
- * Per-channel automatic reply toggle. Loads the channel's MetaChannelSettings and
- * lets the merchant turn automatic replies on/off for that Page. This is a
- * per-channel control available on every plan — packages differ only by
- * conversation quota, never by feature access.
- */
-function ChannelAutoReplyToggle({ channelId }: { channelId: string }) {
-  const { t } = useTranslation();
-  const [settings, setSettings] = useState<MetaChannelSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    getMetaChannelSettings(channelId)
-      .then((s) => active && setSettings(s))
-      .catch(() => active && setSettings(null))
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-    };
-  }, [channelId]);
-
-  const toggle = async () => {
-    if (!settings || saving) return;
-    const next = !settings.aiAutoReply;
-    setSaving(true);
-    try {
-      const updated = await updateMetaChannelSettings(channelId, { aiAutoReply: next });
-      setSettings(updated);
-      toast.success(next ? t("channels.autoReply.enabledToast") : t("channels.autoReply.disabledToast"));
-    } catch {
-      toast.error(t("channels.autoReply.saveFailed"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="mb-3 flex items-center gap-2 text-xs text-gray-400">
-        <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t("channels.autoReply.loading")}
-      </div>
-    );
-  }
-  if (!settings) return null;
-
-  return (
-    <div className="mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-      <div className="flex items-center gap-2">
-        <Cpu className="w-4 h-4 text-purple-600 flex-shrink-0" />
-        <div>
-          <p className="text-xs font-medium text-gray-800">{t("channels.autoReply.title")}</p>
-          <p className="text-[11px] text-gray-500">
-            {settings.aiAutoReply
-              ? t("channels.autoReply.onDesc")
-              : t("channels.autoReply.offDesc")}
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={settings.aiAutoReply}
-        onClick={toggle}
-        disabled={saving}
-        title={t("channels.autoReply.toggleTitle")}
-        className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
-          settings.aiAutoReply ? "bg-purple-600" : "bg-gray-300"
-        }`}
-      >
-        <span
-          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-            settings.aiAutoReply ? "translate-x-4" : "translate-x-1"
-          }`}
-        />
-      </button>
     </div>
   );
 }

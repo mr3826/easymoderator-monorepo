@@ -609,6 +609,18 @@
     "noConversations": "এখনো কোনো কথোপকথন নেই",
     "agentHandling": "🙋 আপনি উত্তর দিচ্ছেন",
     "aiActive": "🤖 AI উত্তর দিচ্ছে",
+    "modeLabel": "AI উত্তর দেওয়ার মোড",
+    "mode": {
+      "auto": "স্বয়ংক্রিয় উত্তর",
+      "draft": "রিভিউয়ের জন্য খসড়া",
+      "manual": "শুধু ম্যানুয়াল উত্তর"
+    },
+    "status": {
+      "processing": "AI উত্তর প্রস্তুত করছে",
+      "sent": "AI-এর উত্তর পাঠানো হয়েছে",
+      "failed": "AI-এর উত্তর পাঠানো যায়নি",
+      "draftReady": "রিভিউ করার জন্য খসড়া প্রস্তুত"
+    },
     "upgradeForAI": "AI-এর জন্য আপগ্রেড করুন",
     "agentBanner": "আপনি নিজে উত্তর দিচ্ছেন — এই কথোপকথনে AI বন্ধ আছে।",
     "windowClosingSoon": "⚠ এই কাস্টমারকে সরাসরি উত্তর দেওয়ার সময় প্রায় শেষ — এখনই উত্তর দিন।",
@@ -1372,16 +1384,6 @@
       "step4": "Business Integrations থেকে EasyModerator সরিয়ে দিন, তারপর আবার connection চেষ্টা করুন।",
       "openSettings": "Meta Business Settings খুলুন",
       "tryAgain": "আবার চেষ্টা করুন"
-    },
-    "autoReply": {
-      "enabledToast": "Page AI participation চালু হয়েছে",
-      "disabledToast": "Page AI participation বন্ধ হয়েছে",
-      "saveFailed": "সেটিং সেভ করা যায়নি",
-      "loading": "AI সেটিং লোড হচ্ছে…",
-      "title": "Page AI participation",
-      "onDesc": "এই Page business reply mode follow করবে",
-      "offDesc": "এই Page-এ AI draft বা send করবে না",
-      "toggleTitle": "এই Page business reply mode ব্যবহার করবে কি না"
     }
   },
   "reports": {
@@ -1787,9 +1789,9 @@
       "mode": {
         "autoTitle": "Send automatically",
         "autoDesc": "EasyModerator confident reply নিজে পাঠাবে",
-        "draftTitle": "Review first (Recommended)",
+        "draftTitle": "Review first",
         "draftDesc": "EasyModerator draft লিখবে, customer পাওয়ার আগে আপনি approve করবেন",
-        "manualTitle": "Manual replies only",
+        "manualTitle": "Manual replies only (Recommended)",
         "manualDesc": "EasyModerator automatically reply draft বা send করবে না"
       },
       "languageLabel": "Replies-এর tone কেমন হবে?",

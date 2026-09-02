@@ -59,7 +59,7 @@ vi.mock('@/api/domains/meta-channels', () => ({
   reconnectMetaChannel:           vi.fn(),
   getMetaChannelConsentSummary:   vi.fn(),
   updateMetaChannelPurposeLabel:  vi.fn(),
-  getMetaChannelSettings:         vi.fn().mockResolvedValue({ aiAutoReply: false }),
+  getMetaChannelSettings:         vi.fn().mockResolvedValue({}),
   updateMetaChannelSettings:      vi.fn(),
 }))
 

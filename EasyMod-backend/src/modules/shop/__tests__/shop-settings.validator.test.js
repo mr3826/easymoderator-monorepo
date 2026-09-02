@@ -9,6 +9,7 @@ const {
   validateSettings,
   sanitizeSettings,
   mergeAndSanitizeSettings,
+  stripAutomationModeFromShopUpdate,
   AI_SETTINGS_SCHEMA,
   BD_SETTINGS_SCHEMA,
   BUSINESS_INFO_SCHEMA
@@ -510,6 +511,29 @@ describe('Shop Settings Validator', () => {
       expect(() => mergeAndSanitizeSettings({}, {
         ai: { handoff_settings: { cooldown_minutes: 1441 } },
       })).toThrow(AppError);
+    });
+  });
+
+  describe('stripAutomationModeFromShopUpdate', () => {
+    it('removes only the general-update reply mode without mutating the input', () => {
+      const update = {
+        shop_name: 'Updated Shop',
+        settings: {
+          ai: { automation_mode: 'AUTO', confidence_threshold: 80 },
+          businessInfo: { shopName: 'Updated Shop' },
+        },
+      };
+
+      const stripped = stripAutomationModeFromShopUpdate(update);
+
+      expect(stripped).toEqual({
+        shop_name: 'Updated Shop',
+        settings: {
+          ai: { confidence_threshold: 80 },
+          businessInfo: { shopName: 'Updated Shop' },
+        },
+      });
+      expect(update.settings.ai.automation_mode).toBe('AUTO');
     });
   });
 

@@ -231,6 +231,61 @@ const injectAssistantMessage = async (conversationId, content, sourceReferences 
     });
 };
 
+/**
+ * Set the business-level reply mode for one disposable E2E shop. This bypasses
+ * the HTTP settings contract deliberately: the mode API has its own unit/API
+ * coverage, while these tests need to isolate the worker's send boundary.
+ */
+const setBusinessReplyMode = async (shopId, mode) => {
+    const { Shop } = require('../../src/modules/entities');
+    const shop = await Shop.findByPk(shopId);
+    if (!shop) throw new Error(`meta-e2e: shop ${shopId} not found`);
+
+    const settings = shop.settings && typeof shop.settings === 'object' ? shop.settings : {};
+    const ai = settings.ai && typeof settings.ai === 'object' ? settings.ai : {};
+    await shop.update({
+        settings: {
+            ...settings,
+            ai: {
+                ...ai,
+                automation_mode: mode,
+                auto_reply_enabled: mode === 'AUTO',
+            },
+        },
+    });
+};
+
+/**
+ * Send one explicit merchant reply through the real Shared Inbox delivery
+ * helper. The provider transport remains captured by transport.js.
+ */
+const sendAgentReply = async ({ shopId, content }) => {
+    const { Message } = require('../../src/modules/conversation/conversation.entity');
+    const conversation = await conversationFor(shopId);
+    if (!conversation) throw new Error(`meta-e2e: no conversation for shop ${shopId}`);
+
+    const message = await Message.create({
+        conversation_id: conversation.id,
+        content,
+        sender: 'business',
+        external_id: null,
+        metadata: { message_type: 'text', delivery_status: 'pending' },
+    });
+    const controller = require('../../src/modules/conversation/conversation.controller');
+    const sendsBefore = transport.capturedSends().length;
+    await controller._deliverViaMetaIfApplicable(
+        conversation.id,
+        shopId,
+        message,
+        'agent',
+    );
+
+    return {
+        message,
+        sends: transport.capturedSends().slice(sendsBefore),
+    };
+};
+
 // ── The main entry point ─────────────────────────────────────────────────────
 
 /**
@@ -386,6 +441,8 @@ module.exports = {
     conversationFor,
     messagesFor,
     injectAssistantMessage,
+    setBusinessReplyMode,
+    sendAgentReply,
     // captured outbound
     sentTexts,
     sentAttachments,

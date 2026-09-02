@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { authService } from './auth';
 import { buildApiUrl } from './config';
-import type { Message } from '@/api/types/conversation';
+import { normalizeAiReplyMode, type AiReplyMode, type Message } from '@/api/types/conversation';
 
 interface SSECallbacks {
     onNewMessage: (data: { conversation_id: string; message: Message }) => void;
     onHitlChanged: (data: { conversation_id: string; hitl: boolean }) => void;
+    onAiReplyModeChanged?: (data: { mode: AiReplyMode }) => void;
     onMessageDeliveryUpdated?: (data: { conversation_id: string; message_id: string; metadata: Message['metadata'] }) => void;
     onDeliveryFailed?: (data: { conversation_id: string; reason: string }) => void;
     onChannelError?: (data: { type: string; page_id: string; display_name: string; message: string }) => void;
@@ -15,16 +16,16 @@ interface SSECallbacks {
 
 /**
  * Opens a Server-Sent Events connection to /conversation/events for the
- * current shop. Calls the provided callbacks whenever the backend emits
- * a new_message or hitl_changed event.
+ * current shop. Calls the provided callbacks whenever the backend emits an
+ * inbox event, including new_message, hitl_changed, or ai_reply_mode_changed.
  *
  * Reconnects automatically with exponential back-off (1s → 30s cap) on error.
  * Cookies are sent automatically by EventSource (withCredentials: true).
  */
-export function useInboxSSE({ onNewMessage, onHitlChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline }: SSECallbacks): void {
+export function useInboxSSE({ onNewMessage, onHitlChanged, onAiReplyModeChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline }: SSECallbacks): void {
     // Keep callbacks in a ref so reconnects always use the latest closures
-    const callbacksRef = useRef<SSECallbacks>({ onNewMessage, onHitlChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline });
-    callbacksRef.current = { onNewMessage, onHitlChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline };
+    const callbacksRef = useRef<SSECallbacks>({ onNewMessage, onHitlChanged, onAiReplyModeChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline });
+    callbacksRef.current = { onNewMessage, onHitlChanged, onAiReplyModeChanged, onMessageDeliveryUpdated, onDeliveryFailed, onChannelError, onSSEOffline, onSSEOnline };
 
     const shopId = authService.getCurrentShopId();
 
@@ -54,6 +55,17 @@ export function useInboxSSE({ onNewMessage, onHitlChanged, onMessageDeliveryUpda
             es.addEventListener('hitl_changed', (e: MessageEvent) => {
                 try {
                     callbacksRef.current.onHitlChanged(JSON.parse(e.data));
+                } catch (e) {
+                    console.error('[useInboxSSE] Failed to parse SSE event data:', e);
+                }
+            });
+
+            es.addEventListener('ai_reply_mode_changed', (e: MessageEvent) => {
+                try {
+                    const payload = JSON.parse(e.data) as { mode?: unknown };
+                    callbacksRef.current.onAiReplyModeChanged?.({
+                        mode: normalizeAiReplyMode(payload?.mode),
+                    });
                 } catch (e) {
                     console.error('[useInboxSSE] Failed to parse SSE event data:', e);
                 }

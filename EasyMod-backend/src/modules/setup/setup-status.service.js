@@ -3,6 +3,7 @@
 const { Op } = require('sequelize');
 const { MetaChannel, Product } = require('../entities');
 const shopService = require('../shop/shop.service');
+const { AI_REPLY_MODES, normalizeAiReplyMode } = require('../shop/ai-reply-mode');
 
 const TASK_KEYS = Object.freeze({
     CONNECT_CHANNEL: 'connect_channel',
@@ -101,9 +102,13 @@ function assessShopProfile(shop, businessInfo, aiSettings) {
 function assessAiSettings(aiSettings) {
     const missing = [];
     const warnings = [];
+    const hasAutomationMode = hasText(aiSettings.automation_mode);
+    const automationMode = hasAutomationMode
+        ? normalizeAiReplyMode(aiSettings.automation_mode)
+        : null;
     const confidenceThreshold = Number(aiSettings.confidence_threshold);
 
-    if (!hasText(aiSettings.automation_mode)) {
+    if (!hasAutomationMode) {
         missing.push('automation_mode');
     }
 
@@ -111,7 +116,7 @@ function assessAiSettings(aiSettings) {
         missing.push('confidence_threshold');
     }
 
-    if (hasText(aiSettings.automation_mode) && aiSettings.automation_mode !== 'DRAFT') {
+    if (automationMode && automationMode !== AI_REPLY_MODES.DRAFT) {
         warnings.push({
             code: 'AI_NOT_DRAFT',
             message: 'Draft mode is recommended for first launch verification.',
@@ -122,6 +127,7 @@ function assessAiSettings(aiSettings) {
         complete: missing.length === 0,
         missing,
         warnings,
+        automationMode,
     };
 }
 
@@ -187,7 +193,7 @@ async function getSetupStatus({ shopId, userId }) {
             missing: aiSettingsStatus.missing,
             warnings: aiSettingsStatus.warnings,
             meta: {
-                automationMode: normalizedAiSettings.automation_mode || null,
+                automationMode: aiSettingsStatus.automationMode,
                 confidenceThreshold: normalizedAiSettings.confidence_threshold ?? null,
             },
         }),

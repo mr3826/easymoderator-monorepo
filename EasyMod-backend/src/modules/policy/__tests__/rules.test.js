@@ -480,9 +480,10 @@ describe('draftMode.rule', () => {
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('DRAFT_MODE');
     });
-    test('allows when AI_ACTIVE', async () => {
-        const r = await rule.evaluate({}, { settings: { automation_mode: 'AI_ACTIVE' } });
+    test.each(['AUTO', 'AI_ACTIVE'])('allows when automation_mode=%s', async (mode) => {
+        const r = await rule.evaluate({}, { settings: { automation_mode: mode } });
         expect(r.allow).toBe(true);
+        expect(r.reason).toBe('AUTO');
     });
     test('allows transactional notifications in DRAFT mode', async () => {
         const r = await rule.evaluate({ messageType: 'transactional' }, {
@@ -495,21 +496,32 @@ describe('draftMode.rule', () => {
         const r = await rule.evaluate({}, {});
         expect(r.allow).toBe(false);
         expect(r.reason).toBe('DRAFT_MODE');
+        expect(r.augment.automation_mode).toBe('DRAFT');
     });
 
-    // Regression guard: AI_ACTIVE is the ONLY mode that may deliver to a
-    // customer. HUMAN_ACTIVE shipped absent from the deny set and therefore
-    // auto-sent. Enumerating the persisted enum here means a mode added to the
-    // column but forgotten in NON_DELIVERING_MODES fails this test instead of
-    // silently auto-sending in production.
-    const PERSISTED_AUTOMATION_MODES = ['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT'];
-    test('AI_ACTIVE is the only persisted mode that delivers', async () => {
+    test('allows an explicit human-agent send regardless of reply mode', async () => {
+        for (const automationMode of [undefined, 'DRAFT', 'MANUAL', 'AUTO', 'AI_ACTIVE', 'GARBAGE']) {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await rule.evaluate(
+                { senderRole: 'agent' },
+                automationMode === undefined ? {} : { settings: { automation_mode: automationMode } },
+            );
+            expect(r).toEqual({ allow: true, reason: 'HUMAN_AGENT_SEND' });
+        }
+    });
+
+    // Legacy values remain readable, but only the canonical AUTO mode may
+    // deliver automatically.
+    const PERSISTED_AUTOMATION_MODES = [
+        'AUTO', 'DRAFT', 'MANUAL', 'AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE',
+    ];
+    test('AUTO is the only canonical mode that delivers automatically', async () => {
         const delivering = [];
         for (const mode of PERSISTED_AUTOMATION_MODES) {
             // eslint-disable-next-line no-await-in-loop
             const r = await rule.evaluate({}, { settings: { automation_mode: mode } });
             if (r.allow) delivering.push(mode);
         }
-        expect(delivering).toEqual(['AI_ACTIVE']);
+        expect(delivering).toEqual(['AUTO', 'AI_ACTIVE']);
     });
 });

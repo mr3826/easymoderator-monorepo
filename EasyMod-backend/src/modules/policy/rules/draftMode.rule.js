@@ -12,23 +12,35 @@
 
 'use strict';
 
-const NON_DELIVERING_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL']);
+const {
+    AI_REPLY_MODES,
+    normalizeAiReplyMode,
+    isNonDeliveringMode,
+} = require('../../shop/ai-reply-mode');
 
 module.exports = {
     name: 'draftMode',
 
-    async evaluate(_message, ctx) {
-        if (ctx.messageType === 'transactional' || _message?.messageType === 'transactional') {
+    async evaluate(message, ctx) {
+        // Human sends are explicit authorization and are independent of the AI
+        // delivery mode.
+        if (message?.senderRole === 'agent') {
+            return { allow: true, reason: 'HUMAN_AGENT_SEND' };
+        }
+
+        // Transactional/system notifications (order confirmations, etc.) are not
+        // AI-drafted replies and are independent of the AI delivery mode.
+        if (ctx.messageType === 'transactional' || message?.messageType === 'transactional') {
             return { allow: true, reason: 'TRANSACTIONAL_NOTIFICATION' };
         }
+
         // Absent settings mean "not configured yet" — hold the reply rather than
-        // auto-sending it. Fail-safe, matching DEFAULT_AI_SETTINGS.
-        const mode = ctx.settings?.automation_mode || 'DRAFT';
-        if (NON_DELIVERING_MODES.has(mode)) {
+        // auto-sending it. Fail-safe for automatic callers.
+        const mode = normalizeAiReplyMode(ctx.settings?.automation_mode || AI_REPLY_MODES.DRAFT);
+
+        if (isNonDeliveringMode(mode)) {
             return { allow: false, reason: 'DRAFT_MODE', augment: { automation_mode: mode } };
         }
-        return { allow: true, reason: 'AI_ACTIVE' };
+        return { allow: true, reason: AI_REPLY_MODES.AUTO };
     },
 };
-
-module.exports.NON_DELIVERING_MODES = NON_DELIVERING_MODES;

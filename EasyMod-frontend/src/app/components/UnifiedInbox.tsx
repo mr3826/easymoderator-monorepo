@@ -13,7 +13,14 @@ import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "@/api";
-import type { Conversation, Message, ResponseTemplate } from "@/api/types/conversation";
+import {
+  DEFAULT_AI_REPLY_MODE,
+  normalizeAiReplyMode,
+  type AiReplyMode,
+  type Conversation,
+  type Message,
+  type ResponseTemplate,
+} from "@/api/types/conversation";
 import { useSubscriptionFeatures } from "../lib/useSubscriptionFeatures";
 import { useInboxSSE } from "../lib/useInboxSSE";
 import { InboxThreadList } from "./inbox/InboxThreadList";
@@ -22,6 +29,46 @@ import { InboxThreadDetail } from "./inbox/InboxThreadDetail";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
+type AiReplyStatus = "processing" | "sent" | "failed";
+
+const AI_REPLY_MODE_LABEL_KEYS: Record<AiReplyMode, string> = {
+  AUTO: "inbox.mode.auto",
+  DRAFT: "inbox.mode.draft",
+  MANUAL: "inbox.mode.manual",
+};
+
+const getAiReplyStatus = (messages: Message[], mode: AiReplyMode): AiReplyStatus | null => {
+  if (mode !== "AUTO") return null;
+
+  const lastCustomerMessage = [...messages].reverse().find((message) => message.sender === "customer");
+  const lastAgentMessage = [...messages].reverse().find((message) => message.sender === "agent");
+  const lastAiMessage = [...messages].reverse().find((message) => message.sender === "ai");
+
+  if (!lastAiMessage) {
+    if (lastAgentMessage && lastCustomerMessage) {
+      const agentAfterCustomer =
+        new Date(lastAgentMessage.created_at) > new Date(lastCustomerMessage.created_at);
+      if (agentAfterCustomer) return null;
+    }
+    return "processing";
+  }
+
+  const customerAfterAi =
+    lastCustomerMessage &&
+    new Date(lastCustomerMessage.created_at) > new Date(lastAiMessage.created_at);
+  const agentAfterCustomer =
+    lastAgentMessage &&
+    lastCustomerMessage &&
+    new Date(lastAgentMessage.created_at) > new Date(lastCustomerMessage.created_at);
+
+  if (customerAfterAi) return agentAfterCustomer ? null : "processing";
+
+  const deliveryStatus = lastAiMessage.metadata?.delivery_status;
+  if (deliveryStatus === "pending") return "processing";
+  if (deliveryStatus === "failed") return "failed";
+  if (deliveryStatus === "sent" || lastAiMessage.metadata?.delivered === true) return "sent";
+  return null;
+};
 
 // Quick-reply fallback templates. Labels (`name`) are translatable; `content`
 // is intentionally informal Banglish reply text shown to the agent as-is.
@@ -66,6 +113,8 @@ export default function UnifiedInbox() {
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [resolveNote, setResolveNote] = useState("");
   const [sseConnected, setSseConnected] = useState(true);
+  const [aiReplyMode, setAiReplyMode] = useState<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
+  const [aiReplyStatuses, setAiReplyStatuses] = useState<Record<string, AiReplyStatus>>({});
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -82,6 +131,7 @@ export default function UnifiedInbox() {
       setLoadingConversations(true);
       setError(null);
       const result = await apiClient.getConversations({ limit: 50 });
+      setAiReplyMode(normalizeAiReplyMode(result.ai_reply_mode));
       setConversations(result.data);
       if (result.data.length > 0 && !selectedConversation) {
         setSelectedConversation(result.data[0]);
@@ -115,6 +165,13 @@ export default function UnifiedInbox() {
       const result = await apiClient.getMessages(conversationId, { page, limit: PAGE_SIZE });
       if (page === 1) {
         setMessages(result.messages);
+        const status = getAiReplyStatus(result.messages, aiReplyMode);
+        setAiReplyStatuses((prev) => {
+          const next = { ...prev };
+          if (status) next[conversationId] = status;
+          else delete next[conversationId];
+          return next;
+        });
       } else {
         setMessages((prev) => [...result.messages, ...prev]);
       }
@@ -177,6 +234,19 @@ export default function UnifiedInbox() {
         const alreadyExists = prev.some((m) => m.id === message.id);
         return alreadyExists ? prev : [...prev, message];
       });
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        if (message.sender === "customer" && aiReplyMode === "AUTO") {
+          next[conversation_id] = "processing";
+        } else if (message.sender === "agent") {
+          delete next[conversation_id];
+        } else if (message.sender === "ai") {
+          const status = getAiReplyStatus([message], aiReplyMode);
+          if (status) next[conversation_id] = status;
+          else delete next[conversation_id];
+        }
+        return next;
+      });
       setConversations((prev) => {
         const exists = prev.some((conv) => conv.id === conversation_id);
         if (!exists) {
@@ -198,7 +268,7 @@ export default function UnifiedInbox() {
             : conv
         );
       });
-    }, [selectedConversation?.id]),
+    }, [aiReplyMode, selectedConversation?.id]),
 
     onHitlChanged: useCallback(({ conversation_id, hitl }) => {
       setConversations((prev) =>
@@ -207,13 +277,20 @@ export default function UnifiedInbox() {
       setSelectedConversation((prev) =>
         prev?.id === conversation_id ? { ...prev, hitl } : prev
       );
-    }, []),
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        if (hitl || aiReplyMode !== "AUTO") delete next[conversation_id];
+        else next[conversation_id] = "processing";
+        return next;
+      });
+    }, [aiReplyMode]),
 
     onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata }: {
       conversation_id: string;
       message_id: string;
       metadata: Message["metadata"];
     }) => {
+      const currentMessage = messages.find((message) => message.id === message_id);
       setMessages((prev) => {
         if (selectedConversation?.id !== conversation_id) return prev;
         return prev.map((message) =>
@@ -222,11 +299,38 @@ export default function UnifiedInbox() {
             : message
         );
       });
-    }, [selectedConversation?.id]),
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        if (currentMessage?.sender === "agent") {
+          delete next[conversation_id];
+          return next;
+        }
+        if (currentMessage?.sender !== "ai" || aiReplyMode !== "AUTO") return next;
+        const status = getAiReplyStatus(
+          [{ ...currentMessage, metadata: { ...(currentMessage.metadata || {}), ...(metadata || {}) } }],
+          aiReplyMode
+        );
+        if (status) next[conversation_id] = status;
+        else delete next[conversation_id];
+        return next;
+      });
+    }, [aiReplyMode, messages, selectedConversation?.id]),
 
-    onDeliveryFailed: useCallback(({ reason }: { reason: string }) => {
+    onDeliveryFailed: useCallback(({ conversation_id, reason }: { conversation_id?: string; reason: string }) => {
+      const failedConversationId = conversation_id || selectedConversation?.id;
+      if (aiReplyMode === "AUTO") {
+        setAiReplyStatuses((prev) =>
+          failedConversationId ? { ...prev, [failedConversationId]: "failed" } : prev
+        );
+      }
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
-    }, []), // eslint-disable-line react-hooks/exhaustive-deps
+    }, [aiReplyMode, selectedConversation?.id]),
+
+    onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
+      setAiReplyMode(normalizeAiReplyMode(mode));
+      setAiReplyStatuses({});
+      setDismissedSuggestionId(null);
+    }, []),
 
     onChannelError: useCallback(({ display_name, message: errMsg }: { display_name: string; message: string }) => {
       toast.error(t("inbox.channelIssue", { name: display_name, message: errMsg }), { duration: 12000 });
@@ -252,6 +356,12 @@ export default function UnifiedInbox() {
       const updated = { ...selectedConversation, hitl: newHITL };
       setSelectedConversation(updated);
       setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        if (newHITL || aiReplyMode !== "AUTO") delete next[selectedConversation.id];
+        else next[selectedConversation.id] = "processing";
+        return next;
+      });
       apiClient.createAuditLog({
         action: newHITL ? "HUMAN_TAKEOVER" : "UPDATE",
         resource_type: "CONVERSATION",
@@ -260,7 +370,13 @@ export default function UnifiedInbox() {
         new_values: { hitl: newHITL },
         metadata: { channel: selectedConversation.channel },
       }).catch(() => {});
-      toast.success(newHITL ? t("inbox.aiPaused") : t("inbox.aiReEnabled"));
+      toast.success(
+        newHITL
+          ? t("inbox.aiPaused")
+          : aiReplyMode === "AUTO"
+          ? t("inbox.aiReEnabled")
+          : t("inbox.mode.manual")
+      );
     } catch {
       toast.error(t("inbox.errors.updateMode"));
     } finally {
@@ -299,6 +415,12 @@ export default function UnifiedInbox() {
 
   const handleMessageSent = (message: Message) => {
     setMessages((prev) => prev.some((m) => m.id === message.id) ? prev : [...prev, message]);
+    setAiReplyStatuses((prev) => {
+      const next = { ...prev };
+      const conversationId = message.conversation_id || selectedConversation?.id;
+      if (conversationId) delete next[conversationId];
+      return next;
+    });
     setConversations((prev) =>
       prev.map((conv) =>
         conv.id === selectedConversation?.id
@@ -306,6 +428,25 @@ export default function UnifiedInbox() {
           : conv
       )
     );
+  };
+
+  const handleMessageSendFailed = () => {
+    if (!selectedConversation) return;
+    setAiReplyStatuses((prev) => {
+      const next = { ...prev };
+      delete next[selectedConversation.id];
+      return next;
+    });
+  };
+
+  const handleDismissSuggestion = (messageId: string) => {
+    setDismissedSuggestionId(messageId);
+    if (!selectedConversation) return;
+    setAiReplyStatuses((prev) => {
+      const next = { ...prev };
+      delete next[selectedConversation.id];
+      return next;
+    });
   };
 
   // ─── Derived values ────────────────────────────────────────────────────────
@@ -345,6 +486,12 @@ export default function UnifiedInbox() {
         <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm whitespace-nowrap">
           {t("inbox.active", { count: conversations.filter((c) => c.status === "active").length })}
         </span>
+        <span
+          data-testid="inbox-ai-reply-mode"
+          className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm whitespace-nowrap"
+        >
+          {t("inbox.modeLabel")}: {t(AI_REPLY_MODE_LABEL_KEYS[aiReplyMode])}
+        </span>
         {error && (
           <span className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm font-bn">{error}</span>
         )}
@@ -361,6 +508,7 @@ export default function UnifiedInbox() {
       <div className="flex-1 flex overflow-hidden">
         <InboxThreadList
           conversations={conversations}
+          aiReplyMode={aiReplyMode}
           selectedConversationId={selectedConversation?.id ?? null}
           filteredConversations={filteredConversations}
           loading={loadingConversations}
@@ -380,6 +528,8 @@ export default function UnifiedInbox() {
         {selectedConversation ? (
           <InboxThreadDetail
             selectedConversation={selectedConversation}
+            aiReplyMode={aiReplyMode}
+            aiReplyStatus={aiReplyStatuses[selectedConversation.id] ?? null}
             messages={messages}
             loadingMessages={loadingMessages}
             hasMoreMessages={hasMoreMessages}
@@ -401,12 +551,13 @@ export default function UnifiedInbox() {
             onToggleHITL={handleToggleHITL}
             onResolve={handleResolveConversation}
             onLoadOlderMessages={loadOlderMessages}
-            onDismissSuggestion={setDismissedSuggestionId}
+            onDismissSuggestion={handleDismissSuggestion}
             onUseAiSuggestion={() => {}}
             onSetEditingMessage={() => {}}
             onSetShowResolveDialog={setShowResolveDialog}
             onSetResolveNote={setResolveNote}
             onMessageSent={handleMessageSent}
+            onSendFailed={handleMessageSendFailed}
             onTemplatesChanged={loadTemplates}
           />
         ) : (

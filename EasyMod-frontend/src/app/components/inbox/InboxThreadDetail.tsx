@@ -10,7 +10,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
-import type { Conversation, Message, MessageMetadata, ResponseTemplate } from "@/api/types/conversation";
+import type { AiReplyMode, Conversation, Message, MessageMetadata, ResponseTemplate } from "@/api/types/conversation";
 import { InboxComposer } from "./InboxComposer";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -158,6 +158,8 @@ const MessageItem = memo(function MessageItem({
 
 interface InboxThreadDetailProps {
   selectedConversation: Conversation;
+  aiReplyMode: AiReplyMode;
+  aiReplyStatus: "processing" | "sent" | "failed" | null;
   messages: Message[];
   loadingMessages: boolean;
   hasMoreMessages: boolean;
@@ -185,11 +187,14 @@ interface InboxThreadDetailProps {
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
   onMessageSent: (message: Message) => void;
+  onSendFailed: () => void;
   onTemplatesChanged: () => Promise<void>;
 }
 
 export function InboxThreadDetail({
   selectedConversation,
+  aiReplyMode,
+  aiReplyStatus,
   messages,
   loadingMessages,
   hasMoreMessages,
@@ -215,6 +220,7 @@ export function InboxThreadDetail({
   onSetShowResolveDialog,
   onSetResolveNote,
   onMessageSent,
+  onSendFailed,
   onTemplatesChanged,
 }: InboxThreadDetailProps) {
   const { t } = useTranslation();
@@ -245,7 +251,31 @@ export function InboxThreadDetail({
     !!aiSuggestion &&
     heldAiMsg?.id !== dismissedSuggestionId &&
     !!customerSentAfterAgent;
+  const hasUndeliveredHeldMessage =
+    !!heldAiMsg &&
+    heldAiMsg.id !== dismissedSuggestionId &&
+    !!customerSentAfterAgent;
   const isLowConfidence = hasAiSuggestion && heldMeta?.held_reason === "low_confidence";
+  const isAiActive =
+    aiReplyMode === "AUTO" &&
+    selectedConversation.hitl !== true &&
+    aiReplyStatus === "processing";
+  const modeLabelKey = {
+    AUTO: "inbox.mode.auto",
+    DRAFT: "inbox.mode.draft",
+    MANUAL: "inbox.mode.manual",
+  } satisfies Record<AiReplyMode, string>;
+  const modeLabel = t(modeLabelKey[aiReplyMode]);
+  const replyStatusLabel =
+    aiReplyMode === "DRAFT" && hasUndeliveredHeldMessage
+      ? t("inbox.status.draftReady")
+      : aiReplyMode === "AUTO" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
+      ? t("inbox.status.processing")
+      : aiReplyMode === "AUTO" && aiReplyStatus === "sent"
+      ? t("inbox.status.sent")
+      : aiReplyMode === "AUTO" && aiReplyStatus === "failed"
+      ? t("inbox.status.failed")
+      : null;
 
   // Traffic-light dot only — no English jargon for non-tech shop owners.
   const confidenceTier = (() => {
@@ -277,6 +307,7 @@ export function InboxThreadDetail({
         onMessageSent(message);
         toast.success(t("inbox.aiSuggestion"));
       } catch (err: unknown) {
+        onSendFailed();
         toast.error((err as { message?: string })?.message || "Failed to send AI suggestion");
       }
     }
@@ -297,6 +328,7 @@ export function InboxThreadDetail({
       onMessageSent(message);
       toast.success("Retry queued");
     } catch (err: unknown) {
+      onSendFailed();
       toast.error((err as { message?: string })?.message || "Retry failed");
     }
   };
@@ -347,7 +379,13 @@ export function InboxThreadDetail({
               <button
                 onClick={onToggleHITL}
                 disabled={togglingHITL}
-                title={selectedConversation.hitl ? t("inbox.humanTooltip") : t("inbox.aiTooltip")}
+                title={
+                  selectedConversation.hitl
+                    ? t("inbox.humanTooltip")
+                    : aiReplyMode === "AUTO"
+                    ? t("inbox.aiTooltip")
+                    : modeLabel
+                }
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   selectedConversation.hitl
                     ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
@@ -361,7 +399,11 @@ export function InboxThreadDetail({
                 ) : (
                   <Bot className="w-4 h-4" />
                 )}
-                {selectedConversation.hitl ? t("inbox.agentHandling") : t("inbox.aiActive")}
+                {selectedConversation.hitl
+                  ? t("inbox.agentHandling")
+                  : isAiActive
+                  ? t("inbox.aiActive")
+                  : modeLabel}
               </button>
             ) : (
               <a
@@ -376,6 +418,16 @@ export function InboxThreadDetail({
           </div>
         </div>
       </div>
+
+      {replyStatusLabel && (
+        <div
+          data-testid="inbox-reply-status"
+          aria-live="polite"
+          className="bg-slate-50 border-b border-gray-200 px-6 py-2 text-sm text-slate-700 font-bn"
+        >
+          {replyStatusLabel}
+        </div>
+      )}
 
       {/* Banners */}
       {selectedConversation.hitl && (
@@ -501,6 +553,7 @@ export function InboxThreadDetail({
         loadingTemplates={loadingTemplates}
         planFeaturesAdvancedAI={planFeaturesAdvancedAI}
         onMessageSent={onMessageSent}
+        onSendFailed={onSendFailed}
         onTemplatesChanged={onTemplatesChanged}
       />
 

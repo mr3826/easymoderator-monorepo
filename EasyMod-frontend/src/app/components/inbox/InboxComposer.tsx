@@ -25,6 +25,7 @@ interface InboxComposerProps {
   loadingTemplates: boolean;
   planFeaturesAdvancedAI: boolean;
   onMessageSent: (message: Message) => void;
+  onSendFailed?: () => void;
   onTemplatesChanged: () => Promise<void>;
 }
 
@@ -61,6 +62,7 @@ export function InboxComposer({
   quickReplyTemplates,
   loadingTemplates,
   onMessageSent,
+  onSendFailed,
   onTemplatesChanged,
 }: InboxComposerProps) {
   const { t, i18n } = useTranslation();
@@ -166,6 +168,7 @@ export function InboxComposer({
       setSendState("pulse");
       setTimeout(() => setSendState("idle"), 600);
     } catch (err: unknown) {
+      onSendFailed?.();
       const rawMsg = getErrorMessage(err, "");
       const friendly = getDenyMessage(rawMsg || "error", lang as "bn" | "en");
       setSendError(friendly);

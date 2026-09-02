@@ -10,6 +10,7 @@ const { Conversation: ConvModel, Customer: CustomerModel, Message: MessageModel 
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
+const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const { resolvePublicAssetOrigin } = require('../../config/origins');
 const config = require('../../config/config');
 
@@ -278,12 +279,14 @@ async function deliverViaMetaIfApplicable(conversationId, shopId, outboundMessag
             direction: 'outbound',
             senderRole,
         };
+        const automationMode = await getEffectiveAiReplyMode(shopId);
         const policyCtx = {
             shopId,
             channelId: metaChannel.id,
             recipientId,
             channel: metaChannel,
             customer: conversation.customer, // already loaded via include above
+            settings: { automation_mode: automationMode },
             platform,
         };
         const decision = await policyEngine.evaluateOutbound(normalizedMessage, policyCtx);

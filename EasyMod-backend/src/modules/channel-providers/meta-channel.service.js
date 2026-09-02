@@ -531,8 +531,6 @@ class MetaChannelService {
         const settings = await this.getSettings(channelId);
 
         const ALLOWED_KEYS = [
-            'ai_auto_reply',
-            'automation_mode',
             'confidence_threshold_send',
             'confidence_threshold_suggest',
             'business_hours',

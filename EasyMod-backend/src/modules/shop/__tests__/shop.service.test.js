@@ -56,10 +56,22 @@ jest.mock('../shop-settings.validator', () => ({
     mergeAndSanitizeSettings: jest.fn((current, patch) => (
         jest.requireActual('../shop-settings.validator').mergeAndSanitizeSettings(current, patch)
     )),
+    stripAutomationModeFromShopUpdate: jest.fn((updateData) => (
+        jest.requireActual('../shop-settings.validator').stripAutomationModeFromShopUpdate(updateData)
+    )),
+}));
+
+jest.mock('../../audit/audit.service', () => ({
+    logOperation: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../../../utils/sse-manager', () => ({
+    emit: jest.fn(),
 }));
 
 const { Shop, UserShop, Subscription } = require('../../entities');
 const shopService = require('src/modules/shop/shop.service');
+const auditService = require('../../audit/audit.service');
+const sseManager = require('../../../utils/sse-manager');
 
 // ── Test Data ─────────────────────────────────────────────────────────────────
 const mockUserShop = {
@@ -230,6 +242,85 @@ describe('Shop Service', () => {
         expect(shopInstance.update).toHaveBeenCalledWith(
             expect.not.objectContaining({ id: 'hacked-id' })
         );
+    });
+
+    it('updateShopById — strips the reply mode from the general settings update', async () => {
+        const shopWithSettings = {
+            ...mockShop,
+            settings: { ai: { automation_mode: 'DRAFT' } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        await shopService.updateShopById('shop-1', 'user-1', {
+            settings: { ai: { automation_mode: 'AUTO' } },
+        });
+
+        expect(shopWithSettings.update).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                ai: { automation_mode: 'DRAFT' },
+            }),
+        }));
+    });
+
+    it('getShopAiSettings — normalizes legacy aliases on read', async () => {
+        const shopWithSettings = {
+            ...mockShop,
+            settings: { ai: { automation_mode: 'AI_SUGGEST_ONLY' } },
+        };
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        await expect(shopService.getShopAiSettings('shop-1')).resolves.toEqual(expect.objectContaining({
+            automation_mode: 'DRAFT',
+        }));
+    });
+
+    it('updateShopAiSettings — persists canonical mode and emits audit plus SSE', async () => {
+        const shopWithSettings = {
+            ...mockShop,
+            settings: { ai: { automation_mode: 'DRAFT' } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        const result = await shopService.updateShopAiSettings('shop-1', 'user-1', {
+            automation_mode: 'AI_ACTIVE',
+        });
+
+        expect(result.automation_mode).toBe('AUTO');
+        expect(shopWithSettings.update).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                ai: expect.objectContaining({ automation_mode: 'AUTO', auto_reply_enabled: true }),
+            }),
+        }));
+        expect(auditService.logOperation).toHaveBeenCalledWith(expect.objectContaining({
+            action: 'AI_REPLY_MODE_CHANGED',
+            shopId: 'shop-1',
+            userId: 'user-1',
+            oldValues: { automation_mode: 'DRAFT' },
+            newValues: { automation_mode: 'AUTO' },
+            metadata: {
+                shop_id: 'shop-1',
+                old_mode: 'DRAFT',
+                new_mode: 'AUTO',
+                actor_id: 'user-1',
+            },
+        }));
+        expect(sseManager.emit).toHaveBeenCalledWith('shop-1', 'ai_reply_mode_changed', { mode: 'AUTO' });
+    });
+
+    it('updateShopAiSettings — does not emit for a normalized no-op', async () => {
+        const shopWithSettings = {
+            ...mockShop,
+            settings: { ai: { automation_mode: 'AI_ACTIVE' } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        await shopService.updateShopAiSettings('shop-1', 'user-1', { automation_mode: 'AUTO' });
+
+        expect(auditService.logOperation).not.toHaveBeenCalled();
+        expect(sseManager.emit).not.toHaveBeenCalled();
     });
 
     // ── deleteShopById ─────────────────────────────────────────────────────────

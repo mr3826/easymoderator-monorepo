@@ -1,8 +1,5 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-
 process.env.NODE_ENV = 'test';
 
 jest.mock('bullmq', () => ({
@@ -132,24 +129,26 @@ describe('message-worker AI disclosure greeting gate', () => {
         jest.clearAllMocks();
     });
 
-    it('applies only for AI_ACTIVE first customer turns with no prior visible disclosure', async () => {
+    it('applies only for AUTO first customer turns with no prior visible disclosure', async () => {
         Message.count.mockResolvedValueOnce(0);
         Message.findAll.mockResolvedValueOnce([]);
 
         await expect(_private.shouldApplyAiDisclosureGreeting({
             conversationId: 'conv-1',
             currentTurnMessageIds: ['msg-1'],
-            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+            aiSettings: { automation_mode: 'AUTO' },
+            channel: { status: 'CONNECTED' },
         })).resolves.toBe(true);
     });
 
-    it.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL'])(
+    it.each(['DRAFT', 'AI_SUGGEST_ONLY', 'MANUAL', 'HUMAN_ACTIVE'])(
         'does not apply in %s mode because it is not customer-visible auto-send',
         async (automationMode) => {
             await expect(_private.shouldApplyAiDisclosureGreeting({
                 conversationId: 'conv-1',
                 currentTurnMessageIds: ['msg-1'],
-                aiSettings: { automation_mode: automationMode, ai_auto_reply: true },
+                aiSettings: { automation_mode: automationMode },
+                channel: { status: 'CONNECTED' },
             })).resolves.toBe(false);
 
             expect(Message.count).not.toHaveBeenCalled();
@@ -157,11 +156,12 @@ describe('message-worker AI disclosure greeting gate', () => {
         }
     );
 
-    it('does not apply when per-channel auto reply is disabled', async () => {
+    it('does not apply when the channel is disconnected', async () => {
         await expect(_private.shouldApplyAiDisclosureGreeting({
             conversationId: 'conv-1',
             currentTurnMessageIds: ['msg-1'],
-            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: false },
+            aiSettings: { automation_mode: 'AUTO' },
+            channel: { status: 'DISCONNECTED' },
         })).resolves.toBe(false);
 
         expect(Message.count).not.toHaveBeenCalled();
@@ -174,7 +174,8 @@ describe('message-worker AI disclosure greeting gate', () => {
         await expect(_private.shouldApplyAiDisclosureGreeting({
             conversationId: 'conv-1',
             currentTurnMessageIds: ['msg-2'],
-            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+            aiSettings: { automation_mode: 'AUTO' },
+            channel: { status: 'CONNECTED' },
         })).resolves.toBe(false);
 
         expect(Message.findAll).not.toHaveBeenCalled();
@@ -189,82 +190,9 @@ describe('message-worker AI disclosure greeting gate', () => {
         await expect(_private.shouldApplyAiDisclosureGreeting({
             conversationId: 'conv-1',
             currentTurnMessageIds: ['msg-1'],
-            aiSettings: { automation_mode: 'AI_ACTIVE', ai_auto_reply: true },
+            aiSettings: { automation_mode: 'AUTO' },
+            channel: { status: 'CONNECTED' },
         })).resolves.toBe(false);
-    });
-});
-
-describe('message-worker channel auto-reply final-send guard', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, '../message-worker.js'), 'utf8');
-
-    it('keeps the early channel opt-out decision', () => {
-        expect(source).toContain('isChannelAutoReplyDisabled(channelAISettings)');
-        expect(source).toContain("return { skipped: true, reason: 'channel_ai_disabled' }");
-    });
-
-    it('rechecks reloaded settings before the final provider send', () => {
-        const reloadIndex = source.indexOf('latestChannelAISettings = { ...channelAISettings');
-        const guardIndex = source.indexOf('isChannelAutoReplyDisabled(latestChannelAISettings)');
-        const sendIndex = source.indexOf('provider.sendMessage({', guardIndex);
-
-        expect(reloadIndex).toBeGreaterThan(-1);
-        expect(guardIndex).toBeGreaterThan(reloadIndex);
-        expect(sendIndex).toBeGreaterThan(guardIndex);
-        expect(source.slice(guardIndex, sendIndex)).toContain("heldReason: 'channel_ai_disabled'");
-        expect(source.slice(guardIndex, sendIndex)).toContain('delivered: false');
-    });
-});
-
-describe('message-worker automation mode helpers', () => {
-    it('normalizes legacy AUTO mode to AI_ACTIVE', () => {
-        expect(_private.normalizeAutomationMode('AUTO')).toBe('AI_ACTIVE');
-        expect(_private.normalizeAutomationMode('AI_ACTIVE')).toBe('AI_ACTIVE');
-    });
-
-    it('treats shop MANUAL as a hard kill switch', () => {
-        expect(_private.isShopManualKillSwitch({ automation_mode: 'MANUAL' })).toBe(true);
-        expect(_private.isShopManualKillSwitch({ automation_mode: 'AI_ACTIVE' })).toBe(false);
-        expect(_private.isShopManualKillSwitch({ automation_mode: 'AUTO' })).toBe(false);
-    });
-
-    it('keeps business DRAFT authoritative when the page is AI_ACTIVE', () => {
-        const effective = _private.resolveEffectiveAiSettings(
-            { automation_mode: 'DRAFT', confidence_threshold: 75 },
-            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true, confidence_threshold_send: 90 }
-        );
-
-        expect(effective).toEqual(expect.objectContaining({
-            automation_mode: 'DRAFT',
-            ai_auto_reply: true,
-            confidence_threshold_send: 90,
-        }));
-    });
-
-    it('keeps business MANUAL authoritative when the page is AI_ACTIVE', () => {
-        const effective = _private.resolveEffectiveAiSettings(
-            { automation_mode: 'MANUAL' },
-            { automation_mode: 'AI_ACTIVE', ai_auto_reply: true }
-        );
-
-        expect(effective.automation_mode).toBe('MANUAL');
-    });
-
-    it('uses the page automation mode only when business mode is missing', () => {
-        const effective = _private.resolveEffectiveAiSettings(
-            { confidence_threshold: 70 },
-            { automation_mode: 'DRAFT', ai_auto_reply: true }
-        );
-
-        expect(effective.automation_mode).toBe('DRAFT');
-    });
-
-    it('normalizes legacy business AUTO before applying channel settings', () => {
-        const effective = _private.resolveEffectiveAiSettings(
-            { automation_mode: 'AUTO' },
-            { automation_mode: 'DRAFT', ai_auto_reply: true }
-        );
-
-        expect(effective.automation_mode).toBe('AI_ACTIVE');
     });
 });
 

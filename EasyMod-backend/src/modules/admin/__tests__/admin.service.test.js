@@ -111,17 +111,23 @@ describe('admin.service mutations', () => {
     expect(res).toEqual({ before: { status: 'CONNECTED' }, after: { status: 'TOKEN_EXPIRED' } });
   });
 
-  it('emergencyDisableAi sets MANUAL on every channel + shop level', async () => {
+  it('emergencyDisableAi sets MANUAL through the business setting only', async () => {
     jest.spyOn(metaChannelService, 'listByShop').mockResolvedValue([{ id: 'ch-1' }, { id: 'ch-2' }]);
     jest.spyOn(metaChannelService, 'getSettings').mockResolvedValue({ automation_mode: 'AI_ACTIVE' });
     jest.spyOn(metaChannelService, 'updateSettings').mockResolvedValue({});
+    jest.spyOn(shopService, 'getShopAiSettings').mockResolvedValue({ automation_mode: 'AUTO' });
     jest.spyOn(shopService, 'updateShopAiSettings').mockResolvedValue({});
 
     const res = await adminService.emergencyDisableAi('shop-1', 'admin-1');
 
-    expect(metaChannelService.updateSettings).toHaveBeenCalledWith('ch-1', { automation_mode: 'MANUAL' });
-    expect(metaChannelService.updateSettings).toHaveBeenCalledWith('ch-2', { automation_mode: 'MANUAL' });
+    expect(metaChannelService.listByShop).not.toHaveBeenCalled();
+    expect(metaChannelService.getSettings).not.toHaveBeenCalled();
+    expect(metaChannelService.updateSettings).not.toHaveBeenCalled();
+    expect(shopService.getShopAiSettings).toHaveBeenCalledWith('shop-1');
     expect(shopService.updateShopAiSettings).toHaveBeenCalledWith('shop-1', 'admin-1', { automation_mode: 'MANUAL' });
-    expect(res.after).toEqual({ automation_mode: 'MANUAL', channelsAffected: 2 });
+    expect(res).toEqual({
+      before: { automation_mode: 'AUTO' },
+      after: { automation_mode: 'MANUAL' },
+    });
   });
 });

@@ -5,6 +5,25 @@
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type MessageType = 'text' | 'image' | 'file' | 'location';
 
+export const AI_REPLY_MODES = ['AUTO', 'DRAFT', 'MANUAL'] as const;
+export type AiReplyMode = (typeof AI_REPLY_MODES)[number];
+export const DEFAULT_AI_REPLY_MODE: AiReplyMode = 'MANUAL';
+
+const AI_REPLY_MODE_ALIASES: Record<string, AiReplyMode> = {
+  AUTO: 'AUTO',
+  AI_ACTIVE: 'AUTO',
+  DRAFT: 'DRAFT',
+  AI_SUGGEST_ONLY: 'DRAFT',
+  MANUAL: 'MANUAL',
+  HUMAN_ACTIVE: 'MANUAL',
+};
+
+/** Normalize current and legacy API values, failing closed to MANUAL. */
+export function normalizeAiReplyMode(value: unknown): AiReplyMode {
+  if (typeof value !== 'string') return DEFAULT_AI_REPLY_MODE;
+  return AI_REPLY_MODE_ALIASES[value.trim()] ?? DEFAULT_AI_REPLY_MODE;
+}
+
 export type MessageSourceKind = 'rag' | 'faq' | 'product';
 
 export interface MessageSourceReference {
@@ -19,8 +38,15 @@ export interface MessageSourceReference {
  *  - 'low_confidence': auto-mode reply below the shop's confidence threshold;
  *    the conversation was handed off to a human.
  *  - 'draft_mode': suggest-only / DRAFT / policy-withheld reply.
+ *  - 'executed_mutation_without_outbound_send': an order mutation completed
+ *    but the safety gate withheld the customer-facing response.
  */
-export type HeldReason = 'low_confidence' | 'draft_mode';
+export type HeldReason =
+  | 'low_confidence'
+  | 'draft_mode'
+  | 'mode_changed'
+  | 'channel_disconnected'
+  | 'executed_mutation_without_outbound_send';
 
 export interface MessageMetadata {
   message_type?: MessageType;

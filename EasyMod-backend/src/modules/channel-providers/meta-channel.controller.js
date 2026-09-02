@@ -180,19 +180,36 @@ exports.consentSummary = async (req, res, next) => {
 };
 
 const SETTINGS_WHITELIST = [
-    'ai_auto_reply', 'automation_mode',
     'confidence_threshold_send', 'confidence_threshold_suggest',
+    'business_hours',
     'allow_order_creation',
     'purpose_label',
 ];
 
+const UNSUPPORTED_PAGE_SETTINGS = new Set([
+    'aiAutoReply',
+    'automationMode',
+    'ai_auto_reply',
+    'automation_mode',
+]);
+
+function assertNoUnsupportedPageSettings(body) {
+    const unsupportedKey = Object.keys(body || {}).find((key) => UNSUPPORTED_PAGE_SETTINGS.has(key));
+    if (unsupportedKey) {
+        throw new AppError(
+            `${unsupportedKey} is not supported for Page settings; configure the business AI reply mode instead`,
+            400,
+            'VALIDATION_ERROR'
+        );
+    }
+}
+
 function serializeSettings(s) {
     if (!s) return null;
     return {
-        aiAutoReply:                s.ai_auto_reply,
-        automationMode:             s.automation_mode,
         confidenceThresholdSend:    parseFloat(s.confidence_threshold_send),
         confidenceThresholdSuggest: parseFloat(s.confidence_threshold_suggest),
+        businessHours:              s.business_hours ?? null,
         allowOrderCreation:         s.allow_order_creation,
         purposeLabel:               s.purpose_label ?? null,
     };
@@ -222,12 +239,12 @@ exports.updateChannelSettings = async (req, res, next) => {
         const { channelId } = req.params;
         const { shopId } = req.user;
         await assertChannelBelongsToShop(channelId, shopId);
+        assertNoUnsupportedPageSettings(req.body);
 
         const camelToSnake = {
-            aiAutoReply: 'ai_auto_reply',
-            automationMode: 'automation_mode',
             confidenceThresholdSend: 'confidence_threshold_send',
             confidenceThresholdSuggest: 'confidence_threshold_suggest',
+            businessHours: 'business_hours',
             allowOrderCreation: 'allow_order_creation',
             purposeLabel: 'purpose_label',
         };

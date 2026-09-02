@@ -69,6 +69,7 @@ describe('Shop Domain API', () => {
   describe('getShopAISettings', () => {
     it('should return AI settings', async () => {
       const mockSettings = {
+        automation_mode: 'AI_ACTIVE',
         ai_enabled: true,
         response_language: 'bn',
         confidence_threshold: 0.7,
@@ -79,8 +80,19 @@ describe('Shop Domain API', () => {
       const result = await shop.getShopAISettings();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/shop/ai-settings');
+      expect(result.automation_mode).toBe('AUTO');
       expect(result.ai_enabled).toBe(true);
       expect(result.response_language).toBe('bn');
+    });
+
+    it('fails closed when the response contains an unknown mode', async () => {
+      (httpClient.get as any).mockResolvedValue({
+        data: { data: { automation_mode: 'GARBAGE' } },
+      });
+
+      const result = await shop.getShopAISettings();
+
+      expect(result.automation_mode).toBe('MANUAL');
     });
   });
 

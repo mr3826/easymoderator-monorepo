@@ -56,6 +56,12 @@ jest.mock('../../entities', () => ({
     DeliveryIntegration: {
         findAll: jest.fn(),
     },
+    MetaChannel: {
+        findAll: jest.fn(),
+    },
+    PolicyDecision: {
+        findAll: jest.fn(),
+    },
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
 }));
@@ -102,6 +108,9 @@ jest.mock('../shop-settings.validator', () => ({
     sanitizeSettings: jest.fn((s) => s),
     mergeAndSanitizeSettings: jest.fn((current, patch) => (
         jest.requireActual('../shop-settings.validator').mergeAndSanitizeSettings(current, patch)
+    )),
+    stripAutomationModeFromShopUpdate: jest.fn((updateData) => (
+        jest.requireActual('../shop-settings.validator').stripAutomationModeFromShopUpdate(updateData)
     )),
 }));
 
@@ -153,6 +162,9 @@ beforeEach(() => {
     UserShop.create.mockResolvedValue({ id: 'us-1' });
     const { DeliveryIntegration } = require('../../entities');
     DeliveryIntegration.findAll.mockResolvedValue([]);
+    const { MetaChannel, PolicyDecision } = require('../../entities');
+    MetaChannel.findAll.mockResolvedValue([]);
+    PolicyDecision.findAll.mockResolvedValue([]);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -276,6 +288,31 @@ describe('POST /shop/update', () => {
 
         expect(res.status).toBe(401);
     });
+
+    it('strips settings.ai.automation_mode so the general update cannot change reply mode', async () => {
+        const shopWithSettings = {
+            ...mockShopInstance,
+            settings: { ai: { automation_mode: 'DRAFT' } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        const { Shop } = require('../../entities');
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        const res = await request(app)
+            .post('/shop/update')
+            .set('Authorization', authHeader)
+            .send({
+                shopId: 'dddddddd-4444-4444-8444-dddddddddddd',
+                settings: { ai: { automation_mode: 'AUTO' } },
+            });
+
+        expect(res.status).toBe(200);
+        expect(shopWithSettings.update).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                ai: { automation_mode: 'DRAFT' },
+            }),
+        }));
+    });
 });
 
 describe('POST /shop/delete', () => {
@@ -378,6 +415,42 @@ describe('PUT /shop/platform-priority', () => {
         expect(res.status).toBe(200);
         expect(res.body.data).toEqual({ payment: ['unregistered-payment'], delivery: [] });
         expect(DeliveryIntegration.findAll).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /shop/ai-diagnostics', () => {
+    it('returns channel health without exposing deprecated Page AI fields', async () => {
+        const { MetaChannel, PolicyDecision } = require('../../entities');
+        const channel = {
+            id: 'channel-1',
+            display_name: 'Sales Page',
+            platform: 'facebook',
+            meta_asset_id: 'page-1',
+            status: 'CONNECTED',
+            webhook_subscribed_fields: ['messages'],
+            webhook_last_verified_at: '2026-09-02T00:00:00.000Z',
+            getDataValue: jest.fn().mockReturnValue('encrypted-page-token'),
+        };
+        MetaChannel.findAll.mockResolvedValueOnce([channel]);
+        PolicyDecision.findAll.mockResolvedValueOnce([]);
+
+        const res = await request(app)
+            .get('/shop/ai-diagnostics')
+            .set('Authorization', authHeader);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.channels).toEqual([{
+            channel_id: 'channel-1',
+            display_name: 'Sales Page',
+            platform: 'facebook',
+            meta_asset_id: 'page-1',
+            status: 'CONNECTED',
+            token_present: true,
+            webhook_subscribed_fields: ['messages'],
+            webhook_last_verified_at: '2026-09-02T00:00:00.000Z',
+        }]);
+        expect(res.body.data.channels[0]).not.toHaveProperty('automation_mode');
+        expect(res.body.data.channels[0]).not.toHaveProperty('ai_auto_reply');
     });
 });
 

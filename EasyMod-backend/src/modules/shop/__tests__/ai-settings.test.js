@@ -79,6 +79,8 @@ jest.mock('src/modules/analytics/knowledge-gap.entity', () => ({
 }));
 jest.mock('src/modules/rag/rag.service',  () => ({ ingestData: jest.fn(() => Promise.resolve()) }));
 jest.mock('src/utils/cache.service',      () => ({ getForShop: jest.fn(() => Promise.resolve(null)), setForShop: jest.fn(), deleteForShop: jest.fn() }));
+jest.mock('src/modules/audit/audit.service', () => ({ logOperation: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('src/utils/sse-manager', () => ({ emit: jest.fn() }));
 jest.mock('src/middleware/session.middleware', () => () => (req, res, next) => next());
 jest.mock('src/utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn(), logUsage: jest.fn() })),
@@ -91,6 +93,8 @@ jest.mock('src/middleware/auth.middleware', () => ({
 }));
 
 const { Shop, UserShop, Subscription } = require('src/modules/entities');
+const auditService = require('src/modules/audit/audit.service');
+const sseManager = require('src/utils/sse-manager');
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
@@ -130,7 +134,7 @@ describe('Shop AI Settings API', () => {
 
             expect(res.status).toBe(200);
             const data = res.body.data;
-            expect(data.automation_mode).toBe('DRAFT');
+            expect(data.automation_mode).toBe('MANUAL');
             expect(data.auto_reply_enabled).toBe(false);
             expect(data.confidence_threshold).toBe(75);
             expect(data.required_fields).toHaveProperty('customer_name');
@@ -142,21 +146,68 @@ describe('Shop AI Settings API', () => {
 
             const res = await request(app).get('/api/shop/ai-settings');
 
-            expect(res.body.data.automation_mode).toBe('AI_ACTIVE');
+            expect(res.body.data.automation_mode).toBe('AUTO');
             expect(res.body.data.confidence_threshold).toBe(85);
+            expect(res.body.plan_capabilities.allowed_automation_modes).toEqual(['AUTO', 'DRAFT', 'MANUAL']);
         });
     });
 
     // ── PUT /shop/ai-settings ─────────────────────────────────────────────
 
     describe('PUT /shop/ai-settings', () => {
-        it('accepts valid automation_mode', async () => {
-            for (const mode of ['DRAFT', 'AUTO', 'MANUAL']) {
+        it('accepts canonical modes and normalizes legacy aliases', async () => {
+            for (const mode of ['DRAFT', 'AUTO', 'MANUAL', 'AI_SUGGEST_ONLY', 'AI_ACTIVE', 'HUMAN_ACTIVE']) {
                 const res = await request(app)
                     .put('/api/shop/ai-settings')
                     .send({ automation_mode: mode });
                 expect(res.status).toBe(200);
+                expect(['AUTO', 'DRAFT', 'MANUAL']).toContain(res.body.data.automation_mode);
             }
+        });
+
+        it('records and broadcasts a normalized mode change', async () => {
+            mockShop.settings = { ai: { automation_mode: 'DRAFT' } };
+            Shop.findByPk.mockResolvedValue(mockShop);
+
+            const res = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({ automation_mode: 'AI_ACTIVE' });
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.automation_mode).toBe('AUTO');
+            expect(mockShop.settings.ai.automation_mode).toBe('AUTO');
+            expect(auditService.logOperation).toHaveBeenCalledWith(expect.objectContaining({
+                userId: 'user-1',
+                shopId: 'shop-1',
+                action: 'AI_REPLY_MODE_CHANGED',
+                oldValues: { automation_mode: 'DRAFT' },
+                newValues: { automation_mode: 'AUTO' },
+                metadata: {
+                    shop_id: 'shop-1',
+                    old_mode: 'DRAFT',
+                    new_mode: 'AUTO',
+                    actor_id: 'user-1',
+                },
+            }));
+            expect(sseManager.emit).toHaveBeenCalledWith(
+                'shop-1',
+                'ai_reply_mode_changed',
+                { mode: 'AUTO' },
+            );
+        });
+
+        it('does not emit a mode-change event for a normalized no-op', async () => {
+            mockShop.settings = { ai: { automation_mode: 'AI_ACTIVE' } };
+            Shop.findByPk.mockResolvedValue(mockShop);
+
+            const res = await request(app)
+                .put('/api/shop/ai-settings')
+                .send({ automation_mode: 'AUTO' });
+
+            expect(res.status).toBe(200);
+            expect(res.body.data.automation_mode).toBe('AUTO');
+            expect(auditService.logOperation).not.toHaveBeenCalled();
+            expect(sseManager.emit).not.toHaveBeenCalled();
         });
 
         it('rejects invalid automation_mode', async () => {
@@ -262,7 +313,7 @@ describe('Shop AI Settings API', () => {
             const reload = await request(app).get('/api/shop/ai-settings');
             expect(reload.status).toBe(200);
             expect(reload.body.data).toEqual(expect.objectContaining({
-                automation_mode: 'AI_ACTIVE',
+                automation_mode: 'AUTO',
                 confidence_threshold: 85,
                 primary_language: 'en',
                 auto_reply_enabled: true,
