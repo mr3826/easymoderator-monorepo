@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { v5: uuidv5 } = require('uuid');
 const { Op } = require('sequelize');
+const { joinOrigin, resolvePublicAssetOrigin } = require('../config/origins');
 const {
     PlanCode,
     PRICING_TIERS,
@@ -224,6 +225,14 @@ const assertProductionDatabase = async (sequelize, env) => {
     }
 };
 
+const getPublicAssetOrigin = (env) => {
+    const origin = resolvePublicAssetOrigin(null, env);
+    if (env.NODE_ENV === 'production' && !origin.startsWith('https://')) {
+        throw new Error('Production seed requires an HTTPS public asset origin');
+    }
+    return origin;
+};
+
 const lockSeedTransaction = async (sequelize, transaction) => {
     if (typeof sequelize.getDialect !== 'function' || sequelize.getDialect() !== 'postgres') return;
     await sequelize.query(
@@ -253,7 +262,11 @@ const ensureUser = async ({ User, sequelize, transaction, password, hashPassword
     const email = typeof sequelize.getDialect === 'function' && sequelize.getDialect() === 'postgres'
         ? { [Op.iLike]: EMAIL }
         : EMAIL;
-    const existing = await User.findOne({ where: { email }, transaction });
+    const existingUsers = typeof User.findAll === 'function'
+        ? await User.findAll({ where: { email }, transaction })
+        : [await User.findOne({ where: { email }, transaction })].filter(Boolean);
+    if (existingUsers.length > 1) throw conflict('multiple users match the review email');
+    const existing = existingUsers[0] || null;
     if (existing) {
         if (existing.platform_role !== null && existing.platform_role !== undefined
             && String(existing.platform_role).trim() !== '') {
@@ -275,6 +288,7 @@ const ensureUser = async ({ User, sequelize, transaction, password, hashPassword
             updates.refresh_token = null;
             updates.token_version = Math.max(1, Number(existing.token_version) || 1) + 1;
         }
+        if (existing.email !== EMAIL) updates.email = EMAIL;
         if (existing.full_name !== MERCHANT_NAME) updates.full_name = MERCHANT_NAME;
         if (existing.is_verified !== true) updates.is_verified = true;
         if (existing.is_active !== true) updates.is_active = true;
@@ -438,7 +452,7 @@ const planSubscriptionValues = (subscription, { initializeUsage, periodStart, pe
     return values;
 };
 
-const ensureSubscription = async ({ Subscription, shop, transaction }) => {
+const ensureSubscription = async ({ Subscription, Invoice, shop, transaction }) => {
     const periodStart = new Date('2026-09-01T00:00:00.000Z');
     const periodEnd = new Date('2026-11-01T00:00:00.000Z');
     let subscription = await Subscription.findOne({ where: { shop_id: shop.id }, transaction });
@@ -447,6 +461,15 @@ const ensureSubscription = async ({ Subscription, shop, transaction }) => {
         if (String(subscription.plan_code || '').toUpperCase() === PlanCode.PARTNER
             || subscription.billing_model === 'per_order') {
             throw conflict('the review shop already has a Partner/per-order subscription');
+        }
+        const invoices = await Invoice.findAll({ where: { subscription_id: subscription.id }, transaction });
+        const billingStateConflict = invoices.filter((invoice) => (
+            ['paid', 'pending', 'overdue'].includes(invoice.status)
+            && (!invoiceIsSeedOwned(invoice)
+                || invoice.transaction_id || invoice.payment_id || invoice.bkash_url)
+        ));
+        if (billingStateConflict.length > 0) {
+            throw conflict('existing subscription billing state is not owned by this seed');
         }
         await subscription.update(
             planSubscriptionValues(subscription, { initializeUsage: false, periodStart, periodEnd }),
@@ -604,6 +627,10 @@ const ensureProducts = async ({ Product, shop, transaction }) => {
         && !expectedSkus.has(product.sku)
     ));
     if (unexpected.length > 0) throw conflict('the review shop contains an unexpected META-* product');
+    for (const sku of expectedSkus) {
+        const matches = allProducts.filter((product) => product.sku === sku);
+        if (matches.length > 1) throw conflict(`duplicate SKU ${sku} exists in the review shop`);
+    }
 
     const products = [];
     for (const fixture of PRODUCTS) {
@@ -642,7 +669,21 @@ const ensureProducts = async ({ Product, shop, transaction }) => {
     return products;
 };
 
-const defaultImageExists = async ({ product, shopId, getProductMediaPaths, uploadRoot }) => {
+const defaultImageExists = async ({ product, shopId, getProductMediaPaths, uploadRoot, publicAssetOrigin }) => {
+    const values = [
+        ...(Array.isArray(product.images) ? product.images : []),
+        product.image_url,
+    ];
+    const hasOwnedOrigin = values.some((value) => {
+        if (typeof value !== 'string') return false;
+        if (value.startsWith('/uploads/')) return true;
+        try {
+            return new URL(value).origin === new URL(publicAssetOrigin).origin;
+        } catch (_) {
+            return false;
+        }
+    });
+    if (!hasOwnedOrigin) return false;
     const paths = getProductMediaPaths(product.images, product.image_url, shopId);
     if (paths.length !== 1) return false;
     const relative = paths[0].slice('/uploads/'.length);
@@ -665,6 +706,7 @@ const persistProductImage = async ({ product, fixture, shopId, deps }) => {
             shopId,
             getProductMediaPaths: deps.getProductMediaPaths,
             uploadRoot: deps.uploadRoot,
+            publicAssetOrigin: deps.publicAssetOrigin,
         });
     if (attributes.source_image_url === fixture.imageUrl && localImageExists) {
         if (product.image_url && (!Array.isArray(product.images)
@@ -698,17 +740,18 @@ const persistProductImage = async ({ product, fixture, shopId, deps }) => {
     if (!stored || typeof stored.publicPath !== 'string' || !stored.publicPath.startsWith('/uploads/')) {
         throw new Error(`Image storage returned no application-owned path for ${fixture.sku}`);
     }
+    const publicImageUrl = joinOrigin(deps.publicAssetOrigin, stored.publicPath);
 
     try {
         await product.update({
-            image_url: stored.publicPath,
-            images: [stored.publicPath],
+            image_url: publicImageUrl,
+            images: [publicImageUrl],
             ai_attributes: attributes,
         });
     } catch (error) {
         await deps.removeUnreferencedProductMedia({
             shopId,
-            images: [stored.publicPath],
+            images: [publicImageUrl],
             excludeProductId: product.id,
         }).catch(() => {});
         throw error;
@@ -814,6 +857,7 @@ const runMetaReviewMerchantSeed = async ({
         }
         const { subscription, created: subscriptionCreated } = await ensureSubscription({
             Subscription,
+            Invoice,
             shop,
             transaction,
         });
@@ -850,6 +894,7 @@ const runMetaReviewMerchantSeed = async ({
         uploadRoot,
         env,
         imageExists,
+        publicAssetOrigin: getPublicAssetOrigin(env),
     };
     for (const fixture of PRODUCTS) {
         const product = result.products.find((item) => item.sku === fixture.sku);
@@ -950,6 +995,7 @@ module.exports = {
     EMAIL,
     GROUNDING_QUERIES,
     INVOICE_TYPE,
+    MERCHANT_NAME,
     MEDIA_HOSTS,
     PAYMENT_METHOD,
     PERIODS,

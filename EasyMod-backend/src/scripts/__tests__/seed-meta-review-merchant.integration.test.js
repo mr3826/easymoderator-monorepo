@@ -51,7 +51,7 @@ const makeSeedDependencies = () => ({
     uploadRoot: require('../../utils/image-upload.service').UPLOAD_ROOT,
     embedProduct: async () => true,
     searchForOrder,
-    env: { NODE_ENV: 'test' },
+    env: { NODE_ENV: 'test', PUBLIC_ASSET_URL: 'https://assets.test.invalid' },
     now: new Date('2026-09-02T09:00:00.000Z'),
     imageExists: async ({ product }) => Boolean(product.image_url),
 });

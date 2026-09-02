@@ -4,6 +4,7 @@ const {
     BUSINESS_NAME,
     EMAIL,
     INVOICE_TYPE,
+    MERCHANT_NAME,
     PAYMENT_METHOD,
     PRODUCTS,
     SEED_CONFIRMATION,
@@ -77,7 +78,10 @@ const makeHarness = ({ users = [], shops = [], tenants = [], memberships = [], s
     const getProductMediaPaths = jest.fn((images, imageUrl, shopId) => [...new Set([
         ...(Array.isArray(images) ? images : []),
         imageUrl,
-    ].filter((value) => typeof value === 'string'
+    ].map((value) => {
+        if (typeof value !== 'string') return null;
+        try { return new URL(value).pathname; } catch (_) { return value; }
+    }).filter((value) => typeof value === 'string'
         && value.startsWith(`/uploads/product-images/${shopId}/`)))]);
     const embedProduct = jest.fn(async () => true);
     const searchForOrder = jest.fn(async ({ query }) => {
@@ -105,7 +109,7 @@ const makeHarness = ({ users = [], shops = [], tenants = [], memberships = [], s
         embedProduct,
         searchForOrder,
         password: 'test-only-secret',
-        env: { NODE_ENV: 'test' },
+        env: { NODE_ENV: 'test', PUBLIC_ASSET_URL: 'https://assets.test.invalid' },
         now: new Date('2026-09-02T09:00:00.000Z'),
         imageExists: jest.fn(async ({ product }) => Boolean(product.image_url)),
     };
@@ -193,6 +197,7 @@ describe('seed-meta-review-merchant', () => {
             }),
         });
         expect(result.imageCount).toBe(5);
+        expect(result.products?.[0]?.image_url).toMatch(/^https:\/\//);
         expect(new Set(harness.entities.Product.rows.map((product) => product.image_url)).size).toBe(5);
     });
 
@@ -261,6 +266,53 @@ describe('seed-meta-review-merchant', () => {
         expect(harness.entities.Tenant.rows).toHaveLength(0);
         expect(harness.entities.Shop.rows).toHaveLength(0);
         expect(harness.entities.Product.rows).toHaveLength(0);
+    });
+
+    it('normalizes an existing case-variant email before authentication', async () => {
+        const harness = makeHarness({
+            users: [{
+                id: 'existing-user',
+                email: 'Merchant@EasyMod.Tech',
+                password: 'bcrypt-test:16',
+                platform_role: null,
+                settings: {},
+                full_name: MERCHANT_NAME,
+                is_active: true,
+                is_verified: true,
+            }],
+        });
+        harness.sequelize.getDialect.mockReturnValue('postgres');
+
+        await runHarness(harness);
+
+        expect(harness.entities.User.rows).toHaveLength(1);
+        expect(harness.entities.User.rows[0].email).toBe(EMAIL);
+    });
+
+    it('fails closed when a real paid invoice already exists for the subscription', async () => {
+        const harness = makeHarness();
+        const first = await runHarness(harness);
+        harness.entities.Invoice.rows.push({
+            subscription_id: first.subscription.id,
+            invoice_type: INVOICE_TYPE,
+            billing_period: '2026-11',
+            status: 'paid',
+            metadata: { reference: 'real-renewal' },
+        });
+
+        await expect(runHarness(harness)).rejects.toThrow('billing state is not owned by this seed');
+    });
+
+    it('fails closed instead of selecting one row when an expected SKU is duplicated', async () => {
+        const harness = makeHarness();
+        const first = await runHarness(harness);
+        harness.entities.Product.rows.push({
+            ...harness.entities.Product.rows[0],
+            id: 'duplicate-product',
+        });
+
+        await expect(runHarness(harness)).rejects.toThrow('duplicate SKU');
+        expect(first.productCount).toBe(5);
     });
 
     it('requires the production confirmation and never provides a password default', () => {

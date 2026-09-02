@@ -83,6 +83,7 @@ jobs:
           fi
 
       - name: Copy the bounded seed script to the droplet
+        id: ssh_host
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
@@ -93,7 +94,19 @@ jobs:
           printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
           scp -i "$HOME/.ssh/deploy_key" \
             EasyMod-backend/src/scripts/seed-meta-review-merchant.js \
             root@"$DEPLOY_HOST":/opt/easymod/seed-meta-review-merchant.js
@@ -104,6 +117,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: root
           key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
           timeout: 300s
           envs: META_REVIEW_MERCHANT_PASSWORD,EXPECTED_SHA
           script: |
@@ -119,6 +133,10 @@ jobs:
               exit 1
             fi
             echo "==> running bounded Meta review seed for deployed SHA ${EXPECTED_SHA}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -e EXPECTED_SHA="$EXPECTED_SHA" backend \
+              node -e 'if (process.env.GIT_SHA !== process.env.EXPECTED_SHA) process.exit(1);'
+            echo "backend_image_sha=${EXPECTED_SHA}"
             docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
               -v "$SCRIPT":/app/src/scripts/seed-meta-review-merchant.js:ro \
               -e NODE_ENV=production \
