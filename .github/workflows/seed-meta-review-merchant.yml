@@ -1,0 +1,156 @@
+name: Seed Meta Review Merchant
+
+# This is the only production path for the fixed Meta App Review merchant seed.
+# It is intentionally separate from deployment and from the platform-admin seed.
+# The script is mounted into the already deployed backend image, so this can run
+# after the required application deployment without changing deployment settings.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: 'Full SHA currently serving production (verified via /version)'
+        required: true
+        type: string
+      confirm:
+        description: 'Retype META-REVIEW-SEED to authorize this scoped seed'
+        required: true
+        type: string
+
+concurrency:
+  group: seed-meta-review-merchant
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    name: Seed fixed merchant on production
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Validate production seed gate
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CONFIRMATION: ${{ inputs.confirm }}
+          DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
+        run: |
+          set -euo pipefail
+          case "$EXPECTED_SHA" in
+            (????????????????????????????????????????) ;;
+            (*) echo '::error::expected_sha must be a full 40-character SHA'; exit 1 ;;
+          esac
+          if ! printf '%s' "$EXPECTED_SHA" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+            echo '::error::expected_sha must contain only hexadecimal characters'
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != 'META-REVIEW-SEED' ]; then
+            echo '::error::confirm must exactly equal META-REVIEW-SEED'
+            exit 1
+          fi
+          if [ "${DEPLOY_ENABLED:-false}" = 'true' ]; then
+            echo '::error::PRODUCTION_DEPLOY_ENABLED must remain false for a seed-only run'
+            exit 1
+          fi
+
+      - name: Verify the expected SHA is serving production
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error --max-time 20 https://api.easymod.tech/version)
+          actual_sha=$(printf '%s' "$response" | jq -r '.gitSha // empty')
+          if [ "$actual_sha" != "$EXPECTED_SHA" ]; then
+            echo '::error::production /version does not match expected_sha'
+            exit 1
+          fi
+          echo "production_sha=$actual_sha"
+
+      - name: Verify the seed password secret exists
+        env:
+          META_REVIEW_MERCHANT_PASSWORD: ${{ secrets.META_REVIEW_MERCHANT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$META_REVIEW_MERCHANT_PASSWORD" ]; then
+            echo '::error::production secret META_REVIEW_MERCHANT_PASSWORD is not configured'
+            exit 1
+          fi
+
+      - name: Copy the bounded seed script to the droplet
+        id: ssh_host
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DO_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          host_entry=$(ssh-keygen -F "$DEPLOY_HOST" -f "$HOME/.ssh/known_hosts" | awk '!/^#/ { print; exit }')
+          key_type=$(printf '%s\n' "$host_entry" | awk '{ print $2 }')
+          key_blob=$(printf '%s\n' "$host_entry" | awk '{ print $3 }')
+          if [ -z "$key_type" ] || [ -z "$key_blob" ]; then
+            echo '::error::pinned host key is missing for DEPLOY_HOST'
+            exit 1
+          fi
+          fingerprint=$(printf '%s %s\n' "$key_type" "$key_blob" | ssh-keygen -lf - -E sha256 | awk '{ print $2 }')
+          if [ -z "$fingerprint" ]; then
+            echo '::error::could not derive the pinned host fingerprint'
+            exit 1
+          fi
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+          scp -i "$HOME/.ssh/deploy_key" \
+            EasyMod-backend/src/scripts/seed-meta-review-merchant.js \
+            root@"$DEPLOY_HOST":/opt/easymod/seed-meta-review-merchant.js
+
+      - name: Run only the bounded seed inside the backend image
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
+          fingerprint: ${{ steps.ssh_host.outputs.fingerprint }}
+          timeout: 300s
+          envs: META_REVIEW_MERCHANT_PASSWORD,EXPECTED_SHA
+          script: |
+            set -euo pipefail
+            cd /opt/easymod
+            SCRIPT=/opt/easymod/seed-meta-review-merchant.js
+            OUTPUT=/tmp/meta-review-seed-output.txt
+            trap 'rm -f "$SCRIPT" "$OUTPUT"' EXIT
+
+            bytes=$(wc -c < "$SCRIPT")
+            if [ "$bytes" -lt 1000 ]; then
+              echo 'ERROR: bounded seed script is missing or truncated'
+              exit 1
+            fi
+            echo "==> running bounded Meta review seed for deployed SHA ${EXPECTED_SHA}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -e EXPECTED_SHA="$EXPECTED_SHA" backend \
+              node -e 'if (process.env.GIT_SHA !== process.env.EXPECTED_SHA) process.exit(1);'
+            echo "backend_image_sha=${EXPECTED_SHA}"
+            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+              -v "$SCRIPT":/app/src/scripts/seed-meta-review-merchant.js:ro \
+              -e NODE_ENV=production \
+              -e RUN_MIGRATIONS_ON_STARTUP=false \
+              -e META_REVIEW_EXPECTED_DB_NAME=easymod_prod \
+              -e META_REVIEW_SEED_CONFIRMATION=META-REVIEW-SEED \
+              -e META_REVIEW_MERCHANT_PASSWORD="$META_REVIEW_MERCHANT_PASSWORD" \
+              backend node /app/src/scripts/seed-meta-review-merchant.js | tee "$OUTPUT"
+            test -s "$OUTPUT"
+            grep -Fx 'META_REVIEW_SEED=PASS' "$OUTPUT"
+            grep -Fx 'AI_REPLY_MODE=MANUAL' "$OUTPUT"
+            grep -Fx 'PRODUCT_GROUNDING=PASS' "$OUTPUT"
+            grep -Fx 'META_DATA_SEEDED=NO' "$OUTPUT"
+            echo '==> bounded Meta review seed completed'
+        env:
+          META_REVIEW_MERCHANT_PASSWORD: ${{ secrets.META_REVIEW_MERCHANT_PASSWORD }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
