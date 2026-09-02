@@ -30,7 +30,8 @@ describe('20260902_001_business_ai_reply_mode', () => {
         const sql = queries.join('\n');
         expect(sql).toMatch(/UPDATE shops/);
         expect(sql).toMatch(/jsonb_set/);
-        expect(sql).toMatch(/jsonb_typeof\(settings\) = 'object'/);
+        expect(sql).toMatch(/jsonb_typeof\(settings::jsonb\) = 'object'/);
+        expect(sql).toMatch(/COALESCE\(settings::jsonb, '\{\}'::jsonb\)/);
         expect(sql).toMatch(/'AI_ACTIVE' THEN 'AUTO'/);
         expect(sql).toMatch(/'AI_SUGGEST_ONLY' THEN 'DRAFT'/);
         expect(sql).toMatch(/'HUMAN_ACTIVE' THEN 'MANUAL'/);

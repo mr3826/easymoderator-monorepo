@@ -7,6 +7,11 @@
  * without replacing the original value, so those rows are deliberately left
  * untouched. The application fails closed for them, while all valid settings
  * objects retain their unrelated data.
+ *
+ * shops.settings is declared JSONB in the original schema migration, but the
+ * Sequelize model reads it back as DataTypes.JSON and production's actual
+ * column has drifted to json — jsonb_typeof()/-> need genuine jsonb input, so
+ * every read of the column is cast explicitly rather than assumed.
  */
 
 const MIGRATION_NAME = '20260902_001_business_ai_reply_mode';
@@ -20,12 +25,12 @@ module.exports = {
         await sequelize.query(`
             UPDATE shops
                SET settings = jsonb_set(
-                   COALESCE(settings, '{}'::jsonb),
+                   COALESCE(settings::jsonb, '{}'::jsonb),
                    '{ai}',
                    (
                        CASE
-                           WHEN jsonb_typeof(settings->'ai') = 'object'
-                               THEN settings->'ai'
+                           WHEN jsonb_typeof((settings::jsonb)->'ai') = 'object'
+                               THEN (settings::jsonb)->'ai'
                            ELSE '{}'::jsonb
                        END
                    ) || jsonb_build_object(
@@ -46,11 +51,11 @@ module.exports = {
                )
              WHERE settings IS NULL
                 OR (
-                    jsonb_typeof(settings) = 'object'
+                    jsonb_typeof(settings::jsonb) = 'object'
                     AND (
-                        jsonb_typeof(settings->'ai') IS NULL
-                        OR jsonb_typeof(settings->'ai') = 'object'
-                        OR jsonb_typeof(settings->'ai') = 'null'
+                        jsonb_typeof((settings::jsonb)->'ai') IS NULL
+                        OR jsonb_typeof((settings::jsonb)->'ai') = 'object'
+                        OR jsonb_typeof((settings::jsonb)->'ai') = 'null'
                     )
                     AND (
                         settings #>> '{ai,automation_mode}' IS NULL
