@@ -2,6 +2,8 @@
  * Dashboard and Analytics types
  */
 
+import type { AiReplyMode } from './conversation';
+
 export interface DashboardMetrics {
   metrics: {
     totalMessages: number;
@@ -56,7 +58,7 @@ export interface ShopAgent {
 }
 
 export interface ShopAISettings {
-  automation_mode: string;
+  automation_mode: AiReplyMode;
   ai_enabled?: boolean;
   confidence_threshold: number;
   auto_reply_enabled: boolean;

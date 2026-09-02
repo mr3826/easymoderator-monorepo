@@ -207,8 +207,6 @@ function assertNoUnsupportedPageSettings(body) {
 function serializeSettings(s) {
     if (!s) return null;
     return {
-        aiAutoReply:                s.ai_auto_reply,
-        automationMode:             s.automation_mode,
         confidenceThresholdSend:    parseFloat(s.confidence_threshold_send),
         confidenceThresholdSuggest: parseFloat(s.confidence_threshold_suggest),
         businessHours:              s.business_hours ?? null,

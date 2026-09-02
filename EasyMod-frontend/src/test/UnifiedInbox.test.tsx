@@ -429,6 +429,34 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI is preparing a reply')
   })
 
+  it('keeps the AUTO sent terminal state without showing the active claim', async () => {
+    const customerMessage = {
+      id: 'msg-customer-sent',
+      conversation_id: 'conv-1',
+      content: 'Thanks',
+      sender: 'customer' as const,
+      message_type: 'text' as const,
+      created_at: new Date(Date.now() - 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    }
+    const sentMessage = {
+      id: 'msg-ai-sent',
+      conversation_id: 'conv-1',
+      content: 'You are welcome.',
+      sender: 'ai' as const,
+      message_type: 'text' as const,
+      metadata: { delivered: true },
+      created_at: new Date(Date.now() - 30 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 30 * 1000).toISOString(),
+    }
+    setInboxData('AUTO', [customerMessage, sentMessage])
+
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-reply-status')).toHaveTextContent('AI reply sent')
+    expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
+  })
+
   const draftMessages = () => {
     const customerMessage = {
       id: 'msg-customer-draft',
@@ -464,6 +492,24 @@ describe('UnifiedInbox 24h window behavior', () => {
 
   it('does not show DRAFT readiness when no undelivered held AI message exists', async () => {
     setInboxData('DRAFT')
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('Drafts for review')
+    expect(screen.queryByText('Draft ready for review')).not.toBeInTheDocument()
+  })
+
+  it('clears DRAFT readiness after a newer human reply', async () => {
+    const { customerMessage, heldMessage } = draftMessages()
+    const agentMessage = {
+      id: 'msg-agent-draft',
+      conversation_id: 'conv-1',
+      content: 'A human reply.',
+      sender: 'agent' as const,
+      message_type: 'text' as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    setInboxData('DRAFT', [customerMessage, heldMessage, agentMessage])
     render(<UnifiedInbox />)
 
     expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('Drafts for review')

@@ -132,6 +132,11 @@ describe('AI chatbot exact channel routing', () => {
             mockMetaChannelService.getSettings.mockResolvedValue({
                 automation_mode: pageMode,
                 ai_auto_reply: true,
+                business_hours: { mon: { open: '09:00', close: '18:00' } },
+                confidence_threshold_send: 0.8,
+                confidence_threshold_suggest: 0.5,
+                allow_order_creation: false,
+                purpose_label: 'Sales',
             });
 
             await AIChatbotController.processMessage(baseRequest({ meta_channel_id: CHANNEL_ID }), res);
@@ -140,6 +145,14 @@ describe('AI chatbot exact channel routing', () => {
             expect(payload).toEqual(expect.objectContaining({ success: true }));
             expect(payload.metadata).toEqual(expect.objectContaining({ is_draft: expectedDraft }));
             expect(payload.metadata.ai_settings.automation_mode).toBe(expectedMode);
+            expect(payload.metadata.ai_settings).toEqual(expect.objectContaining({
+                business_hours: { mon: { open: '09:00', close: '18:00' } },
+                confidence_threshold_send: 0.8,
+                confidence_threshold_suggest: 0.5,
+                allow_order_creation: false,
+                purpose_label: 'Sales',
+            }));
+            expect(payload.metadata.ai_settings).not.toHaveProperty('ai_auto_reply');
             expect(mockConversationStateService.updateConversationState).toHaveBeenCalledWith(
                 'conversation-1',
                 expect.objectContaining({ automation_mode: expectedMode }),

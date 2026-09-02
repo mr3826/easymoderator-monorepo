@@ -183,4 +183,48 @@ describe('meta-oauth.controller', () => {
             expect(channelService.updateSettings).not.toHaveBeenCalled();
         });
     });
+
+    test('Meta settings GET omits deprecated Page AI fields and keeps supported settings', async () => {
+        const channelModel = { findByPk: jest.fn().mockResolvedValue({ id: 'channel-1', shop_id: 'shop-1' }) };
+        const channelService = {
+            getSettings: jest.fn().mockResolvedValue({
+                ai_auto_reply: false,
+                automation_mode: 'AUTO',
+                confidence_threshold_send: '0.80',
+                confidence_threshold_suggest: '0.50',
+                business_hours: { mon: { open: '09:00', close: '18:00' } },
+                allow_order_creation: false,
+                purpose_label: 'Sales',
+            }),
+        };
+
+        await jest.isolateModulesAsync(async () => {
+            jest.doMock('../meta-channel.entity', () => channelModel);
+            jest.doMock('../meta-channel.service', () => channelService);
+            jest.doMock('../meta-channel-settings.entity', () => ({}));
+            jest.doMock('../meta-channel-consent-event.entity', () => ({}));
+            jest.doMock('../provider.registry', () => ({ getProvider: jest.fn() }));
+
+            const channelController = require('../meta-channel.controller');
+            const res = mkRes();
+            const next = jest.fn();
+
+            await channelController.getSettings({
+                params: { channelId: 'channel-1' },
+                user: { shopId: 'shop-1' },
+            }, res, next);
+
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                data: {
+                    confidenceThresholdSend: 0.8,
+                    confidenceThresholdSuggest: 0.5,
+                    businessHours: { mon: { open: '09:00', close: '18:00' } },
+                    allowOrderCreation: false,
+                    purposeLabel: 'Sales',
+                },
+            });
+            expect(next).not.toHaveBeenCalled();
+        });
+    });
 });

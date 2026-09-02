@@ -145,7 +145,7 @@ const makeJob = (overrides = {}) => ({
         shopId: 'shop-1',
         conversationId: 'conv-1',
         messageId: 'message-1',
-        externalId: `external-${Math.random()}`,
+        externalId: 'external-1',
         message: 'What is the price?',
         platform: 'facebook',
         recipientId: 'recipient-1',
@@ -224,6 +224,16 @@ test('MANUAL business mode skips before any LLM or outbound policy work', async 
     expect(mockProcessNewIntent).not.toHaveBeenCalled();
     expect(mockHandleOrderFlow).not.toHaveBeenCalled();
     expect(mockEvaluateOutbound).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
+test('an unknown business mode fails closed as MANUAL before the LLM', async () => {
+    mockGetShopAiSettings.mockResolvedValueOnce(shopSettings('GARBAGE'));
+
+    const result = await processMessageJob(makeJob());
+
+    expect(result).toEqual(expect.objectContaining({ skipped: true, reason: 'manual_mode' }));
+    expect(mockProcessNewIntent).not.toHaveBeenCalled();
     expect(mockSendMessage).not.toHaveBeenCalled();
 });
 

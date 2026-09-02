@@ -665,12 +665,13 @@ const updatePlatformPriority = async (req, res, next) => {
 const getAIDiagnostics = async (req, res, next) => {
     try {
         const { shopId } = req.user;
-        const { MetaChannel, MetaChannelSettings, PolicyDecision } = require('../entities');
+        const { MetaChannel, PolicyDecision } = require('../entities');
 
         // Shop-level effective AI settings
         const shopAI = await shopService.getShopAiSettings(shopId);
 
-        // All connected channels + their settings (backfill missing rows idempotently)
+        // All connected channels. Legacy Page AI settings are intentionally not
+        // read here; the business mode above is the only automation authority.
         const channels = await MetaChannel.findAll({
             where: { shop_id: shopId, status: 'CONNECTED' },
             attributes: [
@@ -684,23 +685,15 @@ const getAIDiagnostics = async (req, res, next) => {
                 'page_access_token_ct',
             ],
         });
-        const channelDiagnostics = await Promise.all(channels.map(async (ch) => {
-            const [settings] = await MetaChannelSettings.findOrCreate({
-                where: { channel_id: ch.id },
-                defaults: { channel_id: ch.id },
-            });
-            return {
-                channel_id: ch.id,
-                display_name: ch.display_name,
-                platform: ch.platform,
-                meta_asset_id: ch.meta_asset_id,
-                status: ch.status,
-                token_present: Boolean(ch.getDataValue('page_access_token_ct')),
-                webhook_subscribed_fields: ch.webhook_subscribed_fields || [],
-                webhook_last_verified_at: ch.webhook_last_verified_at,
-                ai_auto_reply: settings.ai_auto_reply,
-                automation_mode: settings.automation_mode,
-            };
+        const channelDiagnostics = channels.map((ch) => ({
+            channel_id: ch.id,
+            display_name: ch.display_name,
+            platform: ch.platform,
+            meta_asset_id: ch.meta_asset_id,
+            status: ch.status,
+            token_present: Boolean(ch.getDataValue('page_access_token_ct')),
+            webhook_subscribed_fields: ch.webhook_subscribed_fields || [],
+            webhook_last_verified_at: ch.webhook_last_verified_at,
         }));
 
         // Last 5 policy decisions for this shop (shows what's blocking)
@@ -722,7 +715,7 @@ const getAIDiagnostics = async (req, res, next) => {
             success: true,
             data: {
                 worker_queue: queueStats,
-                shop_automation_mode: shopAI.automation_mode,
+                shop_automation_mode: normalizeAiReplyMode(shopAI?.automation_mode),
                 shop_auto_reply_enabled: shopAI.auto_reply_enabled,
                 channels: channelDiagnostics,
                 recent_policy_decisions: decisions.map(d => ({

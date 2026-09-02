@@ -251,6 +251,10 @@ export function InboxThreadDetail({
     !!aiSuggestion &&
     heldAiMsg?.id !== dismissedSuggestionId &&
     !!customerSentAfterAgent;
+  const hasUndeliveredHeldMessage =
+    !!heldAiMsg &&
+    heldAiMsg.id !== dismissedSuggestionId &&
+    !!customerSentAfterAgent;
   const isLowConfidence = hasAiSuggestion && heldMeta?.held_reason === "low_confidence";
   const isAiActive =
     aiReplyMode === "AUTO" &&
@@ -263,7 +267,7 @@ export function InboxThreadDetail({
   } satisfies Record<AiReplyMode, string>;
   const modeLabel = t(modeLabelKey[aiReplyMode]);
   const replyStatusLabel =
-    aiReplyMode === "DRAFT" && hasAiSuggestion
+    aiReplyMode === "DRAFT" && hasUndeliveredHeldMessage
       ? t("inbox.status.draftReady")
       : aiReplyMode === "AUTO" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
       ? t("inbox.status.processing")
@@ -324,6 +328,7 @@ export function InboxThreadDetail({
       onMessageSent(message);
       toast.success("Retry queued");
     } catch (err: unknown) {
+      onSendFailed();
       toast.error((err as { message?: string })?.message || "Retry failed");
     }
   };

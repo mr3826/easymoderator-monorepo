@@ -418,6 +418,83 @@ describe('META-E2E-006 — a Page that does not own the product', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// META-E2E-REPLY-MODE — business-level send authority
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('META-E2E-REPLY-MODE — one business mode controls every automatic send', () => {
+    test('MANUAL skips before the LLM and sends zero automatic messages', async () => {
+        await harness.setBusinessReplyMode(IDS.shopA, 'MANUAL');
+
+        const result = await harness.deliver({
+            text: 'black panjabi ache?',
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+
+        expect(result.jobResults[0]).toEqual(expect.objectContaining({
+            skipped: true,
+            reason: 'manual_mode',
+        }));
+        expect(transport.llmProvidersCalled()).toEqual([]);
+        expect(result.sends).toHaveLength(0);
+    });
+
+    test('DRAFT stores a suggestion without sending, then one explicit agent send succeeds', async () => {
+        await harness.setBusinessReplyMode(IDS.shopA, 'DRAFT');
+
+        const draft = await harness.deliver({
+            text: 'black panjabi ache?',
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+
+        expect(draft.sends).toHaveLength(0);
+        expect(draft.jobResults[0]).toEqual(expect.objectContaining({
+            sent: false,
+            reason: 'DRAFT_MODE',
+        }));
+
+        const manual = await harness.sendAgentReply({
+            shopId: IDS.shopA,
+            content: 'Yes, the black Panjabi is available.',
+        });
+        expect(manual.sends).toHaveLength(1);
+        expect(harness.sentBody(manual.sends)).toContain('black Panjabi');
+    });
+
+    test('AUTO sends exactly one automatic reply', async () => {
+        await harness.setBusinessReplyMode(IDS.shopA, 'AUTO');
+
+        const result = await harness.deliver({
+            text: 'black panjabi ache?',
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+
+        expect(result.jobResults[0]).toEqual(expect.objectContaining({ sent: true }));
+        expect(result.sends).toHaveLength(1);
+    });
+
+    test('mode changes are isolated by shop', async () => {
+        await harness.setBusinessReplyMode(IDS.shopA, 'MANUAL');
+        await harness.setBusinessReplyMode(IDS.shopB, 'AUTO');
+
+        const manualShop = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA,
+            candidate: 'Shop A must not send this.',
+        });
+        const automaticShop = await harness.deliver({
+            text: 'tote bag ache?',
+            pageId: IDS.pageB,
+            candidate: `${EXPECTED.shopBProductName} — ৳750.`,
+        });
+
+        expect(manualShop.sends).toHaveLength(0);
+        expect(manualShop.jobResults[0]).toEqual(expect.objectContaining({ reason: 'manual_mode' }));
+        expect(automaticShop.sends).toHaveLength(1);
+        expect(harness.sentBody(automaticShop.sends)).toContain(EXPECTED.shopBProductName);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // META-E2E-007 — conversation contamination
 // ─────────────────────────────────────────────────────────────────────────────
 

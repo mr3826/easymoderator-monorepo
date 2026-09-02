@@ -255,3 +255,22 @@ describe('MetaChannelService cross-shop Meta asset claims', () => {
         );
     });
 });
+
+describe('MetaChannelService channel settings allowlist', () => {
+    test('does not persist deprecated Page AI fields while keeping supported settings', async () => {
+        const update = jest.fn().mockResolvedValue(undefined);
+        mockMetaChannelSettings.findOrCreate.mockResolvedValueOnce([{ update }, false]);
+
+        await metaChannelService.updateSettings('channel-1', {
+            ai_auto_reply: false,
+            automation_mode: 'AUTO',
+            business_hours: { mon: { open: '09:00', close: '18:00' } },
+            purpose_label: 'Sales',
+        });
+
+        expect(update).toHaveBeenCalledWith({
+            business_hours: { mon: { open: '09:00', close: '18:00' } },
+            purpose_label: 'Sales',
+        });
+    });
+});

@@ -38,8 +38,15 @@ export interface MessageSourceReference {
  *  - 'low_confidence': auto-mode reply below the shop's confidence threshold;
  *    the conversation was handed off to a human.
  *  - 'draft_mode': suggest-only / DRAFT / policy-withheld reply.
+ *  - 'executed_mutation_without_outbound_send': an order mutation completed
+ *    but the safety gate withheld the customer-facing response.
  */
-export type HeldReason = 'low_confidence' | 'draft_mode';
+export type HeldReason =
+  | 'low_confidence'
+  | 'draft_mode'
+  | 'mode_changed'
+  | 'channel_disconnected'
+  | 'executed_mutation_without_outbound_send';
 
 export interface MessageMetadata {
   message_type?: MessageType;

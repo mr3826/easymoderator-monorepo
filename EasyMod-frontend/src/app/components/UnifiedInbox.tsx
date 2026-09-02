@@ -316,12 +316,15 @@ export default function UnifiedInbox() {
       });
     }, [aiReplyMode, messages, selectedConversation?.id]),
 
-    onDeliveryFailed: useCallback(({ conversation_id, reason }: { conversation_id: string; reason: string }) => {
+    onDeliveryFailed: useCallback(({ conversation_id, reason }: { conversation_id?: string; reason: string }) => {
+      const failedConversationId = conversation_id || selectedConversation?.id;
       if (aiReplyMode === "AUTO") {
-        setAiReplyStatuses((prev) => ({ ...prev, [conversation_id]: "failed" }));
+        setAiReplyStatuses((prev) =>
+          failedConversationId ? { ...prev, [failedConversationId]: "failed" } : prev
+        );
       }
       toast.warning(t("inbox.deliveryFailed", { reason }), { duration: 6000 });
-    }, [aiReplyMode]),
+    }, [aiReplyMode, selectedConversation?.id]),
 
     onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
       setAiReplyMode(normalizeAiReplyMode(mode));

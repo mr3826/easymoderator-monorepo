@@ -254,13 +254,13 @@ jobs:
 
       - name: Install Chromium
         working-directory: ./EasyMod-frontend
-        run: npx playwright install --with-deps chromium
+        run: npm exec --offline -- playwright install --with-deps chromium
 
       - name: Run mock-only frontend browser proof
         working-directory: ./EasyMod-frontend
         env:
           PLAYWRIGHT_PORT: '4273'
-        run: npx playwright test tests/e2e/ai-reply-mode.spec.ts
+        run: npm run test:e2e -- tests/e2e/ai-reply-mode.spec.ts --workers=1
 
       - name: Upload frontend Playwright artifacts
         if: failure()

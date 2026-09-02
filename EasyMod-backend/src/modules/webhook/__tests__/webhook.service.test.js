@@ -112,6 +112,9 @@ describe('sendMessage (webhook shim — exact routing)', () => {
             recipientId: 'psid-123',
             normalizedMessage: expect.objectContaining({ text: 'Hello customer' }),
         }));
+        const policySettings = policyEngine.evaluateOutbound.mock.calls[0][1].settings;
+        expect(policySettings).not.toHaveProperty('ai_auto_reply');
+        expect(policySettings).not.toHaveProperty('channel_id');
     });
 
     test('maps facebook channel type to facebook platform', async () => {
@@ -237,6 +240,23 @@ describe('sendMessage (webhook shim — exact routing)', () => {
             reason: 'settings_unavailable',
         });
         expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    test('does not require the deprecated Page mode in channel settings', async () => {
+        metaChannelService.getSettings.mockResolvedValueOnce({ channel_id: 'mc-1' });
+        mockSendMessage.mockResolvedValueOnce({});
+
+        await expect(sendMessage(buildChannel(), 'psid', 'msg')).resolves.toEqual(expect.objectContaining({
+            sent: true,
+        }));
+
+        expect(policyEngine.evaluateOutbound).toHaveBeenCalledWith(
+            expect.any(Object),
+            expect.objectContaining({
+                settings: expect.objectContaining({ automation_mode: expect.any(String) }),
+            }),
+        );
+        expect(mockSendMessage).toHaveBeenCalledTimes(1);
     });
 
     test('does not send when the customer channel type is unknown', async () => {

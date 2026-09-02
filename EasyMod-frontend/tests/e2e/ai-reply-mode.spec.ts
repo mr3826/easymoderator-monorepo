@@ -195,6 +195,7 @@ interface RouteFixture {
     messages: Record<string, ReturnType<typeof makeMessage>[]>;
     savedModes: Array<{ mode: unknown; auto_reply_enabled: unknown }>;
     createdMessages: Array<Record<string, unknown>>;
+    conversationFetches: number;
     unexpectedApiRequests: string[];
   };
   sseRequested: Promise<void>;
@@ -219,6 +220,7 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
     },
     savedModes: [],
     createdMessages: [],
+    conversationFetches: 0,
     unexpectedApiRequests: [],
   };
 
@@ -340,6 +342,7 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
       }
 
       if (path === '/api/conversation' && method === 'GET') {
+        state.conversationFetches += 1;
         return route.fulfill(jsonResponse({
           conversations: options.conversations ?? [makeConversation()],
           ai_reply_mode: state.mode,
@@ -503,12 +506,22 @@ test('Scenario C: Manual mode suppresses the automatic-reply claim while keeping
   await loginAndGo(page, '/inbox');
 
   await expect(page.getByRole('heading', { name: 'Shared Inbox' })).toBeVisible();
-  await expect(page.getByText('Manual replies only', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('inbox-ai-reply-mode')).toContainText('Manual replies only');
   await expectAiActiveCleared(page);
 
   const composer = page.getByPlaceholder('Type your reply here...', { exact: true });
   await expect(composer).toBeVisible();
   await expect(composer).toBeEnabled();
+
+  const hitlControl = page.getByRole('button', { name: /Manual replies only/ });
+  await expect(hitlControl).toBeVisible();
+  const hitlResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/conversation/conv-1' && response.request().method() === 'PATCH';
+  });
+  await hitlControl.click();
+  await hitlResponse;
+  await expect(page.getByRole('button', { name: /You're replying/ })).toBeVisible();
   fixture.assertNoUnexpectedApiRequests();
 });
 
@@ -516,7 +529,7 @@ test('Scenario D: Draft mode shows draft-ready only when an undelivered held mes
   const fixture = await setupRoutes(page, { mode: 'DRAFT' });
   await loginAndGo(page, '/inbox');
 
-  await expect(page.getByText('Drafts for review', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('inbox-ai-reply-mode')).toContainText('Drafts for review');
   await expect(page.getByText('Draft ready for review', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Send this', exact: true })).toHaveCount(0);
 
@@ -545,8 +558,10 @@ test('Scenario E: an SSE mode change updates Inbox without polling or reload', a
   await expect(page.getByText(/AI is replying/)).toBeVisible();
   await fixture.sseRequested;
   await fixture.releaseSse();
-  await expect(page.getByText('Manual replies only', { exact: true })).toBeVisible();
+  const conversationFetchesBeforeSse = fixture.state.conversationFetches;
+  await expect(page.getByTestId('inbox-ai-reply-mode')).toContainText('Manual replies only');
   await expectAiActiveCleared(page);
+  expect(fixture.state.conversationFetches).toBe(conversationFetchesBeforeSse);
   fixture.assertNoUnexpectedApiRequests();
 });
 

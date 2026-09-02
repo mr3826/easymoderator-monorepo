@@ -89,7 +89,7 @@ describe('Meta deauthorization and invalid-token recovery', () => {
                 last_error: 'meta_deauthorized_reconnect_required',
             });
         }
-        expect(mockModels.MetaChannelSettings.update).toHaveBeenCalledTimes(2);
+        expect(mockModels.MetaChannelSettings.update).not.toHaveBeenCalled();
         expect(mockDrain).toHaveBeenCalledTimes(2);
         expect(mockModels.OwnerNotification.create).toHaveBeenCalledTimes(2);
         expect(mockConsent.recordDeauthorize).toHaveBeenCalledTimes(2);
@@ -124,7 +124,7 @@ describe('Meta deauthorization and invalid-token recovery', () => {
         expect(active.page_access_token_ct).toBeNull();
     });
 
-    test('invalid token disables automation and prevents futile queued retries', async () => {
+    test('invalid token disables the channel and prevents futile queued retries', async () => {
         const active = channel('1');
         await service.recoverInvalidToken(active, { metaCode: 190 });
         expect(active).toMatchObject({
@@ -132,10 +132,7 @@ describe('Meta deauthorization and invalid-token recovery', () => {
             page_access_token_ct: null,
             last_error: 'meta_token_invalid_reconnect_required',
         });
-        expect(mockModels.MetaChannelSettings.update).toHaveBeenCalledWith(
-            { ai_auto_reply: false, automation_mode: 'MANUAL' },
-            { where: { channel_id: active.id } },
-        );
+        expect(mockModels.MetaChannelSettings.update).not.toHaveBeenCalled();
         expect(mockDrain).toHaveBeenCalledWith(expect.objectContaining({
             metaChannelId: active.id,
         }));

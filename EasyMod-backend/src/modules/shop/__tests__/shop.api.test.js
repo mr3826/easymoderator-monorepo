@@ -56,6 +56,12 @@ jest.mock('../../entities', () => ({
     DeliveryIntegration: {
         findAll: jest.fn(),
     },
+    MetaChannel: {
+        findAll: jest.fn(),
+    },
+    PolicyDecision: {
+        findAll: jest.fn(),
+    },
     Subscription: { create: jest.fn() },
     Tenant: { findByPk: jest.fn() },
 }));
@@ -156,6 +162,9 @@ beforeEach(() => {
     UserShop.create.mockResolvedValue({ id: 'us-1' });
     const { DeliveryIntegration } = require('../../entities');
     DeliveryIntegration.findAll.mockResolvedValue([]);
+    const { MetaChannel, PolicyDecision } = require('../../entities');
+    MetaChannel.findAll.mockResolvedValue([]);
+    PolicyDecision.findAll.mockResolvedValue([]);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -406,6 +415,42 @@ describe('PUT /shop/platform-priority', () => {
         expect(res.status).toBe(200);
         expect(res.body.data).toEqual({ payment: ['unregistered-payment'], delivery: [] });
         expect(DeliveryIntegration.findAll).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /shop/ai-diagnostics', () => {
+    it('returns channel health without exposing deprecated Page AI fields', async () => {
+        const { MetaChannel, PolicyDecision } = require('../../entities');
+        const channel = {
+            id: 'channel-1',
+            display_name: 'Sales Page',
+            platform: 'facebook',
+            meta_asset_id: 'page-1',
+            status: 'CONNECTED',
+            webhook_subscribed_fields: ['messages'],
+            webhook_last_verified_at: '2026-09-02T00:00:00.000Z',
+            getDataValue: jest.fn().mockReturnValue('encrypted-page-token'),
+        };
+        MetaChannel.findAll.mockResolvedValueOnce([channel]);
+        PolicyDecision.findAll.mockResolvedValueOnce([]);
+
+        const res = await request(app)
+            .get('/shop/ai-diagnostics')
+            .set('Authorization', authHeader);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.channels).toEqual([{
+            channel_id: 'channel-1',
+            display_name: 'Sales Page',
+            platform: 'facebook',
+            meta_asset_id: 'page-1',
+            status: 'CONNECTED',
+            token_present: true,
+            webhook_subscribed_fields: ['messages'],
+            webhook_last_verified_at: '2026-09-02T00:00:00.000Z',
+        }]);
+        expect(res.body.data.channels[0]).not.toHaveProperty('automation_mode');
+        expect(res.body.data.channels[0]).not.toHaveProperty('ai_auto_reply');
     });
 });
 

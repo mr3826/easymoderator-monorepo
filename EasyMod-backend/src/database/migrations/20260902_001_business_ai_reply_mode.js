@@ -54,7 +54,7 @@ module.exports = {
                     )
                     AND (
                         settings #>> '{ai,automation_mode}' IS NULL
-                        OR btrim(settings #>> '{ai,automation_mode}') NOT IN ('AUTO', 'DRAFT', 'MANUAL')
+                        OR settings #>> '{ai,automation_mode}' NOT IN ('AUTO', 'DRAFT', 'MANUAL')
                     )
                 );
         `);

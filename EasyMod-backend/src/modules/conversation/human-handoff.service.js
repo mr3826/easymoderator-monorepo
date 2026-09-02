@@ -20,7 +20,9 @@ const { getProvider } = require('../channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const policyEngine = require('../policy/policy.engine');
 const { Customer, MetaChannelSettings } = require('../entities');
+const { selectChannelRuntimeSettings } = require('../channel-providers/meta-channel-settings.runtime');
 const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
+const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
 const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
@@ -132,7 +134,7 @@ async function escalateToHuman({
 
         try {
             const customerChannelType = pf === 'facebook' ? 'messenger' : pf;
-            const [customer, settings] = await Promise.all([
+            const [customer, settings, businessMode] = await Promise.all([
                 Customer.findOne({
                     where: {
                         shop_id: shopId,
@@ -141,6 +143,7 @@ async function escalateToHuman({
                     },
                 }),
                 MetaChannelSettings.findOne({ where: { channel_id: channel.id } }),
+                getEffectiveAiReplyMode(shopId),
             ]);
 
             const customerKnown = isContextRecord(customer) && hasRequiredContextValue(customer.id);
@@ -152,6 +155,11 @@ async function escalateToHuman({
                 console.warn(`[handoff] Holding message not sent for conv ${convId}: ${missing} unavailable`);
                 return holdingMsg;
             }
+
+            const policySettings = {
+                ...selectChannelRuntimeSettings(settings),
+                automation_mode: businessMode,
+            };
 
             const normalizedMessage = {
                 text: holdingMsg.content,
@@ -167,7 +175,7 @@ async function escalateToHuman({
                 recipientId: String(recipientId),
                 channel,
                 customer,
-                settings,
+                settings: policySettings,
                 platform: pf,
             });
             if (!decision.allow) {

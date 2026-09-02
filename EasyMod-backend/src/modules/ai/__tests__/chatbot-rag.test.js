@@ -39,9 +39,9 @@ jest.mock('src/config/redis', () => ({
 }));
 
 // ── Shared test data ──────────────────────────────────────────────────────────
-const SHOP_ID = 'a1b2c3d4-1111-4abc-8def-aabbccddeeff'; // valid RFC 4122 v4 UUID
-const CUSTOMER_ID = 'cust-channel-001';
-const CONV_ID = 'conv-test-uuid-0001';
+const mockShopId = 'a1b2c3d4-1111-4abc-8def-aabbccddeeff'; // valid RFC 4122 v4 UUID
+const mockCustomerId = 'cust-channel-001';
+const mockConversationId = 'conv-test-uuid-0001';
 
 // ── Mock Redis ────────────────────────────────────────────────────────────────
 const redisStore = {};
@@ -100,7 +100,7 @@ function mockSequelizeModel() {
 
 // ── Mock Shop entity with AI settings ────────────────────────────────────────
 const mockShopInstance = {
-    id: SHOP_ID,
+    id: mockShopId,
     shop_name: 'Dhaka Fashion Store',
     settings: {
         businessInfo: {
@@ -123,7 +123,7 @@ const mockShopInstance = {
 
 const mockFaqInstance = {
     id: 42,
-    shop_id: SHOP_ID,
+    shop_id: mockShopId,
     category: 'What are your delivery areas?',
     template_en: 'We deliver to Dhaka and Chittagong. Standard delivery takes 2-3 business days.',
     template_bn: null,
@@ -169,19 +169,19 @@ jest.mock('src/modules/entities', () => ({
         belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(), addScope: jest.fn(), scope: jest.fn(),
     },
     Customer: {
-        findOne: jest.fn(() => Promise.resolve(null)), findOrCreate: jest.fn(() => Promise.resolve([{ id: 'cust-1', shop_id: SHOP_ID }, true])),
+        findOne: jest.fn(() => Promise.resolve(null)), findOrCreate: jest.fn(() => Promise.resolve([{ id: 'cust-1', shop_id: mockShopId }, true])),
         create: jest.fn(), update: jest.fn(), findAll: jest.fn(() => Promise.resolve([])),
         belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(), addScope: jest.fn(), scope: jest.fn(),
     },
     Conversation: {
         findOne: jest.fn(() => Promise.resolve(null)),
-        create: jest.fn(() => Promise.resolve({ id: CONV_ID, shop_id: SHOP_ID })),
+        create: jest.fn(() => Promise.resolve({ id: mockConversationId, shop_id: mockShopId })),
         findAll: jest.fn(() => Promise.resolve([])), update: jest.fn(),
         belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(), addScope: jest.fn(), scope: jest.fn(),
     },
     Message: {
         findOne: jest.fn(() => Promise.resolve(null)),
-        create: jest.fn(() => Promise.resolve({ id: 'msg-1', conversation_id: CONV_ID, content: '', sender: 'ai' })),
+        create: jest.fn(() => Promise.resolve({ id: 'msg-1', conversation_id: mockConversationId, content: '', sender: 'ai' })),
         findAll: jest.fn(() => Promise.resolve([])), update: jest.fn(),
         belongsTo: jest.fn(), hasMany: jest.fn(), hasOne: jest.fn(), belongsToMany: jest.fn(), addScope: jest.fn(), scope: jest.fn(),
     },
@@ -266,9 +266,9 @@ jest.mock('src/modules/analytics/knowledge-gap.entity', () => ({
 const mockConversationHistory = [];
 jest.mock('src/modules/conversation/conversation-state-standalone.service', () => ({
     ingestMessage: jest.fn(() => Promise.resolve({
-        conversation_id: CONV_ID,
-        shop_id: SHOP_ID,
-        customer_channel_id: CUSTOMER_ID,
+        conversation_id: mockConversationId,
+        shop_id: mockShopId,
+        customer_channel_id: mockCustomerId,
         platform: 'messenger',
         conversation_history: mockConversationHistory,
         active_order_session: null,
@@ -362,8 +362,8 @@ const chatbotPost = (body) =>
         .send(body);
 
 const baseBody = (message) => ({
-    shop_id: SHOP_ID,
-    customer_channel_id: CUSTOMER_ID,
+    shop_id: mockShopId,
+    customer_channel_id: mockCustomerId,
     platform: 'messenger',
     message,
 });
@@ -394,7 +394,7 @@ describe('Stage 2 — FAQ match via RAG (score ≥ 0.82)', () => {
             results: [{
                 score: 0.91,
                 content: 'Q: What are your delivery areas?\nA: We deliver to Dhaka and Chittagong.',
-                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: SHOP_ID, type: 'faq' },
+                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: mockShopId, type: 'faq' },
             }],
         });
 
@@ -442,7 +442,7 @@ describe('Stage 2 — FAQ match via RAG (score ≥ 0.82)', () => {
             results: [{
                 score: 0.81,   // just below threshold
                 content: 'some faq content',
-                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: SHOP_ID, type: 'faq' },
+                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: mockShopId, type: 'faq' },
             }],
         });
         mockLlmService.chat.mockResolvedValueOnce({ text: 'LLM answered this question.', provider: 'openai' });
@@ -515,7 +515,7 @@ describe('Stage 1 — Response cache', () => {
             results: [{
                 score: 0.90,
                 content: 'FAQ: delivery areas are Dhaka, Chittagong',
-                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: SHOP_ID },
+                metadata: { documentId: `faq-${mockFaqInstance.id}`, shopId: mockShopId },
             }],
         });
         mockLlmService.chat.mockResolvedValue({ text: 'We deliver to Dhaka and Chittagong!', provider: 'gemini' });
@@ -543,7 +543,7 @@ describe('Stage 1 — Response cache', () => {
 describe('Input validation', () => {
 
     test('missing shop_id returns 400', async () => {
-        const res = await chatbotPost({ customer_channel_id: CUSTOMER_ID, platform: 'messenger', message: 'hi' });
+        const res = await chatbotPost({ customer_channel_id: mockCustomerId, platform: 'messenger', message: 'hi' });
         expect(res.status).toBe(400);
     });
 
@@ -558,7 +558,7 @@ describe('Input validation', () => {
     });
 
     test('empty message with no attachments returns 400', async () => {
-        const res = await chatbotPost({ shop_id: SHOP_ID, customer_channel_id: CUSTOMER_ID, platform: 'messenger' });
+        const res = await chatbotPost({ shop_id: mockShopId, customer_channel_id: mockCustomerId, platform: 'messenger' });
         expect(res.status).toBe(400);
     });
 });
@@ -570,7 +570,7 @@ describe('Exact Meta channel routing', () => {
         const channelId = '11111111-1111-4111-8111-111111111111';
         mockMetaChannelService.findConnectedById.mockResolvedValueOnce({
             id: channelId,
-            shop_id: SHOP_ID,
+            shop_id: mockShopId,
             platform: 'facebook',
             status: 'CONNECTED',
         });
@@ -586,7 +586,7 @@ describe('Exact Meta channel routing', () => {
             meta_channel_id: channelId,
         }));
         expect(mockMetaChannelService.findConnectedById).toHaveBeenCalledWith(channelId, {
-            shopId: SHOP_ID,
+            shopId: mockShopId,
             platform: 'facebook',
         });
         expect(mockMetaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
@@ -618,9 +618,9 @@ describe('Order intent detection', () => {
 
         // Simulate an active order session already in progress
         ConversationStateService.ingestMessage.mockResolvedValueOnce({
-            conversation_id: CONV_ID,
-            shop_id: SHOP_ID,
-            customer_channel_id: CUSTOMER_ID,
+            conversation_id: mockConversationId,
+            shop_id: mockShopId,
+            customer_channel_id: mockCustomerId,
             platform: 'messenger',
             conversation_history: [],
             active_order_session: { id: 'session-1', status: 'ACTIVE', current_step: 'PRODUCT_SELECTION' },
@@ -726,7 +726,7 @@ describe('RAG knowledge ingestion helpers (knowledge service)', () => {
     test('POST /api/knowledge/query requires auth', async () => {
         const res = await request(app)
             .post('/api/knowledge/query')
-            .send({ query: 'delivery areas', shop_id: SHOP_ID });
+            .send({ query: 'delivery areas', shop_id: mockShopId });
         // 401 = no auth token; 403 = forbidden (both are valid auth rejections)
         expect([401, 403]).toContain(res.status);
     });

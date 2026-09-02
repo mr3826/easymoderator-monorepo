@@ -5,6 +5,7 @@ const intentRouter = require('../ai/intent-router.service');
 const knowledgeService = require('../knowledge/knowledge.service');
 const shopService = require('../shop/shop.service');
 const metaChannelService = require('../channel-providers/meta-channel.service');
+const { selectChannelRuntimeSettings } = require('../channel-providers/meta-channel-settings.runtime');
 const cacheService = require('../../utils/cache.service');
 const { isTooLong } = require('../ai/prompt-sanitizer.service');
 const { SupportTicket } = require('../entities');
@@ -70,7 +71,7 @@ function normalizeBusinessAiSettings(settings = {}) {
 function mergeAiSettings(shopSettings, channelSettings) {
     return {
         ...shopSettings,
-        ...channelSettings,
+        ...selectChannelRuntimeSettings(channelSettings),
         // Page-level automation_mode is legacy data and cannot override the
         // business reply mode, including when the business mode is absent.
         automation_mode: normalizeAiReplyMode(shopSettings?.automation_mode || AI_REPLY_MODES.MANUAL),

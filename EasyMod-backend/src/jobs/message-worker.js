@@ -202,6 +202,16 @@ const getChannelAISettings = async (channel) => {
     }
 };
 
+const buildWorkerAiSettings = (shopSettings = {}, channelSettings = {}, businessMode) => ({
+    business_hours: channelSettings.business_hours,
+    confidence_threshold_send: channelSettings.confidence_threshold_send,
+    confidence_threshold_suggest: channelSettings.confidence_threshold_suggest,
+    allow_order_creation: channelSettings.allow_order_creation,
+    purpose_label: channelSettings.purpose_label,
+    ...shopSettings,
+    automation_mode: businessMode,
+});
+
 /**
  * Load the last 10 messages prior to the current turn, as LLM conversation
  * history. `excludeIds` is the id (or ids, for a coalesced burst) of the message(s)
@@ -371,6 +381,21 @@ function createRecoveryControl({
             });
             return null;
         }
+        // Recovery timers can outlive the initial Guard 4 read. Do not let a
+        // holding message bypass a later AUTO -> MANUAL change.
+        const latestBusinessMode = await getEffectiveAiReplyMode(shopId);
+        if (!isAutoSendMode(latestBusinessMode)) {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'BLOCKED',
+            });
+            return null;
+        }
+        policySettings = {
+            ...policySettings,
+            automation_mode: latestBusinessMode,
+        };
         if (closed || (hardTimeout
             ? recovery.isHardTimeoutSuppressed(currentState)
             : recovery.isHoldingSuppressed(currentState))) return null;
@@ -937,11 +962,7 @@ async function processMessageJob(job) {
         getChannelAISettings(jobChannel),
     ]);
     const businessMode = normalizeAiReplyMode(shopAISettings.automation_mode);
-    const aiSettings = {
-        ...channelAISettings,
-        ...shopAISettings,
-        automation_mode: businessMode,
-    };
+    const aiSettings = buildWorkerAiSettings(shopAISettings, channelAISettings, businessMode);
     recoveryControl?.setPolicySettings(aiSettings);
     if (businessMode === AI_REPLY_MODES.MANUAL) {
         return { skipped: true, reason: 'manual_mode', scope: 'shop' };
@@ -1501,11 +1522,7 @@ async function processMessageJob(job) {
             throw settingsErr;
         }
         latestChannelAISettings = { ...channelAISettings, ...latestSettings };
-        channelSettings = {
-            ...latestChannelAISettings,
-            ...shopAISettings,
-            automation_mode: businessMode,
-        };
+        channelSettings = buildWorkerAiSettings(shopAISettings, latestChannelAISettings, businessMode);
     }
 
     // The channel can lose its token while the LLM is running. Keep the

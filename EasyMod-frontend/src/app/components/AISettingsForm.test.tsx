@@ -74,6 +74,9 @@ describe('AISettingsForm', () => {
     expect(screen.getByText('AUTO')).toBeInTheDocument();
     expect(screen.getByText('DRAFT')).toBeInTheDocument();
     expect(screen.getByText('MANUAL')).toBeInTheDocument();
+    expect(screen.getByText('Manual replies only (Recommended)')).toBeInTheDocument();
+    expect(screen.getByText('Review first')).toBeInTheDocument();
+    expect(screen.queryByText('Review first (Recommended)')).not.toBeInTheDocument();
     expect([...screen.getByTestId('ai-reply-mode').querySelectorAll('[role="radio"]')].map((radio) => radio.id)).toEqual([
       'ai-reply-mode-manual',
       'ai-reply-mode-draft',
@@ -306,10 +309,10 @@ describe('AISettingsForm', () => {
   });
 
   it('merges initial data with defaults correctly', () => {
-    const partialData: Partial<ShopAISettings> = {
+    const partialData = {
       automation_mode: 'AI_ACTIVE',
       confidence_threshold: 80,
-    };
+    } as unknown as Partial<ShopAISettings>;
 
     render(<AISettingsForm {...defaultProps} initialData={partialData} />);
     
@@ -326,7 +329,7 @@ describe('AISettingsForm', () => {
   it('fails closed to Manual for unknown initial mode values', () => {
     const partialData = {
       automation_mode: 'GARBAGE',
-    } as Partial<ShopAISettings>;
+    } as unknown as Partial<ShopAISettings>;
 
     render(<AISettingsForm {...defaultProps} initialData={partialData} />);
 

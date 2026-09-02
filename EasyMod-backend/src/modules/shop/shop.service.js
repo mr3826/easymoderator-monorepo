@@ -366,6 +366,9 @@ const getShopAiSettings = async (shopId) => {
     };
     // All callers receive the same canonical business-level reply mode.
     merged.automation_mode = normalizeAiReplyMode(merged.automation_mode);
+    // Keep the legacy flag as a derived compatibility value; it cannot diverge
+    // from the canonical mode or become a second runtime switch.
+    merged.auto_reply_enabled = isAutoSendMode(merged.automation_mode);
     return merged;
 };
 

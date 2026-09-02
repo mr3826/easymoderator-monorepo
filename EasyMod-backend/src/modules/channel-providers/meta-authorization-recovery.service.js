@@ -5,7 +5,6 @@ const {
     AuditLog,
     Customer,
     MetaChannel,
-    MetaChannelSettings,
     MetaUserIdentity,
     OwnerNotification,
 } = require('../entities');
@@ -92,12 +91,9 @@ async function disableChannel(channel, {
         }
     }
 
-    await MetaChannelSettings.update({
-        ai_auto_reply: false,
-        automation_mode: 'MANUAL',
-    }, {
-        where: { channel_id: channel.id },
-    });
+    // Channel connectivity is the token-loss kill switch. The legacy Page AI
+    // settings are retained for compatibility but must not be used as runtime
+    // authority or mutated by recovery.
     await channel.update({
         status,
         page_access_token_ct: null,

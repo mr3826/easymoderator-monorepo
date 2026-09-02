@@ -35,6 +35,7 @@ describe('20260902_001_business_ai_reply_mode', () => {
         expect(sql).toMatch(/'AI_SUGGEST_ONLY' THEN 'DRAFT'/);
         expect(sql).toMatch(/'HUMAN_ACTIVE' THEN 'MANUAL'/);
         expect(sql).toMatch(/NOT IN \('AUTO', 'DRAFT', 'MANUAL'\)/);
+        expect(sql).toMatch(/btrim\(settings #>> '\{ai,automation_mode\}'\)/);
         expect(sql).toMatch(/settings IS NULL/);
         expect(sql).toMatch(/SET DEFAULT 'MANUAL'/);
         expect(sql).toMatch(/COMMENT ON COLUMN meta_channel_settings\.automation_mode/);

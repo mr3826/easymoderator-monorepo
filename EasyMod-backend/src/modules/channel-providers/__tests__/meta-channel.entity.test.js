@@ -129,8 +129,8 @@ describe('MetaChannelSettings entity - defaults', () => {
     let attrs;
     beforeAll(() => { attrs = getMetaChannelSettingsAttrs(); });
 
-    it('defaults newly connected channels to DRAFT, never straight to auto-send', () => {
+    it('defaults legacy Page mode to MANUAL, never straight to auto-send', () => {
         expect(attrs.ai_auto_reply.defaultValue).toBe(true);
-        expect(attrs.automation_mode.defaultValue).toBe('DRAFT');
+        expect(attrs.automation_mode.defaultValue).toBe('MANUAL');
     });
 });
