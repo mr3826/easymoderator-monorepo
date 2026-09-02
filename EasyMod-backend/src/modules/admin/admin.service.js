@@ -9,6 +9,7 @@ const cacheService = require('../../utils/cache.service');
 const subscriptionService = require('../subscription/subscription.service');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const shopService = require('../shop/shop.service');
+const { AI_REPLY_MODES } = require('../shop/ai-reply-mode');
 const { AppError } = require('../../utils/AppError');
 const { effectiveConversationLimit } = require('../subscription/subscription.access');
 const { countRecentDeliveredOrders } = require('../subscription/partner.service');
@@ -373,22 +374,16 @@ async function markChannelReconnect(shopId, channelId) {
 }
 
 /**
- * EMERGENCY: hard-stop a shop's AI. Channel settings override shop settings in
- * both the worker Guard 4 and the Policy Engine draftMode rule, so we set
- * automation_mode=MANUAL on EVERY channel, plus shop-level for UI consistency.
+ * EMERGENCY: hard-stop a shop's AI through the business-level source of truth.
+ * Channel-level reply-mode writes are intentionally not part of this path.
  */
 async function emergencyDisableAi(shopId, adminUserId) {
-  const channels = await metaChannelService.listByShop(shopId);
-  const before = { channels: [] };
-  for (const ch of channels) {
-    let prevMode = null;
-    try { prevMode = (await metaChannelService.getSettings(ch.id))?.automation_mode ?? null; } catch { /* ignore */ }
-    before.channels.push({ channelId: ch.id, automation_mode: prevMode });
-    await metaChannelService.updateSettings(ch.id, { automation_mode: 'MANUAL' });
-  }
-  // shop-level (the worker reads getShopAiSettings as the base layer)
-  await shopService.updateShopAiSettings(shopId, adminUserId, { automation_mode: 'MANUAL' });
-  return { before, after: { automation_mode: 'MANUAL', channelsAffected: channels.length } };
+  const currentSettings = await shopService.getShopAiSettings(shopId);
+  const before = { automation_mode: currentSettings?.automation_mode ?? null };
+  await shopService.updateShopAiSettings(shopId, adminUserId, {
+    automation_mode: AI_REPLY_MODES.MANUAL,
+  });
+  return { before, after: { automation_mode: AI_REPLY_MODES.MANUAL } };
 }
 
 module.exports = {

@@ -25,6 +25,9 @@ jest.mock('../../entities', () => ({
 jest.mock('../../subscription/subscription.service', () => ({
     trackUsage: jest.fn(),
 }));
+jest.mock('../../shop/shop.service', () => ({
+    getShopAiSettings: jest.fn(),
+}));
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(),
@@ -36,6 +39,7 @@ jest.mock('../../../utils/structured-logger', () => ({
 
 const { Conversation } = require('../../entities');
 const subscriptionService = require('../../subscription/subscription.service');
+const shopService = require('../../shop/shop.service');
 const { sequelize } = require('../../../utils/database/database-setup');
 const conversationService = require('../conversation.service');
 
@@ -45,6 +49,7 @@ beforeEach(() => {
     mockTransaction.rollback.mockResolvedValue(undefined);
     sequelize.transaction.mockResolvedValue(mockTransaction);
     Conversation.create.mockResolvedValue(mockConversation);
+    shopService.getShopAiSettings.mockResolvedValue({ automation_mode: 'AI_ACTIVE' });
 });
 
 describe('conversation creation after commit', () => {
@@ -66,5 +71,32 @@ describe('conversation creation after commit', () => {
             usageError,
             expect.objectContaining({ conversationId: 'conversation-1' }),
         );
+    });
+});
+
+describe('conversation list reply-mode envelope', () => {
+    it('reads the business mode once and returns the normalized mode', async () => {
+        const row = {
+            id: 'conversation-1',
+            customer_id: 'customer-1',
+            channel: 'messenger',
+            metadata: {},
+            hitl: false,
+            customer: null,
+            metaChannel: null,
+            message: null,
+        };
+        Conversation.findAndCountAll = jest.fn().mockResolvedValue({ rows: [row], count: 1 });
+        shopService.getShopAiSettings.mockResolvedValue({ automation_mode: 'AI_ACTIVE' });
+
+        const result = await conversationService.getConversations('shop-1');
+
+        expect(result).toEqual(expect.objectContaining({
+            ai_reply_mode: 'AUTO',
+            conversations: [expect.objectContaining({ id: 'conversation-1' })],
+        }));
+        expect(shopService.getShopAiSettings).toHaveBeenCalledTimes(1);
+        expect(shopService.getShopAiSettings).toHaveBeenCalledWith('shop-1');
+        expect(Conversation.findAndCountAll).toHaveBeenCalledTimes(1);
     });
 });

@@ -33,6 +33,7 @@ const { Conversation } = require('../conversation/conversation.entity');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const { getProvider } = require('../channel-providers/provider.registry');
 const policyEngine = require('../policy/policy.engine');
+const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const { createLogger } = require('../../utils/structured-logger');
 
 const logger = createLogger('WebhookService');
@@ -146,6 +147,12 @@ async function sendMessage(channel, recipientId, messageText) {
         });
         return { sent: false, reason: 'settings_unavailable' };
     }
+    // Channel settings still provide per-Page policy inputs, but business reply
+    // mode is resolved from the shop and is authoritative for delivery.
+    settings = {
+        ...settings,
+        automation_mode: await getEffectiveAiReplyMode(channel.shop_id),
+    };
 
     // Build a minimal NormalizedMessage for the policy engine
     const normalizedMessage = {

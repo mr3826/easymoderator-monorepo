@@ -52,8 +52,6 @@ vi.mock('@/api/domains/meta-channels', () => ({
   pingMetaChannel:            vi.fn().mockResolvedValue({ ping: { ok: true, latencyMs: 10 } }),
   getMetaChannelConsentSummary: vi.fn().mockResolvedValue({ channelId: 'mc-1', counts: { optIns: 0, optOuts: 0, deauthorized: 0, dataDeleted: 0 }, recentEvents: [] }),
   updateMetaChannelPurposeLabel: vi.fn().mockResolvedValue({}),
-  getMetaChannelSettings:     vi.fn().mockResolvedValue({ aiAutoReply: false }),
-  updateMetaChannelSettings:  vi.fn().mockResolvedValue({ aiAutoReply: true }),
   initiateMetaOAuth:          mockInitiateMetaOAuth,
   handleMetaOAuthCallback:    mockHandleMetaOAuthCallback,
   connectMetaAsset:           mockConnectMetaAsset,
@@ -82,7 +80,7 @@ vi.mock('lucide-react', () => {
   return {
     MessageSquare: Icon, CheckCircle: Icon, Clock: Icon,
     X: Icon, AlertCircle: Icon, Info: Icon, ChevronDown: Icon, ChevronUp: Icon,
-    Loader2: Icon, Shield: Icon, Cpu: Icon, Lock: Icon, Plus: Icon, Check: Icon,
+    Loader2: Icon, Shield: Icon, Lock: Icon, Plus: Icon, Check: Icon,
     FlaskConical: Icon, Unplug: Icon, RefreshCw: Icon, ShieldCheck: Icon,
   };
 });

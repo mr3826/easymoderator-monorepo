@@ -103,6 +103,9 @@ jest.mock('../shop-settings.validator', () => ({
     mergeAndSanitizeSettings: jest.fn((current, patch) => (
         jest.requireActual('../shop-settings.validator').mergeAndSanitizeSettings(current, patch)
     )),
+    stripAutomationModeFromShopUpdate: jest.fn((updateData) => (
+        jest.requireActual('../shop-settings.validator').stripAutomationModeFromShopUpdate(updateData)
+    )),
 }));
 
 // ── JWT auth ──────────────────────────────────────────────────────────────────
@@ -275,6 +278,31 @@ describe('POST /shop/update', () => {
             .send({ shopId: 'dddddddd-4444-4444-8444-dddddddddddd', shop_name: 'X' });
 
         expect(res.status).toBe(401);
+    });
+
+    it('strips settings.ai.automation_mode so the general update cannot change reply mode', async () => {
+        const shopWithSettings = {
+            ...mockShopInstance,
+            settings: { ai: { automation_mode: 'DRAFT' } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        const { Shop } = require('../../entities');
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        const res = await request(app)
+            .post('/shop/update')
+            .set('Authorization', authHeader)
+            .send({
+                shopId: 'dddddddd-4444-4444-8444-dddddddddddd',
+                settings: { ai: { automation_mode: 'AUTO' } },
+            });
+
+        expect(res.status).toBe(200);
+        expect(shopWithSettings.update).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                ai: { automation_mode: 'DRAFT' },
+            }),
+        }));
     });
 });
 

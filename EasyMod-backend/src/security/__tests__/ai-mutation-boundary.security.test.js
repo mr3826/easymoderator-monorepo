@@ -33,7 +33,7 @@ describe('AI mutation import boundary', () => {
 
     test('the worker passes mutation permission and trace context into the order seam', () => {
         const source = fs.readFileSync(workerPath, 'utf8');
-        expect(source).toContain('mutationsAllowed: aiSettings.automation_mode === \'AI_ACTIVE\'');
+        expect(source).toContain('mutationsAllowed: isAutoSendMode(businessMode)');
         expect(source).toContain('conversationId,');
         expect(source).toContain('traceId: job.id || effExternalId || conversationId');
     });

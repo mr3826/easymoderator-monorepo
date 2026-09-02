@@ -19,13 +19,51 @@
 'use strict';
 
 const express = require('express');
+const Joi = require('joi');
 const oauthController = require('./meta-oauth.controller');
 const channelController = require('./meta-channel.controller');
 const v = require('./meta-oauth.validator');
 const { validate } = require('../helpers');
 const { authenticate } = require('../../middleware/auth.middleware');
+const { verifyShopAccess } = require('../../middleware/shop-access.middleware');
+const { requireOwner } = require('../../middleware/shop-permission.middleware');
 
 const router = express.Router();
+
+const unsupportedPageSetting = (key) => Joi.any().forbidden().messages({
+    'any.unknown': `${key} is not supported for Page settings; configure the business AI reply mode instead`,
+});
+
+const channelSettingsPatchBody = Joi.object({
+    aiAutoReply: unsupportedPageSetting('aiAutoReply'),
+    automationMode: unsupportedPageSetting('automationMode'),
+    ai_auto_reply: unsupportedPageSetting('ai_auto_reply'),
+    automation_mode: unsupportedPageSetting('automation_mode'),
+    confidenceThresholdSend: Joi.number().min(0).max(1).messages({
+        'number.base': 'confidenceThresholdSend must be a number',
+        'number.min': 'confidenceThresholdSend must be between 0 and 1',
+        'number.max': 'confidenceThresholdSend must be between 0 and 1',
+    }),
+    confidenceThresholdSuggest: Joi.number().min(0).max(1).messages({
+        'number.base': 'confidenceThresholdSuggest must be a number',
+        'number.min': 'confidenceThresholdSuggest must be between 0 and 1',
+        'number.max': 'confidenceThresholdSuggest must be between 0 and 1',
+    }),
+    businessHours: Joi.object().unknown(true).allow(null),
+    business_hours: Joi.object().unknown(true).allow(null),
+    allowOrderCreation: Joi.boolean().messages({
+        'boolean.base': 'allowOrderCreation must be a boolean',
+    }),
+    allow_order_creation: Joi.boolean().messages({
+        'boolean.base': 'allow_order_creation must be a boolean',
+    }),
+    purposeLabel: Joi.string().trim().max(64).allow('', null).messages({
+        'string.max': 'purposeLabel must be at most 64 characters',
+    }),
+    purpose_label: Joi.string().trim().max(64).allow('', null).messages({
+        'string.max': 'purpose_label must be at most 64 characters',
+    }),
+});
 
 router.use(authenticate);
 
@@ -59,6 +97,9 @@ router.get(
 router.patch(
     '/:channelId/settings',
     validate(v.channelIdParam),
+    verifyShopAccess,
+    requireOwner,
+    validate({ body: channelSettingsPatchBody }),
     channelController.updateChannelSettings
 );
 router.patch(

@@ -12,7 +12,7 @@
  * low-confidence reply was always auto-sent. The gate below is called from
  * message-worker.js after the reply is generated and before it is delivered.
  *
- * Holds ONLY in auto-send mode. In DRAFT / AI_SUGGEST_ONLY / HUMAN_ACTIVE / MANUAL the policy
+ * Holds ONLY in AUTO mode. In DRAFT / MANUAL (including their legacy aliases) the policy
  * engine already withholds delivery, so the gate is a no-op there. Deterministic
  * order-flow turns (confidence 1.0) are never held. A null/unknown confidence
  * (AI pipeline failure) is treated as low → held, which is safer than
@@ -22,7 +22,7 @@
  * default 75). Accepts a 0–1 fraction too, so both scales are safe.
  */
 
-const NON_AUTO_MODES = new Set(['DRAFT', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL']);
+const { AI_REPLY_MODES, isNonDeliveringMode } = require('../shop/ai-reply-mode');
 
 const DEFAULT_THRESHOLD = 0.75;
 
@@ -53,14 +53,14 @@ function normalizeConfidence(raw) {
  */
 function shouldHoldForLowConfidence({
     confidence,
-    // NOT the product default (DRAFT). A non-auto mode makes this gate a no-op,
+    // NOT the product default (MANUAL). A non-auto mode makes this gate a no-op,
     // so an omitted mode must assume the auto-send path and actually evaluate.
-    automationMode = 'AI_ACTIVE',
+    automationMode = AI_REPLY_MODES.AUTO,
     confidenceThreshold,
     orderFlowHandled = false,
 } = {}) {
     if (orderFlowHandled) return false;
-    if (NON_AUTO_MODES.has(automationMode)) return false;
+    if (isNonDeliveringMode(automationMode)) return false;
 
     const threshold = normalizeThreshold(confidenceThreshold);
     const conf = normalizeConfidence(confidence);
@@ -73,6 +73,5 @@ module.exports = {
     shouldHoldForLowConfidence,
     normalizeThreshold,
     normalizeConfidence,
-    NON_AUTO_MODES,
     DEFAULT_THRESHOLD,
 };

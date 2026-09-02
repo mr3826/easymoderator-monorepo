@@ -88,6 +88,7 @@ vi.mock('lucide-react', () => ({
   X:          () => null,
   ChevronDown:() => null,
   ChevronUp:  () => null,
+  CircleIcon: () => null,
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────

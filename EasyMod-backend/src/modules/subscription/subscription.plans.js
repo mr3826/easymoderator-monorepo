@@ -10,6 +10,8 @@
  * Supported channel: Facebook Messenger (Instagram + WhatsApp out of product scope).
  */
 
+const { AI_REPLY_MODES } = require('../shop/ai-reply-mode');
+
 const UNLIMITED = -1;
 
 const PlanCode = Object.freeze({
@@ -87,9 +89,9 @@ const BASE_FEATURES = Object.freeze({
     // See docs/ai-cost/GEMINI_FIRST_ROUTING.md.
     advanced_model_preset: false,
     allowed_languages: Object.freeze(['en', 'bn', 'mixed']),
-    // Canonical automation modes advertised to the client (matches the
-    // MetaChannelSettings ENUM). All modes are available on every plan.
-    allowed_automation_modes: Object.freeze(['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'MANUAL', 'DRAFT']),
+    // Canonical business reply modes advertised to the client. All modes are
+    // available on every plan; legacy aliases are read-only compatibility data.
+    allowed_automation_modes: Object.freeze(Object.values(AI_REPLY_MODES)),
     rate_limit_per_minute: 40
 });
 

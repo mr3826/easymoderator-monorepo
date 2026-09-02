@@ -4,6 +4,7 @@
  */
 
 const { AppError } = require('../../utils/AppError');
+const { isKnownAiReplyMode } = require('./ai-reply-mode');
 
 // Validation helpers
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -42,7 +43,7 @@ const isValidSocialLinks = (val) => {
 
 // AI Settings Schema
 const AI_SETTINGS_SCHEMA = {
-  automation_mode: (val) => ['AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'AUTO', 'DRAFT', 'MANUAL'].includes(val),
+  automation_mode: isKnownAiReplyMode,
   confidence_threshold: (val) => typeof val === 'number' && val >= 0 && val <= 100,
   auto_reply_enabled: (val) => typeof val === 'boolean',
   max_auto_order_value: (val) => typeof val === 'number' && val >= 0,
@@ -284,6 +285,28 @@ const mergeAndSanitizeSettings = (currentSettings, patch) => {
   return sanitized;
 };
 
+/**
+ * Remove the reply-mode field from the general shop update surface. Reply mode
+ * has its own audited API contract and must not be changed as a side effect of
+ * updating unrelated shop settings.
+ */
+const stripAutomationModeFromShopUpdate = (updateData) => {
+  if (!isPlainObject(updateData)
+    || !isPlainObject(updateData.settings)
+    || !isPlainObject(updateData.settings.ai)
+    || !Object.prototype.hasOwnProperty.call(updateData.settings.ai, 'automation_mode')) {
+    return updateData;
+  }
+
+  const settings = {
+    ...updateData.settings,
+    ai: { ...updateData.settings.ai },
+  };
+  delete settings.ai.automation_mode;
+
+  return { ...updateData, settings };
+};
+
 module.exports = {
   validateAISettings,
   validateBDSettings,
@@ -291,6 +314,7 @@ module.exports = {
   validateSettings,
   sanitizeSettings,
   mergeAndSanitizeSettings,
+  stripAutomationModeFromShopUpdate,
   AI_SETTINGS_SCHEMA,
   BD_SETTINGS_SCHEMA,
   BUSINESS_INFO_SCHEMA

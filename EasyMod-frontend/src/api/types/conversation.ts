@@ -5,6 +5,25 @@
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type MessageType = 'text' | 'image' | 'file' | 'location';
 
+export const AI_REPLY_MODES = ['AUTO', 'DRAFT', 'MANUAL'] as const;
+export type AiReplyMode = (typeof AI_REPLY_MODES)[number];
+export const DEFAULT_AI_REPLY_MODE: AiReplyMode = 'MANUAL';
+
+const AI_REPLY_MODE_ALIASES: Record<string, AiReplyMode> = {
+  AUTO: 'AUTO',
+  AI_ACTIVE: 'AUTO',
+  DRAFT: 'DRAFT',
+  AI_SUGGEST_ONLY: 'DRAFT',
+  MANUAL: 'MANUAL',
+  HUMAN_ACTIVE: 'MANUAL',
+};
+
+/** Normalize current and legacy API values, failing closed to MANUAL. */
+export function normalizeAiReplyMode(value: unknown): AiReplyMode {
+  if (typeof value !== 'string') return DEFAULT_AI_REPLY_MODE;
+  return AI_REPLY_MODE_ALIASES[value.trim()] ?? DEFAULT_AI_REPLY_MODE;
+}
+
 export type MessageSourceKind = 'rag' | 'faq' | 'product';
 
 export interface MessageSourceReference {

@@ -11,6 +11,11 @@ const { SupportTicket } = require('../entities');
 const { createLogger } = require('../../utils/structured-logger');
 const { planHasFeature } = require('../subscription/subscription.plans');
 const grounding = require('../ai/grounding');
+const {
+    AI_REPLY_MODES,
+    normalizeAiReplyMode,
+    isAutoSendMode,
+} = require('../shop/ai-reply-mode');
 
 const presetLogger = createLogger('AiChatbotPreset');
 
@@ -47,11 +52,29 @@ const advancedPresetAllowed = async (shopId) => {
 async function getShopAISettings(shopId) {
     const cacheKey = 'ai_settings';
     const cached = await cacheService.getForShop(shopId, cacheKey);
-    if (cached) return cached;
+    if (cached) return normalizeBusinessAiSettings(cached);
 
     const settings = await shopService.getShopAiSettings(shopId) || {};
-    await cacheService.setForShop(shopId, cacheKey, settings, 300);
-    return settings;
+    const normalizedSettings = normalizeBusinessAiSettings(settings);
+    await cacheService.setForShop(shopId, cacheKey, normalizedSettings, 300);
+    return normalizedSettings;
+}
+
+function normalizeBusinessAiSettings(settings = {}) {
+    return {
+        ...settings,
+        automation_mode: normalizeAiReplyMode(settings.automation_mode || AI_REPLY_MODES.MANUAL),
+    };
+}
+
+function mergeAiSettings(shopSettings, channelSettings) {
+    return {
+        ...shopSettings,
+        ...channelSettings,
+        // Page-level automation_mode is legacy data and cannot override the
+        // business reply mode, including when the business mode is absent.
+        automation_mode: normalizeAiReplyMode(shopSettings?.automation_mode || AI_REPLY_MODES.MANUAL),
+    };
 }
 
 function captureKnowledgeGap(params) {
@@ -172,7 +195,7 @@ class AIChatbotController {
                     } catch { return {}; }
                 })()
             ]);
-            const aiSettings = { ...shopAISettings, ...channelAISettings };
+            const aiSettings = mergeAiSettings(shopAISettings, channelAISettings);
 
             // Step 4: Determine if we should continue order session or process new intent
             let response;
@@ -261,8 +284,10 @@ class AIChatbotController {
             const shopCreatedAt = aiSettings.shop_created_at;
             const isOnboarding = shopCreatedAt
                 && (Date.now() - new Date(shopCreatedAt).getTime()) < 48 * 60 * 60 * 1000;
-            const effectiveMode = isOnboarding ? 'DRAFT' : (aiSettings.automation_mode || 'DRAFT');
-            const isDraft = effectiveMode === 'DRAFT';
+            const effectiveMode = isOnboarding
+                ? AI_REPLY_MODES.DRAFT
+                : normalizeAiReplyMode(aiSettings.automation_mode);
+            const isDraft = !isAutoSendMode(effectiveMode);
 
             // Step 5: Store AI response
             await ConversationStateService.storeAIResponse(conversation_id, response, {

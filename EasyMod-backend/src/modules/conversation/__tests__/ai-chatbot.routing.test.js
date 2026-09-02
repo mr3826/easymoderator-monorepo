@@ -47,6 +47,8 @@ jest.mock('../../../utils/structured-logger', () => ({
 }));
 
 const AIChatbotController = require('../ai-chatbot.controller');
+const shopService = require('../../shop/shop.service');
+const { AI_REPLY_MODES } = require('../../shop/ai-reply-mode');
 
 const makeResponse = () => ({
     status: jest.fn(function status() { return this; }),
@@ -65,6 +67,10 @@ const baseRequest = (overrides = {}) => ({
 
 beforeEach(() => {
     jest.clearAllMocks();
+    shopService.getShopAiSettings.mockResolvedValue({
+        automation_mode: AI_REPLY_MODES.DRAFT,
+        confidence_threshold: 75,
+    });
     mockMetaChannelService.findConnectedById.mockResolvedValue({
         id: CHANNEL_ID,
         shop_id: SHOP_ID,
@@ -110,4 +116,34 @@ describe('AI chatbot exact channel routing', () => {
         expect(mockConversationStateService.ingestMessage).not.toHaveBeenCalled();
         expect(mockMetaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
     });
+
+    test.each([
+        ['AI_SUGGEST_ONLY', 'AI_ACTIVE', AI_REPLY_MODES.DRAFT, true],
+        ['AI_ACTIVE', 'DRAFT', AI_REPLY_MODES.AUTO, false],
+        [undefined, 'AI_ACTIVE', AI_REPLY_MODES.MANUAL, true],
+    ])(
+        'uses the business reply mode when business=%s and Page mode=%s',
+        async (businessMode, pageMode, expectedMode, expectedDraft) => {
+            const res = makeResponse();
+            shopService.getShopAiSettings.mockResolvedValue({
+                ...(businessMode === undefined ? {} : { automation_mode: businessMode }),
+                confidence_threshold: 75,
+            });
+            mockMetaChannelService.getSettings.mockResolvedValue({
+                automation_mode: pageMode,
+                ai_auto_reply: true,
+            });
+
+            await AIChatbotController.processMessage(baseRequest({ meta_channel_id: CHANNEL_ID }), res);
+
+            const payload = res.json.mock.calls[0][0];
+            expect(payload).toEqual(expect.objectContaining({ success: true }));
+            expect(payload.metadata).toEqual(expect.objectContaining({ is_draft: expectedDraft }));
+            expect(payload.metadata.ai_settings.automation_mode).toBe(expectedMode);
+            expect(mockConversationStateService.updateConversationState).toHaveBeenCalledWith(
+                'conversation-1',
+                expect.objectContaining({ automation_mode: expectedMode }),
+            );
+        },
+    );
 });

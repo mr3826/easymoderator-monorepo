@@ -5,17 +5,20 @@
 import { httpClient } from '@/shared/lib/http/client';
 import type { ApiResponse, PaginatedResponse } from '../types/common';
 import type {
+  AiReplyMode,
   Conversation,
   Message,
   ResponseTemplate,
   VoiceTranscriptionRequest,
   VoiceTranscriptionResponse,
 } from '../types/conversation';
+import { normalizeAiReplyMode } from '../types/conversation';
 import type { AuditLog } from '../types/audit';
 import type { AxiosResponse } from 'axios';
 
 interface ConversationListBody {
   conversations?: Conversation[];
+  ai_reply_mode?: unknown;
   pagination?: {
     total?: number;
     page?: number;
@@ -25,13 +28,22 @@ interface ConversationListBody {
   };
 }
 
-type ConversationListResponse = PaginatedResponse<Conversation> | ConversationListBody;
+type ConversationListResponse =
+  | (PaginatedResponse<Conversation> & { ai_reply_mode?: unknown })
+  | ConversationListBody;
+
+export interface ConversationsResponse extends PaginatedResponse<Conversation> {
+  ai_reply_mode: AiReplyMode;
+}
 
 function normalizeConversationList(
   body: ConversationListResponse | undefined
-): PaginatedResponse<Conversation> {
+): ConversationsResponse {
   if (body && 'data' in body && Array.isArray(body.data)) {
-    return body;
+    return {
+      ...body,
+      ai_reply_mode: normalizeAiReplyMode(body.ai_reply_mode),
+    };
   }
 
   const conversations = body && 'conversations' in body && Array.isArray(body.conversations)
@@ -44,13 +56,14 @@ function normalizeConversationList(
     total: pagination?.total ?? conversations.length,
     page: pagination?.page ?? 1,
     pageSize: pagination?.pageSize ?? pagination?.limit ?? conversations.length,
+    ai_reply_mode: normalizeAiReplyMode(body && 'ai_reply_mode' in body ? body.ai_reply_mode : undefined),
   };
 }
 
 // Conversations
 export async function getConversations(
   params?: Record<string, unknown>
-): Promise<PaginatedResponse<Conversation>> {
+): Promise<ConversationsResponse> {
   const response: AxiosResponse<ApiResponse<ConversationListResponse>> =
     await httpClient.get('/api/conversation', { params });
   return normalizeConversationList(response.data.data);

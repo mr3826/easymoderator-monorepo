@@ -2,7 +2,7 @@
  * businessHours rule
  *
  * If the channel has business_hours configured and the current time is outside
- * them, and the channel is in AI_ACTIVE mode, the rule does NOT deny but emits
+ * them, and the channel is in AUTO mode, the rule does NOT deny but emits
  * a SUGGEST_ONLY reason so the worker downgrades from auto-send to suggestion.
  *
  * Outside business hours but the message is a customer-triggered reply
@@ -20,6 +20,12 @@
  */
 
 'use strict';
+
+const {
+    AI_REPLY_MODES,
+    normalizeAiReplyMode,
+    isAutoSendMode,
+} = require('../../shop/ai-reply-mode');
 
 function parseHHMM(s) {
     const [h, m] = String(s).split(':').map(Number);
@@ -46,14 +52,16 @@ module.exports = {
 
     async evaluate(_message, ctx) {
         const settings = ctx.settings || {};
-        const automationMode = settings.automation_mode || 'DRAFT';
+        const automationMode = normalizeAiReplyMode(
+            settings.automation_mode || AI_REPLY_MODES.MANUAL
+        );
         const businessHours = settings.business_hours;
         if (!businessHours) return { allow: true, reason: 'NO_HOURS_CONFIG' };
 
         if (isInsideHours(businessHours)) {
             return { allow: true, reason: 'INSIDE_HOURS' };
         }
-        if (automationMode === 'AI_ACTIVE') {
+        if (isAutoSendMode(automationMode)) {
             // Downgrade — allow the engine to flag the worker to store-only.
             return { allow: false, reason: 'SUGGEST_ONLY' };
         }

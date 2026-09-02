@@ -6,9 +6,18 @@ const { validationResult } = require('express-validator');
 const { AppError } = require('../../utils/AppError');
 const cacheService = require('../../utils/cache.service');
 const { getBdSettings: getBdSettingsHelper, updateBdSettings: updateBdSettingsHelper } = require('./shop-bd-settings');
-const { mergeAndSanitizeSettings } = require('./shop-settings.validator');
+const {
+    mergeAndSanitizeSettings,
+    stripAutomationModeFromShopUpdate,
+} = require('./shop-settings.validator');
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
 const { PlanCode, normalizePlanCode } = require('../subscription/subscription.plans');
+const {
+    AI_REPLY_MODES,
+    normalizeAiReplyMode,
+    isAutoSendMode,
+    isKnownAiReplyMode,
+} = require('./ai-reply-mode');
 
 // Resolve subscription plan code for a shop, with Redis caching (5 min TTL).
 // Missing/error states fail closed to the free Shuru entitlement; they must not
@@ -199,7 +208,7 @@ const updateShop = async (req, res, next) => {
 
         // Always use the shop from the authenticated token — never trust shopId from the body.
         const shopId = req.user.shopId;
-        const updateData = { ...req.body };
+        const updateData = stripAutomationModeFromShopUpdate({ ...req.body });
         delete updateData.id;      // immutable
         delete updateData.shopId;  // strip if accidentally sent
         const shop = await shopService.updateShopById(shopId, req.user.userId, updateData);
@@ -366,16 +375,8 @@ const updateLLMConfig = async (req, res, next) => {
     }
 };
 
-// Allowed values for AI behaviour fields — validated server-side.
-// Must mirror the MetaChannelSettings.automation_mode ENUM
-// ('AI_ACTIVE'|'AI_SUGGEST_ONLY'|'HUMAN_ACTIVE'|'MANUAL'|'DRAFT'). 'AUTO' is kept
-// as a legacy alias that getShopAiSettings normalises to 'AI_ACTIVE' on read.
-const ALLOWED_AUTOMATION_MODES = new Set([
-    'AI_ACTIVE', 'AI_SUGGEST_ONLY', 'HUMAN_ACTIVE', 'MANUAL', 'DRAFT', 'AUTO',
-]);
 const ALLOWED_LANGUAGES        = new Set(['mixed', 'en', 'bn']);
 const ALLOWED_NOTIF_CHANNELS   = new Set(['in_app', 'email', 'sms', 'telegram']);
-const isAutoSendMode = (mode) => mode === 'AUTO' || mode === 'AI_ACTIVE';
 
 /**
  * GET /shop/ai-settings
@@ -390,6 +391,10 @@ const getAISettings = async (req, res, next) => {
             getShopPlanCode(shopId)
         ]);
 
+        const normalizedAiSettings = aiSettings
+            ? { ...aiSettings, automation_mode: normalizeAiReplyMode(aiSettings.automation_mode) }
+            : aiSettings;
+
         // Include plan capabilities so the frontend can render locked fields
         const { getTierByCode } = require('../subscription/subscription.plans');
         const tier = getTierByCode(planCode) || getTierByCode(PlanCode.SHURU);
@@ -397,11 +402,11 @@ const getAISettings = async (req, res, next) => {
             plan_code: planCode,
             ai_settings_access: [...tier.ai_settings_access],
             allowed_languages: [...tier.features.allowed_languages],
-            allowed_automation_modes: [...tier.features.allowed_automation_modes],
+            allowed_automation_modes: Object.values(AI_REPLY_MODES),
             language_autodetect: false
         };
 
-        res.status(200).json({ success: true, data: aiSettings, plan_capabilities: planCapabilities });
+        res.status(200).json({ success: true, data: normalizedAiSettings, plan_capabilities: planCapabilities });
     } catch (error) {
         next(error);
     }
@@ -420,12 +425,13 @@ const updateAISettings = async (req, res, next) => {
             max_auto_order_value, ask_email, primary_language,
             required_fields, handoff_settings, payment_methods,
             greeting, closing
-        } = req.body;
+        } = req.body || {};
 
-        // Automation mode — format validation
+        // Legacy aliases are accepted only at this boundary and are stored and
+        // returned using the canonical three-value vocabulary.
         if (automation_mode !== undefined) {
-            if (!ALLOWED_AUTOMATION_MODES.has(automation_mode)) {
-                throw new AppError(`automation_mode must be one of: ${[...ALLOWED_AUTOMATION_MODES].join(', ')}`, 400);
+            if (!isKnownAiReplyMode(automation_mode)) {
+                throw new AppError('automation_mode must be AUTO, DRAFT, MANUAL, or a supported legacy alias', 400);
             }
         }
 
@@ -449,8 +455,9 @@ const updateAISettings = async (req, res, next) => {
 
         const updates = {};
         if (automation_mode      !== undefined) {
-            updates.automation_mode = automation_mode;
-            updates.auto_reply_enabled = isAutoSendMode(automation_mode);
+            const normalizedMode = normalizeAiReplyMode(automation_mode);
+            updates.automation_mode = normalizedMode;
+            updates.auto_reply_enabled = isAutoSendMode(normalizedMode);
         }
         if (confidence_threshold !== undefined) updates.confidence_threshold = confidence_threshold;
         if (automation_mode === undefined && auto_reply_enabled !== undefined) updates.auto_reply_enabled = Boolean(auto_reply_enabled);
@@ -464,7 +471,10 @@ const updateAISettings = async (req, res, next) => {
         if (closing              !== undefined) updates.closing              = closing;
 
         const data = await shopService.updateShopAiSettings(shopId, userId, updates);
-        res.status(200).json({ success: true, data });
+        const normalizedData = data
+            ? { ...data, automation_mode: normalizeAiReplyMode(data.automation_mode) }
+            : data;
+        res.status(200).json({ success: true, data: normalizedData });
     } catch (error) {
         next(error);
     }

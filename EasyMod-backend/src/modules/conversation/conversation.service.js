@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
+const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 
 class ConversationService {
     mapConversation(conversation) {
@@ -66,34 +67,39 @@ class ConversationService {
                 }
             }
 
-            const conversations = await Conversation.findAndCountAll({
-                where: whereClause,
-                order: [['created_at', 'DESC']],
-                limit,
-                offset,
-                include: [
-                    {
-                        model: Customer,
-                        as: 'customer',
-                        attributes: ['id', 'name', 'phone']
-                    },
-                    {
-                        model: MetaChannel,
-                        as: 'metaChannel',
-                        required: false,
-                        attributes: ['id', 'display_name', 'platform'],
-                        include: [{
-                            model: MetaChannelSettings,
-                            as: 'settings',
+            const [conversations, aiReplyMode] = await Promise.all([
+                Conversation.findAndCountAll({
+                    where: whereClause,
+                    order: [['created_at', 'DESC']],
+                    limit,
+                    offset,
+                    include: [
+                        {
+                            model: Customer,
+                            as: 'customer',
+                            attributes: ['id', 'name', 'phone']
+                        },
+                        {
+                            model: MetaChannel,
+                            as: 'metaChannel',
                             required: false,
-                            attributes: ['purpose_label']
-                        }]
-                    }
-                ]
-            });
+                            attributes: ['id', 'display_name', 'platform'],
+                            include: [{
+                                model: MetaChannelSettings,
+                                as: 'settings',
+                                required: false,
+                                attributes: ['purpose_label']
+                            }]
+                        }
+                    ]
+                }),
+                // One shop-level read for the envelope; never resolve this per row.
+                getEffectiveAiReplyMode(shopId),
+            ]);
 
             return {
                 conversations: conversations.rows.map((row) => this.mapConversation(row)),
+                ai_reply_mode: aiReplyMode,
                 pagination: {
                     total: conversations.count,
                     page,

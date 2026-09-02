@@ -1,0 +1,613 @@
+import { expect, test, type Page } from '@playwright/test';
+
+type AiReplyMode = 'AUTO' | 'DRAFT' | 'MANUAL';
+type MessageSender = 'customer' | 'agent' | 'ai';
+
+const mockUser = {
+  id: 'user-1',
+  full_name: 'Test Owner',
+  email: 'owner@shop.bd',
+};
+
+const mockShop = {
+  id: 'shop-1',
+  unique_code: 'SHOP1',
+  shop_name: 'Mode Test Shop',
+  role: 'owner',
+  settings: { onboarding_completed: true },
+};
+
+const mockBusinessInfo = {
+  shopName: 'Mode Test Shop',
+  phone: '01711000000',
+  address: 'Dhaka, Bangladesh',
+  openingHours: '9am-6pm',
+  additionalInfo: '',
+  socialLinks: {},
+};
+
+const mockAISettings = {
+  automation_mode: 'MANUAL' as AiReplyMode,
+  confidence_threshold: 75,
+  auto_reply_enabled: false,
+  max_auto_order_value: 5000,
+  ask_email: false,
+  primary_language: 'mixed',
+  required_fields: {
+    customer_name: true,
+    mobile_number: true,
+    delivery_address: true,
+    payment_method: true,
+    email_address: false,
+    special_instructions: false,
+  },
+  handoff_settings: {
+    trigger_keywords: ['refund'],
+    notification_channel: 'in_app',
+    cooldown_minutes: 30,
+  },
+  greeting: { enabled: true, custom_text: 'Welcome' },
+  closing: { enabled: true, custom_text: 'Thanks' },
+};
+
+const mockMetaChannel = {
+  id: 'meta-channel-1',
+  shopId: mockShop.id,
+  platform: 'facebook',
+  metaAssetId: 'page-1',
+  displayName: 'Mode Test Page',
+  pictureUrl: null,
+  status: 'CONNECTED',
+  lastError: null,
+  tokenExpiresAt: null,
+  tokenLastRefreshedAt: '2026-09-01T00:00:00.000Z',
+  webhookSubscribedFields: ['messages'],
+  webhookLastVerifiedAt: '2026-09-01T00:00:00.000Z',
+  connectedAt: '2026-09-01T00:00:00.000Z',
+  disconnectedAt: null,
+  createdAt: '2026-09-01T00:00:00.000Z',
+  updatedAt: '2026-09-01T00:00:00.000Z',
+  purposeLabel: null,
+};
+
+function isoFromNow(offsetMs: number): string {
+  return new Date(Date.now() + offsetMs).toISOString();
+}
+
+function makeConversation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'conv-1',
+    customer_id: 'customer-1',
+    customer: { id: 'customer-1', name: 'Ahmed Hassan' },
+    channel: 'messenger',
+    title: 'Product question',
+    status: 'active',
+    hitl: false,
+    lastMessage: 'Is this available?',
+    unreadCount: 0,
+    created_at: isoFromNow(-60_000),
+    updated_at: isoFromNow(-1_000),
+    ...overrides,
+  };
+}
+
+function makeMessage(
+  id: string,
+  sender: MessageSender,
+  content: string,
+  offsetMs: number,
+  metadata?: Record<string, unknown>,
+) {
+  return {
+    id,
+    conversation_id: 'conv-1',
+    content,
+    sender,
+    message_type: 'text',
+    metadata,
+    created_at: isoFromNow(offsetMs),
+    updated_at: isoFromNow(offsetMs),
+  };
+}
+
+const customerMessage = () => makeMessage(
+  'customer-1',
+  'customer',
+  'Is this available?',
+  -2_000,
+);
+
+const heldDraftMessage = () => makeMessage(
+  'ai-held-1',
+  'ai',
+  'The draft reply is ready for your review.',
+  -1_000,
+  { delivered: false, held_reason: 'draft_mode' },
+);
+
+function jsonResponse(data: unknown, status = 200) {
+  return {
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify({ success: status < 400, data }),
+  };
+}
+
+function errorResponse(message: string, status = 400) {
+  return {
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify({ success: false, error: { message } }),
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+function isConversationMessagesPath(path: string): boolean {
+  return /^\/api\/conversation\/[^/]+\/messages$/.test(path);
+}
+
+function isConversationPath(path: string): boolean {
+  return /^\/api\/conversation\/[^/]+$/.test(path);
+}
+
+function isKnownApiPath(path: string): boolean {
+  return [
+    '/api/csrf',
+    '/api/auth/me',
+    '/api/auth/signin',
+    '/api/setup/status',
+    '/api/dashboard/metrics',
+    '/api/dashboard/queue',
+    '/api/order',
+    '/api/subscription',
+    '/api/notifications/in-app',
+    '/api/notifications/telegram',
+    '/api/shop/business-info',
+    '/api/shop/ai-settings',
+    '/api/conversation',
+    '/api/conversation/events',
+    '/api/templates',
+    '/api/channels/meta',
+    '/api/audit',
+  ].includes(path) || isConversationMessagesPath(path) || isConversationPath(path);
+}
+
+interface RouteOptions {
+  mode?: AiReplyMode;
+  conversations?: ReturnType<typeof makeConversation>[];
+  messages?: ReturnType<typeof makeMessage>[];
+  sseBody?: string;
+  holdSse?: boolean;
+  createMessageStatus?: number;
+}
+
+interface RouteFixture {
+  state: {
+    mode: AiReplyMode;
+    aiSettings: typeof mockAISettings;
+    messages: Record<string, ReturnType<typeof makeMessage>[]>;
+    savedModes: Array<{ mode: unknown; auto_reply_enabled: unknown }>;
+    createdMessages: Array<Record<string, unknown>>;
+    unexpectedApiRequests: string[];
+  };
+  sseRequested: Promise<void>;
+  releaseSse: () => void;
+  assertNoUnexpectedApiRequests: () => void;
+}
+
+async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<RouteFixture> {
+  let authenticated = false;
+  const mode = options.mode ?? 'MANUAL';
+  const sseGate = deferred();
+  const sseRequested = deferred();
+  const state: RouteFixture['state'] = {
+    mode,
+    aiSettings: {
+      ...mockAISettings,
+      automation_mode: mode,
+      auto_reply_enabled: mode === 'AUTO',
+    },
+    messages: {
+      'conv-1': options.messages ?? [customerMessage()],
+    },
+    savedModes: [],
+    createdMessages: [],
+    unexpectedApiRequests: [],
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('easymod:business-setup:default:complete-dismissed', '1');
+    window.localStorage.setItem('easymod:business-setup:shop-1:complete-dismissed', '1');
+  });
+
+  // Keep the fallback API-only. A broad API glob also matches Vite's /src/api
+  // modules and prevents the application bundle from loading.
+  await page.route(
+    (url) => {
+      const path = new URL(url).pathname;
+      return path.startsWith('/api/') && !isKnownApiPath(path);
+    },
+    async (route) => {
+      const request = route.request();
+      state.unexpectedApiRequests.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      await route.abort();
+    },
+  );
+
+  await page.route(
+    (url) => isKnownApiPath(new URL(url).pathname),
+    async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const method = request.method();
+
+      if (path === '/api/csrf' && method === 'GET') {
+        return route.fulfill(jsonResponse({ csrfToken: 'csrf-test' }));
+      }
+
+      if (path === '/api/auth/signin' && method === 'POST') {
+        authenticated = true;
+        return route.fulfill(jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] }));
+      }
+
+      if (path === '/api/auth/me' && method === 'GET') {
+        return route.fulfill(authenticated
+          ? jsonResponse({ user: mockUser, currentShop: mockShop, allShops: [mockShop] })
+          : errorResponse('Unauthorized', 401));
+      }
+
+      if (path === '/api/setup/status' && method === 'GET') {
+        return route.fulfill(jsonResponse({
+          isComplete: true,
+          completedCount: 4,
+          totalCount: 4,
+          progressPercent: 100,
+          tasks: [],
+        }));
+      }
+
+      if (path === '/api/dashboard/metrics' && method === 'GET') {
+        return route.fulfill(jsonResponse({
+          metrics: {
+            totalMessages: 0,
+            activeProducts: 0,
+            ordersToday: 0,
+            weeklyChange: 0,
+            conversionRate: 0,
+          },
+          analytics: { llm_calls: 0 },
+        }));
+      }
+
+      if (path === '/api/dashboard/queue' && method === 'GET') {
+        return route.fulfill(jsonResponse({ unread_count: 0, pending_payment_count: 0, at_risk_orders: [] }));
+      }
+
+      if (path === '/api/order' && method === 'GET') {
+        return route.fulfill(jsonResponse([]));
+      }
+
+      if (path === '/api/subscription' && method === 'GET') {
+        return route.fulfill(jsonResponse({
+          subscription: {
+            plan_code: 'GROWTH',
+            plan_name: 'Growth',
+            conversations_limit: -1,
+            features: {
+              image_understanding: true,
+              advanced_ai: true,
+              priority_support: false,
+              custom_branding: false,
+            },
+          },
+          effective_conversation_limit: -1,
+          usage: { conversations: { used: 0, limit: -1 } },
+          period: { start: '2026-09-01T00:00:00.000Z' },
+        }));
+      }
+
+      if (path === '/api/notifications/in-app' && method === 'GET') {
+        return route.fulfill(jsonResponse([]));
+      }
+
+      if (path === '/api/notifications/telegram' && method === 'GET') {
+        return route.fulfill(jsonResponse({ connected: false }));
+      }
+
+      if (path === '/api/shop/business-info' && method === 'GET') {
+        return route.fulfill(jsonResponse({ businessInfo: mockBusinessInfo, shop: mockShop }));
+      }
+
+      if (path === '/api/shop/ai-settings') {
+        if (method === 'GET') return route.fulfill(jsonResponse(state.aiSettings));
+        if (method === 'PUT') {
+          const body = (request.postDataJSON() || {}) as Record<string, unknown>;
+          state.mode = body.automation_mode as AiReplyMode;
+          state.aiSettings = { ...state.aiSettings, ...body, automation_mode: state.mode } as typeof mockAISettings;
+          state.savedModes.push({
+            mode: body.automation_mode,
+            auto_reply_enabled: body.auto_reply_enabled,
+          });
+          return route.fulfill(jsonResponse(state.aiSettings));
+        }
+      }
+
+      if (path === '/api/conversation' && method === 'GET') {
+        return route.fulfill(jsonResponse({
+          conversations: options.conversations ?? [makeConversation()],
+          ai_reply_mode: state.mode,
+          pagination: { total: 1, page: 1, pageSize: 50, totalPages: 1 },
+        }));
+      }
+
+      if (path === '/api/conversation/events' && method === 'GET') {
+        sseRequested.resolve();
+        if (options.holdSse) await sseGate.promise;
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/event-stream',
+          headers: { 'Cache-Control': 'no-cache' },
+          body: options.sseBody ?? 'retry: 10000\n\n',
+        });
+      }
+
+      if (isConversationMessagesPath(path)) {
+        const conversationId = path.split('/')[3];
+        if (method === 'GET') {
+          return route.fulfill(jsonResponse({
+            messages: state.messages[conversationId] ?? [],
+            pagination: { page: 1, totalPages: 1 },
+          }));
+        }
+        if (method === 'POST') {
+          const body = (request.postDataJSON() || {}) as Record<string, unknown>;
+          state.createdMessages.push(body);
+          if (options.createMessageStatus) {
+            return route.fulfill(errorResponse('Message delivery failed', options.createMessageStatus));
+          }
+          return route.fulfill(jsonResponse({
+            id: 'agent-message-1',
+            conversation_id: conversationId,
+            content: String(body.content ?? ''),
+            sender: 'agent',
+            message_type: 'text',
+            metadata: { delivery_status: 'sent' },
+            created_at: isoFromNow(0),
+            updated_at: isoFromNow(0),
+          }, 201));
+        }
+      }
+
+      if (isConversationPath(path) && method === 'PATCH') {
+        const body = (request.postDataJSON() || {}) as Record<string, unknown>;
+        return route.fulfill(jsonResponse({
+          ...makeConversation(),
+          hitl: body.hitl,
+        }));
+      }
+
+      if (path === '/api/templates' && method === 'GET') {
+        return route.fulfill(jsonResponse([]));
+      }
+
+      if (path === '/api/channels/meta' && method === 'GET') {
+        return route.fulfill(jsonResponse([mockMetaChannel]));
+      }
+
+      if (path === '/api/audit' && method === 'POST') {
+        return route.fulfill(jsonResponse({ id: 'audit-1' }, 201));
+      }
+
+      state.unexpectedApiRequests.push(`${method} ${path}`);
+      await route.abort();
+    },
+  );
+
+  return {
+    state,
+    sseRequested: sseRequested.promise,
+    releaseSse: sseGate.resolve,
+    assertNoUnexpectedApiRequests: () => {
+      expect(state.unexpectedApiRequests, 'unexpected API requests').toEqual([]);
+    },
+  };
+}
+
+async function loginAndGo(page: Page, path: string): Promise<void> {
+  await page.goto('/signin');
+  await page.getByLabel(/email/i).fill(mockUser.email);
+  await page.getByLabel(/password/i).fill('password123');
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto(path);
+}
+
+async function expectAiActiveCleared(page: Page): Promise<void> {
+  await expect(page.getByText(/AI is replying/)).toHaveCount(0);
+}
+
+test('Scenario A: Manual, Draft, and Auto render in order and save the canonical mode', async ({ page }) => {
+  const fixture = await setupRoutes(page, { mode: 'DRAFT' });
+  await loginAndGo(page, '/manage-shop/business-info');
+
+  const group = page.getByTestId('ai-reply-mode');
+  await expect(group).toHaveAttribute('role', 'radiogroup');
+  await expect(group.locator('[role="radio"]')).toHaveCount(3);
+  const optionIds = await group.locator('[data-testid^="ai-reply-mode-"]').evaluateAll((nodes) => (
+    nodes.map((node) => node.getAttribute('data-testid'))
+  ));
+  expect(optionIds).toEqual([
+    'ai-reply-mode-manual',
+    'ai-reply-mode-draft',
+    'ai-reply-mode-auto',
+  ]);
+
+  for (const mode of ['MANUAL', 'DRAFT', 'AUTO'] as const) {
+    const radio = page.getByTestId(`ai-reply-mode-${mode.toLowerCase()}`);
+    await radio.click();
+    await expect(radio).toHaveAttribute('aria-checked', 'true');
+
+    const saveResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/shop/ai-settings' && response.request().method() === 'PUT';
+    });
+    await page.getByRole('button', { name: 'Save Reply Settings', exact: true }).click();
+    await saveResponse;
+    await expect(page.getByText('Reply settings saved.', { exact: true })).toBeVisible();
+  }
+
+  expect(fixture.state.savedModes).toEqual([
+    { mode: 'MANUAL', auto_reply_enabled: false },
+    { mode: 'DRAFT', auto_reply_enabled: false },
+    { mode: 'AUTO', auto_reply_enabled: true },
+  ]);
+  await page.reload();
+  await expect(page.getByTestId('ai-reply-mode-auto')).toHaveAttribute('aria-checked', 'true');
+  fixture.assertNoUnexpectedApiRequests();
+});
+
+test('Scenario B: the mode control is accessible and Page settings has no AI participation toggle', async ({ page }) => {
+  const fixture = await setupRoutes(page, { mode: 'MANUAL' });
+  await loginAndGo(page, '/manage-shop/business-info');
+
+  const group = page.getByTestId('ai-reply-mode');
+  await expect(group).toHaveAttribute('aria-labelledby', 'ai-reply-mode-label');
+  const manual = page.getByTestId('ai-reply-mode-manual');
+  const draft = page.getByTestId('ai-reply-mode-draft');
+  await expect(manual).toHaveAttribute('role', 'radio');
+  await expect(manual).toHaveAttribute('aria-checked', 'true');
+  await manual.press('ArrowRight');
+  await expect(draft).toBeFocused();
+  // Radix's roving-focus radio group moves focus on arrow keys and only
+  // auto-selects the newly focused item on a real browser input event; a
+  // Space activates the standard, framework-independent path.
+  await draft.press('Space');
+  await expect(draft).toHaveAttribute('aria-checked', 'true');
+
+  await page.goto('/manage-shop/chat-settings');
+  await expect(page.getByRole('heading', { name: 'Channel Settings' })).toBeVisible();
+  await expect(page.getByRole('switch')).toHaveCount(0);
+  await expect(page.getByText(/Page AI participation/i)).toHaveCount(0);
+  fixture.assertNoUnexpectedApiRequests();
+});
+
+test('Scenario C: Manual mode suppresses the automatic-reply claim while keeping Inbox controls available', async ({ page }) => {
+  const fixture = await setupRoutes(page, { mode: 'MANUAL' });
+  await loginAndGo(page, '/inbox');
+
+  await expect(page.getByRole('heading', { name: 'Shared Inbox' })).toBeVisible();
+  await expect(page.getByText('Manual replies only', { exact: true })).toBeVisible();
+  await expectAiActiveCleared(page);
+
+  const composer = page.getByPlaceholder('Type your reply here...', { exact: true });
+  await expect(composer).toBeVisible();
+  await expect(composer).toBeEnabled();
+  fixture.assertNoUnexpectedApiRequests();
+});
+
+test('Scenario D: Draft mode shows draft-ready only when an undelivered held message exists', async ({ page }) => {
+  const fixture = await setupRoutes(page, { mode: 'DRAFT' });
+  await loginAndGo(page, '/inbox');
+
+  await expect(page.getByText('Drafts for review', { exact: true })).toBeVisible();
+  await expect(page.getByText('Draft ready for review', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send this', exact: true })).toHaveCount(0);
+
+  fixture.state.messages['conv-1'] = [customerMessage(), heldDraftMessage()];
+  await page.reload();
+  await expect(page.getByText('Draft ready for review', { exact: true })).toBeVisible();
+  await expect(page.getByText('The draft reply is ready for your review.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send this', exact: true })).toBeVisible();
+  fixture.assertNoUnexpectedApiRequests();
+});
+
+test('Scenario E: an SSE mode change updates Inbox without polling or reload', async ({ page }) => {
+  const fixture = await setupRoutes(page, {
+    mode: 'AUTO',
+    holdSse: true,
+    sseBody: [
+      'retry: 10000',
+      'event: ai_reply_mode_changed',
+      'data: {"mode":"MANUAL"}',
+      '',
+      '',
+    ].join('\n'),
+  });
+  await loginAndGo(page, '/inbox');
+
+  await expect(page.getByText(/AI is replying/)).toBeVisible();
+  await fixture.sseRequested;
+  await fixture.releaseSse();
+  await expect(page.getByText('Manual replies only', { exact: true })).toBeVisible();
+  await expectAiActiveCleared(page);
+  fixture.assertNoUnexpectedApiRequests();
+});
+
+test.describe('Scenario F: terminal activity clears from Inbox', () => {
+  test('after a merchant sends a reply', async ({ page }) => {
+    const fixture = await setupRoutes(page, { mode: 'AUTO' });
+    await loginAndGo(page, '/inbox');
+
+    await expect(page.getByText(/AI is replying/)).toBeVisible();
+    const composer = page.getByPlaceholder('Type your reply here...', { exact: true });
+    await composer.fill('Thanks, it is available.');
+    const sendResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/conversation/conv-1/messages' && response.request().method() === 'POST';
+    });
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await sendResponse;
+    await expectAiActiveCleared(page);
+    expect(fixture.state.createdMessages).toHaveLength(1);
+    fixture.assertNoUnexpectedApiRequests();
+  });
+
+  test('after an SSE delivery failure', async ({ page }) => {
+    const fixture = await setupRoutes(page, {
+      mode: 'AUTO',
+      holdSse: true,
+      sseBody: [
+        'retry: 10000',
+        'event: delivery_failed',
+        'data: {"conversation_id":"conv-1","reason":"provider rejected"}',
+        '',
+        '',
+      ].join('\n'),
+    });
+    await loginAndGo(page, '/inbox');
+
+    await expect(page.getByText(/AI is replying/)).toBeVisible();
+    await fixture.sseRequested;
+    await fixture.releaseSse();
+    await expectAiActiveCleared(page);
+    fixture.assertNoUnexpectedApiRequests();
+  });
+
+  test('after human takeover cancels automatic activity', async ({ page }) => {
+    const fixture = await setupRoutes(page, {
+      mode: 'AUTO',
+      holdSse: true,
+      sseBody: [
+        'retry: 10000',
+        'event: hitl_changed',
+        'data: {"conversation_id":"conv-1","hitl":true}',
+        '',
+        '',
+      ].join('\n'),
+    });
+    await loginAndGo(page, '/inbox');
+
+    await expect(page.getByText(/AI is replying/)).toBeVisible();
+    await fixture.sseRequested;
+    await fixture.releaseSse();
+    await expectAiActiveCleared(page);
+    fixture.assertNoUnexpectedApiRequests();
+  });
+});

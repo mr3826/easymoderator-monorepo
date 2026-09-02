@@ -35,4 +35,11 @@ describe('SSEClient tenant binding', () => {
     expect(url.origin).toBe('https://api.easymod.tech');
     expect(url.pathname).toBe('/conversation/events');
   });
+
+  it('accepts the AI reply mode change event as a known event', async () => {
+    const { SSEClient } = await import('./sse-client');
+    const client = new SSEClient({ shopId: 'shop-1', baseUrl: 'https://app.example.test' });
+
+    expect(client.on('ai_reply_mode_changed', () => {})).toBe(client);
+  });
 });

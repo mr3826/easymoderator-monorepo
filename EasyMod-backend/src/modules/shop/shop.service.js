@@ -4,9 +4,13 @@ const { sequelize } = require('../../utils/database/database-setup');
 const { DEFAULT_AI_SETTINGS } = require('./shop-defaults');
 const {
     validateAISettings,
-    mergeAndSanitizeSettings
+    mergeAndSanitizeSettings,
+    stripAutomationModeFromShopUpdate,
 } = require('./shop-settings.validator');
 const { invalidateShopSettingsCaches } = require('../../utils/shop-settings-cache');
+const { normalizeAiReplyMode, isAutoSendMode } = require('./ai-reply-mode');
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 /**
  * Get the single shop for a user.
@@ -124,7 +128,7 @@ const updateShopById = async (shopId, userId, updateData) => {
         throw new AppError('Shop not found', 404);
     }
 
-    const nextUpdate = { ...updateData };
+    const nextUpdate = stripAutomationModeFromShopUpdate({ ...updateData });
 
     // Don't allow updating unique_code
     delete nextUpdate.id;
@@ -360,9 +364,8 @@ const getShopAiSettings = async (shopId) => {
         ...(shop.settings?.ai || {}),
         shop_created_at: shop.created_at
     };
-    // Normalize legacy 'AUTO' → 'AI_ACTIVE' for shops that were created before the
-    // enum was standardised (stored value wins over default in the spread above).
-    if (merged.automation_mode === 'AUTO') merged.automation_mode = 'AI_ACTIVE';
+    // All callers receive the same canonical business-level reply mode.
+    merged.automation_mode = normalizeAiReplyMode(merged.automation_mode);
     return merged;
 };
 
@@ -376,33 +379,82 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     // Validate updates before applying
     validateAISettings(updates);
 
+    const normalizedUpdates = { ...updates };
+    const modeWasProvided = hasOwn(updates, 'automation_mode');
+    const oldMode = normalizeAiReplyMode(shop.settings?.ai?.automation_mode);
+    if (modeWasProvided) {
+        normalizedUpdates.automation_mode = normalizeAiReplyMode(updates.automation_mode);
+        // Reply mode is the source of truth for this legacy derived flag.
+        normalizedUpdates.auto_reply_enabled = isAutoSendMode(normalizedUpdates.automation_mode);
+    }
+
     const currentSettings = shop.settings || {};
     const currentAI = currentSettings.ai || {};
 
     // Deep-merge nested settings blocks so partial updates do not erase
     // sibling values that were not included in the request.
-    const newAI = { ...currentAI, ...updates };
-    if (updates.required_fields) {
-        newAI.required_fields = { ...(currentAI.required_fields || {}), ...updates.required_fields };
+    const newAI = { ...currentAI, ...normalizedUpdates };
+    if (normalizedUpdates.required_fields) {
+        newAI.required_fields = { ...(currentAI.required_fields || {}), ...normalizedUpdates.required_fields };
     }
-    if (updates.handoff_settings) {
-        newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...updates.handoff_settings };
+    if (normalizedUpdates.handoff_settings) {
+        newAI.handoff_settings = { ...(currentAI.handoff_settings || {}), ...normalizedUpdates.handoff_settings };
     }
-    if (updates.greeting) {
-        newAI.greeting = { ...(currentAI.greeting || {}), ...updates.greeting };
+    if (normalizedUpdates.greeting) {
+        newAI.greeting = { ...(currentAI.greeting || {}), ...normalizedUpdates.greeting };
     }
-    if (updates.closing) {
-        newAI.closing = { ...(currentAI.closing || {}), ...updates.closing };
+    if (normalizedUpdates.closing) {
+        newAI.closing = { ...(currentAI.closing || {}), ...normalizedUpdates.closing };
     }
     // Deep-merge intent_confidence_map to preserve per-intent settings
-    if (updates.intent_confidence_map) {
-        newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...updates.intent_confidence_map };
+    if (normalizedUpdates.intent_confidence_map) {
+        newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...normalizedUpdates.intent_confidence_map };
     }
 
     const sanitizedSettings = mergeAndSanitizeSettings(currentSettings, { ai: newAI });
 
     await shop.update({ settings: sanitizedSettings });
     await invalidateShopSettingsCaches(shopId);
+
+    if (modeWasProvided) {
+        const newMode = normalizeAiReplyMode(newAI.automation_mode);
+        newAI.automation_mode = newMode;
+
+        if (oldMode !== newMode) {
+            const modeChange = {
+                shop_id: shopId,
+                old_mode: oldMode,
+                new_mode: newMode,
+                actor_id: userId || null,
+            };
+
+            // Audit failures must not turn a successful settings write into a
+            // failed request; AuditService follows the same convention.
+            try {
+                const AuditService = require('../audit/audit.service');
+                await AuditService.logOperation({
+                    userId: userId || null,
+                    shopId,
+                    action: 'AI_REPLY_MODE_CHANGED',
+                    resourceType: 'SHOP',
+                    resourceId: shopId,
+                    oldValues: { automation_mode: oldMode },
+                    newValues: { automation_mode: newMode },
+                    metadata: modeChange,
+                });
+            } catch (error) {
+                console.error('Failed to record AI reply mode change audit:', error);
+            }
+
+            try {
+                const sseManager = require('../../utils/sse-manager');
+                sseManager.emit(shopId, 'ai_reply_mode_changed', { mode: newMode });
+            } catch (error) {
+                console.warn('Failed to publish AI reply mode change:', error.message);
+            }
+        }
+    }
+
     return newAI;
 };
 

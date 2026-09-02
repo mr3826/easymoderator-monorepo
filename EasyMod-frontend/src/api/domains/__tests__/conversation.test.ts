@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as conversation from '../conversation';
 import { httpClient } from '@/shared/lib/http/client';
+import { normalizeAiReplyMode } from '@/api/types/conversation';
 
 vi.mock('@/shared/lib/http/client', () => ({
   httpClient: {
@@ -34,7 +35,7 @@ describe('Conversation Domain API', () => {
       const result = await conversation.getConversations();
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: undefined });
-      expect(result).toEqual(mockData);
+      expect(result).toEqual({ ...mockData, ai_reply_mode: 'MANUAL' });
     });
 
     it('should normalize production conversation list payloads', async () => {
@@ -44,6 +45,7 @@ describe('Conversation Domain API', () => {
           data: {
             conversations: [{ id: 'c1', status: 'active' }],
             pagination: { total: 1, page: 1, limit: 50, totalPages: 1 },
+            ai_reply_mode: 'AI_ACTIVE',
           },
         },
       });
@@ -56,6 +58,7 @@ describe('Conversation Domain API', () => {
         total: 1,
         page: 1,
         pageSize: 50,
+        ai_reply_mode: 'AUTO',
       });
     });
 
@@ -65,6 +68,23 @@ describe('Conversation Domain API', () => {
       await conversation.getConversations({ status: 'active', page: 2 });
 
       expect(httpClient.get).toHaveBeenCalledWith('/api/conversation', { params: { status: 'active', page: 2 } });
+    });
+  });
+
+  describe('AiReplyMode normalization', () => {
+    it.each([
+      ['AUTO', 'AUTO'],
+      ['AI_ACTIVE', 'AUTO'],
+      ['DRAFT', 'DRAFT'],
+      ['AI_SUGGEST_ONLY', 'DRAFT'],
+      ['MANUAL', 'MANUAL'],
+      ['HUMAN_ACTIVE', 'MANUAL'],
+      [null, 'MANUAL'],
+      [undefined, 'MANUAL'],
+      ['', 'MANUAL'],
+      ['GARBAGE', 'MANUAL'],
+    ])('normalizes %s to %s', (value, expected) => {
+      expect(normalizeAiReplyMode(value)).toBe(expected);
     });
   });
 
