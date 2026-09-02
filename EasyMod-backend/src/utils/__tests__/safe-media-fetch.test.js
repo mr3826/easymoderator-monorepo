@@ -79,6 +79,40 @@ describe('safe external media fetch policy', () => {
         expect(result.buffer).toEqual(png);
     });
 
+    test('supports Node lookup callbacks that request all resolved addresses', async () => {
+        let lookupResult;
+        const requestImpl = (_url, options, callback) => {
+            const request = new EventEmitter();
+            request.setTimeout = jest.fn();
+            request.destroy = (error) => request.emit('error', error);
+            request.end = () => setImmediate(() => {
+                options.lookup('media.easymod.tech', { all: true }, (error, addresses) => {
+                    lookupResult = { error, addresses };
+                    callback(response({
+                        headers: {
+                            'content-type': 'image/png',
+                            'content-length': String(png.length),
+                        },
+                        chunks: [png],
+                    }));
+                });
+            });
+            return request;
+        };
+
+        const result = await safeFetchMedia('https://media.easymod.tech/a.png', {
+            env,
+            lookup: jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+            requestImpl,
+        });
+
+        expect(lookupResult).toEqual({
+            error: null,
+            addresses: [{ address: '93.184.216.34', family: 4 }],
+        });
+        expect(result.buffer).toEqual(png);
+    });
+
     test('rejects redirects whose DNS resolves to a private address', async () => {
         const lookup = jest.fn()
             .mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }])

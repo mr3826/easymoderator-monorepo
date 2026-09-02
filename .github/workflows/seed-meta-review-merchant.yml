@@ -127,17 +127,45 @@ jobs:
             OUTPUT=/tmp/meta-review-seed-output.txt
             trap 'rm -f "$SCRIPT" "$OUTPUT"' EXIT
 
+            image_for_service() {
+              local service="$1"
+              local container
+              container=$(docker ps -q --filter "label=com.docker.compose.service=$service" | head -n 1)
+              if [ -z "$container" ]; then
+                echo "ERROR: no running container found for $service"
+                exit 1
+              fi
+              docker inspect --format '{{.Config.Image}}' "$container"
+            }
+
+            BACKEND_IMAGE=$(image_for_service backend)
+            FRONTEND_IMAGE=$(image_for_service frontend)
+            GROWTH_IMAGE=$(image_for_service growth-frontend)
+            for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE" "$GROWTH_IMAGE"; do
+              if ! printf '%s' "$image" | grep -Eq '^.+@sha256:[0-9a-fA-F]{64}$'; then
+                echo 'ERROR: running service image is not digest-pinned'
+                exit 1
+              fi
+            done
+
+            compose() {
+              GHCR_IMAGE_BACKEND="$BACKEND_IMAGE" \
+              GHCR_IMAGE_FRONTEND="$FRONTEND_IMAGE" \
+              GHCR_IMAGE_GROWTH="$GROWTH_IMAGE" \
+              docker compose --env-file .env.prod -f docker-compose.prod.yml "$@"
+            }
+
             bytes=$(wc -c < "$SCRIPT")
             if [ "$bytes" -lt 1000 ]; then
               echo 'ERROR: bounded seed script is missing or truncated'
               exit 1
             fi
             echo "==> running bounded Meta review seed for deployed SHA ${EXPECTED_SHA}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+            compose run --rm --no-deps -T \
               -e EXPECTED_SHA="$EXPECTED_SHA" backend \
               node -e 'if (process.env.GIT_SHA !== process.env.EXPECTED_SHA) process.exit(1);'
             echo "backend_image_sha=${EXPECTED_SHA}"
-            docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps -T \
+            compose run --rm --no-deps -T \
               -v "$SCRIPT":/app/src/scripts/seed-meta-review-merchant.js:ro \
               -e NODE_ENV=production \
               -e RUN_MIGRATIONS_ON_STARTUP=false \
