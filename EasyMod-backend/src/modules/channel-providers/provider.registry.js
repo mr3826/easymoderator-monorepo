@@ -14,9 +14,9 @@
 
 'use strict';
 
-const MetaMessengerProvider = require('./providers/MetaMessengerProvider');
+const MetaPortfolioMessengerProvider = require('./providers/MetaPortfolioMessengerProvider');
 
-const messenger = new MetaMessengerProvider();
+const messenger = new MetaPortfolioMessengerProvider();
 
 const providers = Object.freeze({
     facebook: messenger
