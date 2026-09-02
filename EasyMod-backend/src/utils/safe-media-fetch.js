@@ -186,7 +186,11 @@ function requestOnce(url, resolved, {
                 Accept: [...ALLOWED_MIME_TYPES].join(', '),
                 'User-Agent': 'EasyModerator-MediaFetcher/1.0',
             },
-            lookup: (_hostname, _options, callback) => {
+            lookup: (_hostname, options, callback) => {
+                if (options?.all) {
+                    callback(null, [{ address: resolved.address, family: resolved.family }]);
+                    return;
+                }
                 callback(null, resolved.address, resolved.family);
             },
             servername: url.hostname,
