@@ -170,7 +170,7 @@ Payment and courier remain bundled under the top-level `COMMERCE_OPS` domain for
 The split trigger is the first of:
 
 1. either subdomain receives merchant-configurable policy; or
-2. self-MFS verification enters `AI_ACTIVE`.
+2. self-MFS verification enters business `AUTO`.
 
 At the trigger, the top-level domain is split into `PAYMENT_OPS` and `COURIER_OPS`, with separate ownership, rollout gates, and budgets.
 

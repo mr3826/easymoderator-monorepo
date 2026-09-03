@@ -26,7 +26,7 @@ EasyModerator is a production-focused Messenger sales and order automation platf
 - Live channel: Facebook Page Messenger DMs.
 - Out of current launch scope: Instagram, WhatsApp, Telegram as a customer/inbox channel, public comment automation, cold-DM automation, and broadcast campaigns.
 - Merchant alert channels: browser push, in-app notification center, and one-way Telegram group alerts through the global EasyModerator bot.
-- AI starts in Draft/Suggest mode for safer merchant review before auto-send is explicitly enabled.
+- AI reply mode is configured once in Business Settings. New or unresolved shops fail closed to Manual; Draft requires merchant review, and Auto can send only after policy and confidence gates pass.
 - Messenger conversations outside Meta's 24-hour reply window are blocked until an approved compliant template path exists.
 - Product/order flows must remain grounded in live product, shop, customer, and order data.
 - Public pricing lives at `/pricing` and is driven by the public server plan catalog; the landing page pricing section stays the primary conversion surface.
@@ -49,8 +49,8 @@ Required completion rules:
 - At least one connected Facebook Page channel.
 - Minimal shop profile: shop name, support contact, delivery info, and payment methods.
 - At least one active product; three or more active products are recommended.
-- Reply settings exist with an automation mode and confidence threshold. Draft mode remains the default and is recommended for first launch verification.
-- AI auto-reply is derived from the business automation mode: Draft holds replies as merchant-visible suggestions, Manual disables AI generation, and Auto can send after policy and confidence gates pass. Per-Page channel toggles only opt a Page in or out of that business reply mode.
+- Reply settings exist with an automation mode and confidence threshold. Manual is the safe default and is recommended for first launch verification.
+- AI auto-reply is derived from the business automation mode: Manual disables automatic AI generation, Draft holds replies as merchant-visible suggestions, and Auto can send after policy and confidence gates pass. Page settings do not override the business mode.
 
 The checklist does not lock navigation. Merchants can use the sidebar and settings pages while setup is incomplete. When all required items pass, EasyModerator shows a one-time "Your shop is ready" completion screen before the normal dashboard. Set `VITE_ENABLE_FIRST_TIME_SETUP_DASHBOARD=false` only as an operational fallback.
 

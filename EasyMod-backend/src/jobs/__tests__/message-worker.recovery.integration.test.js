@@ -40,9 +40,11 @@ const {
     ConversationTurn,
     Customer,
     Message,
+    Shop,
 } = require('../../modules/entities');
 const { sequelize } = require('../../utils/database/database-setup');
 const recovery = require('../../modules/ai/recovery/turn-recovery.service');
+const policyEngine = require('../../modules/policy/policy.engine');
 const { _private: workerPrivate } = require('../message-worker');
 
 jest.useFakeTimers();
@@ -115,6 +117,46 @@ test('replaying one turn preserves its start timestamp and sends one holding mes
     expect(new Date(stored.turn_started_at).toISOString()).toBe(new Date(startedAt).toISOString());
     expect(mockSendMessage).toHaveBeenCalledTimes(1);
     expect(await Message.count({ where: { conversation_id: CONVERSATION_ID } })).toBe(1);
+});
+
+test('recovery holding delivery rechecks business mode before provider delivery', async () => {
+    const shop = await Shop.findByPk(IDS.shopA);
+    const originalSettings = JSON.parse(JSON.stringify(shop.settings || {}));
+    const control = workerPrivate.createRecoveryControl({
+        turnId: 'mode-race-holding-turn',
+        shopId: IDS.shopA,
+        conversationId: CONVERSATION_ID,
+        platform: 'facebook',
+        recipientId: '7000000000000002',
+        channel: { id: 'channel-recovery' },
+        language: 'en',
+    });
+
+    policyEngine.evaluateOutbound.mockImplementationOnce(async () => {
+        await shop.update({
+            settings: {
+                ...shop.settings,
+                ai: {
+                    ...(shop.settings?.ai || {}),
+                    automation_mode: 'MANUAL',
+                    auto_reply_enabled: false,
+                },
+            },
+        });
+        return { allow: true, decisionId: 'recovery-policy', transform: null };
+    });
+    control.setPolicySettings({ automation_mode: 'AI_ACTIVE', ai_auto_reply: true });
+
+    try {
+        await jest.advanceTimersByTimeAsync(8000);
+        await control.flush();
+
+        expect(mockSendMessage).not.toHaveBeenCalled();
+        expect(await Message.count({ where: { conversation_id: CONVERSATION_ID } })).toBe(0);
+    } finally {
+        await control.close();
+        await shop.update({ settings: originalSettings });
+    }
 });
 
 test('HUMAN_REQUIRED and hitl are committed together and a missing conversation creates neither', async () => {

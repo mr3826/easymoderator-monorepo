@@ -115,6 +115,7 @@ export default function UnifiedInbox() {
   const [sseConnected, setSseConnected] = useState(true);
   const [aiReplyMode, setAiReplyMode] = useState<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
   const [aiReplyStatuses, setAiReplyStatuses] = useState<Record<string, AiReplyStatus>>({});
+  const aiReplyModeRef = useRef<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -131,7 +132,9 @@ export default function UnifiedInbox() {
       setLoadingConversations(true);
       setError(null);
       const result = await apiClient.getConversations({ limit: 50 });
-      setAiReplyMode(normalizeAiReplyMode(result.ai_reply_mode));
+      const normalizedMode = normalizeAiReplyMode(result.ai_reply_mode);
+      aiReplyModeRef.current = normalizedMode;
+      setAiReplyMode(normalizedMode);
       setConversations(result.data);
       if (result.data.length > 0 && !selectedConversation) {
         setSelectedConversation(result.data[0]);
@@ -165,7 +168,7 @@ export default function UnifiedInbox() {
       const result = await apiClient.getMessages(conversationId, { page, limit: PAGE_SIZE });
       if (page === 1) {
         setMessages(result.messages);
-        const status = getAiReplyStatus(result.messages, aiReplyMode);
+        const status = getAiReplyStatus(result.messages, aiReplyModeRef.current);
         setAiReplyStatuses((prev) => {
           const next = { ...prev };
           if (status) next[conversationId] = status;
@@ -327,7 +330,9 @@ export default function UnifiedInbox() {
     }, [aiReplyMode, selectedConversation?.id]),
 
     onAiReplyModeChanged: useCallback(({ mode }: { mode: AiReplyMode }) => {
-      setAiReplyMode(normalizeAiReplyMode(mode));
+      const normalizedMode = normalizeAiReplyMode(mode);
+      aiReplyModeRef.current = normalizedMode;
+      setAiReplyMode(normalizedMode);
       setAiReplyStatuses({});
       setDismissedSuggestionId(null);
     }, []),

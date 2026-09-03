@@ -4,6 +4,11 @@
 **Audited checkout:** `easy-moderator` on branch `main`<br>
 **Scope:** Current repository code, current deployment configuration, tests, and current operational documentation. Sibling checkouts under `D:\easymod` were not treated as product evidence.
 
+**Historical snapshot note:** This audit predates the business-level AI reply-mode
+refactor. Its legacy mode names and findings describe the 2026-08-21 snapshot and
+must not be used as the current configuration contract. The active contract is
+documented in `docs/adr/0003-business-ai-reply-mode-source-of-truth.md`.
+
 ## Evidence Rules
 
 This report uses the following labels:

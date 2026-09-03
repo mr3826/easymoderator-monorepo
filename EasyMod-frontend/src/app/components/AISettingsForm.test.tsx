@@ -267,6 +267,24 @@ describe('AISettingsForm', () => {
     });
   });
 
+  it('uses the persisted server mode after saving', async () => {
+    mockOnSave.mockResolvedValue({
+      ...defaultSettings,
+      automation_mode: 'MANUAL',
+      auto_reply_enabled: false,
+    });
+
+    render(<AISettingsForm {...defaultProps} initialData={defaultSettings} />);
+
+    fireEvent.click(screen.getByTestId('ai-reply-mode-auto'));
+    fireEvent.click(screen.getByRole('button', { name: /Save Reply Settings/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-reply-mode-manual')).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByTestId('ai-reply-mode-auto')).toHaveAttribute('aria-checked', 'false');
+    });
+  });
+
   it('shows success notice after save', async () => {
     mockOnSave.mockResolvedValue({});
     

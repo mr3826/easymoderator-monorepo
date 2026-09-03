@@ -15,7 +15,7 @@ This plan sequences implementation and launch evidence. The runtime architecture
 - A phase cannot be marked complete without a signed evidence receipt.
 - A failed hard gate stops the phase and disables the affected flag.
 - A later phase cannot begin automatically after an earlier phase fails.
-- Production mode names are `DRAFT`, `AI_ACTIVE`, `HUMAN_ACTIVE`, and `MANUAL`; behavior is defined here and in the Action Policy. `HUMAN_ACTIVE` MUST be non-delivering for automated customer sends.
+- Production business reply mode names are `AUTO`, `DRAFT`, and `MANUAL`; behavior is defined here and in the Action Policy. Legacy `AI_ACTIVE`, `AI_SUGGEST_ONLY`, and `HUMAN_ACTIVE` values are input-only compatibility aliases and MUST normalize to the canonical mode without creating a Page override.
 - The live repository is currently Level 4 and Facebook Messenger-only. No rollout step expands channel or autonomy scope without a new contract and review.
 
 ## 2. Phase Map
@@ -46,7 +46,7 @@ The first implementation sequence is:
 5. Add Response Grounding Verifier after mutation/result and before confidence.
 6. Add dependency-cruiser CI enforcement and worker traversal integration tests.
 7. Add durable courier idempotency and reconciliation before any courier AI flag can be true.
-8. Fix strict confirmation and summary revalidation before OrderAgent can reach `AI_ACTIVE`.
+8. Fix strict confirmation and summary revalidation before OrderAgent can reach business `AUTO`.
 
 The existing audit's live defects, including mutation-before-outbound policy, broad `extractConfirmation()` matching, unbound order status, early dedup claims, and courier retry uncertainty, are Phase A implementation work. This document set specifies them; it does not claim they are fixed by documentation alone.
 
@@ -54,7 +54,7 @@ The ordering deviation is recorded in [ADR-0001](../adr/0001-phase-a-defect-firs
 
 ## 4. Merchant Readiness Gate
 
-An unprepared shop starts in `DRAFT`. `AI_ACTIVE` requires a readiness receipt with all mandatory checks:
+An unprepared shop starts in `MANUAL`. Business `AUTO` requires a readiness receipt with all mandatory checks:
 
 | Check | Launch threshold | Evidence |
 |---|---:|---|
@@ -66,7 +66,7 @@ An unprepared shop starts in `DRAFT`. `AI_ACTIVE` requires a readiness receipt w
 | Return policy | One reviewed policy entry | FAQ/knowledge record |
 | FAQ coverage | At least five reviewed entries or an explicit knowledge-gap plan | FAQ review receipt |
 
-Below the bar, the merchant sees a completeness checklist with missing records and a Draft-mode explanation. Product owns the readiness score. Operations tracks the score, “I do not know” rate, conversion, and churn correlation weekly.
+Below the bar, the merchant sees a completeness checklist with missing records and a Manual-mode explanation. Product owns the readiness score. Operations tracks the score, “I do not know” rate, conversion, and churn correlation weekly.
 
 ## 5. Shadow Promotion Gate
 

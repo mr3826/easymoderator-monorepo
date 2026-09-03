@@ -62,7 +62,7 @@ export default function BusinessInfoSettings() {
   };
 
   const handleSaveAISettings = async (data: ShopAISettings) => {
-    await apiClient.updateShopAISettings(data);
+    return apiClient.updateShopAISettings(data);
   };
 
   if (isLoading) return <div className="p-6 text-gray-500">{t('manageShop.businessInfo.loading')}</div>;

@@ -507,8 +507,8 @@
       "complete": "সম্পন্ন",
       "incomplete": "কাজ বাকি",
       "missingPrefix": "বাকি:",
-      "noteTitle": "Review first recommended",
-      "noteBody": "EasyModerator defaultভাবে reply Draft রাখে। Real customer question review করার পর comfortable হলে automatic replies চালু করুন।",
+      "noteTitle": "Manual mode দিয়ে শুরু করা নিরাপদ",
+      "noteBody": "নতুন ব্যবসায় EasyModerator Manual mode দিয়ে শুরু হয়। Real customer question review করার পর Business Settings থেকে Draft বা Auto বেছে নিন।",
       "tasks": {
         "connect_channel": {
           "title": "Facebook Page যুক্ত করুন",
@@ -1711,11 +1711,11 @@
       "subtitle": "দোকানের কনফিগারেশন ম্যানেজ করুন",
       "businessInfo": {
         "name": "ব্যবসার তথ্য",
-        "desc": "নাম, ঠিকানা, লোগো ও অপারেটিং বিবরণ"
+        "desc": "নাম, ঠিকানা, লোগো, ব্যবসার বিবরণ ও AI reply mode"
       },
       "chatSettings": {
         "name": "চ্যাট সেটিংস",
-        "desc": "AI উত্তরের আচরণ ও গ্রিটিং কাস্টমাইজ করুন"
+        "desc": "Facebook Page সংযোগ ও Page label ম্যানেজ করুন"
       },
       "deliverySettings": {
         "name": "ডেলিভারি সেটিংস",
@@ -1807,7 +1807,6 @@
       "confidenceIndependent": "স্বাধীন",
       "maxAutoOrderLabel": "Maximum automatic order value (৳)",
       "maxAutoOrderHint": "এই পরিমাণের বেশি অর্ডারের জন্য ম্যানুয়াল অনুমোদন লাগবে।",
-      "autoReplyEnabled": "Automatic replies enabled",
       "askEmail": "গ্রাহকের ইমেইল জিজ্ঞাসা করুন",
       "greetingLabel": "First customer message reply",
       "greetingHint": "(শুধু automatic replies চালু থাকলে এবং গ্রাহকের প্রথম মেসেজে auto-send হলে)",

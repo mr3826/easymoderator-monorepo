@@ -201,7 +201,7 @@ Phase A implementation MUST consume the documents in this order:
 2. Implement the Action Gate and its audit record before enabling any order or courier mutation.
 3. Enforce the dependency rule and the message-worker integration invariant in CI.
 4. Add the intent registry and evaluation corpus before changing routing.
-5. Implement recovery and merchant readiness before enabling `AI_ACTIVE` for a new shop.
+5. Implement recovery and merchant readiness before enabling business `AUTO` for a new shop.
 6. Enable order and courier actions only after the launch gates in `ROLLOUT_PLAN.md` pass.
 
 No implementation may infer a missing rule from prompt prose. When these documents disagree, the authority table governs and the conflict blocks merge until resolved by an ADR.

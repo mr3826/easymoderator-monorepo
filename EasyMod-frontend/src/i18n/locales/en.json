@@ -507,8 +507,8 @@
       "complete": "Complete",
       "incomplete": "Needs work",
       "missingPrefix": "Missing:",
-      "noteTitle": "Review first is recommended",
-      "noteBody": "EasyModerator keeps replies in Draft by default. Review real customer questions first, then switch to automatic replies only when you are comfortable.",
+      "noteTitle": "Manual mode is recommended",
+      "noteBody": "EasyModerator starts new businesses in Manual mode. Review real customer questions and choose Draft or Auto from Business Settings only when you are ready.",
       "tasks": {
         "connect_channel": {
           "title": "Connect Facebook Page",
@@ -1711,11 +1711,11 @@
       "subtitle": "Manage your shop configuration",
       "businessInfo": {
         "name": "Business Info",
-        "desc": "Name, address, logo and operating details"
+        "desc": "Name, address, logo, operating details and AI reply mode"
       },
       "chatSettings": {
         "name": "Chat Settings",
-        "desc": "Customize AI reply behaviour and greeting"
+        "desc": "Connect Facebook Pages and manage Page labels"
       },
       "deliverySettings": {
         "name": "Delivery Settings",
@@ -1807,7 +1807,6 @@
       "confidenceIndependent": "Independent",
       "maxAutoOrderLabel": "Maximum automatic order value (৳)",
       "maxAutoOrderHint": "Orders above this amount require manual approval.",
-      "autoReplyEnabled": "Automatic replies enabled",
       "askEmail": "Ask customer for email",
       "greetingLabel": "First customer message reply",
       "greetingHint": "(only when automatic replies are enabled and the customer's first message is auto-sent)",

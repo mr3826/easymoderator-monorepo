@@ -323,6 +323,29 @@ describe('Shop Service', () => {
         expect(sseManager.emit).not.toHaveBeenCalled();
     });
 
+    it('updateShopAiSettings — cannot make the legacy boolean override Manual mode', async () => {
+        const shopWithSettings = {
+            ...mockShop,
+            settings: { ai: { automation_mode: 'MANUAL', auto_reply_enabled: false } },
+            update: jest.fn().mockResolvedValue(true),
+        };
+        Shop.findByPk.mockResolvedValueOnce(shopWithSettings);
+
+        const result = await shopService.updateShopAiSettings('shop-1', 'user-1', {
+            auto_reply_enabled: true,
+        });
+
+        expect(result).toEqual(expect.objectContaining({
+            automation_mode: 'MANUAL',
+            auto_reply_enabled: false,
+        }));
+        expect(shopWithSettings.update).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({
+                ai: expect.objectContaining({ automation_mode: 'MANUAL', auto_reply_enabled: false }),
+            }),
+        }));
+    });
+
     // ── deleteShopById ─────────────────────────────────────────────────────────
 
     it('deleteShopById — deletes shop when user is owner', async () => {

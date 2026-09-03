@@ -5,6 +5,11 @@
 Every node is traced to a file and line. Nodes marked **$** cost money; **DEAD** nodes are wired in
 code but unreachable in the deployed stack.
 
+This is a historical cost audit. The current business reply-mode contract is
+`AUTO`/`DRAFT`/`MANUAL`; Page-level AI switches are compatibility data only. See
+`docs/adr/0003-business-ai-reply-mode-source-of-truth.md` for the active authority
+and send-boundary decision.
+
 ---
 
 ## 1. Production model chain
@@ -50,7 +55,7 @@ Meta webhook  (POST /api/webhooks/meta)
        ├─ claimDedupKey(msg:dedup:…)  SET NX EX 86400     :292
        │     ◀── runs BEFORE any model call, so a duplicate webhook AND a BullMQ retry
        │         both short-circuit at $0. Retries never re-charge.
-       ├─ Guard: HITL / ai:pause / automation_mode / channel flag / subscription status
+       ├─ Guard: HITL / ai:pause / business automation_mode / channel status / subscription status
        │
        ├─ $ analyzeSentiment()                     sentiment.service.js:174
        │     keyword hit (angry/frustrated/positive) → return, NO LLM

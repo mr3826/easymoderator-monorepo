@@ -6,10 +6,10 @@
  * Fixed UUIDs: the same IDs appear in docs/testing/META_E2E_TEST_SETUP.md and in
  * the live-Meta runner, so a failure message names an asset a human can look up.
  *
- * Two shops exist on purpose. Shop A owns the whole catalog; Shop B owns one
- * unrelated product and its own Page. Cross-shop isolation is only meaningful
- * when the "wrong" shop has a real, non-empty catalog of its own — an empty one
- * would pass the test for the wrong reason.
+ * Two shops exist on purpose. Shop A owns the whole catalog and two Pages; Shop
+ * B owns one unrelated product and its own Page. Cross-shop isolation is only
+ * meaningful when the "wrong" shop has a real, non-empty catalog of its own —
+ * an empty one would pass the test for the wrong reason.
  */
 
 const { sequelize } = require('../../src/utils/database/database-setup');
@@ -27,11 +27,13 @@ const IDS = Object.freeze({
     shopB: 'bbbbbbbb-0000-4000-8000-00000000000b',
 
     channelA: 'aaaaaaaa-1111-4111-8111-11111111111a',
+    channelA2: 'aaaaaaaa-2222-4222-8222-22222222222a',
     channelB: 'bbbbbbbb-1111-4111-8111-11111111111b',
 
     // Meta Page IDs are strings, not UUIDs. These are E2E stand-ins; the live
     // runner uses the real tester Page ID from META_E2E_PAGE_ID.
     pageA: '100000000000001',
+    pageA2: '100000000000003',
     pageB: '100000000000002',
 
     knownProduct: 'cccccccc-0000-4000-8000-00000000000c',
@@ -50,6 +52,7 @@ const RUNTIME = {};
 
 /** The customer PSID the automated suite pretends to be. */
 const CUSTOMER_PSID = '7000000000000001';
+const CUSTOMER_PSID_PAGE_A2 = '7000000000000003';
 
 /** Expected facts, asserted by name so a fixture edit cannot silently pass. */
 const EXPECTED = Object.freeze({
@@ -300,6 +303,7 @@ const seed = async () => {
     // ── Channels ─────────────────────────────────────────────────────────────
     for (const [id, shopId, pageId, name] of [
         [IDS.channelA, IDS.shopA, IDS.pageA, 'EM E2E Page A'],
+        [IDS.channelA2, IDS.shopA, IDS.pageA2, 'EM E2E Page A2'],
         [IDS.channelB, IDS.shopB, IDS.pageB, 'EM E2E Page B'],
     ]) {
         await MetaChannel.create({
@@ -323,6 +327,7 @@ module.exports = {
     RUNTIME,
     EXPECTED,
     CUSTOMER_PSID,
+    CUSTOMER_PSID_PAGE_A2,
     E2E_PAGE_TOKEN,
     syncSchema,
     truncateAll,

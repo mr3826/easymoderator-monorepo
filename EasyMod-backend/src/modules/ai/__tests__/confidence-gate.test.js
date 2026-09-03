@@ -57,8 +57,12 @@ describe('shouldHoldForLowConfidence', () => {
     });
 
     test('threshold boundary: 0.74 holds, 0.75 sends (threshold 75)', () => {
-        expect(shouldHoldForLowConfidence({ confidence: 0.74, confidenceThreshold: 75 })).toBe(true);
-        expect(shouldHoldForLowConfidence({ confidence: 0.75, confidenceThreshold: 75 })).toBe(false);
+        expect(shouldHoldForLowConfidence({ confidence: 0.74, automationMode: 'AUTO', confidenceThreshold: 75 })).toBe(true);
+        expect(shouldHoldForLowConfidence({ confidence: 0.75, automationMode: 'AUTO', confidenceThreshold: 75 })).toBe(false);
+    });
+
+    test('fails closed when the automation mode is missing', () => {
+        expect(shouldHoldForLowConfidence({ confidence: 0.1, confidenceThreshold: 75 })).toBe(false);
     });
 
     test('does NOT hold in non-auto modes (policy engine already withholds)', () => {
@@ -77,12 +81,12 @@ describe('shouldHoldForLowConfidence', () => {
     });
 
     test('treats null/undefined confidence as low → holds (AI pipeline failure)', () => {
-        expect(shouldHoldForLowConfidence({ confidence: null, confidenceThreshold: 75 })).toBe(true);
-        expect(shouldHoldForLowConfidence({ confidence: undefined, confidenceThreshold: 75 })).toBe(true);
+        expect(shouldHoldForLowConfidence({ confidence: null, automationMode: 'AUTO', confidenceThreshold: 75 })).toBe(true);
+        expect(shouldHoldForLowConfidence({ confidence: undefined, automationMode: 'AUTO', confidenceThreshold: 75 })).toBe(true);
     });
 
     test('uses the 0.75 default when the shop has no threshold configured', () => {
-        expect(shouldHoldForLowConfidence({ confidence: 0.7 })).toBe(true);
-        expect(shouldHoldForLowConfidence({ confidence: 0.8 })).toBe(false);
+        expect(shouldHoldForLowConfidence({ confidence: 0.7, automationMode: 'AUTO' })).toBe(true);
+        expect(shouldHoldForLowConfidence({ confidence: 0.8, automationMode: 'AUTO' })).toBe(false);
     });
 });

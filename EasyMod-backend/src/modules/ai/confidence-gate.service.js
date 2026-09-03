@@ -53,9 +53,9 @@ function normalizeConfidence(raw) {
  */
 function shouldHoldForLowConfidence({
     confidence,
-    // NOT the product default (MANUAL). A non-auto mode makes this gate a no-op,
-    // so an omitted mode must assume the auto-send path and actually evaluate.
-    automationMode = AI_REPLY_MODES.AUTO,
+    // Missing mode is an unresolved configuration value, so fail closed rather
+    // than allowing this helper to imply an automatic-send path.
+    automationMode = AI_REPLY_MODES.MANUAL,
     confidenceThreshold,
     orderFlowHandled = false,
 } = {}) {

@@ -137,6 +137,13 @@ describe('ChatSettings', () => {
     expect(screen.queryByText(/Auto-Selected for Best Results/i)).not.toBeInTheDocument();
   });
 
+  it('does not render a Page-level AI reply mode or participation control', async () => {
+    await renderComponent();
+    expect(screen.queryByText(/Page AI participation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI will not draft or send replies for this Page/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/automatic replies for this Page/i)).not.toBeInTheDocument();
+  });
+
   it('makes API call to load channels on mount', async () => {
     await renderComponent();
     await waitFor(() => {

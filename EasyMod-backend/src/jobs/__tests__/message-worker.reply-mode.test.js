@@ -12,6 +12,7 @@ const mockChannel = {
 
 const mockGetShopAiSettings = jest.fn();
 const mockGetChannelSettings = jest.fn();
+const mockCacheGet = jest.fn(async () => null);
 const mockFindUniqueChannel = jest.fn(async () => mockChannel);
 const mockFindChannelById = jest.fn(async () => mockChannel);
 const mockFindChannelByAsset = jest.fn(async () => null);
@@ -39,7 +40,7 @@ jest.mock('bullmq', () => ({
 jest.mock('src/jobs/message-queue', () => ({ connection: {} }));
 jest.mock('src/config/redis', () => ({
     cacheRedis: {
-        get: jest.fn(async () => null),
+        get: mockCacheGet,
         set: jest.fn(async () => 'OK'),
         setex: jest.fn(async () => 'OK'),
         del: jest.fn(async () => 1),
@@ -174,6 +175,7 @@ const channelSettings = {
 beforeEach(() => {
     jest.clearAllMocks();
     mockChannel.status = 'CONNECTED';
+    mockCacheGet.mockReset().mockResolvedValue(null);
     mockConversationFindOne.mockResolvedValue({ id: 'conv-1', hitl: false, status: 'open', metadata: {} });
     mockMessageFindAll.mockResolvedValue([]);
     mockMessageCount.mockResolvedValue(0);
@@ -291,4 +293,39 @@ test('an AUTO to MANUAL flip after Guard 4 holds the generated text and sends no
     });
     expect(mockEvaluateOutbound).not.toHaveBeenCalled();
     expect(mockSendMessage).not.toHaveBeenCalled();
+});
+
+test('a late human pause suppresses an in-flight AUTO send', async () => {
+    let pauseReads = 0;
+    mockCacheGet.mockImplementation(async (key) => {
+        if (key !== 'ai:pause:conv-1') return null;
+        pauseReads += 1;
+        return pauseReads >= 2 ? '1' : null;
+    });
+
+    const result = await processMessageJob(makeJob());
+
+    expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'ai_paused' }));
+    expect(mockProcessNewIntent).toHaveBeenCalledTimes(1);
+    expect(mockEvaluateOutbound).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith({
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'ai_paused' }),
+    });
+});
+
+test('a mode change during policy evaluation is rechecked before provider delivery', async () => {
+    mockGetShopAiSettings
+        .mockResolvedValueOnce(shopSettings('AUTO'))
+        .mockResolvedValueOnce(shopSettings('AUTO'))
+        .mockResolvedValueOnce(shopSettings('MANUAL'));
+
+    const result = await processMessageJob(makeJob());
+
+    expect(result).toEqual(expect.objectContaining({ sent: false, reason: 'mode_changed' }));
+    expect(mockEvaluateOutbound).toHaveBeenCalledTimes(1);
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith({
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'mode_changed' }),
+    });
 });
