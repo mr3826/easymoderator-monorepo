@@ -1,6 +1,6 @@
 # BD Launch Execution TODOs
 
-Last updated: 2026-08-28
+Last updated: 2026-09-03
 
 Scope: private/founder-led Bangladesh launch for EasyModerator as a Facebook Messenger DM-only product. The commercial model is implemented; live bKash enablement remains gated by the payment checklist below.
 
@@ -20,7 +20,7 @@ Reviewer positioning:
 - Demonstrate direct customer Messenger DM only.
 - Do not mention comments, Instagram, WhatsApp, omnichannel automation, comment-to-DM, or public comment replies in review materials.
 - Use a tester Page and tester customer account while the app remains in Development mode.
-- Screencast path: sign in, open Chat Settings, connect Facebook Page, receive inbound Messenger DM, show AI draft/manual reply, show explicit enablement before auto-reply.
+- Screencast path: sign in, open Business Settings and verify Manual, open Chat Settings and connect the Facebook Page, receive an inbound Messenger DM, then send a merchant-typed reply from the Inbox. Page settings must not present an AI mode override.
 
 Dashboard setup to verify before submission:
 

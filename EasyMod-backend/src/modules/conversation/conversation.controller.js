@@ -475,7 +475,12 @@ class ConversationController {
             // Frontend sends sender='agent'; service maps it to 'business' in DB — check both.
             const sender = messageData.sender || req.body.sender;
             if (sender === 'agent' || sender === 'business') {
-                cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1').catch(() => {});
+                try {
+                    // Persist the human-activity pause before starting delivery
+                    // so an in-flight worker can observe the takeover at its
+                    // final send-boundary re-check.
+                    await cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1');
+                } catch (_) { /* Redis is a safety hint; the manual send still proceeds. */ }
                 // Deliver agent reply to customer via Meta Graph API (fire-and-forget)
                 deliverViaMetaIfApplicable(conversationId, shopId, message);
             }

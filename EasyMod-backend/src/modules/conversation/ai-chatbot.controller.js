@@ -10,6 +10,7 @@ const cacheService = require('../../utils/cache.service');
 const { isTooLong } = require('../ai/prompt-sanitizer.service');
 const { SupportTicket } = require('../entities');
 const { createLogger } = require('../../utils/structured-logger');
+const { AI_SETTINGS_CACHE_KEY } = require('../../utils/shop-settings-cache');
 const { planHasFeature } = require('../subscription/subscription.plans');
 const grounding = require('../ai/grounding');
 const {
@@ -51,13 +52,12 @@ const advancedPresetAllowed = async (shopId) => {
 // Thin cached wrapper — delegates to the canonical shop service so there is
 // a single source of truth for AI settings (stored under shop.settings.ai).
 async function getShopAISettings(shopId) {
-    const cacheKey = 'ai_settings';
-    const cached = await cacheService.getForShop(shopId, cacheKey);
+    const cached = await cacheService.getForShop(shopId, AI_SETTINGS_CACHE_KEY);
     if (cached) return normalizeBusinessAiSettings(cached);
 
     const settings = await shopService.getShopAiSettings(shopId) || {};
     const normalizedSettings = normalizeBusinessAiSettings(settings);
-    await cacheService.setForShop(shopId, cacheKey, normalizedSettings, 300);
+    await cacheService.setForShop(shopId, AI_SETTINGS_CACHE_KEY, normalizedSettings, 300);
     return normalizedSettings;
 }
 

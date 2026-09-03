@@ -20,7 +20,7 @@ const grounding = require('../../src/modules/ai/grounding');
 const productSearch = require('../../src/modules/product/product-search.service');
 const { UsageEvent, Subscription } = require('../../src/modules/entities');
 
-const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID } = fixtures;
+const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID, CUSTOMER_PSID_PAGE_A2 } = fixtures;
 const { GroundingDecision, ReasonCode, ProductEvidenceStatus, MediaStatus } = grounding;
 
 const LANGUAGES = ['bn', 'en', 'mixed'];
@@ -491,6 +491,60 @@ describe('META-E2E-REPLY-MODE — one business mode controls every automatic sen
         expect(manualShop.jobResults[0]).toEqual(expect.objectContaining({ reason: 'manual_mode' }));
         expect(automaticShop.sends).toHaveLength(1);
         expect(harness.sentBody(automaticShop.sends)).toContain(EXPECTED.shopBProductName);
+    });
+
+    test('one business mode converges across both connected Pages', async () => {
+        await harness.setBusinessReplyMode(IDS.shopA, 'MANUAL');
+        const manualPage1 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA,
+            psid: CUSTOMER_PSID,
+            candidate: 'Manual Page 1 must not send this.',
+        });
+        const manualPage2 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA2,
+            psid: CUSTOMER_PSID_PAGE_A2,
+            candidate: 'Manual Page 2 must not send this.',
+        });
+        expect(manualPage1.sends).toHaveLength(0);
+        expect(manualPage2.sends).toHaveLength(0);
+        expect(manualPage1.jobResults[0]).toEqual(expect.objectContaining({ reason: 'manual_mode' }));
+        expect(manualPage2.jobResults[0]).toEqual(expect.objectContaining({ reason: 'manual_mode' }));
+
+        await harness.setBusinessReplyMode(IDS.shopA, 'DRAFT');
+        const draftPage1 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA,
+            psid: CUSTOMER_PSID,
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+        const draftPage2 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA2,
+            psid: CUSTOMER_PSID_PAGE_A2,
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+        expect(draftPage1.sends).toHaveLength(0);
+        expect(draftPage2.sends).toHaveLength(0);
+
+        await harness.setBusinessReplyMode(IDS.shopA, 'AUTO');
+        const autoPage1 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA,
+            psid: CUSTOMER_PSID,
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+        const autoPage2 = await harness.deliver({
+            text: 'black panjabi ache?',
+            pageId: IDS.pageA2,
+            psid: CUSTOMER_PSID_PAGE_A2,
+            candidate: `${EXPECTED.knownProductName} — ৳${EXPECTED.knownProductPrice}.`,
+        });
+        expect(autoPage1.sends).toHaveLength(1);
+        expect(autoPage2.sends).toHaveLength(1);
+        expect(autoPage1.jobResults[0]).toEqual(expect.objectContaining({ sent: true }));
+        expect(autoPage2.jobResults[0]).toEqual(expect.objectContaining({ sent: true }));
     });
 });
 

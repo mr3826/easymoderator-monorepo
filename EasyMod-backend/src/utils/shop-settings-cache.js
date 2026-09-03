@@ -4,10 +4,12 @@ const cacheService = require('./cache.service');
 const geminiCache = require('../modules/ai/gemini-cache.service');
 
 const SETTINGS_GENERATION_KEY = 'settings:generation';
+const AI_SETTINGS_CACHE_KEY = 'ai_settings';
 const MERCHANT_KNOWLEDGE_CACHE_KEY = 'knowledge:summary';
 const AI_KNOWLEDGE_CACHE_KEY = 'knowledge:ai-summary';
 const RETRY_DELAYS_MS = [1000, 5000, 15000, 60000, 240000];
 const INVALIDATION_OPERATIONS = Object.freeze([
+    'aiSettings',
     'merchantKnowledge',
     'aiKnowledge',
     'generation',
@@ -36,6 +38,9 @@ const getShopSettingsGeneration = async (shopId) => {
 };
 
 const operationHandlers = (shopId) => ({
+    aiSettings: () => (typeof cacheService.deleteForShopStrict === 'function'
+        ? cacheService.deleteForShopStrict(shopId, AI_SETTINGS_CACHE_KEY)
+        : cacheService.deleteForShop?.(shopId, AI_SETTINGS_CACHE_KEY)),
     merchantKnowledge: () => (typeof cacheService.deleteForShopStrict === 'function'
         ? cacheService.deleteForShopStrict(shopId, MERCHANT_KNOWLEDGE_CACHE_KEY)
         : cacheService.deleteForShop?.(shopId, MERCHANT_KNOWLEDGE_CACHE_KEY)),
@@ -115,6 +120,7 @@ const invalidateShopSettingsCaches = async (shopId) => {
 
 module.exports = {
     SETTINGS_GENERATION_KEY,
+    AI_SETTINGS_CACHE_KEY,
     MERCHANT_KNOWLEDGE_CACHE_KEY,
     AI_KNOWLEDGE_CACHE_KEY,
     getShopSettingsGeneration,

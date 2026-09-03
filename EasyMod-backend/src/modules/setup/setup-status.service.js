@@ -116,10 +116,10 @@ function assessAiSettings(aiSettings) {
         missing.push('confidence_threshold');
     }
 
-    if (automationMode && automationMode !== AI_REPLY_MODES.DRAFT) {
+    if (automationMode === AI_REPLY_MODES.AUTO) {
         warnings.push({
-            code: 'AI_NOT_DRAFT',
-            message: 'Draft mode is recommended for first launch verification.',
+            code: 'AI_AUTO_ENABLED',
+            message: 'Automatic replies are enabled; verify the shop setup and safety gates before launch.',
         });
     }
 

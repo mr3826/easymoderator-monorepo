@@ -116,7 +116,7 @@ function TagInput({ label, values, onChange, placeholder }: TagInputProps) {
 
 interface AISettingsFormProps {
   initialData?: Partial<ShopAISettings> | null;
-  onSave: (data: ShopAISettings) => Promise<void>;
+  onSave: (data: ShopAISettings) => Promise<ShopAISettings | void>;
   telegramStatus?: TelegramNotificationStatus | null;
 }
 
@@ -153,14 +153,17 @@ export default function AISettingsForm({ initialData, onSave, telegramStatus = n
         ...aiSettings,
         auto_reply_enabled: autoReplyForMode(aiSettings.automation_mode),
       };
-      await onSave(settingsForSave);
+      const persistedSettings = await onSave(settingsForSave);
       try {
         await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       } catch {
         // A cache refresh failure must not turn a successful settings write into an error.
       }
-      setAISettings(settingsForSave);
-      setSavedAISettings(settingsForSave);
+      const nextSettings = persistedSettings && Object.keys(persistedSettings).length > 0
+        ? mergeAISettings(persistedSettings)
+        : settingsForSave;
+      setAISettings(nextSettings);
+      setSavedAISettings(nextSettings);
       showNotice("success", t('manageShop.aiSettings.saveSuccess'));
     } catch (error: any) {
       showNotice("error", getErrorMessage(error, t('manageShop.aiSettings.saveError')));

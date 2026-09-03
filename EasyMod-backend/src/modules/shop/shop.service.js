@@ -413,6 +413,10 @@ const updateShopAiSettings = async (shopId, userId, updates) => {
     if (normalizedUpdates.intent_confidence_map) {
         newAI.intent_confidence_map = { ...(currentAI.intent_confidence_map || {}), ...normalizedUpdates.intent_confidence_map };
     }
+    // Keep the legacy boolean derived even when an older client sends it
+    // without a mode. The boolean is compatibility data, never authority.
+    newAI.automation_mode = normalizeAiReplyMode(newAI.automation_mode);
+    newAI.auto_reply_enabled = isAutoSendMode(newAI.automation_mode);
 
     const sanitizedSettings = mergeAndSanitizeSettings(currentSettings, { ai: newAI });
 

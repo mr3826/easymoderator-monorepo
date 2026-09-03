@@ -165,8 +165,9 @@ never depends on any of the above:
 | Shop A | `aaaaaaaa-0000-4000-8000-00000000000a` — owns the catalog |
 | Shop B | `bbbbbbbb-0000-4000-8000-00000000000b` — isolation counterparty |
 | Page A / Channel A | `100000000000001` / `aaaaaaaa-1111-4111-8111-11111111111a` |
+| Page A2 / Channel A2 | `100000000000003` / `aaaaaaaa-2222-4222-8222-22222222222a` |
 | Page B / Channel B | `100000000000002` / `bbbbbbbb-1111-4111-8111-11111111111b` |
-| Customer PSID | `7000000000000001` |
+| Customer PSIDs | `7000000000000001` (Page A), `7000000000000003` (Page A2) |
 
 Source of truth: `EasyMod-backend/tests/meta-e2e/fixtures.js`.
 

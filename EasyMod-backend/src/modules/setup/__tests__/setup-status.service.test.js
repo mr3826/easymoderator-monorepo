@@ -84,8 +84,33 @@ describe('setup-status.service', () => {
 
         expect(status.tasks.find((task) => task.key === 'ai_settings')).toMatchObject({
             status: 'complete',
-            warnings: [expect.objectContaining({ code: 'AI_NOT_DRAFT' })],
+            warnings: [expect.objectContaining({ code: 'AI_AUTO_ENABLED' })],
             meta: { automationMode: 'AUTO' },
+        });
+    });
+
+    it('does not warn a new or explicitly manual shop to enable automation', async () => {
+        shopService.getShopAiSettings.mockResolvedValue({
+            automation_mode: 'MANUAL',
+            confidence_threshold: 75,
+            payment_methods: ['COD'],
+        });
+        shopService.getShopById.mockResolvedValue({
+            id: 'shop-1',
+            shop_name: 'Starter Shop',
+            settings: { businessInfo: {} },
+        });
+        mockCounts();
+
+        const status = await setupStatusService.getSetupStatus({
+            shopId: 'shop-1',
+            userId: 'user-1',
+        });
+
+        expect(status.tasks.find((task) => task.key === 'ai_settings')).toMatchObject({
+            status: 'complete',
+            warnings: [],
+            meta: { automationMode: 'MANUAL' },
         });
     });
 

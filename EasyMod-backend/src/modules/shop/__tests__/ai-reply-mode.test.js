@@ -25,7 +25,7 @@ describe('AI reply mode', () => {
             expect(normalizeAiReplyMode()).toBe(AI_REPLY_MODES.MANUAL);
         });
 
-        test.each([null, '', '   ', 'GARBAGE'])(
+        test.each([null, '', '   ', 'GARBAGE', {}, 42])(
             'normalizes %p to MANUAL',
             (value) => {
                 expect(normalizeAiReplyMode(value)).toBe(AI_REPLY_MODES.MANUAL);

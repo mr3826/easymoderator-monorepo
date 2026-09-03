@@ -46,6 +46,8 @@ export type HeldReason =
   | 'draft_mode'
   | 'mode_changed'
   | 'channel_disconnected'
+  | 'human_active'
+  | 'ai_paused'
   | 'executed_mutation_without_outbound_send';
 
 export interface MessageMetadata {

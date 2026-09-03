@@ -57,12 +57,12 @@ Mutations (`SUPER_ADMIN` only — each writes an audit row):
 - **Add credits** — calls `subscription.service.grantBonusConversations` (adds to `topup_balance`).
 - **Change plan** — reuses `subscription.service.updatePlan` (no duplicated billing logic).
 - **Mark reconnect** — sets a channel to `TOKEN_EXPIRED`; the merchant must re-OAuth.
-- **Emergency AI off** (`SUPER_ADMIN`) — sets `automation_mode = MANUAL` on **every** channel
-  (`MetaChannelSettings`, the authoritative layer the reply worker + Policy Engine read) **and**
-  shop-level. Inbound messages still persist and the manual inbox still works; only automated
-  delivery stops. There is intentionally **no** one-click re-enable in Phase 1 — restore the
-  desired mode from the merchant app (or a Phase 2 `ai-settings` endpoint). This keeps the
-  emergency action unambiguous and prevents accidental re-enable.
+- **Emergency AI off** (`SUPER_ADMIN`) — sets the business-level `automation_mode = MANUAL`
+  through the audited shop settings path. All connected Pages therefore converge on Manual;
+  Page settings are not changed because they are not an automation authority. Inbound messages
+  still persist and the manual inbox still works; only automated delivery stops. There is
+  intentionally **no** one-click re-enable in Phase 1 — restore the desired mode from the
+  merchant app. This keeps the emergency action unambiguous and prevents accidental re-enable.
 
 ## Never exposed
 
@@ -77,11 +77,12 @@ user-agent) via the shared `AuditService.logOperation`. Actions are namespaced `
 `admin:change_plan`, `admin:mark_reconnect`, `admin:emergency_ai_off`). View them at
 `/admin/audit-logs`.
 
-## Phase 2 (not built here)
+## Phase 2 (remaining work)
 
-AI & Inbox health tab + general `ai-settings` (OFF/DRAFT/AUTO + confidence threshold),
-Orders & Courier health + courier retry, a System Logs page, and cost analytics. The
-dashboard renders these as `—` until then.
+AI & Inbox health tab, Orders & Courier health + courier retry, a System Logs page, and
+cost analytics. The business-level `ai-settings` endpoint and `AUTO`/`DRAFT`/`MANUAL`
+mode contract are available; the dashboard health tab still renders these remaining
+operational metrics as `—` until then.
 
 ## Tests
 

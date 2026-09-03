@@ -254,6 +254,7 @@ describe('Knowledge API', () => {
             await expect(getShopSettingsGeneration('shop-1')).resolves.toBeNull();
 
             await invalidateShopSettingsCaches('shop-1');
+            expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'ai_settings');
             expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
             expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:ai-summary');
             expect(cacheService.incrementForShop).toHaveBeenCalledWith('shop-1', 'settings:generation');
@@ -269,7 +270,7 @@ describe('Knowledge API', () => {
             expect(cacheService.deleteForShop).toHaveBeenCalledWith('shop-1', 'knowledge:summary');
 
             await jest.advanceTimersByTimeAsync(1000);
-            expect(cacheService.deleteForShop).toHaveBeenCalledTimes(3);
+            expect(cacheService.deleteForShop).toHaveBeenCalledTimes(4);
             jest.useRealTimers();
         });
 

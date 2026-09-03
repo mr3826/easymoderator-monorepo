@@ -74,6 +74,32 @@ const getShopAISettings = async (shopId) => {
     }
 };
 
+const getAutomaticSendGuard = async (shopId, conversationId) => {
+    const [businessMode, conversation, manualPause] = await Promise.all([
+        getEffectiveAiReplyMode(shopId),
+        Conversation.findOne({
+            where: { id: conversationId, shop_id: shopId },
+            attributes: ['id', 'hitl'],
+        }),
+        cacheRedis.get(`ai:pause:${conversationId}`),
+    ]);
+
+    if (!isAutoSendMode(businessMode)) {
+        return { allowed: false, mode: businessMode, reason: 'mode_changed' };
+    }
+    if (!conversation) {
+        return { allowed: false, mode: businessMode, reason: 'conversation_unavailable' };
+    }
+    if (conversation.hitl === true) {
+        return { allowed: false, mode: businessMode, reason: 'human_active' };
+    }
+    if (manualPause) {
+        return { allowed: false, mode: businessMode, reason: 'ai_paused' };
+    }
+
+    return { allowed: true, mode: businessMode, reason: null };
+};
+
 const matchesChannelScope = (channel, shopId, platform, metaAssetId = null) => (
     Boolean(channel)
     && channel.status === 'CONNECTED'
@@ -448,6 +474,15 @@ function createRecoveryControl({
                 level: 'error',
                 context: { shopId, conversationId, turnId, recoveryKind },
             }).catch(() => {});
+            return null;
+        }
+        const finalSendGuard = await getAutomaticSendGuard(shopId, conversationId);
+        if (!finalSendGuard.allowed) {
+            await transitionTo('RETRY_PENDING', {
+                retryState: 'HOLDING_SEND_FAILED',
+                recoveryKind,
+                outboundStatus: 'BLOCKED',
+            });
             return null;
         }
         // ponytail: Redis-durable dedup; move to a DB unique constraint if a lost key ever double-sends.
@@ -1639,6 +1674,28 @@ async function processMessageJob(job) {
         return {
             success: true, conversationId, confidence,
             sent: false, reason: denialReason, decisionId: decision?.decisionId,
+        };
+    }
+
+    // Policy evaluation can take long enough for a merchant reply or HITL
+    // takeover to arrive. Re-read the business and conversation state at the
+    // last reversible point so an in-flight AUTO turn cannot send after a
+    // manual action or mode change. Provider calls remain the irreversible
+    // boundary and are protected by the provider idempotency contract.
+    const sendGuard = await getAutomaticSendGuard(shopId, conversationId);
+    if (!sendGuard.allowed) {
+        const heldReason = sendGuard.reason;
+        const heldMessage = (await storeAiResponse(rawResponse, false)).message;
+        await finalizeAiMessage(heldMessage, shopId, conversationId, {
+            delivered: false,
+            heldReason,
+        });
+        return {
+            success: true,
+            conversationId,
+            confidence,
+            sent: false,
+            reason: heldReason,
         };
     }
 

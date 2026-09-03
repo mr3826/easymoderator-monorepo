@@ -3,15 +3,15 @@
 /**
  * Migration: 20260816_002_default_channel_automation_draft
  *
- * meta_channel_settings.automation_mode defaulted to 'AI_ACTIVE' (squash line
- * 1002), so a Page connected without an explicit mode was created ready to
- * auto-send to real customers. DRAFT is the product default everywhere else —
- * shop-defaults.js DEFAULT_AI_SETTINGS, the frontend AISettingsForm, and now
- * meta-channel-settings.entity.js — this aligns the column with them.
+ * This historical migration changed the legacy Page column from 'AI_ACTIVE' to
+ * 'DRAFT'. The later business-level reply-mode migration supersedes that
+ * compatibility default with 'MANUAL'; this file remains unchanged in the
+ * migration history so existing databases can be inspected and rolled back in
+ * the same order.
  *
- * Column default only. Existing rows are NOT rewritten: a shop that deliberately
- * turned a Page on keeps its setting, and business-level automation_mode is
- * authoritative at read time anyway (the business-level reply-mode resolver).
+ * Column default only. Existing rows are NOT rewritten. The legacy Page value
+ * is not runtime authority; business-level automation_mode is resolved through
+ * the canonical business reply-mode resolver.
  */
 
 module.exports = {
