@@ -346,6 +346,27 @@ describe('D — customer photo → product matching', () => {
 });
 
 describe('settings generation and inactive FAQ cache boundaries', () => {
+    test('passes quoted Messenger reply context as bounded untrusted conversation data', async () => {
+        await route({
+            shopId: SHOP,
+            message: 'L',
+            systemPrompt: 'BASE',
+            replyContext: {
+                provider_message_id: 'mid-size-question',
+                sender: 'ai',
+                content: 'Which size would you like, M or L?',
+                status: 'resolved',
+            },
+        });
+
+        const messages = llm.chat.mock.calls.at(-1)[0].messages;
+        const contextMessage = messages.find((item) => String(item.content).includes('messenger_reply_context'));
+        expect(contextMessage).toEqual(expect.objectContaining({ role: 'user' }));
+        expect(contextMessage.content).toContain('untrusted_conversation_data');
+        expect(contextMessage.content).toContain('"referenced_role":"assistant"');
+        expect(contextMessage.content).toContain('Which size would you like, M or L?');
+    });
+
     test('generation changes invalidate the process-local intent entry', async () => {
         mockGetGeneration.mockResolvedValue(1);
         await route({ shopId: SHOP, message: 'hello', language: 'en' });

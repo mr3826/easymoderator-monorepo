@@ -90,7 +90,7 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
     it('counts delivered AI replies with disclosure text as customer-visible disclosures', async () => {
         Message.findAll.mockResolvedValueOnce([
             { id: 'ai-1', content: 'Hello! How can I help you today?', metadata: { delivered: true } },
-            { id: 'ai-2', content: "Hi, I'm the AI assistant from Demo Shop.\n\nHello!", metadata: { delivered: true } },
+            { id: 'ai-2', content: "Hi, I'm the AI assistant from Demo Shop.\n\nHello!", metadata: { delivered: true, provider_message_id: 'mid-visible-1', provider_send_confirmed: true } },
         ]);
 
         await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(true);
@@ -98,7 +98,7 @@ describe('message-worker first customer-visible AI disclosure detection', () => 
 
     it('counts the persisted disclosure metadata flag', async () => {
         Message.findAll.mockResolvedValueOnce([
-            { id: 'ai-1', content: 'Custom localized disclosure', metadata: { delivered: true, ai_disclosure_applied: true } },
+            { id: 'ai-1', content: 'Custom localized disclosure', metadata: { delivered: true, ai_disclosure_applied: true, provider_message_id: 'mid-visible-2', provider_send_confirmed: true } },
         ]);
 
         await expect(_private.hasPriorCustomerVisibleAiDisclosure('conv-1')).resolves.toBe(true);
@@ -184,7 +184,7 @@ describe('message-worker AI disclosure greeting gate', () => {
     it('does not apply when the conversation already has a visible AI disclosure', async () => {
         Message.count.mockResolvedValueOnce(0);
         Message.findAll.mockResolvedValueOnce([
-            { id: 'ai-1', content: "Hi, I'm the AI assistant from Demo Shop.", metadata: { delivered: true } },
+            { id: 'ai-1', content: "Hi, I'm the AI assistant from Demo Shop.", metadata: { delivered: true, provider_message_id: 'mid-visible-3', provider_send_confirmed: true } },
         ]);
 
         await expect(_private.shouldApplyAiDisclosureGreeting({

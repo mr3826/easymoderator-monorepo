@@ -4,6 +4,33 @@
 
 export type MessageSender = 'customer' | 'agent' | 'ai';
 export type MessageType = 'text' | 'image' | 'file' | 'location';
+export type MessageDeliveryState =
+  | 'GENERATING'
+  | 'DRAFT_READY'
+  | 'SEND_PENDING'
+  | 'SENT'
+  | 'DELIVERED'
+  | 'FAILED'
+  | 'HELD'
+  | 'DISMISSED';
+export type SuggestionVisibility =
+  | 'HIDDEN_AUTO_PROCESSING'
+  | 'VISIBLE_DRAFT_REVIEW'
+  | 'VISIBLE_HITL_REVIEW'
+  | 'VISIBLE_MERCHANT_REQUESTED'
+  | 'HIDDEN_SENT'
+  | 'HIDDEN_DISMISSED';
+
+export interface ReplyContext {
+  provider_message_id: string;
+  internal_message_id?: string | null;
+  is_self_reply?: boolean;
+  status: 'resolved' | 'unavailable';
+  sender?: MessageSender;
+  content?: string | null;
+  message_type?: MessageType;
+  file_name?: string | null;
+}
 
 export const AI_REPLY_MODES = ['AUTO', 'DRAFT', 'MANUAL'] as const;
 export type AiReplyMode = (typeof AI_REPLY_MODES)[number];
@@ -48,6 +75,9 @@ export type HeldReason =
   | 'channel_disconnected'
   | 'human_active'
   | 'ai_paused'
+  | 'policy_blocked'
+  | 'provider_send_failed'
+  | 'dismissed'
   | 'executed_mutation_without_outbound_send';
 
 export interface MessageMetadata {
@@ -57,11 +87,20 @@ export interface MessageMetadata {
   file_name?: string;
   mime_type?: string;
   file_size?: number;
-  delivery_status?: 'pending' | 'sent' | 'failed';
+  delivery_status?: 'processing' | 'pending' | 'sent' | 'failed' | 'held' | 'dismissed';
   delivery_error?: string;
   /** true = delivered to the customer; false = HELD as a reviewable suggestion. */
   delivered?: boolean;
   held_reason?: HeldReason;
+  delivery_state?: MessageDeliveryState;
+  provider_message_id?: string | null;
+  provider_message_ids?: string[] | null;
+  delivery_source?: string | null;
+  suggestion_visibility?: SuggestionVisibility;
+  reply_to_provider_message_id?: string | null;
+  reply_to_internal_message_id?: string | null;
+  reply_to_is_self_reply?: boolean;
+  reply_to?: ReplyContext;
   [key: string]: unknown;
 }
 
@@ -75,6 +114,12 @@ export interface Message {
   ai_suggestion?: string;
   ai_confidence?: number;
   source_references?: MessageSourceReference[] | null;
+  delivery_state?: MessageDeliveryState | null;
+  provider_message_id?: string | null;
+  delivery_source?: string | null;
+  reply_to?: ReplyContext | null;
+  is_transcript_message?: boolean;
+  idempotency_replay?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +139,8 @@ export interface Conversation {
     name: string;
     email?: string;
     phone?: string;
+    channel_user_id?: string;
+    meta_channel_id?: string | null;
   };
   channel: 'telegram' | 'messenger' | 'facebook' | 'web';
   meta_channel_id?: string | null;
@@ -103,6 +150,10 @@ export interface Conversation {
   hitl?: boolean;
   lastMessage?: string;
   unreadCount?: number;
+  lastReadMessageId?: string | null;
+  lastReadMessageAt?: string | null;
+  suggestionCount?: number;
+  hasAiSuggestion?: boolean;
   created_at: string;
   updated_at: string;
   messages?: Message[];
