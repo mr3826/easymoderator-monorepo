@@ -122,7 +122,7 @@ export async function getMessages(
   conversationId: string, 
   params?: { page?: number; limit?: number }
 ): Promise<{ messages: Message[]; pagination: { page: number; totalPages: number } }> {
-  const response: AxiosResponse<ApiResponse<{ messages: Message[]; pagination: { page: number; totalPages: number } }>> = 
+  const response: AxiosResponse<ApiResponse<{ messages: Message[]; pagination: { page: number; totalPages: number } }>> =
     await httpClient.get(`/api/conversation/${conversationId}/messages`, { params });
   return response.data.data;
 }
