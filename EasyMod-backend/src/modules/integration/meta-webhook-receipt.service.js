@@ -53,10 +53,6 @@ class WebhookReceiptPersistenceError extends Error {
 
 const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 
-const scopedDedupeKey = (pageId, eventId, payloadHash) => (
-    sha256(`${String(pageId)}|${eventId || payloadHash}`)
-);
-
 /**
  * Classify a raw `entry.messaging[]` element without retaining its content.
  * @returns {{eventType: string, eventId: string|null, senderRef: string|null}}
@@ -85,7 +81,7 @@ function classifyEvent(messaging = {}) {
 async function recordReceipt({ pageId, objectType = 'page', messaging }) {
     const { eventType, eventId, senderRef } = classifyEvent(messaging);
     const payloadHash = sha256(JSON.stringify(messaging ?? null));
-    const dedupeKey = scopedDedupeKey(pageId, eventId, payloadHash);
+    const dedupeKey = eventId || sha256(`${pageId}|${payloadHash}`);
 
     // Only events that can be replayed carry a body. Echoes, delivery and read
     // receipts are accounted for but never re-ingested, so they store nothing.
@@ -116,11 +112,7 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
     }
 
     try {
-        const existing = await MetaWebhookReceipt.findOne({
-            where: eventId
-                ? { page_id: String(pageId), event_id: eventId }
-                : { page_id: String(pageId), dedupe_key: dedupeKey },
-        });
+        const existing = await MetaWebhookReceipt.findOne({ where: { dedupe_key: dedupeKey } });
         if (existing) return { receipt: existing, duplicate: true };
 
         const receipt = await MetaWebhookReceipt.create({
@@ -141,11 +133,7 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
         // A concurrent delivery of the same event lost the unique-index race.
         // That is a duplicate, not a persistence failure.
         if (err?.name === 'SequelizeUniqueConstraintError') {
-            const existing = await MetaWebhookReceipt.findOne({
-                where: eventId
-                    ? { page_id: String(pageId), event_id: eventId }
-                    : { page_id: String(pageId), dedupe_key: dedupeKey },
-            })
+            const existing = await MetaWebhookReceipt.findOne({ where: { dedupe_key: dedupeKey } })
                 .catch(() => null);
             if (existing) return { receipt: existing, duplicate: true };
         }
@@ -159,25 +147,8 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
 }
 
 async function safeUpdate(receipt, fields) {
-    if (!receipt) return false;
+    if (!receipt || typeof receipt.update !== 'function') return false;
     try {
-        const expectedStatus = receipt.status;
-        const expectedToken = receipt.processing_token;
-        const isEntityInstance = typeof MetaWebhookReceipt === 'function'
-            && receipt instanceof MetaWebhookReceipt;
-        if (isEntityInstance && receipt.id && expectedToken && typeof MetaWebhookReceipt.update === 'function') {
-            const [updatedCount] = await MetaWebhookReceipt.update(fields, {
-                where: {
-                    id: receipt.id,
-                    status: expectedStatus,
-                    processing_token: expectedToken,
-                },
-            });
-            if (updatedCount !== 1) return false;
-            if (typeof receipt.set === 'function') receipt.set(fields);
-            return true;
-        }
-        if (typeof receipt.update !== 'function') return false;
         await receipt.update(fields);
         return true;
     } catch (err) {
@@ -210,32 +181,6 @@ async function markSkipped(receipt, reasonCode) {
 
 async function markProcessing(receipt) {
     await updateOrThrow(receipt, { status: 'PROCESSING' });
-}
-
-/**
- * Claim a live receipt before doing any ingestion work. The conditional update
- * is the live-webhook equivalent of the reconciler's processing fence: two
- * concurrent Meta deliveries may observe the same receipt, but only one owns
- * the transition out of RECEIVED/retryable state.
- */
-async function claimProcessing(receipt) {
-    if (!receipt) return true;
-    const token = crypto.randomBytes(16).toString('hex');
-    const { Op } = require('sequelize');
-    const claimableStatuses = ['RECEIVED', ...RETRYABLE_STATUSES];
-    const [updatedCount] = await MetaWebhookReceipt.update(
-        { status: 'PROCESSING', processing_token: token },
-        {
-            where: {
-                id: receipt.id,
-                status: { [Op.in]: claimableStatuses },
-                processing_token: null,
-            },
-        },
-    );
-    if (updatedCount !== 1) return false;
-    if (typeof receipt.set === 'function') receipt.set({ status: 'PROCESSING', processing_token: token });
-    return true;
 }
 
 async function markProcessed(receipt, { shopId = null, metaChannelId = null } = {}) {
@@ -391,7 +336,6 @@ async function claimDueReceipts(limit = 25) {
             { where: { id: receipt.id, status: receipt.status, processing_token: receipt.processing_token } },
         );
         if (updatedCount !== 1) continue; // lost the race to another runner
-        if (typeof receipt.set === 'function') receipt.set({ status: 'PROCESSING', processing_token: token });
 
         let payload = null;
         if (receipt.payload_encrypted) {
@@ -407,6 +351,7 @@ async function claimDueReceipts(limit = 25) {
             continue;
         }
 
+        receipt.set({ status: 'PROCESSING', processing_token: token });
         claimed.push({ receipt, payload });
     }
     return claimed;
@@ -448,7 +393,6 @@ module.exports = {
     recordReceipt,
     markSkipped,
     markProcessing,
-    claimProcessing,
     markProcessed,
     markQueued,
     markIdentityNotResolved,

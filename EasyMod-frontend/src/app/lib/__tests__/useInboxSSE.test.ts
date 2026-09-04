@@ -69,29 +69,4 @@ describe('useInboxSSE', () => {
     expect(onAiReplyModeChanged).toHaveBeenCalledWith({ mode: expected });
     unmount();
   });
-
-  it('forwards read-watermark and customer-enrichment events without mutation', () => {
-    const onConversationRead = vi.fn();
-    const onCustomerUpdated = vi.fn();
-    const { unmount } = renderHook(() => useInboxSSE({
-      onNewMessage: vi.fn(),
-      onHitlChanged: vi.fn(),
-      onConversationRead,
-      onCustomerUpdated,
-    }));
-    const source = MockEventSource.instances[0];
-
-    act(() => {
-      source.emit('conversation_read', JSON.stringify({
-        conversation_id: 'conv-1', unread_count: 0, last_read_message_id: 'msg-1',
-      }));
-      source.emit('customer_updated', JSON.stringify({ customer_id: 'customer-1', name: 'A Customer' }));
-    });
-
-    expect(onConversationRead).toHaveBeenCalledWith({
-      conversation_id: 'conv-1', unread_count: 0, last_read_message_id: 'msg-1',
-    });
-    expect(onCustomerUpdated).toHaveBeenCalledWith({ customer_id: 'customer-1', name: 'A Customer' });
-    unmount();
-  });
 });

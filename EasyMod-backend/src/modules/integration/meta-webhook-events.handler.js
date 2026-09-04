@@ -22,7 +22,6 @@
 const { Customer, AuditLog } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
-const { Op } = require('sequelize');
 const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -37,14 +36,7 @@ const displayChannelForPlatform = (platform) => {
     return platform || 'Unknown';
 };
 
-const fallbackCustomerName = (platform, providerId = null) => {
-    const prefix = platform === 'facebook' || platform === 'messenger'
-        ? 'Facebook customer'
-        : `${displayChannelForPlatform(platform)} customer`;
-    const normalizedId = typeof providerId === 'string' ? providerId.trim() : '';
-    const suffix = normalizedId.replace(/[^A-Za-z0-9]/g, '').slice(-4);
-    return suffix ? `${prefix} · …${suffix}` : prefix;
-};
+const fallbackCustomerName = (platform) => `${displayChannelForPlatform(platform)} User`;
 
 const fallbackCustomerMetadata = ({ platform, source = 'webhook' }) => ({
     source,
@@ -52,10 +44,10 @@ const fallbackCustomerMetadata = ({ platform, source = 'webhook' }) => ({
     channel: displayChannelForPlatform(platform),
 });
 
-async function applyFallbackCustomerProfile({ customer, platform, psid, isPlaceholderName }) {
+async function applyFallbackCustomerProfile({ customer, platform, isPlaceholderName }) {
     if (!customer || typeof customer.update !== 'function' || !isPlaceholderName(customer.name)) return;
 
-    const fallbackName = fallbackCustomerName(platform, psid);
+    const fallbackName = fallbackCustomerName(platform);
     const safeMetadata = Object.fromEntries(
         Object.entries(customer.metadata || {}).filter(([key]) => key !== 'external_id'),
     );
@@ -103,7 +95,7 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
         // The fallback is intentional while the profile feature is disabled;
         // do not report that expected path as an enrichment failure.
         if (process.env.META_USER_PROFILE_ENABLED !== 'true') {
-            void applyFallbackCustomerProfile({ customer, platform, psid, isPlaceholderName });
+            void applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
             return;
         }
 
@@ -119,11 +111,11 @@ function triggerCustomerProfileEnrichment({ customer, metaChannelId, shopId, pla
                     logger.info('Shared inbox customer profile enriched from Meta', logContext);
                     return;
                 }
-                await applyFallbackCustomerProfile({ customer, platform, psid, isPlaceholderName });
+                await applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
                 logger.warn('Shared inbox customer profile enrichment did not update customer; using fallback', logContext);
             })
             .catch(async (err) => {
-                await applyFallbackCustomerProfile({ customer, platform, psid, isPlaceholderName });
+                await applyFallbackCustomerProfile({ customer, platform, isPlaceholderName });
                 logger.warn('Shared inbox customer profile enrichment failed; using fallback', {
                     ...logContext,
                     error: err.message,
@@ -252,7 +244,6 @@ async function dispatchMessageJob(storeResult, event) {
             metaAssetId,
             senderInfo: { customer_id },
             messageId: storeResult.message_id || storeResult.id,
-            replyContext: storeResult.message?.metadata?.reply_to || null,
         };
         if (storeResult.within_allowance !== undefined) {
             burstPayload.within_allowance = storeResult.within_allowance;
@@ -357,18 +348,12 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
     try {
         const channelType = channel.platform === 'facebook' ? 'messenger' : channel.platform;
         const [customer] = await Customer.findOrCreate({
-            where: {
-                shop_id: channel.shop_id,
-                channel_type: channelType,
-                channel_user_id: String(senderId),
-                ...(channel.id ? { meta_channel_id: channel.id } : {}),
-            },
+            where: { shop_id: channel.shop_id, channel_type: channelType, channel_user_id: String(senderId) },
             defaults: {
                 shop_id: channel.shop_id,
-                name: fallbackCustomerName(channel.platform, String(senderId)),
+                name: fallbackCustomerName(channel.platform),
                 channel_type: channelType,
                 channel_user_id: String(senderId),
-                meta_channel_id: channel.id || null,
                 metadata: fallbackCustomerMetadata({
                     platform: channel.platform,
                     source: 'messaging_optins',
@@ -395,184 +380,6 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
 
 // ─── Message storage ──────────────────────────────────────────────────────────
 
-const REPLY_PREVIEW_MAX_LENGTH = 1000;
-
-async function resolveLocalReplyContext({ providerMessageId, shopId, channelType, metaChannelId, transaction }) {
-    if (!providerMessageId || !shopId || !metaChannelId || typeof Message.findOne !== 'function') return null;
-
-    const conversationWhere = {
-        shop_id: shopId,
-        channel: channelType,
-        meta_channel_id: metaChannelId,
-    };
-    const referenced = await Message.findOne({
-        where: {
-            [Op.or]: [
-                { external_id: providerMessageId },
-                { provider_message_id: providerMessageId },
-            ],
-        },
-        include: [{
-            model: Conversation,
-            as: 'conversation',
-            required: true,
-            where: conversationWhere,
-            attributes: ['id', 'shop_id', 'channel', 'meta_channel_id'],
-        }],
-        transaction,
-    });
-    if (!referenced) return null;
-
-    const metadata = referenced.metadata && typeof referenced.metadata === 'object'
-        ? referenced.metadata
-        : {};
-    return {
-        provider_message_id: providerMessageId,
-        internal_message_id: referenced.id,
-        is_self_reply: null,
-        status: 'resolved',
-        sender: referenced.sender === 'business' ? 'agent' : referenced.sender || null,
-        content: typeof referenced.content === 'string'
-            ? referenced.content.slice(0, REPLY_PREVIEW_MAX_LENGTH)
-            : null,
-        message_type: metadata.message_type || 'text',
-        file_name: metadata.file_name || null,
-    };
-}
-
-async function reconcileOutboundEcho({ messaging, channel }) {
-    const providerMessageId = messaging.message?.mid;
-    const recipientId = messaging.recipient?.id;
-    if (!providerMessageId || !recipientId || typeof Conversation.findOne !== 'function') return false;
-
-    const conversation = await Conversation.findOne({
-        where: {
-            shop_id: channel.shop_id,
-            channel: 'messenger',
-            meta_channel_id: channel.id,
-        },
-        include: [{
-            model: Customer,
-            as: 'customer',
-            required: true,
-                where: {
-                    shop_id: channel.shop_id,
-                    channel_type: 'messenger',
-                    channel_user_id: String(recipientId),
-                    ...(channel.id ? { meta_channel_id: channel.id } : {}),
-                },
-        }],
-        order: [['updated_at', 'DESC']],
-    });
-    if (!conversation || typeof Message.findOne !== 'function') return false;
-
-    const candidateWhere = {
-        conversation_id: conversation.id,
-        sender: { [Op.in]: ['ai', 'business'] },
-        provider_message_id: null,
-        delivery_state: 'SEND_PENDING',
-    };
-    const candidates = typeof Message.findAll === 'function'
-        ? (await Message.findAll({ where: candidateWhere, order: [['created_at', 'DESC']], limit: 10 }) || [])
-        : [await Message.findOne({ where: candidateWhere, order: [['created_at', 'DESC']] })].filter(Boolean);
-    const echoText = typeof messaging.message?.text === 'string'
-        ? messaging.message.text.trim()
-        : null;
-    const textMatches = echoText
-        ? candidates.filter((item) => String(item.content || '').trim() === echoText)
-        : [];
-    // Do not assign a provider MID by recency alone when multiple sends are
-    // pending. An unmatched echo stays available for a later reconciler pass.
-    const candidate = textMatches.length === 1
-        ? textMatches[0]
-        : !echoText && candidates.length === 1
-            ? candidates[0]
-            : null;
-    if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) return false;
-
-    let candidateMetadata = candidate.metadata;
-    if (typeof candidateMetadata === 'string') {
-        try { candidateMetadata = JSON.parse(candidateMetadata); } catch (_) { candidateMetadata = {}; }
-    }
-    if (!candidateMetadata || typeof candidateMetadata !== 'object' || Array.isArray(candidateMetadata)) candidateMetadata = {};
-
-    const metadata = {
-        ...candidateMetadata,
-        delivered: true,
-        delivery_status: 'sent',
-        delivery_state: 'SENT',
-        provider_message_id: providerMessageId,
-        provider_send_confirmed: true,
-        echo_reconciled: true,
-    };
-    const [updatedCount] = await Message.update({
-        external_id: providerMessageId,
-        metadata,
-        delivery_state: 'SENT',
-        provider_message_id: providerMessageId,
-    }, {
-        where: {
-            id: candidate.id,
-            conversation_id: conversation.id,
-            delivery_state: 'SEND_PENDING',
-            provider_message_id: null,
-        },
-    });
-    if (updatedCount !== 1) return false;
-    sseManager.emit(channel.shop_id, 'message_delivery_updated', {
-        conversation_id: conversation.id,
-        message_id: candidate.id,
-        metadata,
-        delivery_state: 'SENT',
-        provider_message_id: providerMessageId,
-    });
-    logger.info('Reconciled Meta outbound echo to existing Inbox message', {
-        shopId: channel.shop_id,
-        metaChannelId: channel.id,
-        conversationId: conversation.id,
-        messageId: candidate.id,
-    });
-    return true;
-}
-
-function buildReplyMetadata(replyTo, resolvedReply) {
-    if (!replyTo?.mid) return {};
-    return {
-        reply_to_provider_message_id: String(replyTo.mid),
-        reply_to_is_self_reply: replyTo.is_self_reply === true,
-        reply_to_internal_message_id: resolvedReply?.internal_message_id || null,
-        reply_to: {
-            ...(resolvedReply || {}),
-            provider_message_id: String(replyTo.mid),
-            is_self_reply: replyTo.is_self_reply === true,
-            status: resolvedReply ? 'resolved' : 'unavailable',
-        },
-    };
-}
-
-async function mergeConversationMetadata(shopId, conversationId, patch, metaChannelId = null) {
-    if (typeof Conversation.findOne !== 'function') return;
-    await sequelize.transaction(async (transaction) => {
-        const conversation = await Conversation.findOne({
-            where: {
-                id: conversationId,
-                shop_id: shopId,
-                ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
-            },
-            transaction,
-            lock: transaction.LOCK?.UPDATE,
-        });
-        if (!conversation || typeof conversation.update !== 'function') return;
-        if (metaChannelId && String(conversation.meta_channel_id) !== String(metaChannelId)) return;
-        let metadata = conversation.metadata;
-        if (typeof metadata === 'string') {
-            try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
-        }
-        metadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
-        await conversation.update({ metadata: { ...metadata, ...patch } }, { transaction });
-    });
-}
-
 /**
  * Store incoming customer message in database.
  * Find-or-create customer → find-or-create conversation → create message.
@@ -587,32 +394,18 @@ async function storeIncomingMessage(event) {
 
         const externalId = event.raw_event?.message?.mid || event.raw_event?.id || null;
         if (externalId) {
-            const duplicateConversationWhere = {
-                shop_id,
-                channel: channelType,
-            };
-            if (meta_channel_id) duplicateConversationWhere.meta_channel_id = meta_channel_id;
-            const existing = await Message.findOne({
-                where: { external_id: externalId },
-                include: [{
-                    model: Conversation,
-                    as: 'conversation',
-                    required: true,
-                    where: duplicateConversationWhere,
-                    attributes: ['id', 'shop_id', 'customer_id', 'channel', 'meta_channel_id', 'metadata'],
-                }],
-            });
+            const existing = await Message.findOne({ where: { external_id: externalId } });
             if (existing) {
                 logger.debug(`Duplicate webhook event skipped (external_id=${externalId})`);
-                const fallbackDuplicateConversationWhere = {
+                const duplicateConversationWhere = {
                     id: existing.conversation_id,
                     shop_id,
                     channel: channelType,
                 };
-                if (meta_channel_id) fallbackDuplicateConversationWhere.meta_channel_id = meta_channel_id;
+                if (meta_channel_id) duplicateConversationWhere.meta_channel_id = meta_channel_id;
 
-                const existingConversation = existing.conversation || await Conversation.findOne({
-                    where: fallbackDuplicateConversationWhere,
+                const existingConversation = await Conversation.findOne({
+                    where: duplicateConversationWhere,
                     attributes: ['id', 'shop_id', 'customer_id', 'channel', 'meta_channel_id', 'metadata'],
                 });
                 const duplicateContextMatches = existingConversation
@@ -642,7 +435,6 @@ async function storeIncomingMessage(event) {
                     message_id: existing.id,
                     message: existing,
                     shop_id: event.shop_id,
-                    meta_channel_id,
                     within_allowance: withinAllowance,
                     conversation_metadata: conversationMetadata,
                     duplicate: true
@@ -652,18 +444,12 @@ async function storeIncomingMessage(event) {
 
         const storedMessage = await sequelize.transaction(async (t) => {
             const [customer] = await Customer.findOrCreate({
-                where: {
-                    shop_id,
-                    channel_type: channelType,
-                    channel_user_id: sender,
-                    ...(meta_channel_id ? { meta_channel_id } : {}),
-                },
+                where: { shop_id, channel_type: channelType, channel_user_id: sender },
                 defaults: {
                     shop_id,
-                    name: fallbackCustomerName(platform, String(sender)),
+                    name: fallbackCustomerName(platform),
                     channel_type: channelType,
                     channel_user_id: sender,
-                    meta_channel_id,
                     metadata: fallbackCustomerMetadata({ platform })
                 },
                 transaction: t
@@ -697,8 +483,6 @@ async function storeIncomingMessage(event) {
                 conversation = null;
             }
 
-            const attachments = event.attachments || [];
-            const msgContent = message || (attachments.length > 0 ? '[Attachment]' : '');
             if (!conversation) {
                 conversation = await Conversation.create({
                     shop_id,
@@ -706,11 +490,12 @@ async function storeIncomingMessage(event) {
                     channel: channelType,
                     meta_channel_id,
                     role: 'user',
-                    message: msgContent,
+                    message: message,
                     metadata: { source: 'webhook', platform }
                 }, { transaction: t });
             }
 
+            const attachments = event.attachments || [];
             let msgMeta = {};
             if (attachments.length > 0) {
                 const first = attachments[0];
@@ -720,50 +505,16 @@ async function storeIncomingMessage(event) {
                     msgMeta = { message_type: 'file', file_url: first.payload?.url || null, file_name: first.payload?.name || null };
                 }
             }
-            const replyTo = event.raw_event?.message?.reply_to || event.reply_to || null;
-            const resolvedReply = await resolveLocalReplyContext({
-                providerMessageId: replyTo?.mid ? String(replyTo.mid) : null,
-                shopId: shop_id,
-                channelType,
-                metaChannelId: meta_channel_id,
-                transaction: t,
-            });
-            const replyMetadata = buildReplyMetadata(replyTo, resolvedReply);
-            if (replyTo?.mid) {
-                logger.info(resolvedReply ? 'reply_context_resolved' : 'reply_context_unresolved', {
-                    shopId: shop_id,
-                    metaChannelId: meta_channel_id,
-                    conversationId: conversation.id,
-                    providerMessageId: String(replyTo.mid),
-                    internalMessageId: resolvedReply?.internal_message_id || null,
-                });
-            }
-            let currentConversationMetadata = conversation.metadata;
-            if (typeof currentConversationMetadata === 'string') {
-                try { currentConversationMetadata = JSON.parse(currentConversationMetadata); } catch (_) { currentConversationMetadata = {}; }
-            }
-            if (!currentConversationMetadata || typeof currentConversationMetadata !== 'object' || Array.isArray(currentConversationMetadata)) {
-                currentConversationMetadata = {};
-            }
-            const unreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0) + 1;
+            const msgContent = message || (attachments.length > 0 ? '[Attachment]' : '');
             const msgRecord = await Message.create({
                 conversation_id: conversation.id,
                 content: msgContent,
                 sender: 'customer',
                 external_id: externalId,
-                metadata: { ...msgMeta, ...replyMetadata },
+                metadata: msgMeta
             }, { transaction: t });
 
-            const nextConversationMetadata = {
-                ...currentConversationMetadata,
-                unreadCount,
-                last_actual_message: msgContent,
-            };
-            await conversation.update({
-                message: msgContent,
-                updated_at: new Date(),
-                metadata: nextConversationMetadata,
-            }, { transaction: t });
+            await conversation.update({ updated_at: new Date() }, { transaction: t });
 
             logger.info(`Stored ${platform} message`, { customerId: customer.id, convId: conversation.id, msgId: msgRecord.id });
 
@@ -774,9 +525,7 @@ async function storeIncomingMessage(event) {
                 message_id: msgRecord.id,
                 message: msgRecord,
                 shop_id,
-                meta_channel_id,
-                conversation_metadata: nextConversationMetadata,
-                unread_count: unreadCount,
+                conversation_metadata: conversation.metadata || {},
             };
         });
 
@@ -799,9 +548,16 @@ async function storeIncomingMessage(event) {
                     { resourceId: storedMessage.conversation_id, channel: channelType }
                 );
                 storedMessage.within_allowance = usageResult.within_allowance === true;
-                await mergeConversationMetadata(shop_id, storedMessage.conversation_id, {
-                    within_allowance: storedMessage.within_allowance,
-                }, storedMessage.meta_channel_id);
+                if (typeof Conversation.update === 'function') {
+                    let metadata = storedMessage.conversation_metadata || {};
+                    if (typeof metadata === 'string') {
+                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+                    }
+                    await Conversation.update(
+                        { metadata: { ...metadata, within_allowance: storedMessage.within_allowance } },
+                        { where: { id: storedMessage.conversation_id, shop_id } },
+                    );
+                }
             } catch (usageErr) {
                 logger.warn('Conversation usage metering failed (non-fatal)', {
                     shopId: shop_id,
@@ -833,9 +589,16 @@ async function storeIncomingMessage(event) {
                     }).catch(() => {});
                 }
                 storedMessage.within_allowance = false;
-                mergeConversationMetadata(shop_id, storedMessage.conversation_id, {
-                    within_allowance: false,
-                }, storedMessage.meta_channel_id).catch(() => {});
+                if (typeof Conversation.update === 'function') {
+                    let metadata = storedMessage.conversation_metadata || {};
+                    if (typeof metadata === 'string') {
+                        try { metadata = JSON.parse(metadata); } catch (_) { metadata = {}; }
+                    }
+                    Conversation.update(
+                        { metadata: { ...metadata, within_allowance: false } },
+                        { where: { id: storedMessage.conversation_id, shop_id } },
+                    ).catch(() => {});
+                }
             }
         }
 
@@ -892,7 +655,7 @@ async function notifyPageDisconnected(pageId) {
  *
  * @returns {Promise<'processed'|'skipped'|'failed'>}
  */
-async function processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId = pageId, receiptClaimed = false }) {
+async function processMessagingEvent({ messaging, channel, receipt, pageId, metaAssetId = pageId }) {
     const senderId = messaging.sender?.id;
 
     const channelAssetId = channel?.meta_asset_id || channel?.asset_id;
@@ -907,18 +670,6 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             alert: true,
         });
         return 'failed';
-    }
-
-    // A duplicate delivery may find the same non-terminal receipt while the
-    // first request is still ingesting it. Claim the row before any side effect
-    // so only one live webhook can create a customer message or queue a turn.
-    if (!receiptClaimed) {
-        if (typeof receiptService.claimProcessing === 'function') {
-            const claimed = await receiptService.claimProcessing(receipt);
-            if (!claimed) return 'skipped';
-        } else {
-            await receiptService.markProcessing(receipt);
-        }
     }
 
     if (messaging.optin) {
@@ -941,13 +692,6 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
     }
     if (messaging.message?.is_echo) {
         logger.debug('Skipped echo event', { pageId: metaAssetId });
-        await reconcileOutboundEcho({ messaging, channel }).catch((err) => {
-            logger.warn('Unable to reconcile Meta outbound echo', {
-                shopId: channel.shop_id,
-                metaChannelId: channel.id,
-                error: err.message,
-            });
-        });
         await receiptService.markSkipped(receipt, 'ECHO');
         return 'skipped';
     }
@@ -968,7 +712,6 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         sender: senderId,
         message: messageText || '',
         attachments,
-        reply_to: messaging.message?.reply_to || null,
         timestamp: new Date(messaging.timestamp),
         raw_event: messaging
     };
@@ -981,19 +724,13 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
             hasText: Boolean(messageText),
             attachmentCount: attachments.length,
         });
+        await receiptService.markProcessing(receipt);
         const storeResult = await storeIncomingMessage(normalizedEvent);
         if (!storeResult.duplicate) {
             const msgJson = storeResult.message.toJSON ? storeResult.message.toJSON() : storeResult.message;
             sseManager.emit(channel.shop_id, 'new_message', {
                 conversation_id: storeResult.conversation_id,
-                unread_count: storeResult.unread_count,
-                message: {
-                    ...msgJson,
-                    message_type: msgJson.metadata?.message_type || 'text',
-                    sender: 'customer',
-                    delivery_state: null,
-                    is_transcript_message: true,
-                }
+                message: { ...msgJson, message_type: msgJson.metadata?.message_type || 'text', sender: 'customer' }
             });
         }
         const consentResult = await processInboundConsent({ storeResult, normalizedEvent, channel });
@@ -1102,12 +839,5 @@ module.exports = {
     handlePageWebhook,
     processMessagingEvent,
     storeIncomingMessage,
-    _private: {
-        dispatchMessageJob,
-        processInboundConsent,
-        QueueDispatchError,
-        fallbackCustomerName,
-        resolveLocalReplyContext,
-        buildReplyMetadata,
-    },
+    _private: { dispatchMessageJob, processInboundConsent, QueueDispatchError },
 };

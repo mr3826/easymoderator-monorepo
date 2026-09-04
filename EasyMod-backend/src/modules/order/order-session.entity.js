@@ -25,11 +25,6 @@ const OrderSession = sequelize.define('OrderSession', {
         allowNull: false,
         comment: 'Platform-specific customer ID (sender ID from Meta)'
     },
-    meta_channel_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        comment: 'Meta Page binding for page-scoped PSIDs'
-    },
     channel: {
         type: DataTypes.STRING(20),
         allowNull: false,
@@ -103,7 +98,6 @@ const OrderSession = sequelize.define('OrderSession', {
         { fields: ['shop_id'] },
         { fields: ['customer_id'] },
         { fields: ['customer_channel_id', 'shop_id'] },
-        { fields: ['shop_id', 'customer_channel_id', 'meta_channel_id'] },
         { fields: ['status'] },
         { fields: ['current_step'] },
         { fields: ['last_activity_at'] },

@@ -84,7 +84,6 @@ class WebhookReceiptReconcilerJob {
                 receipt,
                 pageId,
                 metaAssetId: pageId,
-                receiptClaimed: true,
             });
             if (outcome === 'processed') results.processed += 1;
             else if (outcome === 'skipped') results.skipped += 1;

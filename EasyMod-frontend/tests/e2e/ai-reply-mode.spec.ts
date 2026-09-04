@@ -157,10 +157,6 @@ function isConversationPath(path: string): boolean {
   return /^\/api\/conversation\/[^/]+$/.test(path);
 }
 
-function isConversationReadPath(path: string): boolean {
-  return /^\/api\/conversation\/[^/]+\/read$/.test(path);
-}
-
 function isKnownApiPath(path: string): boolean {
   return [
     '/api/csrf',
@@ -180,14 +176,13 @@ function isKnownApiPath(path: string): boolean {
     '/api/templates',
     '/api/channels/meta',
     '/api/audit',
-  ].includes(path) || isConversationMessagesPath(path) || isConversationReadPath(path) || isConversationPath(path);
+  ].includes(path) || isConversationMessagesPath(path) || isConversationPath(path);
 }
 
 interface RouteOptions {
   mode?: AiReplyMode;
   conversations?: ReturnType<typeof makeConversation>[];
   messages?: ReturnType<typeof makeMessage>[];
-  messagesByConversation?: Record<string, ReturnType<typeof makeMessage>[]>;
   sseBody?: string;
   holdSse?: boolean;
   createMessageStatus?: number;
@@ -198,7 +193,6 @@ interface RouteFixture {
     mode: AiReplyMode;
     aiSettings: typeof mockAISettings;
     messages: Record<string, ReturnType<typeof makeMessage>[]>;
-    readConversationIds: Set<string>;
     savedModes: Array<{ mode: unknown; auto_reply_enabled: unknown }>;
     createdMessages: Array<Record<string, unknown>>;
     conversationFetches: number;
@@ -221,10 +215,9 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
       automation_mode: mode,
       auto_reply_enabled: mode === 'AUTO',
     },
-    messages: options.messagesByConversation ?? {
+    messages: {
       'conv-1': options.messages ?? [customerMessage()],
     },
-    readConversationIds: new Set<string>(),
     savedModes: [],
     createdMessages: [],
     conversationFetches: 0,
@@ -350,15 +343,10 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
 
       if (path === '/api/conversation' && method === 'GET') {
         state.conversationFetches += 1;
-        const configuredConversations = options.conversations ?? [makeConversation()];
         return route.fulfill(jsonResponse({
-          conversations: configuredConversations.map((conversation) => (
-            state.readConversationIds.has(conversation.id)
-              ? { ...conversation, unreadCount: 0 }
-              : conversation
-          )),
+          conversations: options.conversations ?? [makeConversation()],
           ai_reply_mode: state.mode,
-          pagination: { total: configuredConversations.length, page: 1, pageSize: 50, totalPages: 1 },
+          pagination: { total: 1, page: 1, pageSize: 50, totalPages: 1 },
         }));
       }
 
@@ -398,16 +386,6 @@ async function setupRoutes(page: Page, options: RouteOptions = {}): Promise<Rout
             updated_at: isoFromNow(0),
           }, 201));
         }
-      }
-
-      if (isConversationReadPath(path) && method === 'POST') {
-        const conversationId = path.split('/')[3];
-        state.readConversationIds.add(conversationId);
-        return route.fulfill(jsonResponse({
-          ...makeConversation({ id: conversationId }),
-          unreadCount: 0,
-          lastReadMessageId: (request.postDataJSON() as Record<string, unknown>)?.message_id,
-        }));
       }
 
       if (isConversationPath(path) && method === 'PATCH') {
@@ -535,7 +513,7 @@ test('Scenario C: Manual mode suppresses the automatic-reply claim while keeping
   await expect(composer).toBeVisible();
   await expect(composer).toBeEnabled();
 
-  const hitlControl = page.getByRole('button', { name: /Take over/ });
+  const hitlControl = page.getByRole('button', { name: /Manual replies only/ });
   await expect(hitlControl).toBeVisible();
   const hitlResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -558,7 +536,7 @@ test('Scenario D: Draft mode shows draft-ready only when an undelivered held mes
   fixture.state.messages['conv-1'] = [customerMessage(), heldDraftMessage()];
   await page.reload();
   await expect(page.getByText('Draft ready for review', { exact: true })).toBeVisible();
-  await expect(page.getByText('"The draft reply is ready for your review."', { exact: true })).toBeVisible();
+  await expect(page.getByText('The draft reply is ready for your review.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send this', exact: true })).toBeVisible();
   fixture.assertNoUnexpectedApiRequests();
 });
@@ -609,21 +587,11 @@ test.describe('Scenario F: terminal activity clears from Inbox', () => {
   test('after an SSE delivery failure', async ({ page }) => {
     const fixture = await setupRoutes(page, {
       mode: 'AUTO',
-      messages: [
-        customerMessage(),
-        makeMessage(
-          'ai-pending-1',
-          'ai',
-          'Pending automatic reply',
-          -1_000,
-          { delivery_state: 'SEND_PENDING', delivery_status: 'pending', delivered: false },
-        ),
-      ],
       holdSse: true,
       sseBody: [
         'retry: 10000',
         'event: delivery_failed',
-        'data: {"conversation_id":"conv-1","message_id":"ai-pending-1","reason":"provider rejected"}',
+        'data: {"conversation_id":"conv-1","reason":"provider rejected"}',
         '',
         '',
       ].join('\n'),
@@ -657,113 +625,4 @@ test.describe('Scenario F: terminal activity clears from Inbox', () => {
     await expectAiActiveCleared(page);
     fixture.assertNoUnexpectedApiRequests();
   });
-});
-
-test('Scenario G: a merchant-requested AI suggestion is visible and explicitly unsent', async ({ page }) => {
-  const fixture = await setupRoutes(page, {
-    mode: 'MANUAL',
-    messages: [
-      customerMessage(),
-      makeMessage(
-        'ai-requested-1',
-        'ai',
-        'Here is the requested answer.',
-        -1_000,
-        {
-          delivery_state: 'HELD',
-          delivered: false,
-          held_reason: 'human_active',
-          suggestion_visibility: 'VISIBLE_MERCHANT_REQUESTED',
-        },
-      ),
-    ],
-  });
-  await loginAndGo(page, '/inbox');
-
-  await expect(page.getByText('Human review required', { exact: true })).toBeVisible();
-  await expect(page.getByText('AI suggestion — NOT SENT', { exact: true })).toBeVisible();
-  await expect(page.getByText('"Here is the requested answer."', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Send this', exact: true })).toBeVisible();
-  await expect(page.getByText('AI Assistant', { exact: true })).toHaveCount(0);
-  fixture.assertNoUnexpectedApiRequests();
-});
-
-test('Scenario H: a Messenger quoted reply renders its resolved reference once', async ({ page }) => {
-  const quotedMessage = makeMessage(
-    'customer-quoted-1',
-    'customer',
-    'Large please',
-    -1_000,
-    {
-      reply_to: {
-        provider_message_id: 'mid-previous-1',
-        status: 'resolved',
-        sender: 'agent',
-        content: 'Which size would you like?',
-        message_type: 'text',
-      },
-    },
-  );
-  const fixture = await setupRoutes(page, {
-    mode: 'MANUAL',
-    messages: [
-      makeMessage('agent-previous-1', 'agent', 'Previous Messenger reply', -2_000),
-      quotedMessage,
-    ],
-  });
-  await loginAndGo(page, '/inbox');
-
-  await expect(page.getByText('Replying to:', { exact: false })).toBeVisible();
-  await expect(page.getByText(/Replying to:\s*Which size would you like\?/)).toBeVisible();
-  await expect(page.getByText('Previous Messenger reply', { exact: true })).toBeVisible();
-  await expect(page.getByText('Large please', { exact: true })).toHaveCount(1);
-  fixture.assertNoUnexpectedApiRequests();
-});
-
-test('Scenario I: read state and message identity stay isolated across two Messenger Pages', async ({ page }) => {
-  const pageAConversation = makeConversation({
-    id: 'conv-page-a',
-    customer_id: 'customer-page-a',
-    customer: { id: 'customer-page-a', name: 'Page A Customer' },
-    meta_channel_id: 'meta-page-a',
-    unreadCount: 1,
-  });
-  const pageBConversation = makeConversation({
-    id: 'conv-page-b',
-    customer_id: 'customer-page-b',
-    customer: { id: 'customer-page-b', name: 'Page B Customer' },
-    meta_channel_id: 'meta-page-b',
-    unreadCount: 1,
-  });
-  const pageAMessage = { ...customerMessage(), id: 'page-a-message', conversation_id: 'conv-page-a', content: 'Page A private message' };
-  const pageBMessage = { ...customerMessage(), id: 'page-b-message', conversation_id: 'conv-page-b', content: 'Page B private message' };
-  const fixture = await setupRoutes(page, {
-    mode: 'MANUAL',
-    conversations: [pageAConversation, pageBConversation],
-    messagesByConversation: {
-      'conv-page-a': [pageAMessage],
-      'conv-page-b': [pageBMessage],
-    },
-  });
-  const firstRead = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return url.pathname === '/api/conversation/conv-page-a/read' && response.request().method() === 'POST';
-  });
-  await loginAndGo(page, '/inbox');
-  await firstRead;
-
-  await expect(page.getByRole('heading', { name: 'Page A Customer', exact: true }).last()).toBeVisible();
-  await expect(page.getByTestId('unread-badge')).toHaveCount(1);
-  await expect(page.getByText('Page B Customer', { exact: true }).first()).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByRole('heading', { name: 'Page A Customer', exact: true }).last()).toBeVisible();
-  await expect(page.getByTestId('unread-badge')).toHaveCount(1);
-
-  await page.getByRole('heading', { name: 'Page B Customer', exact: true }).first().click();
-  await expect(page.getByRole('heading', { name: 'Page B Customer', exact: true }).last()).toBeVisible();
-  await expect(page.getByText('Page B private message', { exact: true })).toBeVisible();
-  await expect(page.getByText('Page A private message', { exact: true })).toHaveCount(0);
-
-  fixture.assertNoUnexpectedApiRequests();
 });

@@ -234,8 +234,7 @@ class AIChatbotController {
                     detectedLanguage,
                     aiSettings,
                     ingestionResult,
-                    imageUrls,
-                    ingestionResult.reply_context || null,
+                    imageUrls
                 );
                 // Same gate as the Messenger worker — this HTTP entry point must
                 // not be a way around the trust boundary.
@@ -339,7 +338,7 @@ class AIChatbotController {
      * Falls back to keyword matching if all LLM providers are unavailable.
      * Returns { response: string, confidence: number (0.0–1.0) }.
      */
-    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult, imageUrls = [], replyContext = null) {
+    static async processNewIntent(message, conversationHistory, entities, language, aiSettings, ingestionResult, imageUrls = []) {
         const { shop_id, customer_channel_id, platform } = ingestionResult;
         const { conversation_id } = ingestionResult;
 
@@ -400,8 +399,7 @@ class AIChatbotController {
                 preferredProvider,  // ✅ NEW: Pass model preset as provider hint
                 // Bug #11: pass per-shop confidence threshold so FAQ matching
                 // uses the value the shop owner configured, not the global env default
-                confidenceThreshold: aiSettings.confidence_threshold,
-                replyContext,
+                confidenceThreshold: aiSettings.confidence_threshold
             });
 
             const evidence = routerResult.grounding || grounding.emptyEvidence(shop_id);

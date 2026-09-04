@@ -361,7 +361,6 @@ class OrderSessionService {
             shop_id,
             customer_id,
             customer_channel_id,
-            meta_channel_id = null,
             channel = 'messenger',
             initial_message,
             entities = {},
@@ -378,24 +377,14 @@ class OrderSessionService {
         };
 
         // Check if there's already an active session for this customer
-        const sessionWhere = {
-            shop_id,
-            customer_channel_id,
-            status: 'ACTIVE',
-            ...(customer_id ? { customer_id } : {}),
-        };
-        let existingSession = meta_channel_id
-            ? await OrderSession.findOne({
-                where: { ...sessionWhere, meta_channel_id },
-                order: [['last_activity_at', 'DESC']],
-            })
-            : null;
-        if (!existingSession) {
-            existingSession = await OrderSession.findOne({
-                where: { ...sessionWhere, ...(meta_channel_id ? { meta_channel_id: null } : {}) },
-                order: [['last_activity_at', 'DESC']],
-            });
-        }
+        const existingSession = await OrderSession.findOne({
+            where: {
+                shop_id,
+                customer_channel_id,
+                status: 'ACTIVE'
+            },
+            order: [['last_activity_at', 'DESC']]
+        });
 
         if (existingSession) {
             // Resume existing session if it's not too old (24 hours)
@@ -419,7 +408,6 @@ class OrderSessionService {
                 shop_id,
                 customer_id,
                 customer_channel_id,
-                meta_channel_id,
                 channel,
                 current_step: 'SELECTING_PRODUCT',
                 step_data: { initial_message, entities, language, product_candidates },
@@ -464,7 +452,6 @@ class OrderSessionService {
             shop_id,
             customer_id,
             customer_channel_id,
-            meta_channel_id,
             channel,
             // When we already know the product, jump straight to asking the quantity
             // ("koyta niben?") — the bot must verify pieces, not assume 1.
@@ -1281,34 +1268,23 @@ class OrderSessionService {
     /**
      * Get active session for a customer
      */
-    static async getActiveSession(shopId, customerChannelId, metaChannelId = null, customerId = null) {
+    static async getActiveSession(shopId, customerChannelId) {
         // Only resume a session that is still within its TTL. A session left stuck at
         // ORDER_SUMMARY (e.g. order creation kept failing) was otherwise resurfaced on
         // EVERY later message — the customer felt the bot was "stuck on old data" and
         // could never start fresh. Drop expired rows; keep legacy rows with null expiry.
-        const where = {
+        return await OrderSession.findOne({
+            where: {
                 shop_id: shopId,
                 customer_channel_id: customerChannelId,
                 status: 'ACTIVE',
-                ...(customerId ? { customer_id: customerId } : {}),
                 [Op.or]: [
                     { expires_at: { [Op.gt]: new Date() } },
                     { expires_at: { [Op.is]: null } }
                 ]
-        };
-        let session = metaChannelId
-            ? await OrderSession.findOne({
-                where: { ...where, meta_channel_id: metaChannelId },
-                order: [['last_activity_at', 'DESC']],
-            })
-            : null;
-        if (!session) {
-            session = await OrderSession.findOne({
-                where: { ...where, ...(metaChannelId ? { meta_channel_id: null } : {}) },
-                order: [['last_activity_at', 'DESC']],
-            });
-        }
-        return session;
+            },
+            order: [['last_activity_at', 'DESC']]
+        });
     }
 
     /**

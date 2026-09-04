@@ -283,30 +283,6 @@ describe('MetaMessengerProvider', () => {
             expect(events).toEqual([]);
         });
 
-        test('preserves Messenger reply_to relationship on inbound events', () => {
-            const events = provider.parseWebhookEnvelope({
-                object: 'page',
-                entry: [{
-                    id: 'PAGE_123',
-                    messaging: [{
-                        sender: { id: 'PSID_999' },
-                        recipient: { id: 'PAGE_123' },
-                        timestamp: 1700000000000,
-                        message: {
-                            mid: 'mid_reply',
-                            text: 'L',
-                            reply_to: { mid: 'mid_question', is_self_reply: true },
-                        },
-                    }],
-                }],
-            });
-
-            expect(events[0]).toEqual(expect.objectContaining({
-                inReplyToExternalId: 'mid_question',
-                replyToIsSelfReply: true,
-            }));
-        });
-
         test('ignores comment events from feed changes', () => {
             const events = provider.parseWebhookEnvelope({
                 object: 'page',
