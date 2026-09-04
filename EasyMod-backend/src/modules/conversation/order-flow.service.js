@@ -58,22 +58,16 @@ const ACTIVE_SESSION_TERMINAL_INTENTS = new Set([
 const channelTypeFor = (platform) =>
     (platform === 'facebook' || platform === 'messenger') ? 'messenger' : (platform || 'messenger');
 
-async function resolveCustomerId(shopId, platform, channelUserId, metaChannelId = null) {
+async function resolveCustomerId(shopId, platform, channelUserId) {
     try {
-        const where = {
-            shop_id: shopId,
-            channel_type: channelTypeFor(platform),
-            channel_user_id: String(channelUserId),
-        };
-        let c = metaChannelId
-            ? await Customer.findOne({ where: { ...where, meta_channel_id: metaChannelId }, attributes: ['id'] })
-            : null;
-        if (!c) {
-            c = await Customer.findOne({
-                where: { ...where, ...(metaChannelId ? { meta_channel_id: null } : {}) },
-                attributes: ['id'],
-            });
-        }
+        const c = await Customer.findOne({
+            where: {
+                shop_id: shopId,
+                channel_type: channelTypeFor(platform),
+                channel_user_id: String(channelUserId),
+            },
+            attributes: ['id'],
+        });
         return c?.id || null;
     } catch {
         return null; // best-effort — order can still be created without a linked customer
@@ -114,15 +108,9 @@ async function handleOrderFlow({
     mutationsAllowed = true,
     conversationId = null,
     traceId = null,
-    metaChannelId = null,
 }) {
     // ── 1. Continue an active session ────────────────────────────────────────
-    const customerId = await resolveCustomerId(shopId, platform, customerChannelId, metaChannelId);
-    const active = metaChannelId
-        ? await OrderSessionService.getActiveSession(shopId, customerChannelId, metaChannelId, customerId)
-        : customerId
-            ? await OrderSessionService.getActiveSession(shopId, customerChannelId, null, customerId)
-            : await OrderSessionService.getActiveSession(shopId, customerChannelId);
+    const active = await OrderSessionService.getActiveSession(shopId, customerChannelId);
     if (active && active.status === 'ACTIVE') {
         const cancelActiveSession = async () => {
             try {
@@ -290,13 +278,13 @@ async function handleOrderFlow({
         };
     }
 
+    const customerId = await resolveCustomerId(shopId, platform, customerChannelId);
     const channel = channelTypeFor(platform);
 
     const startArgs = {
         shop_id: shopId,
         customer_id: customerId,
         customer_channel_id: customerChannelId,
-        ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
         channel,
         initial_message: message,
         entities,

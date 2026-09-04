@@ -91,10 +91,10 @@ function tryMapSequelizeError(err) {
 
 const globalErrorHandler = (err, req, res, next) => {
   const requestId = req.requestId || req.headers['x-request-id'] || 'unknown';
-    let appError = err;
-    if (!(err instanceof AppError)) {
-      appError = tryMapSequelizeError(err)
-      || new AppError(err.message || 'Internal Server Error', err.status || err.statusCode || 500, 'INTERNAL_ERROR', { originalError: err.name });
+  let appError = err;
+  if (!(err instanceof AppError)) {
+    appError = tryMapSequelizeError(err)
+      || new AppError(err.message || 'Internal Server Error', err.status || 500, 'INTERNAL_ERROR', { originalError: err.name });
   }
   const statusCode = appError.status || 500;
   const logContext = { ...appError.getFullContext(), requestId, method: req.method, url: req.originalUrl, clientIp: req.ip };

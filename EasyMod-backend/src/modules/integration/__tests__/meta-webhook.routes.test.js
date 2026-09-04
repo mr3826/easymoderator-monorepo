@@ -232,61 +232,13 @@ describe('storeIncomingMessage', () => {
         expect(result).toMatchObject({ customer_id: CUSTOMER_ID, conversation_id: CONV_ID });
     });
 
-    it('persists a scoped Messenger reply_to relationship and increments unread once', async () => {
-        const referencedMessage = buildMessage({
-            id: 'msg-referenced',
-            external_id: 'mid.question',
-            sender: 'business',
-            content: 'Which size would you like, M or L?',
-            metadata: { message_type: 'text' },
-        });
-        const replyEvent = {
-            ...baseEvent,
-            raw_event: {
-                message: {
-                    mid: 'mid.reply',
-                    text: 'L',
-                    reply_to: { mid: 'mid.question', is_self_reply: true },
-                },
-            },
-            message: 'L',
-        };
-        mockConversation.findOne.mockResolvedValue(conversation);
-        mockMessage.findOne
-            .mockResolvedValueOnce(null)
-            .mockResolvedValueOnce(referencedMessage);
-        mockMessage.create.mockResolvedValue(buildMessage({ id: 'msg-reply', external_id: 'mid.reply' }));
-
-        const result = await storeIncomingMessage(replyEvent);
-        const createPayload = mockMessage.create.mock.calls[0][0];
-
-        expect(createPayload.metadata).toEqual(expect.objectContaining({
-            reply_to_provider_message_id: 'mid.question',
-            reply_to_internal_message_id: 'msg-referenced',
-            reply_to: expect.objectContaining({
-                status: 'resolved',
-                sender: 'agent',
-                content: 'Which size would you like, M or L?',
-                is_self_reply: true,
-            }),
-        }));
-        expect(conversation.update).toHaveBeenCalledWith(
-            expect.objectContaining({
-                message: 'L',
-                metadata: expect.objectContaining({ unreadCount: 1 }),
-            }),
-            expect.objectContaining({ transaction: mockTransaction }),
-        );
-        expect(result.unread_count).toBe(1);
-    });
-
     it('triggers Meta profile enrichment for a new Facebook tester customer', async () => {
         await storeIncomingMessage(baseEvent);
 
         expect(mockCustomer.findOrCreate).toHaveBeenCalledWith(
             expect.objectContaining({
                 defaults: expect.objectContaining({
-                    name: 'Facebook customer · …b123',
+                    name: 'Facebook User',
                     channel_user_id: 'sender-fb-123',
                     metadata: expect.objectContaining({
                         platform: 'facebook',
@@ -341,7 +293,7 @@ describe('storeIncomingMessage', () => {
         await flushPromises();
 
         expect(existingGenericCustomer.update).toHaveBeenCalledWith({
-            name: 'Facebook customer · …b123',
+            name: 'Facebook User',
             metadata: expect.objectContaining({
                 source: 'webhook',
                 platform: 'facebook',
@@ -367,7 +319,7 @@ describe('storeIncomingMessage', () => {
 
         expect(mockCustomerProfileService.enrichCustomerNameFromMeta).not.toHaveBeenCalled();
         expect(existingGenericCustomer.update).toHaveBeenCalledWith({
-            name: 'Facebook customer · …b123',
+            name: 'Facebook User',
             metadata: expect.objectContaining({
                 source: 'webhook',
                 platform: 'facebook',

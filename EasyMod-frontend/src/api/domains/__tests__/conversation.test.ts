@@ -124,52 +124,6 @@ describe('Conversation Domain API', () => {
       expect(httpClient.post).toHaveBeenCalledWith('/api/conversation/c1/messages', msg);
       expect(result.id).toBe('m2');
     });
-
-    it('sends a stable idempotency header for merchant sends', async () => {
-      const msg = { content: 'Hello', sender: 'agent' as const, message_type: 'text' as const };
-      (httpClient.post as any).mockResolvedValue({ data: { data: { id: 'm2', ...msg } } });
-
-      await conversation.createMessage('c1', msg, { idempotencyKey: 'send-key-12345' });
-
-      expect(httpClient.post).toHaveBeenCalledWith(
-        '/api/conversation/c1/messages',
-        msg,
-        { headers: { 'Idempotency-Key': 'send-key-12345' } },
-      );
-    });
-  });
-
-  describe('Inbox lifecycle actions', () => {
-    it('approves a draft through the scoped draft endpoint', async () => {
-      (httpClient.post as any).mockResolvedValue({ data: { data: { message: { id: 'draft-1' } } } });
-
-      await conversation.approveAiDraft('c1', 'draft-1', 'Edited reply');
-
-      expect(httpClient.post).toHaveBeenCalledWith(
-        '/api/conversation/c1/messages/draft-1/approve',
-        { content: 'Edited reply' },
-      );
-    });
-
-    it('persists dismiss and read actions through the server', async () => {
-      (httpClient.post as any)
-        .mockResolvedValueOnce({ data: { data: { message: { id: 'draft-1' } } } })
-        .mockResolvedValueOnce({ data: { data: { id: 'c1', unreadCount: 0 } } });
-
-      await conversation.dismissAiDraft('c1', 'draft-1');
-      await conversation.markConversationRead('c1', 'customer-1');
-
-      expect(httpClient.post).toHaveBeenNthCalledWith(
-        1,
-        '/api/conversation/c1/messages/draft-1/dismiss',
-        {},
-      );
-      expect(httpClient.post).toHaveBeenNthCalledWith(
-        2,
-        '/api/conversation/c1/read',
-        { message_id: 'customer-1' },
-      );
-    });
   });
 
   describe('updateConversation', () => {

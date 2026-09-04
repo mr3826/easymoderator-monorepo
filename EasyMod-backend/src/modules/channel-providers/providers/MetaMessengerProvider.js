@@ -589,8 +589,6 @@ class MetaMessengerProvider extends ChannelProvider {
                     senderExternalId: evt.sender?.id || null,
                     pageOrAccountId: pageId,
                     text: msg.text || null,
-                    inReplyToExternalId: msg.reply_to?.mid || null,
-                    replyToIsSelfReply: msg.reply_to?.is_self_reply === true,
                     attachments: (msg.attachments || []).map(a => ({
                         type: a.type || 'file',
                         url: a.payload?.url,

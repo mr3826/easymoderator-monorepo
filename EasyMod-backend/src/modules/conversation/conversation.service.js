@@ -4,151 +4,15 @@ const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
-const { sequelize } = require('../../utils/database/database-setup');
-const {
-    MESSAGE_DELIVERY_STATES,
-    SUGGESTION_VISIBILITY,
-    normalizeDeliveryState,
-    providerMessageIdFor,
-    isProviderConfirmed,
-    isReviewableSuggestion,
-    deriveMessageSendIdempotencyKey,
-} = require('./message-lifecycle');
-
-const PLACEHOLDER_CUSTOMER_NAMES = new Set([
-    'customer',
-    'facebook user',
-    'messenger user',
-    'instagram user',
-    'no title',
-    'unknown',
-]);
-
-const normalizeObject = (value) => {
-    if (typeof value === 'string') {
-        try {
-            const parsed = JSON.parse(value);
-            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-        } catch (_) {
-            return {};
-        }
-    }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return value;
-};
-
-const displayChannelName = (channel) => (
-    channel === 'facebook' || channel === 'messenger' ? 'Facebook customer' : 'Customer'
-);
-
-const customerFallbackName = (channel, providerId) => {
-    const prefix = displayChannelName(channel);
-    const normalizedId = typeof providerId === 'string' ? providerId.trim() : '';
-    const suffix = normalizedId.replace(/[^A-Za-z0-9]/g, '').slice(-4);
-    return suffix ? `${prefix} · …${suffix}` : prefix;
-};
-
-const isPlaceholderCustomerName = (name) => {
-    if (!name) return true;
-    const normalized = String(name).trim().toLowerCase();
-    return PLACEHOLDER_CUSTOMER_NAMES.has(normalized)
-        || normalized.startsWith('facebook user ')
-        || normalized.startsWith('messenger user ')
-        || normalized.startsWith('instagram user ')
-        || normalized.startsWith('facebook customer ·');
-};
-
-const CLIENT_MESSAGE_METADATA_FIELDS = new Set([
-    'external_id',
-    'provider_message_id',
-    'provider_message_ids',
-    'provider_send_confirmed',
-    'provider_send_attempted',
-    'delivery_state',
-    'delivery_status',
-    'delivered',
-    'suggestion_visibility',
-]);
-
-const sanitizeClientMessageMetadata = (metadata) => Object.fromEntries(
-    Object.entries(normalizeObject(metadata))
-        .filter(([key]) => !CLIENT_MESSAGE_METADATA_FIELDS.has(key)),
-);
-
-const internalIntentTitle = (value, intent) => {
-    if (!value) return true;
-    const title = String(value).trim();
-    return title.toLowerCase() === 'no title'
-        || title.toLowerCase() === 'facebook user'
-        || title.toLowerCase() === 'messenger user'
-        || title === intent
-        || title === 'GENERAL_CHAT_OR_UNKNOWN'
-        || title === 'PURCHASE_INTENT_START'
-        || title === 'ORDER_STATUS_LOOKUP'
-        || title === 'SUPPORT_HANDOFF'
-        || /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(title);
-};
-
-const plainCustomer = (customer, channel) => {
-    if (!customer) return null;
-    const raw = typeof customer.toJSON === 'function' ? customer.toJSON() : { ...customer };
-    if (isPlaceholderCustomerName(raw.name)) {
-        raw.name = customerFallbackName(channel, raw.channel_user_id);
-    }
-    return raw;
-};
-
-const mapMessage = (message) => {
-    const metadata = normalizeObject(message?.metadata);
-    const deliveryState = normalizeDeliveryState(message);
-    const sender = message?.sender === 'business' ? 'agent' : message?.sender;
-    return {
-        id: message.id,
-        conversation_id: message.conversation_id,
-        content: message.content,
-        sender,
-        message_type: metadata.message_type || 'text',
-        metadata: message.metadata || null,
-        ai_suggestion: message.ai_suggestion || null,
-        ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
-        source_references: message.source_references || null,
-        message_tag: message.message_tag || null,
-        delivery_state: deliveryState,
-        provider_message_id: providerMessageIdFor(message),
-        delivery_source: message.delivery_source || metadata.delivery_source || null,
-        reply_to: metadata.reply_to || (metadata.reply_to_provider_message_id
-            ? {
-                provider_message_id: metadata.reply_to_provider_message_id,
-                internal_message_id: metadata.reply_to_internal_message_id || null,
-                is_self_reply: metadata.reply_to_is_self_reply === true,
-                status: metadata.reply_to_internal_message_id ? 'resolved' : 'unavailable',
-            }
-            : null),
-        is_transcript_message: sender !== 'ai' || isProviderConfirmed(message),
-        created_at: message.created_at,
-        updated_at: message.updated_at || message.created_at,
-    };
-};
 
 class ConversationService {
-    mapMessage(message) {
-        return mapMessage(message);
-    }
-
     mapConversation(conversation) {
-        const meta = normalizeObject(conversation.metadata);
+        const meta = conversation.metadata || {};
         const channel = conversation.channel === 'messenger'
             ? 'facebook'
             : conversation.channel === 'web'
                 ? 'webchat'
                 : conversation.channel;
-
-        const customer = plainCustomer(conversation.customer, channel);
-        const customerName = customer?.name || customerFallbackName(channel, customer?.channel_user_id);
-        const titleCandidate = conversation.title || meta.title;
-        const title = internalIntentTitle(titleCandidate, conversation.intent)
-            ? customerName
-            : titleCandidate;
 
         // Phase 2 FK + Phase 4 purpose label. Lets the inbox label which page
         // / IG account a thread arrived on without a separate API call.
@@ -165,17 +29,15 @@ class ConversationService {
         return {
             id: conversation.id,
             customer_id: conversation.customer_id,
-            customer,
+            customer: conversation.customer || null,
             channel,
             meta_channel_id: conversation.meta_channel_id || null,
             metaChannel: metaChannelInfo,
-            title,
+            title: conversation.title || meta.title || conversation.intent || null,
             status: conversation.status || meta.status || 'active',
             hitl: conversation.hitl ?? false,
-            lastMessage: meta.last_actual_message ?? conversation.message ?? null,
-            unreadCount: Math.max(0, Number(meta.unreadCount) || 0),
-            lastReadMessageId: meta.last_read_message_id || null,
-            lastReadMessageAt: meta.last_read_message_at || null,
+            lastMessage: conversation.message,
+            unreadCount: meta.unreadCount || 0,
             // Sequelize timestamps with `underscored: true` are exposed on the
             // instance as camelCase accessors (createdAt/updatedAt) even though
             // the DB columns are snake_case. Reading conversation.created_at
@@ -208,14 +70,14 @@ class ConversationService {
             const [conversations, aiReplyMode] = await Promise.all([
                 Conversation.findAndCountAll({
                     where: whereClause,
-                    order: [['updated_at', 'DESC']],
+                    order: [['created_at', 'DESC']],
                     limit,
                     offset,
                     include: [
                         {
                             model: Customer,
                             as: 'customer',
-                            attributes: ['id', 'name', 'phone', 'channel_user_id']
+                            attributes: ['id', 'name', 'phone']
                         },
                         {
                             model: MetaChannel,
@@ -235,37 +97,8 @@ class ConversationService {
                 getEffectiveAiReplyMode(shopId),
             ]);
 
-            const suggestionCounts = new Map();
-            const conversationIds = conversations.rows.map((row) => row.id);
-            if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
-                const candidates = await Message.findAll({
-                    where: {
-                        conversation_id: { [Op.in]: conversationIds },
-                        sender: 'ai',
-                    },
-                    attributes: [
-                        'id',
-                        'conversation_id',
-                        'sender',
-                        'delivery_state',
-                        'provider_message_id',
-                        'metadata',
-                    ],
-                });
-                for (const candidate of candidates.filter(isReviewableSuggestion)) {
-                    suggestionCounts.set(
-                        candidate.conversation_id,
-                        (suggestionCounts.get(candidate.conversation_id) || 0) + 1,
-                    );
-                }
-            }
-
             return {
-                conversations: conversations.rows.map((row) => ({
-                    ...this.mapConversation(row),
-                    suggestionCount: suggestionCounts.get(row.id) || 0,
-                    hasAiSuggestion: suggestionCounts.has(row.id),
-                })),
+                conversations: conversations.rows.map((row) => this.mapConversation(row)),
                 ai_reply_mode: aiReplyMode,
                 pagination: {
                     total: conversations.count,
@@ -333,23 +166,34 @@ class ConversationService {
                 where: {
                     conversation_id: conversationId
                 },
-                // Page one must contain the newest messages so the merchant
-                // actually sees the latest inbound before the read watermark is
-                // advanced. Reverse the bounded page for chronological render.
-                order: [['created_at', 'DESC']],
+                order: [['created_at', 'ASC']],
                 limit,
                 offset
             });
 
-            const projectedMessages = results.rows.map(mapMessage).reverse();
-            const messages = projectedMessages.filter((message) => message.is_transcript_message);
-            const suggestions = results.rows
-                .filter(isReviewableSuggestion)
-                .map(mapMessage);
+            const messages = results.rows.map((message) => {
+                // message_type is stored inside metadata to remain backward compatible with existing schema
+                // and old rows that predate attachment support.
+                const messageType = message.metadata?.message_type || 'text';
+
+                return {
+                id: message.id,
+                conversation_id: message.conversation_id,
+                content: message.content,
+                sender: message.sender === 'business' ? 'agent' : message.sender,
+                message_type: messageType,
+                metadata: message.metadata || null,
+                ai_suggestion: message.ai_suggestion || null,
+                ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                source_references: message.source_references || null,
+                message_tag: message.message_tag || null,
+                created_at: message.created_at,
+                updated_at: message.updated_at || message.created_at
+                };
+            });
 
             return {
                 messages,
-                suggestions,
                 pagination: {
                     total: results.count,
                     page,
@@ -369,16 +213,8 @@ class ConversationService {
         let committed = false;
         
         try {
-            if (conversationData.customer_id && typeof Customer.findOne === 'function') {
-                const ownedCustomer = await Customer.findOne({
-                    where: { id: conversationData.customer_id, shop_id: shopId },
-                    transaction,
-                });
-                if (!ownedCustomer) {
-                    throw new AppError('Customer not found for this shop', 404);
-                }
-            }
             const resolvedTitle = conversationData.title
+                || conversationData.intent
                 || conversationData.metadata?.title
                 || null;
             const resolvedStatus = conversationData.status
@@ -462,323 +298,38 @@ class ConversationService {
             const sender = messageData.sender === 'agent'
                 ? 'business'
                 : messageData.sender || 'customer';
-            const isManualOutbound = sender === 'business';
-            const isMetaOutbound = ['facebook', 'messenger'].includes(conversation.channel);
-            const sendIdempotencyKey = messageData.send_idempotency_key || null;
-            if (isManualOutbound && sendIdempotencyKey && typeof Message.findOne === 'function') {
-                const existing = await Message.findOne({
-                    where: {
-                        conversation_id: conversationId,
-                        send_idempotency_key: sendIdempotencyKey,
-                    },
-                });
-                if (existing) {
-                    return { ...mapMessage(existing), idempotency_replay: true };
-                }
-            }
-            const metadata = {
-                ...sanitizeClientMessageMetadata(messageData.metadata),
-                message_type: messageData.message_type || messageData.metadata?.message_type || 'text',
-                ...(isManualOutbound ? {
-                    delivered: !isMetaOutbound,
-                    delivery_status: isMetaOutbound ? 'pending' : 'sent',
-                    delivery_state: isMetaOutbound
-                        ? MESSAGE_DELIVERY_STATES.SEND_PENDING
-                        : MESSAGE_DELIVERY_STATES.SENT,
-                    delivery_source: isMetaOutbound ? 'MANUAL' : 'LOCAL',
-                } : {}),
-            };
 
             const message = await Message.create({
                 conversation_id: conversationId,
                 content: messageData.content || messageData.message || '',
                 sender,
-                metadata,
+                metadata: {
+                    ...(messageData.metadata || {}),
+                    message_type: messageData.message_type || 'text'
+                },
                 ai_suggestion: messageData.ai_suggestion || null,
                 ai_confidence: messageData.ai_confidence || null,
                 message_tag: messageData.message_tag || null,
-                external_id: null,
-                delivery_state: isManualOutbound
-                    ? isMetaOutbound ? MESSAGE_DELIVERY_STATES.SEND_PENDING : MESSAGE_DELIVERY_STATES.SENT
-                    : null,
-                delivery_source: isManualOutbound ? (isMetaOutbound ? 'MANUAL' : 'LOCAL') : null,
-                provider_message_id: null,
-                send_idempotency_key: sendIdempotencyKey,
+                external_id: messageData.metadata?.external_id || null
             });
 
-            return { ...mapMessage(message), idempotency_replay: false };
+            return {
+                id: message.id,
+                conversation_id: message.conversation_id,
+                content: message.content,
+                sender: sender === 'business' ? 'agent' : sender,
+                message_type: message.metadata?.message_type || messageData.message_type || 'text',
+                metadata: message.metadata || null,
+                ai_suggestion: message.ai_suggestion || null,
+                ai_confidence: message.ai_confidence ? Number(message.ai_confidence) : null,
+                source_references: message.source_references || null,
+                message_tag: message.message_tag || null,
+                created_at: message.created_at,
+                updated_at: message.updated_at || message.created_at
+            };
         } catch (error) {
             throw new Error(`Failed to create message: ${error.message}`);
         }
-    }
-
-    async approveAiDraft(conversationId, shopId, messageId, content, actorId = null) {
-        const transaction = await sequelize.transaction();
-        try {
-            const conversation = await Conversation.findOne({
-                where: { id: conversationId, shop_id: shopId },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!conversation) {
-                const error = new Error('Conversation not found');
-                error.statusCode = 404;
-                throw error;
-            }
-
-            const candidate = await Message.findOne({
-                where: { id: messageId, conversation_id: conversationId, sender: 'ai' },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!candidate) {
-                const error = new Error('AI suggestion not found');
-                error.statusCode = 404;
-                throw error;
-            }
-
-            const state = normalizeDeliveryState(candidate);
-            if (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED) {
-                await transaction.commit();
-                return { message: mapMessage(candidate), alreadySent: true };
-            }
-            if (state === MESSAGE_DELIVERY_STATES.SEND_PENDING) {
-                const error = new Error('AI suggestion send is already in progress');
-                error.statusCode = 409;
-                error.code = 'DRAFT_SEND_IN_PROGRESS';
-                throw error;
-            }
-            if (normalizeObject(candidate.metadata).provider_send_attempted === true) {
-                const error = new Error('Provider delivery was already attempted; send a fresh merchant reply after checking the channel');
-                error.statusCode = 409;
-                error.code = 'PROVIDER_SEND_ALREADY_ATTEMPTED';
-                throw error;
-            }
-            if (state === MESSAGE_DELIVERY_STATES.DISMISSED) {
-                const error = new Error('AI suggestion was dismissed');
-                error.statusCode = 409;
-                error.code = 'DRAFT_DISMISSED';
-                throw error;
-            }
-            if (!isReviewableSuggestion(candidate)) {
-                const error = new Error('AI suggestion is not awaiting merchant approval');
-                error.statusCode = 409;
-                error.code = 'DRAFT_NOT_APPROVABLE';
-                throw error;
-            }
-
-            const approvedContent = content === undefined || content === null
-                ? candidate.content
-                : String(content).trim();
-            if (!approvedContent) {
-                const error = new Error('Approved message content is required');
-                error.statusCode = 400;
-                throw error;
-            }
-            if (approvedContent.length > 4000) {
-                const error = new Error('Approved message content must not exceed 4000 characters');
-                error.statusCode = 400;
-                throw error;
-            }
-
-            const sendIdempotencyKey = deriveMessageSendIdempotencyKey({
-                shopId,
-                conversationId,
-                messageId,
-            });
-            const nextMetadata = {
-                ...normalizeObject(candidate.metadata),
-                delivered: false,
-                delivery_status: 'pending',
-                delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
-                delivery_source: 'DRAFT_APPROVAL',
-                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_AUTO_PROCESSING,
-                held_reason: null,
-                approved_at: new Date().toISOString(),
-                approved_by_user_id: actorId || null,
-                send_idempotency_key: sendIdempotencyKey,
-            };
-
-            await candidate.update({
-                content: approvedContent,
-                metadata: nextMetadata,
-                delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
-                delivery_source: 'DRAFT_APPROVAL',
-                provider_message_id: null,
-                send_idempotency_key: sendIdempotencyKey,
-            }, { transaction });
-            await transaction.commit();
-            return { message: candidate, sendIdempotencyKey, alreadySent: false };
-        } catch (error) {
-            if (!transaction.finished) await transaction.rollback();
-            throw error;
-        }
-    }
-
-    async dismissAiDraft(conversationId, shopId, messageId, actorId = null) {
-        const transaction = await sequelize.transaction();
-        try {
-            const conversation = await Conversation.findOne({
-                where: { id: conversationId, shop_id: shopId },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!conversation) {
-                const error = new Error('Conversation not found');
-                error.statusCode = 404;
-                throw error;
-            }
-            const candidate = await Message.findOne({
-                where: { id: messageId, conversation_id: conversationId, sender: 'ai' },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!candidate) {
-                const error = new Error('AI suggestion not found');
-                error.statusCode = 404;
-                throw error;
-            }
-
-            const state = normalizeDeliveryState(candidate);
-            if (state === MESSAGE_DELIVERY_STATES.DISMISSED) {
-                await transaction.commit();
-                return { message: mapMessage(candidate), alreadyDismissed: true };
-            }
-            if (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED) {
-                const error = new Error('A sent AI message cannot be dismissed');
-                error.statusCode = 409;
-                error.code = 'DRAFT_ALREADY_SENT';
-                throw error;
-            }
-            if (state === MESSAGE_DELIVERY_STATES.SEND_PENDING) {
-                const error = new Error('AI suggestion send is already in progress');
-                error.statusCode = 409;
-                error.code = 'DRAFT_SEND_IN_PROGRESS';
-                throw error;
-            }
-            if (!isReviewableSuggestion(candidate)) {
-                const error = new Error('AI suggestion is not dismissible');
-                error.statusCode = 409;
-                error.code = 'DRAFT_NOT_DISMISSIBLE';
-                throw error;
-            }
-
-            const metadata = {
-                ...normalizeObject(candidate.metadata),
-                delivered: false,
-                delivery_status: 'dismissed',
-                delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
-                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
-                held_reason: 'dismissed',
-                dismissed_at: new Date().toISOString(),
-                dismissed_by_user_id: actorId || null,
-            };
-            await candidate.update({
-                metadata,
-                delivery_state: MESSAGE_DELIVERY_STATES.DISMISSED,
-                delivery_source: candidate.delivery_source || 'AI_DRAFT',
-            }, { transaction });
-            await transaction.commit();
-            return { message: candidate, alreadyDismissed: false };
-        } catch (error) {
-            if (!transaction.finished) await transaction.rollback();
-            throw error;
-        }
-    }
-
-    async markConversationRead(conversationId, shopId, messageId) {
-        const transaction = await sequelize.transaction();
-        let conversation;
-        try {
-            conversation = await Conversation.findOne({
-                where: { id: conversationId, shop_id: shopId },
-                transaction,
-                lock: transaction.LOCK?.UPDATE,
-            });
-            if (!conversation) {
-                const error = new Error('Conversation not found');
-                error.statusCode = 404;
-                throw error;
-            }
-            const readThrough = await Message.findOne({
-                where: { id: messageId, conversation_id: conversationId, sender: 'customer' },
-                transaction,
-            });
-            if (!readThrough) {
-                const error = new Error('Read watermark must reference a customer message in this conversation');
-                error.statusCode = 400;
-                throw error;
-            }
-
-            const currentMetadata = normalizeObject(conversation.metadata);
-            const requestedReadAt = new Date(readThrough.created_at).getTime();
-            const currentReadAt = currentMetadata.last_read_message_at
-                ? new Date(currentMetadata.last_read_message_at).getTime()
-                : NaN;
-            if (Number.isFinite(currentReadAt)
-                && Number.isFinite(requestedReadAt)
-                && requestedReadAt <= currentReadAt) {
-                await transaction.commit();
-                return this.mapConversation(conversation);
-            }
-
-            const unreadCount = typeof Message.count === 'function' && Number.isFinite(requestedReadAt)
-                ? await Message.count({
-                    where: {
-                        conversation_id: conversationId,
-                        sender: 'customer',
-                        created_at: { [Op.gt]: readThrough.created_at },
-                    },
-                    transaction,
-                })
-                : 0;
-            const metadata = {
-                ...currentMetadata,
-                unreadCount,
-                last_read_message_id: readThrough.id,
-                last_read_message_at: readThrough.created_at || new Date().toISOString(),
-                last_read_at: new Date().toISOString(),
-            };
-            await conversation.update({ metadata }, { transaction });
-            await transaction.commit();
-            return this.mapConversation(conversation);
-        } catch (error) {
-            if (!transaction.finished) await transaction.rollback();
-            throw error;
-        }
-    }
-
-    async holdPendingAiCandidates(conversationId, shopId, reason = 'human_active') {
-        const conversation = await Conversation.findOne({
-            where: { id: conversationId, shop_id: shopId },
-        });
-        if (!conversation || typeof Message.findAll !== 'function') return 0;
-
-        const candidates = await Message.findAll({
-            where: { conversation_id: conversationId, sender: 'ai' },
-        });
-        const pending = candidates.filter((message) => {
-            const state = normalizeDeliveryState(message);
-            const metadata = normalizeObject(message.metadata);
-            return !isProviderConfirmed(message)
-                && state !== MESSAGE_DELIVERY_STATES.DISMISSED
-                && state !== MESSAGE_DELIVERY_STATES.FAILED
-                && metadata.provider_send_attempted !== true;
-        });
-        await Promise.all(pending.map((message) => message.update({
-            delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-            metadata: {
-                ...normalizeObject(message.metadata),
-                delivered: false,
-                delivery_status: 'held',
-                delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-                held_reason: reason,
-                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
-                cancelled_by_human: true,
-                cancelled_at: new Date().toISOString(),
-            },
-        })));
-        return pending.length;
     }
 
     async updateConversation(conversationId, shopId, updates) {
@@ -804,34 +355,6 @@ class ConversationService {
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
 
             await conversation.update(fields);
-
-            // A human takeover invalidates any candidate that has not crossed
-            // the provider boundary. The worker performs the same check at its
-            // final send gate, while this update keeps an already-persisted
-            // pending candidate from appearing sendable in another Inbox tab.
-            if (updates.hitl === true && typeof Message.findAll === 'function') {
-                const pending = await Message.findAll({
-                    where: {
-                        conversation_id: conversationId,
-                        sender: 'ai',
-                        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
-                    },
-                });
-                const cancellable = pending.filter((message) => (
-                    normalizeObject(message.metadata).provider_send_attempted !== true
-                ));
-                await Promise.all(cancellable.map((message) => message.update({
-                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-                    metadata: {
-                        ...normalizeObject(message.metadata),
-                        delivered: false,
-                        delivery_status: 'held',
-                        delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-                        held_reason: 'human_active',
-                        suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
-                    },
-                })));
-            }
 
             return {
                 ...this.mapConversation(conversation),

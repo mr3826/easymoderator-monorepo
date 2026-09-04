@@ -449,7 +449,7 @@ describe('META-E2E-REPLY-MODE — one business mode controls every automatic sen
         expect(draft.sends).toHaveLength(0);
         expect(draft.jobResults[0]).toEqual(expect.objectContaining({
             sent: false,
-            reason: 'draft_mode',
+            reason: 'DRAFT_MODE',
         }));
 
         const manual = await harness.sendAgentReply({

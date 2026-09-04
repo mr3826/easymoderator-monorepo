@@ -5,7 +5,6 @@ const { Op } = require('sequelize');
 const Customer = require('../customer/customer.entity');
 const { Conversation, Message } = require('./conversation.entity');
 const { normalizeAiReplyMode } = require('../shop/ai-reply-mode');
-const { MESSAGE_DELIVERY_STATES, isProviderConfirmed } = require('./message-lifecycle');
 
 // Import OrderSessionService
 const OrderSessionService = require('../order/order-session-standalone.service');
@@ -36,8 +35,7 @@ class ConversationStateService {
                 where: {
                     shop_id,
                     channel_type: channelType,
-                    channel_user_id: customer_channel_id,
-                    ...(meta_channel_id ? { meta_channel_id } : {}),
+                    channel_user_id: customer_channel_id
                 }
             });
 
@@ -47,8 +45,7 @@ class ConversationStateService {
                     shop_id,
                     channel_user_id: customer_channel_id,
                     channel_type: channelType,
-                    meta_channel_id,
-                    name: `Facebook customer · …${String(customer_channel_id || '').replace(/[^A-Za-z0-9]/g, '').slice(-4) || 'unknown'}`,
+                    name: 'Customer',
                     phone: null,
                     email: null,
                     metadata: {}
@@ -112,8 +109,7 @@ class ConversationStateService {
                         last_intent: null,
                         language_detected: null,
                         automation_enabled: true,
-                        message_count: 0,
-                        unreadCount: 0,
+                        message_count: 0
                     }
                 });
             }
@@ -134,20 +130,12 @@ class ConversationStateService {
             });
 
             // Update conversation activity
-            const currentMeta = conversation.metadata && typeof conversation.metadata === 'object'
-                ? conversation.metadata
-                : {};
-            const unreadCount = senderValue === 'customer'
-                ? Math.max(0, Number(currentMeta.unreadCount) || 0) + 1
-                : Math.max(0, Number(currentMeta.unreadCount) || 0);
+            const currentMeta = conversation.metadata || {};
             await conversation.update({
-                ...(senderValue === 'customer' ? { message } : {}),
                 metadata: {
                     ...currentMeta,
                     last_message_at: messageTime.toISOString(),
-                    last_actual_message: senderValue === 'customer' ? message : currentMeta.last_actual_message,
-                    unreadCount,
-                    message_count: (currentMeta.message_count || 0) + 1,
+                    message_count: (currentMeta.message_count || 0) + 1
                 }
             });
 
@@ -194,7 +182,6 @@ class ConversationStateService {
                 },
                 conversation_history: conversationHistory,
                 active_order_session: activeOrderSession,
-                reply_context: messageRecord.metadata?.reply_to || metadata.reply_to || null,
                 customer_info: {
                     id: customer.id,
                     name: customer.name,
@@ -215,14 +202,7 @@ class ConversationStateService {
     static async storeAIResponse(conversationId, response, metadata = {}) {
         try {
             // Extract first-class columns from metadata bag; keep the rest in JSON.
-            const {
-                confidence,
-                sourceReferences,
-                delivery_state = MESSAGE_DELIVERY_STATES.GENERATING,
-                delivery_source = 'AUTO',
-                send_idempotency_key = null,
-                ...restMeta
-            } = metadata;
+            const { confidence, sourceReferences, ...restMeta } = metadata;
             const message = await Message.create({
                 id: uuidv4(),
                 conversation_id: conversationId,
@@ -233,19 +213,9 @@ class ConversationStateService {
                 source_references: Array.isArray(sourceReferences) && sourceReferences.length
                     ? sourceReferences
                     : null,
-                ai_suggestion: response,
-                delivery_state,
-                delivery_source,
-                provider_message_id: null,
-                send_idempotency_key,
                 metadata: {
                     ...restMeta,
                     confidence,
-                    delivery_state,
-                    delivery_source,
-                    send_idempotency_key,
-                    delivered: false,
-                    delivery_status: delivery_state === MESSAGE_DELIVERY_STATES.DRAFT_READY ? 'pending' : 'processing',
                     timestamp: new Date().toISOString(),
                     type: 'ai_response'
                 }
@@ -253,9 +223,7 @@ class ConversationStateService {
 
             const conversation = await Conversation.findByPk(conversationId);
             if (conversation) {
-                const currentMeta = conversation.metadata && typeof conversation.metadata === 'object'
-                    ? conversation.metadata
-                    : {};
+                const currentMeta = conversation.metadata || {};
                 await conversation.update({
                     metadata: {
                         ...currentMeta,
@@ -391,25 +359,12 @@ class ConversationStateService {
                     order: [['created_at', 'ASC']],
                     limit: 20
                 });
-                history = messages
-                    .filter(msg => {
-                        const metadata = msg.metadata && typeof msg.metadata === 'object' ? msg.metadata : {};
-                        const hasExplicitDeliveryLifecycle = msg.delivery_state != null
-                            || msg.provider_message_id != null
-                            || metadata.delivery_state != null
-                            || metadata.delivery_status != null
-                            || metadata.delivered !== undefined
-                            || metadata.suggestion_visibility != null;
-                        return msg.sender !== 'ai'
-                            || isProviderConfirmed(msg)
-                            || !hasExplicitDeliveryLifecycle;
-                    })
-                    .map(msg => ({
-                        role: msg.sender === 'customer' ? 'user' : msg.sender === 'ai' ? 'assistant' : 'system',
-                        content: msg.content,
-                        timestamp: msg.created_at,
-                        metadata: msg.metadata,
-                    }));
+                history = messages.map(msg => ({
+                    role: msg.sender === 'customer' ? 'user' : msg.sender === 'ai' ? 'assistant' : 'system',
+                    content: msg.content,
+                    timestamp: msg.created_at,
+                    metadata: msg.metadata
+                }));
             }
 
             const activeOrderSession = await OrderSessionService.getActiveSession(

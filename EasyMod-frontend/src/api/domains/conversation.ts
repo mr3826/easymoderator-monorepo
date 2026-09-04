@@ -120,12 +120,10 @@ export async function reopenConversation(conversationId: string): Promise<Conver
 // Messages
 export async function getMessages(
   conversationId: string, 
-  params?: { page?: number; limit?: number; signal?: AbortSignal }
-): Promise<{ messages: Message[]; suggestions?: Message[]; pagination: { page: number; totalPages: number } }> {
-  const { signal, ...queryParams } = params || {};
-  const requestConfig = signal ? { params: queryParams, signal } : { params: queryParams };
-  const response: AxiosResponse<ApiResponse<{ messages: Message[]; suggestions?: Message[]; pagination: { page: number; totalPages: number } }>> =
-    await httpClient.get(`/api/conversation/${conversationId}/messages`, requestConfig);
+  params?: { page?: number; limit?: number }
+): Promise<{ messages: Message[]; pagination: { page: number; totalPages: number } }> {
+  const response: AxiosResponse<ApiResponse<{ messages: Message[]; pagination: { page: number; totalPages: number } }>> =
+    await httpClient.get(`/api/conversation/${conversationId}/messages`, { params });
   return response.data.data;
 }
 
@@ -136,46 +134,11 @@ export async function createMessage(
     sender: 'customer' | 'agent' | 'ai';
     message_type: 'text' | 'image' | 'file' | 'location';
     metadata?: unknown;
-  },
-  options?: { idempotencyKey?: string }
+  }
 ): Promise<Message> {
-  const response: AxiosResponse<ApiResponse<Message>> = options?.idempotencyKey
-    ? await httpClient.post(
-      `/api/conversation/${conversationId}/messages`,
-      message,
-      { headers: { 'Idempotency-Key': options.idempotencyKey } },
-    )
-    : await httpClient.post(`/api/conversation/${conversationId}/messages`, message);
-  return response.data.data;
-}
-
-export async function approveAiDraft(
-  conversationId: string,
-  messageId: string,
-  content?: string,
-): Promise<Message> {
-  const response: AxiosResponse<ApiResponse<{ message: Message }>> = await httpClient.post(
-    `/api/conversation/${conversationId}/messages/${messageId}/approve`,
-    content === undefined ? {} : { content },
-  );
-  return response.data.data.message;
-}
-
-export async function dismissAiDraft(conversationId: string, messageId: string): Promise<Message> {
-  const response: AxiosResponse<ApiResponse<{ message: Message }>> = await httpClient.post(
-    `/api/conversation/${conversationId}/messages/${messageId}/dismiss`,
-    {},
-  );
-  return response.data.data.message;
-}
-
-export async function markConversationRead(
-  conversationId: string,
-  messageId: string,
-): Promise<Conversation> {
-  const response: AxiosResponse<ApiResponse<Conversation>> = await httpClient.post(
-    `/api/conversation/${conversationId}/read`,
-    { message_id: messageId },
+  const response: AxiosResponse<ApiResponse<Message>> = await httpClient.post(
+    `/api/conversation/${conversationId}/messages`,
+    message
   );
   return response.data.data;
 }

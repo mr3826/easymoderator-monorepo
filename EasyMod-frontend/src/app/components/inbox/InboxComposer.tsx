@@ -156,15 +156,12 @@ export function InboxComposer({
       }
 
       setSendPhase("sending");
-      const idempotencyKey = typeof globalThis.crypto?.randomUUID === "function"
-        ? globalThis.crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const message = await apiClient.createMessage(selectedConversation.id, {
         content,
         sender: "agent",
         message_type: messageType,
         ...(metadata ? { metadata } : {}),
-      }, { idempotencyKey });
+      });
       onMessageSent(message);
       setEditingMessage("");
       handleAttachmentClear();

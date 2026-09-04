@@ -195,15 +195,9 @@ function unregister(shopId, res) {
  * @param {object} data    JSON-serialisable payload
  */
 function emit(shopId, event, data) {
-    try {
-        _getBus().publish(shopId, event, data).catch((err) => {
-            logger.warn('SSEManager: publish failed', { shopId, event, err: err.message });
-        });
-    } catch (err) {
-        // A missing or partially initialised Redis client must not fail the
-        // database/provider operation that emitted the UI notification.
-        logger.warn('SSEManager: publish initialisation failed', { shopId, event, err: err.message });
-    }
+    _getBus().publish(shopId, event, data).catch((err) => {
+        logger.warn('SSEManager: publish failed', { shopId, event, err: err.message });
+    });
 }
 
 /**

@@ -4,13 +4,14 @@
  */
 import { motion } from "motion/react";
 import { Search, UserCheck, CheckCircle2, Loader2, MessageCircle } from "lucide-react";
-import type { Conversation } from "@/api/types/conversation";
+import type { AiReplyMode, Conversation } from "@/api/types/conversation";
 import { Badge } from "@/app/components/ui/badge";
 import { useTranslation } from "react-i18next";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
 interface InboxThreadListProps {
   conversations: Conversation[];
+  aiReplyMode: AiReplyMode;
   selectedConversationId: string | null;
   filteredConversations: Conversation[];
   loading: boolean;
@@ -50,14 +51,9 @@ const formatDate = (dateString: string, t: TFunc): string => {
   return date.toLocaleDateString();
 };
 
-const displayTitle = (conversation: Conversation, fallback: string): string => {
-  const title = conversation.title?.trim();
-  if (title && !/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(title) && title.toLowerCase() !== "no title") return title;
-  return conversation.customer?.name || fallback;
-};
-
 export function InboxThreadList({
   filteredConversations,
+  aiReplyMode,
   selectedConversationId,
   loading,
   searchQuery,
@@ -149,6 +145,8 @@ export function InboxThreadList({
         >
           {filteredConversations.map((conversation) => {
             const isHITL = conversation.hitl === true;
+            const isAIHandled = aiReplyMode === "AUTO" && !isHITL && conversation.status === "active";
+            const lastAIReply = isAIHandled ? formatDate(conversation.updated_at, t) : null;
 
             return (
               <motion.div
@@ -219,14 +217,21 @@ export function InboxThreadList({
                   )}
                 </div>
                 <p className="text-sm text-gray-600 truncate">
-                  {displayTitle(conversation, t("inbox.unknownCustomer"))}
+                  {conversation.title || t("inbox.noTitle")}
                 </p>
                 {conversation.lastMessage && (
                   <p className="text-xs text-gray-500 truncate mt-0.5">{conversation.lastMessage}</p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">
-                  {formatDate(conversation.updated_at, t)}
-                </p>
+                {/* AI-handled: muted + relative timestamp */}
+                {isAIHandled && lastAIReply ? (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t("inbox.aiRepliedAt", { time: lastAIReply })}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {formatDate(conversation.updated_at, t)}
+                  </p>
+                )}
               </motion.div>
             );
           })}

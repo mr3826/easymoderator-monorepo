@@ -28,17 +28,6 @@ const Customer = sequelize.define('Customer', {
         type: DataTypes.STRING,
         allowNull: false
     },
-    // Messenger/Instagram user IDs are Page-scoped. Keep the owning channel
-    // on the customer row so profile enrichment cannot merge two Pages.
-    meta_channel_id: {
-        type: DataTypes.UUID,
-        allowNull: true,
-        references: {
-            model: 'meta_channels',
-            key: 'id',
-        },
-        onDelete: 'SET NULL',
-    },
     language_preference: {
         type: DataTypes.ENUM('bangla', 'english', 'banglish'),
         allowNull: true
@@ -87,12 +76,8 @@ const Customer = sequelize.define('Customer', {
         },
         {
             // Primary webhook lookup: find-or-create customer on every inbound message
-            fields: ['shop_id', 'channel_type', 'channel_user_id']
-        },
-        {
             unique: true,
-            fields: ['shop_id', 'channel_type', 'meta_channel_id', 'channel_user_id'],
-            where: { meta_channel_id: { [require('sequelize').Op.ne]: null } },
+            fields: ['shop_id', 'channel_type', 'channel_user_id']
         },
         {
             // Data-deletion callback: delete by channel_user_id across all shops

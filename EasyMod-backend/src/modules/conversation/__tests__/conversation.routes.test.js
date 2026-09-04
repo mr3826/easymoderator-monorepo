@@ -22,9 +22,6 @@ const mockController = {
     updateConversationStatus: jest.fn((_req, res) => res.status(200).json({ success: true })),
     getMessages: jest.fn((_req, res) => res.status(200).json({ success: true, data: { messages: [], pagination: { page: 1, totalPages: 0 } } })),
     createMessage: jest.fn((_req, res) => res.status(201).json({ success: true })),
-    approveAiDraft: jest.fn((_req, res) => res.status(200).json({ success: true })),
-    dismissAiDraft: jest.fn((_req, res) => res.status(200).json({ success: true })),
-    markConversationRead: jest.fn((_req, res) => res.status(200).json({ success: true })),
 };
 
 jest.mock('../../../middleware/auth.middleware', () => ({
@@ -45,9 +42,6 @@ jest.mock('../conversation.validator', () => ({
     updateConversationStatus: {},
     getMessages: {},
     createMessage: {},
-    approveAiDraft: {},
-    conversationMessageAction: {},
-    markConversationRead: {},
 }));
 
 describe('conversation.routes', () => {
