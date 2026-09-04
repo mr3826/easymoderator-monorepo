@@ -20,6 +20,32 @@ class ConversationValidator {
         })
     };
 
+    conversationMessageAction = {
+        params: Joi.object({
+            conversationId: Joi.string().uuid().required(),
+            messageId: Joi.string().uuid().required(),
+        }),
+    };
+
+    approveAiDraft = {
+        params: Joi.object({
+            conversationId: Joi.string().uuid().required(),
+            messageId: Joi.string().uuid().required(),
+        }),
+        body: Joi.object({
+            content: Joi.string().trim().max(4000).optional(),
+        }),
+    };
+
+    markConversationRead = {
+        params: Joi.object({
+            conversationId: Joi.string().uuid().required(),
+        }),
+        body: Joi.object({
+            message_id: Joi.string().uuid().required(),
+        }),
+    };
+
     createConversation = {
         body: Joi.object({
             customer_id: Joi.string().uuid().required(),

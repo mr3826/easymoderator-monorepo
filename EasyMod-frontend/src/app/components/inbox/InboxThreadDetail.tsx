@@ -2,7 +2,7 @@
  * InboxThreadDetail — Right pane: message thread, AI suggestion, composer.
  * Extracted from UnifiedInbox.tsx (D2 split).
  */
-import { memo } from "react";
+import { memo, useState } from "react";
 import {
   Bot, User, CheckCircle2, Edit3, Loader2, UserCheck, AlertTriangle,
   Clock, ArrowLeft, Lock, FileText, RotateCcw,
@@ -10,7 +10,15 @@ import {
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { apiClient } from "@/api";
-import type { AiReplyMode, Conversation, Message, MessageMetadata, ResponseTemplate } from "@/api/types/conversation";
+import type {
+  AiReplyMode,
+  Conversation,
+  Message,
+  MessageDeliveryState,
+  MessageMetadata,
+  ResponseTemplate,
+  SuggestionVisibility,
+} from "@/api/types/conversation";
 import { InboxComposer } from "./InboxComposer";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -27,6 +35,57 @@ function isValidMediaUrl(url: unknown): url is string {
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
+function getDeliveryState(message: Message): MessageDeliveryState | null {
+  const explicit = message.delivery_state || message.metadata?.delivery_state;
+  if (explicit) return explicit;
+  if (message.metadata?.delivered === true
+    && (message.provider_message_id || message.metadata?.provider_message_id || message.metadata?.provider_send_confirmed === true)) {
+    return "SENT";
+  }
+  return null;
+}
+
+function isProviderConfirmed(message: Message): boolean {
+  const state = getDeliveryState(message);
+  return (state === "SENT" || state === "DELIVERED")
+    && Boolean(
+      message.provider_message_id
+      || message.metadata?.provider_message_id
+      || message.metadata?.provider_send_confirmed === true,
+    );
+}
+
+function isReviewableSuggestion(message: Message): boolean {
+  if (message.sender !== "ai" || isProviderConfirmed(message)) return false;
+  const state = getDeliveryState(message);
+  const visibility = message.metadata?.suggestion_visibility as SuggestionVisibility | undefined;
+  if (state === "DISMISSED" || visibility === "HIDDEN_DISMISSED") return false;
+  if (state === "GENERATING" || state === "SEND_PENDING") return false;
+  return visibility === "VISIBLE_DRAFT_REVIEW"
+    || visibility === "VISIBLE_HITL_REVIEW"
+    || visibility === "VISIBLE_MERCHANT_REQUESTED"
+    || state === "DRAFT_READY"
+    || (state === "HELD" && [
+      "low_confidence",
+      "human_active",
+      "ai_paused",
+      "channel_disconnected",
+      "mode_changed",
+      "policy_blocked",
+      "provider_send_failed",
+    ].includes(String(message.metadata?.held_reason)))
+    || (state === null && message.metadata?.delivered === false && [
+      "draft_mode",
+      "low_confidence",
+      "human_active",
+      "ai_paused",
+      "channel_disconnected",
+      "mode_changed",
+      "policy_blocked",
+      "provider_send_failed",
+    ].includes(String(message.metadata?.held_reason)));
+}
+
 function formatDate(dateString: string, t: TFunc): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -39,6 +98,18 @@ function formatDate(dateString: string, t: TFunc): string {
   if (hours < 24) return t("inbox.timeHours", { count: hours });
   if (days < 7) return t("inbox.timeDays", { count: days });
   return date.toLocaleDateString();
+}
+
+function displayCustomerName(conversation: Conversation): string {
+  const title = conversation.title?.trim();
+  const customerName = conversation.customer?.name?.trim();
+  if (customerName
+    && !/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(customerName)
+    && !["no title", "facebook user", "messenger user", "instagram user"].includes(customerName.toLowerCase())) {
+    return customerName;
+  }
+  if (title && !/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(title) && title.toLowerCase() !== "no title") return title;
+  return "Facebook customer";
 }
 
 // ─── MessageItem ──────────────────────────────────────────────────────────────
@@ -56,7 +127,13 @@ const MessageItem = memo(function MessageItem({
     hour: "2-digit",
     minute: "2-digit",
   });
-  const deliveryStatus = message.sender === "agent" ? message.metadata?.delivery_status : undefined;
+  const deliveryStatus = message.sender === "agent" || message.sender === "ai"
+    ? message.metadata?.delivery_status
+      || (getDeliveryState(message) === "SENT" || getDeliveryState(message) === "DELIVERED" ? "sent" : undefined)
+      || (getDeliveryState(message) === "SEND_PENDING" ? "pending" : undefined)
+      || (getDeliveryState(message) === "FAILED" ? "failed" : undefined)
+    : undefined;
+  const replyTo = message.reply_to || message.metadata?.reply_to;
 
   return (
     <div className={`flex ${message.sender === "customer" ? "justify-start" : "justify-end"}`}>
@@ -83,6 +160,18 @@ const MessageItem = memo(function MessageItem({
               : "You"}
           </span>
         </div>
+        {replyTo && (
+          <div className="mb-2 rounded-lg border-l-2 border-gray-300 bg-black/5 px-3 py-2 text-xs text-gray-600">
+            <span className="font-semibold">Replying to: </span>
+            {replyTo.status === "resolved"
+              ? replyTo.message_type === "image"
+                ? "[Image]"
+                : replyTo.message_type === "file"
+                ? `[File${replyTo.file_name ? `: ${replyTo.file_name}` : ""}]`
+                : replyTo.content || "a previous Messenger message"
+              : "a previous Messenger message"}
+          </div>
+        )}
         {message.message_type === "image" ? (
           <div>
             {isValidMediaUrl(message.metadata?.image_url) ? (
@@ -181,9 +270,7 @@ interface InboxThreadDetailProps {
   onToggleHITL: () => void;
   onResolve: () => void;
   onLoadOlderMessages: () => void;
-  onDismissSuggestion: (msgId: string) => void;
-  onUseAiSuggestion: (edit: boolean) => void;
-  onSetEditingMessage: (text: string) => void;
+  onDismissSuggestion: (msgId: string) => void | Promise<void>;
   onSetShowResolveDialog: (show: boolean) => void;
   onSetResolveNote: (note: string) => void;
   onMessageSent: (message: Message) => void;
@@ -224,17 +311,13 @@ export function InboxThreadDetail({
   onTemplatesChanged,
 }: InboxThreadDetailProps) {
   const { t } = useTranslation();
+  const [editingSuggestion, setEditingSuggestion] = useState(false);
+  const [editedSuggestion, setEditedSuggestion] = useState("");
+  const [sendingSuggestion, setSendingSuggestion] = useState(false);
 
-  // AI suggestion logic — show the panel ONLY for a HELD reply (one the AI did
-  // NOT auto-deliver to the customer). A delivered reply is already in the thread,
-  // so a "Use this / Edit / Ignore" panel for it would be redundant. A held reply
-  // carries metadata.delivered === false — either a suggest-only/DRAFT reply or a
-  // low-confidence handoff. We pick the most recent HELD message (not merely the
-  // most recent AI message) so the customer-facing holding message sent during a
-  // handoff never hides the actual draft the agent needs to review.
   const heldAiMsg =
     [...messages].reverse().find(
-      (m) => m.sender === "ai" && (m.metadata as MessageMetadata | undefined)?.delivered === false
+      (m) => isReviewableSuggestion(m)
     ) ?? null;
   const heldMeta = heldAiMsg?.metadata as MessageMetadata | undefined;
   const aiSuggestion = heldAiMsg?.ai_suggestion || heldAiMsg?.content || "";
@@ -251,31 +334,32 @@ export function InboxThreadDetail({
     !!aiSuggestion &&
     heldAiMsg?.id !== dismissedSuggestionId &&
     !!customerSentAfterAgent;
-  const hasUndeliveredHeldMessage =
-    !!heldAiMsg &&
-    heldAiMsg.id !== dismissedSuggestionId &&
-    !!customerSentAfterAgent;
   const isLowConfidence = hasAiSuggestion && heldMeta?.held_reason === "low_confidence";
   const isAiActive =
     aiReplyMode === "AUTO" &&
     selectedConversation.hitl !== true &&
     aiReplyStatus === "processing";
-  const modeLabelKey = {
-    AUTO: "inbox.mode.auto",
-    DRAFT: "inbox.mode.draft",
-    MANUAL: "inbox.mode.manual",
-  } satisfies Record<AiReplyMode, string>;
-  const modeLabel = t(modeLabelKey[aiReplyMode]);
   const replyStatusLabel =
-    aiReplyMode === "DRAFT" && hasUndeliveredHeldMessage
-      ? t("inbox.status.draftReady")
-      : aiReplyMode === "AUTO" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
+    aiReplyMode === "AUTO" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
       ? t("inbox.status.processing")
       : aiReplyMode === "AUTO" && aiReplyStatus === "sent"
       ? t("inbox.status.sent")
       : aiReplyMode === "AUTO" && aiReplyStatus === "failed"
       ? t("inbox.status.failed")
       : null;
+
+  const suggestionVisibility = heldMeta?.suggestion_visibility as SuggestionVisibility | undefined;
+  const isDraftReview = aiReplyMode === "DRAFT"
+    || suggestionVisibility === "VISIBLE_DRAFT_REVIEW"
+    || (aiReplyMode !== "AUTO" && heldMeta?.held_reason === "draft_mode");
+  const suggestionHeading = isDraftReview ? t("inbox.status.draftReady") : t("inbox.status.humanReviewRequired");
+  const providerSendFailed = getDeliveryState(heldAiMsg || ({} as Message)) === "FAILED"
+    || heldMeta?.held_reason === "provider_send_failed";
+
+  const transcriptMessages = messages.filter((message) => (
+    message.is_transcript_message !== false
+    && (message.sender !== "ai" || isProviderConfirmed(message))
+  ));
 
   // Traffic-light dot only — no English jargon for non-tech shop owners.
   const confidenceTier = (() => {
@@ -286,30 +370,37 @@ export function InboxThreadDetail({
   })();
 
   const handleUseAiSuggestion = async (edit: boolean) => {
-    if (!aiSuggestion) return;
+    if (!aiSuggestion || !heldAiMsg) return;
     if (edit) {
-      // Surface to parent — the composer is self-contained; use toast to communicate
-      toast.info("Copy the suggestion and paste into the message box.");
-    } else {
-      // Guard: legacy Messenger tags are disabled for the BD launch, so any
-      // out-of-window AI draft stays blocked until an approved template path exists.
-      if (is24hExpired) {
-        toast.error(t("inbox.errors.outsideWindowDisabled"));
+      if (editingSuggestion) {
+        setEditingSuggestion(false);
+        setEditedSuggestion("");
         return;
       }
-      // Send directly
-      try {
-        const message = await apiClient.createMessage(selectedConversation.id, {
-          content: aiSuggestion,
-          sender: "agent",
-          message_type: "text",
-        });
-        onMessageSent(message);
-        toast.success(t("inbox.aiSuggestion"));
-      } catch (err: unknown) {
-        onSendFailed();
-        toast.error((err as { message?: string })?.message || "Failed to send AI suggestion");
-      }
+      setEditedSuggestion(aiSuggestion);
+      setEditingSuggestion(true);
+      return;
+    }
+    if (is24hExpired) {
+      toast.error(t("inbox.errors.outsideWindowDisabled"));
+      return;
+    }
+    try {
+      setSendingSuggestion(true);
+      const message = await apiClient.approveAiDraft(
+        selectedConversation.id,
+        heldAiMsg.id,
+        editingSuggestion ? editedSuggestion : undefined,
+      );
+      onMessageSent(message);
+      setEditingSuggestion(false);
+      setEditedSuggestion("");
+      toast.success(t("inbox.aiSuggestion"));
+    } catch (err: unknown) {
+      onSendFailed();
+      toast.error((err as { message?: string })?.message || "Failed to send AI suggestion");
+    } finally {
+      setSendingSuggestion(false);
     }
   };
 
@@ -324,6 +415,10 @@ export function InboxThreadDetail({
         sender: "agent",
         message_type: failedMessage.message_type,
         metadata: { ...metadata, delivery_status: "pending" },
+      }, {
+        idempotencyKey: typeof globalThis.crypto?.randomUUID === "function"
+          ? globalThis.crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       });
       onMessageSent(message);
       toast.success("Retry queued");
@@ -350,7 +445,7 @@ export function InboxThreadDetail({
             </button>
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-gray-900 truncate">
-                {selectedConversation.customer?.name || "Unknown"}
+                {displayCustomerName(selectedConversation)}
               </h2>
               <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
                 <span>{selectedConversation.channel}</span>
@@ -376,35 +471,32 @@ export function InboxThreadDetail({
               </button>
             )}
             {planFeaturesAdvancedAI ? (
-              <button
-                onClick={onToggleHITL}
-                disabled={togglingHITL}
-                title={
-                  selectedConversation.hitl
-                    ? t("inbox.humanTooltip")
-                    : aiReplyMode === "AUTO"
-                    ? t("inbox.aiTooltip")
-                    : modeLabel
-                }
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  selectedConversation.hitl
-                    ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                    : "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                }`}
-              >
-                {togglingHITL ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : selectedConversation.hitl ? (
-                  <UserCheck className="w-4 h-4" />
-                ) : (
-                  <Bot className="w-4 h-4" />
+              <>
+                {isAiActive && !selectedConversation.hitl && (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    title={t("inbox.aiTooltip")}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-100 text-purple-700"
+                  >
+                    <Bot className="w-4 h-4" />
+                    {t("inbox.aiActive")}
+                  </span>
                 )}
-                {selectedConversation.hitl
-                  ? t("inbox.agentHandling")
-                  : isAiActive
-                  ? t("inbox.aiActive")
-                  : modeLabel}
-              </button>
+                <button
+                  onClick={onToggleHITL}
+                  disabled={togglingHITL}
+                  title={selectedConversation.hitl ? t("inbox.humanTooltip") : t("inbox.takeOverTooltip")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    selectedConversation.hitl
+                      ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {togglingHITL ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedConversation.hitl ? <UserCheck className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                  {selectedConversation.hitl ? t("inbox.agentHandling") : t("inbox.takeOver")}
+                </button>
+              </>
             ) : (
               <a
                 href="/subscription"
@@ -455,7 +547,7 @@ export function InboxThreadDetail({
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : transcriptMessages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500">
             <p className="font-bn">{t("inbox.noMessages")}</p>
           </div>
@@ -477,11 +569,11 @@ export function InboxThreadDetail({
                 </button>
               </div>
             )}
-            {messages.map((message) => (
+            {transcriptMessages.map((message) => (
               <MessageItem
                 key={message.id}
                 message={message}
-                customerName={selectedConversation.customer?.name || "Unknown"}
+                customerName={displayCustomerName(selectedConversation)}
                 onRetry={handleRetryMessage}
               />
             ))}
@@ -505,36 +597,59 @@ export function InboxThreadDetail({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Bot className="w-4 h-4 text-purple-600" />
-              <span className="text-sm font-semibold text-purple-900">{t("inbox.aiSuggestion")}</span>
+              <span className="text-sm font-semibold text-purple-900">{suggestionHeading}</span>
             </div>
             <span
               className={`inline-block w-2.5 h-2.5 rounded-full ${confidenceTier.dot}`}
               aria-hidden="true"
             />
           </div>
-          <p className="text-sm text-gray-800 mb-2 italic">"{aiSuggestion}"</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+            {isDraftReview ? t("inbox.draftNotSent") : t("inbox.aiSuggestionNotSent")}
+           </p>
+           {editingSuggestion ? (
+             <textarea
+               aria-label={t("inbox.editedSuggestionLabel")}
+               value={editedSuggestion}
+               onChange={(event) => setEditedSuggestion(event.target.value)}
+               rows={4}
+               className="w-full text-sm text-gray-800 mb-2 rounded-lg border border-purple-200 bg-white p-2"
+             />
+           ) : (
+             <p className="text-sm text-gray-800 mb-2 italic">"{aiSuggestion}"</p>
+           )}
           {isLowConfidence && (
             <p className="text-xs text-amber-700 mb-2 flex items-center gap-1 font-bn">
               <AlertTriangle className="w-3 h-3" /> {t("inbox.lowConfidence")}
             </p>
           )}
-          <div className="flex flex-col sm:flex-row gap-2">
+           <div className="flex flex-col sm:flex-row gap-2">
+             {providerSendFailed ? (
+               <p className="flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                 {t("inbox.status.providerBlocked")}
+               </p>
+             ) : (
+               <>
             <button
-              onClick={() => handleUseAiSuggestion(false)}
+               onClick={() => handleUseAiSuggestion(false)}
+               disabled={sendingSuggestion || (editingSuggestion && !editedSuggestion.trim())}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 sm:py-1.5 px-2 sm:px-3 bg-purple-600 text-white text-xs sm:text-sm font-medium rounded-lg hover:bg-purple-700 min-h-10"
             >
               <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-              {t("inbox.useThis")}
+              {sendingSuggestion ? t("inbox.sending") : editingSuggestion ? t("inbox.sendEdited") : t("inbox.useThis")}
             </button>
             <button
-              onClick={() => handleUseAiSuggestion(true)}
+               onClick={() => handleUseAiSuggestion(true)}
+               disabled={sendingSuggestion}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 sm:py-1.5 px-2 sm:px-3 bg-white border border-purple-300 text-purple-700 text-xs sm:text-sm font-medium rounded-lg hover:bg-purple-50 min-h-10"
             >
               <Edit3 className="w-3 h-3 flex-shrink-0" />
-              {t("inbox.editAndUse")}
+               {editingSuggestion ? t("common.cancel") : t("inbox.editAndUse")}
             </button>
+               </>
+             )}
             <button
-              onClick={() => heldAiMsg && onDismissSuggestion(heldAiMsg.id)}
+               onClick={() => heldAiMsg && void onDismissSuggestion(heldAiMsg.id)}
               className="flex-1 py-2 sm:py-1.5 px-2 sm:px-3 bg-white border border-gray-300 text-gray-600 text-xs sm:text-sm font-medium rounded-lg hover:bg-gray-50 min-h-10"
             >
               {t("inbox.ignore")}

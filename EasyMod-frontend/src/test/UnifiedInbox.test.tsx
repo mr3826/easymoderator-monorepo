@@ -21,8 +21,11 @@ vi.mock('@/api', () => ({
     getShopAgents: vi.fn(),
     // Conversation methods
     getConversations: vi.fn(),
-    getMessages: vi.fn(),
-    createMessage: vi.fn(),
+  getMessages: vi.fn(),
+  createMessage: vi.fn(),
+  approveAiDraft: vi.fn(),
+  dismissAiDraft: vi.fn(),
+  markConversationRead: vi.fn(),
     updateConversation: vi.fn(),
     transcribeVoice: vi.fn(),
     getResponseTemplates: vi.fn(),
@@ -103,6 +106,7 @@ describe('UnifiedInbox 24h window behavior', () => {
       data: [],
       pagination: { page: 1, totalPages: 1 }
     })
+    ;(apiClient.markConversationRead as any).mockResolvedValue({ ...baseConversation, unreadCount: 0, lastReadMessageId: 'msg-read' })
     ;(apiClient.createMessage as any).mockResolvedValue({
       id: 'msg-1',
       conversation_id: 'conv-1',
@@ -112,6 +116,28 @@ describe('UnifiedInbox 24h window behavior', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
+    ;(apiClient.approveAiDraft as any).mockResolvedValue({
+      id: 'msg-ai-draft',
+      conversation_id: 'conv-1',
+      content: 'Here is a draft reply.',
+      sender: 'ai',
+      message_type: 'text',
+      delivery_state: 'SENT',
+      metadata: { delivered: true, delivery_status: 'sent', delivery_state: 'SENT', provider_message_id: 'mid-1' },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    ;(apiClient.dismissAiDraft as any).mockImplementation(async (_conversationId: string, messageId: string) => ({
+      id: messageId,
+      conversation_id: 'conv-1',
+      content: 'Here is a draft reply.',
+      sender: 'ai',
+      message_type: 'text',
+      delivery_state: 'DISMISSED',
+      metadata: { delivered: false, delivery_status: 'dismissed', delivery_state: 'DISMISSED', suggestion_visibility: 'HIDDEN_DISMISSED' },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }))
     ;(apiClient.updateConversation as any).mockResolvedValue({
       id: 'conv-1',
       status: 'active',
@@ -246,8 +272,8 @@ describe('UnifiedInbox 24h window behavior', () => {
           content: 'Please help',
           sender: 'customer',
           message_type: 'text',
-          created_at: new Date(Date.now() - 60 * 1000).toISOString(),
-          updated_at: new Date(Date.now() - 60 * 1000).toISOString(),
+           created_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+           updated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
         },
         {
           id: 'msg-ai-1',
@@ -268,7 +294,7 @@ describe('UnifiedInbox 24h window behavior', () => {
     render(<UnifiedInbox />)
 
     await waitFor(() => {
-      expect(screen.getByText(/AI's reply/i)).toBeInTheDocument()
+      expect(screen.getByText(/Draft ready for review/i)).toBeInTheDocument()
     })
 
     fireEvent.click(screen.getByRole('button', { name: /Send this/i }))
@@ -414,18 +440,22 @@ describe('UnifiedInbox 24h window behavior', () => {
             delivery_status: 'pending',
             file_data_url: expect.stringMatching(/^data:image\/png;base64,/),
           }),
-        })
+         }),
+         expect.objectContaining({ idempotencyKey: expect.any(String) }),
       )
     })
   })
 
   it('shows the AUTO mode and automatic activity claim while AI is processing', async () => {
-    setInboxData('AUTO')
+    setInboxData('AUTO', [{
+      id: 'msg-customer-processing', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+      created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+    }])
 
     render(<UnifiedInbox />)
 
     expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('AI reply mode: Automatic replies')
-    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
     expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI is preparing a reply')
   })
 
@@ -445,7 +475,8 @@ describe('UnifiedInbox 24h window behavior', () => {
       content: 'You are welcome.',
       sender: 'ai' as const,
       message_type: 'text' as const,
-      metadata: { delivered: true },
+       provider_message_id: 'mid.ai-sent',
+       metadata: { delivered: true, provider_message_id: 'mid.ai-sent', provider_send_confirmed: true },
       created_at: new Date(Date.now() - 30 * 1000).toISOString(),
       updated_at: new Date(Date.now() - 30 * 1000).toISOString(),
     }
@@ -498,6 +529,19 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(screen.queryByText('Draft ready for review')).not.toBeInTheDocument()
   })
 
+  it('marks the latest visible inbound read through the server and clears the global unread badge', async () => {
+    const conversation = { ...baseConversation, unreadCount: 1 }
+    const inbound = {
+      id: 'msg-read-latest', conversation_id: 'conv-1', content: 'Please help', sender: 'customer' as const, message_type: 'text' as const,
+      created_at: new Date(Date.now() - 30000).toISOString(), updated_at: new Date(Date.now() - 30000).toISOString(),
+    }
+    setInboxData('MANUAL', [inbound], conversation)
+    render(<UnifiedInbox />)
+
+    await waitFor(() => expect(apiClient.markConversationRead).toHaveBeenCalledWith('conv-1', 'msg-read-latest'))
+    await waitFor(() => expect(screen.queryByTestId('inbox-unread-total')).not.toBeInTheDocument())
+  })
+
   it('clears DRAFT readiness after a newer human reply', async () => {
     const { customerMessage, heldMessage } = draftMessages()
     const agentMessage = {
@@ -523,16 +567,19 @@ describe('UnifiedInbox 24h window behavior', () => {
 
     expect(await screen.findByTestId('inbox-ai-reply-mode')).toHaveTextContent('AI reply mode: Manual replies only')
     expect(await screen.findByPlaceholderText(/Type your reply here/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Manual replies only/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Take over/i })).toBeInTheDocument()
     expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
     expect(screen.queryByText('AI is preparing a reply')).not.toBeInTheDocument()
   })
 
   it('clears the active claim after a mode change', async () => {
-    setInboxData('AUTO')
+    setInboxData('AUTO', [{
+      id: 'msg-customer-mode', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+      created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+    }])
     render(<UnifiedInbox />)
 
-    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
     act(() => {
       latestSSECallbacks().onAiReplyModeChanged?.({ mode: 'MANUAL' })
     })
@@ -541,10 +588,13 @@ describe('UnifiedInbox 24h window behavior', () => {
   })
 
   it('clears the active claim after a successful manual send', async () => {
-    setInboxData('AUTO')
+    setInboxData('AUTO', [{
+      id: 'msg-customer-manual', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+      created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+    }])
     render(<UnifiedInbox />)
     const input = await screen.findByPlaceholderText(/Type your reply here/i)
-    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
     fireEvent.change(input, { target: { value: 'A manual reply' } })
     fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
     await waitFor(() => expect(apiClient.createMessage).toHaveBeenCalled())
@@ -552,11 +602,14 @@ describe('UnifiedInbox 24h window behavior', () => {
   })
 
   it('clears the active claim after a failed manual send', async () => {
-    setInboxData('AUTO')
+    setInboxData('AUTO', [{
+      id: 'msg-customer-manual-fail', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+      created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+    }])
     ;(apiClient.createMessage as any).mockRejectedValueOnce(new Error('delivery failed'))
     render(<UnifiedInbox />)
     const failedInput = await screen.findByPlaceholderText(/Type your reply here/i)
-    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
     fireEvent.change(failedInput, { target: { value: 'This will fail' } })
     fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
     await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
@@ -572,12 +625,22 @@ describe('UnifiedInbox 24h window behavior', () => {
   })
 
   it('clears the active claim and exposes the failed terminal state on delivery failure', async () => {
-    setInboxData('AUTO')
+    setInboxData('AUTO', [
+      {
+        id: 'msg-customer-failed', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+        created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+      },
+      {
+        id: 'msg-ai-failed', conversation_id: 'conv-1', content: 'Reply', sender: 'ai', message_type: 'text',
+        delivery_state: 'SEND_PENDING', metadata: { delivery_state: 'SEND_PENDING', delivery_status: 'pending' },
+        created_at: new Date(Date.now() - 30000).toISOString(), updated_at: new Date(Date.now() - 30000).toISOString(),
+      },
+    ])
     render(<UnifiedInbox />)
 
-    expect(await screen.findByRole('button', { name: /AI is replying/i })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
     act(() => {
-      latestSSECallbacks().onDeliveryFailed?.({ conversation_id: 'conv-1', reason: 'Meta rejected it' })
+      latestSSECallbacks().onDeliveryFailed?.({ conversation_id: 'conv-1', message_id: 'msg-ai-failed', reason: 'Meta rejected it' })
     })
 
     await waitFor(() => {
@@ -620,6 +683,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     ;(apiClient.getResponseTemplates as any).mockResolvedValue([])
     ;(apiClient.getShopAgents as any).mockResolvedValue([])
     ;(apiClient.updateConversation as any).mockResolvedValue({ id: 'conv-1', status: 'active' })
+    ;(apiClient.markConversationRead as any).mockResolvedValue({ ...baseConversation, unreadCount: 0, lastReadMessageId: 'msg-read' })
     ;(apiClient.createMessage as any).mockResolvedValue({
       id: 'msg-retry',
       conversation_id: 'conv-1',
@@ -639,6 +703,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
   const renderWith = (conv: any, messages: any[]) => {
     ;(apiClient.getConversations as any).mockResolvedValue({
       data: [conv],
+      ai_reply_mode: conv.ai_reply_mode || 'MANUAL',
       pagination: { page: 1, totalPages: 1 },
     })
     ;(apiClient.getMessages as any).mockResolvedValue({
@@ -649,7 +714,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
   }
 
   it('HIDES the suggestion panel when the last AI reply was auto-delivered', async () => {
-    renderWith(baseConversation, [customerMsg, aiMsg({ delivered: true })])
+    renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [customerMsg, aiMsg({ delivered: true })])
 
     // Wait for the thread to render (customer bubble present)…
     await waitFor(() => {
@@ -657,6 +722,74 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     })
     // …then the redundant "Send this" suggestion panel must NOT be present.
     expect(screen.queryByRole('button', { name: /Send this/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps an unsent AI candidate out of the normal transcript', async () => {
+    renderWith({ ...baseConversation, ai_reply_mode: 'DRAFT' }, [
+      customerMsg,
+      aiMsg({ delivery_state: 'DRAFT_READY', delivered: false, held_reason: 'draft_mode', suggestion_visibility: 'VISIBLE_DRAFT_REVIEW' }),
+    ])
+
+    await waitFor(() => expect(screen.getByText('DRAFT — NOT SENT')).toBeInTheDocument())
+    expect(screen.queryByText('AI Assistant')).not.toBeInTheDocument()
+  })
+
+  it('hides normal AUTO suggestions and keeps the processing status non-interactive', async () => {
+    renderWith({ ...baseConversation, ai_reply_mode: 'AUTO' }, [
+      customerMsg,
+      aiMsg({ delivery_state: 'SEND_PENDING', delivery_status: 'pending', delivered: false, suggestion_visibility: 'HIDDEN_AUTO_PROCESSING' }),
+    ])
+    await waitFor(() => expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI is preparing a reply'))
+    expect(screen.queryByRole('button', { name: /Send this/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /AI is replying/i })).not.toBeInTheDocument()
+  })
+
+  it('shows a clearly labelled HITL suggestion when AUTO requires human review', async () => {
+    const hitlConversation = { ...baseConversation, ai_reply_mode: 'AUTO', hitl: true }
+    renderWith(hitlConversation, [
+      customerMsg,
+      aiMsg({ delivery_state: 'HELD', delivered: false, held_reason: 'low_confidence', suggestion_visibility: 'VISIBLE_HITL_REVIEW' }),
+    ])
+    expect(await screen.findByText('Human review required')).toBeInTheDocument()
+    expect(screen.getByText('AI suggestion — NOT SENT')).toBeInTheDocument()
+  })
+
+  it('renders a resolved Messenger reply quote without duplicating the referenced message', async () => {
+    renderWith(baseConversation, [{
+      ...customerMsg,
+      content: 'L',
+      metadata: {
+        reply_to: {
+          provider_message_id: 'mid-question',
+          status: 'resolved',
+          sender: 'ai',
+          content: 'Which size would you like, M or L?',
+          message_type: 'text',
+        },
+      },
+    }])
+
+    expect(await screen.findByText('Which size would you like, M or L?')).toBeInTheDocument()
+    expect(screen.getAllByText('L')).toHaveLength(1)
+  })
+
+  it('deduplicates repeated SSE messages by message identity', async () => {
+    renderWith(baseConversation, [customerMsg])
+    await waitFor(() => expect(screen.getByText('Do you have this in red?')).toBeInTheDocument())
+    const callback = latestSSECallbacks()
+    const newMessage = {
+      id: 'new-customer-message', conversation_id: 'conv-1', content: 'One event', sender: 'customer' as const, message_type: 'text' as const,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }
+    act(() => {
+      callback.onNewMessage({ conversation_id: 'conv-1', message: newMessage })
+      callback.onNewMessage({ conversation_id: 'conv-1', message: newMessage })
+    })
+    await waitFor(() => {
+      // One transcript bubble plus one list preview proves the duplicate SSE
+      // did not create a second message bubble.
+      expect(screen.getAllByText('One event')).toHaveLength(2)
+    })
   })
 
   it('SHOWS the held suggestion even when the conversation is in HITL (handoff)', async () => {
@@ -744,7 +877,7 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
           file_url: 'https://cdn.example.com/catalog.pdf',
           delivery_status: 'pending',
         }),
-      }))
+      }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
     })
   })
 })

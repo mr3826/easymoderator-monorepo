@@ -148,6 +148,24 @@ const Message = sequelize.define('Message', {
         type: DataTypes.DECIMAL(3, 2),
         allowNull: true
     },
+    // Provider-send truth is separate from authorship/content. Inbound and
+    // legacy rows may remain NULL; outbound AI rows use this lifecycle.
+    delivery_state: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+    },
+    provider_message_id: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+    },
+    delivery_source: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+    },
+    send_idempotency_key: {
+        type: DataTypes.STRING(128),
+        allowNull: true,
+    },
     // Architect §16 — source references that grounded the AI reply.
     // Shape: [{ kind: 'rag'|'faq'|'product', id?, title?, score? }, ...]
     // NULL for non-AI messages or AI replies with no grounding (cache / greeting).
@@ -181,9 +199,19 @@ const Message = sequelize.define('Message', {
         },
         {
             // Idempotency: fast lookup by external platform message ID
-            unique: true,
             fields: ['external_id'],
             where: { external_id: { [require('sequelize').Op.ne]: null } }
+        },
+        {
+            fields: ['conversation_id', 'delivery_state']
+        },
+        {
+            fields: ['provider_message_id']
+        },
+        {
+            unique: true,
+            fields: ['conversation_id', 'send_idempotency_key'],
+            where: { send_idempotency_key: { [require('sequelize').Op.ne]: null } }
         }
     ]
 });

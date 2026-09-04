@@ -257,6 +257,7 @@ function buildCoalescedTurn(messages) {
  */
 async function loadPendingCustomerTurn(conversationId) {
     const { Message } = require('../modules/conversation/conversation.entity');
+    const { isProviderConfirmed } = require('../modules/conversation/message-lifecycle');
     const recent = await Message.findAll({
         where: { conversation_id: conversationId },
         order: [['created_at', 'DESC']],
@@ -265,7 +266,15 @@ async function loadPendingCustomerTurn(conversationId) {
 
     const pending = [];
     for (const m of recent) { // newest → oldest
-        if (m.sender !== 'customer') break; // reached the last AI/business reply
+        const metadata = m.metadata && typeof m.metadata === 'object' ? m.metadata : {};
+        const hasExplicitDeliveryLifecycle = m.delivery_state != null
+            || m.provider_message_id != null
+            || metadata.delivery_state != null
+            || metadata.delivery_status != null
+            || metadata.delivered !== undefined
+            || metadata.suggestion_visibility != null;
+        if (m.sender === 'ai' && hasExplicitDeliveryLifecycle && !isProviderConfirmed(m)) continue;
+        if (m.sender !== 'customer') break; // reached the last customer-visible reply
         pending.push(m);
     }
     pending.reverse(); // oldest → newest

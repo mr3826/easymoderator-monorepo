@@ -409,7 +409,7 @@ describe('existing behaviour is preserved', () => {
 
         await expect(processMessageJob(job())).rejects.toThrow('temporary Meta failure');
 
-        expect(cacheRedis.del).toHaveBeenCalledWith('msg:dedup:shop-a:ext-1');
+        expect(cacheRedis.del).toHaveBeenCalledWith('msg:dedup:shop-a:facebook:ext-1');
     });
 
     test('a policy denial still holds the reply as a draft rather than sending', async () => {
@@ -455,12 +455,14 @@ describe('existing behaviour is preserved', () => {
             expect.stringContaining('ORD-1'),
             expect.objectContaining({ order_flow: expect.any(Object) }),
         );
-        expect(mockStoredAiMessageUpdate).toHaveBeenCalledWith({
+        expect(mockStoredAiMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
             metadata: expect.objectContaining({
                 delivered: false,
                 held_reason: 'executed_mutation_without_outbound_send',
+                delivery_state: 'HELD',
             }),
-        });
+            delivery_state: 'HELD',
+        }));
         expect(opsAlert).toHaveBeenCalledWith(
             'executed_mutation_without_outbound_send',
             expect.objectContaining({ level: 'error' }),
