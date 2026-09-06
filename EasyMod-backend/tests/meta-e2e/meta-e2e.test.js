@@ -18,7 +18,9 @@ const transport = require('./transport');
 const fixtures = require('./fixtures');
 const grounding = require('../../src/modules/ai/grounding');
 const productSearch = require('../../src/modules/product/product-search.service');
-const { UsageEvent, Subscription } = require('../../src/modules/entities');
+const {
+    UsageEvent, Subscription, Customer, Conversation, Message,
+} = require('../../src/modules/entities');
 
 const { IDS, RUNTIME, EXPECTED, CUSTOMER_PSID, CUSTOMER_PSID_PAGE_A2 } = fixtures;
 const { GroundingDecision, ReasonCode, ProductEvidenceStatus, MediaStatus } = grounding;
@@ -414,6 +416,120 @@ describe('META-E2E-006 — a Page that does not own the product', () => {
         expect(result.decision.productStatus).toBe(ProductEvidenceStatus.VERIFIED);
         expect(result.decision.verifiedProductIds).toEqual([IDS.shopBProduct]);
         expect(body(result)).toContain(EXPECTED.shopBProductName);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// META-E2E-INBOUND-IDENTITY — pre-Page rows and Page isolation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('META-E2E-INBOUND-IDENTITY — legacy adoption without Page leakage', () => {
+    test('adopts a legacy customer and conversation instead of opening a second thread', async () => {
+        const legacyCustomer = await Customer.create({
+            shop_id: IDS.shopA,
+            name: 'Legacy Meta Customer',
+            channel_type: 'messenger',
+            channel_user_id: CUSTOMER_PSID,
+            meta_channel_id: null,
+            metadata: { source: 'pre_page_fixture' },
+        });
+        const legacyConversation = await Conversation.create({
+            shop_id: IDS.shopA,
+            customer_id: legacyCustomer.id,
+            channel: 'messenger',
+            meta_channel_id: null,
+            role: 'user',
+            message: 'legacy seed',
+            metadata: {},
+        });
+
+        const result = await harness.deliver({
+            text: 'legacy inbound message',
+            mid: 'm_e2e_legacy_adoption_001',
+            candidate: '',
+        });
+
+        expect(result.status).toBe(200);
+        const customers = await Customer.findAll({
+            where: {
+                shop_id: IDS.shopA,
+                channel_type: 'messenger',
+                channel_user_id: CUSTOMER_PSID,
+            },
+        });
+        const conversations = await Conversation.findAll({
+            where: {
+                shop_id: IDS.shopA,
+                customer_id: legacyCustomer.id,
+                channel: 'messenger',
+            },
+        });
+        const inboundMessages = await Message.findAll({
+            where: {
+                conversation_id: legacyConversation.id,
+                external_id: result.eventId,
+                sender: 'customer',
+            },
+        });
+
+        expect(customers).toHaveLength(1);
+        expect(customers[0].id).toBe(legacyCustomer.id);
+        expect(customers[0].meta_channel_id).toBe(IDS.channelA);
+        expect(conversations).toHaveLength(1);
+        expect(conversations[0].id).toBe(legacyConversation.id);
+        expect(conversations[0].meta_channel_id).toBe(IDS.channelA);
+        expect(inboundMessages).toHaveLength(1);
+    });
+
+    test('creates a separate customer and conversation when the existing row is pinned to another Page', async () => {
+        const pageACustomer = await Customer.create({
+            shop_id: IDS.shopA,
+            name: 'Page A Customer',
+            channel_type: 'messenger',
+            channel_user_id: CUSTOMER_PSID,
+            meta_channel_id: IDS.channelA,
+            metadata: { source: 'page_a_fixture' },
+        });
+        await Conversation.create({
+            shop_id: IDS.shopA,
+            customer_id: pageACustomer.id,
+            channel: 'messenger',
+            meta_channel_id: IDS.channelA,
+            role: 'user',
+            message: 'page A seed',
+            metadata: {},
+        });
+
+        const result = await harness.deliver({
+            pageId: IDS.pageA2,
+            psid: CUSTOMER_PSID,
+            text: 'same PSID on Page A2',
+            mid: 'm_e2e_page_isolation_001',
+            candidate: '',
+        });
+
+        expect(result.status).toBe(200);
+        const customers = await Customer.findAll({
+            where: {
+                shop_id: IDS.shopA,
+                channel_type: 'messenger',
+                channel_user_id: CUSTOMER_PSID,
+            },
+            order: [['created_at', 'ASC']],
+        });
+        const conversations = await Conversation.findAll({
+            where: { shop_id: IDS.shopA, channel: 'messenger' },
+            order: [['created_at', 'ASC']],
+        });
+
+        expect(customers).toHaveLength(2);
+        expect(customers.map((row) => row.meta_channel_id)).toEqual(
+            expect.arrayContaining([IDS.channelA, IDS.channelA2]),
+        );
+        expect(conversations).toHaveLength(2);
+        expect(conversations.map((row) => row.meta_channel_id)).toEqual(
+            expect.arrayContaining([IDS.channelA, IDS.channelA2]),
+        );
     });
 });
 

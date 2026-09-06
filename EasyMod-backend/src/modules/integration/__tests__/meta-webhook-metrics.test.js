@@ -59,3 +59,21 @@ describe('safe malformed Meta webhook metrics', () => {
         expect(serialized).not.toContain('psid-secret');
     });
 });
+
+describe('receipt claim conflict metrics', () => {
+    test('records a bounded conflict count and timestamp', () => {
+        metrics.recordReceiptClaimConflict({
+            pageId: 'page-1',
+            receiptId: 'receipt-1',
+            status: 'PROCESSING',
+        });
+
+        const snapshot = metrics.getReceiptClaimConflictMetrics();
+        expect(snapshot.count).toBe(1);
+        expect(Number.isNaN(Date.parse(snapshot.lastAt))).toBe(false);
+        expect(mockLogCalls[0]).toEqual([
+            'Meta webhook receipt claim lost to another processor',
+            { pageId: 'page-1', receiptId: 'receipt-1', status: 'PROCESSING' },
+        ]);
+    });
+});

@@ -99,6 +99,7 @@ class UniqueConstraintError extends Error {
 
 const store = new Map();
 let failCreate = null;
+let failClaimOnce = false;
 let idCounter = 0;
 
 const matches = (row, where) => Object.entries(where).every(([field, cond]) => {
@@ -128,6 +129,7 @@ const makeRow = (fields) => {
         retry_count: 0,
         processing_token: null,
         next_retry_at: null,
+        received_at: new Date(),
         updated_at: new Date(),
         created_at: new Date(),
         ...fields,
@@ -139,7 +141,17 @@ const makeRow = (fields) => {
 
 const MockReceipt = {
     findOne: jest.fn(async ({ where }) => [...store.values()].find((r) => evalWhere(r, where)) || null),
-    findAll: jest.fn(async ({ where, limit }) => [...store.values()].filter((r) => evalWhere(r, where)).slice(0, limit)),
+    findAll: jest.fn(async ({ where, limit, order }) => {
+        const rows = [...store.values()].filter((r) => evalWhere(r, where));
+        const orderExpression = order?.[0]?.[0]?.val || order?.[0]?.[0] || '';
+        if (String(orderExpression).includes('COALESCE')) {
+            rows.sort((left, right) => (
+                (left.next_retry_at || left.updated_at).getTime()
+                - (right.next_retry_at || right.updated_at).getTime()
+            ));
+        }
+        return rows.slice(0, limit);
+    }),
     count: jest.fn(async ({ where }) => [...store.values()].filter((r) => evalWhere(r, where)).length),
     destroy: jest.fn(async () => 0),
     create: jest.fn(async (fields) => {
@@ -150,6 +162,10 @@ const MockReceipt = {
         return row;
     }),
     update: jest.fn(async (patch, { where }) => {
+        if (failClaimOnce && patch.status === 'PROCESSING') {
+            failClaimOnce = false;
+            throw new Error('claim store unavailable');
+        }
         const rows = [...store.values()].filter((r) => evalWhere(r, where));
         rows.forEach((r) => Object.assign(r, patch, { updated_at: new Date() }));
         return [rows.length];
@@ -165,6 +181,7 @@ const crypto = require('crypto');
 
 const receiptService = require('src/modules/integration/meta-webhook-receipt.service');
 const WebhookReceiptReconcilerJob = require('src/jobs/webhook-receipt-reconciler.job');
+const { encryptPayload } = require('src/utils/webhook-payload-cipher');
 
 const APP_SECRET = 'durability-test-app-secret';
 const PAGE_ID = 'page-durability-1';
@@ -228,6 +245,7 @@ beforeEach(() => {
     logCalls.length = 0;
     alertCalls.length = 0;
     failCreate = null;
+    failClaimOnce = false;
 
     mockMetaChannelService.findByMetaAssetId.mockResolvedValue(connectedChannel());
     mockConsentService.isStopKeyword.mockReturnValue(false);
@@ -254,6 +272,61 @@ describe('durable receipt precedes acknowledgement', () => {
         expect(r.event_type).toBe('message');
         expect(r.status).toBe('QUEUED');
         expect(r.shop_id).toBe(SHOP_ID);
+    });
+
+    test('recovers when the live receipt claim throws instead of leaving RECEIVED unreachable', async () => {
+        failClaimOnce = true;
+        mockConsentService.isStopKeyword.mockReturnValue(true);
+
+        await post(buildPayload()).expect(200);
+
+        expect(receipts()[0].status).toBe('RETRY_PENDING');
+        expect(receipts()[0].status).not.toBe('RECEIVED');
+        expect(receipts()[0].payload_encrypted).toMatch(/^v1:/);
+
+        receipts()[0].next_retry_at = new Date(Date.now() - 1000);
+        const result = await new WebhookReceiptReconcilerJob().execute();
+
+        expect(result.processed).toBe(1);
+        expect(mockMessage.create).toHaveBeenCalledTimes(1);
+        expect(receipts()[0].status).toBe('PROCESSED');
+    });
+
+    test('sweeps an orphaned RECEIVED receipt after the short orphan window', async () => {
+        const messaging = buildPayload().entry[0].messaging[0];
+        const recorded = await receiptService.recordReceipt({ pageId: PAGE_ID, messaging });
+        recorded.receipt.received_at = new Date(Date.now() - 120_000);
+        recorded.receipt.updated_at = new Date(Date.now() - 120_000);
+
+        const claimed = await receiptService.claimDueReceipts(25);
+
+        expect(claimed).toHaveLength(1);
+        expect(claimed[0].receipt.id).toBe(recorded.receipt.id);
+        expect(claimed[0].receipt.status).toBe('PROCESSING');
+    });
+
+    test('claims a stale PROCESSING receipt ahead of 25 due retryable receipts', async () => {
+        const payload = buildPayload().entry[0].messaging[0];
+        for (let index = 0; index < 25; index += 1) {
+            const row = makeRow({
+                status: 'RETRY_PENDING',
+                next_retry_at: new Date(Date.now() - 5_000 + index),
+                payload_encrypted: encryptPayload(payload),
+            });
+            store.set(row.id, row);
+        }
+        const stale = makeRow({
+            status: 'PROCESSING',
+            processing_token: 'stale-token',
+            next_retry_at: null,
+            updated_at: new Date(Date.now() - 60 * 60 * 1000),
+            payload_encrypted: encryptPayload(payload),
+        });
+        store.set(stale.id, stale);
+
+        const claimed = await receiptService.claimDueReceipts(25);
+
+        expect(claimed[0].receipt.id).toBe(stale.id);
     });
 
     test('recovers a duplicate message before QUEUED without losing customer context', async () => {
@@ -663,7 +736,11 @@ describe('message storage failure', () => {
 
 describe('non-business events', () => {
     test('an echo is recorded and skipped', async () => {
-        await post(buildPayload({}, { message: { mid: 'mid.ECHO', text: 'hi', is_echo: true } })).expect(200);
+        await post(buildPayload({}, {
+            sender: { id: PAGE_ID },
+            recipient: { id: SENDER_PSID },
+            message: { mid: 'mid.ECHO', text: 'hi', is_echo: true },
+        })).expect(200);
         expect(receipts()[0].status).toBe('SKIPPED');
         expect(receipts()[0].last_error_code).toBe('ECHO');
         expect(mockMessage.create).not.toHaveBeenCalled();
@@ -679,7 +756,11 @@ describe('non-business events', () => {
     });
 
     test('a skipped event carries no retained payload', async () => {
-        await post(buildPayload({}, { message: { mid: 'mid.ECHO2', text: 'hi', is_echo: true } })).expect(200);
+        await post(buildPayload({}, {
+            sender: { id: PAGE_ID },
+            recipient: { id: SENDER_PSID },
+            message: { mid: 'mid.ECHO2', text: 'hi', is_echo: true },
+        })).expect(200);
         expect(receipts()[0].payload_encrypted).toBeNull();
     });
 });

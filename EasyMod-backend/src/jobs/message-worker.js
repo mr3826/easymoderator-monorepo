@@ -1523,6 +1523,9 @@ async function processMessageJob(job) {
     }
     await recoveryControl?.transitionTo('CONTEXT_BUILDING');
     if (conversation.hitl) return { skipped: true, reason: 'hitl_active' };
+    if (['closed', 'archived'].includes(conversation.status)) {
+        return { skipped: true, reason: 'conversation_closed' };
+    }
 
     // ── Guard 3: AI pause (30-min mute when agent sends manually) ──────────
     const paused = await cacheRedis.get(`ai:pause:${conversationId}`);
@@ -2401,6 +2404,52 @@ async function processMessageJob(job) {
     // for a reply that was actually auto-sent.
 
     if (!(await claimAutomaticCandidate(aiMessage, automaticSendIdempotencyKey, shopId))) {
+        if (typeof Message.findOne === 'function') {
+            const currentCandidate = await Message.findOne({
+                where: { id: aiMessage?.id, conversation_id: conversationId, sender: 'ai' },
+            }).catch(() => null);
+            const candidateMetadata = messageMetadata(currentCandidate || aiMessage);
+            if (currentCandidate
+                && !isProviderConfirmed(currentCandidate)
+                && candidateMetadata.provider_send_attempted !== true
+                && candidateMetadata.provider_send_claimed !== true) {
+                const guard = await getAutomaticSendGuard(shopId, conversationId).catch(() => ({
+                    allowed: false,
+                    reason: 'conversation_unavailable',
+                }));
+                const terminal = {
+                    human_active: {
+                        heldReason: 'human_active',
+                        suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                    },
+                    conversation_closed: {
+                        heldReason: 'conversation_closed',
+                        suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                    },
+                    conversation_unavailable: {
+                        heldReason: 'conversation_unavailable',
+                        suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                    },
+                    ai_paused: {
+                        heldReason: 'ai_paused',
+                        suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                    },
+                    mode_changed: {
+                        heldReason: 'mode_changed',
+                        suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                    },
+                }[guard.reason];
+                if (terminal) {
+                    await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                        delivered: false,
+                        heldReason: terminal.heldReason,
+                        deliveryState: MESSAGE_DELIVERY_STATES.HELD,
+                        deliverySource: 'AUTO',
+                        suggestionVisibility: terminal.suggestionVisibility,
+                    });
+                }
+            }
+        }
         return {
             success: true,
             conversationId,
@@ -2454,19 +2503,39 @@ async function processMessageJob(job) {
             shopId,
         );
         if (!providerBoundary.allowed) {
-            const heldReason = {
-                human_active: 'human_active',
-                ai_paused: 'ai_paused',
-                conversation_closed: 'human_active',
-                mode_changed: 'mode_changed',
+            const terminal = {
+                human_active: {
+                    heldReason: 'human_active',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                },
+                ai_paused: {
+                    heldReason: 'ai_paused',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                },
+                conversation_closed: {
+                    heldReason: 'conversation_closed',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                },
+                conversation_unavailable: {
+                    heldReason: 'conversation_unavailable',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                },
+                opted_out: {
+                    heldReason: 'opted_out',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                },
+                mode_changed: {
+                    heldReason: 'mode_changed',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                },
             }[providerBoundary.reason];
-            if (heldReason) {
+            if (terminal) {
                 await finalizeAiMessage(aiMessage, shopId, conversationId, {
                     delivered: false,
-                    heldReason,
+                    heldReason: terminal.heldReason,
                     deliveryState: MESSAGE_DELIVERY_STATES.HELD,
                     deliverySource: 'AUTO',
-                    suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                    suggestionVisibility: terminal.suggestionVisibility,
                 });
             }
             return {

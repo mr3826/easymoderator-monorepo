@@ -109,6 +109,21 @@ class InboxDeliveryReconcilerJob {
                     continue;
                 }
 
+                const currentMetadata = metadataFor(message);
+                if (['human_active', 'conversation_closed'].includes(currentMetadata.held_reason)
+                    || currentMetadata.suggestion_visibility === 'HIDDEN_DISMISSED') {
+                    await updateOutbox(row, token, {
+                        status: 'COMPLETED',
+                        processing_token: null,
+                        next_attempt_at: null,
+                        last_error_code: currentMetadata.held_reason === 'conversation_closed'
+                            ? 'CONVERSATION_CLOSED'
+                            : 'HUMAN_TAKEOVER',
+                    });
+                    results.reconciliations += 1;
+                    continue;
+                }
+
                 if (row.provider_message_id) {
                     const metadata = metadataFor(message);
                     const reconciledMetadata = {
@@ -146,7 +161,7 @@ class InboxDeliveryReconcilerJob {
                     }
                 }
 
-                const metadata = metadataFor(message);
+                const metadata = currentMetadata;
                 if (metadata.provider_send_attempted === true) {
                     await updateOutbox(row, token, {
                         status: 'NEEDS_RECONCILIATION',

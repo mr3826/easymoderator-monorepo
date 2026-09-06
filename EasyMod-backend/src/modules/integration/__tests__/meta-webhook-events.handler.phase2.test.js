@@ -59,6 +59,7 @@ jest.mock('src/utils/structured-logger', () => ({
 
 const mockReceiptService = {
     markProcessing: jest.fn(),
+    claimProcessing: jest.fn(),
     markProcessed: jest.fn(),
     markQueued: jest.fn(),
     markStoreFailure: jest.fn(),
@@ -101,6 +102,7 @@ beforeEach(() => {
     mockRecordOptOut.mockResolvedValue({ id: CUSTOMER_ID });
     mockRecordOptIn.mockResolvedValue({ id: CUSTOMER_ID });
     mockReceiptService.markProcessing.mockResolvedValue(undefined);
+    mockReceiptService.claimProcessing.mockResolvedValue(true);
     mockReceiptService.markProcessed.mockResolvedValue(undefined);
     mockReceiptService.markQueued.mockImplementation(async (row) => {
         row.status = 'QUEUED';
@@ -156,6 +158,23 @@ describe('dispatch queue availability', () => {
 });
 
 describe('shared inbound consent and dispatch boundary', () => {
+    test('turns a live receipt claim exception into retryable failure state', async () => {
+        const claimError = new Error('receipt claim store unavailable');
+        mockReceiptService.claimProcessing.mockRejectedValueOnce(claimError);
+
+        await expect(runProcess()).resolves.toBe('failed');
+
+        expect(mockReceiptService.markStoreFailure).toHaveBeenCalledWith(
+            receipt,
+            expect.objectContaining({
+                message: claimError.message,
+                name: 'MESSAGE_STORE_FAILED',
+                retryable: true,
+            }),
+            expect.objectContaining({ pageId: PAGE_ID }),
+        );
+    });
+
     test('does not dispatch when consent bookkeeping fails', async () => {
         mockRecordInbound.mockRejectedValueOnce(new Error('consent store unavailable'));
 

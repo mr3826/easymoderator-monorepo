@@ -45,6 +45,135 @@ const normalizeObject = (value) => {
     return value;
 };
 
+const workflowTimestamp = (message) => {
+    const value = message?.created_at ?? message?.createdAt;
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : NaN;
+};
+
+const workflowDeliverySource = (message) => {
+    const metadata = normalizeObject(message?.metadata);
+    return message?.delivery_source || metadata.delivery_source || null;
+};
+
+const isAnsweringOutbound = (message) => {
+    if (message?.sender === 'business') {
+        const state = normalizeDeliveryState(message);
+        return ![
+            MESSAGE_DELIVERY_STATES.GENERATING,
+            MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            MESSAGE_DELIVERY_STATES.FAILED,
+        ].includes(state);
+    }
+    return message?.sender === 'ai'
+        && workflowDeliverySource(message) !== 'HITL_ESCALATION'
+        && isProviderConfirmed(message);
+};
+
+const isCurrentWorkflowMessage = (message, latestCustomerAt, latestAnswerAt) => {
+    const timestamp = workflowTimestamp(message);
+    const afterCustomer = !Number.isFinite(latestCustomerAt)
+        || !Number.isFinite(timestamp)
+        || timestamp >= latestCustomerAt;
+    const afterAnswer = !Number.isFinite(latestAnswerAt)
+        || !Number.isFinite(timestamp)
+        || timestamp > latestAnswerAt;
+    return afterCustomer && afterAnswer;
+};
+
+const isActiveProviderAttempt = (message, latestCustomerAt, latestAnswerAt) => {
+    if (!['ai', 'business'].includes(message?.sender)
+        || isProviderConfirmed(message)
+        || !isCurrentWorkflowMessage(message, latestCustomerAt, latestAnswerAt)) return false;
+    const metadata = normalizeObject(message.metadata);
+    if (metadata.provider_send_attempted === true) return false;
+    return [MESSAGE_DELIVERY_STATES.GENERATING, MESSAGE_DELIVERY_STATES.SEND_PENDING]
+        .includes(normalizeDeliveryState(message));
+};
+
+const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
+    const metadata = normalizeObject(conversation?.metadata);
+    const status = conversation?.status || metadata.status || 'active';
+    const open = !['closed', 'archived'].includes(status);
+    const rows = Array.isArray(messages) ? messages : [];
+    const customerTimes = rows
+        .filter((message) => message?.sender === 'customer')
+        .map(workflowTimestamp)
+        .filter(Number.isFinite);
+    const answerTimes = rows
+        .filter(isAnsweringOutbound)
+        .map(workflowTimestamp)
+        .filter(Number.isFinite);
+    const latestCustomerAt = customerTimes.length ? Math.max(...customerTimes) : NaN;
+    const latestAnswerAt = answerTimes.length ? Math.max(...answerTimes) : NaN;
+    const unanswered = Number.isFinite(latestCustomerAt)
+        && (!Number.isFinite(latestAnswerAt) || latestCustomerAt > latestAnswerAt);
+    const currentRows = rows.filter((message) => isCurrentWorkflowMessage(
+        message,
+        latestCustomerAt,
+        latestAnswerAt,
+    ));
+    const reviewable = currentRows.filter(isReviewableSuggestion);
+    const failed = currentRows.filter((message) => {
+        const metadataForMessage = normalizeObject(message.metadata);
+        return ['ai', 'business'].includes(message?.sender)
+            && (normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.FAILED
+                || metadataForMessage.held_reason === 'provider_send_failed');
+    });
+    const activeAttempts = currentRows.filter((message) => isActiveProviderAttempt(
+        message,
+        latestCustomerAt,
+        latestAnswerAt,
+    ));
+    const aiProcessing = activeAttempts.some((message) => (
+        message.sender === 'ai'
+        && workflowDeliverySource(message) !== 'DRAFT_APPROVAL'
+        && workflowDeliverySource(message) !== 'HITL_ESCALATION'
+    ));
+
+    let needsMerchantReply = false;
+    if (open) {
+        if (reviewable.length > 0 || failed.length > 0) {
+            needsMerchantReply = true;
+        } else if (unanswered) {
+            // AUTO owns a turn while its candidate is processing. MANUAL and
+            // DRAFT always leave the unanswered customer visible to the merchant.
+            needsMerchantReply = aiReplyMode !== 'AUTO' || conversation?.hitl === true
+                ? activeAttempts.length === 0
+                : false;
+        }
+    }
+
+    let reason = null;
+    if (needsMerchantReply) {
+        if (failed.length > 0) {
+            reason = failed.some((message) => message.sender === 'business')
+                ? 'PROVIDER_SEND_FAILED'
+                : 'AI_FAILED';
+        } else if (reviewable.length > 0) {
+            const hasDraft = reviewable.some((message) => {
+                const messageMetadata = normalizeObject(message.metadata);
+                return messageMetadata.suggestion_visibility === SUGGESTION_VISIBILITY.VISIBLE_DRAFT_REVIEW
+                    || normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.DRAFT_READY;
+            });
+            reason = hasDraft ? 'DRAFT_REVIEW_REQUIRED' : 'HITL_REQUIRED';
+        } else if (conversation?.hitl === true) {
+            reason = 'HITL_REQUIRED';
+        } else {
+            reason = 'CUSTOMER_UNANSWERED';
+        }
+    }
+
+    return {
+        needs_merchant_reply: needsMerchantReply,
+        needs_merchant_reply_reason: reason,
+        ai_is_replying: open
+            && aiReplyMode === 'AUTO'
+            && conversation?.hitl !== true
+            && aiProcessing,
+    };
+};
+
 const displayChannelName = (channel) => (
     channel === 'facebook' || channel === 'messenger' ? 'Facebook customer' : 'Customer'
 );
@@ -211,7 +340,15 @@ class ConversationService {
             // Add status filter for conversation management
             // Valid statuses: 'active', 'unanswered', 'pending_order', 'completed', 'followed_up'
             if (status) {
-                const validStatuses = ['active', 'unanswered', 'pending_order', 'completed', 'followed_up'];
+                const validStatuses = [
+                    'active',
+                    'unanswered',
+                    'pending_order',
+                    'completed',
+                    'followed_up',
+                    'closed',
+                    'archived',
+                ];
                 if (validStatuses.includes(status)) {
                     whereClause.status = status;
                 }
@@ -248,22 +385,29 @@ class ConversationService {
             ]);
 
             const suggestionCounts = new Map();
+            const messagesByConversation = new Map();
             const conversationIds = conversations.rows.map((row) => row.id);
             if (conversationIds.length > 0 && typeof Message.findAll === 'function') {
                 const candidates = await Message.findAll({
                     where: {
                         conversation_id: { [Op.in]: conversationIds },
-                        sender: 'ai',
                     },
                     attributes: [
                         'id',
                         'conversation_id',
                         'sender',
+                        'created_at',
                         'delivery_state',
+                        'delivery_source',
                         'provider_message_id',
                         'metadata',
                     ],
-                });
+                }) || [];
+                for (const candidate of candidates) {
+                    const conversationMessages = messagesByConversation.get(candidate.conversation_id) || [];
+                    conversationMessages.push(candidate);
+                    messagesByConversation.set(candidate.conversation_id, conversationMessages);
+                }
                 for (const candidate of candidates.filter(isReviewableSuggestion)) {
                     suggestionCounts.set(
                         candidate.conversation_id,
@@ -277,6 +421,11 @@ class ConversationService {
                     ...this.mapConversation(row),
                     suggestionCount: suggestionCounts.get(row.id) || 0,
                     hasAiSuggestion: suggestionCounts.has(row.id),
+                    ...deriveWorkflowProjection(
+                        row,
+                        messagesByConversation.get(row.id) || [],
+                        aiReplyMode,
+                    ),
                 })),
                 ai_reply_mode: aiReplyMode,
                 pagination: {
@@ -319,7 +468,28 @@ class ConversationService {
                 throw new Error('Conversation not found');
             }
 
-            return this.mapConversation(conversation);
+            const [aiReplyMode, messages] = await Promise.all([
+                getEffectiveAiReplyMode(shopId),
+                typeof Message.findAll === 'function'
+                    ? Message.findAll({
+                        where: { conversation_id: conversationId },
+                        attributes: [
+                            'id',
+                            'conversation_id',
+                            'sender',
+                            'created_at',
+                            'delivery_state',
+                            'delivery_source',
+                            'provider_message_id',
+                            'metadata',
+                        ],
+                    })
+                    : [],
+            ]);
+            return {
+                ...this.mapConversation(conversation),
+                ...deriveWorkflowProjection(conversation, messages || [], aiReplyMode),
+            };
         } catch (error) {
             throw new Error(`Failed to fetch conversation: ${error.message}`);
         }
@@ -710,6 +880,12 @@ class ConversationService {
                 error.code = 'DRAFT_SEND_IN_PROGRESS';
                 throw error;
             }
+            if (normalizeObject(candidate.metadata).provider_send_attempted === true) {
+                const error = new Error('Provider delivery was already attempted; reconcile the message before dismissing it');
+                error.statusCode = 409;
+                error.code = 'PROVIDER_SEND_ALREADY_ATTEMPTED';
+                throw error;
+            }
             if (!isReviewableSuggestion(candidate)) {
                 const error = new Error('AI suggestion is not dismissible');
                 error.statusCode = 409;
@@ -891,6 +1067,11 @@ class ConversationService {
                 if (updates.status === 'closed' && !conversation.resolved_at) {
                     fields.resolved_at = new Date();
                 }
+                if (updates.status === 'closed') {
+                    // Resolution ends the transient human session. The shop's
+                    // global automation mode is intentionally unchanged.
+                    fields.hitl = false;
+                }
             }
             if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
@@ -899,11 +1080,17 @@ class ConversationService {
 
             const heldEvents = [];
 
-            // A human takeover invalidates any candidate that has not crossed
-            // the provider boundary. The worker performs the same check at its
-            // final send gate, while this update keeps an already-persisted
-            // pending candidate from appearing sendable in another Inbox tab.
-            if (updates.hitl === true && typeof Message.findAll === 'function') {
+            // Takeover and resolution invalidate any candidate that has not
+            // crossed the provider boundary. The worker performs the same check
+            // at its final send gate, while this update keeps an already-
+            // persisted pending candidate from appearing sendable elsewhere.
+            if ((updates.hitl === true || updates.status === 'closed')
+                && typeof Message.findAll === 'function') {
+                const closing = updates.status === 'closed';
+                const heldReason = closing ? 'conversation_closed' : 'human_active';
+                const suggestionVisibility = closing
+                    ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
+                    : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW;
                 const pending = await Message.findAll({
                     where: {
                         conversation_id: conversationId,
@@ -923,8 +1110,8 @@ class ConversationService {
                         delivered: false,
                         delivery_status: 'held',
                         delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-                        held_reason: 'human_active',
-                        suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                        held_reason: heldReason,
+                        suggestion_visibility: suggestionVisibility,
                     };
                     await message.update({
                         delivery_state: MESSAGE_DELIVERY_STATES.HELD,
@@ -953,9 +1140,26 @@ class ConversationService {
                     created_at: message.created_at || null,
                 });
             }
+            const aiReplyMode = await getEffectiveAiReplyMode(shopId);
+            const messages = typeof Message.findAll === 'function'
+                ? await Message.findAll({
+                    where: { conversation_id: conversationId },
+                    attributes: [
+                        'id',
+                        'conversation_id',
+                        'sender',
+                        'created_at',
+                        'delivery_state',
+                        'delivery_source',
+                        'provider_message_id',
+                        'metadata',
+                    ],
+                })
+                : [];
             return {
                 ...this.mapConversation(result.conversation),
-                hitl: result.conversation.hitl
+                hitl: result.conversation.hitl,
+                ...deriveWorkflowProjection(result.conversation, messages || [], aiReplyMode),
             };
         } catch (error) {
             throw new Error(`Failed to update conversation: ${error.message}`);
@@ -963,30 +1167,7 @@ class ConversationService {
     }
 
     async updateConversationStatus(conversationId, shopId, status) {
-        try {
-            const conversation = await Conversation.findOne({
-                where: {
-                    id: conversationId,
-                    shop_id: shopId
-                }
-            });
-
-            if (!conversation) {
-                throw new Error('Conversation not found');
-            }
-
-            const resolvedStatus = status || 'active';
-            const metadata = {
-                ...(conversation.metadata || {}),
-                status: resolvedStatus
-            };
-
-            await conversation.update({ status: resolvedStatus, metadata });
-
-            return this.mapConversation(conversation);
-        } catch (error) {
-            throw new Error(`Failed to update conversation status: ${error.message}`);
-        }
+        return this.updateConversation(conversationId, shopId, { status: status || 'active' });
     }
 
     async bulkUpdateStatus(shopId, conversationIds = [], status) {

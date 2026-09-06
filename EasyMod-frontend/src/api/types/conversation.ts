@@ -154,6 +154,9 @@ export interface Conversation {
   lastReadMessageAt?: string | null;
   suggestionCount?: number;
   hasAiSuggestion?: boolean;
+  needs_merchant_reply?: boolean;
+  needs_merchant_reply_reason?: string | null;
+  ai_is_replying?: boolean;
   created_at: string;
   updated_at: string;
   messages?: Message[];
