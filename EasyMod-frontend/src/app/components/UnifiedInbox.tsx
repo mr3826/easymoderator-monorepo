@@ -162,9 +162,10 @@ const getAiReplyStatus = (
 
   const deliveryState = getDeliveryState(lastAiMessage);
   const deliveryStatus = lastAiMessage.metadata?.delivery_status;
-  if (deliveryState === "GENERATING" || deliveryState === "SEND_PENDING" || deliveryStatus === "pending") return "processing";
   if (deliveryState === "FAILED" || deliveryStatus === "failed") return "failed";
   if (isProviderConfirmed(lastAiMessage)) return "sent";
+  if (hasAuthoritativeProcessingState && conversation.ai_is_replying === false) return null;
+  if (deliveryState === "GENERATING" || deliveryState === "SEND_PENDING" || deliveryStatus === "pending") return "processing";
   if (hasAuthoritativeProcessingState && conversation.ai_is_replying) return "processing";
   return null;
 };
@@ -223,6 +224,7 @@ export default function UnifiedInbox() {
   const aiReplyModeRef = useRef<AiReplyMode>(DEFAULT_AI_REPLY_MODE);
   const aiReplyModeRevisionRef = useRef(0);
   const selectedConversationRef = useRef<Conversation | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const readWatermarkRef = useRef<Record<string, string>>({});
   const readRequestRef = useRef<Record<string, number>>({});
@@ -240,6 +242,10 @@ export default function UnifiedInbox() {
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -314,10 +320,7 @@ export default function UnifiedInbox() {
         );
       }
       if (page === 1) {
-        setMessages((prev) => [
-          ...projectedMessages,
-          ...prev.filter((message) => !projectedMessages.some((item) => item.id === message.id)),
-        ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+        setMessages(projectedMessages);
         const status = getAiReplyStatus(
           projectedMessages,
           aiReplyModeRef.current,
@@ -444,15 +447,21 @@ export default function UnifiedInbox() {
           inboundAt,
         );
       }
+      const knownConversation = conversationsRef.current.find((conversation) => conversation.id === conversation_id);
+      const selectedForEvent = selectedConversationRef.current?.id === conversation_id
+        ? selectedConversationRef.current
+        : knownConversation;
+      const hitlActive = selectedForEvent?.hitl === true;
+      const needsMerchantReplyForInbound = hitlActive || aiReplyMode !== "AUTO";
       const providerConfirmed = message.sender === "customer" || isProviderConfirmed(message);
       const inboundWorkflow = isCustomerMessage
         ? {
             status: "active" as const,
-            needs_merchant_reply: aiReplyMode === "AUTO" && selectedConversationRef.current?.hitl !== true,
-            needs_merchant_reply_reason: aiReplyMode === "AUTO" && selectedConversationRef.current?.hitl !== true
-              ? null
-              : "CUSTOMER_UNANSWERED",
-            ai_is_replying: aiReplyMode === "AUTO" && selectedConversationRef.current?.hitl !== true,
+            needs_merchant_reply: needsMerchantReplyForInbound,
+            needs_merchant_reply_reason: needsMerchantReplyForInbound
+              ? (hitlActive ? "HITL_REQUIRED" : "CUSTOMER_UNANSWERED")
+              : null,
+            ai_is_replying: aiReplyMode === "AUTO" && !hitlActive,
           }
         : {};
       setMessages((prev) => {
@@ -465,14 +474,14 @@ export default function UnifiedInbox() {
       });
       setAiReplyStatuses((prev) => {
         const next = { ...prev };
-        if (isCustomerMessage && aiReplyMode === "AUTO" && selectedConversationRef.current?.hitl !== true) {
+        if (isCustomerMessage && aiReplyMode === "AUTO" && !hitlActive) {
           next[conversation_id] = "processing";
         } else if (message.sender === "agent") {
           delete next[conversation_id];
         } else if (message.sender === "ai") {
           const status = getDeliveryState(message) === "FAILED" || message.metadata?.delivery_status === "failed"
             ? "failed"
-            : getAiReplyStatus([message], aiReplyMode, selectedConversationRef.current);
+            : getAiReplyStatus([message], aiReplyMode, selectedForEvent);
           if (status) next[conversation_id] = status;
           else delete next[conversation_id];
         }
@@ -563,6 +572,8 @@ export default function UnifiedInbox() {
       created_at?: string | null;
     }) => {
       const currentMessage = messages.find((message) => message.id === message_id);
+      const workflowConversation = conversationsRef.current.find((conversation) => conversation.id === conversation_id)
+        || (selectedConversationRef.current?.id === conversation_id ? selectedConversationRef.current : null);
       if (!currentMessage && selectedConversationRef.current?.id === conversation_id) {
         void loadMessagesRef.current(conversation_id, 1);
       }
@@ -594,7 +605,7 @@ export default function UnifiedInbox() {
         if (mergedMessage?.sender !== "ai" || aiReplyMode !== "AUTO") return next;
         const status = getDeliveryState(mergedMessage) === "FAILED" || mergedMessage.metadata?.delivery_status === "failed"
           ? "failed"
-          : getAiReplyStatus([mergedMessage], aiReplyMode, selectedConversationRef.current);
+          : getAiReplyStatus([mergedMessage], aiReplyMode, workflowConversation);
         if (status) next[conversation_id] = status;
         else delete next[conversation_id];
         return next;
@@ -602,15 +613,21 @@ export default function UnifiedInbox() {
       if ((delivery_state === "SENT" || delivery_state === "FAILED") && (currentMessage?.content || content)) {
         const confirmed = mergedMessage ? isProviderConfirmed(mergedMessage) : Boolean(provider_message_id);
         const delivered = delivery_state === "SENT" && confirmed;
+        const isSystemEscalation = (mergedMessage?.delivery_source
+          || delivery_source
+          || mergedMessage?.metadata?.delivery_source) === "HITL_ESCALATION";
+        const deliveredAnswer = delivered && !isSystemEscalation;
         setConversations((prev) => prev.map((conversation) => conversation.id === conversation_id
           ? {
               ...conversation,
               lastMessage: currentMessage?.content || content || conversation.lastMessage,
               ...(created_at ? { updated_at: created_at } : {}),
-              ...(delivered
+              ...(deliveredAnswer
                 ? { needs_merchant_reply: false, needs_merchant_reply_reason: null, ai_is_replying: false }
-                : { needs_merchant_reply: true, needs_merchant_reply_reason: "PROVIDER_SEND_FAILED", ai_is_replying: false }),
-              ...(delivered
+                : isSystemEscalation
+                  ? { needs_merchant_reply: true, needs_merchant_reply_reason: "HITL_REQUIRED", ai_is_replying: false }
+                  : { needs_merchant_reply: true, needs_merchant_reply_reason: "PROVIDER_SEND_FAILED", ai_is_replying: false }),
+              ...(deliveredAnswer
                 ? {
                     suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
                     hasAiSuggestion: false,
@@ -618,7 +635,7 @@ export default function UnifiedInbox() {
                 : {}),
             }
           : conversation));
-        if (delivered) {
+        if (deliveredAnswer) {
           setSelectedConversation((conversation) => conversation?.id === conversation_id
             ? {
                 ...conversation,
@@ -627,6 +644,15 @@ export default function UnifiedInbox() {
                 ai_is_replying: false,
                 suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
                 hasAiSuggestion: false,
+              }
+            : conversation);
+        } else if (isSystemEscalation) {
+          setSelectedConversation((conversation) => conversation?.id === conversation_id
+            ? {
+                ...conversation,
+                needs_merchant_reply: true,
+                needs_merchant_reply_reason: "HITL_REQUIRED",
+                ai_is_replying: false,
               }
             : conversation);
         } else if (delivery_state === "FAILED") {

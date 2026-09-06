@@ -22,6 +22,10 @@ jest.mock('src/modules/entities', () => ({
     Customer: { findOne: jest.fn() },
     MetaChannelSettings: { findOne: jest.fn() },
 }));
+jest.mock('src/modules/conversation/conversation-lock.service', () => ({
+    acquireForDelivery: jest.fn(async () => ({ available: false })),
+    releaseLock: jest.fn(),
+}));
 jest.mock('src/modules/shop/shop.service', () => ({
     getShopAiSettings: mockGetShopAiSettings,
 }));
@@ -71,7 +75,13 @@ describe('escalateToHuman', () => {
         });
 
         expect(conversation.update).toHaveBeenCalledWith({ hitl: true });
-        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', { conversation_id: 'c1', hitl: true });
+        expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
+            conversation_id: 'c1',
+            hitl: true,
+            needs_merchant_reply: true,
+            needs_merchant_reply_reason: 'HITL_REQUIRED',
+            ai_is_replying: false,
+        });
         expect(sendEscalationAutoReply).toHaveBeenCalledWith('c1', 's1');
         expect(send).toHaveBeenCalledTimes(1);
         const arg = send.mock.calls[0][0];
@@ -160,7 +170,11 @@ describe('escalateToHuman', () => {
             conversation_id: 'c1', message: holdingMessage,
         });
         expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
-            conversation_id: 'c1', hitl: true,
+            conversation_id: 'c1',
+            hitl: true,
+            needs_merchant_reply: true,
+            needs_merchant_reply_reason: 'HITL_REQUIRED',
+            ai_is_replying: false,
         });
         expect(mockNotifyShop).toHaveBeenCalledWith(
             's1', 'ai_hitl', expect.objectContaining({ conversationId: 'c1' }), expect.any(Object),
@@ -244,7 +258,11 @@ describe('escalateToHuman', () => {
 
         expect(result).toEqual(expect.objectContaining({ id: 'm1' }));
         expect(sseManager.emit).toHaveBeenCalledWith('s1', 'hitl_changed', {
-            conversation_id: 'c1', hitl: true,
+            conversation_id: 'c1',
+            hitl: true,
+            needs_merchant_reply: true,
+            needs_merchant_reply_reason: 'HITL_REQUIRED',
+            ai_is_replying: false,
         });
         expect(sseManager.emit).toHaveBeenCalledWith('s1', 'new_message', expect.any(Object));
         expect(mockNotifyShop).toHaveBeenCalled();

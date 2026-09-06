@@ -631,6 +631,43 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(apiClient.createMessage).not.toHaveBeenCalled()
   })
 
+  it('keeps Needs your reply after a delivered system HITL escalation', async () => {
+    const hitlConversation = {
+      ...baseConversation,
+      hitl: true,
+      needs_merchant_reply: true,
+      needs_merchant_reply_reason: 'HITL_REQUIRED',
+    }
+    setInboxData('AUTO', [{
+      id: 'msg-customer-handoff',
+      conversation_id: 'conv-1',
+      content: 'Can someone help?',
+      sender: 'customer',
+      created_at: new Date(Date.now() - 1000).toISOString(),
+    }], hitlConversation)
+    render(<UnifiedInbox />)
+
+    await screen.findByText('Can someone help?')
+    act(() => {
+      latestSSECallbacks().onMessageDeliveryUpdated?.({
+        conversation_id: 'conv-1',
+        message_id: 'handoff-message',
+        content: 'A human will help shortly.',
+        delivery_state: 'SENT',
+        delivery_source: 'HITL_ESCALATION',
+        provider_message_id: 'mid-handoff',
+        metadata: {
+          delivery_state: 'SENT',
+          delivery_source: 'HITL_ESCALATION',
+          provider_message_id: 'mid-handoff',
+          delivered: true,
+        },
+      })
+    })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Needs your reply/i })).toHaveTextContent('1'))
+  })
+
   it('clears the active claim after a mode change', async () => {
     setInboxData('AUTO', [{
       id: 'msg-customer-mode', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
@@ -802,6 +839,23 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
     await waitFor(() => expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI is preparing a reply'))
     expect(screen.queryByRole('button', { name: /Send this/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /AI is replying/i })).not.toBeInTheDocument()
+  })
+
+  it('does not show AI is replying for an attempted send with authoritative false state', async () => {
+    renderWith({ ...baseConversation, ai_reply_mode: 'AUTO', ai_is_replying: false }, [
+      customerMsg,
+      aiMsg({
+        delivery_state: 'SEND_PENDING',
+        delivery_status: 'pending',
+        provider_send_attempted: true,
+        delivered: false,
+        suggestion_visibility: 'HIDDEN_AUTO_PROCESSING',
+      }),
+    ])
+
+    await waitFor(() => expect(screen.getByText('Do you have this in red?')).toBeInTheDocument())
+    expect(screen.queryByText('AI is preparing a reply')).not.toBeInTheDocument()
+    expect(screen.queryByText('AI is replying')).not.toBeInTheDocument()
   })
 
   it('shows a clearly labelled HITL suggestion when AUTO requires human review', async () => {
