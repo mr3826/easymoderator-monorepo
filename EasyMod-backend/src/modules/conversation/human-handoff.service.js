@@ -209,7 +209,7 @@ async function escalateToHuman({
                 lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
                 maxWaitMs: DELIVERY_LOCK_WAIT_MS,
             });
-            if (lock?.available !== false && !lock?.success) return null;
+            if (lock && lock.available !== false && !lock.success) return null;
             deliveryLock = lock?.success ? lock : null;
 
             if (typeof Conversation?.findOne === 'function') {
@@ -217,7 +217,9 @@ async function escalateToHuman({
                     where: { id: convId, shop_id: shopId },
                     attributes: ['id', 'status', 'hitl'],
                 });
-                if (!latestConversation || ['closed', 'archived'].includes(latestConversation.status)) {
+                if (!latestConversation
+                    || latestConversation.hitl !== true
+                    || ['closed', 'archived'].includes(latestConversation.status)) {
                     if (deliveryLock?.success) {
                         await conversationLockService.releaseLock(convId, deliveryLock.lockId).catch(() => {});
                         deliveryLock = null;

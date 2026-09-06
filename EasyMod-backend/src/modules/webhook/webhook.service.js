@@ -179,6 +179,7 @@ async function sendMessage(channel, recipientId, messageText, { messageType = nu
                 shop_id: channel.shop_id,
                 channel_type: customerChannelType,
                 channel_user_id: recipientIdStr,
+                meta_channel_id: metaChannel.id,
             },
         });
     } catch (lookupErr) {
@@ -317,7 +318,15 @@ async function sendToCustomer({
 
     let customer = null;
     try {
-        customer = await Customer.findOne({ where: { id: customerId, shop_id: shopId } });
+        customer = await Customer.findOne({
+            where: {
+                id: customerId,
+                shop_id: shopId,
+                ...(metaChannelId || metaChannelIdSnake
+                    ? { meta_channel_id: metaChannelId || metaChannelIdSnake }
+                    : {}),
+            },
+        });
     } catch (err) {
         logger.warn('sendToCustomer: customer lookup failed', { shopId, customerId, error: err.message });
         return { sent: false, reason: 'lookup_error' };
@@ -342,7 +351,7 @@ async function sendToCustomer({
         return { sent: false, reason: 'ambiguous_channel' };
     }
 
-    let resolvedChannelId = metaChannelId || metaChannelIdSnake;
+    let resolvedChannelId = metaChannelId || metaChannelIdSnake || customer.meta_channel_id || null;
     if (!resolvedChannelId) {
         let conversations;
         try {
@@ -377,19 +386,6 @@ async function sendToCustomer({
         }
 
         resolvedChannelId = channelIds[0] || null;
-        if (!resolvedChannelId) {
-            try {
-                const uniqueChannel = await metaChannelService.findUniqueConnectedByShopAndPlatform(shopId, 'facebook');
-                resolvedChannelId = uniqueChannel?.id || null;
-            } catch (err) {
-                logger.warn('sendToCustomer: channel fallback lookup failed', {
-                    shopId,
-                    customerId,
-                    error: err.message,
-                });
-                return { sent: false, reason: 'lookup_error' };
-            }
-        }
     }
 
     if (!resolvedChannelId) {

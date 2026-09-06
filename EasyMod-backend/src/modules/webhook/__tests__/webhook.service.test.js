@@ -45,6 +45,7 @@ const mockCustomerRecord = {
     shop_id: 'shop-uuid-1234',
     channel_type: 'messenger',
     channel_user_id: 'psid-123',
+    meta_channel_id: 'mc-1',
 };
 jest.mock('../../customer/customer.entity', () => ({
     findOne: jest.fn().mockResolvedValue(mockCustomerRecord),
@@ -107,6 +108,9 @@ describe('sendMessage (webhook shim — exact routing)', () => {
             'facebook',
         );
         expect(mockSendMessage).toHaveBeenCalledTimes(1);
+        expect(Customer.findOne).toHaveBeenCalledWith(expect.objectContaining({
+            where: expect.objectContaining({ meta_channel_id: 'mc-1' }),
+        }));
         expect(mockSendMessage).toHaveBeenCalledWith(expect.objectContaining({
             channel: mockMetaChannel,
             recipientId: 'psid-123',
@@ -372,6 +376,27 @@ describe('sendMessage (webhook shim — exact routing)', () => {
         expect(result).toEqual(expect.objectContaining({ sent: true, recipientId: 'psid-cust-9' }));
     });
 
+    test('sendToCustomer fails closed instead of using a shop-wide Page fallback', async () => {
+        Customer.findOne.mockResolvedValue({
+            id: 'cust-uuid-1',
+            shop_id: 'shop-uuid-1234',
+            channel_type: 'messenger',
+            channel_user_id: 'psid-cust-9',
+            meta_channel_id: null,
+        });
+        Conversation.findAll.mockResolvedValue([]);
+
+        const result = await sendToCustomer({
+            shopId: 'shop-uuid-1234',
+            customerId: 'cust-uuid-1',
+            message: 'Your order shipped',
+        });
+
+        expect(result).toEqual({ sent: false, reason: 'no_channel' });
+        expect(metaChannelService.findUniqueConnectedByShopAndPlatform).not.toHaveBeenCalled();
+        expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
     test('sendToCustomer returns ambiguous_channel and does not send for multiple distinct channels', async () => {
         Customer.findOne.mockResolvedValue({
             id: 'cust-uuid-1',
@@ -481,6 +506,7 @@ describe('sendToCustomer (resolve PSID from a customer record)', () => {
         shop_id: 'shop-uuid-1234',
         channel_type: 'messenger',
         channel_user_id: 'psid-cust-9',
+        meta_channel_id: 'mc-1',
         ...overrides,
     });
 

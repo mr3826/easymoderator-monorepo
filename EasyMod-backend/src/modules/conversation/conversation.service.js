@@ -11,6 +11,8 @@ const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
 const sseManager = require('../../utils/sse-manager');
+const { cacheRedis } = require('../../config/redis');
+const conversationLockService = require('./conversation-lock.service');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const { sequelize } = require('../../utils/database/database-setup');
 const {
@@ -31,6 +33,31 @@ const PLACEHOLDER_CUSTOMER_NAMES = new Set([
     'no title',
     'unknown',
 ]);
+
+const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_WAIT_MS = 10_000;
+
+async function acquireBulkDeliveryLock(conversationId) {
+    if (!cacheRedis || typeof cacheRedis.set !== 'function'
+        || typeof conversationLockService?.acquireForDelivery !== 'function') return null;
+    const lock = await conversationLockService.acquireForDelivery(conversationId, {
+        lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+        maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+    });
+    if (lock?.available === false) return null;
+    if (!lock?.success) {
+        const error = new Error('Another Inbox delivery is in progress; retry after it completes');
+        error.statusCode = 409;
+        error.code = 'CONVERSATION_DELIVERY_BUSY';
+        throw error;
+    }
+    return lock;
+}
+
+async function releaseBulkDeliveryLock(lock, conversationId) {
+    if (!lock?.success || typeof conversationLockService?.releaseLock !== 'function') return;
+    await conversationLockService.releaseLock(conversationId, lock.lockId).catch(() => {});
+}
 
 const normalizeObject = (value) => {
     if (typeof value === 'string') {
@@ -1213,6 +1240,46 @@ class ConversationService {
                 const error = new Error('Invalid status');
                 error.statusCode = 400;
                 throw error;
+            }
+
+            if (status === 'closed') {
+                const targets = typeof Conversation.findAll === 'function'
+                    ? await Conversation.findAll({
+                        where: {
+                            shop_id: shopId,
+                            id: { [Op.in]: conversationIds },
+                        },
+                        attributes: ['id'],
+                    })
+                    : conversationIds.map((id) => ({ id }));
+                const updatedConversationIds = [];
+
+                for (const target of targets) {
+                    const conversationId = target?.id || target;
+                    const deliveryLock = await acquireBulkDeliveryLock(conversationId);
+                    try {
+                        const updatedConversation = await this.updateConversation(conversationId, shopId, { status: 'closed' });
+                        updatedConversationIds.push(conversationId);
+                        sseManager.emit(shopId, 'hitl_changed', {
+                            conversation_id: conversationId,
+                            hitl: updatedConversation.hitl,
+                            status: updatedConversation.status,
+                            needs_merchant_reply: updatedConversation.needs_merchant_reply,
+                            needs_merchant_reply_reason: updatedConversation.needs_merchant_reply_reason,
+                            ai_is_replying: updatedConversation.ai_is_replying,
+                        });
+                    } finally {
+                        await releaseBulkDeliveryLock(deliveryLock, conversationId);
+                    }
+                }
+
+                return {
+                    requested: conversationIds.length,
+                    updated: updatedConversationIds.length,
+                    skipped: Math.max(conversationIds.length - updatedConversationIds.length, 0),
+                    status,
+                    updated_conversation_ids: updatedConversationIds,
+                };
             }
 
             const [updatedCount] = await Conversation.update(

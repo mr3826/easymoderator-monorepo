@@ -3,7 +3,8 @@
 const mockConversationModel = {
     findOne: jest.fn(),
     findAndCountAll: jest.fn(),
-};
+    findAll: undefined,
+    };
 const mockMessageModel = {
     findOne: jest.fn(),
     findAndCountAll: jest.fn(),
@@ -31,6 +32,12 @@ jest.mock('../../entities', () => ({
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: { transaction: jest.fn(async () => mockTransaction) },
 }));
+const mockDeliveryLock = {
+    acquireForDelivery: jest.fn(async () => ({ available: true, success: true, lockId: 'lock-1' })),
+    releaseLock: jest.fn(async () => {}),
+};
+jest.mock('../conversation-lock.service', () => mockDeliveryLock);
+jest.mock('../../../config/redis', () => ({ cacheRedis: { set: jest.fn() } }));
 jest.mock('../../../utils/structured-logger', () => ({
     createLogger: jest.fn(() => ({ error: jest.fn(), info: jest.fn(), warn: jest.fn() })),
 }));
@@ -316,6 +323,37 @@ describe('ConversationService delivery projection', () => {
             dismissed_by_resume: true,
         }));
         expect(require('../message-lifecycle').isReviewableSuggestion(held)).toBe(false);
+    });
+
+    it('bulk closes through the per-conversation delivery fence', async () => {
+        const conversations = new Map(['conversation-1', 'conversation-2'].map((id) => [id, {
+            id,
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: false,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversations.get(id), updates)),
+        }]));
+        mockConversationModel.findOne.mockImplementation(async ({ where }) => conversations.get(where.id));
+        mockMessageModel.findAll.mockResolvedValue([]);
+
+        const result = await conversationService.bulkUpdateStatus(
+            'shop-a',
+            ['conversation-1', 'conversation-2'],
+            'closed',
+        );
+
+        expect(result).toEqual(expect.objectContaining({
+            requested: 2,
+            updated: 2,
+            skipped: 0,
+            status: 'closed',
+            updated_conversation_ids: ['conversation-1', 'conversation-2'],
+        }));
+        expect(mockDeliveryLock.acquireForDelivery).toHaveBeenCalledTimes(2);
+        expect(mockDeliveryLock.releaseLock).toHaveBeenCalledTimes(2);
+        expect(conversations.get('conversation-1').status).toBe('closed');
+        expect(conversations.get('conversation-2').status).toBe('closed');
     });
 
     it.each([

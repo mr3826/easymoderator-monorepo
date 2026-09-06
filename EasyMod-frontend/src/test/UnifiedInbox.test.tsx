@@ -697,6 +697,22 @@ describe('UnifiedInbox 24h window behavior', () => {
     await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
   })
 
+  it('clears AI is replying when the backend pauses automation', async () => {
+    setInboxData('AUTO', [{
+      id: 'msg-customer-paused', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
+      created_at: new Date(Date.now() - 60000).toISOString(), updated_at: new Date(Date.now() - 60000).toISOString(),
+    }])
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/AI is replying/i)
+    act(() => {
+      latestSSECallbacks().onAiPaused?.({ conversation_id: 'conv-1', reason: 'usage_exhausted' })
+    })
+
+    await waitFor(() => expect(screen.queryByText('AI is replying')).not.toBeInTheDocument())
+    expect(screen.getByText('Needs your reply')).toBeInTheDocument()
+  })
+
   it('clears the active claim after a failed manual send', async () => {
     setInboxData('AUTO', [{
       id: 'msg-customer-manual-fail', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
