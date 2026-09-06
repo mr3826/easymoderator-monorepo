@@ -277,6 +277,47 @@ describe('ConversationService delivery projection', () => {
         }));
     });
 
+    it('dismisses human-held AI candidates when Resume AI returns control', async () => {
+        const held = {
+            id: 'held-ai',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date('2026-09-04T10:01:00Z'),
+            delivery_state: 'HELD',
+            metadata: {
+                delivered: false,
+                delivery_state: 'HELD',
+                held_reason: 'human_active',
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(async (updates) => Object.assign(held, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([held]);
+
+        await conversationService.updateConversation(
+            'conversation-1',
+            'shop-a',
+            { hitl: false },
+        );
+
+        expect(held.delivery_state).toBe('DISMISSED');
+        expect(held.metadata).toEqual(expect.objectContaining({
+            held_reason: 'human_active',
+            suggestion_visibility: 'HIDDEN_DISMISSED',
+            dismissed_by_resume: true,
+        }));
+        expect(require('../message-lifecycle').isReviewableSuggestion(held)).toBe(false);
+    });
+
     it.each([
         {
             name: 'MANUAL inbound',
@@ -350,6 +391,26 @@ describe('ConversationService delivery projection', () => {
                         delivery_state: 'FAILED',
                         held_reason: 'provider_send_failed',
                         suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+                    },
+                },
+            ],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'AI_FAILED', ai_is_replying: false },
+        },
+        {
+            name: 'AUTO provider outcome unknown',
+            mode: 'AUTO',
+            messages: [
+                customerMessage,
+                {
+                    id: 'attempted-ai',
+                    conversation_id: 'conversation-1',
+                    sender: 'ai',
+                    created_at: new Date('2026-09-04T10:01:00Z'),
+                    delivery_state: 'SEND_PENDING',
+                    delivery_source: 'AUTO',
+                    metadata: {
+                        delivery_state: 'SEND_PENDING',
+                        provider_send_attempted: true,
                     },
                 },
             ],

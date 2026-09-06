@@ -1052,6 +1052,7 @@ class ConversationController {
     }
 
     async updateConversation(req, res) {
+        let deliveryLock = null;
         try {
             const { conversationId } = req.params;
             const shopId = req.user?.shopId;
@@ -1064,6 +1065,9 @@ class ConversationController {
             }
 
             const { hitl, status, assignee_id, resolution_note } = req.body;
+            if (hitl !== undefined || status === 'closed') {
+                deliveryLock = await acquireDeliveryLock(conversationId);
+            }
             const conversation = await conversationService.updateConversation(
                 conversationId,
                 shopId,
@@ -1092,16 +1096,19 @@ class ConversationController {
 
             res.json({ success: true, data: conversation });
         } catch (error) {
-            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
-            const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_UPDATE_FAILED';
+            const statusCode = error.statusCode || (error.message === 'Conversation not found' ? 404 : 500);
+            const errorCode = error.code || (statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_UPDATE_FAILED');
             res.status(statusCode).json({
                 success: false,
                 error: { code: errorCode, message: error.message }
             });
+        } finally {
+            await releaseDeliveryLock(deliveryLock, req.params.conversationId);
         }
     }
 
     async updateConversationStatus(req, res) {
+        let deliveryLock = null;
         try {
             const { conversationId } = req.params; // Already validated
             const shopId = req.user?.shopId;
@@ -1117,6 +1124,9 @@ class ConversationController {
             }
             const { status } = req.body; // Already validated
 
+            if (status === 'closed') {
+                deliveryLock = await acquireDeliveryLock(conversationId);
+            }
             const conversation = await conversationService.updateConversationStatus(conversationId, shopId, status);
 
             sseManager.emit(shopId, 'hitl_changed', {
@@ -1133,8 +1143,8 @@ class ConversationController {
                 data: conversation
             });
         } catch (error) {
-            const statusCode = error.message === 'Conversation not found' ? 404 : 500;
-            const errorCode = statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_UPDATE_FAILED';
+            const statusCode = error.statusCode || (error.message === 'Conversation not found' ? 404 : 500);
+            const errorCode = error.code || (statusCode === 404 ? 'CONVERSATION_NOT_FOUND' : 'CONVERSATION_UPDATE_FAILED');
 
             res.status(statusCode).json({
                 success: false,
@@ -1143,6 +1153,8 @@ class ConversationController {
                     message: error.message
                 }
             });
+        } finally {
+            await releaseDeliveryLock(deliveryLock, req.params.conversationId);
         }
     }
 

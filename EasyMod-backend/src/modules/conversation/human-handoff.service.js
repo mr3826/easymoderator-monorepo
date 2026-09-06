@@ -19,7 +19,8 @@ const sseManager = require('../../utils/sse-manager');
 const { getProvider } = require('../channel-providers/provider.registry');
 const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const policyEngine = require('../policy/policy.engine');
-const { Customer, MetaChannelSettings, Message } = require('../entities');
+const { Customer, MetaChannelSettings, Message, Conversation } = require('../entities');
+const conversationLockService = require('./conversation-lock.service');
 const { Op, literal } = require('sequelize');
 const { selectChannelRuntimeSettings } = require('../channel-providers/meta-channel-settings.runtime');
 const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
@@ -34,6 +35,8 @@ const {
 } = require('./message-lifecycle');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
+const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_WAIT_MS = 10_000;
 const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
 
 function hasRequiredContextValue(value) {
@@ -188,23 +191,59 @@ async function escalateToHuman({
         } else {
             hitlReady = true;
         }
-        sseManager.emit(shopId, 'hitl_changed', { conversation_id: convId, hitl: true });
+        sseManager.emit(shopId, 'hitl_changed', {
+            conversation_id: convId,
+            hitl: true,
+            needs_merchant_reply: true,
+            needs_merchant_reply_reason: 'HITL_REQUIRED',
+            ai_is_replying: false,
+        });
     } catch (err) {
         console.error(`[handoff] Failed to set hitl for conv ${convId} (${reason}): ${err.message}`);
     }
 
-    // 2. Reassure the customer with one templated holding message
-    const holdingMsg = await sendEscalationAutoReply(convId, shopId).catch(() => null);
-    if (!holdingMsg) return null;
+    let deliveryLock = null;
+    if (channel && hitlReady) {
+        try {
+            const lock = await conversationLockService.acquireForDelivery(convId, {
+                lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+                maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+            });
+            if (lock?.available !== false && !lock?.success) return null;
+            deliveryLock = lock?.success ? lock : null;
 
-    const holdingMetadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'
-        ? holdingMsg.metadata
-        : {};
-    if (isProviderConfirmed(holdingMsg) || holdingMetadata.provider_send_attempted === true) {
-        return holdingMsg;
+            if (typeof Conversation?.findOne === 'function') {
+                const latestConversation = await Conversation.findOne({
+                    where: { id: convId, shop_id: shopId },
+                    attributes: ['id', 'status', 'hitl'],
+                });
+                if (!latestConversation || ['closed', 'archived'].includes(latestConversation.status)) {
+                    if (deliveryLock?.success) {
+                        await conversationLockService.releaseLock(convId, deliveryLock.lockId).catch(() => {});
+                        deliveryLock = null;
+                    }
+                    return null;
+                }
+            }
+        } catch (err) {
+            console.warn(`[handoff] Holding message delivery lock unavailable for conv ${convId}: ${err.message}`);
+            return null;
+        }
     }
 
-    sseManager.emit(shopId, 'new_message', { conversation_id: convId, message: holdingMsg });
+    try {
+        // 2. Reassure the customer with one templated holding message
+        const holdingMsg = await sendEscalationAutoReply(convId, shopId).catch(() => null);
+        if (!holdingMsg) return null;
+
+        const holdingMetadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'
+            ? holdingMsg.metadata
+            : {};
+        if (isProviderConfirmed(holdingMsg) || holdingMetadata.provider_send_attempted === true) {
+            return holdingMsg;
+        }
+
+        sseManager.emit(shopId, 'new_message', { conversation_id: convId, message: holdingMsg });
 
     // 3. Deliver it on the same channel the inbound arrived on
     if (channel && hitlReady) {
@@ -306,7 +345,12 @@ async function escalateToHuman({
         }
     }
 
-    return holdingMsg;
+        return holdingMsg;
+    } finally {
+        if (deliveryLock?.success) {
+            await conversationLockService.releaseLock(convId, deliveryLock.lockId).catch(() => {});
+        }
+    }
 }
 
 module.exports = {

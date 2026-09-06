@@ -118,6 +118,8 @@ const deriveWorkflowProjection = (conversation, messages, aiReplyMode) => {
         const metadataForMessage = normalizeObject(message.metadata);
         return ['ai', 'business'].includes(message?.sender)
             && (normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.FAILED
+                || (normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.SEND_PENDING
+                    && metadataForMessage.provider_send_attempted === true)
                 || metadataForMessage.held_reason === 'provider_send_failed');
     });
     const activeAttempts = currentRows.filter((message) => isActiveProviderAttempt(
@@ -1084,11 +1086,15 @@ class ConversationService {
             // crossed the provider boundary. The worker performs the same check
             // at its final send gate, while this update keeps an already-
             // persisted pending candidate from appearing sendable elsewhere.
-            if ((updates.hitl === true || updates.status === 'closed')
+            if ((updates.hitl === true || updates.hitl === false || updates.status === 'closed')
                 && typeof Message.findAll === 'function') {
                 const closing = updates.status === 'closed';
+                const resuming = updates.hitl === false && !closing;
                 const heldReason = closing ? 'conversation_closed' : 'human_active';
-                const suggestionVisibility = closing
+                const nextState = resuming
+                    ? MESSAGE_DELIVERY_STATES.DISMISSED
+                    : MESSAGE_DELIVERY_STATES.HELD;
+                const suggestionVisibility = closing || resuming
                     ? SUGGESTION_VISIBILITY.HIDDEN_DISMISSED
                     : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW;
                 const pending = await Message.findAll({
@@ -1103,18 +1109,27 @@ class ConversationService {
                     && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.DISMISSED
                     && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.FAILED
                     && normalizeObject(message.metadata).provider_send_attempted !== true
+                    && (!resuming || (
+                        normalizeDeliveryState(message) === MESSAGE_DELIVERY_STATES.HELD
+                        && normalizeObject(message.metadata).held_reason === 'human_active'
+                    ))
                 ));
                 await Promise.all(cancellable.map(async (message) => {
+                    const messageMetadata = normalizeObject(message.metadata);
                     const metadata = {
-                        ...normalizeObject(message.metadata),
+                        ...messageMetadata,
                         delivered: false,
-                        delivery_status: 'held',
-                        delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                        delivery_status: resuming ? 'dismissed' : 'held',
+                        delivery_state: nextState,
                         held_reason: heldReason,
                         suggestion_visibility: suggestionVisibility,
+                        ...(resuming ? {
+                            dismissed_at: new Date().toISOString(),
+                            dismissed_by_resume: true,
+                        } : {}),
                     };
                     await message.update({
-                        delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                        delivery_state: nextState,
                         metadata,
                     }, ...(transaction ? [{ transaction }] : []));
                     heldEvents.push({ message, metadata });
@@ -1133,7 +1148,7 @@ class ConversationService {
                     conversation_id: conversationId,
                     message_id: message.id,
                     metadata,
-                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                    delivery_state: metadata.delivery_state,
                     delivery_source: message.delivery_source || metadata.delivery_source || null,
                     content: message.content || null,
                     sender: message.sender === 'business' ? 'agent' : message.sender || 'ai',
