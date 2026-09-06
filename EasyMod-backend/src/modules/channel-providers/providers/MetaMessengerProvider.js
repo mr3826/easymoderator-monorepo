@@ -671,7 +671,10 @@ class MetaMessengerProvider extends ChannelProvider {
                     const resp = await axios.post(
                         `${GRAPH_BASE}/me/messages`,
                         body,
-                        { params: { access_token: token, appsecret_proof: appsecretProof(token) } }
+                        {
+                            params: { access_token: token, appsecret_proof: appsecretProof(token) },
+                            timeout: 30_000,
+                        }
                     );
                     const providerMessageId = resp.data?.message_id;
                     if (!providerMessageId) {

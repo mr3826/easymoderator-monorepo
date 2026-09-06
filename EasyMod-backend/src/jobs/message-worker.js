@@ -412,6 +412,43 @@ async function claimDedupKey(key) {
     }
 }
 
+const STALE_PROVIDER_CLAIM_MS = 10 * 60 * 1000;
+
+/**
+ * A crash between the candidate claim and the provider boundary can leave a row
+ * claimed forever. Release the claim only while the send has not started, so the
+ * reconciler still owns genuinely attempted deliveries.
+ */
+async function releaseStaleProviderClaim(message) {
+    if (!message?.id || typeof Message.update !== 'function') return false;
+    const metadata = messageMetadata(message);
+    if (metadata.provider_send_attempted === true) return false;
+    const releasedMetadata = { ...metadata };
+    delete releasedMetadata.provider_send_claimed;
+    delete releasedMetadata.provider_send_claimed_at;
+    delete releasedMetadata.provider_send_claim_token;
+    try {
+        const result = await Message.update(
+            { metadata: releasedMetadata },
+            {
+                where: {
+                    id: message.id,
+                    delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                    provider_message_id: null,
+                    [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                },
+            },
+        );
+        const updatedCount = Array.isArray(result) ? result[0] : 1;
+        if (updatedCount !== 1) return false;
+    } catch (error) {
+        console.warn(`[worker] Unable to release stale provider claim for message ${message.id}: ${error.message}`);
+        return false;
+    }
+    message.metadata = releasedMetadata;
+    return true;
+}
+
 async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
     if (!message?.id || !idempotencyKey) return false;
     const metadata = messageMetadata(message);
@@ -1568,9 +1605,17 @@ async function processMessageJob(job) {
                 && typeof foundAutomaticCandidate.metadata === 'object'
                 ? foundAutomaticCandidate.metadata
                 : {};
-            if (existingState === MESSAGE_DELIVERY_STATES.SEND_PENDING
+            const claimedAtMs = Date.parse(existingMetadata.provider_send_claimed_at || '');
+            const claimIsStale = existingMetadata.provider_send_claimed === true
+                && (!Number.isFinite(claimedAtMs) || Date.now() - claimedAtMs > STALE_PROVIDER_CLAIM_MS);
+            let reusable = existingState === MESSAGE_DELIVERY_STATES.SEND_PENDING
                 && existingMetadata.provider_send_attempted !== true
-                && isAutoSendMode(businessMode)) {
+                && isAutoSendMode(businessMode)
+                && (existingMetadata.provider_send_claimed !== true || claimIsStale);
+            if (reusable && claimIsStale) {
+                reusable = await releaseStaleProviderClaim(foundAutomaticCandidate);
+            }
+            if (reusable) {
                 // A previous attempt was delayed before provider delivery (for
                 // example by Meta rate limiting). Reuse the persisted candidate
                 // instead of creating a second row.

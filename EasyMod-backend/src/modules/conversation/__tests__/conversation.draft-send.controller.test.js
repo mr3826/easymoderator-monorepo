@@ -28,7 +28,7 @@ jest.mock('../../channel-providers/meta-channel.service', () => ({
 jest.mock('../../channel-providers/provider.registry', () => ({ getProvider: jest.fn(() => ({ sendMessage: mockProviderSend })) }));
 jest.mock('../../policy/policy.engine', () => ({ evaluateOutbound: jest.fn(async () => ({ allow: true })) }));
 jest.mock('../../../utils/sse-manager', () => ({ emit: jest.fn() }));
-jest.mock('../../../config/redis', () => ({ cacheRedis: { setex: jest.fn(), del: jest.fn() } }));
+jest.mock('../../../config/redis', () => ({ cacheRedis: { setex: jest.fn(), del: jest.fn(async () => 1) } }));
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: {
         transaction: jest.fn(),
@@ -38,6 +38,8 @@ jest.mock('../../../utils/database/database-setup', () => ({
 
 const metaChannelService = require('../../channel-providers/meta-channel.service');
 const { getProvider } = require('../../channel-providers/provider.registry');
+const sseManager = require('../../../utils/sse-manager');
+const { cacheRedis } = require('../../../config/redis');
 const controller = require('../conversation.controller');
 
 const candidate = {
@@ -113,6 +115,31 @@ describe('draft approval controller boundary', () => {
         });
     });
 
+    it('clears the manual AI pause when Resolve closes the conversation', async () => {
+        mockUpdateConversation.mockResolvedValue({ id: 'conversation-1', hitl: false, status: 'closed' });
+        const res = response();
+
+        await controller.updateConversation({
+            params: { conversationId: 'conversation-1' },
+            body: { status: 'closed' },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, res);
+
+        expect(cacheRedis.del).toHaveBeenCalledWith('ai:pause:conversation-1');
+    });
+
+    it('keeps the manual AI pause when the merchant takes over', async () => {
+        const res = response();
+
+        await controller.updateConversation({
+            params: { conversationId: 'conversation-1' },
+            body: { hitl: true },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, res);
+
+        expect(cacheRedis.del).not.toHaveBeenCalledWith('ai:pause:conversation-1');
+    });
+
     it('performs zero provider sends before approval and exactly one after approval', async () => {
         expect(mockProviderSend).not.toHaveBeenCalled();
 
@@ -163,6 +190,14 @@ describe('draft approval controller boundary', () => {
             expect.objectContaining({ delivery_state: 'SENT' }),
             expect.anything(),
         );
+        expect(mockMessageUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({ delivery_state: 'FAILED' }),
+            expect.anything(),
+        );
+        expect(sseManager.emit).toHaveBeenCalledWith('shop-1', 'delivery_failed', expect.objectContaining({
+            conversation_id: 'conversation-1',
+            message_id: 'draft-1',
+        }));
     });
 
     it('holds the candidate as failed when the provider omits its message ID', async () => {

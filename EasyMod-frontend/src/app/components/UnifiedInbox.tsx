@@ -340,8 +340,10 @@ export default function UnifiedInbox() {
       if ((error as { name?: string })?.name === "CanceledError" || (error as { name?: string })?.name === "AbortError") return;
       toast.error(t("inbox.errors.loadMessages"));
     } finally {
-      setLoadingMessages(false);
-      setLoadingMoreMessages(false);
+      if (requestId === messageRequestRef.current) {
+        setLoadingMessages(false);
+        setLoadingMoreMessages(false);
+      }
     }
   };
 
@@ -1052,6 +1054,8 @@ export default function UnifiedInbox() {
           onFilterChange={setFilterTab}
           onSelectConversation={(conv) => {
             setSelectedConversation(conv);
+            setMessages([]);
+            setLoadingMessages(true);
             setMobilePanelOpen(true);
           }}
         />

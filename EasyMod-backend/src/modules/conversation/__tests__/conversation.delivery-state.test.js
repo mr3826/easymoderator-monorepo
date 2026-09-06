@@ -474,4 +474,90 @@ describe('ConversationService delivery projection', () => {
 
         expect(result.conversations[0]).toEqual(expect.objectContaining(expected));
     });
+
+    it('keeps Needs your reply while a system HITL escalation is still pending', async () => {
+        const row = {
+            id: 'conversation-1',
+            customer_id: 'customer-1',
+            channel: 'messenger',
+            status: 'active',
+            hitl: true,
+            metadata: { unreadCount: 0 },
+            customer: null,
+            metaChannel: null,
+            message: null,
+        };
+        mockConversationModel.findAndCountAll = jest.fn().mockResolvedValue({ rows: [row], count: 1 });
+        getEffectiveAiReplyMode.mockResolvedValue('AUTO');
+        mockMessageModel.findAll.mockResolvedValue([
+            customerMessage,
+            {
+                id: 'escalation-pending',
+                conversation_id: 'conversation-1',
+                sender: 'ai',
+                created_at: new Date('2026-09-04T10:01:00Z'),
+                delivery_state: 'SEND_PENDING',
+                delivery_source: 'HITL_ESCALATION',
+                metadata: {
+                    delivery_state: 'SEND_PENDING',
+                    delivery_source: 'HITL_ESCALATION',
+                },
+            },
+        ]);
+
+        const result = await conversationService.getConversations('shop-a');
+
+        expect(result.conversations[0]).toEqual(expect.objectContaining({
+            needs_merchant_reply: true,
+            ai_is_replying: false,
+        }));
+        expect(result.conversations[0].needs_merchant_reply_reason).toBeTruthy();
+    });
+
+    it('dismisses stale escalation and low-confidence candidates when Resume AI returns control', async () => {
+        const escalation = {
+            id: 'escalation-pending',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date('2026-09-04T10:01:00Z'),
+            delivery_state: 'SEND_PENDING',
+            delivery_source: 'HITL_ESCALATION',
+            metadata: {
+                delivered: false,
+                delivery_state: 'SEND_PENDING',
+                delivery_source: 'HITL_ESCALATION',
+            },
+            update: jest.fn(async (updates) => Object.assign(escalation, updates)),
+        };
+        const lowConfidence = {
+            id: 'low-confidence-ai',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date('2026-09-04T10:02:00Z'),
+            delivery_state: 'HELD',
+            metadata: {
+                delivered: false,
+                delivery_state: 'HELD',
+                held_reason: 'low_confidence',
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(async (updates) => Object.assign(lowConfidence, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([escalation, lowConfidence]);
+
+        await conversationService.updateConversation('conversation-1', 'shop-a', { hitl: false });
+
+        expect(escalation.delivery_state).toBe('DISMISSED');
+        expect(lowConfidence.delivery_state).toBe('DISMISSED');
+        expect(require('../message-lifecycle').isReviewableSuggestion(lowConfidence)).toBe(false);
+    });
 });

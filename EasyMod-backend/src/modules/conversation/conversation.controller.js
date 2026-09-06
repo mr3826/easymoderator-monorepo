@@ -624,7 +624,7 @@ async function deliverViaMetaIfApplicable(
         returnedResult = { sent: false, reason: failureReason };
         return returnedResult;
     } finally {
-        if (isMetaChannel && failureReason && deliveryClaimed) {
+        if (isMetaChannel && failureReason) {
             const failurePersisted = await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'failed', {
                 delivery_error: failureReason,
                 ...(options.failureState ? { delivery_state: options.failureState } : {}),
@@ -1090,7 +1090,7 @@ class ConversationController {
 
             // When re-enabling AI (HITL off), clear the 30-min manual-reply pause so the AI
             // can respond immediately instead of waiting out the remainder of the timer.
-            if (hitl === false) {
+            if (hitl === false || (status === 'closed' && conversation?.hitl === false)) {
                 cacheRedis.del(`ai:pause:${conversationId}`).catch(() => {});
             }
 
