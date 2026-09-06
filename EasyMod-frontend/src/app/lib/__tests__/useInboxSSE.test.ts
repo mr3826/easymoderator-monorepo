@@ -94,4 +94,27 @@ describe('useInboxSSE', () => {
     expect(onCustomerUpdated).toHaveBeenCalledWith({ customer_id: 'customer-1', name: 'A Customer' });
     unmount();
   });
+
+  it('forwards AI pause events so the Inbox can clear its local processing claim', () => {
+    const onAiPaused = vi.fn();
+    const { unmount } = renderHook(() => useInboxSSE({
+      onNewMessage: vi.fn(),
+      onHitlChanged: vi.fn(),
+      onAiPaused,
+    }));
+    const source = MockEventSource.instances[0];
+
+    act(() => {
+      source.emit('ai_paused', JSON.stringify({
+        conversation_id: 'conv-1',
+        reason: 'usage_exhausted',
+      }));
+    });
+
+    expect(onAiPaused).toHaveBeenCalledWith({
+      conversation_id: 'conv-1',
+      reason: 'usage_exhausted',
+    });
+    unmount();
+  });
 });

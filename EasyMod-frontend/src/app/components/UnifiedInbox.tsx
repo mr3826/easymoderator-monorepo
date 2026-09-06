@@ -561,6 +561,28 @@ export default function UnifiedInbox() {
       });
     }, []),
 
+    onAiPaused: useCallback(({ conversation_id, reason }: { conversation_id: string; reason?: string }) => {
+      const workflow = {
+        needs_merchant_reply: true,
+        needs_merchant_reply_reason: "AI_PAUSED",
+        ai_is_replying: false,
+      };
+      setConversations((prev) => prev.map((conversation) => conversation.id === conversation_id
+        ? { ...conversation, ...workflow }
+        : conversation));
+      setSelectedConversation((conversation) => conversation?.id === conversation_id
+        ? { ...conversation, ...workflow }
+        : conversation);
+      setAiReplyStatuses((prev) => {
+        const next = { ...prev };
+        delete next[conversation_id];
+        return next;
+      });
+      if (reason) {
+        toast.warning(t("inbox.aiPaused", { reason }), { duration: 6000 });
+      }
+    }, []),
+
     onMessageDeliveryUpdated: useCallback(({ conversation_id, message_id, metadata, delivery_state, provider_message_id, delivery_source, content, created_at }: {
       conversation_id: string;
       message_id: string;

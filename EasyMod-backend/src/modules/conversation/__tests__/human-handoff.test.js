@@ -24,7 +24,7 @@ jest.mock('src/modules/entities', () => ({
 }));
 jest.mock('src/modules/conversation/conversation-lock.service', () => ({
     acquireForDelivery: jest.fn(async () => ({ available: false })),
-    releaseLock: jest.fn(),
+    releaseLock: jest.fn(async () => {}),
 }));
 jest.mock('src/modules/shop/shop.service', () => ({
     getShopAiSettings: mockGetShopAiSettings,
