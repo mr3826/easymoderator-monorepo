@@ -33,9 +33,13 @@ type AiReplyStatus = "processing" | "sent" | "failed";
 
 const getDeliveryState = (message: Message): string | null => {
   const explicit = message.delivery_state || message.metadata?.delivery_state;
-  if (explicit) return explicit;
+  const providerMessageId = message.provider_message_id || message.metadata?.provider_message_id;
+  if (explicit) {
+    if ((explicit === "SENT" || explicit === "DELIVERED") && !providerMessageId) return "HELD";
+    return explicit;
+  }
   if (message.metadata?.delivered === true
-    && (message.provider_message_id || message.metadata?.provider_message_id || message.metadata?.provider_send_confirmed === true)) {
+    && providerMessageId) {
     return "SENT";
   }
   return null;
@@ -46,8 +50,7 @@ const isProviderConfirmed = (message: Message): boolean => {
   return (state === "SENT" || state === "DELIVERED")
     && Boolean(
       message.provider_message_id
-      || message.metadata?.provider_message_id
-      || message.metadata?.provider_send_confirmed === true,
+      || message.metadata?.provider_message_id,
     );
 };
 
@@ -59,6 +62,30 @@ const deliveryStateRank: Record<string, number> = {
   DISMISSED: 30,
   SENT: 40,
   DELIVERED: 50,
+};
+
+const timestampMs = (value?: string | null): number => {
+  if (!value) return NaN;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const mergeReadProjection = (
+  conversation: Conversation,
+  incoming: Pick<Conversation, "unreadCount" | "lastReadMessageId" | "lastReadMessageAt">,
+): Conversation => {
+  const currentReadAt = timestampMs(conversation.lastReadMessageAt);
+  const incomingReadAt = timestampMs(incoming.lastReadMessageAt);
+  if (Number.isFinite(currentReadAt)
+    && (!Number.isFinite(incomingReadAt) || incomingReadAt < currentReadAt)) {
+    return conversation;
+  }
+  return {
+    ...conversation,
+    unreadCount: incoming.unreadCount ?? conversation.unreadCount ?? 0,
+    lastReadMessageId: incoming.lastReadMessageId ?? conversation.lastReadMessageId ?? null,
+    lastReadMessageAt: incoming.lastReadMessageAt || conversation.lastReadMessageAt || null,
+  };
 };
 
 const mergeMessageLifecycle = (current: Message, incoming: Message): Message => {
@@ -180,6 +207,8 @@ export default function UnifiedInbox() {
   const selectedConversationRef = useRef<Conversation | null>(null);
   const seenMessageIdsRef = useRef<Set<string>>(new Set());
   const readWatermarkRef = useRef<Record<string, string>>({});
+  const readRequestRef = useRef<Record<string, number>>({});
+  const latestInboundAtRef = useRef<Record<string, number>>({});
   const messageRequestRef = useRef(0);
 
   const loadMessagesAbortRef = useRef<AbortController | null>(null);
@@ -247,6 +276,14 @@ export default function UnifiedInbox() {
       const projectedMessages = [...result.messages, ...(result.suggestions || [])]
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       projectedMessages.forEach((message) => seenMessageIdsRef.current.add(message.id));
+      const latestInbound = [...projectedMessages].reverse().find((message) => message.sender === "customer");
+      const latestInboundAt = timestampMs(latestInbound?.created_at);
+      if (Number.isFinite(latestInboundAt)) {
+        latestInboundAtRef.current[conversationId] = Math.max(
+          latestInboundAtRef.current[conversationId] || 0,
+          latestInboundAt,
+        );
+      }
       if (page === 1) {
         setMessages(projectedMessages);
         const status = getAiReplyStatus(projectedMessages, aiReplyModeRef.current);
@@ -322,25 +359,21 @@ export default function UnifiedInbox() {
       const latestInbound = [...messages].reverse().find((message) => message.sender === "customer");
       if (!latestInbound || readWatermarkRef.current[conversationId] === latestInbound.id) return;
       readWatermarkRef.current[conversationId] = latestInbound.id;
+      const requestId = (readRequestRef.current[conversationId] || 0) + 1;
+      readRequestRef.current[conversationId] = requestId;
       Promise.resolve(apiClient.markConversationRead(conversationId, latestInbound.id))
         .then((updated) => {
+          if (readRequestRef.current[conversationId] !== requestId) return;
+          const responseReadAt = timestampMs(updated.lastReadMessageAt);
+          const latestInboundAt = latestInboundAtRef.current[conversationId];
+          if (Number.isFinite(responseReadAt)
+            && Number.isFinite(latestInboundAt)
+            && latestInboundAt > responseReadAt) return;
           setConversations((previous) => previous.map((conversation) => (
-            conversation.id === conversationId
-              ? {
-                  ...conversation,
-                  unreadCount: updated.unreadCount ?? 0,
-                  lastReadMessageId: updated.lastReadMessageId,
-                  lastReadMessageAt: updated.lastReadMessageAt,
-                }
-              : conversation
+            conversation.id === conversationId ? mergeReadProjection(conversation, updated) : conversation
           )));
           setSelectedConversation((previous) => previous?.id === conversationId
-            ? {
-                ...previous,
-                unreadCount: updated.unreadCount ?? 0,
-                lastReadMessageId: updated.lastReadMessageId,
-                lastReadMessageAt: updated.lastReadMessageAt,
-              }
+            ? mergeReadProjection(previous, updated)
             : previous);
         })
         .catch(() => {
@@ -368,6 +401,13 @@ export default function UnifiedInbox() {
       const selectedId = selectedConversationRef.current?.id;
       const isSelected = selectedId === conversation_id;
       const isCustomerMessage = message.sender === "customer";
+      const inboundAt = timestampMs(message.created_at);
+      if (isCustomerMessage && Number.isFinite(inboundAt)) {
+        latestInboundAtRef.current[conversation_id] = Math.max(
+          latestInboundAtRef.current[conversation_id] || 0,
+          inboundAt,
+        );
+      }
       const providerConfirmed = message.sender === "customer" || isProviderConfirmed(message);
       setMessages((prev) => {
         if (!isSelected) return prev;
@@ -409,9 +449,18 @@ export default function UnifiedInbox() {
                 ...(message.sender === "ai" && message.is_transcript_message === false
                   ? { hasAiSuggestion: true, suggestionCount: Math.max(1, conv.suggestionCount || 0) }
                   : {}),
-                unreadCount: unread_count ?? (isCustomerMessage
-                  ? (isSelected ? conv.unreadCount ?? 0 : (conv.unreadCount ?? 0) + 1)
-                  : conv.unreadCount ?? 0),
+                unreadCount: (() => {
+                  const currentUnread = conv.unreadCount ?? 0;
+                  if (!isCustomerMessage) return currentUnread;
+                  const eventAt = timestampMs(message.created_at);
+                  const readAt = timestampMs(conv.lastReadMessageAt);
+                  if (Number.isFinite(eventAt) && Number.isFinite(readAt) && eventAt <= readAt) {
+                    return currentUnread;
+                  }
+                  const reportedUnread = typeof unread_count === "number" ? unread_count : null;
+                  if (reportedUnread !== null) return Math.max(currentUnread, reportedUnread);
+                  return isSelected ? currentUnread : currentUnread + 1;
+                })(),
               }
             : conv
         );
@@ -481,13 +530,29 @@ export default function UnifiedInbox() {
         return next;
       });
       if (delivery_state === "SENT" && (currentMessage?.content || content)) {
+        const confirmed = mergedMessage ? isProviderConfirmed(mergedMessage) : Boolean(provider_message_id);
         setConversations((prev) => prev.map((conversation) => conversation.id === conversation_id
           ? {
               ...conversation,
               lastMessage: currentMessage?.content || content || conversation.lastMessage,
               ...(created_at ? { updated_at: created_at } : {}),
+              ...(confirmed
+                ? {
+                    suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
+                    hasAiSuggestion: false,
+                  }
+                : {}),
             }
           : conversation));
+        if (confirmed) {
+          setSelectedConversation((conversation) => conversation?.id === conversation_id
+            ? {
+                ...conversation,
+                suggestionCount: Math.max(0, (conversation.suggestionCount || 1) - 1),
+                hasAiSuggestion: false,
+              }
+            : conversation);
+        }
       }
     }, [aiReplyMode, messages]),
 
@@ -536,32 +601,21 @@ export default function UnifiedInbox() {
       last_read_message_id?: string | null;
       last_read_message_at?: string | null;
     }) => {
-      const incomingReadAt = last_read_message_at ? new Date(last_read_message_at).getTime() : NaN;
       setConversations((prev) => prev.map((conversation) => {
         if (conversation.id !== conversation_id) return conversation;
-        const currentReadAt = conversation.lastReadMessageAt
-          ? new Date(conversation.lastReadMessageAt).getTime()
-          : NaN;
-        if (Number.isFinite(incomingReadAt) && Number.isFinite(currentReadAt) && incomingReadAt < currentReadAt) {
-          return conversation;
-        }
-        return {
-          ...conversation,
+        return mergeReadProjection(conversation, {
           unreadCount: unread_count,
           lastReadMessageId: last_read_message_id,
-          lastReadMessageAt: last_read_message_at || conversation.lastReadMessageAt || null,
-        };
+          lastReadMessageAt: last_read_message_at,
+        });
       }));
       setSelectedConversation((prev) => {
         if (!prev || prev.id !== conversation_id) return prev;
-        const currentReadAt = prev.lastReadMessageAt ? new Date(prev.lastReadMessageAt).getTime() : NaN;
-        if (Number.isFinite(incomingReadAt) && Number.isFinite(currentReadAt) && incomingReadAt < currentReadAt) return prev;
-        return {
-          ...prev,
+        return mergeReadProjection(prev, {
           unreadCount: unread_count,
           lastReadMessageId: last_read_message_id,
-          lastReadMessageAt: last_read_message_at || prev.lastReadMessageAt || null,
-        };
+          lastReadMessageAt: last_read_message_at,
+        });
       });
     }, []),
     onCustomerUpdated: useCallback(({ customer_id, name, meta_channel_id }: { customer_id: string; name?: string; meta_channel_id?: string | null }) => {
@@ -663,14 +717,34 @@ export default function UnifiedInbox() {
       return next;
     });
     const confirmed = message.sender === "customer" || isProviderConfirmed(message);
+    const clearsSuggestionProjection = message.sender === "agent"
+      || (message.sender === "ai" && isProviderConfirmed(message));
     if (confirmed) {
       setConversations((prev) =>
         prev.map((conv) =>
           conv.id === selectedConversation?.id
-            ? { ...conv, updated_at: message.created_at || conv.updated_at, lastMessage: message.content }
+            ? {
+                ...conv,
+                updated_at: message.created_at || conv.updated_at,
+                lastMessage: message.content,
+                ...(clearsSuggestionProjection ? { hasAiSuggestion: false, suggestionCount: 0 } : {}),
+              }
             : conv
         )
       );
+    } else if (clearsSuggestionProjection) {
+      setConversations((prev) => prev.map((conv) => (
+        conv.id === selectedConversation?.id
+          ? { ...conv, hasAiSuggestion: false, suggestionCount: 0 }
+          : conv
+      )));
+    }
+    if (clearsSuggestionProjection && selectedConversation) {
+      setSelectedConversation({
+        ...selectedConversation,
+        hasAiSuggestion: false,
+        suggestionCount: 0,
+      });
     }
   };
 

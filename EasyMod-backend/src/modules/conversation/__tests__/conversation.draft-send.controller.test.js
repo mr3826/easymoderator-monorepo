@@ -108,4 +108,73 @@ describe('draft approval controller boundary', () => {
 
         expect(mockProviderSend).not.toHaveBeenCalled();
     });
+
+    it('does not project a pre-provider failure as SENT', async () => {
+        mockConversationFindOne.mockResolvedValue({
+            ...conversation,
+            customer: { channel_user_id: null },
+        });
+
+        await controller._deliverViaMetaIfApplicable('conversation-1', 'shop-1', candidate);
+
+        expect(mockProviderSend).not.toHaveBeenCalled();
+        expect(mockMessageUpdate).not.toHaveBeenCalledWith(
+            expect.objectContaining({ delivery_state: 'SENT' }),
+            expect.anything(),
+        );
+    });
+
+    it('holds the candidate as failed when the provider omits its message ID', async () => {
+        mockProviderSend.mockResolvedValue({ providerMessageId: null, providerMessageIds: [null] });
+        const outboundMessage = {
+            ...candidate,
+            provider_message_id: null,
+            metadata: { ...candidate.metadata, provider_send_attempted: false },
+        };
+
+        await controller._deliverViaMetaIfApplicable('conversation-1', 'shop-1', outboundMessage);
+
+        expect(mockProviderSend).toHaveBeenCalledTimes(1);
+        expect(mockMessageUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({ delivery_state: 'FAILED' }),
+            expect.anything(),
+        );
+        expect(mockMessageUpdate).not.toHaveBeenCalledWith(
+            expect.objectContaining({ delivery_state: 'SENT' }),
+            expect.anything(),
+        );
+    });
+
+    it('does not report provider success when local acknowledgement persistence is lost', async () => {
+        mockMessageUpdate
+            .mockResolvedValueOnce([1])
+            .mockResolvedValueOnce([1])
+            .mockResolvedValueOnce([0]);
+        mockMessageFindOne.mockResolvedValue({
+            ...candidate,
+            delivery_state: 'SEND_PENDING',
+            provider_message_id: null,
+            metadata: { ...candidate.metadata, provider_send_attempted: true },
+        });
+
+        const result = await controller._deliverViaMetaIfApplicable(
+            'conversation-1',
+            'shop-1',
+            {
+                ...candidate,
+                provider_message_id: null,
+                metadata: {
+                    ...candidate.metadata,
+                    provider_send_attempted: false,
+                    provider_send_claimed: false,
+                },
+            },
+        );
+
+        expect(mockProviderSend).toHaveBeenCalledTimes(1);
+        expect(result).toEqual(expect.objectContaining({
+            sent: false,
+            reason: expect.stringContaining('requires reconciliation'),
+        }));
+    });
 });

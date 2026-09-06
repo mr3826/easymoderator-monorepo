@@ -648,6 +648,7 @@ describe('UnifiedInbox 24h window behavior', () => {
       expect(screen.getByTestId('inbox-reply-status')).toHaveTextContent('AI reply failed')
     })
   })
+
 })
 
 describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
@@ -879,5 +880,27 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
         }),
       }), expect.objectContaining({ idempotencyKey: expect.any(String) }))
     })
+  })
+
+  it('does not offer a blind retry after a provider call has started', async () => {
+    const providerAttemptedFile = {
+      id: 'msg-file-unknown',
+      conversation_id: 'conv-1',
+      content: 'catalog.pdf',
+      sender: 'agent' as const,
+      message_type: 'file' as const,
+      metadata: {
+        file_name: 'catalog.pdf',
+        delivery_status: 'failed',
+        provider_send_attempted: true,
+      },
+      created_at: newerTs,
+      updated_at: newerTs,
+    }
+
+    renderWith(baseConversation, [providerAttemptedFile])
+
+    expect(await screen.findByText('Provider result pending reconciliation')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry/i })).not.toBeInTheDocument()
   })
 })

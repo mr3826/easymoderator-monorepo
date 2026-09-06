@@ -133,6 +133,9 @@ const MessageItem = memo(function MessageItem({
       || (getDeliveryState(message) === "SEND_PENDING" ? "pending" : undefined)
       || (getDeliveryState(message) === "FAILED" ? "failed" : undefined)
     : undefined;
+  const providerOutcomeUnknown = message.metadata?.provider_send_attempted === true
+    && !message.provider_message_id
+    && !message.metadata?.provider_message_id;
   const replyTo = message.reply_to || message.metadata?.reply_to;
 
   return (
@@ -228,14 +231,20 @@ const MessageItem = memo(function MessageItem({
         </p>
         {deliveryStatus === "failed" && (
           <div className="mt-2 flex items-center gap-2 text-xs text-red-50">
-            <span>Failed</span>
-            <button
-              onClick={() => onRetry(message)}
-              className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-1 text-white hover:bg-white/10"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Retry
-            </button>
+            {providerOutcomeUnknown ? (
+              <span>Provider result pending reconciliation</span>
+            ) : (
+              <>
+                <span>Failed</span>
+                <button
+                  onClick={() => onRetry(message)}
+                  className="inline-flex items-center gap-1 rounded border border-white/40 px-2 py-1 text-white hover:bg-white/10"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Retry
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

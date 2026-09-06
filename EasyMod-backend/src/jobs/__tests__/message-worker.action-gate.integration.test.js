@@ -99,7 +99,12 @@ let messageSequence = 0;
 
 const sleep = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
-const getActiveSession = () => OrderSessionService.getActiveSession(IDS.shopA, CUSTOMER_PSID);
+const getActiveSession = () => OrderSessionService.getActiveSession(
+    IDS.shopA,
+    CUSTOMER_PSID,
+    IDS.channelA,
+    CUSTOMER_ID,
+);
 
 const runInbound = async (text) => {
     messageSequence += 1;
@@ -183,6 +188,7 @@ beforeAll(async () => {
         name: 'Integration Customer',
         channel_type: 'messenger',
         channel_user_id: CUSTOMER_PSID,
+        meta_channel_id: IDS.channelA,
         phone: '01711111111',
         messaging_consent: { facebook: { opted_in: true } },
     });

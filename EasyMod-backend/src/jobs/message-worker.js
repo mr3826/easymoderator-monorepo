@@ -31,6 +31,7 @@ const { getProvider } = require('../modules/channel-providers/provider.registry'
 const sseManager = require('../utils/sse-manager');
 const policyEngine = require('../modules/policy/policy.engine');
 const metaChannelService = require('../modules/channel-providers/meta-channel.service');
+const conversationLockService = require('../modules/conversation/conversation-lock.service');
 const Customer = require('../modules/customer/customer.entity');
 const grounding = require('../modules/ai/grounding');
 const { Op, literal } = require('sequelize');
@@ -46,6 +47,8 @@ const {
     SUGGESTION_VISIBILITY,
     normalizeDeliveryState,
     isProviderConfirmed,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
     deriveAutomaticSendIdempotencyKey,
 } = require('../modules/conversation/message-lifecycle');
 const lifecycleLogger = createLogger('InboxLifecycle');
@@ -59,12 +62,25 @@ const asRetryableDependencyError = (error, code) => {
     return normalized;
 };
 
-const providerSendSucceeded = (result) => Boolean(result)
-    && result.sent !== false
-    && result.success !== false
-    && result.ok !== false;
+const providerSendSucceeded = hasProviderAcknowledgement;
+const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_WAIT_MS = 10_000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const messageMetadata = (message) => {
+    if (typeof message?.metadata === 'string') {
+        try {
+            const parsed = JSON.parse(message.metadata);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) {
+            return {};
+        }
+    }
+    return message?.metadata && typeof message.metadata === 'object'
+        ? message.metadata
+        : {};
+};
 
 // Lazy imports to avoid circular dependency issues at module load
 const getShopAISettings = async (shopId) => {
@@ -398,41 +414,62 @@ async function claimDedupKey(key) {
 
 async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
     if (!message?.id || !idempotencyKey) return false;
-    const metadata = message.metadata && typeof message.metadata === 'object'
-        ? message.metadata
-        : {};
+    const metadata = messageMetadata(message);
     const claimedMetadata = {
         ...metadata,
         delivered: false,
         delivery_status: 'pending',
         delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
-        provider_send_attempted: true,
+        provider_send_claimed: true,
+        provider_send_claimed_at: new Date().toISOString(),
+        provider_send_attempted: false,
     };
 
     if (typeof Message.update === 'function') {
         const claim = async (transaction) => {
-            if (transaction && typeof Conversation.findOne === 'function') {
+            if (typeof Conversation.findOne === 'function') {
                 const conversation = await Conversation.findOne({
                     where: { id: message.conversation_id, shop_id: shopId },
-                    attributes: ['id', 'hitl', 'status'],
-                    transaction,
-                    lock: transaction.LOCK?.UPDATE,
+                    attributes: ['id', 'customer_id', 'channel', 'hitl', 'status'],
+                    ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                 });
                 if (!conversation || conversation.hitl === true || ['closed', 'archived'].includes(conversation.status)) {
                     return false;
+                }
+                if (typeof cacheRedis.get === 'function' && await cacheRedis.get(`ai:pause:${message.conversation_id}`)) {
+                    return false;
+                }
+                if (typeof Message.findOne === 'function') {
+                    const [latestBusiness, latestCustomer] = await Promise.all([
+                        Message.findOne({
+                            where: { conversation_id: message.conversation_id, sender: 'business' },
+                            order: [['created_at', 'DESC']],
+                            attributes: ['created_at'],
+                            ...(transaction ? { transaction } : {}),
+                        }),
+                        Message.findOne({
+                            where: { conversation_id: message.conversation_id, sender: 'customer' },
+                            order: [['created_at', 'DESC']],
+                            attributes: ['created_at'],
+                            ...(transaction ? { transaction } : {}),
+                        }),
+                    ]);
+                    if (latestBusiness && (!latestCustomer
+                        || new Date(latestBusiness.created_at).getTime() >= new Date(latestCustomer.created_at).getTime())) {
+                        return false;
+                    }
                 }
                 if (conversation.customer_id && typeof Customer.findOne === 'function') {
                     const customer = await Customer.findOne({
                         where: { id: conversation.customer_id, shop_id: shopId },
                         attributes: ['id', 'messaging_consent'],
-                        transaction,
-                        lock: transaction.LOCK?.UPDATE,
+                        ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                     });
                     const consentPlatform = conversation.channel === 'instagram' ? 'instagram' : 'facebook';
                     if (!customer || customer.messaging_consent?.[consentPlatform]?.opted_out_at) return false;
                 }
             }
-            const [updatedCount] = await Message.update(
+            const claimResult = await Message.update(
                 {
                     metadata: claimedMetadata,
                     delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
@@ -445,11 +482,15 @@ async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
                         delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
                     provider_message_id: null,
                     send_idempotency_key: idempotencyKey,
-                    [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+                    [Op.and]: [
+                        literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`),
+                        literal(`(metadata->>'provider_send_claimed') IS DISTINCT FROM 'true'`),
+                    ],
                 },
                     ...(transaction ? { transaction } : {}),
                 },
             );
+            const updatedCount = Array.isArray(claimResult) ? claimResult[0] : 1;
             if (updatedCount !== 1) return false;
             message.metadata = claimedMetadata;
             message.delivery_state = MESSAGE_DELIVERY_STATES.SEND_PENDING;
@@ -469,16 +510,123 @@ async function claimAutomaticCandidate(message, idempotencyKey, shopId) {
     return claimDedupKey(`provider-send:${idempotencyKey}`);
 }
 
+/**
+ * Move the candidate across the irreversible provider boundary. This second
+ * conditional update is deliberately separate from the candidate claim: a
+ * merchant reply can cancel a claimed-but-not-started send, while a provider
+ * call that has actually started remains reconciliation-visible.
+ */
+async function claimProviderSendBoundary(message, idempotencyKey, shopId) {
+    if (!message?.id || !idempotencyKey) return { allowed: false, reason: 'candidate_invalidated' };
+    if (typeof Message.update !== 'function') return { allowed: true, reason: null };
+
+    const attempt = async (transaction) => {
+        const conversation = typeof Conversation.findOne === 'function'
+            ? await Conversation.findOne({
+                where: { id: message.conversation_id, shop_id: shopId },
+                attributes: ['id', 'customer_id', 'channel', 'hitl', 'status'],
+                ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+            })
+            : null;
+        if (!conversation) return { allowed: false, reason: 'conversation_unavailable' };
+        if (conversation.hitl === true) return { allowed: false, reason: 'human_active' };
+        if (['closed', 'archived'].includes(conversation.status)) {
+            return { allowed: false, reason: 'conversation_closed' };
+        }
+        const currentBusinessMode = await getEffectiveAiReplyMode(shopId);
+        if (!isAutoSendMode(currentBusinessMode)) {
+            return { allowed: false, reason: 'mode_changed' };
+        }
+        if (typeof cacheRedis.get === 'function' && await cacheRedis.get(`ai:pause:${message.conversation_id}`)) {
+            return { allowed: false, reason: 'ai_paused' };
+        }
+
+        if (typeof Message.findOne === 'function') {
+            const [latestBusiness, latestCustomer] = await Promise.all([
+                Message.findOne({
+                    where: { conversation_id: message.conversation_id, sender: 'business' },
+                    order: [['created_at', 'DESC']],
+                    attributes: ['created_at'],
+                    ...(transaction ? { transaction } : {}),
+                }),
+                Message.findOne({
+                    where: { conversation_id: message.conversation_id, sender: 'customer' },
+                    order: [['created_at', 'DESC']],
+                    attributes: ['created_at'],
+                    ...(transaction ? { transaction } : {}),
+                }),
+            ]);
+            if (latestBusiness && (!latestCustomer
+                || new Date(latestBusiness.created_at).getTime() >= new Date(latestCustomer.created_at).getTime())) {
+                return { allowed: false, reason: 'human_active' };
+            }
+        }
+
+        if (conversation.customer_id && typeof Customer.findOne === 'function') {
+            const customer = await Customer.findOne({
+                where: { id: conversation.customer_id, shop_id: shopId },
+                attributes: ['id', 'messaging_consent'],
+                ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+            });
+            const consentPlatform = conversation.channel === 'instagram' ? 'instagram' : 'facebook';
+            if (!customer || customer.messaging_consent?.[consentPlatform]?.opted_out_at) {
+                return { allowed: false, reason: 'opted_out' };
+            }
+        }
+
+        const metadata = messageMetadata(message);
+        const attemptedMetadata = {
+            ...metadata,
+            provider_send_attempted: true,
+            provider_send_claimed: true,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            delivery_status: 'pending',
+            delivered: false,
+        };
+        const attemptResult = await Message.update(
+            {
+                metadata: attemptedMetadata,
+                delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            },
+            {
+                where: {
+                    id: message.id,
+                    conversation_id: message.conversation_id,
+                    sender: 'ai',
+                    delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                    provider_message_id: null,
+                    send_idempotency_key: idempotencyKey,
+                    [Op.and]: [
+                        literal(`(metadata->>'provider_send_claimed') = 'true'`),
+                        literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`),
+                    ],
+                },
+                ...(transaction ? { transaction } : {}),
+            },
+        );
+        const updatedCount = Array.isArray(attemptResult) ? attemptResult[0] : 1;
+        if (updatedCount !== 1) return { allowed: false, reason: 'candidate_invalidated' };
+        message.metadata = attemptedMetadata;
+        message.delivery_state = MESSAGE_DELIVERY_STATES.SEND_PENDING;
+        return { allowed: true, reason: null };
+    };
+
+    if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+        return sequelize.transaction((transaction) => attempt(transaction));
+    }
+    return attempt(null);
+}
+
 async function releaseAutomaticCandidate(message, idempotencyKey) {
     if (message?.id && typeof Message.update === 'function') {
-        const metadata = message.metadata && typeof message.metadata === 'object'
-            ? message.metadata
-            : {};
+        const metadata = messageMetadata(message);
         const retryMetadata = {
             ...metadata,
             delivered: false,
             delivery_status: 'pending',
             delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            provider_send_claimed: false,
+            provider_send_claimed_at: null,
             provider_send_attempted: false,
         };
         await Message.update(
@@ -713,6 +861,16 @@ function createRecoveryControl({
                 });
             }
             const provider = getProvider(providerName);
+            if (holdingMessage?.update) {
+                await holdingMessage.update({
+                    metadata: {
+                        ...(holdingMessage.metadata || {}),
+                        provider_send_attempted: true,
+                        provider_send_claimed: true,
+                    },
+                    delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                });
+            }
             providerAttempted = true;
             const sendResult = await provider.sendMessage({
                 channel,
@@ -727,6 +885,7 @@ function createRecoveryControl({
             }
             providerAccepted = true;
             if (holdingMessage?.update) {
+                const providerMessageId = providerAcknowledgementId(sendResult);
                 const sentMetadata = {
                     ...(holdingMessage.metadata || {}),
                     delivered: true,
@@ -735,24 +894,24 @@ function createRecoveryControl({
                     delivery_source: 'HITL_ESCALATION',
                     suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_SENT,
                     provider_send_confirmed: true,
-                    provider_message_id: sendResult?.providerMessageId || null,
+                    provider_message_id: providerMessageId,
                 };
                 holdingMessage.metadata = sentMetadata;
                 holdingMessage.delivery_state = MESSAGE_DELIVERY_STATES.SENT;
-                holdingMessage.provider_message_id = sendResult?.providerMessageId || null;
-                holdingMessage.external_id = sendResult?.providerMessageId || null;
+                holdingMessage.provider_message_id = providerMessageId;
+                holdingMessage.external_id = providerMessageId;
                 await holdingMessage.update({
-                    external_id: sendResult?.providerMessageId || null,
+                    external_id: providerMessageId,
                     delivery_state: MESSAGE_DELIVERY_STATES.SENT,
                     delivery_source: 'HITL_ESCALATION',
-                    provider_message_id: sendResult?.providerMessageId || null,
+                    provider_message_id: providerMessageId,
                     metadata: sentMetadata,
                 });
                 sseManager.emit(shopId, 'message_delivery_updated', {
                     conversation_id: conversationId,
                     message_id: holdingMessage.id,
                     delivery_state: MESSAGE_DELIVERY_STATES.SENT,
-                    provider_message_id: sendResult?.providerMessageId || null,
+                    provider_message_id: providerMessageId,
                     metadata: holdingMessage.metadata,
                 });
             }
@@ -927,6 +1086,46 @@ async function finalizeAiMessage(
         suggestionVisibility = null,
     },
 ) {
+    if (delivered && !providerMessageId) {
+        const error = new Error('Provider acknowledgement did not include a message ID');
+        error.code = 'PROVIDER_NO_ACK';
+        throw error;
+    }
+
+    let currentMessage = aiMessage;
+    if (aiMessage?.id && typeof Message.findOne === 'function') {
+        try {
+            currentMessage = await Message.findOne({
+                where: { id: aiMessage.id, conversation_id: conversationId, sender: 'ai' },
+            }) || aiMessage;
+        } catch (err) {
+            console.warn(`[worker] Failed to re-read AI message lifecycle: ${err.message}`);
+        }
+    }
+
+    // A Meta echo can win the race with the original provider request. Never
+    // downgrade that durable truth to FAILED, and never replace its MID with a
+    // stale response from the request that timed out.
+    if (isProviderConfirmed(currentMessage)) {
+        const confirmedMetadata = messageMetadata(currentMessage);
+        const confirmedState = normalizeDeliveryState(currentMessage);
+        const confirmedProviderMessageId = currentMessage.provider_message_id
+            || confirmedMetadata.provider_message_id
+            || null;
+        sseManager.emit(shopId, 'message_delivery_updated', {
+            conversation_id: conversationId,
+            message_id: currentMessage.id,
+            metadata: confirmedMetadata,
+            delivery_state: confirmedState,
+            provider_message_id: confirmedProviderMessageId,
+            delivery_source: currentMessage.delivery_source || confirmedMetadata.delivery_source || null,
+            content: currentMessage.content || null,
+            sender: currentMessage.sender === 'business' ? 'agent' : currentMessage.sender || null,
+            created_at: currentMessage.created_at || null,
+        });
+        return { providerConfirmed: true, persisted: false, message: currentMessage };
+    }
+
     const resolvedState = deliveryState || (delivered
         ? MESSAGE_DELIVERY_STATES.SENT
         : heldReason === 'draft_mode'
@@ -938,7 +1137,7 @@ async function finalizeAiMessage(
             ? SUGGESTION_VISIBILITY.VISIBLE_DRAFT_REVIEW
             : SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW);
     const resolvedMetadata = {
-        ...(aiMessage?.metadata || {}),
+        ...messageMetadata(currentMessage),
         delivered: Boolean(delivered),
         delivery_status: delivered ? 'sent' : resolvedState === MESSAGE_DELIVERY_STATES.DRAFT_READY ? 'pending' : 'held',
         delivery_state: resolvedState,
@@ -974,30 +1173,62 @@ async function finalizeAiMessage(
             heldReason,
         });
     }
-    if (aiMessage) {
-        aiMessage.metadata = resolvedMetadata;
-        aiMessage.delivery_state = resolvedState;
-        aiMessage.delivery_source = deliverySource;
-        aiMessage.provider_message_id = providerMessageId;
+    const updateValues = {
+        ...(providerMessageId ? { external_id: providerMessageId } : {}),
+        metadata: resolvedMetadata,
+        delivery_state: resolvedState,
+        delivery_source: deliverySource,
+        provider_message_id: providerMessageId,
+    };
+    if (currentMessage) {
+        const providerBoundaryFinalization = delivered || heldReason === 'provider_send_failed';
         try {
-            await aiMessage.update({
-                ...(providerMessageId ? { external_id: providerMessageId } : {}),
-                metadata: resolvedMetadata,
-                delivery_state: resolvedState,
-                delivery_source: deliverySource,
-                provider_message_id: providerMessageId,
-            });
-            if (delivered && typeof Conversation.update === 'function' && aiMessage.content) {
+            if (providerBoundaryFinalization && typeof Message.update === 'function') {
+                const finalizationResult = await Message.update(updateValues, {
+                    where: {
+                        id: currentMessage.id,
+                        conversation_id: conversationId,
+                        sender: 'ai',
+                        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                        provider_message_id: null,
+                    },
+                });
+                const updatedCount = Array.isArray(finalizationResult) ? finalizationResult[0] : 1;
+                if (updatedCount !== 1) {
+                    const latest = typeof Message.findOne === 'function'
+                        ? await Message.findOne({
+                            where: { id: currentMessage.id, conversation_id: conversationId, sender: 'ai' },
+                        })
+                        : null;
+                    if (latest && isProviderConfirmed(latest)) {
+                        return finalizeAiMessage(latest, shopId, conversationId, {
+                            delivered: false,
+                            heldReason: 'provider_send_failed',
+                        });
+                    }
+                    const error = new Error('AI message lifecycle changed before provider outcome was persisted');
+                    error.code = 'LIFECYCLE_CONFLICT';
+                    throw error;
+                }
+            } else if (typeof currentMessage.update === 'function') {
+                await currentMessage.update(updateValues);
+            }
+            currentMessage.metadata = resolvedMetadata;
+            currentMessage.delivery_state = resolvedState;
+            currentMessage.delivery_source = deliverySource;
+            currentMessage.provider_message_id = providerMessageId;
+            if (delivered && typeof Conversation.update === 'function' && currentMessage.content) {
                 await Conversation.update(
-                    { message: aiMessage.content },
+                    { message: currentMessage.content },
                     { where: { id: conversationId, shop_id: shopId } },
                 );
             }
         } catch (err) {
+            if (providerBoundaryFinalization) throw err;
             console.warn(`[worker] Failed to stamp delivery flag on AI message: ${err.message}`);
         }
     }
-    const message = aiMessage?.toJSON ? aiMessage.toJSON() : aiMessage;
+    const message = currentMessage?.toJSON ? currentMessage.toJSON() : currentMessage;
     sseManager.emit(shopId, 'new_message', {
         conversation_id: conversationId,
         message: message
@@ -1011,6 +1242,7 @@ async function finalizeAiMessage(
             }
             : null,
     });
+    return { providerConfirmed: Boolean(delivered), persisted: true, message: currentMessage };
 }
 
 /**
@@ -1250,6 +1482,7 @@ async function processMessageJob(job) {
 
     let recoveryControl = null;
     let recoveryStarted = false;
+    let deliveryLock = null;
     let stableTraceId = jobTraceId || job.id || effExternalId || conversationId;
     const turnId = requestedTurnId || effExternalId || messageId || String(job.id);
     try {
@@ -1457,7 +1690,7 @@ async function processMessageJob(job) {
         const { createIntentRecord } = require('../modules/ai/contracts/intent.contract');
         const OrderSessionService = require('../modules/order/order-session-standalone.service');
         const activeOrderSession = typeof OrderSessionService.getActiveSession === 'function'
-            ? await OrderSessionService.getActiveSession(shopId, recipientId).catch(() => null)
+            ? await OrderSessionService.getActiveSession(shopId, recipientId, metaChannelId, conversation.customer_id || null).catch(() => null)
             : null;
         shadowProposal = classify(effMessage, {
             language: detectedLanguage,
@@ -2195,8 +2428,54 @@ async function processMessageJob(job) {
     let sendResult = null;
     let providerSendAttempted = false;
     try {
+        if (typeof cacheRedis?.set === 'function'
+            && typeof conversationLockService?.acquireForDelivery === 'function') {
+            deliveryLock = await conversationLockService.acquireForDelivery(conversationId, {
+                lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+                maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+            });
+            if (deliveryLock?.available !== false && !deliveryLock?.success) {
+                await releaseAutomaticCandidate(aiMessage, automaticSendIdempotencyKey).catch(() => {});
+                return {
+                    success: true,
+                    conversationId,
+                    confidence,
+                    sent: false,
+                    reason: deliveryLock.error || 'delivery_lock_busy',
+                };
+            }
+        }
         if (!channel) {
             throw new Error(`No MetaChannel found for shop ${shopId} platform ${policyChannelTypeForSend}`);
+        }
+        const providerBoundary = await claimProviderSendBoundary(
+            aiMessage,
+            automaticSendIdempotencyKey,
+            shopId,
+        );
+        if (!providerBoundary.allowed) {
+            const heldReason = {
+                human_active: 'human_active',
+                ai_paused: 'ai_paused',
+                conversation_closed: 'human_active',
+                mode_changed: 'mode_changed',
+            }[providerBoundary.reason];
+            if (heldReason) {
+                await finalizeAiMessage(aiMessage, shopId, conversationId, {
+                    delivered: false,
+                    heldReason,
+                    deliveryState: MESSAGE_DELIVERY_STATES.HELD,
+                    deliverySource: 'AUTO',
+                    suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
+                });
+            }
+            return {
+                success: true,
+                conversationId,
+                confidence,
+                sent: false,
+                reason: providerBoundary.reason,
+            };
         }
         const provider = getProvider(policyChannelTypeForSend);
         providerSendAttempted = true;
@@ -2245,13 +2524,17 @@ async function processMessageJob(job) {
                 messageId: aiMessage?.id || null,
                 errorCode: err.code,
             });
-            await finalizeAiMessage(aiMessage, shopId, conversationId, {
+            const finalized = await finalizeAiMessage(aiMessage, shopId, conversationId, {
                 delivered: false,
                 heldReason: 'provider_send_failed',
                 deliveryState: MESSAGE_DELIVERY_STATES.FAILED,
                 deliverySource: 'AUTO',
                 suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
             });
+            if (finalized?.providerConfirmed) {
+                await recoveryControl?.complete('SENT', { outboundStatus: 'SENT' });
+                return { success: true, conversationId, confidence, sent: true, reason: 'echo_reconciled' };
+            }
             sseManager.emit(shopId, 'delivery_failed', {
                 conversation_id: conversationId,
                 message_id: aiMessage?.id,
@@ -2267,13 +2550,17 @@ async function processMessageJob(job) {
             messageId: aiMessage?.id || null,
             errorCode: err.code || 'PROVIDER_SEND_FAILED',
         });
-        await finalizeAiMessage(aiMessage, shopId, conversationId, {
+        const finalized = await finalizeAiMessage(aiMessage, shopId, conversationId, {
             delivered: false,
             heldReason: 'provider_send_failed',
             deliveryState: MESSAGE_DELIVERY_STATES.FAILED,
             deliverySource: 'AUTO',
             suggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
         });
+        if (finalized?.providerConfirmed) {
+            await recoveryControl?.complete('SENT', { outboundStatus: 'SENT' });
+            return { success: true, conversationId, confidence, sent: true, reason: 'echo_reconciled' };
+        }
         sseManager.emit(shopId, 'delivery_failed', {
             conversation_id: conversationId,
             message_id: aiMessage?.id,
@@ -2284,10 +2571,10 @@ async function processMessageJob(job) {
     }
 
     // Mark the reply delivered (no suggestion panel) and emit to agent tabs.
-    await finalizeAiMessage(aiMessage, shopId, conversationId, {
+    const finalized = await finalizeAiMessage(aiMessage, shopId, conversationId, {
         delivered: true,
         heldReason: null,
-        providerMessageId: sendResult?.providerMessageId || null,
+        providerMessageId: providerAcknowledgementId(sendResult),
         deliveryState: MESSAGE_DELIVERY_STATES.SENT,
         deliverySource: 'AUTO',
         suggestionVisibility: SUGGESTION_VISIBILITY.HIDDEN_SENT,
@@ -2320,13 +2607,29 @@ async function processMessageJob(job) {
     } catch (_) { /* analytics must never fail a sent reply */ }
 
     if (recoveryControl) await recoveryControl.complete('SENT', { outboundStatus: 'SENT' });
-    return { success: true, conversationId, confidence, sent: true, decisionId: decision.decisionId };
+    return {
+        success: true,
+        conversationId,
+        confidence,
+        sent: finalized?.providerConfirmed !== false,
+        decisionId: decision.decisionId,
+    };
     } catch (err) {
         if (dedupKey && !isUnrecoverableJobError(err) && typeof cacheRedis.del === 'function') {
             await cacheRedis.del(dedupKey).catch(() => {});
         }
         throw err;
     } finally {
+        if (deliveryLock?.success) {
+            await conversationLockService.releaseLock(conversationId, deliveryLock.lockId).catch((error) => {
+                lifecycleLogger.warn('Unable to release automatic delivery lock', {
+                    shopId,
+                    conversationId,
+                    error: error.message,
+                });
+            });
+            deliveryLock = null;
+        }
         await recoveryControl?.close();
     }
 }

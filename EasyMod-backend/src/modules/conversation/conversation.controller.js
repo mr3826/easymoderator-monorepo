@@ -15,6 +15,7 @@ const {
 } = require('../entities');
 const metaChannelService = require('../channel-providers/meta-channel.service');
 const { getProvider } = require('../channel-providers/provider.registry');
+const conversationLockService = require('./conversation-lock.service');
 const policyEngine = require('../policy/policy.engine');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const {
@@ -22,6 +23,8 @@ const {
     SUGGESTION_VISIBILITY,
     normalizeDeliveryState,
     isProviderConfirmed,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
 } = require('./message-lifecycle');
 const { resolvePublicAssetOrigin } = require('../../config/origins');
 const config = require('../../config/config');
@@ -30,6 +33,8 @@ const { createLogger } = require('../../utils/structured-logger');
 const lifecycleLogger = createLogger('InboxLifecycle');
 
 const AI_PAUSE_TTL_SECS = 1800; // 30 minutes
+const DELIVERY_LOCK_TIMEOUT_MS = 60_000;
+const DELIVERY_LOCK_WAIT_MS = 10_000;
 const META_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 const ATTACHMENT_UPLOAD_DIR = path.join(__dirname, '../../../uploads/conversation-attachments');
 const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
@@ -59,6 +64,34 @@ function makeHttpError(statusCode, message) {
     const err = new Error(message);
     err.statusCode = statusCode;
     return err;
+}
+
+async function acquireDeliveryLock(conversationId) {
+    // Narrow test doubles and single-process callers may not expose a lock
+    // primitive. Production Redis does, and then a busy lock is fail-closed.
+    if (!cacheRedis || typeof cacheRedis.set !== 'function'
+        || typeof conversationLockService?.acquireForDelivery !== 'function') return null;
+    const lock = await conversationLockService.acquireForDelivery(conversationId, {
+        lockTimeoutMs: DELIVERY_LOCK_TIMEOUT_MS,
+        maxWaitMs: DELIVERY_LOCK_WAIT_MS,
+    });
+    if (lock?.available === false) return null;
+    if (!lock?.success) {
+        const error = makeHttpError(409, 'Another Inbox delivery is in progress; retry after it completes');
+        error.code = 'CONVERSATION_DELIVERY_BUSY';
+        throw error;
+    }
+    return lock;
+}
+
+async function releaseDeliveryLock(lock, conversationId) {
+    if (!lock?.success || typeof conversationLockService?.releaseLock !== 'function') return;
+    await conversationLockService.releaseLock(conversationId, lock.lockId).catch((error) => {
+        lifecycleLogger.warn('Unable to release conversation delivery lock', {
+            conversationId,
+            error: error.message,
+        });
+    });
 }
 
 function parseDataUrl(value) {
@@ -222,8 +255,22 @@ function buildOutboundAttachments(message) {
     }];
 }
 
+function messageMetadata(message) {
+    if (typeof message?.metadata === 'string') {
+        try {
+            const parsed = JSON.parse(message.metadata);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) {
+            return {};
+        }
+    }
+    return message?.metadata && typeof message.metadata === 'object'
+        ? message.metadata
+        : {};
+}
+
 async function updateDeliveryStatus(shopId, conversationId, message, status, updates = {}) {
-    if (!message?.id) return;
+    if (!message?.id) return false;
     const deliveryState = updates.delivery_state || (
         status === 'sent'
             ? MESSAGE_DELIVERY_STATES.SENT
@@ -235,8 +282,14 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
         || message.provider_message_id
         || message.metadata?.provider_message_id
         || null;
+    const claimToken = messageMetadata(message).provider_send_claim_token;
+    if (status === 'sent' && !providerMessageId) {
+        const error = new Error('Provider acknowledgement did not include a message ID');
+        error.code = 'PROVIDER_NO_ACK';
+        throw error;
+    }
     const metadata = {
-        ...(message.metadata || {}),
+        ...messageMetadata(message),
         delivery_status: status,
         delivery_state: deliveryState,
         delivered: status === 'sent',
@@ -250,13 +303,25 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
         message.provider_message_id = providerMessageId;
         message.delivery_source = metadata.delivery_source || message.delivery_source || null;
     }
-    await MessageModel.update({
+    const result = await MessageModel.update({
         ...(providerMessageId ? { external_id: providerMessageId } : {}),
         metadata,
         delivery_state: deliveryState,
         provider_message_id: providerMessageId,
         delivery_source: updates.delivery_source || message.delivery_source || message.metadata?.delivery_source || null,
-    }, { where: { id: message.id, conversation_id: conversationId } });
+    }, {
+        where: {
+            id: message.id,
+            conversation_id: conversationId,
+            provider_message_id: null,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            ...(claimToken ? {
+                [Op.and]: [literal(`(metadata->>'provider_send_claim_token') = '${claimToken}'`)],
+            } : {}),
+        },
+    });
+    const updatedCount = Array.isArray(result) ? result[0] : 1;
+    if (updatedCount !== 1) return false;
 
     lifecycleLogger.info(status === 'sent' ? 'ai_provider_send_success' : 'ai_provider_send_failure', {
         shopId,
@@ -283,22 +348,25 @@ async function updateDeliveryStatus(shopId, conversationId, message, status, upd
         sender: typeof message === 'object' ? message.sender === 'business' ? 'agent' : message.sender : null,
         created_at: typeof message === 'object' ? message.created_at || null : null,
     });
+    return true;
 }
 
 async function claimOutboundDelivery(conversationId, message) {
     if (!message?.id || typeof MessageModel.update !== 'function') return true;
-    const metadata = message.metadata && typeof message.metadata === 'object'
-        ? message.metadata
-        : {};
+    const metadata = messageMetadata(message);
+    const claimToken = crypto.randomBytes(16).toString('hex');
     if (metadata.provider_send_attempted === true) return false;
     const claimedMetadata = {
         ...metadata,
-        provider_send_attempted: true,
+        provider_send_attempted: false,
+        provider_send_claimed: true,
+        provider_send_claim_token: claimToken,
+        provider_send_claimed_at: new Date().toISOString(),
         delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
         delivery_status: 'pending',
         delivered: false,
     };
-    const [updatedCount] = await MessageModel.update({
+    const claimResult = await MessageModel.update({
         metadata: claimedMetadata,
         delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
     }, {
@@ -313,12 +381,50 @@ async function claimOutboundDelivery(conversationId, message) {
                 },
             ],
             provider_message_id: null,
-            [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
+            [Op.and]: [
+                literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`),
+                literal(`(metadata->>'provider_send_claimed') IS DISTINCT FROM 'true'`),
+            ],
         },
     });
+    const updatedCount = Array.isArray(claimResult) ? claimResult[0] : 1;
     if (updatedCount !== 1) return false;
     message.metadata = claimedMetadata;
     message.delivery_state = MESSAGE_DELIVERY_STATES.SEND_PENDING;
+    return true;
+}
+
+async function markOutboundProviderAttempted(conversationId, message) {
+    if (!message?.id || typeof MessageModel.update !== 'function') return true;
+    const metadata = messageMetadata(message);
+    if (metadata.provider_send_attempted === true) return true;
+    if (!metadata.provider_send_claim_token) return false;
+    const attemptedMetadata = {
+        ...metadata,
+        provider_send_attempted: true,
+        provider_send_claimed: true,
+        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+        delivery_status: 'pending',
+        delivered: false,
+    };
+    const result = await MessageModel.update({
+        metadata: attemptedMetadata,
+        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+    }, {
+        where: {
+            id: message.id,
+            conversation_id: conversationId,
+            delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+            provider_message_id: null,
+            [Op.and]: [
+                literal(`(metadata->>'provider_send_claimed') = 'true'`),
+                literal(`(metadata->>'provider_send_claim_token') = '${metadata.provider_send_claim_token}'`),
+            ],
+        },
+    });
+    const updatedCount = Array.isArray(result) ? result[0] : 1;
+    if (updatedCount !== 1) return false;
+    message.metadata = attemptedMetadata;
     return true;
 }
 
@@ -373,6 +479,9 @@ async function deliverViaMetaIfApplicable(
     let deliveryResult = null;
     let providerCallStarted = false;
     let deliveryClaimed = false;
+    let returnedResult = null;
+    let deliveryLock = options.deliveryLock || null;
+    let ownsDeliveryLock = false;
     const content = typeof outboundMessage === 'string' ? outboundMessage : outboundMessage?.content || '';
     let attachments = [];
     try {
@@ -387,6 +496,11 @@ async function deliverViaMetaIfApplicable(
         if (!platform) return { sent: false, reason: 'non_meta_channel' }; // webchat/telegram
 
         isMetaChannel = true; // past this point: failures should surface to the agent
+
+        if (!deliveryLock) {
+            deliveryLock = await acquireDeliveryLock(conversationId);
+            ownsDeliveryLock = Boolean(deliveryLock);
+        }
 
         const recipientId = conversation.customer?.channel_user_id;
         if (!recipientId) {
@@ -460,6 +574,11 @@ async function deliverViaMetaIfApplicable(
         }
 
         const provider = getProvider(platform);
+        if (!(await markOutboundProviderAttempted(conversationId, outboundMessage))) {
+            deliveryClaimed = false;
+            failureReason = 'Provider delivery was invalidated before the send boundary';
+            return { sent: false, reason: failureReason };
+        }
         providerCallStarted = true;
         deliveryResult = await provider.sendMessage({
             channel: metaChannel,
@@ -473,37 +592,80 @@ async function deliverViaMetaIfApplicable(
             || deliveryResult.ok === false) {
             throw new Error('Provider did not confirm the outbound send');
         }
+        if (!hasProviderAcknowledgement(deliveryResult)) {
+            const error = new Error('Provider acknowledgement did not include a message ID');
+            error.code = 'PROVIDER_NO_ACK';
+            throw error;
+        }
         console.log(`[inbox] Message delivered via ${platform} (conv: ${conversationId})`);
-        return {
+        returnedResult = {
             sent: true,
-            providerMessageId: deliveryResult?.providerMessageId || deliveryResult?.providerMessageIds?.[0] || null,
+            providerMessageId: providerAcknowledgementId(deliveryResult),
             providerMessageIds: deliveryResult?.providerMessageIds || null,
         };
+        return returnedResult;
     } catch (err) {
         failureReason = err.message;
         console.error(`[inbox] Meta delivery failed for conversation ${conversationId}: ${err.message}`);
-        return { sent: false, reason: failureReason };
+        returnedResult = { sent: false, reason: failureReason };
+        return returnedResult;
     } finally {
         if (isMetaChannel && failureReason && deliveryClaimed) {
-            await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'failed', {
+            const failurePersisted = await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'failed', {
                 delivery_error: failureReason,
                 ...(options.failureState ? { delivery_state: options.failureState } : {}),
                 ...(options.failureSuggestionVisibility
                     ? { suggestion_visibility: options.failureSuggestionVisibility }
                     : {}),
                 ...(providerCallStarted ? { provider_send_attempted: true, held_reason: 'provider_send_failed' } : {}),
-            }).catch(() => {});
-            sseManager.emit(shopId, 'delivery_failed', {
-                conversation_id: conversationId,
-                message_id: outboundMessage?.id,
-                reason: failureReason
-            });
-        } else if (isMetaChannel && outboundMessage?.id) {
-            await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'sent', {
-                provider_message_id: deliveryResult?.providerMessageId || deliveryResult?.providerMessageIds?.[0] || null,
+            }).catch(() => false);
+            if (failurePersisted) {
+                sseManager.emit(shopId, 'delivery_failed', {
+                    conversation_id: conversationId,
+                    message_id: outboundMessage?.id,
+                    reason: failureReason
+                });
+            }
+        } else if (isMetaChannel && outboundMessage?.id && deliveryClaimed
+            && !failureReason && hasProviderAcknowledgement(deliveryResult)) {
+            const persisted = await updateDeliveryStatus(shopId, conversationId, outboundMessage, 'sent', {
+                provider_message_id: providerAcknowledgementId(deliveryResult),
                 provider_message_ids: deliveryResult?.providerMessageIds || undefined,
                 provider_send_confirmed: true,
-            }).catch(() => {});
+            }).catch(() => false);
+            if (!persisted) {
+                const latest = typeof MessageModel.findOne === 'function'
+                    ? await MessageModel.findOne({
+                        where: {
+                            id: outboundMessage.id,
+                            conversation_id: conversationId,
+                        },
+                    }).catch(() => null)
+                    : null;
+                const reconciled = latest && isProviderConfirmed(latest)
+                    && String(latest.provider_message_id || latest.metadata?.provider_message_id)
+                        === String(providerAcknowledgementId(deliveryResult));
+                if (!reconciled) {
+                    if (returnedResult) {
+                        Object.assign(returnedResult, {
+                            sent: false,
+                            reason: 'Provider acknowledged the message, but local delivery state requires reconciliation',
+                            providerMessageId: providerAcknowledgementId(deliveryResult),
+                        });
+                    }
+                    lifecycleLogger.error('provider_ack_persistence_failed', {
+                        shopId,
+                        conversationId,
+                        messageId: outboundMessage.id,
+                        providerMessageId: providerAcknowledgementId(deliveryResult),
+                    });
+                }
+            }
+        }
+        if (ownsDeliveryLock) {
+            await releaseDeliveryLock(deliveryLock, conversationId);
+            deliveryLock = null;
+            ownsDeliveryLock = false;
         }
     }
 }
@@ -634,6 +796,7 @@ class ConversationController {
     }
 
     async createMessage(req, res) {
+        let deliveryLock = null;
         try {
             const { conversationId } = req.params; // Already validated
             const shopId = req.user?.shopId;
@@ -646,6 +809,10 @@ class ConversationController {
                         message: 'Shop ID is required'
                     }
                 });
+            }
+            const requestedSender = req.body?.sender;
+            if (requestedSender === 'agent' || requestedSender === 'business') {
+                deliveryLock = await acquireDeliveryLock(conversationId);
             }
             const preparedMessageData = await prepareOutboundAttachmentMetadata(req, shopId, req.body); // Already validated
             const messageData = {
@@ -684,8 +851,12 @@ class ConversationController {
                     // final send-boundary re-check.
                     await cacheRedis.setex(`ai:pause:${conversationId}`, AI_PAUSE_TTL_SECS, '1');
                 } catch (_) { /* Redis is a safety hint; the manual send still proceeds. */ }
-                // Deliver agent reply to customer via Meta Graph API (fire-and-forget)
-                deliverViaMetaIfApplicable(conversationId, shopId, message);
+                // Keep the conversation delivery lock through the provider call
+                // so a worker cannot cross the send boundary between takeover
+                // cancellation and the manual send.
+                await deliverViaMetaIfApplicable(conversationId, shopId, message, 'agent', {
+                    deliveryLock,
+                });
             }
 
             res.status(201).json({
@@ -703,6 +874,9 @@ class ConversationController {
                     message: error.message
                 }
             });
+        } finally {
+            await releaseDeliveryLock(deliveryLock, req.params?.conversationId);
+            deliveryLock = null;
         }
     }
 
@@ -742,7 +916,7 @@ class ConversationController {
             });
 
             if (!claim.alreadySent) {
-                await deliverViaMetaIfApplicable(
+                const delivery = await deliverViaMetaIfApplicable(
                     conversationId,
                     shopId,
                     claim.message,
@@ -752,6 +926,34 @@ class ConversationController {
                         failureSuggestionVisibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
                     },
                 );
+                if (typeof conversationService.settleInboxDeliveryOutbox === 'function') {
+                    await conversationService.settleInboxDeliveryOutbox(messageId, {
+                        sent: delivery?.sent === true,
+                        providerAttempted: claim.message?.metadata?.provider_send_attempted === true,
+                        errorCode: delivery?.sent === true ? null : 'DRAFT_DELIVERY_NOT_CONFIRMED',
+                    }).catch((error) => lifecycleLogger.warn('Unable to settle draft delivery outbox', {
+                        shopId,
+                        conversationId,
+                        messageId,
+                        error: error.message,
+                    }));
+                }
+                if (delivery?.sent !== true) {
+                    const error = makeHttpError(
+                        409,
+                        delivery?.reason || 'Provider delivery was not confirmed; reconciliation is required before retrying',
+                    );
+                    error.code = 'DRAFT_DELIVERY_NOT_CONFIRMED';
+                    throw error;
+                }
+            } else if (typeof conversationService.settleInboxDeliveryOutbox === 'function') {
+                await conversationService.settleInboxDeliveryOutbox(messageId, { sent: true })
+                    .catch((error) => lifecycleLogger.warn('Unable to settle already-sent draft outbox', {
+                        shopId,
+                        conversationId,
+                        messageId,
+                        error: error.message,
+                    }));
             }
 
             const message = await loadProjectedMessage(messageId, conversationId) || conversationService.mapMessage(claim.message);

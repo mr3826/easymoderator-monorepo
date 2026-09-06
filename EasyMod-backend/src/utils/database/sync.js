@@ -8,6 +8,8 @@ const schemaDriftMigration = require('../../database/migrations/20260611_003_sch
 const courierClaimMigration = require('../../database/migrations/20260828_003_courier_dispatch_claim_owner');
 const commercialMigration = require('../../database/migrations/20260828_004_commercial_model');
 const commercialEntityDriftMigration = require('../../database/migrations/20260901_001_reconcile_commercial_entity_drift');
+const inboxMessageDeliveryStateMigration = require('../../database/migrations/20260904_001_inbox_message_delivery_state');
+const inboxDeliveryOutboxMigration = require('../../database/migrations/20260904_002_inbox_delivery_outbox');
 const growthProspectMigration = require('../../database/migrations/20260820_002_growth_os_prospects');
 const growthProspectSourceReferenceMigration = require('../../database/migrations/20260820_003_growth_os_prospect_source_reference_idx');
 
@@ -24,6 +26,8 @@ const syncDatabase = async () => {
         await courierClaimMigration.up(sequelize);
         await commercialMigration.up(sequelize);
         await commercialEntityDriftMigration.up(sequelize);
+        await inboxMessageDeliveryStateMigration.up(sequelize);
+        await inboxDeliveryOutboxMigration.up(sequelize);
         await growthProspectMigration.up(sequelize);
         await growthProspectSourceReferenceMigration.up(sequelize);
         console.log('Database synchronized and migrations applied successfully.');

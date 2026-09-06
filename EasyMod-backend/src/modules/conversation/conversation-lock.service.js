@@ -28,7 +28,9 @@ class ConversationLockService {
                 return { success: true, lockId, conversationId, acquiredAt, expiresAt: acquiredAt + lockTimeoutMs };
             }
 
-            const ttl = await cacheRedis.pttl(lockKey);
+            const ttl = typeof cacheRedis.pttl === 'function'
+                ? await cacheRedis.pttl(lockKey)
+                : null;
             logger.warn(`[LOCK] Already held for conv ${conversationId}, TTL=${ttl}ms`);
             return { success: false, lockId, conversationId, acquiredAt, expiresAt: acquiredAt, error: 'LOCK_ALREADY_HELD', lockExpiresInMs: ttl };
         } catch (error) {
@@ -45,14 +47,24 @@ class ConversationLockService {
         const lockKey = `lock:conversation:${conversationId}`;
 
         try {
-            // Atomic check-and-delete: only del if value matches lockId
-            const luaScript = `
-                if redis.call("get", KEYS[1]) == ARGV[1] then
-                    return redis.call("del", KEYS[1])
-                else
-                    return 0
-                end`;
-            const deleted = await cacheRedis.eval(luaScript, 1, lockKey, lockId);
+            // Atomic check-and-delete on Redis; compare then delete for the
+            // in-memory/test client, which does not implement EVAL.
+            let deleted;
+            if (typeof cacheRedis.eval === 'function') {
+                const luaScript = `
+                    if redis.call("get", KEYS[1]) == ARGV[1] then
+                        return redis.call("del", KEYS[1])
+                    else
+                        return 0
+                    end`;
+                deleted = await cacheRedis.eval(luaScript, 1, lockKey, lockId);
+            } else if (typeof cacheRedis.get === 'function' && typeof cacheRedis.del === 'function') {
+                deleted = await cacheRedis.get(lockKey) === lockId
+                    ? await cacheRedis.del(lockKey)
+                    : 0;
+            } else {
+                deleted = 0;
+            }
 
             if (deleted === 1) {
                 logger.debug(`[LOCK] Released ${lockId} for conv ${conversationId}`);
@@ -83,6 +95,10 @@ class ConversationLockService {
         const lockKey = `lock:conversation:${conversationId}`;
         const startTime = Date.now();
 
+        if (typeof cacheRedis.exists !== 'function') {
+            return { acquired: true, waitedMs: 0 };
+        }
+
         while (Date.now() - startTime < maxWaitMs) {
             const exists = await cacheRedis.exists(lockKey);
             if (exists === 0) return { acquired: true, waitedMs: Date.now() - startTime };
@@ -90,6 +106,40 @@ class ConversationLockService {
         }
 
         return { acquired: false, waitedMs: maxWaitMs, error: 'TIMEOUT' };
+    }
+
+    /**
+     * Acquire the lock shared by outbound conversation writers. A short wait
+     * lets a merchant request arriving during another delivery take its turn
+     * instead of racing the provider boundary.
+     */
+    async acquireForDelivery(conversationId, {
+        lockTimeoutMs = 60_000,
+        maxWaitMs = 10_000,
+    } = {}) {
+        if (!cacheRedis || typeof cacheRedis.set !== 'function') {
+            return { success: false, available: false, conversationId };
+        }
+
+        try {
+            const deadline = Date.now() + maxWaitMs;
+            let lock = await this.acquireLock(conversationId, lockTimeoutMs);
+            while (!lock.success && Date.now() < deadline) {
+                const remaining = Math.max(1, deadline - Date.now());
+                const waited = await this.waitForLockRelease(conversationId, Math.min(remaining, 250));
+                if (!waited.acquired) break;
+                lock = await this.acquireLock(conversationId, lockTimeoutMs);
+            }
+            return { ...lock, available: true };
+        } catch (error) {
+            logger.error(`[LOCK] Delivery lock unavailable: ${error.message}`);
+            return {
+                success: false,
+                available: true,
+                conversationId,
+                error: 'DELIVERY_LOCK_UNAVAILABLE',
+            };
+        }
     }
 
     _generateLockId() {

@@ -13,6 +13,7 @@ const {
     MetaTokenRefreshJob,
     PipelineCanaryJob,
     WebhookReceiptReconcilerJob,
+    InboxDeliveryReconcilerJob,
 } = require('./index');
 
 class QueueManager {
@@ -48,6 +49,7 @@ class QueueManager {
             ['pipeline-canary', 'pipelineCanary', PipelineCanaryJob],
             // Reliability — replay inbound Meta events held as durable receipts
             ['webhook-receipt-reconciler', 'webhookReceiptReconciler', WebhookReceiptReconcilerJob],
+            ['inbox-delivery-reconciler', 'inboxDeliveryReconciler', InboxDeliveryReconcilerJob],
         ];
 
         for (const [queueName, key, JobClass] of billingQueues) {
@@ -187,6 +189,12 @@ class QueueManager {
             { name: 'run', data: { dryRun: false } }
         );
 
+        await this.queues.inboxDeliveryReconciler.upsertJobScheduler(
+            'inbox-delivery-reconciler',
+            { pattern: '*/2 * * * *', tz: 'UTC' },
+            { name: 'run', data: { dryRun: false } }
+        );
+
         console.log('✅ Scheduled jobs configured');
     }
 
@@ -200,6 +208,7 @@ class QueueManager {
             'meta_token_refresh': 'metaTokenRefresh',
             'pipeline_canary': 'pipelineCanary',
             'webhook_receipt_reconciler': 'webhookReceiptReconciler',
+            'inbox_delivery_reconciler': 'inboxDeliveryReconciler',
         };
 
         const queueKey = queueMap[jobName];

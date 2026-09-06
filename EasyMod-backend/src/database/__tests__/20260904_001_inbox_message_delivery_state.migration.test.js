@@ -1,6 +1,7 @@
 'use strict';
 
 const migration = require('../migrations/20260904_001_inbox_message_delivery_state');
+const outboxMigration = require('../migrations/20260904_002_inbox_delivery_outbox');
 
 const makeSequelize = () => {
     const queries = [];
@@ -41,5 +42,15 @@ describe('20260904_001_inbox_message_delivery_state', () => {
 
         expect(queries.join('\n')).not.toMatch(/ADD CONSTRAINT.*external_id.*UNIQUE/i);
         expect(queries.join('\n')).toMatch(/DROP COLUMN IF EXISTS delivery_state/);
+    });
+
+    it('adds the durable approval outbox migration to the bootstrap chain', async () => {
+        const { sequelize, queries } = makeSequelize();
+
+        await outboxMigration.up(sequelize);
+
+        expect(outboxMigration.name).toBe('20260904_002_inbox_delivery_outbox');
+        expect(queries.join('\n')).toMatch(/CREATE TABLE IF NOT EXISTS inbox_delivery_outbox/);
+        expect(queries.join('\n')).toMatch(/idx_inbox_delivery_outbox_message/);
     });
 });

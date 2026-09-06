@@ -24,7 +24,14 @@ const { Op, literal } = require('sequelize');
 const { selectChannelRuntimeSettings } = require('../channel-providers/meta-channel-settings.runtime');
 const { DEFAULT_AI_SETTINGS } = require('../shop/shop-defaults');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
-const { MESSAGE_DELIVERY_STATES, SUGGESTION_VISIBILITY, isProviderConfirmed } = require('./message-lifecycle');
+const {
+    MESSAGE_DELIVERY_STATES,
+    SUGGESTION_VISIBILITY,
+    isProviderConfirmed,
+    providerMessageIdFor,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
+} = require('./message-lifecycle');
 const DEFAULT_HANDOFF_COOLDOWN_MINUTES = DEFAULT_AI_SETTINGS.handoff_settings.cooldown_minutes;
 const MAX_HANDOFF_COOLDOWN_MINUTES = 1440;
 const SUPPORTED_HANDOFF_PLATFORMS = new Set(['facebook', 'messenger', 'instagram']);
@@ -41,18 +48,14 @@ function normalizeHandoffPlatform(platform) {
     return platform === 'messenger' ? 'facebook' : platform;
 }
 
-const providerSendSucceeded = (result) => Boolean(result)
-    && result.sent !== false
-    && result.success !== false
-    && result.ok !== false;
+const providerSendSucceeded = hasProviderAcknowledgement;
 
 async function stampHoldingMessage(holdingMsg, convId, state, sendResult = null, extra = {}) {
     if (!holdingMsg?.id || !Message || typeof Message.update !== 'function') return;
-    const providerMessageId = sendResult?.providerMessageId
-        || sendResult?.providerMessageIds?.[sendResult.providerMessageIds.length - 1]
-        || holdingMsg.provider_message_id
-        || holdingMsg.metadata?.provider_message_id
+    const providerMessageId = providerAcknowledgementId(sendResult)
+        || providerMessageIdFor(holdingMsg)
         || null;
+    if (state === MESSAGE_DELIVERY_STATES.SENT && !providerMessageId) return;
     const metadata = {
         ...(holdingMsg.metadata && typeof holdingMsg.metadata === 'object' ? holdingMsg.metadata : {}),
         delivered: state === MESSAGE_DELIVERY_STATES.SENT,
@@ -83,7 +86,7 @@ function emitHoldingDelivery(shopId, convId, holdingMsg, state, sendResult = nul
         conversation_id: convId,
         message_id: holdingMsg?.id || null,
         delivery_state: state,
-        provider_message_id: sendResult?.providerMessageId || holdingMsg?.provider_message_id || null,
+        provider_message_id: providerAcknowledgementId(sendResult) || holdingMsg?.provider_message_id || null,
         metadata: metadata || holdingMsg?.metadata || {},
     });
 }
@@ -93,7 +96,7 @@ async function claimHoldingMessage(holdingMsg, convId) {
     const metadata = holdingMsg.metadata && typeof holdingMsg.metadata === 'object'
         ? holdingMsg.metadata
         : {};
-    const [updatedCount] = await Message.update({
+    const claimResult = await Message.update({
         metadata: {
             ...metadata,
             provider_send_attempted: true,
@@ -111,6 +114,7 @@ async function claimHoldingMessage(holdingMsg, convId) {
             [Op.and]: [literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`)],
         },
     });
+    const updatedCount = Array.isArray(claimResult) ? claimResult[0] : 1;
     return updatedCount === 1;
 }
 

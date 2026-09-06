@@ -18,6 +18,7 @@ class OrderSessionController {
             const {
                 customer_id,
                 customer_channel_id,
+                meta_channel_id,
                 channel,
                 initial_message,
                 entities,
@@ -29,6 +30,7 @@ class OrderSessionController {
                 shop_id,
                 customer_id,
                 customer_channel_id,
+                meta_channel_id,
                 channel,
                 initial_message,
                 entities,
@@ -41,9 +43,10 @@ class OrderSessionController {
             });
         } catch (error) {
             console.error('Start order session error:', error);
-            res.status(500).json({
+            res.status(error.statusCode || 500).json({
                 success: false,
-                error: 'Failed to start order session'
+                error: error.message || 'Failed to start order session',
+                code: error.code || 'ORDER_SESSION_START_FAILED',
             });
         }
     }
@@ -87,6 +90,7 @@ class OrderSessionController {
         try {
             const shop_id = req.user.shopId;
             const customerChannelId = req.query.customer_channel_id || req.query.customer_id;
+            const metaChannelId = req.query.meta_channel_id || null;
 
             if (!shop_id || !customerChannelId) {
                 return res.status(400).json({
@@ -95,7 +99,7 @@ class OrderSessionController {
                 });
             }
 
-            const session = await OrderSessionService.getActiveSession(shop_id, customerChannelId);
+            const session = await OrderSessionService.getActiveSession(shop_id, customerChannelId, metaChannelId);
 
             if (!session) {
                 return res.json({

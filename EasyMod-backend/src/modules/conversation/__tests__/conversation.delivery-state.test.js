@@ -9,6 +9,10 @@ const mockMessageModel = {
     findAndCountAll: jest.fn(),
     findAll: jest.fn(),
 };
+const mockInboxDeliveryOutbox = {
+    create: jest.fn(),
+    update: jest.fn(),
+};
 const mockTransaction = {
     LOCK: { UPDATE: 'UPDATE' },
     finished: null,
@@ -22,6 +26,7 @@ jest.mock('../../entities', () => ({
     Customer: {},
     MetaChannel: {},
     MetaChannelSettings: {},
+    InboxDeliveryOutbox: mockInboxDeliveryOutbox,
 }));
 jest.mock('../../../utils/database/database-setup', () => ({
     sequelize: { transaction: jest.fn(async () => mockTransaction) },
@@ -64,6 +69,7 @@ const draftMessage = {
 beforeEach(() => {
     jest.clearAllMocks();
     mockTransaction.finished = null;
+    mockInboxDeliveryOutbox.create.mockResolvedValue({ id: 'outbox-1' });
 });
 
 describe('ConversationService delivery projection', () => {
@@ -109,7 +115,7 @@ describe('ConversationService delivery projection', () => {
     });
 
     it('claims a draft row before approval and does not create a second message', async () => {
-        const conversation = { id: 'conversation-1', shop_id: 'shop-a' };
+        const conversation = { id: 'conversation-1', shop_id: 'shop-a', channel: 'messenger' };
         mockConversationModel.findOne.mockResolvedValue(conversation);
         mockMessageModel.findOne.mockResolvedValue(draftMessage);
 
@@ -133,6 +139,14 @@ describe('ConversationService delivery projection', () => {
         );
         expect(mockMessageModel.findAndCountAll).not.toHaveBeenCalled();
         expect(mockTransaction.commit).toHaveBeenCalledTimes(1);
+        expect(mockInboxDeliveryOutbox.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message_id: 'draft-message',
+                status: 'PENDING',
+                delivery_source: 'DRAFT_APPROVAL',
+            }),
+            { transaction: mockTransaction },
+        );
     });
 
     it('persists a read watermark and clears only the owning conversation', async () => {
@@ -177,7 +191,7 @@ describe('ConversationService delivery projection', () => {
         await expect(conversationService.holdPendingAiCandidates('conversation-1', 'shop-a'))
             .resolves.toBe(1);
         expect(candidate.delivery_state).toBe('HELD');
-        expect(candidate.metadata.suggestion_visibility).toBe('HIDDEN_DISMISSED');
-        expect(require('../message-lifecycle').isReviewableSuggestion(candidate)).toBe(false);
+        expect(candidate.metadata.suggestion_visibility).toBe('VISIBLE_HITL_REVIEW');
+        expect(require('../message-lifecycle').isReviewableSuggestion(candidate)).toBe(true);
     });
 });

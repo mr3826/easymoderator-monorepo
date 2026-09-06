@@ -106,7 +106,7 @@ const merchantNotificationService = require('src/modules/notification/merchant-n
 const SHOP = 'shop-a';
 const PHOTO_URL = 'https://cdn.easymod.tech/products/black-saree.jpg';
 
-const sendMessage = jest.fn(async () => ({ ok: true }));
+const sendMessage = jest.fn(async () => ({ ok: true, providerMessageId: 'provider-1' }));
 
 const job = (over = {}) => ({
     data: {

@@ -25,6 +25,13 @@ Draft approval locks the candidate under the shop/conversation owner, changes
 the same row to `SEND_PENDING`, sends the approved text once, and changes it to
 `SENT` only after provider acknowledgement. Dismiss persists `DISMISSED`.
 
+The approval transition and its `DRAFT_APPROVAL` delivery outbox row commit in
+one transaction. A worker claims the row with a lease and marks the provider
+boundary before calling Meta. If the process loses the provider outcome, recovery
+reconciles the existing row or marks it for review; it never blindly sends a
+second reply. Meta echo reconciliation resolves provider MIDs within the owning
+shop, Page, and conversation boundary.
+
 ## Alternatives Rejected
 
 - **Separate Draft entity:** rejected because it duplicates candidate content,

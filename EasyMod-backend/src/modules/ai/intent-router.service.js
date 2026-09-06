@@ -20,7 +20,7 @@ const { MemoryCache } = require('../../config/memory-cache');
 const { getShopSettingsGeneration } = require('../../utils/shop-settings-cache');
 const productSearch = require('../product/product-search.service');
 const { incrementFaqHit } = require('../knowledge/knowledge.service');
-const { scrubPII } = require('./prompt-sanitizer.service');
+const { scrubPII, sanitize: sanitizePromptInput } = require('./prompt-sanitizer.service');
 const bertClient = require('./bert-client.service');
 const geminiCache = require('./gemini-cache.service');
 const { photoMatchEnabled, stripImageBlocks } = require('./vision-policy.service');
@@ -88,6 +88,12 @@ const normalizeReplyContext = (replyContext) => {
     const providerMessageId = replyContext.provider_message_id || replyContext.providerMessageId;
     if (!providerMessageId) return null;
     const sender = replyContext.sender || replyContext.referenced_role;
+    const quotedText = typeof replyContext.content === 'string'
+        ? replyContext.content.slice(0, 1000)
+        : null;
+    const quotedSafety = typeof sanitizePromptInput === 'function' && quotedText
+        ? sanitizePromptInput(quotedText)
+        : null;
     return {
         provider_message_id: String(providerMessageId).slice(0, 255),
         referenced_role: sender === 'customer'
@@ -95,9 +101,9 @@ const normalizeReplyContext = (replyContext) => {
             : sender === 'ai'
                 ? 'assistant'
                 : 'merchant',
-        referenced_text: typeof replyContext.content === 'string'
-            ? replyContext.content.slice(0, 1000)
-            : null,
+        referenced_text: quotedSafety?.clean === false
+            ? '[quoted text omitted: instruction-like content]'
+            : quotedText,
         status: replyContext.status === 'resolved' ? 'resolved' : 'unavailable',
     };
 };
@@ -200,6 +206,20 @@ const route = async ({
     confidenceThreshold,
     replyContext = null,
 }) => {
+    const inputSafety = typeof sanitizePromptInput === 'function'
+        ? sanitizePromptInput(message)
+        : { clean: true };
+    if (!inputSafety.clean) {
+        return {
+            response: language === 'en'
+                ? 'I can help with product, price, and availability questions. Please send your shop question.'
+                : 'পণ্য, দাম বা স্টক সম্পর্কে প্রশ্ন পাঠান। আমি সাহায্য করব।',
+            confidence: 0,
+            source: 'prompt_safety_blocked',
+            sourceReferences: null,
+        };
+    }
+
     // Resolve effective threshold: per-shop value wins over global env default.
     // Shop stores it as 0–100 integer (e.g. 75 means 0.75); convert accordingly.
     const effectiveThreshold = confidenceThreshold != null

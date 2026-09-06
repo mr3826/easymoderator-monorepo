@@ -6,6 +6,7 @@ const Customer = require('../customer/customer.entity');
 const { Conversation, Message } = require('./conversation.entity');
 const { normalizeAiReplyMode } = require('../shop/ai-reply-mode');
 const { MESSAGE_DELIVERY_STATES, isProviderConfirmed } = require('./message-lifecycle');
+const { sequelize } = require('../../utils/database/database-setup');
 
 // Import OrderSessionService
 const OrderSessionService = require('../order/order-session-standalone.service');
@@ -37,7 +38,7 @@ class ConversationStateService {
                     shop_id,
                     channel_type: channelType,
                     channel_user_id: customer_channel_id,
-                    ...(meta_channel_id ? { meta_channel_id } : {}),
+                    meta_channel_id,
                 }
             });
 
@@ -79,9 +80,7 @@ class ConversationStateService {
                 channel: channelType,
                 updated_at: { [Op.gte]: oneDayAgo }
             };
-            if (meta_channel_id) {
-                convoWhere.meta_channel_id = meta_channel_id;
-            }
+            convoWhere.meta_channel_id = meta_channel_id;
             let conversation = await Conversation.findOne({
                 where: convoWhere,
                 order: [['updated_at', 'DESC']]
@@ -175,7 +174,9 @@ class ConversationStateService {
             // Check for active order session
             const activeOrderSession = await OrderSessionService.getActiveSession(
                 shop_id,
-                customer_channel_id
+                customer_channel_id,
+                conversation.meta_channel_id || meta_channel_id || null,
+                customer.id,
             );
 
             return {
@@ -251,18 +252,32 @@ class ConversationStateService {
                 }
             });
 
-            const conversation = await Conversation.findByPk(conversationId);
-            if (conversation) {
-                const currentMeta = conversation.metadata && typeof conversation.metadata === 'object'
-                    ? conversation.metadata
-                    : {};
+            const updateConversationMetadata = async (transaction = null) => {
+                const conversation = typeof Conversation.findOne === 'function'
+                    ? await Conversation.findOne({
+                        where: { id: conversationId },
+                        ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
+                    })
+                    : await Conversation.findByPk(conversationId);
+                if (!conversation) return;
+
+                let currentMeta = conversation.metadata;
+                if (typeof currentMeta === 'string') {
+                    try { currentMeta = JSON.parse(currentMeta); } catch (_) { currentMeta = {}; }
+                }
+                if (!currentMeta || typeof currentMeta !== 'object' || Array.isArray(currentMeta)) currentMeta = {};
                 await conversation.update({
                     metadata: {
                         ...currentMeta,
                         last_ai_response_at: new Date().toISOString(),
-                        ai_response_count: (currentMeta.ai_response_count || 0) + 1
+                        ai_response_count: (Number(currentMeta.ai_response_count) || 0) + 1
                     }
-                });
+                }, ...(transaction ? [{ transaction }] : []));
+            };
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                await sequelize.transaction((transaction) => updateConversationMetadata(transaction));
+            } else {
+                await updateConversationMetadata();
             }
 
             return { success: true, message_id: message.id, message };
@@ -414,7 +429,9 @@ class ConversationStateService {
 
             const activeOrderSession = await OrderSessionService.getActiveSession(
                 conversation.shop_id,
-                conversation.customer.channel_user_id
+                conversation.customer.channel_user_id,
+                conversation.meta_channel_id || null,
+                conversation.customer.id,
             );
 
             const meta = conversation.metadata || {};

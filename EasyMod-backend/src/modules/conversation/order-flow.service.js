@@ -65,15 +65,10 @@ async function resolveCustomerId(shopId, platform, channelUserId, metaChannelId 
             channel_type: channelTypeFor(platform),
             channel_user_id: String(channelUserId),
         };
-        let c = metaChannelId
-            ? await Customer.findOne({ where: { ...where, meta_channel_id: metaChannelId }, attributes: ['id'] })
-            : null;
-        if (!c) {
-            c = await Customer.findOne({
-                where: { ...where, ...(metaChannelId ? { meta_channel_id: null } : {}) },
-                attributes: ['id'],
-            });
-        }
+        const c = await Customer.findOne({
+            where: { ...where, meta_channel_id: metaChannelId || null },
+            attributes: ['id'],
+        });
         return c?.id || null;
     } catch {
         return null; // best-effort — order can still be created without a linked customer

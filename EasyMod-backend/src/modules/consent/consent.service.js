@@ -159,7 +159,8 @@ class ConsentService {
         const expectedChannelType = pf === 'facebook' ? 'messenger' : pf;
         if ((customer.shop_id != null && String(customer.shop_id) !== String(shopId))
             || (customer.channel_type != null && customer.channel_type !== expectedChannelType)
-            || (customer.meta_channel_id != null && String(customer.meta_channel_id) !== String(channelId))) {
+            || !hasRequiredContextValue(customer.meta_channel_id)
+            || String(customer.meta_channel_id) !== String(channelId)) {
             logger.warn('ConsentService: customer context does not match the requested shop/channel', {
                 customerId,
                 shopId,
@@ -287,11 +288,19 @@ class ConsentService {
         const customer = await this._withCustomerTransaction(async (transaction) => {
             const lockedCustomer = await this._findRequiredCustomer({ shopId, channelId, customerId, platform: pf, transaction });
             const prev = lockedCustomer.messaging_consent?.[pf] || {};
+            const eventTimestamp = metadata?.event_timestamp ? new Date(metadata.event_timestamp) : null;
+            const previousInboundTimestamp = prev.last_inbound_at ? new Date(prev.last_inbound_at) : null;
+            const inboundAt = eventTimestamp && Number.isFinite(eventTimestamp.getTime())
+                && (!previousInboundTimestamp
+                    || !Number.isFinite(previousInboundTimestamp.getTime())
+                    || eventTimestamp.getTime() >= previousInboundTimestamp.getTime())
+                ? eventTimestamp.toISOString()
+                : prev.last_inbound_at || new Date().toISOString();
             const next = ensurePlatformShape(lockedCustomer.messaging_consent, pf, {
                 // An inbound message after an opt-out does NOT re-grant consent —
                 // the customer must explicitly opt back in.
                 opted_in: prev.opted_in === true || !prev.opted_out_at,
-                last_inbound_at: new Date().toISOString(),
+                last_inbound_at: inboundAt,
             });
             lockedCustomer.messaging_consent = next;
             lockedCustomer.changed('messaging_consent', true);

@@ -19,6 +19,10 @@ jest.mock('../order.service', () => ({
 }));
 jest.mock('../../payment/self-mfs-handler.service', () => ({ verifyPaymentScreenshot: jest.fn() }));
 jest.mock('../../ai/action-gate', () => ({ verifyAuthorization: jest.fn(() => true) }));
+jest.mock('../../customer/customer.entity', () => ({
+    findOne: jest.fn().mockResolvedValue({ id: 'cust-1' }),
+    findByPk: jest.fn(),
+}));
 
 const OrderSessionService = require('../order-session-standalone.service');
 const { createOrderInternal } = require('../order.service');
@@ -31,6 +35,8 @@ describe('createOrderFromSession', () => {
             id: 'sess-1',
             shop_id: 'shop-1',
             customer_id: 'cust-1',
+            customer_channel_id: 'customer-1',
+            meta_channel_id: 'channel-1',
             channel: 'messenger',
             product_info: { id: 'prod-1', name: 'Red Saree', price: 1200, quantity: 1 },
         };
@@ -73,6 +79,8 @@ describe('createOrderFromSession', () => {
             id: 'sess-2',
             shop_id: 'shop-1',
             customer_id: 'cust-1',
+            customer_channel_id: 'customer-1',
+            meta_channel_id: 'channel-1',
             channel: 'messenger',
             // product_info holds only the last-configured item; the cart is the truth.
             product_info: { id: 'prod-2', name: 'Silk Dupatta', price: 500, quantity: 2 },

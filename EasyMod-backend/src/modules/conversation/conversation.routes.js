@@ -11,6 +11,7 @@ const { idempotencyMiddleware } = require('../audit/idempotency.middleware');
 // automated AI replies in the worker; the manual inbox must stay usable so
 // merchants can read and respond to customers while resolving billing.
 router.use(authenticate);
+router.use(verifyShopAccess);
 
 // Routes for conversations
 router.get(

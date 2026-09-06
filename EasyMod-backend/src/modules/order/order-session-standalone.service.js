@@ -13,6 +13,63 @@ const { verifyPaymentScreenshot } = require('../payment/self-mfs-handler.service
 const { isNegatedMutation } = require('../ai/intent/stage2-rules');
 const courierDispatchClaims = require('../delivery/courier-dispatch-claim.service');
 
+const normalizeSessionChannel = (channel) => (
+    channel === 'facebook' ? 'messenger' : (channel || 'messenger')
+);
+
+const isMetaSessionChannel = (channel) => ['messenger', 'instagram'].includes(normalizeSessionChannel(channel));
+
+const customerScopeError = (message = 'Customer does not belong to this shop and Page') => {
+    const error = new Error(message);
+    error.statusCode = 403;
+    error.code = 'CUSTOMER_SCOPE_MISMATCH';
+    return error;
+};
+
+async function findScopedSessionCustomer({ shopId, customerId, customerChannelId, metaChannelId, channel }) {
+    if (!customerId) return null;
+    if (isMetaSessionChannel(channel) && !metaChannelId) {
+        throw customerScopeError('Messenger/Instagram Page context is required for an order session');
+    }
+    if (typeof CustomerEntity.findOne !== 'function') {
+        throw customerScopeError('Customer context is unavailable');
+    }
+
+    const where = {
+        id: customerId,
+        shop_id: shopId,
+        channel_type: normalizeSessionChannel(channel),
+        ...(customerChannelId ? { channel_user_id: String(customerChannelId) } : {}),
+        ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
+    };
+    const customer = await CustomerEntity.findOne({ where });
+    if (!customer) throw customerScopeError();
+    return customer;
+}
+
+async function resolveSessionCustomerId({ shopId, customerId, customerChannelId, metaChannelId, channel }) {
+    if (isMetaSessionChannel(channel) && !metaChannelId) {
+        throw customerScopeError('Messenger/Instagram Page context is required for an order session');
+    }
+    if (typeof CustomerEntity.findOne !== 'function') {
+        if (customerId) throw customerScopeError('Customer context is unavailable');
+        return null;
+    }
+
+    const where = {
+        shop_id: shopId,
+        channel_type: normalizeSessionChannel(channel),
+        channel_user_id: String(customerChannelId),
+        ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
+    };
+    const customer = await CustomerEntity.findOne({ where });
+    if (customerId && (!customer || String(customer.id) !== String(customerId))) {
+        throw customerScopeError();
+    }
+    if (isMetaSessionChannel(channel) && !customer) throw customerScopeError();
+    return customer?.id || customerId || null;
+}
+
 // Define OrderSession model directly
 const OrderSession = sequelize.define('OrderSession', {
     id: {
@@ -28,6 +85,12 @@ const OrderSession = sequelize.define('OrderSession', {
     customer_id: {
         type: DataTypes.UUID,
         allowNull: true
+    },
+    // Messenger/Instagram identifiers are Page-scoped; never resume a
+    // session from another Meta channel owned by the same shop.
+    meta_channel_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
     },
     customer_channel_id: {
         type: DataTypes.STRING,
@@ -362,7 +425,8 @@ class OrderSessionService {
             customer_id,
             customer_channel_id,
             meta_channel_id = null,
-            channel = 'messenger',
+            channel: inputChannel = null,
+            platform = null,
             initial_message,
             entities = {},
             language = 'bn',            // 'bn' | 'en' | 'mixed' — single-language replies
@@ -370,6 +434,14 @@ class OrderSessionService {
             product_candidates = null   // Fix 14: array of 2+ matching products → numbered picker
         } = data;
         let product_info = incomingProductInfo;
+        const channel = inputChannel || platform || 'messenger';
+        const resolvedCustomerId = await resolveSessionCustomerId({
+            shopId: shop_id,
+            customerId: customer_id,
+            customerChannelId: customer_channel_id,
+            metaChannelId: meta_channel_id,
+            channel,
+        });
 
         // Default AI settings
         const defaultAiSettings = {
@@ -382,20 +454,12 @@ class OrderSessionService {
             shop_id,
             customer_channel_id,
             status: 'ACTIVE',
-            ...(customer_id ? { customer_id } : {}),
+            ...(resolvedCustomerId ? { customer_id: resolvedCustomerId } : {}),
         };
-        let existingSession = meta_channel_id
-            ? await OrderSession.findOne({
-                where: { ...sessionWhere, meta_channel_id },
-                order: [['last_activity_at', 'DESC']],
-            })
-            : null;
-        if (!existingSession) {
-            existingSession = await OrderSession.findOne({
-                where: { ...sessionWhere, ...(meta_channel_id ? { meta_channel_id: null } : {}) },
-                order: [['last_activity_at', 'DESC']],
-            });
-        }
+        const existingSession = await OrderSession.findOne({
+            where: { ...sessionWhere, meta_channel_id: meta_channel_id || null },
+            order: [['last_activity_at', 'DESC']],
+        });
 
         if (existingSession) {
             // Resume existing session if it's not too old (24 hours)
@@ -417,7 +481,7 @@ class OrderSessionService {
             const session = await OrderSession.create({
                 id: uuidv4(),
                 shop_id,
-                customer_id,
+                customer_id: resolvedCustomerId,
                 customer_channel_id,
                 meta_channel_id,
                 channel,
@@ -462,7 +526,7 @@ class OrderSessionService {
         const session = await OrderSession.create({
             id: uuidv4(),
             shop_id,
-            customer_id,
+            customer_id: resolvedCustomerId,
             customer_channel_id,
             meta_channel_id,
             channel,
@@ -1100,7 +1164,13 @@ class OrderSessionService {
                         await OrderSessionService.enrichCustomer(
                             session.customer_id,
                             step_data.name,
-                            step_data.phone
+                            step_data.phone,
+                            {
+                                shopId: session.shop_id,
+                                channel: session.channel,
+                                customerChannelId: session.customer_channel_id,
+                                metaChannelId: session.meta_channel_id,
+                            },
                         ).catch(() => {}); // non-blocking
                     }
 
@@ -1296,18 +1366,10 @@ class OrderSessionService {
                     { expires_at: { [Op.is]: null } }
                 ]
         };
-        let session = metaChannelId
-            ? await OrderSession.findOne({
-                where: { ...where, meta_channel_id: metaChannelId },
-                order: [['last_activity_at', 'DESC']],
-            })
-            : null;
-        if (!session) {
-            session = await OrderSession.findOne({
-                where: { ...where, ...(metaChannelId ? { meta_channel_id: null } : {}) },
-                order: [['last_activity_at', 'DESC']],
-            });
-        }
+        const session = await OrderSession.findOne({
+            where: { ...where, meta_channel_id: metaChannelId || null },
+            order: [['last_activity_at', 'DESC']],
+        });
         return session;
     }
 
@@ -1576,6 +1638,13 @@ class OrderSessionService {
         }
 
         if (!conversationId) throw new Error('Conversation context is required to create an order');
+        const scopedCustomer = await findScopedSessionCustomer({
+            shopId: session.shop_id,
+            customerId: session.customer_id,
+            customerChannelId: session.customer_channel_id,
+            metaChannelId: session.meta_channel_id,
+            channel: session.channel,
+        });
         const summaryHash = confirmedSummaryHash || stepData.confirmed_summary_hash || hashSummary(
             OrderSessionService.buildContractOrderSummary(session, stepData)
         );
@@ -1595,7 +1664,7 @@ class OrderSessionService {
         }
 
         const orderData = {
-            customer_id: session.customer_id || null,
+            customer_id: scopedCustomer?.id || null,
             customer_name: stepData.name,
             customer_phone: stepData.phone,
             delivery_address: stepData.address,
@@ -1626,8 +1695,19 @@ class OrderSessionService {
      * Update the Customer record with the name and phone collected during the session,
      * but only if the current values are missing/generic.
      */
-    static async enrichCustomer(customerId, name, phone) {
-        const customer = await CustomerEntity.findByPk(customerId);
+    static async enrichCustomer(customerId, name, phone, scope = {}) {
+        const customer = scope && (scope.shopId || scope.metaChannelId || scope.customerChannelId)
+            && typeof CustomerEntity.findOne === 'function'
+            ? await CustomerEntity.findOne({
+                where: {
+                    id: customerId,
+                    ...(scope.shopId ? { shop_id: scope.shopId } : {}),
+                    ...(scope.channel ? { channel_type: normalizeSessionChannel(scope.channel) } : {}),
+                    ...(scope.customerChannelId ? { channel_user_id: String(scope.customerChannelId) } : {}),
+                    ...(scope.metaChannelId ? { meta_channel_id: scope.metaChannelId } : {}),
+                },
+            })
+            : await CustomerEntity.findByPk(customerId);
         if (!customer) return;
 
         const updates = {};

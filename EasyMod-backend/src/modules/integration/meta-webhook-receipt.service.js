@@ -87,9 +87,10 @@ async function recordReceipt({ pageId, objectType = 'page', messaging }) {
     const payloadHash = sha256(JSON.stringify(messaging ?? null));
     const dedupeKey = scopedDedupeKey(pageId, eventId, payloadHash);
 
-    // Only events that can be replayed carry a body. Echoes, delivery and read
-    // receipts are accounted for but never re-ingested, so they store nothing.
-    const replayable = eventType === 'message' || eventType === 'optin';
+    // Keep echoes too: an echo can arrive before the original provider request
+    // finishes, so it may need a later reconciliation pass to attach Meta's MID
+    // to the already-persisted outbound row.
+    const replayable = eventType === 'message' || eventType === 'optin' || eventType === 'echo';
 
     // A cipher failure must degrade, not reject: recording the event without a
     // replay body still preserves it as evidence, whereas throwing here would

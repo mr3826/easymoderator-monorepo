@@ -297,6 +297,17 @@ test('Page automation_mode and ai_auto_reply cannot override an AUTO business', 
     }));
 });
 
+test('AUTO fails closed when the provider returns no message ID', async () => {
+    mockSendMessage.mockResolvedValueOnce({ sent: true, providerMessageId: null });
+
+    await expect(processMessageJob(makeJob())).rejects.toMatchObject({ code: 'PROVIDER_NO_SEND' });
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    expect(mockStoredMessageUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        delivery_state: 'FAILED',
+        metadata: expect.objectContaining({ delivered: false, held_reason: 'provider_send_failed' }),
+    }));
+});
+
 test('a channel that is no longer CONNECTED is blocked before the LLM', async () => {
     mockGetChannelSettings.mockImplementationOnce(async () => {
         mockChannel.status = 'DISCONNECTED';

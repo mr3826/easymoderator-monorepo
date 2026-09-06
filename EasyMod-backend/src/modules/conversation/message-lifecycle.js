@@ -45,8 +45,18 @@ function metadataFor(message) {
 function normalizeDeliveryState(message) {
     const metadata = metadataFor(message);
     const explicit = message?.delivery_state || metadata.delivery_state;
-    if (stateValues.has(explicit)) return explicit;
-    if (metadata.delivered === true) return MESSAGE_DELIVERY_STATES.SENT;
+    if (stateValues.has(explicit)) {
+        if ([MESSAGE_DELIVERY_STATES.SENT, MESSAGE_DELIVERY_STATES.DELIVERED].includes(explicit)
+            && !providerMessageIdFor(message)) {
+            return MESSAGE_DELIVERY_STATES.HELD;
+        }
+        return explicit;
+    }
+    if (metadata.delivered === true) {
+        return providerMessageIdFor(message)
+            ? MESSAGE_DELIVERY_STATES.SENT
+            : MESSAGE_DELIVERY_STATES.HELD;
+    }
     if (metadata.delivery_status === 'pending') return MESSAGE_DELIVERY_STATES.SEND_PENDING;
     if (metadata.delivered === false) {
         return metadata.held_reason === 'draft_mode'
@@ -57,13 +67,30 @@ function normalizeDeliveryState(message) {
 }
 
 function providerMessageIdFor(message) {
-    return message?.provider_message_id || metadataFor(message).provider_message_id || null;
+    const metadata = metadataFor(message);
+    const raw = [message?.provider_message_id, metadata.provider_message_id]
+        .find((value) => value !== null && value !== undefined && String(value).trim());
+    return raw && String(raw).trim() ? String(raw).trim() : null;
+}
+
+function providerAcknowledgementId(result) {
+    if (!result || result.sent === false || result.success === false || result.ok === false) return null;
+    if (result.providerMessageId && String(result.providerMessageId).trim()) {
+        return String(result.providerMessageId).trim();
+    }
+    const ids = Array.isArray(result.providerMessageIds) ? result.providerMessageIds : [];
+    const lastId = ids[ids.length - 1];
+    return lastId && String(lastId).trim() ? String(lastId).trim() : null;
+}
+
+function hasProviderAcknowledgement(result) {
+    return Boolean(providerAcknowledgementId(result));
 }
 
 function isProviderConfirmed(message) {
     const state = normalizeDeliveryState(message);
     return (state === MESSAGE_DELIVERY_STATES.SENT || state === MESSAGE_DELIVERY_STATES.DELIVERED)
-        && (Boolean(providerMessageIdFor(message)) || metadataFor(message).provider_send_confirmed === true);
+        && Boolean(providerMessageIdFor(message));
 }
 
 function isUnsentAiMessage(message) {
@@ -121,6 +148,8 @@ module.exports = {
     SUGGESTION_VISIBILITY,
     normalizeDeliveryState,
     providerMessageIdFor,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
     isProviderConfirmed,
     isUnsentAiMessage,
     isTranscriptMessage,

@@ -448,6 +448,8 @@ class AIChatbotController {
                 shop_id,
                 customer_channel_id,
                 platform,
+                meta_channel_id,
+                customer_id: ingestionResult.customer_id,
                 initial_message: message,
                 entities,
                 product_info: productInfo
@@ -755,7 +757,12 @@ class AIChatbotController {
             const { transaction_id, customer_message, screenshot_url } = req.body;
 
             // Get active order session
-            const session = await OrderSessionService.getActiveSession(req.body.shop_id, req.body.customer_channel_id);
+            const session = await OrderSessionService.getActiveSession(
+                req.user?.shopId,
+                req.body.customer_channel_id,
+                req.body.meta_channel_id || null,
+                req.body.customer_id || null,
+            );
             
             if (!session || session.status !== 'ACTIVE') {
                 return res.status(404).json({

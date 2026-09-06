@@ -5,6 +5,8 @@ const {
     SUGGESTION_VISIBILITY,
     normalizeDeliveryState,
     isProviderConfirmed,
+    providerAcknowledgementId,
+    hasProviderAcknowledgement,
     isTranscriptMessage,
     isReviewableSuggestion,
     deriveMessageSendIdempotencyKey,
@@ -35,6 +37,26 @@ describe('message lifecycle projection', () => {
 
         expect(isProviderConfirmed(sent)).toBe(true);
         expect(isTranscriptMessage(sent)).toBe(true);
+    });
+
+    it('requires a provider message ID in the send acknowledgement', () => {
+        expect(providerAcknowledgementId({ providerMessageId: 'mid-1' })).toBe('mid-1');
+        expect(providerAcknowledgementId({ providerMessageIds: ['mid-1', 'mid-2'] })).toBe('mid-2');
+        expect(hasProviderAcknowledgement({ providerMessageId: null, providerMessageIds: [null] })).toBe(false);
+        expect(hasProviderAcknowledgement({ sent: false, providerMessageId: 'mid-ignored' })).toBe(false);
+    });
+
+    it('does not treat a legacy confirmation flag without a provider ID as sent', () => {
+        expect(isProviderConfirmed({
+            sender: 'ai',
+            delivery_state: MESSAGE_DELIVERY_STATES.SENT,
+            metadata: { delivered: true, provider_send_confirmed: true },
+        })).toBe(false);
+        expect(isTranscriptMessage({
+            sender: 'ai',
+            delivery_state: MESSAGE_DELIVERY_STATES.SENT,
+            metadata: { delivered: true, provider_send_confirmed: true },
+        })).toBe(false);
     });
 
     it('keeps idempotency keys stable per candidate and scoped by tenant', () => {

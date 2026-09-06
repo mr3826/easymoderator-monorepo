@@ -35,10 +35,7 @@ module.exports = {
             UPDATE messages
                SET delivery_state = CASE
                    WHEN (metadata::jsonb ->> 'delivered') = 'true'
-                        AND (
-                            metadata::jsonb ->> 'provider_message_id' IS NOT NULL
-                            OR (metadata::jsonb ->> 'provider_send_confirmed') = 'true'
-                        ) THEN 'SENT'
+                         AND NULLIF(metadata::jsonb ->> 'provider_message_id', '') IS NOT NULL THEN 'SENT'
                    WHEN (metadata::jsonb ->> 'delivered') = 'true' THEN 'HELD'
                    WHEN (metadata::jsonb ->> 'delivery_status') = 'pending' THEN 'SEND_PENDING'
                    WHEN (metadata::jsonb ->> 'delivered') = 'false'
@@ -92,6 +89,37 @@ module.exports = {
                 ON meta_webhook_receipts(page_id, dedupe_key);
         `);
 
+        // Some production snapshots have the migration ledger entry for the
+        // missing-table repair but still lack order_sessions. Make this forward
+        // migration safe for that state instead of assuming the table exists.
+        await sequelize.query(`
+            CREATE TABLE IF NOT EXISTS order_sessions (
+                id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                shop_id             UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+                customer_id         UUID REFERENCES customers(id) ON DELETE CASCADE,
+                conversation_id     UUID,
+                session_data        JSONB NOT NULL DEFAULT '{}',
+                step                VARCHAR(100),
+                is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+                expires_at          TIMESTAMPTZ,
+                completed_at        TIMESTAMPTZ,
+                order_id            UUID REFERENCES orders(id) ON DELETE SET NULL,
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                customer_channel_id VARCHAR(255),
+                channel             VARCHAR(20) DEFAULT 'messenger',
+                current_step        VARCHAR(50) DEFAULT 'INITIAL',
+                step_data           JSONB DEFAULT '{}',
+                product_info        JSONB,
+                status              VARCHAR(20) DEFAULT 'ACTIVE',
+                automation_mode    VARCHAR(20) DEFAULT 'DRAFT',
+                confidence_threshold INTEGER DEFAULT 60,
+                last_activity_at   TIMESTAMPTZ DEFAULT NOW(),
+                created_order_id    UUID REFERENCES orders(id) ON DELETE SET NULL,
+                final_summary       TEXT,
+                metadata            JSONB DEFAULT '{}'
+            );
+        `);
         await sequelize.query('ALTER TABLE order_sessions ADD COLUMN IF NOT EXISTS meta_channel_id UUID;');
         await sequelize.query(`
             CREATE INDEX IF NOT EXISTS idx_order_sessions_shop_customer_page
@@ -102,7 +130,7 @@ module.exports = {
     down: async (sequelize) => {
         await sequelize.query('DROP INDEX IF EXISTS idx_meta_webhook_receipts_page_dedupe;');
         await sequelize.query('DROP INDEX IF EXISTS idx_order_sessions_shop_customer_page;');
-        await sequelize.query('ALTER TABLE order_sessions DROP COLUMN IF EXISTS meta_channel_id;');
+        await sequelize.query('ALTER TABLE IF EXISTS order_sessions DROP COLUMN IF EXISTS meta_channel_id;');
         await sequelize.query('DROP INDEX IF EXISTS idx_messages_conversation_send_idempotency;');
         await sequelize.query('DROP INDEX IF EXISTS idx_messages_conversation_delivery_state;');
         await sequelize.query('DROP INDEX IF EXISTS idx_messages_provider_message_id;');

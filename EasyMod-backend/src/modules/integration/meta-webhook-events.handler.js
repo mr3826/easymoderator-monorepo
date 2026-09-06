@@ -19,10 +19,10 @@
  * meta_webhook_receipts first, and every terminal outcome is written back.
  */
 
-const { Customer, AuditLog } = require('../entities');
+const { Customer, AuditLog, InboxDeliveryOutbox } = require('../entities');
 const { Conversation, Message } = require('../conversation/conversation.entity');
 const { sequelize } = require('../../utils/database/database-setup');
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
@@ -51,6 +51,18 @@ const fallbackCustomerMetadata = ({ platform, source = 'webhook' }) => ({
     platform: platform === 'messenger' ? 'facebook' : platform,
     channel: displayChannelForPlatform(platform),
 });
+
+async function lockInboundConversationKey({ shopId, channelType, metaChannelId, customerId, transaction }) {
+    if (sequelize?.getDialect?.() !== 'postgres' || typeof sequelize.query !== 'function') return;
+    const key = [shopId, channelType, metaChannelId || 'unbound', customerId].join(':');
+    // The 24-hour conversation window is intentionally not a unique index: a
+    // shop may have multiple historical threads. Serialize only the
+    // find-or-create key so two first messages cannot open two live threads.
+    await sequelize.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended(:conversation_key, 0))',
+        { replacements: { conversation_key: key }, transaction },
+    );
+}
 
 async function applyFallbackCustomerProfile({ customer, platform, psid, isPlaceholderName }) {
     if (!customer || typeof customer.update !== 'function' || !isPlaceholderName(customer.name)) return;
@@ -337,9 +349,12 @@ async function processInboundConsent({ storeResult, normalizedEvent, channel }) 
         const consentState = await consentService.recordInbound({
             shopId: storeResult.shop_id,
             channelId: channel?.id || null,
-            customerId: storeResult.customer_id,
-            platform,
-            metadata: { message_id: storeResult.message_id },
+                customerId: storeResult.customer_id,
+                platform,
+                metadata: {
+                    message_id: storeResult.message_id,
+                    event_timestamp: normalizedEvent.timestamp?.toISOString?.() || null,
+                },
         });
         requireConsentState(consentState, 'recordInbound');
         return { shouldDispatch: true };
@@ -397,8 +412,8 @@ async function handleMessagingOptin({ channel, senderId, optin }) {
 
 const REPLY_PREVIEW_MAX_LENGTH = 1000;
 
-async function resolveLocalReplyContext({ providerMessageId, shopId, channelType, metaChannelId, transaction }) {
-    if (!providerMessageId || !shopId || !metaChannelId || typeof Message.findOne !== 'function') return null;
+async function resolveLocalReplyContext({ providerMessageId, shopId, channelType, metaChannelId, conversationId, transaction }) {
+    if (!providerMessageId || !shopId || !metaChannelId || !conversationId || typeof Message.findOne !== 'function') return null;
 
     const conversationWhere = {
         shop_id: shopId,
@@ -407,6 +422,7 @@ async function resolveLocalReplyContext({ providerMessageId, shopId, channelType
     };
     const referenced = await Message.findOne({
         where: {
+            conversation_id: conversationId,
             [Op.or]: [
                 { external_id: providerMessageId },
                 { provider_message_id: providerMessageId },
@@ -443,7 +459,9 @@ async function resolveLocalReplyContext({ providerMessageId, shopId, channelType
 async function reconcileOutboundEcho({ messaging, channel }) {
     const providerMessageId = messaging.message?.mid;
     const recipientId = messaging.recipient?.id;
-    if (!providerMessageId || !recipientId || typeof Conversation.findOne !== 'function') return false;
+    if (!providerMessageId || !recipientId || typeof Conversation.findOne !== 'function') {
+        return { reconciled: false, retryable: false };
+    }
 
     const conversation = await Conversation.findOne({
         where: {
@@ -464,13 +482,20 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         }],
         order: [['updated_at', 'DESC']],
     });
-    if (!conversation || typeof Message.findOne !== 'function') return false;
+    if (!conversation || typeof Message.findOne !== 'function') {
+        return { reconciled: false, retryable: false };
+    }
 
     const candidateWhere = {
         conversation_id: conversation.id,
         sender: { [Op.in]: ['ai', 'business'] },
         provider_message_id: null,
-        delivery_state: 'SEND_PENDING',
+        delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED'] },
+        [Op.and]: [
+            // A FAILED row is eligible only when a provider call actually
+            // started; pre-provider failures must not absorb an unrelated echo.
+            literal(`(metadata->>'provider_send_attempted') = 'true'`),
+        ],
     };
     const candidates = typeof Message.findAll === 'function'
         ? (await Message.findAll({ where: candidateWhere, order: [['created_at', 'DESC']], limit: 10 }) || [])
@@ -488,7 +513,10 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         : !echoText && candidates.length === 1
             ? candidates[0]
             : null;
-    if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) return false;
+    if (!candidates.length) return { reconciled: false, retryable: false };
+    if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) {
+        return { reconciled: false, retryable: true };
+    }
 
     let candidateMetadata = candidate.metadata;
     if (typeof candidateMetadata === 'string') {
@@ -514,11 +542,27 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         where: {
             id: candidate.id,
             conversation_id: conversation.id,
-            delivery_state: 'SEND_PENDING',
+            delivery_state: { [Op.in]: ['SEND_PENDING', 'FAILED'] },
             provider_message_id: null,
+            [Op.and]: [
+                literal(`(metadata->>'provider_send_attempted') = 'true'`),
+            ],
         },
     });
-    if (updatedCount !== 1) return false;
+    if (updatedCount !== 1) return { reconciled: false, retryable: true };
+    if (InboxDeliveryOutbox && typeof InboxDeliveryOutbox.update === 'function') {
+        await InboxDeliveryOutbox.update({
+            status: 'COMPLETED',
+            processing_token: null,
+            last_error_code: null,
+            next_attempt_at: null,
+        }, {
+            where: {
+                message_id: candidate.id,
+                status: { [Op.in]: ['PENDING', 'PROCESSING', 'NEEDS_RECONCILIATION'] },
+            },
+        }).catch(() => {});
+    }
     sseManager.emit(channel.shop_id, 'message_delivery_updated', {
         conversation_id: conversation.id,
         message_id: candidate.id,
@@ -532,7 +576,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         conversationId: conversation.id,
         messageId: candidate.id,
     });
-    return true;
+    return { reconciled: true, retryable: false };
 }
 
 function buildReplyMetadata(replyTo, resolvedReply) {
@@ -670,6 +714,14 @@ async function storeIncomingMessage(event) {
             });
             customerForEnrichment = customer;
 
+            await lockInboundConversationKey({
+                shopId: shop_id,
+                channelType,
+                metaChannelId: meta_channel_id,
+                customerId: customer.id,
+                transaction: t,
+            });
+
             // Once the webhook identifies a Page, only its exact channel may
             // match. Legacy unpinned rows remain historical data, not a target
             // for a newly identified Page.
@@ -699,6 +751,9 @@ async function storeIncomingMessage(event) {
 
             const attachments = event.attachments || [];
             const msgContent = message || (attachments.length > 0 ? '[Attachment]' : '');
+            const eventTime = event.timestamp instanceof Date && Number.isFinite(event.timestamp.getTime())
+                ? event.timestamp
+                : new Date();
             if (!conversation) {
                 conversation = await Conversation.create({
                     shop_id,
@@ -707,7 +762,11 @@ async function storeIncomingMessage(event) {
                     meta_channel_id,
                     role: 'user',
                     message: msgContent,
-                    metadata: { source: 'webhook', platform }
+                    metadata: {
+                        source: 'webhook',
+                        platform,
+                        last_message_at: eventTime.toISOString(),
+                    }
                 }, { transaction: t });
             }
 
@@ -726,6 +785,7 @@ async function storeIncomingMessage(event) {
                 shopId: shop_id,
                 channelType,
                 metaChannelId: meta_channel_id,
+                conversationId: conversation.id,
                 transaction: t,
             });
             const replyMetadata = buildReplyMetadata(replyTo, resolvedReply);
@@ -751,17 +811,47 @@ async function storeIncomingMessage(event) {
                 content: msgContent,
                 sender: 'customer',
                 external_id: externalId,
+                created_at: eventTime,
                 metadata: { ...msgMeta, ...replyMetadata },
             }, { transaction: t });
 
+            const currentLastMessageAt = currentConversationMetadata.last_message_at
+                ? new Date(currentConversationMetadata.last_message_at)
+                : conversation.updated_at
+                    ? new Date(conversation.updated_at)
+                    : null;
+            const eventIsAtOrAfterCurrent = !currentLastMessageAt
+                || !Number.isFinite(currentLastMessageAt.getTime())
+                || eventTime.getTime() >= currentLastMessageAt.getTime();
+            let persistedUnreadCount = unreadCount;
+            if (typeof Message.count === 'function') {
+                const unreadWhere = {
+                    conversation_id: conversation.id,
+                    sender: 'customer',
+                };
+                const readAt = currentConversationMetadata.last_read_message_at
+                    ? new Date(currentConversationMetadata.last_read_message_at)
+                    : null;
+                if (readAt && Number.isFinite(readAt.getTime())) {
+                    unreadWhere.created_at = { [Op.gt]: readAt };
+                }
+                persistedUnreadCount = await Message.count({ where: unreadWhere, transaction: t });
+            } else if (currentConversationMetadata.last_read_message_at) {
+                const readAt = new Date(currentConversationMetadata.last_read_message_at).getTime();
+                if (Number.isFinite(readAt) && eventTime.getTime() <= readAt) {
+                    persistedUnreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0);
+                }
+            }
             const nextConversationMetadata = {
                 ...currentConversationMetadata,
-                unreadCount,
-                last_actual_message: msgContent,
+                unreadCount: persistedUnreadCount,
+                ...(eventIsAtOrAfterCurrent ? {
+                    last_actual_message: msgContent,
+                    last_message_at: eventTime.toISOString(),
+                } : {}),
             };
             await conversation.update({
-                message: msgContent,
-                updated_at: new Date(),
+                ...(eventIsAtOrAfterCurrent ? { message: msgContent, updated_at: eventTime } : {}),
                 metadata: nextConversationMetadata,
             }, { transaction: t });
 
@@ -776,7 +866,7 @@ async function storeIncomingMessage(event) {
                 shop_id,
                 meta_channel_id,
                 conversation_metadata: nextConversationMetadata,
-                unread_count: unreadCount,
+                unread_count: persistedUnreadCount,
             };
         });
 
@@ -941,13 +1031,22 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
     }
     if (messaging.message?.is_echo) {
         logger.debug('Skipped echo event', { pageId: metaAssetId });
-        await reconcileOutboundEcho({ messaging, channel }).catch((err) => {
+        const reconciliation = await reconcileOutboundEcho({ messaging, channel }).catch((err) => {
             logger.warn('Unable to reconcile Meta outbound echo', {
                 shopId: channel.shop_id,
                 metaChannelId: channel.id,
                 error: err.message,
             });
+            return { reconciled: false, retryable: true };
         });
+        if (reconciliation?.retryable) {
+            const error = new Error('Meta outbound echo could not be reconciled');
+            error.name = 'OUTBOUND_ECHO_UNRECONCILED';
+            error.code = 'OUTBOUND_ECHO_UNRECONCILED';
+            error.retryable = true;
+            await receiptService.markStoreFailure(receipt, error, { pageId: metaAssetId || pageId });
+            return 'failed';
+        }
         await receiptService.markSkipped(receipt, 'ECHO');
         return 'skipped';
     }
@@ -1062,7 +1161,7 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             resolutionFailure.cause = err;
             for (const { receipt } of recorded) {
                 if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
-                if (['message', 'optin'].includes(receipt?.event_type)) {
+                if (['message', 'optin', 'echo'].includes(receipt?.event_type)) {
                     await receiptService.markStoreFailure(receipt, resolutionFailure, { pageId });
                 } else {
                     await receiptService.markSkipped(receipt, 'CHANNEL_RESOLUTION_FAILED');
@@ -1076,7 +1175,7 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             let alerted = false;
             for (const { receipt } of recorded) {
                 if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
-                if (!['message', 'optin'].includes(receipt?.event_type)) {
+                if (!['message', 'optin', 'echo'].includes(receipt?.event_type)) {
                     await receiptService.markSkipped(receipt, 'PAGE_NOT_CONNECTED');
                     continue;
                 }

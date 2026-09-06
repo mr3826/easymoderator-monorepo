@@ -1,8 +1,16 @@
-const { Conversation, Message, Customer, MetaChannel, MetaChannelSettings } = require('../entities');
+const {
+    Conversation,
+    Message,
+    Customer,
+    MetaChannel,
+    MetaChannelSettings,
+    InboxDeliveryOutbox,
+} = require('../entities');
 const { Op } = require('sequelize');
 const subscriptionService = require('../subscription/subscription.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { AppError } = require('../../utils/AppError');
+const sseManager = require('../../utils/sse-manager');
 const { getEffectiveAiReplyMode } = require('../shop/ai-reply-mode');
 const { sequelize } = require('../../utils/database/database-setup');
 const {
@@ -68,6 +76,10 @@ const CLIENT_MESSAGE_METADATA_FIELDS = new Set([
     'delivery_status',
     'delivered',
     'suggestion_visibility',
+    'reply_to',
+    'reply_to_provider_message_id',
+    'reply_to_internal_message_id',
+    'reply_to_is_self_reply',
 ]);
 
 const sanitizeClientMessageMetadata = (metadata) => Object.fromEntries(
@@ -447,12 +459,13 @@ class ConversationService {
     }
 
     async createMessage(conversationId, shopId, messageData) {
-        try {
+        const create = async (transaction) => {
             const conversation = await Conversation.findOne({
                 where: {
                     id: conversationId,
                     shop_id: shopId
-                }
+                },
+                ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
             });
 
             if (!conversation) {
@@ -471,6 +484,7 @@ class ConversationService {
                         conversation_id: conversationId,
                         send_idempotency_key: sendIdempotencyKey,
                     },
+                    ...(transaction ? { transaction } : {}),
                 });
                 if (existing) {
                     return { ...mapMessage(existing), idempotency_replay: true };
@@ -504,9 +518,16 @@ class ConversationService {
                 delivery_source: isManualOutbound ? (isMetaOutbound ? 'MANUAL' : 'LOCAL') : null,
                 provider_message_id: null,
                 send_idempotency_key: sendIdempotencyKey,
-            });
+            }, transaction ? { transaction } : undefined);
 
             return { ...mapMessage(message), idempotency_replay: false };
+        };
+
+        try {
+            if (sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function') {
+                return await sequelize.transaction((transaction) => create(transaction));
+            }
+            return await create(null);
         } catch (error) {
             throw new Error(`Failed to create message: ${error.message}`);
         }
@@ -607,12 +628,45 @@ class ConversationService {
                 provider_message_id: null,
                 send_idempotency_key: sendIdempotencyKey,
             }, { transaction });
+            if (InboxDeliveryOutbox && typeof InboxDeliveryOutbox.create === 'function'
+                && ['facebook', 'messenger'].includes(conversation.channel)) {
+                await InboxDeliveryOutbox.create({
+                    shop_id: shopId,
+                    conversation_id: conversationId,
+                    message_id: messageId,
+                    delivery_source: 'DRAFT_APPROVAL',
+                    status: 'PENDING',
+                    next_attempt_at: new Date(),
+                }, { transaction });
+            }
             await transaction.commit();
             return { message: candidate, sendIdempotencyKey, alreadySent: false };
         } catch (error) {
             if (!transaction.finished) await transaction.rollback();
             throw error;
         }
+    }
+
+    async settleInboxDeliveryOutbox(messageId, {
+        sent = false,
+        providerAttempted = false,
+        providerMessageId = null,
+        errorCode = null,
+    } = {}) {
+        if (!InboxDeliveryOutbox || typeof InboxDeliveryOutbox.update !== 'function' || !messageId) return;
+        const status = sent ? 'COMPLETED' : providerAttempted ? 'NEEDS_RECONCILIATION' : 'PENDING';
+        await InboxDeliveryOutbox.update({
+            status,
+            processing_token: null,
+            ...(providerMessageId ? { provider_message_id: providerMessageId } : {}),
+            last_error_code: errorCode || null,
+            next_attempt_at: status === 'PENDING' ? new Date() : null,
+        }, {
+            where: {
+                message_id: messageId,
+                status: { [Op.in]: ['PENDING', 'PROCESSING'] },
+            },
+        });
     }
 
     async dismissAiDraft(conversationId, shopId, messageId, actorId = null) {
@@ -765,26 +819,64 @@ class ConversationService {
                 && state !== MESSAGE_DELIVERY_STATES.FAILED
                 && metadata.provider_send_attempted !== true;
         });
-        await Promise.all(pending.map((message) => message.update({
-            delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-            metadata: {
+        await Promise.all(pending.map(async (message) => {
+            const metadata = {
                 ...normalizeObject(message.metadata),
                 delivered: false,
                 delivery_status: 'held',
                 delivery_state: MESSAGE_DELIVERY_STATES.HELD,
                 held_reason: reason,
-                suggestion_visibility: SUGGESTION_VISIBILITY.HIDDEN_DISMISSED,
+                suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
                 cancelled_by_human: true,
                 cancelled_at: new Date().toISOString(),
-            },
-        })));
+            };
+            let updatedCount = 0;
+            if (typeof Message.update === 'function') {
+                const result = await Message.update({
+                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                    metadata,
+                }, {
+                    where: {
+                        id: message.id,
+                        conversation_id: conversationId,
+                        sender: 'ai',
+                        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
+                        provider_message_id: null,
+                        [Op.and]: [
+                            literal(`(metadata->>'provider_send_attempted') IS DISTINCT FROM 'true'`),
+                        ],
+                    },
+                });
+                updatedCount = Array.isArray(result) ? result[0] : 1;
+            } else if (typeof message.update === 'function') {
+                await message.update({
+                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                    metadata,
+                });
+                updatedCount = 1;
+            }
+            if (updatedCount !== 1) return;
+            message.delivery_state = MESSAGE_DELIVERY_STATES.HELD;
+            message.metadata = metadata;
+            sseManager.emit(shopId, 'message_delivery_updated', {
+                conversation_id: conversationId,
+                message_id: message.id,
+                metadata,
+                delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                delivery_source: message.delivery_source || metadata.delivery_source || null,
+                content: message.content || null,
+                sender: message.sender === 'business' ? 'agent' : message.sender || 'ai',
+                created_at: message.created_at || null,
+            });
+        }));
         return pending.length;
     }
 
     async updateConversation(conversationId, shopId, updates) {
-        try {
+        const update = async (transaction) => {
             const conversation = await Conversation.findOne({
-                where: { id: conversationId, shop_id: shopId }
+                where: { id: conversationId, shop_id: shopId },
+                ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
             });
 
             if (!conversation) {
@@ -803,7 +895,9 @@ class ConversationService {
             if (updates.assignee_id !== undefined) fields.assignee_id = updates.assignee_id;
             if (updates.resolution_note !== undefined) fields.resolution_note = updates.resolution_note;
 
-            await conversation.update(fields);
+            await conversation.update(fields, ...(transaction ? [{ transaction }] : []));
+
+            const heldEvents = [];
 
             // A human takeover invalidates any candidate that has not crossed
             // the provider boundary. The worker performs the same check at its
@@ -814,28 +908,54 @@ class ConversationService {
                     where: {
                         conversation_id: conversationId,
                         sender: 'ai',
-                        delivery_state: MESSAGE_DELIVERY_STATES.SEND_PENDING,
                     },
+                    ...(transaction ? { transaction, lock: transaction.LOCK?.UPDATE } : {}),
                 });
                 const cancellable = pending.filter((message) => (
-                    normalizeObject(message.metadata).provider_send_attempted !== true
+                    !isProviderConfirmed(message)
+                    && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.DISMISSED
+                    && normalizeDeliveryState(message) !== MESSAGE_DELIVERY_STATES.FAILED
+                    && normalizeObject(message.metadata).provider_send_attempted !== true
                 ));
-                await Promise.all(cancellable.map((message) => message.update({
-                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
-                    metadata: {
+                await Promise.all(cancellable.map(async (message) => {
+                    const metadata = {
                         ...normalizeObject(message.metadata),
                         delivered: false,
                         delivery_status: 'held',
                         delivery_state: MESSAGE_DELIVERY_STATES.HELD,
                         held_reason: 'human_active',
                         suggestion_visibility: SUGGESTION_VISIBILITY.VISIBLE_HITL_REVIEW,
-                    },
-                })));
+                    };
+                    await message.update({
+                        delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                        metadata,
+                    }, ...(transaction ? [{ transaction }] : []));
+                    heldEvents.push({ message, metadata });
+                }));
             }
 
+            return { conversation, heldEvents };
+        };
+
+        try {
+            const result = sequelize?.getDialect?.() === 'postgres' && typeof sequelize.transaction === 'function'
+                ? await sequelize.transaction((transaction) => update(transaction))
+                : await update(null);
+            for (const { message, metadata } of result.heldEvents) {
+                sseManager.emit(shopId, 'message_delivery_updated', {
+                    conversation_id: conversationId,
+                    message_id: message.id,
+                    metadata,
+                    delivery_state: MESSAGE_DELIVERY_STATES.HELD,
+                    delivery_source: message.delivery_source || metadata.delivery_source || null,
+                    content: message.content || null,
+                    sender: message.sender === 'business' ? 'agent' : message.sender || 'ai',
+                    created_at: message.created_at || null,
+                });
+            }
             return {
-                ...this.mapConversation(conversation),
-                hitl: conversation.hitl
+                ...this.mapConversation(result.conversation),
+                hitl: result.conversation.hitl
             };
         } catch (error) {
             throw new Error(`Failed to update conversation: ${error.message}`);

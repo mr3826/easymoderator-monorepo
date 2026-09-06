@@ -5,6 +5,7 @@ const mockAuthenticate = jest.fn((req, _res, next) => {
     req.user = { userId: 'user-1', shopId: 'shop-1' };
     next();
 });
+const mockVerifyShopAccess = jest.fn((_req, _res, next) => next());
 const mockCheckSubscriptionStatus = jest.fn((_req, _res, next) => {
     next(new Error('subscription gate should not run for manual inbox routes'));
 });
@@ -30,6 +31,9 @@ const mockController = {
 jest.mock('../../../middleware/auth.middleware', () => ({
     authenticate: mockAuthenticate,
     checkSubscriptionStatus: mockCheckSubscriptionStatus,
+}));
+jest.mock('../../../middleware/shop-access.middleware', () => ({
+    verifyShopAccess: mockVerifyShopAccess,
 }));
 
 jest.mock('../conversation.controller', () => mockController);
@@ -68,6 +72,7 @@ describe('conversation.routes', () => {
 
         expect(res.status).toBe(200);
         expect(mockAuthenticate).toHaveBeenCalledTimes(1);
+        expect(mockVerifyShopAccess).toHaveBeenCalledTimes(1);
         expect(mockCheckSubscriptionStatus).not.toHaveBeenCalled();
         expect(mockController.getConversations).toHaveBeenCalledTimes(1);
     });

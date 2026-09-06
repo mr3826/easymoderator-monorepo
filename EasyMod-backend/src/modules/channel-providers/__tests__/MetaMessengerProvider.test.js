@@ -408,6 +408,17 @@ describe('MetaMessengerProvider', () => {
             });
         });
 
+        test('fails closed when Meta accepts a request without returning a message ID', async () => {
+            axios.post.mockResolvedValueOnce({ data: {} });
+
+            await expect(provider.sendMessage({
+                channel,
+                recipientId: 'PSID_NO_MID',
+                normalizedMessage: { text: 'No opaque acknowledgement', attachments: [] },
+                decision,
+            })).rejects.toMatchObject({ code: 'PROVIDER_NO_ACK' });
+        });
+
         test.each([102, 190])(
             'marks Meta error %s permanent only after durable recovery succeeds',
             async (metaCode) => {

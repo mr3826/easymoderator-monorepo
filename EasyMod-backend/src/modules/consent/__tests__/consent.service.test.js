@@ -26,6 +26,7 @@ function makeCustomer(overrides = {}) {
     return {
         id: 'cust-1',
         shop_id: 'shop-1',
+        meta_channel_id: 'ch-1',
         messaging_consent: {},
         changed: jest.fn(),
         save: jest.fn().mockResolvedValue(undefined),
