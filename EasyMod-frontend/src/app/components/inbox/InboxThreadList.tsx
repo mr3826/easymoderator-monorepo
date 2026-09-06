@@ -149,6 +149,8 @@ export function InboxThreadList({
         >
           {filteredConversations.map((conversation) => {
             const isHITL = conversation.hitl === true;
+            const needsReply = conversation.needs_merchant_reply
+              ?? (conversation.hitl === true || conversation.hasAiSuggestion === true);
 
             return (
               <motion.div
@@ -206,8 +208,8 @@ export function InboxThreadList({
                       </div>
                     </div>
                   </div>
-                  {/* HITL badge */}
-                  {isHITL && (
+                  {/* Merchant action badge. Human ownership is shown separately. */}
+                  {needsReply && (
                     <Badge variant="destructive" className="text-xs shrink-0 font-bn">
                       {t("inbox.needsReplyBadge")}
                     </Badge>

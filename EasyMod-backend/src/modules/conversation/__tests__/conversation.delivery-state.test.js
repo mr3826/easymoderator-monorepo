@@ -40,6 +40,7 @@ jest.mock('../../shop/ai-reply-mode', () => ({
 }));
 
 const conversationService = require('../conversation.service');
+const { getEffectiveAiReplyMode } = require('../../shop/ai-reply-mode');
 
 const customerMessage = {
     id: 'customer-message',
@@ -149,6 +150,41 @@ describe('ConversationService delivery projection', () => {
         );
     });
 
+    it('does not dismiss a provider-attempted failed candidate', async () => {
+        const attempted = {
+            id: 'attempted-draft',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            delivery_state: 'FAILED',
+            metadata: {
+                delivered: false,
+                delivery_state: 'FAILED',
+                delivery_status: 'failed',
+                provider_send_attempted: true,
+                suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+            },
+            update: jest.fn(),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            update: jest.fn(),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findOne.mockResolvedValue(attempted);
+
+        await expect(conversationService.dismissAiDraft(
+            'conversation-1',
+            'shop-a',
+            'attempted-draft',
+            'user-1',
+        )).rejects.toMatchObject({
+            code: 'PROVIDER_SEND_ALREADY_ATTEMPTED',
+            statusCode: 409,
+        });
+        expect(attempted.update).not.toHaveBeenCalled();
+    });
+
     it('persists a read watermark and clears only the owning conversation', async () => {
         const conversation = {
             id: 'conversation-1',
@@ -193,5 +229,150 @@ describe('ConversationService delivery projection', () => {
         expect(candidate.delivery_state).toBe('HELD');
         expect(candidate.metadata.suggestion_visibility).toBe('VISIBLE_HITL_REVIEW');
         expect(require('../message-lifecycle').isReviewableSuggestion(candidate)).toBe(true);
+    });
+
+    it('closes the conversation and terminalizes pending AI work without exposing a stale draft', async () => {
+        const pending = {
+            id: 'pending-ai',
+            conversation_id: 'conversation-1',
+            sender: 'ai',
+            created_at: new Date('2026-09-04T10:01:00Z'),
+            delivery_state: 'SEND_PENDING',
+            metadata: {
+                delivered: false,
+                delivery_state: 'SEND_PENDING',
+                suggestion_visibility: 'HIDDEN_AUTO_PROCESSING',
+            },
+            update: jest.fn(async (updates) => Object.assign(pending, updates)),
+        };
+        const conversation = {
+            id: 'conversation-1',
+            shop_id: 'shop-a',
+            status: 'active',
+            hitl: true,
+            metadata: {},
+            update: jest.fn(async (updates) => Object.assign(conversation, updates)),
+        };
+        mockConversationModel.findOne.mockResolvedValue(conversation);
+        mockMessageModel.findAll.mockResolvedValue([pending]);
+
+        const result = await conversationService.updateConversation(
+            'conversation-1',
+            'shop-a',
+            { status: 'closed' },
+        );
+
+        expect(conversation.status).toBe('closed');
+        expect(conversation.hitl).toBe(false);
+        expect(pending.delivery_state).toBe('HELD');
+        expect(pending.metadata).toEqual(expect.objectContaining({
+            held_reason: 'conversation_closed',
+            suggestion_visibility: 'HIDDEN_DISMISSED',
+        }));
+        expect(result).toEqual(expect.objectContaining({
+            status: 'closed',
+            hitl: false,
+            needs_merchant_reply: false,
+            ai_is_replying: false,
+        }));
+    });
+
+    it.each([
+        {
+            name: 'MANUAL inbound',
+            mode: 'MANUAL',
+            messages: [customerMessage],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED', ai_is_replying: false },
+        },
+        {
+            name: 'MANUAL answered',
+            mode: 'MANUAL',
+            messages: [
+                customerMessage,
+                {
+                    id: 'business-message',
+                    conversation_id: 'conversation-1',
+                    sender: 'business',
+                    created_at: new Date('2026-09-04T10:02:00Z'),
+                    delivery_state: 'SENT',
+                    metadata: { delivery_state: 'SENT' },
+                },
+            ],
+            expected: { needs_merchant_reply: false, needs_merchant_reply_reason: null, ai_is_replying: false },
+        },
+        {
+            name: 'DRAFT waiting',
+            mode: 'DRAFT',
+            messages: [customerMessage, {
+                ...draftMessage,
+                delivery_state: 'DRAFT_READY',
+                delivery_source: 'AI_DRAFT',
+                metadata: {
+                    delivered: false,
+                    delivery_state: 'DRAFT_READY',
+                    suggestion_visibility: 'VISIBLE_DRAFT_REVIEW',
+                },
+            }],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'DRAFT_REVIEW_REQUIRED', ai_is_replying: false },
+        },
+        {
+            name: 'AUTO processing',
+            mode: 'AUTO',
+            messages: [
+                customerMessage,
+                {
+                    id: 'processing-ai',
+                    conversation_id: 'conversation-1',
+                    sender: 'ai',
+                    created_at: new Date('2026-09-04T10:01:00Z'),
+                    delivery_state: 'SEND_PENDING',
+                    delivery_source: 'AUTO',
+                    metadata: {
+                        delivery_state: 'SEND_PENDING',
+                        suggestion_visibility: 'HIDDEN_AUTO_PROCESSING',
+                    },
+                },
+            ],
+            expected: { needs_merchant_reply: false, needs_merchant_reply_reason: null, ai_is_replying: true },
+        },
+        {
+            name: 'AUTO failure',
+            mode: 'AUTO',
+            messages: [
+                customerMessage,
+                {
+                    id: 'failed-ai',
+                    conversation_id: 'conversation-1',
+                    sender: 'ai',
+                    created_at: new Date('2026-09-04T10:01:00Z'),
+                    delivery_state: 'FAILED',
+                    metadata: {
+                        delivery_state: 'FAILED',
+                        held_reason: 'provider_send_failed',
+                        suggestion_visibility: 'VISIBLE_HITL_REVIEW',
+                    },
+                },
+            ],
+            expected: { needs_merchant_reply: true, needs_merchant_reply_reason: 'AI_FAILED', ai_is_replying: false },
+        },
+    ])('projects $name independently of unread state', async ({ mode, messages, expected }) => {
+        const row = {
+            id: 'conversation-1',
+            customer_id: 'customer-1',
+            channel: 'messenger',
+            status: 'active',
+            hitl: false,
+            metadata: { unreadCount: 0 },
+            customer: null,
+            metaChannel: null,
+            message: null,
+        };
+        mockConversationModel.findAndCountAll = jest.fn().mockResolvedValue({ rows: [row], count: 1 });
+        getEffectiveAiReplyMode.mockResolvedValue(mode);
+        mockMessageModel.findAll.mockResolvedValue(messages);
+
+        const result = await conversationService.getConversations('shop-a');
+
+        expect(result.conversations[0]).toEqual(expect.objectContaining(expected));
     });
 });

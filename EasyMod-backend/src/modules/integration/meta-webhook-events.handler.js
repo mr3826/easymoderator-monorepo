@@ -27,9 +27,110 @@ const sseManager = require('../../utils/sse-manager');
 const consentService = require('../consent/consent.service');
 const { createLogger } = require('../../utils/structured-logger');
 const { opsAlert } = require('../../utils/ops-alert');
+const { recordReceiptClaimConflict } = require('./meta-webhook-metrics');
 const receiptService = require('./meta-webhook-receipt.service');
 
 const logger = createLogger('MetaWebhookEvents');
+
+/**
+ * Resolve a customer without allowing a Page-scoped identifier to create a
+ * duplicate of a pre-Page legacy row. The conditional adoption update is the
+ * ownership fence when two Pages receive the same historical PSID at once.
+ */
+async function findOrAdoptCustomer({
+    shopId,
+    channelType,
+    channelUserId,
+    metaChannelId = null,
+    defaults,
+    transaction = null,
+    createIfMissing = true,
+}) {
+    const baseWhere = {
+        shop_id: shopId,
+        channel_type: channelType,
+        channel_user_id: String(channelUserId),
+    };
+
+    // Keep the fallback for narrow unit-test doubles and older callers. The
+    // production Customer model has all three explicit methods below.
+    if (typeof Customer.findOne !== 'function'
+        || typeof Customer.update !== 'function'
+        || (createIfMissing && typeof Customer.create !== 'function')) {
+        if (!createIfMissing || typeof Customer.findOrCreate !== 'function') return null;
+        const result = await Customer.findOrCreate({
+            where: {
+                ...baseWhere,
+                ...(metaChannelId ? { meta_channel_id: metaChannelId } : {}),
+            },
+            defaults: {
+                ...defaults,
+                ...baseWhere,
+                meta_channel_id: metaChannelId,
+            },
+            ...(transaction ? { transaction } : {}),
+        });
+        return Array.isArray(result) ? result[0] : result;
+    }
+
+    const findOptions = (where) => ({
+        where,
+        ...(transaction ? { transaction } : {}),
+        ...(transaction?.LOCK?.UPDATE ? { lock: transaction.LOCK.UPDATE } : {}),
+    });
+    const exactWhere = {
+        ...baseWhere,
+        meta_channel_id: metaChannelId || null,
+    };
+
+    let customer = await Customer.findOne(findOptions(exactWhere));
+    if (customer || !metaChannelId) return customer;
+
+    const legacyCustomer = await Customer.findOne(findOptions({
+        ...baseWhere,
+        meta_channel_id: null,
+    }));
+    if (legacyCustomer && !legacyCustomer.meta_channel_id) {
+        const [adoptedCount] = await Customer.update(
+            { meta_channel_id: metaChannelId },
+            {
+                where: {
+                    id: legacyCustomer.id,
+                    ...baseWhere,
+                    meta_channel_id: null,
+                },
+                ...(transaction ? { transaction } : {}),
+            },
+        );
+        if (adoptedCount === 1) {
+            if (typeof legacyCustomer.set === 'function') legacyCustomer.set({ meta_channel_id: metaChannelId });
+            else legacyCustomer.meta_channel_id = metaChannelId;
+            return legacyCustomer;
+        }
+
+        // Another Page may have won the conditional adoption. Re-read only
+        // the requested Page before deciding whether a new scoped row is safe.
+        customer = await Customer.findOne(findOptions(exactWhere));
+        if (customer) return customer;
+    }
+
+    if (!createIfMissing) return null;
+
+    try {
+        return await Customer.create({
+            ...defaults,
+            ...baseWhere,
+            meta_channel_id: metaChannelId,
+        }, transaction ? { transaction } : undefined);
+    } catch (err) {
+        // A concurrent create can win the Page-scoped unique index. Re-read
+        // that exact Page row; never fall back to a different Page's customer.
+        if (err?.name !== 'SequelizeUniqueConstraintError') throw err;
+        customer = await Customer.findOne(findOptions(exactWhere));
+        if (customer) return customer;
+        throw err;
+    }
+}
 
 const displayChannelForPlatform = (platform) => {
     if (platform === 'facebook' || platform === 'messenger') return 'Facebook';
@@ -371,19 +472,13 @@ async function processInboundConsent({ storeResult, normalizedEvent, channel }) 
 async function handleMessagingOptin({ channel, senderId, optin }) {
     try {
         const channelType = channel.platform === 'facebook' ? 'messenger' : channel.platform;
-        const [customer] = await Customer.findOrCreate({
-            where: {
-                shop_id: channel.shop_id,
-                channel_type: channelType,
-                channel_user_id: String(senderId),
-                ...(channel.id ? { meta_channel_id: channel.id } : {}),
-            },
+        const customer = await findOrAdoptCustomer({
+            shopId: channel.shop_id,
+            channelType,
+            channelUserId: senderId,
+            metaChannelId: channel.id || null,
             defaults: {
-                shop_id: channel.shop_id,
                 name: fallbackCustomerName(channel.platform, String(senderId)),
-                channel_type: channelType,
-                channel_user_id: String(senderId),
-                meta_channel_id: channel.id || null,
                 metadata: fallbackCustomerMetadata({
                     platform: channel.platform,
                     source: 'messaging_optins',
@@ -463,6 +558,16 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         return { reconciled: false, retryable: false };
     }
 
+    const customer = await findOrAdoptCustomer({
+        shopId: channel.shop_id,
+        channelType: 'messenger',
+        channelUserId: recipientId,
+        metaChannelId: channel.id || null,
+        defaults: {},
+        createIfMissing: false,
+    });
+    if (!customer) return { reconciled: false, retryable: false };
+
     const conversation = await Conversation.findOne({
         where: {
             shop_id: channel.shop_id,
@@ -473,12 +578,13 @@ async function reconcileOutboundEcho({ messaging, channel }) {
             model: Customer,
             as: 'customer',
             required: true,
-                where: {
-                    shop_id: channel.shop_id,
-                    channel_type: 'messenger',
-                    channel_user_id: String(recipientId),
-                    ...(channel.id ? { meta_channel_id: channel.id } : {}),
-                },
+            where: {
+                id: customer.id,
+                shop_id: channel.shop_id,
+                channel_type: 'messenger',
+                channel_user_id: String(recipientId),
+                meta_channel_id: channel.id || null,
+            },
         }],
         order: [['updated_at', 'DESC']],
     });
@@ -507,7 +613,8 @@ async function reconcileOutboundEcho({ messaging, channel }) {
         ? candidates.filter((item) => String(item.content || '').trim() === echoText)
         : [];
     // Do not assign a provider MID by recency alone when multiple sends are
-    // pending. An unmatched echo stays available for a later reconciler pass.
+    // pending. The durable echo receipt is settled as SKIPPED below instead
+    // of retrying an event that cannot be matched safely.
     const candidate = textMatches.length === 1
         ? textMatches[0]
         : !echoText && candidates.length === 1
@@ -515,7 +622,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
             : null;
     if (!candidates.length) return { reconciled: false, retryable: false };
     if (!candidate || candidate.provider_message_id || candidate.metadata?.provider_message_id) {
-        return { reconciled: false, retryable: true };
+        return { reconciled: false, retryable: false };
     }
 
     let candidateMetadata = candidate.metadata;
@@ -549,7 +656,7 @@ async function reconcileOutboundEcho({ messaging, channel }) {
             ],
         },
     });
-    if (updatedCount !== 1) return { reconciled: false, retryable: true };
+    if (updatedCount !== 1) return { reconciled: false, retryable: false };
     if (InboxDeliveryOutbox && typeof InboxDeliveryOutbox.update === 'function') {
         await InboxDeliveryOutbox.update({
             status: 'COMPLETED',
@@ -695,22 +802,16 @@ async function storeIncomingMessage(event) {
         }
 
         const storedMessage = await sequelize.transaction(async (t) => {
-            const [customer] = await Customer.findOrCreate({
-                where: {
-                    shop_id,
-                    channel_type: channelType,
-                    channel_user_id: sender,
-                    ...(meta_channel_id ? { meta_channel_id } : {}),
-                },
+            const customer = await findOrAdoptCustomer({
+                shopId: shop_id,
+                channelType,
+                channelUserId: sender,
+                metaChannelId: meta_channel_id,
                 defaults: {
-                    shop_id,
                     name: fallbackCustomerName(platform, String(sender)),
-                    channel_type: channelType,
-                    channel_user_id: sender,
-                    meta_channel_id,
-                    metadata: fallbackCustomerMetadata({ platform })
+                    metadata: fallbackCustomerMetadata({ platform }),
                 },
-                transaction: t
+                transaction: t,
             });
             customerForEnrichment = customer;
 
@@ -722,31 +823,68 @@ async function storeIncomingMessage(event) {
                 transaction: t,
             });
 
-            // Once the webhook identifies a Page, only its exact channel may
-            // match. Legacy unpinned rows remain historical data, not a target
-            // for a newly identified Page.
             const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const convoWhere = {
+            const conversationScope = {
                 shop_id,
                 customer_id: customer.id,
                 channel: channelType,
                 updated_at: { [Op.gte]: oneDayAgo }
             };
-            if (meta_channel_id) {
-                convoWhere.meta_channel_id = meta_channel_id;
-            }
+            const exactConversationWhere = {
+                ...conversationScope,
+                meta_channel_id: meta_channel_id || null,
+            };
             let conversation = await Conversation.findOne({
-                where: convoWhere,
+                where: exactConversationWhere,
                 order: [['updated_at', 'DESC']],
                 lock: t.LOCK.UPDATE,
                 transaction: t
             });
 
-            // A defensive check keeps mocked/weakly consistent stores from
-            // reusing a row that does not satisfy the exact Page predicate.
             if (conversation && meta_channel_id
-                && String(conversation.meta_channel_id) !== String(meta_channel_id)) {
-                conversation = null;
+                && conversation.meta_channel_id != null
+                && String(conversation.meta_channel_id) !== String(meta_channel_id)) conversation = null;
+
+            if (!conversation && meta_channel_id) {
+                const legacyConversation = await Conversation.findOne({
+                    where: { ...conversationScope, meta_channel_id: null },
+                    order: [['updated_at', 'DESC']],
+                    lock: t.LOCK.UPDATE,
+                    transaction: t,
+                });
+
+                if (legacyConversation && !legacyConversation.meta_channel_id
+                    && typeof Conversation.update === 'function') {
+                    const [adoptedCount] = await Conversation.update(
+                        { meta_channel_id },
+                        {
+                            where: {
+                                id: legacyConversation.id,
+                                ...conversationScope,
+                                meta_channel_id: null,
+                            },
+                            transaction: t,
+                        },
+                    );
+                    if (adoptedCount === 1) {
+                        if (typeof legacyConversation.set === 'function') {
+                            legacyConversation.set({ meta_channel_id });
+                        } else {
+                            legacyConversation.meta_channel_id = meta_channel_id;
+                        }
+                        conversation = legacyConversation;
+                    } else {
+                        // A concurrent Page may have adopted the legacy row.
+                        // Re-read only the requested Page before creating a new
+                        // thread, never a row pinned elsewhere.
+                        conversation = await Conversation.findOne({
+                            where: exactConversationWhere,
+                            order: [['updated_at', 'DESC']],
+                            lock: t.LOCK.UPDATE,
+                            transaction: t,
+                        });
+                    }
+                }
             }
 
             const attachments = event.attachments || [];
@@ -805,6 +943,22 @@ async function storeIncomingMessage(event) {
             if (!currentConversationMetadata || typeof currentConversationMetadata !== 'object' || Array.isArray(currentConversationMetadata)) {
                 currentConversationMetadata = {};
             }
+            if (['closed', 'archived'].includes(conversation.status)) {
+                // A new customer event starts a fresh interaction. Reopen the
+                // rolling thread and end any previous human ownership without
+                // changing the shop-wide automation mode.
+                currentConversationMetadata = {
+                    ...currentConversationMetadata,
+                    status: 'active',
+                };
+                await conversation.update({
+                    status: 'active',
+                    hitl: false,
+                    resolved_at: null,
+                    resolution_note: null,
+                    metadata: currentConversationMetadata,
+                }, { transaction: t });
+            }
             const unreadCount = Math.max(0, Number(currentConversationMetadata.unreadCount) || 0) + 1;
             const msgRecord = await Message.create({
                 conversation_id: conversation.id,
@@ -815,11 +969,13 @@ async function storeIncomingMessage(event) {
                 metadata: { ...msgMeta, ...replyMetadata },
             }, { transaction: t });
 
+            // The preview watermark is the only comparable event clock. A
+            // legacy conversation without it has no prior watermark, even if
+            // Sequelize exposes a server-side updated_at value from another
+            // operation.
             const currentLastMessageAt = currentConversationMetadata.last_message_at
                 ? new Date(currentConversationMetadata.last_message_at)
-                : conversation.updated_at
-                    ? new Date(conversation.updated_at)
-                    : null;
+                : null;
             const eventIsAtOrAfterCurrent = !currentLastMessageAt
                 || !Number.isFinite(currentLastMessageAt.getTime())
                 || eventTime.getTime() >= currentLastMessageAt.getTime();
@@ -999,80 +1155,88 @@ async function processMessagingEvent({ messaging, channel, receipt, pageId, meta
         return 'failed';
     }
 
-    // A duplicate delivery may find the same non-terminal receipt while the
-    // first request is still ingesting it. Claim the row before any side effect
-    // so only one live webhook can create a customer message or queue a turn.
-    if (!receiptClaimed) {
-        if (typeof receiptService.claimProcessing === 'function') {
-            const claimed = await receiptService.claimProcessing(receipt);
-            if (!claimed) return 'skipped';
-        } else {
-            await receiptService.markProcessing(receipt);
+    try {
+        // A duplicate delivery may find the same non-terminal receipt while the
+        // first request is still ingesting it. Claim the row before any side
+        // effect so only one live webhook can create a customer message or
+        // queue a turn. Keeping this inside the catch is essential: a claim
+        // failure must become retryable receipt state, never an unreachable
+        // RECEIVED row acknowledged with HTTP 200.
+        if (!receiptClaimed) {
+            if (typeof receiptService.claimProcessing === 'function') {
+                const claimed = await receiptService.claimProcessing(receipt);
+                if (!claimed) {
+                    logger.warn('Skipped Meta webhook delivery after receipt claim conflict', {
+                        pageId: metaAssetId || pageId,
+                        receiptId: receipt?.id || null,
+                        status: receipt?.status || null,
+                    });
+                    recordReceiptClaimConflict({
+                        pageId: metaAssetId || pageId,
+                        receiptId: receipt?.id,
+                        status: receipt?.status,
+                    });
+                    return 'skipped';
+                }
+            } else {
+                await receiptService.markProcessing(receipt);
+            }
         }
-    }
 
-    if (messaging.optin) {
-        try {
-            await handleMessagingOptin({ channel, senderId, optin: messaging.optin });
+        if (messaging.optin) {
+            try {
+                await handleMessagingOptin({ channel, senderId, optin: messaging.optin });
+            } catch (err) {
+                throw toReceiptFailure(err, 'CONSENT_STATE_UNAVAILABLE');
+            }
             await receiptService.markProcessed(receipt, { shopId: channel.shop_id, metaChannelId: channel.id });
             return 'processed';
-        } catch (err) {
-            logger.error('Failed to process Facebook messaging opt-in', {
-                pageId: metaAssetId || pageId,
-                error: err.message,
-            });
-            await receiptService.markStoreFailure(
-                receipt,
-                toReceiptFailure(err, 'CONSENT_STATE_UNAVAILABLE'),
-                { pageId: metaAssetId || pageId },
-            );
-            return 'failed';
         }
-    }
-    if (messaging.message?.is_echo) {
-        logger.debug('Skipped echo event', { pageId: metaAssetId });
-        const reconciliation = await reconcileOutboundEcho({ messaging, channel }).catch((err) => {
-            logger.warn('Unable to reconcile Meta outbound echo', {
-                shopId: channel.shop_id,
-                metaChannelId: channel.id,
-                error: err.message,
+
+        const isPageEcho = messaging.message?.is_echo === true
+            && senderId != null
+            && String(senderId) === String(metaAssetId || pageId);
+        if (isPageEcho) {
+            logger.debug('Skipped Meta outbound echo', { pageId: metaAssetId });
+            const reconciliation = await reconcileOutboundEcho({ messaging, channel }).catch((err) => {
+                logger.warn('Unable to reconcile Meta outbound echo', {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                    error: err.message,
+                });
+                return { reconciled: false, retryable: false };
             });
-            return { reconciled: false, retryable: true };
-        });
-        if (reconciliation?.retryable) {
-            const error = new Error('Meta outbound echo could not be reconciled');
-            error.name = 'OUTBOUND_ECHO_UNRECONCILED';
-            error.code = 'OUTBOUND_ECHO_UNRECONCILED';
-            error.retryable = true;
-            await receiptService.markStoreFailure(receipt, error, { pageId: metaAssetId || pageId });
-            return 'failed';
+            if (!reconciliation?.reconciled) {
+                logger.warn('Meta outbound echo did not match a unique pending message', {
+                    shopId: channel.shop_id,
+                    metaChannelId: channel.id,
+                });
+            }
+            await receiptService.markSkipped(receipt, 'ECHO');
+            return 'skipped';
         }
-        await receiptService.markSkipped(receipt, 'ECHO');
-        return 'skipped';
-    }
 
-    const messageText = messaging.message?.text || null;
-    const attachments = messaging.message?.attachments || [];
-    if (!messageText && attachments.length === 0) {
-        logger.debug('Skipped non-message event', { pageId: metaAssetId, keys: Object.keys(messaging) });
-        await receiptService.markSkipped(receipt, 'NON_MESSAGE_EVENT');
-        return 'skipped';
-    }
+        const messageText = messaging.message?.text || null;
+        const attachments = messaging.message?.attachments || [];
+        if (!messageText && attachments.length === 0) {
+            logger.debug('Skipped non-message event', { pageId: metaAssetId, keys: Object.keys(messaging) });
+            await receiptService.markSkipped(receipt, 'NON_MESSAGE_EVENT');
+            return 'skipped';
+        }
 
-    const normalizedEvent = {
-        platform: 'facebook',
-        shop_id: channel.shop_id,
-        meta_channel_id: channel.id,
-        metaAssetId,
-        sender: senderId,
-        message: messageText || '',
-        attachments,
-        reply_to: messaging.message?.reply_to || null,
-        timestamp: new Date(messaging.timestamp),
-        raw_event: messaging
-    };
+        const normalizedEvent = {
+            platform: 'facebook',
+            shop_id: channel.shop_id,
+            meta_channel_id: channel.id,
+            metaAssetId,
+            sender: senderId,
+            message: messageText || '',
+            attachments,
+            reply_to: messaging.message?.reply_to || null,
+            timestamp: new Date(messaging.timestamp),
+            raw_event: messaging
+        };
 
-    try {
         logger.info('Processing inbound Facebook message', {
             shopId: channel.shop_id,
             metaChannelId: channel.id,
@@ -1161,6 +1325,13 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             resolutionFailure.cause = err;
             for (const { receipt } of recorded) {
                 if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
+                if (receipt?.status === 'PROCESSING' && receipt.processing_token) {
+                    logger.debug('Receipt is already owned while channel resolution failed; leaving it untouched', {
+                        pageId,
+                        receiptId: receipt.id,
+                    });
+                    continue;
+                }
                 if (['message', 'optin', 'echo'].includes(receipt?.event_type)) {
                     await receiptService.markStoreFailure(receipt, resolutionFailure, { pageId });
                 } else {
@@ -1175,6 +1346,13 @@ async function handlePageWebhook(payload, resolveConnectedChannel) {
             let alerted = false;
             for (const { receipt } of recorded) {
                 if (receipt && receiptService.TERMINAL_STATUSES.includes(receipt.status)) continue;
+                if (receipt?.status === 'PROCESSING' && receipt.processing_token) {
+                    logger.debug('Receipt is already owned while Page is disconnected; leaving it untouched', {
+                        pageId,
+                        receiptId: receipt.id,
+                    });
+                    continue;
+                }
                 if (!['message', 'optin', 'echo'].includes(receipt?.event_type)) {
                     await receiptService.markSkipped(receipt, 'PAGE_NOT_CONNECTED');
                     continue;

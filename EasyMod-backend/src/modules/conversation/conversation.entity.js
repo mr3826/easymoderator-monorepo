@@ -191,6 +191,7 @@ const Message = sequelize.define('Message', {
     tableName: 'messages',
     underscored: true,
     timestamps: true,
+    createdAt: 'created_at',
     updatedAt: false,
     indexes: [
         {

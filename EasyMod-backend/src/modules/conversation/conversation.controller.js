@@ -3,7 +3,6 @@ const path = require('path');
 const crypto = require('crypto');
 const { Op, literal } = require('sequelize');
 const conversationService = require('./conversation.service');
-const { sendEscalationAutoReply } = require('./escalation-auto-reply.service');
 const cacheService = require('../../utils/cache.service');
 const sseManager = require('../../utils/sse-manager');
 const { cacheRedis } = require('../../config/redis');
@@ -491,6 +490,21 @@ async function deliverViaMetaIfApplicable(
             include: [{ model: CustomerModel, as: 'customer' }]
         });
         if (!conversation) return { sent: false, reason: 'conversation_not_found' };
+
+        const outboundMetadata = outboundMessage?.metadata && typeof outboundMessage.metadata === 'object'
+            ? outboundMessage.metadata
+            : {};
+        const deliverySource = outboundMessage?.delivery_source || outboundMetadata.delivery_source || null;
+        const isAiCandidate = outboundMessage?.sender === 'ai' || senderRole === 'ai';
+        const isSystemEscalation = deliverySource === 'HITL_ESCALATION';
+        if (isAiCandidate
+            && !isSystemEscalation
+            && (conversation.hitl === true || ['closed', 'archived'].includes(conversation.status))) {
+            return {
+                sent: false,
+                reason: conversation.hitl === true ? 'human_active' : 'conversation_closed',
+            };
+        }
 
         const platform = META_CHANNEL_PLATFORM[conversation.channel];
         if (!platform) return { sent: false, reason: 'non_meta_channel' }; // webchat/telegram
@@ -1056,11 +1070,17 @@ class ConversationController {
                 { hitl, status, assignee_id, resolution_note }
             );
 
-            // Notify other agent tabs of HITL change first so the banner appears immediately
-            if (hitl !== undefined) {
+            // Notify other agent tabs of ownership and workflow changes. Manual
+            // takeover is state-only; system escalation uses human-handoff.service
+            // and is the only path allowed to send a holding message.
+            if (hitl !== undefined || status !== undefined) {
                 sseManager.emit(shopId, 'hitl_changed', {
                     conversation_id: conversationId,
-                    hitl: conversation.hitl
+                    hitl: conversation.hitl,
+                    status: conversation.status,
+                    needs_merchant_reply: conversation.needs_merchant_reply,
+                    needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
+                    ai_is_replying: conversation.ai_is_replying,
                 });
             }
 
@@ -1068,27 +1088,6 @@ class ConversationController {
             // can respond immediately instead of waiting out the remainder of the timer.
             if (hitl === false) {
                 cacheRedis.del(`ai:pause:${conversationId}`).catch(() => {});
-            }
-
-            // Send escalation auto-reply synchronously so the agent response only returns
-            // after the customer notification attempt is complete (success or logged failure).
-            if (hitl === true) {
-                try {
-                    const autoReplyMsg = await sendEscalationAutoReply(conversationId, shopId);
-                    if (autoReplyMsg) {
-                        sseManager.emit(shopId, 'new_message', { conversation_id: conversationId, message: autoReplyMsg });
-                        // Automated escalation holding message, not a human-typed reply —
-                        // must not be blocked by the human-agent outside-window policy gate.
-                        await deliverViaMetaIfApplicable(conversationId, shopId, autoReplyMsg, 'ai');
-                    }
-                } catch (err) {
-                    // Non-fatal: HITL is already set; log and surface to the agent via SSE
-                    console.error(`[escalation] Auto-reply failed for conv ${conversationId}: ${err.message}`);
-                    sseManager.emit(shopId, 'delivery_failed', {
-                        conversation_id: conversationId,
-                        reason: `Escalation message not delivered to customer: ${err.message}`
-                    });
-                }
             }
 
             res.json({ success: true, data: conversation });
@@ -1119,6 +1118,15 @@ class ConversationController {
             const { status } = req.body; // Already validated
 
             const conversation = await conversationService.updateConversationStatus(conversationId, shopId, status);
+
+            sseManager.emit(shopId, 'hitl_changed', {
+                conversation_id: conversationId,
+                hitl: conversation.hitl,
+                status: conversation.status,
+                needs_merchant_reply: conversation.needs_merchant_reply,
+                needs_merchant_reply_reason: conversation.needs_merchant_reply_reason,
+                ai_is_replying: conversation.ai_is_replying,
+            });
 
             res.json({
                 success: true,

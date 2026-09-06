@@ -572,6 +572,65 @@ describe('UnifiedInbox 24h window behavior', () => {
     expect(screen.queryByText('AI is preparing a reply')).not.toBeInTheDocument()
   })
 
+  it('uses the backend Needs your reply projection independently from HITL and unread state', async () => {
+    const needsReplyConversation = {
+      ...baseConversation,
+      needs_merchant_reply: true,
+      needs_merchant_reply_reason: 'CUSTOMER_UNANSWERED',
+      unreadCount: 0,
+    }
+    const answeredHumanOwned = {
+      ...baseConversation,
+      id: 'conv-2',
+      customer_id: 'cust-2',
+      customer: { id: 'cust-2', name: 'Bob' },
+      hitl: true,
+      needs_merchant_reply: false,
+      unreadCount: 0,
+    }
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [needsReplyConversation, answeredHumanOwned],
+      ai_reply_mode: 'MANUAL',
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getMessages as any).mockResolvedValue({ messages: [], pagination: { page: 1, totalPages: 1 } })
+
+    render(<UnifiedInbox />)
+
+    const needsTab = await screen.findByRole('button', { name: /Needs your reply/i })
+    expect(needsTab).toHaveTextContent('1')
+    fireEvent.click(needsTab)
+    expect(screen.getAllByText('Alice').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Bob')).not.toBeInTheDocument()
+  })
+
+  it('keeps Needs your reply after dismissing an unanswered draft', async () => {
+    const { customerMessage, heldMessage } = draftMessages()
+    setInboxData('DRAFT', [customerMessage, heldMessage], {
+      ...baseConversation,
+      needs_merchant_reply: true,
+      needs_merchant_reply_reason: 'DRAFT_REVIEW_REQUIRED',
+    })
+    render(<UnifiedInbox />)
+
+    expect(await screen.findByText('Draft ready for review')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Needs your reply/i })).toHaveTextContent('1')
+    })
+  })
+
+  it('uses Resume AI as a state-only hand-back action', async () => {
+    const humanOwned = { ...baseConversation, hitl: true, needs_merchant_reply: false }
+    setInboxData('AUTO', [], humanOwned)
+    render(<UnifiedInbox />)
+
+    const resume = await screen.findByRole('button', { name: /Resume AI/i })
+    fireEvent.click(resume)
+    await waitFor(() => expect(apiClient.updateConversation).toHaveBeenCalledWith('conv-1', { hitl: false }))
+    expect(apiClient.createMessage).not.toHaveBeenCalled()
+  })
+
   it('clears the active claim after a mode change', async () => {
     setInboxData('AUTO', [{
       id: 'msg-customer-mode', conversation_id: 'conv-1', content: 'Hello', sender: 'customer', message_type: 'text',
@@ -791,6 +850,78 @@ describe('UnifiedInbox AI suggestion visibility (deliver-aware)', () => {
       // did not create a second message bubble.
       expect(screen.getAllByText('One event')).toHaveLength(2)
     })
+  })
+
+  it('keeps an SSE message when the stale page-one fetch resolves afterward', async () => {
+    const fetchedMessage = {
+      id: 'fetched-message', conversation_id: 'conv-1', content: 'Fetched before the event', sender: 'customer' as const, message_type: 'text' as const,
+      created_at: new Date(Date.now() - 1000).toISOString(), updated_at: new Date(Date.now() - 1000).toISOString(),
+    }
+    const sseMessage = {
+      id: 'sse-message', conversation_id: 'conv-1', content: 'Arrived over SSE', sender: 'customer' as const, message_type: 'text' as const,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }
+    let resolveMessages!: (value: { messages: any[]; pagination: { page: number; totalPages: number } }) => void
+    ;(apiClient.getMessages as any).mockImplementation(() => new Promise((resolve) => {
+      resolveMessages = resolve
+    }))
+
+    render(<UnifiedInbox />)
+    await waitFor(() => expect(latestSSECallbacks()).toBeTruthy())
+
+    act(() => {
+      latestSSECallbacks().onNewMessage({ conversation_id: 'conv-1', message: sseMessage })
+    })
+    expect(await screen.findByText('Arrived over SSE')).toBeInTheDocument()
+
+    act(() => {
+      resolveMessages({ messages: [fetchedMessage], pagination: { page: 1, totalPages: 1 } })
+    })
+    await waitFor(() => expect(screen.getByText('Fetched before the event')).toBeInTheDocument())
+    expect(screen.getAllByText('Arrived over SSE').length).toBeGreaterThan(0)
+  })
+
+  it('does not consume an SSE id received while its conversation is unselected', async () => {
+    const otherConversation = {
+      ...baseConversation,
+      id: 'conv-2',
+      customer_id: 'cust-2',
+      customer: { id: 'cust-2', name: 'Bob' },
+    }
+    const message = {
+      id: 'unselected-message', conversation_id: 'conv-2', content: 'Message for Bob', sender: 'customer' as const, message_type: 'text' as const,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }
+    let resolveOtherMessages!: (value: { messages: any[]; pagination: { page: number; totalPages: number } }) => void
+    ;(apiClient.getConversations as any).mockResolvedValue({
+      data: [baseConversation, otherConversation],
+      ai_reply_mode: 'MANUAL',
+      pagination: { page: 1, totalPages: 1 },
+    })
+    ;(apiClient.getMessages as any).mockImplementation((conversationId: string) => (
+      conversationId === 'conv-1'
+        ? Promise.resolve({ messages: [], pagination: { page: 1, totalPages: 1 } })
+        : new Promise((resolve) => { resolveOtherMessages = resolve })
+    ))
+
+    render(<UnifiedInbox />)
+    await waitFor(() => expect(screen.getAllByText('Bob').length).toBeGreaterThan(0))
+
+    act(() => {
+      latestSSECallbacks().onNewMessage({ conversation_id: 'conv-2', message })
+    })
+    fireEvent.click(screen.getAllByText('Bob')[0])
+
+    await waitFor(() => expect(latestSSECallbacks()).toBeTruthy())
+    act(() => {
+      latestSSECallbacks().onNewMessage({ conversation_id: 'conv-2', message })
+    })
+    expect(await screen.findByText('Message for Bob')).toBeInTheDocument()
+
+    act(() => {
+      resolveOtherMessages({ messages: [], pagination: { page: 1, totalPages: 1 } })
+    })
+    await waitFor(() => expect(screen.getByText('Message for Bob')).toBeInTheDocument())
   })
 
   it('SHOWS the held suggestion even when the conversation is in HITL (handoff)', async () => {

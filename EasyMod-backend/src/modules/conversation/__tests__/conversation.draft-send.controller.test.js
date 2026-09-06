@@ -1,6 +1,7 @@
 'use strict';
 
 const mockApproveAiDraft = jest.fn();
+const mockUpdateConversation = jest.fn();
 const mockMapMessage = jest.fn((message) => message);
 const mockConversationFindOne = jest.fn();
 const mockMessageFindOne = jest.fn();
@@ -9,6 +10,7 @@ const mockProviderSend = jest.fn();
 
 jest.mock('../conversation.service', () => ({
     approveAiDraft: mockApproveAiDraft,
+    updateConversation: mockUpdateConversation,
     dismissAiDraft: jest.fn(),
     markConversationRead: jest.fn(),
     mapMessage: mockMapMessage,
@@ -64,6 +66,7 @@ const response = () => ({
 beforeEach(() => {
     jest.clearAllMocks();
     mockApproveAiDraft.mockResolvedValue({ message: candidate, alreadySent: false });
+    mockUpdateConversation.mockResolvedValue({ id: 'conversation-1', hitl: true, status: 'active' });
     mockMessageFindOne.mockResolvedValue({ ...candidate, delivery_state: 'SENT', provider_message_id: 'mid-1' });
     mockMessageUpdate.mockResolvedValue([1]);
     mockConversationFindOne.mockResolvedValue(conversation);
@@ -72,6 +75,44 @@ beforeEach(() => {
 });
 
 describe('draft approval controller boundary', () => {
+    it('manual takeover changes ownership without sending an escalation message', async () => {
+        const res = response();
+
+        await controller.updateConversation({
+            params: { conversationId: 'conversation-1' },
+            body: { hitl: true },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, res);
+
+        expect(mockUpdateConversation).toHaveBeenCalledWith(
+            'conversation-1',
+            'shop-1',
+            { hitl: true, status: undefined, assignee_id: undefined, resolution_note: undefined },
+        );
+        expect(mockProviderSend).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith({
+            success: true,
+            data: expect.objectContaining({ hitl: true }),
+        });
+    });
+
+    it('resolve changes status without sending a customer message', async () => {
+        mockUpdateConversation.mockResolvedValue({ id: 'conversation-1', hitl: false, status: 'closed' });
+        const res = response();
+
+        await controller.updateConversation({
+            params: { conversationId: 'conversation-1' },
+            body: { status: 'closed' },
+            user: { shopId: 'shop-1', userId: 'merchant-1' },
+        }, res);
+
+        expect(mockProviderSend).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith({
+            success: true,
+            data: expect.objectContaining({ status: 'closed', hitl: false }),
+        });
+    });
+
     it('performs zero provider sends before approval and exactly one after approval', async () => {
         expect(mockProviderSend).not.toHaveBeenCalled();
 

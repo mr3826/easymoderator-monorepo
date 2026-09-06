@@ -12,6 +12,8 @@ const MALFORMED_WEBHOOK_CODES = Object.freeze({
 
 let malformedCount = 0;
 let lastMalformedAt = null;
+let receiptClaimConflictCount = 0;
+let lastReceiptClaimConflictAt = null;
 
 const toBodyBuffer = (rawBody) => {
     if (Buffer.isBuffer(rawBody)) return rawBody;
@@ -55,8 +57,33 @@ function getMalformedWebhookMetrics() {
     };
 }
 
+/** Record a concurrent receipt claim loss without retaining message content. */
+function recordReceiptClaimConflict({ pageId, receiptId, status } = {}) {
+    receiptClaimConflictCount += 1;
+    lastReceiptClaimConflictAt = new Date().toISOString();
+    try {
+        logger.warn('Meta webhook receipt claim lost to another processor', {
+            pageId: pageId ? String(pageId) : null,
+            receiptId: receiptId ? String(receiptId) : null,
+            status: status || null,
+        });
+    } catch (_) {
+        // Metrics must never turn a duplicate delivery into a webhook failure.
+    }
+    return getReceiptClaimConflictMetrics();
+}
+
+function getReceiptClaimConflictMetrics() {
+    return {
+        count: receiptClaimConflictCount,
+        lastAt: lastReceiptClaimConflictAt,
+    };
+}
+
 module.exports = {
     MALFORMED_WEBHOOK_CODES,
     recordMalformedWebhook,
     getMalformedWebhookMetrics,
+    recordReceiptClaimConflict,
+    getReceiptClaimConflictMetrics,
 };

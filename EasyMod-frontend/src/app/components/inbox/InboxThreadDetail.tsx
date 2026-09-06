@@ -346,10 +346,11 @@ export function InboxThreadDetail({
   const isLowConfidence = hasAiSuggestion && heldMeta?.held_reason === "low_confidence";
   const isAiActive =
     aiReplyMode === "AUTO" &&
+    selectedConversation.status !== "closed" &&
     selectedConversation.hitl !== true &&
     aiReplyStatus === "processing";
   const replyStatusLabel =
-    aiReplyMode === "AUTO" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
+    aiReplyMode === "AUTO" && selectedConversation.status !== "closed" && aiReplyStatus === "processing" && selectedConversation.hitl !== true
       ? t("inbox.status.processing")
       : aiReplyMode === "AUTO" && aiReplyStatus === "sent"
       ? t("inbox.status.sent")
@@ -495,7 +496,7 @@ export function InboxThreadDetail({
                 <button
                   onClick={onToggleHITL}
                   disabled={togglingHITL}
-                  title={selectedConversation.hitl ? t("inbox.humanTooltip") : t("inbox.takeOverTooltip")}
+                  title={selectedConversation.hitl ? t("inbox.resumeAiTooltip") : t("inbox.takeOverTooltip")}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     selectedConversation.hitl
                       ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
@@ -503,7 +504,7 @@ export function InboxThreadDetail({
                   }`}
                 >
                   {togglingHITL ? <Loader2 className="w-4 h-4 animate-spin" /> : selectedConversation.hitl ? <UserCheck className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                  {selectedConversation.hitl ? t("inbox.agentHandling") : t("inbox.takeOver")}
+                  {selectedConversation.hitl ? t("inbox.resumeAi") : t("inbox.takeOver")}
                 </button>
               </>
             ) : (

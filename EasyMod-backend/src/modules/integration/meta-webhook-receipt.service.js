@@ -13,6 +13,7 @@
  */
 
 const crypto = require('crypto');
+const { literal } = require('sequelize');
 const MetaWebhookReceipt = require('./meta-webhook-receipt.entity');
 const { encryptPayload, decryptPayload } = require('../../utils/webhook-payload-cipher');
 const { createLogger } = require('../../utils/structured-logger');
@@ -32,6 +33,8 @@ const MAX_IDENTITY_RETRIES = IDENTITY_RETRY_BACKOFF_MINUTES.length;
 
 /** A claim older than this is assumed abandoned (crashed runner) and reclaimed. */
 const STALE_CLAIM_MS = 15 * 60 * 1000;
+/** A receipt left at RECEIVED after the HTTP handler escaped is recoverable. */
+const ORPHANED_RECEIVED_MS = 60 * 1000;
 
 /** Retention — receipts are operational evidence, not an archive. */
 const TERMINAL_RETENTION_DAYS = 7;
@@ -61,14 +64,16 @@ const scopedDedupeKey = (pageId, eventId, payloadHash) => (
  * Classify a raw `entry.messaging[]` element without retaining its content.
  * @returns {{eventType: string, eventId: string|null, senderRef: string|null}}
  */
-function classifyEvent(messaging = {}) {
+function classifyEvent(messaging = {}, pageId = null) {
     const senderId = messaging.sender?.id;
     const senderRef = senderId ? sha256(senderId) : null;
     const eventId = messaging.message?.mid || null;
+    const isOutboundEcho = messaging.message?.is_echo === true
+        && (pageId == null || String(senderId) === String(pageId));
 
     let eventType = 'unknown';
     if (messaging.optin) eventType = 'optin';
-    else if (messaging.message?.is_echo) eventType = 'echo';
+    else if (isOutboundEcho) eventType = 'echo';
     else if (messaging.message?.text || (messaging.message?.attachments || []).length > 0) eventType = 'message';
     else if (messaging.delivery) eventType = 'delivery';
     else if (messaging.read) eventType = 'read';
@@ -83,7 +88,7 @@ function classifyEvent(messaging = {}) {
  * @throws {WebhookReceiptPersistenceError} when the row cannot be written.
  */
 async function recordReceipt({ pageId, objectType = 'page', messaging }) {
-    const { eventType, eventId, senderRef } = classifyEvent(messaging);
+    const { eventType, eventId, senderRef } = classifyEvent(messaging, pageId);
     const payloadHash = sha256(JSON.stringify(messaging ?? null));
     const dedupeKey = scopedDedupeKey(pageId, eventId, payloadHash);
 
@@ -166,7 +171,7 @@ async function safeUpdate(receipt, fields) {
         const expectedToken = receipt.processing_token;
         const isEntityInstance = typeof MetaWebhookReceipt === 'function'
             && receipt instanceof MetaWebhookReceipt;
-        if (isEntityInstance && receipt.id && expectedToken && typeof MetaWebhookReceipt.update === 'function') {
+        if (isEntityInstance && receipt.id && typeof MetaWebhookReceipt.update === 'function') {
             const [updatedCount] = await MetaWebhookReceipt.update(fields, {
                 where: {
                     id: receipt.id,
@@ -174,19 +179,32 @@ async function safeUpdate(receipt, fields) {
                     processing_token: expectedToken,
                 },
             });
-            if (updatedCount !== 1) return false;
+            if (updatedCount !== 1) {
+                const claimLost = Object.assign(
+                    new Error('Webhook receipt update lost its processing fence'),
+                    { code: 'WEBHOOK_RECEIPT_CLAIM_LOST', retryable: true },
+                );
+                logger.warn('Webhook receipt update skipped after claim ownership changed', {
+                    receiptId: receipt.id,
+                    expectedStatus,
+                    requestedStatus: fields.status || null,
+                    requestedErrorCode: fields.last_error_code || null,
+                });
+                return { ok: false, claimLost: true, error: claimLost };
+            }
             if (typeof receipt.set === 'function') receipt.set(fields);
-            return true;
+            return { ok: true };
         }
-        if (typeof receipt.update !== 'function') return false;
+        if (typeof receipt.update !== 'function') return { ok: false, error: null };
         await receipt.update(fields);
-        return true;
+        return { ok: true };
     } catch (err) {
         logger.error('Failed to update webhook receipt status', {
             receiptId: receipt.id,
             errorCode: err?.name || 'UnknownError',
+            errorMessage: err?.message || null,
         });
-        return false;
+        return { ok: false, claimLost: false, error: err };
     }
 }
 
@@ -194,8 +212,13 @@ async function updateOrThrow(receipt, fields) {
     // A missing receipt can only occur in a mocked/incomplete caller; the
     // create path already throws when persistence returns no row.
     if (!receipt) return;
-    if (await safeUpdate(receipt, fields)) return;
-    throw new WebhookReceiptPersistenceError(new Error('Failed to update inbound Meta webhook receipt status'));
+    const result = await safeUpdate(receipt, fields);
+    if (result === true || result?.ok === true) return;
+    // A stale live request must not turn a successful reconciler claim into a
+    // 503 or overwrite the newer owner's state. The warning above records the
+    // fence loss and the requested failure code for diagnosis.
+    if (result?.claimLost) return;
+    throw new WebhookReceiptPersistenceError(result?.error || new Error('Failed to update inbound Meta webhook receipt status'));
 }
 
 /** Event carries no business action (echo, delivery, read, unrecognised). */
@@ -378,9 +401,16 @@ async function claimDueReceipts(limit = 25) {
                     status: 'PROCESSING',
                     updated_at: { [Op.lt]: new Date(now.getTime() - STALE_CLAIM_MS) },
                 },
+                // A handler can fail after recording the receipt but before
+                // claiming it. Such rows are not covered by the retry ladder;
+                // recover them once they have aged past the short orphan window.
+                {
+                    status: 'RECEIVED',
+                    received_at: { [Op.lt]: new Date(now.getTime() - ORPHANED_RECEIVED_MS) },
+                },
             ],
         },
-        order: [['next_retry_at', 'ASC']],
+        order: [[literal('COALESCE(next_retry_at, updated_at)'), 'ASC']],
         limit,
     });
 

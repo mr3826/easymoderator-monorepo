@@ -543,7 +543,7 @@ test('Scenario C: Manual mode suppresses the automatic-reply claim while keeping
   });
   await hitlControl.click();
   await hitlResponse;
-  await expect(page.getByRole('button', { name: /You're replying/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Resume AI/ })).toBeVisible();
   fixture.assertNoUnexpectedApiRequests();
 });
 

@@ -60,7 +60,7 @@ const mockMetaChannelService = {
 jest.mock('src/modules/channel-providers/meta-channel.service', () => mockMetaChannelService);
 
 const mockCustomer = { findOne: jest.fn(), findOrCreate: jest.fn(), update: jest.fn(), destroy: jest.fn() };
-const mockConversation = { findOne: jest.fn(), create: jest.fn() };
+const mockConversation = { findOne: jest.fn(), create: jest.fn(), update: jest.fn() };
 const mockMessage = { findOne: jest.fn(), create: jest.fn() };
 
 jest.mock('src/modules/entities', () => ({
@@ -164,6 +164,7 @@ const buildConversation = (overrides = {}) => ({
     shop_id: SHOP_ID,
     customer_id: CUSTOMER_ID,
     channel: 'messenger',
+    meta_channel_id: 'mc-1',
     update: jest.fn().mockResolvedValue(undefined),
     ...overrides,
 });
@@ -207,6 +208,7 @@ describe('storeIncomingMessage', () => {
         global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
 
         mockCustomer.findOrCreate.mockResolvedValue([customer, true]);
+        delete mockCustomer.create;
         mockConversation.findOne.mockResolvedValue(null);
         mockConversation.create.mockResolvedValue(conversation);
         mockMessage.findOne.mockResolvedValue(null);
@@ -400,17 +402,103 @@ describe('storeIncomingMessage', () => {
         );
     });
 
-    it('does not reuse or pin an unpinned legacy conversation when the Page is known', async () => {
+    it('reopens a recent Done conversation for a new inbound message', async () => {
+        const closedConversation = buildConversation({
+            status: 'closed',
+            hitl: true,
+            resolved_at: new Date(),
+            resolution_note: 'Resolved',
+            metadata: { status: 'closed', unreadCount: 0 },
+        });
+        mockConversation.findOne.mockResolvedValue(closedConversation);
+
+        const result = await storeIncomingMessage(baseEvent);
+
+        expect(result.conversation_id).toBe(CONV_ID);
+        expect(mockConversation.create).not.toHaveBeenCalled();
+        expect(closedConversation.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                status: 'active',
+                hitl: false,
+                resolved_at: null,
+                resolution_note: null,
+                metadata: expect.objectContaining({ status: 'active' }),
+            }),
+            expect.objectContaining({ transaction: mockTransaction }),
+        );
+        expect(mockMessage.create).toHaveBeenCalledWith(
+            expect.objectContaining({ conversation_id: CONV_ID, sender: 'customer' }),
+            expect.objectContaining({ transaction: mockTransaction }),
+        );
+    });
+
+    it('adopts a legacy customer and conversation instead of splitting the Inbox thread', async () => {
+        const legacyCustomer = {
+            id: CUSTOMER_ID,
+            name: 'Facebook User',
+            meta_channel_id: null,
+            metadata: { source: 'legacy' },
+            set: jest.fn((values) => Object.assign(legacyCustomer, values)),
+            update: jest.fn().mockResolvedValue(undefined),
+        };
         const legacyConversation = buildConversation({ meta_channel_id: null });
-        mockConversation.findOne.mockResolvedValue(legacyConversation);
+        legacyConversation.set = jest.fn((values) => Object.assign(legacyConversation, values));
+        mockCustomer.create = jest.fn();
+        mockCustomer.findOne
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(legacyCustomer);
+        mockCustomer.update.mockResolvedValueOnce([1]);
+        mockConversation.findOne
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(legacyConversation);
+        mockConversation.update.mockResolvedValueOnce([1]);
+
+        const result = await storeIncomingMessage(baseEvent);
+
+        expect(mockCustomer.create).not.toHaveBeenCalled();
+        expect(mockCustomer.update).toHaveBeenCalledWith(
+            { meta_channel_id: 'mc-1' },
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    id: CUSTOMER_ID,
+                    meta_channel_id: null,
+                }),
+                transaction: mockTransaction,
+            }),
+        );
+        expect(mockConversation.update).toHaveBeenCalledWith(
+            { meta_channel_id: 'mc-1' },
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    id: CONV_ID,
+                    meta_channel_id: null,
+                }),
+                transaction: mockTransaction,
+            }),
+        );
+        expect(mockConversation.create).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ customer_id: CUSTOMER_ID, conversation_id: CONV_ID });
+    });
+
+    it('does not adopt a customer already pinned to another Page', async () => {
+        const pageBCustomer = {
+            id: 'cust-page-b',
+            meta_channel_id: 'mc-page-b',
+            name: 'Page B customer',
+            metadata: {},
+        };
+        const pageACustomer = { ...customer, id: 'cust-page-a', meta_channel_id: 'mc-1' };
+        mockCustomer.create = jest.fn().mockResolvedValue(pageACustomer);
+        mockCustomer.findOne
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(pageBCustomer);
+        mockConversation.findOne.mockResolvedValue(null);
 
         await storeIncomingMessage(baseEvent);
 
-        expect(mockConversation.findOne).toHaveBeenCalledWith(expect.objectContaining({
-            where: expect.objectContaining({ meta_channel_id: 'mc-1' }),
-        }));
-        expect(legacyConversation.update).not.toHaveBeenCalled();
-        expect(mockConversation.create).toHaveBeenCalledWith(
+        expect(pageBCustomer.meta_channel_id).toBe('mc-page-b');
+        expect(mockCustomer.update).not.toHaveBeenCalled();
+        expect(mockCustomer.create).toHaveBeenCalledWith(
             expect.objectContaining({ meta_channel_id: 'mc-1' }),
             expect.objectContaining({ transaction: mockTransaction }),
         );
@@ -596,10 +684,24 @@ describe('POST /webhooks/meta (incoming webhook)', () => {
 
     it('skips echo events (page own outbound messages)', async () => {
         const echoPayload = buildPagePayload();
-        echoPayload.entry[0].messaging[0].message.is_echo = true;
+        echoPayload.entry[0].messaging[0] = {
+            ...echoPayload.entry[0].messaging[0],
+            sender: { id: PAGE_ID },
+            recipient: { id: 'fb-user-789' },
+            message: { ...echoPayload.entry[0].messaging[0].message, is_echo: true },
+        };
 
         await sendWebhookWithSig(echoPayload).expect(200);
         expect(mockMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('does not classify a customer-sent is_echo flag as our outbound echo', async () => {
+        const inboundEchoFlag = buildPagePayload();
+        inboundEchoFlag.entry[0].messaging[0].message.is_echo = true;
+
+        await sendWebhookWithSig(inboundEchoFlag).expect(200);
+
+        expect(mockMessage.create).toHaveBeenCalled();
     });
 
     it('skips non-message events (read receipts, delivery reports)', async () => {
